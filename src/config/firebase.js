@@ -13,25 +13,13 @@ import { PATHS } from "./dbPaths";
  * Firebase Configuratie - Project: future-factory-377ef
  */
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyA0rOtnlrgPWwhPGj3GkoDqyG_S8n7re-s",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "future-factory-377ef.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "future-factory-377ef",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "future-factory-377ef.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "180452063401",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:180452063401:web:66b4c30bf97080072cd1b8",
 };
-
-const missingKeys = Object.entries(firebaseConfig)
-  .filter(([, value]) => !value)
-  .map(([key]) => key);
-
-if (missingKeys.length > 0) {
-  console.error(
-    "Firebase configuratie ontbreekt. Controleer je .env in de projectroot.",
-    missingKeys
-  );
-  throw new Error("Firebase configuratie ontbreekt.");
-}
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
