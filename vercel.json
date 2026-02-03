@@ -5,5 +5,9 @@
             "main": true,
             "preview": true
         }
+    },
+    "github": {
+        "autoAlias": false,
+        "silent": true
     }
 }
