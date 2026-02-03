@@ -16,11 +16,70 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background-color: #f8fafc; /* slate-50 */
+  /* Voorkomt zoomen op iOS bij input focus */
+  -webkit-text-size-adjust: 100%;
 }
 
 #root {
   width: 100%;
   height: 100%;
+}
+
+/* Responsive Typography */
+@media (max-width: 768px) {
+  :root {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 475px) {
+  :root {
+    font-size: 13px;
+  }
+}
+
+/* Touch-friendly minimum sizes */
+@layer utilities {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  .mobile-padding {
+    @apply px-4 py-3;
+  }
+  
+  .tablet-padding {
+    @apply md:px-6 md:py-4;
+  }
+  
+  /* Prevent text selection on touch interfaces for buttons */
+  .touch-action-none {
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Mobile-specific optimizations */
+@media (hover: none) and (pointer: coarse) {
+  /* Touch devices */
+  button, a {
+    -webkit-tap-highlight-color: rgba(59, 130, 246, 0.1);
+  }
+  
+  /* Larger hit areas for touch */
+  .nav-item, button {
+    padding: 0.75rem;
+  }
+}
+
+/* Tablet optimizations */
+@media (min-width: 768px) and (max-width: 1023px) {
+  /* Increase spacing for tablet */
+  .container {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
 }
 
 /* Algemene Scrollbar Styling - FPI Navy/Blue */

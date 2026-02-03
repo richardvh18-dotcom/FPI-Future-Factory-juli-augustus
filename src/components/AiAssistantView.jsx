@@ -99,7 +99,7 @@ Waar kan ik je mee helpen?`,
   };
 
   // System context for chat - bevat MES-specifieke informatie EN handleiding
-  const MES_CONTEXT = `Je bent een AI assistent voor FPi Future Factory, een MES (Manufacturing Execution System) voor de productie van PVC-buizen en fittings.
+  const MES_CONTEXT = `Je bent een AI assistent voor FPi Future Factory, een MES (Manufacturing Execution System) voor de productie van GRE (Glass Reinforced Epoxy) buizen en fittings.
 
 BELANGRIJK: Gebruik altijd proper Markdown formatting in je antwoorden:
 - Gebruik **vetgedrukt** voor belangrijke termen
@@ -113,13 +113,13 @@ BELANGRIJK: Gebruik altijd proper Markdown formatting in je antwoorden:
 ## PRODUCTIE INFORMATIE:
 
 **GRE Specificaties:**
-- GRE = Gereedstands- en Renvooiliggeld Eenheid
-- EST = Eastern Standard Time specificaties (bijv. 32mm, 40mm, 50mm)
-- CST = Canadian Standard Time specificaties (zwart, geleidend)
+- GRE = Glass Reinforced Epoxy (glasvezelversterkte epoxy)
+- EST = Epoxy Standard Type specificaties (bijv. 32mm, 40mm, 50mm)
+- CST = Conductive Standard Type specificaties (zwart, geleidend)
 - Belangrijke producten: Wavistrong (drukriool), Bocht 87.5°, T-stukken, Moffen
 
 **Afdelingen:**
-- Spuitgieten: Productie van PVC componenten
+- Lamineren: Productie van GRE buizen en componenten
 - Verpakking: Afwerking en verpakken
 - Lossen: Eindcontrole en verzending
 - Nabewerking: Post-processing

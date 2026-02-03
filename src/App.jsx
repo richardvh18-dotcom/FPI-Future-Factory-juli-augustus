@@ -40,14 +40,16 @@ const CalculatorView = lazy(() => import("./components/CalculatorView"));
 const AiAssistantView = lazy(() => import("./components/AiAssistantView"));
 
 /**
- * App.jsx V17.0 - Password Change Flow
- * + Force password change voor nieuwe accounts
+ * App.jsx V18.0 - Responsive Design
+ * + Mobile menu state management
+ * + Password change flow
  */
 const App = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [loginError, setLoginError] = useState(null);
   const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Data fetching via Hooks
   const { user, isAdmin, role, loading: authLoading } = useAdminAuth();
@@ -147,8 +149,7 @@ const App = () => {
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           logoUrl={generalConfig?.logoUrl}
-          appName={generalConfig?.appName}
-          unreadCount={unreadCount}
+          onMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         />
 
         <div className="flex-1 flex overflow-hidden relative">
@@ -157,6 +158,10 @@ const App = () => {
             isAdmin={isAdmin}
             onLogout={async () => {
               await signOut(auth);
+              navigate("/login");
+            }}
+            isMobileMenuOpen={isMobileMenuOpen}
+            onMobileMenuClose={() => setIsMobileMenuOpen(false) await signOut(auth);
               navigate("/login");
             }}
           />
