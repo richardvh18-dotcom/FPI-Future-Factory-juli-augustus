@@ -321,6 +321,28 @@ const AdminUsersView = () => {
     setIsEditing(true);
   };
 
+  // Reset wachtwoord voor gebruiker (via Firebase Auth Admin SDK zou beter zijn, maar we gebruiken email reset)
+  const handleResetPassword = async (userEmail) => {
+    if (!window.confirm(`Wachtwoord reset link sturen naar ${userEmail}?`)) {
+      return;
+    }
+
+    try {
+      const { sendPasswordResetEmail } = await import("firebase/auth");
+      await sendPasswordResetEmail(auth, userEmail);
+      setStatus({
+        type: "success",
+        message: `Reset link verzonden naar ${userEmail}. Gebruiker kan via email een nieuw wachtwoord instellen.`,
+      });
+    } catch (err) {
+      console.error("Reset fout:", err);
+      setStatus({
+        type: "error",
+        message: `Fout bij versturen reset link: ${err.message}`,
+      });
+    }
+  };
+
   // Genereer tijdelijk wachtwoord
   const generateTempPassword = () => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
@@ -627,6 +649,13 @@ const AdminUsersView = () => {
                             </div>
 
                             <div className="mt-8 pt-6 border-t border-slate-50 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                              <button
+                                onClick={() => handleResetPassword(u.email)}
+                                className="p-3 bg-slate-50 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-all"
+                                title="Wachtwoord Resetten"
+                              >
+                                <Key size={18} />
+                              </button>
                               <button
                                 onClick={() => handleEdit(u)}
                                 className="p-3 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
