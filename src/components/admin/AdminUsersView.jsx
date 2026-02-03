@@ -20,8 +20,11 @@ import {
   UserPlus,
   Check,
   Globe,
+  Key,
+  RefreshCcw,
 } from "lucide-react";
-import { db, auth } from "../../config/firebase";
+import { db, auth, firebaseConfig } from "../../config/firebase";
+import { initializeApp, deleteApp } from "firebase/app";
 import {
   collection,
   onSnapshot,
@@ -35,7 +38,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { PATHS, isValidPath } from "../../config/dbPaths";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
 
 /**
  * AdminUsersView V6.0 - Account Request Queue
@@ -59,7 +62,9 @@ const AdminUsersView = () => {
     email: "",
     country: "",
     department: "",
-    role: "guest"
+    role: "guest",
+    tempPassword: "",
+    requirePasswordChange: true
   });
 
   const USER_ROLES = [
@@ -169,18 +174,31 @@ const AdminUsersView = () => {
     setSaving(true);
     setStatus(null);
 
+    // Gebruik opgegeven wachtwoord of genereer een nieuwe
+    const passwordToUse = newUser.tempPassword || generateTempPassword();
+
+    let secondaryApp = null; 
+    let selectedUid = null;
+    let isExistingUser = false;
+
     try {
-      const tempPassword = generateTempPassword();
-      let userCredential;
-      let isExistingUser = false;
-      
       try {
-        // Probeer nieuwe gebruiker aan te maken in Firebase Auth
-        userCredential = await createUserWithEmailAndPassword(
-          auth,
+        // Maak een SECONDARY app instance om de user aan te maken 
+        // zonder de huidige admin uit te loggen.
+        secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
+        const secondaryAuth = getAuth(secondaryApp);
+
+        const userCredential = await createUserWithEmailAndPassword(
+          secondaryAuth,
           newUser.email,
-          tempPassword
+          passwordToUse
         );
+        
+        selectedUid = userCredential.user.uid;
+        
+        // Log de nieuwe user direct weer uit op de secondary app
+        await signOut(secondaryAuth);
+
       } catch (authError) {
         if (authError.code === "auth/email-already-in-use") {
           // Gebruiker bestaat al in Auth
@@ -221,35 +239,35 @@ const AdminUsersView = () => {
               message: "Import geannuleerd.",
             });
             setSaving(false);
+            if (secondaryApp) await deleteApp(secondaryApp);
             return;
           }
           
-          // Valideer UID format (Firebase UIDs zijn 28 tekens)
-          const cleanUid = uid.trim();
-          if (cleanUid.length < 10) {
-            setStatus({
-              type: "error",
-              message: "Ongeldige UID. Firebase UIDs zijn minimaal 10 tekens.",
-            });
-            setSaving(false);
-            return;
+          // Valideer UID 
+          selectedUid = uid.trim();
+          if (selectedUid.length < 5) {
+             throw new Error("Ongeldige UID opgegeven.");
           }
           
-          userCredential = { user: { uid: cleanUid } };
         } else {
           throw authError;
         }
+      } finally {
+        // Ruim de secondary app op
+        if (secondaryApp) {
+          await deleteApp(secondaryApp);
+        }
       }
 
-      // Voeg gebruiker toe aan Firestore
-      await setDoc(doc(db, ...PATHS.USERS, userCredential.user.uid), {
+      // Voeg gebruiker toe aan Firestore (gebruikmakend van de MAIN app db)
+      await setDoc(doc(db, ...PATHS.USERS, selectedUid), {
         name: newUser.name,
         email: newUser.email,
         country: newUser.country || "Nederland",
         department: newUser.department || "Anders",
         role: newUser.role,
-        requirePasswordChange: !isExistingUser,
-        tempPassword: isExistingUser ? "(bestaand wachtwoord behouden)" : tempPassword,
+        requirePasswordChange: newUser.requirePasswordChange, // Gebruik de checkbox waarde
+        tempPassword: isExistingUser ? "(bestaand wachtwoord behouden)" : passwordToUse,
         createdAt: serverTimestamp(),
         createdBy: auth.currentUser?.email || "Admin",
         imported: isExistingUser,
@@ -259,12 +277,21 @@ const AdminUsersView = () => {
       setStatus({
         type: "success",
         message: isExistingUser 
-          ? `✅ Gebruiker succesvol geïmporteerd! Ze kunnen nu inloggen met hun bestaande wachtwoord.` 
-          : `✅ Gebruiker aangemaakt! Tijdelijk wachtwoord: ${tempPassword}`,
+          ? `✅ Gebruiker succesvol geïmporteerd!` 
+          : `✅ Gebruiker aangemaakt! Tijdelijk wachtwoord: ${passwordToUse}`,
       });
       
       setShowAddUserModal(false);
-      setNewUser({ name: "", email: "", country: "", department: "", role: "guest" });
+      setNewUser({ 
+        name: "", 
+        email: "", 
+        country: "", 
+        department: "", 
+        role: "guest",
+        tempPassword: "",
+        requirePasswordChange: true 
+      });
+
     } catch (err) {
       console.error("Fout bij toevoegen gebruiker:", err);
       let errorMessage = "Fout bij toevoegen gebruiker";
@@ -273,6 +300,8 @@ const AdminUsersView = () => {
         errorMessage = "Ongeldig email-adres";
       } else if (err.code === "auth/weak-password") {
         errorMessage = "Wachtwoord is te zwak (minimaal 6 karakters)";
+      } else if (err.code === "auth/email-already-in-use"){
+         errorMessage = "E-mailadres is al in gebruik (en import geannuleerd).";
       } else {
         errorMessage = err.message;
       }
@@ -926,6 +955,46 @@ const AdminUsersView = () => {
                     <option key={dept} value={dept}>{dept}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-600 uppercase tracking-widest">Wachtwoord Instellingen</label>
+                <div className="p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl space-y-4">
+                   <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                          type="text"
+                          value={newUser.tempPassword}
+                          onChange={(e) => setNewUser({...newUser, tempPassword: e.target.value})}
+                          placeholder="Automatisch gegenereerd (of typ zelf)"
+                          className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl font-mono text-sm focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <button
+                        onClick={() => setNewUser({...newUser, tempPassword: generateTempPassword()})}
+                        className="p-3 bg-white border border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 rounded-xl transition-all"
+                        title="Genereer nieuw wachtwoord"
+                      >
+                        <RefreshCcw size={18} />
+                      </button>
+                   </div>
+                   
+                   <label className="flex items-center gap-3 cursor-pointer group">
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${newUser.requirePasswordChange ? 'bg-blue-500 border-blue-500' : 'bg-white border-slate-300 group-hover:border-blue-400'}`}>
+                        {newUser.requirePasswordChange && <Check size={14} className="text-white" />}
+                      </div>
+                      <input 
+                        type="checkbox" 
+                        className="hidden"
+                        checked={newUser.requirePasswordChange}
+                        onChange={(e) => setNewUser({...newUser, requirePasswordChange: e.target.checked})} 
+                      />
+                      <span className="text-sm font-bold text-slate-700 select-none">
+                        Wachtwoord wijzigen bij volgende login verplichten
+                      </span>
+                   </label>
+                </div>
               </div>
 
               <div className="space-y-2">

@@ -12,7 +12,7 @@ import { PATHS } from "./dbPaths";
 /**
  * Firebase Configuratie - Project: future-factory-377ef
  */
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyA0rOtnlrgPWwhPGj3GkoDqyG_S8n7re-s",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "future-factory-377ef.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "future-factory-377ef",
