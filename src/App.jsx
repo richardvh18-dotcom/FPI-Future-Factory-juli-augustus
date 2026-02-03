@@ -161,9 +161,7 @@ const App = () => {
               navigate("/login");
             }}
             isMobileMenuOpen={isMobileMenuOpen}
-            onMobileMenuClose={() => setIsMobileMenuOpen(false) await signOut(auth);
-              navigate("/login");
-            }}
+            onMobileMenuClose={() => setIsMobileMenuOpen(false)}
           />
 
           <main className="flex-1 flex flex-col overflow-hidden relative md:pl-16">
