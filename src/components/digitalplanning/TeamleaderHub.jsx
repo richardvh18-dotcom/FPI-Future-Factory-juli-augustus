@@ -21,7 +21,6 @@ import {
   CalendarDays,
   UserCheck,
   AlertTriangle,
-  Target,
 } from "lucide-react";
 import { collection, query, onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../config/firebase";
@@ -37,8 +36,6 @@ import TerminalSelectionModal from "./modals/TerminalSelectionModal";
 import TraceModal from "./modals/TraceModal";
 import PlanningSidebar from "./PlanningSidebar";
 import PlanningImportModal from "./modals/PlanningImportModal";
-import EfficiencyDashboard from "./EfficiencyDashboard";
-import StationAssignmentModal from "./modals/StationAssignmentModal";
 
 /**
  * TeamleaderHub V7.0 - Error Resilience Update
@@ -67,8 +64,6 @@ const TeamleaderHub = ({
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedStationDetail, setSelectedStationDetail] = useState(null);
   const [showTerminalSelection, setShowTerminalSelection] = useState(false);
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [assignmentStation, setAssignmentStation] = useState(null);
 
   useEffect(() => {
     const unsubOrders = onSnapshot(
@@ -310,16 +305,6 @@ const TeamleaderHub = ({
           >
             Volledige Lijst
           </button>
-          <button
-            onClick={() => setActiveTab("efficiency")}
-            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === "efficiency"
-                ? "bg-white text-purple-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Efficiency
-          </button>
         </div>
 
         <div className="flex-1 overflow-hidden relative">
@@ -386,7 +371,11 @@ const TeamleaderHub = ({
                   {metrics.machineGridData.map((machine) => (
                     <div
                       key={machine.id}
-                      className="bg-white border border-slate-200 rounded-[35px] p-6 shadow-sm hover:shadow-xl hover:border-blue-400 transition-all group relative overflow-hidden text-left"
+                      onClick={() => {
+                        console.log('[TeamleaderHub] Station clicked:', machine.id);
+                        setSelectedStationDetail(machine.id);
+                      }}
+                      className="bg-white border border-slate-200 rounded-[35px] p-6 shadow-sm hover:shadow-xl hover:border-blue-400 transition-all cursor-pointer group relative overflow-hidden text-left"
                     >
                       <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                         <Cpu size={80} />
@@ -425,29 +414,6 @@ const TeamleaderHub = ({
                           </span>
                         </div>
                       </div>
-                      
-                      {/* Action buttons */}
-                      <div className="flex gap-2 mt-4 pt-4 border-t border-slate-100">
-                        <button
-                          onClick={() => {
-                            setAssignmentStation(machine.id);
-                            setShowAssignModal(true);
-                          }}
-                          className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-black uppercase tracking-widest transition-all"
-                          title="Personeelstoewijzing"
-                        >
-                          <Users size={14} className="inline mr-1" />
-                          Toewijzen
-                        </button>
-                        <button
-                          onClick={() => setSelectedStationDetail(machine.id)}
-                          className="flex-1 px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-black uppercase tracking-widest transition-all"
-                          title="Details"
-                        >
-                          <Monitor size={14} className="inline mr-1" />
-                          Details
-                        </button>
-                      </div>
                     </div>
                   ))}
                 </div>
@@ -459,10 +425,6 @@ const TeamleaderHub = ({
                 scope={fixedScope}
                 machines={allowedMachines}
               />
-            </div>
-          ) : activeTab === "efficiency" ? (
-            <div className="h-full overflow-y-auto custom-scrollbar pb-20">
-              <EfficiencyDashboard selectedStation={null} />
             </div>
           ) : (
             <div className="h-full flex gap-6 overflow-hidden">
@@ -489,16 +451,6 @@ const TeamleaderHub = ({
         <PlanningImportModal
           isOpen={true}
           onClose={() => setShowImportModal(false)}
-        />
-      )}
-      {showAssignModal && assignmentStation && (
-        <StationAssignmentModal
-          stationId={assignmentStation}
-          onClose={() => {
-            setShowAssignModal(false);
-            setAssignmentStation(null);
-          }}
-          department={fixedScope}
         />
       )}
       {selectedStationDetail && (

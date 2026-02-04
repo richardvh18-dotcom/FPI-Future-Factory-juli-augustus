@@ -36,7 +36,7 @@ const MobileScanner = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [hasFlash, setHasFlash] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
-  // jsQrLoaded niet meer nodig, want we importeren het direct
+  const [jsQrLoaded, setJsQrLoaded] = useState(false);
 
   // Refs voor de engine
   const videoRef = useRef(null);
@@ -48,15 +48,18 @@ const MobileScanner = () => {
 
   const appId = typeof __app_id !== "undefined" ? __app_id : "fittings-app-v1";
 
-  // 1. Initialisatie
+  // 1. Initialisatie van de externe Scan Engine (jsQR)
   useEffect(() => {
-    // FAILSAFE: Laad jsQR via CDN als de import faalt (voor zekerheid)
-    if (!window.jsQR) {
-        const script = document.createElement("script");
-        script.id = "jsqr-cdn-fallback";
-        script.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
-        script.async = true;
-        document.head.appendChild(script);
+    const scriptId = "jsqr-engine-v26";
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement("script");
+      script.id = scriptId;
+      script.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
+      script.async = true;
+      script.onload = () => setJsQrLoaded(true);
+      document.head.appendChild(script);
+    } else {
+      setJsQrLoaded(true);
     }
 
     // Synchroniseer met de database voor direct resultaat na een scan
@@ -97,36 +100,28 @@ const MobileScanner = () => {
     setActiveMode("camera");
 
     try {
-      // PROBEER FOCUS TE FORCEREN (Cruciaal voor dichtbij scannen)
       const constraints = {
         video: {
           facingMode: "environment",
-          width: { ideal: 1920 }, // Hogere resolutie vragen voor betere focus
-          height: { ideal: 1080 },
-          advanced: [{ focusMode: "continuous" }]
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
         },
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
       if (videoRef.current) {
-        // ... bestaande code ...
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
         isScanningRef.current = true;
         isProcessingFrameRef.current = false;
 
-        // Apply track constraints (Focus fix)
+        // Controleer of het toestel een zaklamp heeft
         const track = stream.getVideoTracks()[0];
-        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+        const capabilities = track.getCapabilities
+          ? track.getCapabilities()
+          : {};
         setHasFlash(!!capabilities.torch);
-
-        // Probeer autofocus te activeren als de hardware het ondersteunt
-        if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
-             try {
-                await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
-             } catch(e) { console.warn("Focus constraint failed", e); }
-        }
 
         videoRef.current.setAttribute("playsinline", "true");
         await videoRef.current.play();
@@ -170,7 +165,8 @@ const MobileScanner = () => {
     if (
       !isScanningRef.current ||
       !videoRef.current ||
-      !canvasRef.current
+      !canvasRef.current ||
+      !window.jsQR
     ) {
       if (isScanningRef.current)
         requestRef.current = requestAnimationFrame(scanFrame);
@@ -184,58 +180,42 @@ const MobileScanner = () => {
     }
 
     const video = videoRef.current;
-    if (video.readyState === 4 && video.videoWidth > 0 && video.videoHeight > 0) {
+    if (video.readyState === 4) {
       isProcessingFrameRef.current = true;
 
       const canvas = canvasRef.current;
       const context = canvas.getContext("2d", { willReadFrequently: true });
 
-      // FIX: Scherper beeld voor de scanner (720p is vaak sweet spot)
-      const maxDimension = 800; // Verhoogd van 500 naar 800 voor meer detail
-      const scale = Math.min(maxDimension / video.videoWidth, maxDimension / video.videoHeight);
-      
-      const targetWidth = Math.floor(video.videoWidth * scale);
-      const targetHeight = Math.floor(video.videoHeight * scale);
+      // Gebruik een ruimer focus gebied voor betere herkenning
+      const size = Math.min(video.videoWidth, video.videoHeight) * 0.8;
+      const x = (video.videoWidth - size) / 2;
+      const y = (video.videoHeight - size) / 2;
 
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
+      canvas.width = size;
+      canvas.height = size;
 
-      // Scan het VOLLEDIGE beeld
-      context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight, 0, 0, targetWidth, targetHeight);
+      // Kopieer het beeld van de camera naar het onzichtbare canvas
+      context.drawImage(video, x, y, size, size, 0, 0, size, size);
 
-      const imageData = context.getImageData(0, 0, targetWidth, targetHeight);
+      const imageData = context.getImageData(0, 0, size, size);
 
       try {
-        // ROBUUSTE LIBRARY LOADER
-        // We gebruiken nu uitsluitend window.jsQR om build-issues te voorkomen
-        const scannerFunc = window.jsQR;
+        // Analyseer de pixels op zoek naar een QR patroon
+        const code = window.jsQR(imageData.data, size, size, {
+          inversionAttempts: "attemptBoth",
+        });
 
-        if (scannerFunc && typeof scannerFunc === 'function') {
-            // Gebruik ALTIJD attemptBoth - kost iets meer CPU maar pakt alles
-            const code = scannerFunc(imageData.data, targetWidth, targetHeight, {
-                inversionAttempts: "attemptBoth",
-            });
+        if (code && code.data) {
+          // QR GEVONDEN!
+          if (navigator.vibrate) navigator.vibrate(100);
+          setIsSuccess(true);
+          setSearchTerm(code.data);
 
-            if (code && code.data && code.data.length > 0) {
-                // QR GEVONDEN!
-                if (navigator.vibrate) navigator.vibrate(200);
-                console.log("✅ QR Code Gevonden:", code.data);
-                
-                setIsSuccess(true);
-                setSearchTerm(code.data);
-
-                setTimeout(() => stopCamera(), 800);
-                return;
-            }
-        } else {
-             // Als de scanner nog niet geladen is, probeer over 500ms opnieuw de fallback te laden
-             if (!document.getElementById("jsqr-cdn-fallback")) {
-                const script = document.createElement("script");
-                script.id = "jsqr-cdn-fallback";
-                script.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
-                script.async = true;
-                document.head.appendChild(script);
-             }
+          // Korte pauze voor visuele feedback
+          setTimeout(() => {
+            stopCamera();
+          }, 500);
+          return;
         }
       } catch (e) {
         console.error("Scan error:", e);
@@ -283,7 +263,7 @@ const MobileScanner = () => {
     }
   };
 
-  if (loading)
+  if (loading || !jsQrLoaded)
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white">
         <Loader2 className="animate-spin text-blue-500 mb-6" size={56} />
