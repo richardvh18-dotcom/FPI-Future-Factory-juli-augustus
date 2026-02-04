@@ -203,13 +203,31 @@ const PersonnelOccupancy = ({ scope, machines = [], editable = true }) => {
   // 4. KPI CALCULATIONS
   const capacityMetrics = useMemo(() => {
     let totalNetHours = 0;
+    let productionHours = 0;
     const activeToday = occupancy.filter(occ => occ.date === todayStr && occ.operatorNumber);
     const countedOperators = new Set();
+    const productionOperators = new Set();
+    
     activeToday.forEach(occ => {
-        totalNetHours += parseFloat(occ.hoursWorked || 0);
+        const hours = parseFloat(occ.hoursWorked || 0);
+        totalNetHours += hours;
         countedOperators.add(occ.operatorNumber);
+        
+        // Check of station BH of BA is (werkelijke productie stations)
+        const machineId = (occ.machineId || "").toUpperCase();
+        if (machineId.startsWith("BH") || machineId.startsWith("BA")) {
+          productionHours += hours;
+          productionOperators.add(occ.operatorNumber);
+        }
     });
-    return { daily: totalNetHours, activeCount: countedOperators.size };
+    
+    return { 
+      daily: totalNetHours, 
+      activeCount: countedOperators.size,
+      productionHours,
+      productionCount: productionOperators.size,
+      supportHours: totalNetHours - productionHours
+    };
   }, [occupancy, todayStr]);
 
   // 4. DISPLAY SECTIONS
@@ -280,24 +298,49 @@ const PersonnelOccupancy = ({ scope, machines = [], editable = true }) => {
   return (
     <div className="space-y-6 text-left animate-in fade-in duration-500 w-full pb-32 px-1">
       {/* KPI DASHBOARD */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-6 rounded-[35px] border-2 border-slate-100 shadow-sm text-left">
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Man-uren Vandaag</span>
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Totaal Man-uren</span>
               <div className="flex items-baseline gap-2 text-left">
                   <span className="text-3xl font-black text-slate-900 italic tracking-tighter">{capacityMetrics.daily.toFixed(1)}</span>
                   <span className="text-[10px] font-bold text-slate-400 uppercase">Uur</span>
               </div>
+              <div className="text-[9px] text-slate-500 mt-2">
+                {capacityMetrics.activeCount} operators
+              </div>
+          </div>
+          <div className="bg-emerald-600 p-6 rounded-[35px] shadow-lg text-white text-left">
+              <span className="text-[9px] font-black text-emerald-100/50 uppercase tracking-widest block mb-1 text-left">Productie Uren</span>
+              <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-black italic tracking-tighter">{capacityMetrics.productionHours.toFixed(1)}</span>
+                  <span className="text-[10px] font-bold text-emerald-200 uppercase">Uur</span>
+              </div>
+              <div className="text-[9px] text-emerald-200 mt-2">
+                {capacityMetrics.productionCount} op BH/BA stations
+              </div>
           </div>
           <div className="bg-slate-900 p-6 rounded-[35px] shadow-xl text-white text-left">
-              <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest block mb-1 text-left">Operators</span>
+              <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest block mb-1 text-left">Ondersteuning</span>
               <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-black italic tracking-tighter">{capacityMetrics.activeCount}</span>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Actief</span>
+                  <span className="text-3xl font-black italic tracking-tighter">{capacityMetrics.supportHours.toFixed(1)}</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">Uur</span>
+              </div>
+              <div className="text-[9px] text-slate-500 mt-2">
+                Overige stations
               </div>
           </div>
           <div className="bg-blue-600 p-6 rounded-[35px] shadow-lg text-white text-left">
-              <span className="text-[9px] font-black text-blue-100/50 uppercase tracking-widest block mb-1 text-left">Systeem Status</span>
-              <span className="text-2xl font-black italic tracking-tighter uppercase">W{currentWeek} Live</span>
+              <span className="text-[9px] font-black text-blue-100/50 uppercase tracking-widest block mb-1 text-left">Efficiency</span>
+              <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-black italic tracking-tighter">
+                    {capacityMetrics.daily > 0 
+                      ? Math.round((capacityMetrics.productionHours / capacityMetrics.daily) * 100)
+                      : 0}%
+                  </span>
+              </div>
+              <div className="text-[9px] text-blue-200 mt-2">
+                Week {currentWeek}
+              </div>
           </div>
       </div>
 

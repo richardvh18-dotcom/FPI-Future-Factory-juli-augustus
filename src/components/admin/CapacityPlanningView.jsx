@@ -77,10 +77,23 @@ const CapacityPlanningView = () => {
       return occDate >= weekStart && occDate <= weekEnd;
     });
 
-    // Bereken totale productie-uren (netto werk)
-    const totalProductionHours = weekOccupancy.reduce((sum, occ) => {
-      return sum + parseFloat(occ.hoursWorked || 0);
-    }, 0);
+    // Bereken totale uren en splits op in productie vs support
+    let totalProductionHours = 0;
+    let realProductionHours = 0;
+    let supportHours = 0;
+    
+    weekOccupancy.forEach(occ => {
+      const hours = parseFloat(occ.hoursWorked || 0);
+      totalProductionHours += hours;
+      
+      // Check of station BH of BA is (werkelijke productie)
+      const machineId = (occ.machineId || "").toUpperCase();
+      if (machineId.startsWith("BH") || machineId.startsWith("BA")) {
+        realProductionHours += hours;
+      } else {
+        supportHours += hours;
+      }
+    });
 
     // Bereken rand-uren (setup, pauze, overhead)
     // Aanname: 8 uur per dag - hoursWorked = overhead
@@ -96,11 +109,16 @@ const CapacityPlanningView = () => {
 
     return {
       totalProductionHours: Math.round(totalProductionHours * 10) / 10,
+      realProductionHours: Math.round(realProductionHours * 10) / 10,
+      supportHours: Math.round(supportHours * 10) / 10,
       overheadHours: Math.round(overheadHours * 10) / 10,
       totalScheduledHours: Math.round(totalScheduledHours * 10) / 10,
       operatorCount,
       efficiency: totalScheduledHours > 0 
         ? Math.round((totalProductionHours / totalScheduledHours) * 100) 
+        : 0,
+      productionRatio: totalProductionHours > 0
+        ? Math.round((realProductionHours / totalProductionHours) * 100)
         : 0
     };
   }, [occupancy, weekStart, weekEnd]);
@@ -148,7 +166,8 @@ const CapacityPlanningView = () => {
 
   // Bereken verschil
   const gap = useMemo(() => {
-    const difference = capacityMetrics.totalProductionHours - demandMetrics.estimatedHours;
+    // Gebruik realProductionHours voor vergelijking met planning
+    const difference = capacityMetrics.realProductionHours - demandMetrics.estimatedHours;
     const percentage = demandMetrics.estimatedHours > 0
       ? Math.round((difference / demandMetrics.estimatedHours) * 100)
       : 0;
@@ -186,20 +205,20 @@ const CapacityPlanningView = () => {
       </div>
 
       {/* Main Metrics Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Beschikbare Capaciteit */}
-        <div className="bg-white border-2 border-emerald-200 rounded-2xl p-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Totaal Beschikbare Uren */}
+        <div className="bg-white border-2 border-slate-200 rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
-            <Users className="text-emerald-600" size={24} />
-            <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-black">
-              Beschikbaar
+            <Users className="text-slate-600" size={24} />
+            <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-black">
+              Totaal
             </span>
           </div>
-          <div className="text-4xl font-black text-emerald-600 mb-2">
+          <div className="text-4xl font-black text-slate-600 mb-2">
             {capacityMetrics.totalProductionHours}u
           </div>
           <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-            Productie-uren
+            Alle uren
           </div>
           <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
             <div className="flex justify-between text-xs">
@@ -210,9 +229,31 @@ const CapacityPlanningView = () => {
               <span className="text-slate-600">Overhead</span>
               <span className="font-bold">{capacityMetrics.overheadHours}u</span>
             </div>
+          </div>
+        </div>
+
+        {/* Werkelijke Productie Uren (BH/BA) */}
+        <div className="bg-white border-2 border-emerald-200 rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <Activity className="text-emerald-600" size={24} />
+            <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-black">
+              Productie
+            </span>
+          </div>
+          <div className="text-4xl font-black text-emerald-600 mb-2">
+            {capacityMetrics.realProductionHours}u
+          </div>
+          <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
+            BH/BA stations
+          </div>
+          <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-slate-600">Efficiency</span>
-              <span className="font-bold">{capacityMetrics.efficiency}%</span>
+              <span className="text-slate-600">Ratio</span>
+              <span className="font-bold">{capacityMetrics.productionRatio}%</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-slate-600">Support</span>
+              <span className="font-bold">{capacityMetrics.supportHours}u</span>
             </div>
           </div>
         </div>
@@ -356,29 +397,43 @@ const CapacityPlanningView = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white border-2 border-slate-200 rounded-2xl p-6">
           <h3 className="text-sm font-black uppercase tracking-widest text-slate-700 mb-4">
-            Capaciteit Verdeling
+            Uren Verdeling
           </h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-600">Productie</span>
+              <span className="text-xs text-slate-600">Productie (BH/BA)</span>
               <div className="flex items-center gap-2">
                 <div className="w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-emerald-500 rounded-full"
-                    style={{ width: `${capacityMetrics.efficiency}%` }}
+                    style={{ width: `${capacityMetrics.productionRatio}%` }}
                   />
                 </div>
                 <span className="text-xs font-bold text-slate-800 w-16 text-right">
-                  {capacityMetrics.totalProductionHours}u
+                  {capacityMetrics.realProductionHours}u
                 </span>
               </div>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-600">Overhead</span>
+              <span className="text-xs text-slate-600">Support</span>
               <div className="flex items-center gap-2">
                 <div className="w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div 
                     className="h-full bg-slate-400 rounded-full"
+                    style={{ width: `${100 - capacityMetrics.productionRatio}%` }}
+                  />
+                </div>
+                <span className="text-xs font-bold text-slate-800 w-16 text-right">
+                  {capacityMetrics.supportHours}u
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+              <span className="text-xs text-slate-600">Overhead</span>
+              <div className="flex items-center gap-2">
+                <div className="w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-amber-500 rounded-full"
                     style={{ width: `${100 - capacityMetrics.efficiency}%` }}
                   />
                 </div>
