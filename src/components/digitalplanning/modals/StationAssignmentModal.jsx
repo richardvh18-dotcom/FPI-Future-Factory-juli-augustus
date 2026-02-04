@@ -17,8 +17,8 @@ import {
   query,
   where,
 } from "firebase/firestore";
-import { db } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { db } from "../../../config/firebase";
+import { PATHS } from "../../../config/dbPaths";
 
 /**
  * StationAssignmentModal
