@@ -7,7 +7,7 @@ De FPi Future Factory AI Assistent gebruikt **Google Gemini** en is volledig ge√
 
 ### Google Gemini (ACTIEF)
 ```env
-VITE_GOOGLE_AI_KEY=REDACTED
+VITE_GOOGLE_AI_KEY=xxxxxx (zet deze key alleen in je lokale .env bestand)
 ```
 De API key is al geconfigureerd en zou direct moeten werken!
 
@@ -264,7 +264,7 @@ Mogelijke uitbreidingen:
 - Vraag het aan de AI zelf: "Hoe gebruik ik de AI assistent?"
 
 **API Key issues?**
-- Verifieer in `.env`: `VITE_GOOGLE_AI_KEY`
+- Verifieer in `.env`: `VITE_GOOGLE_AI_KEY` (deze mag nooit in de repo staan)
 - Test in Google AI Studio
 - Regenereer key indien nodig
 
