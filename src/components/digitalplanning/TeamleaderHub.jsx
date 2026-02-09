@@ -1,28 +1,11 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   Loader2,
-  Zap,
-  CheckCircle2,
-  AlertOctagon,
-  FileText,
-  X,
-  Layers,
-  List,
-  Activity,
   ArrowLeft,
-  Cpu,
-  Users,
-  Monitor,
   FileSpreadsheet,
-  ClipboardList,
-  TrendingUp,
-  Clock,
-  CalendarDays,
-  UserCheck,
   AlertTriangle,
+  ClipboardList,
 } from "lucide-react";
-import GanttChartView from "../planning/GanttChartView";
 import { collection, query, onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { getISOWeek, format } from "date-fns";
@@ -30,16 +13,16 @@ import { PATHS } from "../../config/dbPaths";
 
 // Helpers & Modals
 import { normalizeMachine } from "../../utils/hubHelpers";
-import PersonnelManager from "../Personel/PersonnelManager";
-import StatusBadge from "./common/StatusBadge";
 import StationDetailModal from "./modals/StationDetailModal";
-import TerminalSelectionModal from "./modals/TerminalSelectionModal";
 import TraceModal from "./modals/TraceModal";
-import PlanningSidebar from "./PlanningSidebar";
 import PlanningImportModal from "./modals/PlanningImportModal";
-import OrderDetail from "./OrderDetail";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
-import CapacityPlanningView from "../planning/CapacityPlanningView";
+import TeamleaderDashboard from "../teamleader/TeamleaderDashboard";
+import TeamleaderGanttView from "../teamleader/TeamleaderGanttView";
+import TeamleaderEfficiencyView from "../teamleader/TeamleaderEfficiencyView";
+import PersonnelOccupancyView from "../personnel/PersonnelOccupancyView";
+import PlanningSidebar from "./PlanningSidebar";
+import OrderDetail from "./OrderDetail";
 
 /**
  * TeamleaderHub V7.0 - Error Resilience Update
@@ -68,7 +51,6 @@ const TeamleaderHub = ({
   const [modalData, setModalData] = useState([]);
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedStationDetail, setSelectedStationDetail] = useState(null);
-  const [showTerminalSelection, setShowTerminalSelection] = useState(false);
 
   useEffect(() => {
     const unsubOrders = onSnapshot(
@@ -338,6 +320,57 @@ const TeamleaderHub = ({
     fixedScope,
   ]);
 
+  // Handler voor KPI tegels (opent trace modal met juiste data)
+  const handleKpiClick = (kpiId, label) => {
+    setModalTitle(label);
+    
+    if (kpiId === "gepland") {
+      setModalData(rawOrders);
+      setShowTraceModal(true);
+    } else if (kpiId === "in_proces") {
+      const list = rawProducts.filter((p) => {
+         const status = p.status || "";
+         const step = p.currentStep || "";
+         const station = (p.currentStation || "").toUpperCase();
+         const isFinished = ['Finished', 'completed', 'GEREED'].includes(status) || step === 'Finished';
+         const isRejected = ['Rejected', 'rejected', 'AFKEUR'].includes(status) || step === 'REJECTED';
+         const isAtBM01 = (station === 'BM01' || station === 'STATION BM01' || step === 'Eindinspectie');
+         return !isFinished && !isRejected && !isAtBM01;
+      });
+      setModalData(list);
+      setShowTraceModal(true);
+    } else if (kpiId === "gereed") {
+      const list = rawProducts.filter((p) => {
+         const status = p.status || "";
+         const step = p.currentStep || "";
+         return ['Finished', 'completed', 'GEREED'].includes(status) || step === 'Finished';
+      });
+      setModalData(list);
+      setShowTraceModal(true);
+    } else if (kpiId === "afkeur") {
+      const list = rawProducts.filter((p) => {
+         const status = p.status || "";
+         const step = p.currentStep || "";
+         return ['Rejected', 'rejected', 'AFKEUR'].includes(status) || step === 'REJECTED';
+      });
+      setModalData(list);
+      setShowTraceModal(true);
+    } else if (kpiId === "bezetting") {
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const todayData = bezetting
+        .filter(b => b.date === todayStr)
+        .map(b => ({
+          ...b,
+          lotNumber: b.operatorName,
+          orderId: b.machineName || b.machineId,
+          item: `${b.hours || 8} uur`,
+          status: b.shift || "N/A"
+        }));
+      setModalData(todayData);
+      setShowTraceModal(true);
+    }
+  };
+
   // Render Logica
   if (loading)
     return (
@@ -370,364 +403,109 @@ const TeamleaderHub = ({
 
   return (
     <div className="flex flex-col h-full bg-slate-50 text-left w-full animate-in fade-in duration-300 overflow-hidden relative">
-      {/* HEADER */}
-      <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center shrink-0 z-40 shadow-sm px-6">
-        <div className="flex items-center gap-6">
-          <button
-            onClick={onBack || onExit}
-            className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-2xl transition-all active:scale-90"
-          >
-            <ArrowLeft size={24} />
-          </button>
-          <div className="text-left">
-            <h2 className="text-xl font-black text-slate-800 uppercase italic tracking-tighter leading-none">
-              Teamleader Hub
-            </h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5">
-              {departmentName} Dashboard
-            </p>
+      {/* HEADER MET GEINTEGREERDE TABS */}
+      <div className="bg-white border-b border-slate-200 shrink-0 z-40 shadow-sm px-6 py-3">
+        <div className="flex flex-col xl:flex-row justify-between items-center gap-4">
+          
+          {/* Links: Titel & Back */}
+          <div className="flex items-center gap-6 w-full xl:w-auto">
+            <button
+              onClick={onBack || onExit}
+              className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-2xl transition-all active:scale-90 shrink-0"
+            >
+              <ArrowLeft size={24} />
+            </button>
+            <div className="text-left">
+              <h2 className="text-xl font-black text-slate-800 uppercase italic tracking-tighter leading-none whitespace-nowrap">
+                Teamleader Hub
+              </h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5 truncate">
+                {departmentName} Dashboard
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-xl shadow-lg font-black text-[10px] uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-all"
-          >
-            <FileSpreadsheet size={16} /> Import
-          </button>
+
+          {/* Midden: Tabs (Scrollable op mobiel) */}
+          <div className="flex bg-slate-100 p-1 rounded-2xl overflow-x-auto max-w-full no-scrollbar w-full xl:w-auto justify-start xl:justify-center">
+            <button
+              onClick={() => setActiveTab("dashboard")}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                activeTab === "dashboard"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Dashboard
+            </button>
+            <button
+              onClick={() => setActiveTab("planning")}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                activeTab === "planning"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Volledige Lijst
+            </button>
+            <button
+              onClick={() => setActiveTab("bezetting")}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                activeTab === "bezetting"
+                  ? "bg-white text-emerald-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Personeel
+            </button>
+            <button
+              onClick={() => setActiveTab("efficiency")}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                activeTab === "efficiency"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Efficiëntie
+            </button>
+            <button
+              onClick={() => setActiveTab("gantt")}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
+                activeTab === "gantt"
+                  ? "bg-white text-orange-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              Gantt-planning
+            </button>
+          </div>
+
+          {/* Rechts: Acties */}
+          <div className="flex items-center gap-3 w-full xl:w-auto justify-end">
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-xl shadow-lg font-black text-[10px] uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-all whitespace-nowrap"
+            >
+              <FileSpreadsheet size={16} /> <span className="hidden sm:inline">Import</span>
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="flex-1 overflow-hidden p-6 w-full flex flex-col text-left">
-        {/* TABS */}
-        <div className="flex bg-slate-200/50 p-1 rounded-2xl mb-6 w-fit shrink-0">
-          <button
-            onClick={() => setActiveTab("dashboard")}
-            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === "dashboard"
-                ? "bg-white text-blue-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Dashboard
-          </button>
-          <button
-            onClick={() => setActiveTab("planning")}
-            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === "planning"
-                ? "bg-white text-blue-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Volledige Lijst
-          </button>
-          <button
-            onClick={() => setActiveTab("bezetting")}
-            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === "bezetting"
-                ? "bg-white text-emerald-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Personeel
-          </button>
-          <button
-            onClick={() => setActiveTab("efficiency")}
-            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === "efficiency"
-                ? "bg-white text-indigo-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Efficiëntie
-          </button>
-          <button
-            onClick={() => setActiveTab("gantt")}
-            className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === "gantt"
-                ? "bg-white text-orange-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            Gantt-planning
-          </button>
-        </div>
 
         <div className="flex-1 overflow-hidden relative">
           {activeTab === "dashboard" ? (
-            <div className="h-full overflow-y-auto custom-scrollbar space-y-8 pr-2 pb-20">
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                {[
-                  {
-                    id: "gepland",
-                    label: "Totaal Plan",
-                    val: metrics.totalPlanned,
-                    icon: Layers,
-                    color: "text-slate-400",
-                  },
-                  {
-                    id: "in_proces",
-                    label: "Lopend",
-                    val: metrics.activeCount,
-                    icon: Zap,
-                    color: "text-blue-500",
-                  },
-                  {
-                    id: "gereed",
-                    label: "Gereed",
-                    val: metrics.finishedCount,
-                    icon: CheckCircle2,
-                    color: "text-emerald-500",
-                  },
-                  {
-                    id: "afkeur",
-                    label: "Afkeur",
-                    val: metrics.rejectedCount,
-                    icon: AlertOctagon,
-                    color: "text-rose-500",
-                  },
-                  {
-                    id: "bezetting",
-                    label: "Bezetting",
-                    val: metrics.bezettingAantal,
-                    icon: Users,
-                    color: "text-indigo-500",
-                  },
-                ].map((item) => (
-                  <div
-                    key={item.id}
-                    className="bg-white p-6 rounded-[35px] border-2 border-slate-100 shadow-sm text-left group hover:border-blue-200 transition-all cursor-pointer"
-                    onClick={() => {
-                      // Open modal met bijbehorende lijst
-                      setModalTitle(item.label);
-                      if (item.id === "gepland" || item.id === "in_proces" || item.id === "gereed" || item.id === "afkeur") {
-                        // Orders of producten tonen afhankelijk van KPI
-                        let list = [];
-                        if (item.id === "gepland") {
-                          list = rawOrders;
-                        } else if (item.id === "in_proces") {
-                          // Zelfde logica als activeCount KPI
-                          list = rawProducts.filter((p) => {
-                             const status = p.status || "";
-                             const step = p.currentStep || "";
-                             const station = (p.currentStation || "").toUpperCase();
-                             const isFinished = ['Finished', 'completed', 'GEREED'].includes(status) || step === 'Finished';
-                             const isRejected = ['Rejected', 'rejected', 'AFKEUR'].includes(status) || step === 'REJECTED';
-                             const isAtBM01 = (station === 'BM01' || station === 'STATION BM01' || step === 'Eindinspectie');
-                             return !isFinished && !isRejected && !isAtBM01;
-                          });
-                        } else if (item.id === "gereed") {
-                          list = rawProducts.filter((p) => {
-                             const status = p.status || "";
-                             const step = p.currentStep || "";
-                             return ['Finished', 'completed', 'GEREED'].includes(status) || step === 'Finished';
-                          });
-                        } else if (item.id === "afkeur") {
-                          list = rawProducts.filter((p) => {
-                             const status = p.status || "";
-                             const step = p.currentStep || "";
-                             return ['Rejected', 'rejected', 'AFKEUR'].includes(status) || step === 'REJECTED';
-                          });
-                        }
-                        setModalData(list);
-                        setShowTraceModal(true);
-                      } else if (item.id === "bezetting") {
-                        // FIX: Filter op VANDAAG en map velden voor TraceModal
-                        const todayStr = format(new Date(), 'yyyy-MM-dd');
-                        const todayData = bezetting
-                          .filter(b => b.date === todayStr)
-                          .map(b => ({
-                            ...b,
-                            // Map velden zodat TraceModal ze snapt (lotNumber is vaak de titel)
-                            lotNumber: b.operatorName,
-                            orderId: b.machineName || b.machineId,
-                            item: `${b.hours || 8} uur`,
-                            status: b.shift || "N/A"
-                          }));
-                        setModalData(todayData);
-                        setShowTraceModal(true);
-                      }
-                    }}
-                  >
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-2">
-                      <item.icon size={14} className={item.color} />{" "}
-                      {item.label}
-                    </p>
-                    <p className="text-3xl font-black text-slate-800 italic">
-                      {item.val}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="text-sm font-black text-slate-800 uppercase italic tracking-widest ml-1">
-                  Live Station Monitor
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {metrics.machineGridData.map((machine) => (
-                    <div
-                      key={machine.id}
-                      onClick={() => {
-                        setSelectedStationDetail(machine.id);
-                      }}
-                      className="bg-white border border-slate-200 rounded-[35px] p-6 shadow-sm hover:shadow-xl hover:border-blue-400 transition-all cursor-pointer group relative overflow-hidden text-left"
-                    >
-                      <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
-                        <Cpu size={80} />
-                      </div>
-                      <div className="text-left mb-4">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">
-                          Station
-                        </span>
-                        <h4 className="text-xl font-black text-slate-900 tracking-tighter uppercase italic">
-                          {machine.id}
-                        </h4>
-                        {machine.operatorNames ? (
-                          <div className="mt-2 flex items-center gap-2 text-[10px] font-bold text-slate-600 bg-slate-50 px-2 py-1 rounded-lg w-fit border border-slate-100">
-                             <Users size={12} className="text-blue-500" />
-                             <span className="truncate max-w-[140px]">{machine.operatorNames}</span>
-                          </div>
-                        ) : (
-                          <div className="mt-2 flex items-center gap-2 text-[10px] font-bold text-slate-300 px-2 py-1">
-                             <span className="italic">Geen operator</span>
-                          </div>
-                        )}
-                      </div>
-                      {!machine.isAlgemeen && (
-                        <div className={`grid ${machine.isDownstream ? 'grid-cols-2' : 'grid-cols-3'} gap-2 pt-4 border-t border-slate-50`}>
-                          {!machine.isDownstream && (
-                            <div>
-                              <span className="text-[8px] font-black text-slate-400 uppercase block mb-0.5">
-                                Plan
-                              </span>
-                              <span className="text-sm font-black text-slate-700 italic">
-                                {machine.planned}
-                              </span>
-                            </div>
-                          )}
-                          <div>
-                            <span className="text-[8px] font-black text-blue-400 uppercase block mb-0.5">
-                              {machine.isDownstream ? "Aanbod" : "Actief"}
-                            </span>
-                            <span className="text-sm font-black text-blue-600 italic">
-                              {machine.active}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[8px] font-black text-emerald-400 uppercase block mb-0.5">
-                              {machine.isDownstream ? "Gereed" : "Klaar"}
-                            </span>
-                            <span className="text-sm font-black text-emerald-600 italic">
-                              {machine.finished}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+            <TeamleaderDashboard 
+              metrics={metrics}
+              onKpiClick={handleKpiClick}
+              onStationSelect={setSelectedStationDetail}
+            />
           ) : activeTab === "bezetting" ? (
-            <div className="h-full overflow-y-auto custom-scrollbar pb-20">
-              <PersonnelManager user={user} initialTab="stations" fixedScope={fixedScope} />
-            </div>
+            <PersonnelOccupancyView scope={fixedScope} />
           ) : activeTab === "efficiency" ? (
-            <div className="h-full overflow-y-auto custom-scrollbar pb-20">
-              <CapacityPlanningView 
-                initialDepartment={departmentName === "Algemeen" ? "Fitting Productions" : departmentName} 
-                lockDepartment={true}
-              />
-            </div>
+            <TeamleaderEfficiencyView departmentName={departmentName} />
           ) : activeTab === "gantt" ? (
-            <div className="h-full overflow-y-auto custom-scrollbar pb-20 flex flex-col items-center">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-w-5xl mx-auto mt-8 mb-8 w-full">
-                {/* Totaal Beschikbare Uren */}
-                <div className="bg-white border-2 border-slate-200 rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <Users className="text-slate-600" size={24} />
-                    <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-black">
-                      Totaal
-                    </span>
-                  </div>
-                  <div className="text-4xl font-black text-slate-600 mb-2">
-                    {metrics.bezettingAantal}u
-                  </div>
-                  <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-                    Alle uren
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-600">Stations</span>
-                      <span className="font-bold">{metrics.machineGridData.length}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Productie-uren */}
-                <div className="bg-white border-2 border-emerald-200 rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <Activity className="text-emerald-600" size={24} />
-                    <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-black">
-                      Productie
-                    </span>
-                  </div>
-                  <div className="text-4xl font-black text-emerald-600 mb-2">
-                    {metrics.finishedCount}u
-                  </div>
-                  <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-                    Afgerond
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-600">Actief</span>
-                      <span className="font-bold">{metrics.activeCount}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Geplande Vraag */}
-                <div className="bg-white border-2 border-blue-200 rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <CalendarDays className="text-blue-600" size={24} />
-                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-black">
-                      Planning
-                    </span>
-                  </div>
-                  <div className="text-4xl font-black text-blue-600 mb-2">
-                    {metrics.totalPlanned}u
-                  </div>
-                  <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-                    Geplande uren
-                  </div>
-                </div>
-
-                {/* Efficiëntie */}
-                <div className={`bg-white border-2 rounded-2xl p-6 ${metrics.totalPlanned > metrics.finishedCount ? 'border-rose-200' : 'border-emerald-200'}`}>
-                  <div className="flex items-center justify-between mb-4">
-                    {metrics.totalPlanned > metrics.finishedCount ? (
-                      <AlertTriangle className="text-rose-600" size={24} />
-                    ) : (
-                      <CheckCircle2 className="text-emerald-600" size={24} />
-                    )}
-                    <span className={`px-3 py-1 rounded-full text-xs font-black ${metrics.totalPlanned > metrics.finishedCount ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                      {metrics.totalPlanned > metrics.finishedCount ? 'Tekort' : 'Overschot'}
-                    </span>
-                  </div>
-                  <div className={`text-4xl font-black mb-2 ${metrics.totalPlanned > metrics.finishedCount ? 'text-rose-600' : 'text-emerald-600'}`}>
-                    {metrics.totalPlanned > 0 ? Math.round(((metrics.finishedCount - metrics.totalPlanned) / metrics.totalPlanned) * 100) : 0}%
-                  </div>
-                  <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-                    {metrics.totalPlanned > metrics.finishedCount ? 'Ondercapaciteit' : 'Overcapaciteit'}
-                  </div>
-                </div>
-              </div>
-              <div className="max-w-4xl w-full bg-white rounded-3xl shadow-xl p-8 flex flex-col items-center">
-                <h2 className="text-2xl font-black text-orange-700 mb-4 uppercase tracking-widest">Gantt-planning</h2>
-                <GanttChartView />
-              </div>
-            </div>
+            <TeamleaderGanttView metrics={metrics} />
           ) : (
             <div className="h-full flex gap-6 overflow-hidden">
               <div className="w-80 shrink-0 flex flex-col min-h-0">

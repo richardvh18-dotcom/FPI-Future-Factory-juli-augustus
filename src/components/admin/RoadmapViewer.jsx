@@ -106,6 +106,16 @@ const RoadmapViewer = ({ user }) => {
 
   const roadmapExpansions = [
     {
+      title: "Technische Gezondheidscheck & Optimalisatie (Code Audit)",
+      items: [
+        "Component Opsplitsing: PersonnelManager (1000+ regels) opsplitsen in beheersbare sub-componenten.",
+        "Performance: Lazy loading implementeren voor zware admin-routes en Firebase hooks optimaliseren.",
+        "Kwaliteit & Stabiliteit: Incrementele migratie naar TypeScript voor kritieke logica (src/utils).",
+        "Testing: Unit tests toevoegen voor rekenmodules zoals efficiencyCalculator.js.",
+        "Onderhoudbaarheid: Alle 'magic numbers' en configuratie centraliseren in constants.js."
+      ]
+    },
+    {
       title: "Kwaliteit & Compliance (Fase 5 uitbreiding)",
       items: [
         "Digitale Werkinstructies met Video: Toon korte instructievideo's of 3D-modellen uit de DRAWING_LIBRARY direct bij workstations.",
