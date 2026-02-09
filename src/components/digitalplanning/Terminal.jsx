@@ -131,7 +131,42 @@ const Terminal = ({ initialStation, onBack }) => {
     setLoading(true);
     
     const unsubOrders = onSnapshot(collection(db, ...PATHS.PLANNING), (snap) => {
-      setAllOrders(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+      const processedOrders = snap.docs.map((doc) => {
+        const data = doc.data();
+        
+        // Robuuste week/jaar bepaling
+        let pYear = 0;
+        let pWeek = 0;
+        
+        // 1. Probeer string formaat "2026-W05"
+        const weekStr = String(data.week || data.weekNumber || "").toUpperCase();
+        if (weekStr.includes("-W")) {
+          const parts = weekStr.split("-W");
+          pYear = parseInt(parts[0]) || 0;
+          pWeek = parseInt(parts[1]) || 0;
+        } 
+        // 2. Fallback naar datum object
+        else if (data.plannedDate) {
+          const d = parseDateSafe(data.plannedDate);
+          if (d) {
+            pYear = getISOWeekYear(d);
+            pWeek = getISOWeek(d);
+          }
+        }
+        // 3. Fallback naar losse nummers (week/year velden) als er geen datum of -W string is
+        else if (data.week || data.weekNumber) {
+             pWeek = parseInt(data.week || data.weekNumber) || 0;
+             pYear = parseInt(data.year || data.weekYear) || new Date().getFullYear();
+        }
+        
+        return { 
+          id: doc.id, 
+          ...data,
+          parsedYear: pYear,
+          parsedWeek: pWeek
+        };
+      });
+      setAllOrders(processedOrders);
     }, (err) => {
       console.error("Orders sync error:", err);
       setLoading(false);
@@ -185,16 +220,24 @@ const Terminal = ({ initialStation, onBack }) => {
 
       if (showAllWeeks || sidebarSearch) return true;
 
-      // Match logica voor weeknummers (bijv. "2026-W3" of "2026-W03")
-      const itemWeekStr = String(o.weekNumber || o.week || "").replace('_', '').trim();
-      if (!itemWeekStr.includes('-W')) return false;
-
-      const [y, w] = itemWeekStr.split('-W');
-      // Vergelijk jaar en week als getallen om formaatverschillen op te vangen
-      return Number(y) === targetYearNum && Number(w) === targetWeekNum;
+      // Filter op berekende week/jaar
+      if (o.parsedYear === targetYearNum && o.parsedWeek === targetWeekNum) return true;
+      
+      return false;
     });
 
-    if (!sidebarSearch) return base.sort((a, b) => a.isUrgent === b.isUrgent ? 0 : a.isUrgent ? -1 : 1);
+    if (!sidebarSearch) {
+      return base.sort((a, b) => {
+        // 1. Urgentie
+        if (a.isUrgent !== b.isUrgent) return a.isUrgent ? -1 : 1;
+        // 2. Jaar
+        if (a.parsedYear !== b.parsedYear) return a.parsedYear - b.parsedYear;
+        // 3. Week
+        if (a.parsedWeek !== b.parsedWeek) return a.parsedWeek - b.parsedWeek;
+        // 4. Order ID
+        return String(a.orderId).localeCompare(String(b.orderId));
+      });
+    }
     
     const term = sidebarSearch.toLowerCase();
     return base.filter(o => (o.orderId || "").toLowerCase().includes(term) || (o.item || "").toLowerCase().includes(term));

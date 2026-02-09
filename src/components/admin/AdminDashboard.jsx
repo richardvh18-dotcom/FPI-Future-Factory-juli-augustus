@@ -45,7 +45,7 @@ const FactoryStructureManager = React.lazy(() =>
   import("./FactoryStructureManager")
 );
 const ConversionManager = React.lazy(() => import("./ConversionManager"));
-const PersonnelManager = React.lazy(() => import("../../Personel/PersonnelManager"));
+const PersonnelManager = React.lazy(() => import("../Personel/PersonnelManager"));
 const AdminMatrixManager = React.lazy(() =>
   import("./matrixmanager/AdminMatrixManager")
 );
@@ -55,7 +55,7 @@ const AdminDatabaseView = React.lazy(() => import("./AdminDatabaseView"));
 const DataMigrationTool = React.lazy(() => import("./DataMigrationTool"));
 const AdminLogView = React.lazy(() => import("./AdminLogView"));
 const AdminSettingsView = React.lazy(() => import("./AdminSettingsView"));
-const CapacityPlanningView = React.lazy(() => import("./CapacityPlanningView"));
+const CapacityPlanningView = React.lazy(() => import("../planning/CapacityPlanningView"));
 const AdminLabelDesigner = React.lazy(() => import("./AdminLabelDesigner"));
 const AiCenterView = React.lazy(() => import("./AiCenterView"));
 // NIEUW: Referentie Tabel toevoegen

@@ -34,14 +34,14 @@ import "jspdf-autotable";
  * Vergelijkt beschikbare productie-uren met geplande uren
  * Toont het verschil tussen capaciteit en demand
  */
-const CapacityPlanningView = () => {
+const CapacityPlanningView = ({ initialDepartment, lockDepartment = false }) => {
   const { user, role, isAdmin } = useAdminAuth();
   const [loading, setLoading] = useState(true);
   const [occupancy, setOccupancy] = useState([]);
   const [planningOrders, setPlanningOrders] = useState([]);
   const [timeStandards, setTimeStandards] = useState([]);
   const [selectedWeek, setSelectedWeek] = useState(new Date());
-  const [selectedDepartment, setSelectedDepartment] = useState("ALLES");
+  const [selectedDepartment, setSelectedDepartment] = useState(initialDepartment || "ALLES");
   const [departments, setDepartments] = useState(["ALLES"]);
   const [factoryConfig, setFactoryConfig] = useState({ departments: [] });
   const [timePeriod, setTimePeriod] = useState("week"); // "week", "ytd", "year", "future", "yoy"
@@ -51,7 +51,7 @@ const CapacityPlanningView = () => {
   // Auto-filter voor teamleaders
   const isTeamleader = role === "teamleader";
   const userDepartment = user?.department;
-  const canChangeFilter = isAdmin || role === "engineer" || !isTeamleader;
+  const canChangeFilter = !lockDepartment && (isAdmin || role === "engineer" || !isTeamleader);
 
   const currentWeek = getISOWeek(selectedWeek);
   const weekStart = startOfISOWeek(selectedWeek);
@@ -134,7 +134,7 @@ const CapacityPlanningView = () => {
 
   // Auto-filter voor teamleaders op hun afdeling
   useEffect(() => {
-    if (isTeamleader && userDepartment) {
+    if (!initialDepartment && isTeamleader && userDepartment) {
       // Zoek matching department (kan "Productie - Fittings" vs "Fittings" zijn)
       const matchingDept = departments.find(d => 
         d === userDepartment || 
@@ -148,7 +148,24 @@ const CapacityPlanningView = () => {
         setSelectedDepartment(userDepartment);
       }
     }
-  }, [isTeamleader, userDepartment, departments]);
+  }, [isTeamleader, userDepartment, departments, initialDepartment]);
+
+  // Update selectedDepartment als initialDepartment verandert (bijv. navigatie)
+  useEffect(() => {
+    if (initialDepartment && departments.length > 0) {
+      if (initialDepartment === "ALLES") {
+        setSelectedDepartment("ALLES");
+        return;
+      }
+      // Probeer te matchen met beschikbare departments
+      const match = departments.find(d => 
+        d.toLowerCase() === initialDepartment.toLowerCase() ||
+        d.toLowerCase().includes(initialDepartment.toLowerCase()) ||
+        initialDepartment.toLowerCase().includes(d.toLowerCase())
+      );
+      setSelectedDepartment(match || initialDepartment);
+    }
+  }, [initialDepartment, departments]);
 
   useEffect(() => {
     setLoading(true);
@@ -218,12 +235,18 @@ const CapacityPlanningView = () => {
     let supportHours = 0;
     
     periodOccupancy.forEach(occ => {
-      const hours = parseFloat(occ.hoursWorked || 0);
+      const hours = parseFloat(occ.hoursWorked || occ.hours || 0);
       totalProductionHours += hours;
       
       // Check of station BH of BA is (werkelijke productie)
-      const machineId = (occ.machineId || "").toUpperCase();
-      if (machineId.startsWith("BH") || machineId.startsWith("BA")) {
+      // UPDATE: Ruimere check voor Mazak, Nabewerking en ID variaties (st_bh...)
+      const mId = (occ.machineId || "").toUpperCase();
+      const mName = (occ.machineName || "").toUpperCase();
+      const idStr = mId + " " + mName;
+
+      const isProduction = idStr.includes("BH") || idStr.includes("BA") || idStr.includes("MAZAK") || idStr.includes("NABEWERK");
+
+      if (isProduction) {
         realProductionHours += hours;
       } else {
         supportHours += hours;

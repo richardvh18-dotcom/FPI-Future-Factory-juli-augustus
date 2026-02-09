@@ -182,6 +182,23 @@ const RoadmapViewer = ({ user }) => {
         ))}
       </div>
 
+      <div className="space-y-4 pt-4">
+        <h3 className="font-bold text-lg text-slate-800">Thematische Verdieping</h3>
+        {roadmapExpansions.map((expansion, index) => (
+          <div key={index} className="bg-slate-50 border border-slate-200 rounded-lg p-5">
+            <h4 className="font-bold text-slate-900 mb-3">{expansion.title}</h4>
+            <ul className="space-y-2">
+              {expansion.items.map((item, idx) => (
+                <li key={idx} className="text-sm text-slate-600 flex items-start gap-2">
+                  <span className="text-blue-500 mt-1">•</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+
       <div className="border-t pt-8">
         <h3 className="font-bold mb-4">💡 Ideeën indienen</h3>
         <div className="flex gap-2">

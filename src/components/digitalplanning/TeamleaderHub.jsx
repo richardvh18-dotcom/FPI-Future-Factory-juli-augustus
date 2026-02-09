@@ -25,12 +25,12 @@ import {
 import GanttChartView from "../planning/GanttChartView";
 import { collection, query, onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../config/firebase";
-import { getISOWeek } from "date-fns";
+import { getISOWeek, format } from "date-fns";
 import { PATHS } from "../../config/dbPaths";
 
 // Helpers & Modals
 import { normalizeMachine } from "../../utils/hubHelpers";
-import PersonnelOccupancy from "./PersonnelOccupancy";
+import PersonnelManager from "../Personel/PersonnelManager";
 import StatusBadge from "./common/StatusBadge";
 import StationDetailModal from "./modals/StationDetailModal";
 import TerminalSelectionModal from "./modals/TerminalSelectionModal";
@@ -38,6 +38,8 @@ import TraceModal from "./modals/TraceModal";
 import PlanningSidebar from "./PlanningSidebar";
 import PlanningImportModal from "./modals/PlanningImportModal";
 import OrderDetail from "./OrderDetail";
+import { useAdminAuth } from "../../hooks/useAdminAuth";
+import CapacityPlanningView from "../planning/CapacityPlanningView";
 
 /**
  * TeamleaderHub V7.0 - Error Resilience Update
@@ -50,6 +52,7 @@ const TeamleaderHub = ({
   departmentName = "Algemeen",
   allowedMachines = [],
 }) => {
+  const { user } = useAdminAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [rawOrders, setRawOrders] = useState([]);
   const [rawProducts, setRawProducts] = useState([]);
@@ -153,41 +156,117 @@ const TeamleaderHub = ({
       };
 
     const currentWeek = getISOWeek(new Date());
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
     const validOrderIds = new Set(dataStore.map((o) => o.orderId));
 
     // Get stations from factory config based on fixedScope
     let stations = [];
     if (factoryConfig && factoryConfig.departments) {
-      const scopeMap = { fittings: "fittings", pipes: "pipes", spools: "spools" };
-      const targetSlug = scopeMap[fixedScope.toLowerCase()] || fixedScope.toLowerCase();
-      console.log('[TeamleaderHub metrics] fixedScope:', fixedScope, 'targetSlug:', targetSlug);
-      console.log('[TeamleaderHub metrics] departments:', factoryConfig.departments.map(d => ({ id: d.id, slug: d.slug, name: d.name })));
-      
-      const dept = factoryConfig.departments.find(
-        (d) => d.slug === targetSlug || d.id === targetSlug || d.name?.toLowerCase() === targetSlug
-      );
-      console.log('[TeamleaderHub metrics] found dept:', dept?.name, 'stations count:', dept?.stations?.length);
-      stations = dept ? (dept.stations || []).filter(s => s.name?.toLowerCase() !== "teamleader") : [];
+      if (!fixedScope || fixedScope === 'all') {
+         // Als geen scope, pak alle stations van alle afdelingen
+         stations = factoryConfig.departments.flatMap(d => d.stations || []);
+      } else {
+          const scopeMap = { fittings: "fittings", pipes: "pipes", spools: "spools" };
+          const targetSlug = scopeMap[fixedScope.toLowerCase()] || fixedScope.toLowerCase();
+          
+          const dept = factoryConfig.departments.find(
+            (d) => d.slug === targetSlug || d.id === targetSlug || d.name?.toLowerCase() === targetSlug
+          );
+          stations = dept ? (dept.stations || []) : [];
+      }
+      // Filter teamleader stations eruit voor de KPI's
+      stations = stations.filter(s => {
+        const name = (s.name || "").toLowerCase();
+        return name !== "teamleader" && name !== "algemeen";
+      });
     }
 
     const machineGridData = stations.map((station) => {
       const stationName = station.name;
+      const stationId = station.id;
+
       const mProducts = rawProducts.filter(
         (p) => (p.machine || "").toLowerCase() === stationName.toLowerCase()
       );
-      const currentOccupancy = bezetting.filter(
-        (b) => (b.machineId || "").toLowerCase() === stationName.toLowerCase()
-      );
+      
+      // Verbeterde matching voor occupancy (ID of Naam)
+      const currentOccupancy = bezetting.filter((b) => {
+          if (b.date !== todayStr) return false;
+          const bId = (b.machineId || "").toLowerCase();
+          const bName = (b.machineName || "").toLowerCase();
+          const sId = (stationId || "").toLowerCase();
+          const sName = (stationName || "").toLowerCase();
+          
+          return (sId && sId === bId) || (sName && sName === bId) || (sName && sName === bName);
+      });
+
+      const nameUpper = stationName.toUpperCase();
+      const isBM01 = nameUpper.includes("BM01");
+      const isNabewerking = nameUpper.includes("NABEWERK");
+      const isMazak = nameUpper.includes("MAZAK");
+      const isLossen = nameUpper.includes("LOSSEN");
+      const isAlgemeen = nameUpper.includes("ALGEMEEN");
+      
+      // Groepeer stations die geen 'Plan' hebben maar 'Aanbod'
+      const isDownstream = isBM01 || isNabewerking || isMazak || isLossen;
+
+      let planned = 0;
+      let active = 0;
+      let finished = 0;
+
+      if (isDownstream) {
+          planned = 0;
+          
+          // Downstream Actief: Items die wachten op dit station (Aanbod)
+          active = rawProducts.filter(p => {
+             const pStation = (p.currentStation || "").toUpperCase();
+             const pStep = (p.currentStep || "").toUpperCase();
+             const pStatus = (p.status || "").toUpperCase();
+             
+             // Check of item actief is
+             const isActiveItem = !['COMPLETED', 'FINISHED', 'GEREED', 'REJECTED', 'AFKEUR'].includes(pStatus) && pStep !== 'FINISHED' && pStep !== 'REJECTED';
+             if (!isActiveItem) return false;
+
+             if (isBM01) return pStation.includes("BM01") || pStep.includes("INSPECTIE") || pStep === "BM01";
+             if (isNabewerking) return pStation.includes("NABEWERK") || pStep.includes("NABEWERK");
+             if (isMazak) return pStation.includes("MAZAK") || pStep.includes("MAZAK");
+             if (isLossen) return pStation.includes("LOSSEN") || pStep.includes("LOSSEN");
+             
+             return false;
+          }).length;
+
+          // Downstream Klaar: Items die verwerkt zijn door dit station
+          finished = rawProducts.filter(p => {
+             const pStatus = (p.status || "").toUpperCase();
+             const pStep = (p.currentStep || "").toUpperCase();
+             const isFinishedItem = ['COMPLETED', 'FINISHED', 'GEREED'].includes(pStatus) || pStep === 'FINISHED';
+             if (!isFinishedItem) return false;
+
+             const lastStation = (p.lastStation || "").toUpperCase();
+             if (isBM01) return lastStation.includes("BM01");
+             if (isNabewerking) return lastStation.includes("NABEWERK");
+             if (isMazak) return lastStation.includes("MAZAK");
+             if (isLossen) return lastStation.includes("LOSSEN");
+             return false;
+          }).length;
+      } else if (!isAlgemeen) {
+          // Standaard Productie Machines (niet Algemeen)
+          planned = dataStore
+            .filter((o) => (o.machine || "").toLowerCase() === stationName.toLowerCase())
+            .reduce((acc, o) => acc + Number(o.plan || 0), 0);
+          active = mProducts.filter((p) => p.status === "In Production").length;
+          finished = mProducts.filter((p) => p.status === "Finished").length;
+      }
 
       return {
         id: stationName,
-        planned: dataStore
-          .filter((o) => (o.machine || "").toLowerCase() === stationName.toLowerCase())
-          .reduce((acc, o) => acc + Number(o.plan || 0), 0),
-        finished: mProducts.filter((p) => p.status === "Finished").length,
-        active: mProducts.filter((p) => p.status === "In Production").length,
+        planned,
+        finished,
+        active,
         operatorCount: currentOccupancy.length,
         operatorNames: currentOccupancy.map((o) => o.operatorName).join(", "),
+        isDownstream,
+        isAlgemeen
       };
     });
 
@@ -231,9 +310,23 @@ const TeamleaderHub = ({
         return ['Rejected', 'rejected', 'AFKEUR'].includes(status) || step === 'REJECTED';
       }).length,
 
-      bezettingAantal: bezetting.filter((b) =>
-        stations.some(s => (s.name || "").toLowerCase() === (b.machineId || "").toLowerCase())
-      ).length,
+      // AANGEPAST: Nu som van uren van VANDAAG
+      bezettingAantal: bezetting.filter((b) => {
+          if (b.date !== todayStr) return false;
+          
+          // Check of deze occupancy bij een van onze stations hoort
+          return stations.some(s => {
+             const sId = (s.id || "").toLowerCase();
+             const sName = (s.name || "").toLowerCase();
+             const bId = (b.machineId || "").toLowerCase();
+             const bName = (b.machineName || "").toLowerCase();
+             return (sId && sId === bId) || (sName && sName === bId) || (sName && sName === bName);
+          });
+        }).reduce((sum, b) => {
+            const val = b.hours ?? b.hoursWorked;
+            const parsed = parseFloat(val);
+            return sum + (isNaN(parsed) ? 8 : parsed);
+        }, 0),
       machineGridData,
     };
   }, [
@@ -439,7 +532,19 @@ const TeamleaderHub = ({
                         setModalData(list);
                         setShowTraceModal(true);
                       } else if (item.id === "bezetting") {
-                        setModalData(bezetting);
+                        // FIX: Filter op VANDAAG en map velden voor TraceModal
+                        const todayStr = format(new Date(), 'yyyy-MM-dd');
+                        const todayData = bezetting
+                          .filter(b => b.date === todayStr)
+                          .map(b => ({
+                            ...b,
+                            // Map velden zodat TraceModal ze snapt (lotNumber is vaak de titel)
+                            lotNumber: b.operatorName,
+                            orderId: b.machineName || b.machineId,
+                            item: `${b.hours || 8} uur`,
+                            status: b.shift || "N/A"
+                          }));
+                        setModalData(todayData);
                         setShowTraceModal(true);
                       }
                     }}
@@ -478,33 +583,47 @@ const TeamleaderHub = ({
                         <h4 className="text-xl font-black text-slate-900 tracking-tighter uppercase italic">
                           {machine.id}
                         </h4>
+                        {machine.operatorNames ? (
+                          <div className="mt-2 flex items-center gap-2 text-[10px] font-bold text-slate-600 bg-slate-50 px-2 py-1 rounded-lg w-fit border border-slate-100">
+                             <Users size={12} className="text-blue-500" />
+                             <span className="truncate max-w-[140px]">{machine.operatorNames}</span>
+                          </div>
+                        ) : (
+                          <div className="mt-2 flex items-center gap-2 text-[10px] font-bold text-slate-300 px-2 py-1">
+                             <span className="italic">Geen operator</span>
+                          </div>
+                        )}
                       </div>
-                      <div className="grid grid-cols-3 gap-2 pt-4 border-t border-slate-50">
-                        <div>
-                          <span className="text-[8px] font-black text-slate-400 uppercase block mb-0.5">
-                            Plan
-                          </span>
-                          <span className="text-sm font-black text-slate-700 italic">
-                            {machine.planned}
-                          </span>
+                      {!machine.isAlgemeen && (
+                        <div className={`grid ${machine.isDownstream ? 'grid-cols-2' : 'grid-cols-3'} gap-2 pt-4 border-t border-slate-50`}>
+                          {!machine.isDownstream && (
+                            <div>
+                              <span className="text-[8px] font-black text-slate-400 uppercase block mb-0.5">
+                                Plan
+                              </span>
+                              <span className="text-sm font-black text-slate-700 italic">
+                                {machine.planned}
+                              </span>
+                            </div>
+                          )}
+                          <div>
+                            <span className="text-[8px] font-black text-blue-400 uppercase block mb-0.5">
+                              {machine.isDownstream ? "Aanbod" : "Actief"}
+                            </span>
+                            <span className="text-sm font-black text-blue-600 italic">
+                              {machine.active}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[8px] font-black text-emerald-400 uppercase block mb-0.5">
+                              {machine.isDownstream ? "Gereed" : "Klaar"}
+                            </span>
+                            <span className="text-sm font-black text-emerald-600 italic">
+                              {machine.finished}
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-[8px] font-black text-blue-400 uppercase block mb-0.5">
-                            Actief
-                          </span>
-                          <span className="text-sm font-black text-blue-600 italic">
-                            {machine.active}
-                          </span>
-                        </div>
-                        <div>
-                          <span className="text-[8px] font-black text-emerald-400 uppercase block mb-0.5">
-                            Klaar
-                          </span>
-                          <span className="text-sm font-black text-emerald-600 italic">
-                            {machine.finished}
-                          </span>
-                        </div>
-                      </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -512,105 +631,14 @@ const TeamleaderHub = ({
             </div>
           ) : activeTab === "bezetting" ? (
             <div className="h-full overflow-y-auto custom-scrollbar pb-20">
-              <div className="flex items-center justify-between mb-4 px-4">
-                <h2 className="text-lg font-black uppercase tracking-widest text-slate-700">Bezetting per station</h2>
-                <button
-                  className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs tracking-widest hover:bg-blue-700 transition-all"
-                  onClick={() => {/* TODO: kopieer vorige dag functionaliteit */}}
-                >
-                  Kopie vorige dag
-                </button>
-              </div>
-              <PersonnelOccupancy
-                scope={fixedScope}
-                machines={allowedMachines}
-                editable={true}
-                mode="station-grid"
-              />
+              <PersonnelManager user={user} initialTab="stations" fixedScope={fixedScope} />
             </div>
           ) : activeTab === "efficiency" ? (
             <div className="h-full overflow-y-auto custom-scrollbar pb-20">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-w-5xl mx-auto mt-8">
-                {/* Totaal Beschikbare Uren */}
-                <div className="bg-white border-2 border-slate-200 rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <Users className="text-slate-600" size={24} />
-                    <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-black">
-                      Totaal
-                    </span>
-                  </div>
-                  <div className="text-4xl font-black text-slate-600 mb-2">
-                    {metrics.bezettingAantal}u
-                  </div>
-                  <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-                    Alle uren
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-600">Stations</span>
-                      <span className="font-bold">{metrics.machineGridData.length}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Productie-uren */}
-                <div className="bg-white border-2 border-emerald-200 rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <Activity className="text-emerald-600" size={24} />
-                    <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-black">
-                      Productie
-                    </span>
-                  </div>
-                  <div className="text-4xl font-black text-emerald-600 mb-2">
-                    {metrics.finishedCount}u
-                  </div>
-                  <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-                    Afgerond
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-600">Actief</span>
-                      <span className="font-bold">{metrics.activeCount}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Geplande Vraag */}
-                <div className="bg-white border-2 border-blue-200 rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <CalendarDays className="text-blue-600" size={24} />
-                    <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-black">
-                      Planning
-                    </span>
-                  </div>
-                  <div className="text-4xl font-black text-blue-600 mb-2">
-                    {metrics.totalPlanned}u
-                  </div>
-                  <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-                    Geplande uren
-                  </div>
-                </div>
-
-                {/* Efficiëntie */}
-                <div className={`bg-white border-2 rounded-2xl p-6 ${metrics.totalPlanned > metrics.finishedCount ? 'border-rose-200' : 'border-emerald-200'}`}>
-                  <div className="flex items-center justify-between mb-4">
-                    {metrics.totalPlanned > metrics.finishedCount ? (
-                      <AlertTriangle className="text-rose-600" size={24} />
-                    ) : (
-                      <CheckCircle2 className="text-emerald-600" size={24} />
-                    )}
-                    <span className={`px-3 py-1 rounded-full text-xs font-black ${metrics.totalPlanned > metrics.finishedCount ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                      {metrics.totalPlanned > metrics.finishedCount ? 'Tekort' : 'Overschot'}
-                    </span>
-                  </div>
-                  <div className={`text-4xl font-black mb-2 ${metrics.totalPlanned > metrics.finishedCount ? 'text-rose-600' : 'text-emerald-600'}`}>
-                    {metrics.totalPlanned > 0 ? Math.round(((metrics.finishedCount - metrics.totalPlanned) / metrics.totalPlanned) * 100) : 0}%
-                  </div>
-                  <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-                    {metrics.totalPlanned > metrics.finishedCount ? 'Ondercapaciteit' : 'Overcapaciteit'}
-                  </div>
-                </div>
-              </div>
+              <CapacityPlanningView 
+                initialDepartment={departmentName === "Algemeen" ? "Fitting Productions" : departmentName} 
+                lockDepartment={true}
+              />
             </div>
           ) : activeTab === "gantt" ? (
             <div className="h-full overflow-y-auto custom-scrollbar pb-20 flex flex-col items-center">

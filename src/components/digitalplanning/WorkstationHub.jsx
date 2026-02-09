@@ -418,6 +418,20 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       });
   }, [selectedStation, occupancy, personnel]);
 
+  // NIEUW: Rotatie logica voor operators (elke 10s wisselen)
+  const [currentOperatorIndex, setCurrentOperatorIndex] = useState(0);
+
+  useEffect(() => {
+    if (stationOccupancy.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentOperatorIndex((prev) => (prev + 1) % stationOccupancy.length);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [stationOccupancy.length]);
+
+  // Reset index bij verandering van lijst (bijv. station wissel)
+  useEffect(() => setCurrentOperatorIndex(0), [stationOccupancy]);
+
   // Bereken Derived Data (Memoized)
   const stationOrders = useMemo(() => {
     if (!selectedStation) return [];
@@ -436,8 +450,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         orderStats[p.orderId] = { started: 0, finished: 0 };
       orderStats[p.orderId].started++;
       
-      // AANGEPAST: Tel als gereed als het voorbij 'Lossen' is (dus niet meer Wikkelen/Lossen/HOLD)
-      const activeMachineSteps = ["Wikkelen", "Lossen", "HOLD_AREA"];
+      // FIX: 'Lossen' verwijderd uit active steps. Zodra een item op 'Lossen' staat, is het klaar voor de machine.
+      const activeMachineSteps = ["Wikkelen", "HOLD_AREA"];
       const isFinishedForMachine = !activeMachineSteps.includes(p.currentStep) || p.currentStep === "Finished" || p.status === "completed";
       if (isFinishedForMachine) orderStats[p.orderId].finished++;
     });
@@ -594,8 +608,16 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     let done = 0;
     
     stationOrders.forEach(o => {
-      plan += Number(o.plan || 0);
-      done += Number(o.liveFinish || 0);
+      const orderPlan = Number(o.plan || 0);
+      plan += orderPlan;
+      
+      // FIX: Als order status 'completed' is, tel als volledig gereed (ook als tracking data weg is)
+      const status = (o.status || "").toLowerCase();
+      if (['completed', 'shipped', 'ready_to_ship', 'gereed', 'finished'].includes(status)) {
+        done += orderPlan;
+      } else {
+        done += Number(o.liveFinish || 0);
+      }
     });
 
     return { plan, done, todo: Math.max(0, plan - done) };
@@ -991,7 +1013,9 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
                 <span className="text-sm font-black text-blue-700 leading-none">{stationStats.plan}</span>
               </div>
               <div className="flex flex-col items-center px-3 py-1 bg-orange-50 rounded-lg border border-orange-100 min-w-[60px]">
-                <span className="text-[8px] font-black text-orange-400 uppercase tracking-widest leading-none mb-0.5">Aan te bieden</span>
+                <span className="text-[8px] font-black text-orange-400 uppercase tracking-widest leading-none mb-0.5">
+                  {["BM01", "Station BM01", "Mazak", "Nabewerking"].includes(selectedStation) ? "Aan te bieden" : "Nog te doen"}
+                </span>
                 <span className="text-sm font-black text-orange-700 leading-none">{stationStats.todo}</span>
               </div>
               <div className="flex flex-col items-center px-3 py-1 bg-emerald-50 rounded-lg border border-emerald-100 min-w-[60px]">
@@ -1001,19 +1025,21 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             </div>
 
             {/* Midden: Bezetting Info */}
-            <div className="hidden lg:flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-slate-200 shadow-sm">
+            <div className="hidden lg:flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-slate-200 shadow-sm min-w-[200px] justify-center">
               <Clock className="w-4 h-4 text-slate-500" />
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {stationOccupancy.map((occ, idx) => (
-                  <div
-                    key={idx}
-                    className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase border ${getShiftColor(occ.shift)}`}
-                    title={`${occ.operatorName} - ${occ.shift}`}
-                  >
-                    {occ.operatorName}
-                  </div>
-                ))}
-              </div>
+              {stationOccupancy.length > 0 ? (
+                <div
+                  key={currentOperatorIndex}
+                  className={`px-3 py-1.5 rounded-md text-xs font-bold uppercase border animate-in fade-in slide-in-from-bottom-1 duration-500 ${getShiftColor(
+                    stationOccupancy[currentOperatorIndex]?.shift
+                  )}`}
+                  title={`${stationOccupancy[currentOperatorIndex]?.operatorName} - ${stationOccupancy[currentOperatorIndex]?.shift}`}
+                >
+                  {stationOccupancy[currentOperatorIndex]?.operatorName}
+                </div>
+              ) : (
+                <span className="text-xs font-bold text-slate-400 uppercase italic">Geen operator</span>
+              )}
             </div>
 
             {/* Rechts: Datum, Tijd & Week - helemaal rechts met flex-1 */}

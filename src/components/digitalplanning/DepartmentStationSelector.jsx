@@ -83,7 +83,9 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }) => {
       (d) => d.slug === targetSlug || d.id === targetSlug || d.name?.toLowerCase() === targetSlug
     );
     
-    return deptData ? (deptData.stations || []).map(s => ({ id: s.id || s.name, name: s.name })) : [];
+    return deptData ? (deptData.stations || [])
+      .filter(s => (s.name || "").toLowerCase() !== "algemeen")
+      .map(s => ({ id: s.id || s.name, name: s.name })) : [];
   }, [factoryConfig, department]);
 
   // Als Teamleader is geselecteerd, toon TeamleaderHub
