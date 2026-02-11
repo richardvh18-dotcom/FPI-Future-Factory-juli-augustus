@@ -185,8 +185,9 @@ const Sidebar = ({
           </span>
         </NavLink>
         <button
-          onClick={() => {
-            onLogout();
+          onClick={async () => {
+            await onLogout();
+            window.location.href = "/login";
             isMobileMenuOpen && onMobileMenuClose();
           }}
           className={`w-full flex items-center gap-3 rounded-xl hover:bg-red-500/10 hover:text-red-400 transition-colors text-slate-400 ${

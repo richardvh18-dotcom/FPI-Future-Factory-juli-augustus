@@ -18,16 +18,18 @@ import {
 const GodModeBootstrap = () => {
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
-
-  // JOUW NIEUWE UID
   const targetUid = "pzxPfiwQhnQdEQJcXU77ZgT2Jo32";
+
+  // Auth check
+  const auth = require("../../config/firebase").auth;
+  const location = window.location;
+  const isAuthenticated = auth.currentUser && !location.pathname.includes("/login");
 
   const handleBootstrap = async () => {
     setStatus("loading");
     setError(null);
     try {
       const userRef = doc(db, ...PATHS.USERS, targetUid);
-
       await setDoc(
         userRef,
         {
@@ -42,12 +44,8 @@ const GodModeBootstrap = () => {
         },
         { merge: true }
       );
-
       setStatus("success");
-      console.log(
-        "✅ God Mode record succesvol weggeschreven voor:",
-        targetUid
-      );
+      console.log("✅ God Mode record succesvol weggeschreven voor:", targetUid);
     } catch (err) {
       console.error(err);
       setError(err.message);
@@ -55,9 +53,13 @@ const GodModeBootstrap = () => {
     }
   };
 
+  // Render niets als niet ingelogd of op login pagina
+  if (!isAuthenticated) return null;
+
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 text-white text-left">
       <div className="max-w-xl w-full bg-white/5 border border-white/10 rounded-[50px] p-12 backdrop-blur-xl animate-in zoom-in duration-500 shadow-2xl">
+        {/* ...existing code... */}
         <div className="flex items-center gap-6 mb-10">
           <div className="p-5 bg-blue-600 rounded-3xl shadow-xl">
             <ShieldAlert size={40} />
@@ -71,7 +73,7 @@ const GodModeBootstrap = () => {
             </p>
           </div>
         </div>
-
+        {/* ...existing code... */}
         <div className="bg-black/40 border border-white/5 p-8 rounded-[35px] mb-10 space-y-4">
           <div className="flex items-center gap-2 text-blue-400 mb-2">
             <Database size={14} />
@@ -83,7 +85,7 @@ const GodModeBootstrap = () => {
             {targetUid}
           </code>
         </div>
-
+        {/* ...existing code... */}
         {status === "success" ? (
           <div className="bg-emerald-500/20 border-2 border-emerald-500/40 p-8 rounded-[35px] flex items-center gap-6 text-emerald-400 animate-in fade-in">
             <CheckCircle2 size={40} />

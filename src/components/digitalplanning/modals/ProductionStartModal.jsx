@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import {
   PlayCircle,
   Printer,
@@ -53,6 +54,7 @@ const ProductionStartModal = ({
   const [selectedLabelId, setSelectedLabelId] = useState("");
   const [loadingLabels, setLoadingLabels] = useState(false);
   const [previewZoom, setPreviewZoom] = useState(1);
+  const location = useLocation();
 
   const containerRef = useRef(null);
 
@@ -197,7 +199,7 @@ const ProductionStartModal = ({
     downloadZPL(zpl, `label_${order.orderId}_${lotNumber}.zpl`);
   };
 
-  if (!isOpen || !order) return null;
+  if (!isOpen || !order || location.pathname.includes("/login")) return null;
 
   return (
     <div className="fixed inset-0 bg-slate-900/90 z-[100] flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in fade-in">

@@ -16,13 +16,19 @@ import {
   Package,
   PlayCircle,
   ScanLine,
-  X
+  UserCheck,
+  X,
+  Info,
+  Calendar,
+  Building2
 } from "lucide-react";
 import { collection, onSnapshot, doc, updateDoc, query, where, serverTimestamp } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { differenceInMinutes } from "date-fns";
+import { format } from "date-fns";
+import { nl } from "date-fns/locale";
 
 /**
  * Mobile Inspector - Floor manager companion app
@@ -30,10 +36,11 @@ import { differenceInMinutes } from "date-fns";
  * Overzicht van alle machines, downtimes, QC issues en order status
  */
 const ShopFloorMobileApp = () => {
-  const { user } = useAdminAuth();
+  const { user, role } = useAdminAuth();
   const [machines, setMachines] = useState([]);
   const [allOrders, setAllOrders] = useState([]);
   const [downtimeReports, setDowntimeReports] = useState([]);
+  const [allPersonnel, setAllPersonnel] = useState([]);
   const [defectReports, setDefectReports] = useState([]);
   const [allTracked, setAllTracked] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -41,28 +48,60 @@ const ShopFloorMobileApp = () => {
   const [activeView, setActiveView] = useState("overview"); // overview | downtime | quality | orders | scanner
   const [showScanner, setShowScanner] = useState(false);
   const [scanResult, setScanResult] = useState(null);
-  const [jsQrLoaded, setJsQrLoaded] = useState(false);
+  const [scannerLoaded, setScannerLoaded] = useState(false);
+  const [manualCode, setManualCode] = useState("");
+  const [factoryStations, setFactoryStations] = useState([]);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [departments, setDepartments] = useState(["ALLES"]);
+  const [selectedDepartment, setSelectedDepartment] = useState("ALLES");
   
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
-  const requestRef = useRef(null);
+  const codeReaderRef = useRef(null);
   const isScanningRef = useRef(false);
   const isProcessingFrameRef = useRef(false);
 
   useEffect(() => {
-    // Load jsQR library
-    const scriptId = "jsqr-scanner";
+    // Load ZXing library (Multi-format support: QR + Barcodes)
+    const scriptId = "zxing-scanner";
     if (!document.getElementById(scriptId)) {
       const script = document.createElement("script");
       script.id = scriptId;
-      script.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
+      script.src = "https://unpkg.com/@zxing/library@0.20.0";
       script.async = true;
-      script.onload = () => setJsQrLoaded(true);
+      script.onload = () => setScannerLoaded(true);
       document.head.appendChild(script);
     } else {
-      setJsQrLoaded(true);
+      setScannerLoaded(true);
     }
+
+    // Load factory config for full machine list
+    const unsubConfig = onSnapshot(
+      doc(db, ...PATHS.FACTORY_CONFIG),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const stations = [];
+          const depts = ["ALLES"];
+          if (data.departments) {
+            data.departments.forEach(dept => {
+              if (dept.isActive !== false) depts.push(dept.name);
+              if (dept.stations) {
+                dept.stations.forEach(station => {
+                  stations.push({
+                    ...station,
+                    departmentName: dept.name
+                  });
+                });
+              }
+            });
+          }
+          setFactoryStations(stations);
+          setDepartments(depts);
+        }
+      }
+    );
 
     // Load all machines/occupancy
     const unsubOccupancy = onSnapshot(
@@ -124,29 +163,70 @@ const ShopFloorMobileApp = () => {
       }
     );
 
+    // Load personnel
+    const unsubPersonnel = onSnapshot(
+      collection(db, ...PATHS.PERSONNEL),
+      (snapshot) => {
+        const people = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAllPersonnel(people);
+      }
+    );
+
     return () => {
       unsubOccupancy();
       unsubPlanning();
       unsubTracked();
       unsubDowntime();
       unsubDefects();
+      unsubPersonnel();
+      unsubConfig();
       stopCamera();
     };
   }, []);
 
+  // Auto-select department for team leaders
+  useEffect(() => {
+    if (role === "teamleader" && user?.department) {
+      const match = departments.find(d => d === user.department);
+      if (match) setSelectedDepartment(match);
+    }
+  }, [role, user, departments]);
+
   // Calculate machine statistics
   const machineStats = useMemo(() => {
-    return machines.map(machine => {
-      const machineOrders = allOrders.filter(o => o.machine === machine.machine);
+    // Use factory config as base, fallback to occupancy data if config not loaded
+    let baseList = [];
+    if (factoryStations.length > 0) {
+      baseList = factoryStations.map(s => ({ 
+        machine: s.name, 
+        id: s.id, 
+        department: s.departmentName 
+      }));
+    } else {
+      // Fallback: unique machines from occupancy
+      const unique = [...new Set(machines.map(m => m.machine || m.machineId).filter(Boolean))];
+      baseList = unique.map(name => ({ machine: name, id: name }));
+    }
+
+    return baseList.map(baseMachine => {
+      const name = baseMachine.machine;
+      
+      // Find active occupancy
+      const occ = machines.find(m => 
+        (m.machine === name || m.machineId === baseMachine.id) && m.operatorName
+      );
+
+      const machineOrders = allOrders.filter(o => o.machine === name);
       const activeOrder = machineOrders.find(o => o.status === "in_production");
-      const machineDowntime = downtimeReports.filter(d => d.machine === machine.machine && d.status === "active");
-      const machineDefects = defectReports.filter(d => d.machine === machine.machine && d.status === "open");
+      const machineDowntime = downtimeReports.filter(d => d.machine === name && d.status === "active");
+      const machineDefects = defectReports.filter(d => d.machine === name && d.status === "open");
       
       const hasIssues = machineDowntime.length > 0 || machineDefects.length > 0;
       const isActive = activeOrder !== undefined;
       
       return {
-        ...machine,
+        ...baseMachine,
+        operatorName: occ?.operatorName,
         activeOrder,
         ordersCount: machineOrders.length,
         downtimeCount: machineDowntime.length,
@@ -156,12 +236,17 @@ const ShopFloorMobileApp = () => {
         status: hasIssues ? "issue" : isActive ? "active" : "idle"
       };
     });
-  }, [machines, allOrders, downtimeReports, defectReports]);
+  }, [factoryStations, machines, allOrders, downtimeReports, defectReports]);
 
   // Filter machines
   const filteredMachines = useMemo(() => {
     let filtered = machineStats;
     
+    // Filter by Department
+    if (selectedDepartment !== "ALLES") {
+      filtered = filtered.filter(m => m.department === selectedDepartment);
+    }
+
     // Filter by status
     if (filterStatus === "active") {
       filtered = filtered.filter(m => m.isActive);
@@ -180,7 +265,7 @@ const ShopFloorMobileApp = () => {
     }
     
     return filtered;
-  }, [machineStats, filterStatus, searchTerm]);
+  }, [machineStats, filterStatus, searchTerm, selectedDepartment]);
 
   // Active issues summary
   const issuesSummary = useMemo(() => ({
@@ -213,24 +298,34 @@ const ShopFloorMobileApp = () => {
     try {
       const constraints = {
         video: {
-          facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          facingMode: "environment", 
+          width: { ideal: 1920 }, // Hogere resolutie voor betere detectie
+          height: { ideal: 1080 },
+          advanced: [{ focusMode: "continuous" }] // Probeer autofocus te forceren
         }
       };
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        streamRef.current = stream;
+      // Apply focus constraint if supported
+      const track = stream.getVideoTracks()[0];
+      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+      if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+            try { await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }); } catch(e) {}
+      }
+
+      if (videoRef.current && window.ZXing) {
+        const codeReader = new window.ZXing.BrowserMultiFormatReader();
+        codeReaderRef.current = codeReader;
         isScanningRef.current = true;
-        
-        videoRef.current.setAttribute("playsinline", "true");
-        await videoRef.current.play();
-        
-        // Start scanning after video is ready
-        requestRef.current = requestAnimationFrame(scanFrame);
+
+        // ZXing handles the video stream and decoding loop
+        await codeReader.decodeFromStream(stream, videoRef.current, (result, err) => {
+          if (result) {
+            if (navigator.vibrate) navigator.vibrate(100);
+            handleScan(result.getText());
+          }
+        });
       }
     } catch (error) {
       console.error("Camera error:", error);
@@ -241,86 +336,40 @@ const ShopFloorMobileApp = () => {
 
   const stopCamera = () => {
     isScanningRef.current = false;
-    isProcessingFrameRef.current = false;
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (requestRef.current) {
-      cancelAnimationFrame(requestRef.current);
-      requestRef.current = null;
+    
+    if (codeReaderRef.current) {
+      codeReaderRef.current.reset(); // Stops the stream and the decoding loop
+      codeReaderRef.current = null;
     }
   };
 
-  const scanFrame = () => {
-    if (!isScanningRef.current || !videoRef.current || !canvasRef.current || !window.jsQR) {
-      if (isScanningRef.current) {
-        requestRef.current = requestAnimationFrame(scanFrame);
-      }
-      return;
-    }
-
-    // Prevent processor overload
-    if (isProcessingFrameRef.current) {
-      requestRef.current = requestAnimationFrame(scanFrame);
-      return;
-    }
-
-    const video = videoRef.current;
-    if (video.readyState === 4) { // HAVE_ENOUGH_DATA
-      isProcessingFrameRef.current = true;
-
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-      // Use larger scan area for better detection
-      const size = Math.min(video.videoWidth, video.videoHeight) * 0.8;
-      const x = (video.videoWidth - size) / 2;
-      const y = (video.videoHeight - size) / 2;
-
-      canvas.width = size;
-      canvas.height = size;
-      
-      ctx.drawImage(video, x, y, size, size, 0, 0, size, size);
-      
-      const imageData = ctx.getImageData(0, 0, size, size);
-
-      try {
-        const code = window.jsQR(imageData.data, size, size, {
-          inversionAttempts: "attemptBoth"
-        });
-
-        if (code && code.data) {
-          // QR code found!
-          if (navigator.vibrate) navigator.vibrate(100);
-          handleScan(code.data);
-          return;
-        }
-      } catch (e) {
-        console.error("Scan error:", e);
-      } finally {
-        isProcessingFrameRef.current = false;
-      }
-    }
-
-    requestRef.current = requestAnimationFrame(scanFrame);
-  };
-
-  const handleScan = (scannedCode) => {
+  const handleScan = (rawCode) => {
     stopCamera();
+    
+    if (!rawCode) return;
+    const scannedCode = rawCode.trim();
+    const lowerCode = scannedCode.toLowerCase();
     
     // Search in tracked products
     const product = allTracked.find(p => 
-      p.lotNumber === scannedCode || 
-      p.orderId === scannedCode ||
+      (p.lotNumber && p.lotNumber.toLowerCase() === lowerCode) || 
+      (p.orderId && p.orderId.toLowerCase() === lowerCode) ||
       p.id === scannedCode
     );
 
     // Search in orders
     const order = allOrders.find(o => 
-      o.orderId === scannedCode || 
-      o.item === scannedCode ||
+      (o.orderId && o.orderId.toLowerCase() === lowerCode) || 
+      (o.item && o.item.toLowerCase() === lowerCode) ||
+      (o.itemCode && o.itemCode.toLowerCase() === lowerCode) ||
+      (o.extraCode && o.extraCode.toLowerCase() === lowerCode) ||
       o.id === scannedCode
+    );
+
+    // Search in personnel
+    const person = allPersonnel.find(p => 
+      (p.employeeNumber && p.employeeNumber.toLowerCase() === lowerCode) || 
+      p.id === scannedCode
     );
 
     if (product) {
@@ -333,6 +382,13 @@ const ShopFloorMobileApp = () => {
       setScanResult({
         type: "order",
         data: order,
+        code: scannedCode,
+        onClick: () => setSelectedOrder(order) // Allow clicking to open details
+      });
+    } else if (person) {
+      setScanResult({
+        type: "personnel",
+        data: person,
         code: scannedCode
       });
     } else {
@@ -347,6 +403,14 @@ const ShopFloorMobileApp = () => {
     stopCamera();
     setShowScanner(false);
     setScanResult(null);
+    setManualCode("");
+  };
+
+  const handleManualSubmit = (e) => {
+    e.preventDefault();
+    if (manualCode.trim()) {
+      handleScan(manualCode.trim());
+    }
   };
 
   if (!user) {
@@ -360,6 +424,8 @@ const ShopFloorMobileApp = () => {
       </div>
     );
   }
+
+  const isDeptLocked = role === "teamleader" && user?.department && departments.includes(user.department);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -442,6 +508,33 @@ const ShopFloorMobileApp = () => {
                           </div>
                         </div>
                       </div>
+                      <button
+                        onClick={() => { closeScanner(); setSelectedOrder(scanResult.data); }}
+                        className="w-full mt-4 py-3 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-xl font-bold transition-colors"
+                      >
+                        Bekijk Details
+                      </button>
+                    </>
+                  ) : scanResult.type === "personnel" ? (
+                    <>
+                      <div className="text-center mb-4">
+                        <UserCheck className="mx-auto text-purple-500 mb-2" size={48} />
+                        <div className="text-2xl font-black text-slate-800">Personeel</div>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Naam</div>
+                          <div className="text-lg font-bold text-slate-900">{scanResult.data.name}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Personeelsnummer</div>
+                          <div className="text-sm font-bold text-slate-700">{scanResult.data.employeeNumber}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Afdeling</div>
+                          <div className="text-sm font-bold text-slate-700">{scanResult.data.departmentId || "Algemeen"}</div>
+                        </div>
+                      </div>
                     </>
                   ) : (
                     <>
@@ -489,19 +582,113 @@ const ShopFloorMobileApp = () => {
                     <div className="absolute -bottom-2 -right-2 w-16 h-16 border-b-4 border-r-4 border-indigo-400 rounded-br-3xl"></div>
                   </div>
                 </div>
+
+                {/* Manual Input */}
+                <div className="absolute bottom-24 left-0 right-0 px-6">
+                  <form onSubmit={handleManualSubmit} className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="Of typ code handmatig..." 
+                      className="flex-1 bg-white/90 backdrop-blur border-0 rounded-xl px-4 py-3 text-slate-900 font-bold outline-none focus:ring-2 focus:ring-indigo-500"
+                      value={manualCode}
+                      onChange={(e) => setManualCode(e.target.value)}
+                    />
+                    <button type="submit" className="bg-indigo-600 text-white px-4 rounded-xl font-bold">Go</button>
+                  </form>
+                </div>
                 
                 {/* Instructions */}
                 <div className="absolute bottom-8 left-0 right-0 text-center px-4">
                   <div className="bg-black/70 backdrop-blur-sm px-6 py-4 rounded-2xl inline-block">
                     <div className="text-white font-bold text-lg mb-1">Scan QR Code</div>
                     <div className="text-xs text-white/70">Plaats de QR code in het midden van het vierkant</div>
-                    {!jsQrLoaded && (
+                    {!scannerLoaded && (
                       <div className="text-xs text-amber-300 mt-2">⏳ Scanner wordt geladen...</div>
                     )}
                   </div>
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Order Detail Modal */}
+      {selectedOrder && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white w-full max-w-lg rounded-[30px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div>
+                <h3 className="text-xl font-black text-slate-800 uppercase italic tracking-tighter">
+                  {selectedOrder.orderId || selectedOrder.item}
+                </h3>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                  Order Details
+                </p>
+              </div>
+              <button 
+                onClick={() => setSelectedOrder(null)}
+                className="p-2 hover:bg-slate-200 rounded-full transition-colors"
+              >
+                <X size={24} className="text-slate-500" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto space-y-6">
+              {/* Status Badge */}
+              <div className="flex justify-center">
+                 <span className={`px-4 py-2 rounded-full text-sm font-black uppercase tracking-widest ${
+                    selectedOrder.status === "in_production" ? "bg-orange-100 text-orange-600" :
+                    selectedOrder.status === "completed" ? "bg-emerald-100 text-emerald-600" :
+                    "bg-blue-100 text-blue-600"
+                 }`}>
+                    {selectedOrder.status || "Gepland"}
+                 </span>
+              </div>
+
+              {/* Info Grid */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Product</div>
+                  <div className="font-bold text-slate-800 text-sm">{selectedOrder.itemCode || selectedOrder.item}</div>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Aantal</div>
+                  <div className="font-bold text-slate-800 text-sm">{selectedOrder.plan || 0} stuks</div>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Machine</div>
+                  <div className="font-bold text-slate-800 text-sm">{selectedOrder.machine || "Niet toegewezen"}</div>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Geplande Datum</div>
+                  <div className="font-bold text-slate-800 text-sm">
+                    {selectedOrder.plannedDate?.seconds 
+                      ? format(new Date(selectedOrder.plannedDate.seconds * 1000), 'dd MMM yyyy', { locale: nl })
+                      : "Niet gepland"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Extra Info */}
+              {selectedOrder.notes && (
+                <div className="p-4 bg-yellow-50 rounded-2xl border border-yellow-100">
+                  <div className="text-[10px] font-black text-yellow-600 uppercase mb-1 flex items-center gap-2">
+                    <Info size={12} /> Notities
+                  </div>
+                  <p className="text-sm text-yellow-800 italic">"{selectedOrder.notes}"</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50">
+              <button 
+                onClick={() => setSelectedOrder(null)}
+                className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-800 transition-all"
+              >
+                Sluiten
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -520,7 +707,7 @@ const ShopFloorMobileApp = () => {
               onClick={() => {
                 setShowScanner(true);
                 setTimeout(() => {
-                  if (jsQrLoaded) {
+                  if (scannerLoaded) {
                     startCamera();
                   } else {
                     alert("QR Scanner wordt nog geladen, probeer opnieuw...");
@@ -561,6 +748,30 @@ const ShopFloorMobileApp = () => {
 
       {/* Search and Filters */}
       <div className="p-4 bg-white border-b border-slate-200 space-y-3">
+        {/* Department Selector */}
+        <div>
+           {isDeptLocked ? (
+             <div className="flex items-center gap-2 px-4 py-3 bg-slate-100 rounded-xl text-slate-600 font-bold text-sm w-full border border-slate-200">
+               <Building2 size={16} />
+               {selectedDepartment}
+               <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded text-slate-500 ml-auto uppercase tracking-wider">Toegewezen</span>
+             </div>
+           ) : (
+             <div className="relative w-full">
+               <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+               <select
+                 value={selectedDepartment}
+                 onChange={(e) => setSelectedDepartment(e.target.value)}
+                 className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 transition-all appearance-none"
+               >
+                 {departments.map(dept => (
+                   <option key={dept} value={dept}>{dept}</option>
+                 ))}
+               </select>
+             </div>
+           )}
+        </div>
+
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
@@ -704,7 +915,10 @@ const ShopFloorMobileApp = () => {
 
                   {/* Active Order */}
                   {machine.activeOrder && (
-                    <div className="bg-blue-50 rounded-xl p-3 mb-3">
+                    <div 
+                      className="bg-blue-50 rounded-xl p-3 mb-3 cursor-pointer hover:bg-blue-100 transition-colors"
+                      onClick={() => setSelectedOrder(machine.activeOrder)}
+                    >
                       <div className="flex items-center gap-2 mb-1">
                         <PlayCircle size={14} className="text-blue-600" />
                         <div className="text-xs font-bold text-blue-900">In Productie</div>
@@ -863,7 +1077,11 @@ const ShopFloorMobileApp = () => {
                 .filter(o => o.status === "in_production" || o.status === "planned")
                 .sort((a, b) => a.status === "in_production" ? -1 : 1)
                 .map(order => (
-                  <div key={order.id} className="bg-white rounded-2xl border-2 border-slate-200 p-4">
+                  <div 
+                    key={order.id} 
+                    className="bg-white rounded-2xl border-2 border-slate-200 p-4 cursor-pointer hover:border-indigo-300 transition-all active:scale-95"
+                    onClick={() => setSelectedOrder(order)}
+                  >
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <div className="text-lg font-black text-slate-800">

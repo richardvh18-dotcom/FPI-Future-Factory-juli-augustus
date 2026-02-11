@@ -4,6 +4,7 @@ import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth, db } from "./config/firebase";
 import { doc, getDoc } from "firebase/firestore";
+import LoggedOutView from "./components/LoggedOutView";
 
 // Basis Componenten
 import Header from "./components/Header";
@@ -35,6 +36,9 @@ const DigitalPlanningHub = lazy(() =>
 );
 const MobileScanner = lazy(() =>
   import("./components/digitalplanning/MobileScanner")
+);
+const ShopFloorMobileApp = lazy(() =>
+  import("./components/planning/ShopFloorMobileApp")
 );
 const CalculatorView = lazy(() => import("./components/CalculatorView"));
 const AiAssistantView = lazy(() => import("./components/AiAssistantView"));
@@ -110,6 +114,7 @@ const App = () => {
     }
   };
 
+
   if (authLoading) {
     return (
       <div className="flex h-screen w-full flex-col items-center justify-center bg-slate-950">
@@ -127,7 +132,17 @@ const App = () => {
     return <GodModeBootstrap />;
   }
 
-  if (!user || role === "guest") {
+
+  // Fallback: Afmeldpagina tonen als user null is en niet loading, behalve op /login
+  if (!user && !authLoading) {
+    const path = window.location.pathname;
+    if (path === "/login") {
+      return <LoginView onLogin={handleLogin} error={loginError} logoUrl={generalConfig?.logoUrl} appName={generalConfig?.appName} />;
+    }
+    return <LoggedOutView />;
+  }
+
+  if (role === "guest") {
     return <LoginView onLogin={handleLogin} error={loginError} logoUrl={generalConfig?.logoUrl} appName={generalConfig?.appName} />;
   }
 
@@ -157,6 +172,7 @@ const App = () => {
           <Sidebar
             user={user}
             isAdmin={isAdmin}
+            role={role}
             onLogout={async () => {
               await signOut(auth);
               navigate("/login");
@@ -177,22 +193,15 @@ const App = () => {
                 <Route path="/" element={<PortalView />} />
                 <Route path="/portal" element={<PortalView />} />
                 <Route path="/profile" element={<ProfileView />} />
-                <Route
-                  path="/products"
-                  element={<ProductSearchView products={products} />}
-                />
+                <Route path="/products" element={<ProductSearchView products={products} />} />
                 <Route path="/planning/*" element={<DigitalPlanningHub />} />
                 <Route path="/scanner" element={<MobileScanner />} />
+                <Route path="/inspector" element={<ShopFloorMobileApp />} />
                 <Route path="/calculator" element={<CalculatorView />} />
                 <Route path="/assistant" element={<AiAssistantView />} />
-
-                {/* FIX: Route voor Berichten (Sidebar link) */}
-                <Route
-                  path="/messages"
-                  element={<AdminMessagesView user={user} />}
-                />
-
+                <Route path="/messages" element={<AdminMessagesView user={user} />} />
                 <Route path="/admin/*" element={<AdminDashboard />} />
+                <Route path="/login" element={<LoginView onLogin={handleLogin} error={loginError} logoUrl={generalConfig?.logoUrl} appName={generalConfig?.appName} />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>

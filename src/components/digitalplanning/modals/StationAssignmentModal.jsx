@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import {
   X,
   Plus,
@@ -17,6 +18,7 @@ import {
   query,
   where,
 } from "firebase/firestore";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { db } from "../../../config/firebase";
 import { PATHS } from "../../../config/dbPaths";
 
@@ -31,13 +33,29 @@ const StationAssignmentModal = ({ stationId, onClose, department }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState(null);
+  const location = useLocation();
+  const auth = getAuth();
+  const [isAuthenticated, setIsAuthenticated] = useState(!!auth.currentUser);
 
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setIsAuthenticated(!!user);
+    });
+    return () => unsubscribe();
+  }, [auth]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!isAuthenticated) return;
+
     const loadData = async () => {
       try {
         // Load personeel
         const personelSnapshot = await getDocs(collection(db, ...PATHS.PERSONNEL));
         setPersonnel(personelSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        if (isMounted) {
+          setPersonnel(personelSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        }
 
         // Load huidige toewijzingen voor dit station vandaag
         const today = new Date().toISOString().split('T')[0];
@@ -49,15 +67,25 @@ const StationAssignmentModal = ({ stationId, onClose, department }) => {
         const assignSnapshot = await getDocs(assignQuery);
         setAssignments(assignSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
         setLoading(false);
+        if (isMounted) {
+          setAssignments(assignSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+          setLoading(false);
+        }
       } catch (error) {
         console.error("Error loading data:", error);
         setStatus({ type: "error", message: "Fout bij laden van gegevens" });
         setLoading(false);
+        if (isMounted) {
+          console.error("Error loading data:", error);
+          setStatus({ type: "error", message: "Fout bij laden van gegevens" });
+          setLoading(false);
+        }
       }
     };
 
-    loadData();
-  }, [stationId]);
+    if (stationId) loadData();
+    return () => { isMounted = false; };
+  }, [stationId, isAuthenticated]);
 
   const handleAssign = async () => {
     if (!selectedOperator) {
@@ -125,6 +153,9 @@ const StationAssignmentModal = ({ stationId, onClose, department }) => {
       setStatus({ type: "error", message: "Fout bij verwijdering" });
     }
   };
+
+  // Beveiliging: Render niets als uitgelogd of op login pagina
+  if (!isAuthenticated || !auth.currentUser || location.pathname.includes("/login") || window.location.pathname.includes("/login")) return null;
 
   if (loading) {
     return (

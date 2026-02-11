@@ -1,4 +1,5 @@
 import React from "react";
+import { useLocation } from "react-router-dom";
 import { X, Settings2, Loader2, Save, Trash2 } from "lucide-react";
 
 /**
@@ -14,7 +15,9 @@ const OrderEditModal = ({
   loading,
   stations,
 }) => {
-  if (!isOpen) return null;
+  const location = useLocation();
+
+  if (!isOpen || location.pathname.includes("/login")) return null;
 
   return (
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[150] flex items-center justify-center p-8 animate-in fade-in">

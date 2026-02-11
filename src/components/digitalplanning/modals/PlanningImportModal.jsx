@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import {
   X,
   Upload,
@@ -37,6 +38,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
   const [existingIds, setExistingIds] = useState(new Set());
   const [importMode, setImportMode] = useState("new_only");
   const fileInputRef = useRef(null);
+  const location = useLocation();
 
   useEffect(() => {
     const fetchExisting = async () => {
@@ -230,7 +232,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || location.pathname.includes("/login")) return null;
 
   const newCount = fileData.filter((i) => !i.isExisting).length;
   const existingCount = fileData.filter((i) => i.isExisting).length;

@@ -12,6 +12,7 @@ import {
   ScanBarcode,
   MessageSquare, // Nieuw icoon voor berichten
   Globe, // Taalwissel icoon
+  Smartphone,
 } from "lucide-react";
 import { useAdminAuth } from "../hooks/useAdminAuth";
 import { useMessages } from "../hooks/useMessages"; // Voor badge count
@@ -196,31 +197,31 @@ const PortalView = () => {
             </div>
           </button>
 
-          {/* Tegel 4: Workstation (Mobiel) */}
+          {/* Tegel 4: Mobile Inspector (Mobiel) - Vervangt Workstation */}
           {isMobile && (
             <button
               type="button"
-              onClick={() => navigate("/scanner")}
-              className="group relative bg-white/5 hover:bg-white/10 active:bg-white/15 border-2 border-white/10 hover:border-orange-500/50 rounded-[30px] md:rounded-[40px] p-6 md:p-8 text-left transition-all duration-300 hover:shadow-2xl hover:shadow-orange-900/50 md:hover:-translate-y-1 overflow-hidden w-full active:scale-95"
+              onClick={() => navigate("/inspector")}
+              className="group relative bg-white/5 hover:bg-white/10 active:bg-white/15 border-2 border-white/10 hover:border-indigo-500/50 rounded-[30px] md:rounded-[40px] p-6 md:p-8 text-left transition-all duration-300 hover:shadow-2xl hover:shadow-indigo-900/50 md:hover:-translate-y-1 overflow-hidden w-full active:scale-95"
             >
               <div className="absolute top-0 right-0 p-6 md:p-8 opacity-10 group-hover:opacity-20 transition-opacity pointer-events-none">
-                <ScanBarcode className="text-white w-24 h-24 md:w-32 md:h-32" />
+                <Smartphone className="text-white w-24 h-24 md:w-32 md:h-32" />
               </div>
 
               <div className="relative z-10 flex flex-col h-full justify-between min-h-[160px] md:min-h-[200px] pointer-events-none">
-                <div className="p-3 md:p-4 bg-orange-500/20 w-fit rounded-2xl mb-4 group-hover:bg-orange-500 group-hover:text-white transition-colors text-orange-400">
-                  <Monitor size={24} className="md:w-8 md:h-8" />
+                <div className="p-3 md:p-4 bg-indigo-500/20 w-fit rounded-2xl mb-4 group-hover:bg-indigo-500 group-hover:text-white transition-colors text-indigo-400">
+                  <Smartphone size={24} className="md:w-8 md:h-8" />
                 </div>
                 <div>
                   <h2 className="text-xl md:text-2xl font-black text-white uppercase italic tracking-tight mb-2">
-                    Workstation
+                    Mobile Inspector
                   </h2>
                   <p className="text-slate-400 text-xs md:text-sm font-medium leading-relaxed max-w-xs">
-                    Operator interface voor scanners.
+                    Kwaliteitscontrole en inspectie op de vloer.
                   </p>
                 </div>
-                <div className="mt-4 md:mt-6 flex items-center text-orange-400 font-bold text-xs uppercase tracking-widest gap-2 group-hover:gap-4 transition-all">
-                  Start Scanner <ArrowRight size={16} />
+                <div className="mt-4 md:mt-6 flex items-center text-indigo-400 font-bold text-xs uppercase tracking-widest gap-2 group-hover:gap-4 transition-all">
+                  Start Inspectie <ArrowRight size={16} />
                 </div>
               </div>
             </button>

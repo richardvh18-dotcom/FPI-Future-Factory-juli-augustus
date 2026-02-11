@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import {
   X,
   Box,
@@ -34,6 +35,7 @@ const DrillDownModal = ({
   const [expandedId, setExpandedId] = useState(null);
   const [internalSearch, setInternalSearch] = useState("");
   const [visibleLimit, setVisibleLimit] = useState(40);
+  const location = useLocation();
 
   // --- STAP 1: GEOPTIMALISEERDE FILTERING ---
   const filteredItems = useMemo(() => {
@@ -47,7 +49,7 @@ const DrillDownModal = ({
     );
   }, [items, internalSearch]);
 
-  if (!isOpen) return null;
+  if (!isOpen || location.pathname.includes("/login")) return null;
 
   // Helper voor Excel datums indien aanwezig
   const formatExcelDate = (val) => {
