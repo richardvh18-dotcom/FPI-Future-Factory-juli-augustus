@@ -185,16 +185,21 @@ const Terminal = ({ initialStation, onBack }) => {
   const productionProgressMap = useMemo(() => {
     const map = {};
     allTracked.forEach((p) => {
-      if (!map[p.orderId]) map[p.orderId] = 0;
-      map[p.orderId]++;
+      const oid = String(p.orderId || "").trim();
+      if (!map[oid]) map[oid] = 0;
+      map[oid]++;
     });
     return map;
   }, [allTracked]);
 
   const activeWikkelingen = useMemo(() => {
     const active = allTracked
-      .filter(p => (normalizeMachine(p.machine) || "").toUpperCase().trim() === normalizedStationId)
-      .filter(p => p.status === "In Production" || p.status === "Held_QC");
+      .filter(p => {
+        const mNorm = (normalizeMachine(p.machine) || "").toUpperCase().trim();
+        const cNorm = (normalizeMachine(p.currentStation) || "").toUpperCase().trim();
+        return mNorm === normalizedStationId || cNorm === normalizedStationId;
+      })
+      .filter(p => p.status === "In Production" || p.status === "Held_QC" || p.status === "in_progress");
     
     if (!sidebarSearch) return active;
     const term = sidebarSearch.toLowerCase();
@@ -205,6 +210,15 @@ const Terminal = ({ initialStation, onBack }) => {
     const base = myOrders.filter((o) => {
       if (o.status !== "pending" && o.status !== "in_progress") return false;
       
+      // FIX: BH31 (Reparatie) orders verdwijnen uit planning zodra ze in behandeling zijn
+      // Tenzij er specifiek naar gezocht wordt
+      const isRepairStation = normalizedStationId === "BH31" || normalizedStationId.includes("REPARATIE") || normalizedStationId.includes("SPECIAL");
+      if (isRepairStation && !sidebarSearch) {
+          const oid = String(o.orderId || "").trim();
+          const started = productionProgressMap[oid] || 0;
+          if (started > 0 || o.status === "in_progress" || o.status === "In Production") return false;
+      }
+
       // BM01: Geen week filter, toon alles (behalve als search actief is, wat hieronder gebeurt)
       if (isBM01) return true;
 
@@ -231,7 +245,7 @@ const Terminal = ({ initialStation, onBack }) => {
     
     const term = sidebarSearch.toLowerCase();
     return base.filter(o => (o.orderId || "").toLowerCase().includes(term) || (o.item || "").toLowerCase().includes(term));
-  }, [myOrders, targetWeekNum, targetYearNum, showAllWeeks, sidebarSearch, isBM01]);
+  }, [myOrders, targetWeekNum, targetYearNum, showAllWeeks, sidebarSearch, isBM01, normalizedStationId, productionProgressMap]);
 
   const selectedOrder = useMemo(() => 
     myOrders.find(o => o.id === selectedOrderId || o.orderId === selectedOrderId), 

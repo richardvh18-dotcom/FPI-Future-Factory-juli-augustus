@@ -98,7 +98,13 @@ const ProductionStartModal = ({
   // 2. Lotnummer generatie
   useEffect(() => {
     if (isOpen && order && mode === "auto") {
-      setLotNumber(generateLotNumber(stationId, existingProducts || []));
+      if (order.lotNumber) {
+        setLotNumber(order.lotNumber);
+      } else if (order.activeLot) {
+        setLotNumber(order.activeLot);
+      } else {
+        setLotNumber(generateLotNumber(stationId, existingProducts || []));
+      }
     }
   }, [isOpen, order, mode, stationId, existingProducts]);
 
@@ -240,6 +246,10 @@ const ProductionStartModal = ({
               <p className="text-[10px] font-bold text-slate-500 mt-1.5 truncate uppercase">
                 {order.item}
               </p>
+              <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between items-center">
+                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Actueel Lot</span>
+                 <span className="text-xs font-mono font-black text-blue-600">{lotNumber || "-"}</span>
+              </div>
             </div>
 
             {/* Mode switcher */}

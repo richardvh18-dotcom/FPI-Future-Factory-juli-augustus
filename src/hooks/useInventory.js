@@ -1,42 +1,54 @@
 import { useState, useEffect } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS } from "../config/dbPaths";
 
 /**
- * useInventory.js - Nieuw in Fase 2
+ * useInventory.js - Optimized
  * Haalt gereedschappen en locatiegegevens op.
+ * Geoptimaliseerd: Gebruikt getDocs in plaats van onSnapshot.
  */
 const useInventory = (shouldFetch = true) => {
   const [moffen, setMoffen] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!shouldFetch) return;
 
+    let isMounted = true;
     setLoading(true);
-    const q = collection(db, ...PATHS.INVENTORY);
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const list = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setMoffen(list);
-        setLoading(false);
-      },
-      (err) => {
+    const fetchInventory = async () => {
+      try {
+        const ref = collection(db, ...PATHS.INVENTORY);
+        const snapshot = await getDocs(ref);
+
+        if (isMounted) {
+          const list = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          setMoffen(list);
+          setLoading(false);
+        }
+      } catch (err) {
         console.error("Fout bij laden inventory:", err);
-        setLoading(false);
+        if (isMounted) {
+          setError(err);
+          setLoading(false);
+        }
       }
-    );
+    };
 
-    return () => unsubscribe();
+    fetchInventory();
+
+    return () => {
+      isMounted = false;
+    };
   }, [shouldFetch]);
 
-  return { moffen, loading };
+  return { moffen, loading, error };
 };
 
 export default useInventory;

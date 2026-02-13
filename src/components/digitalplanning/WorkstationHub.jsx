@@ -781,6 +781,25 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     }
   };
 
+  // Handler voor handmatig verplaatsen van product (Nieuw toegevoegd voor Dossier)
+  const handleMoveLot = async (lotNumber, newStation) => {
+    if (!lotNumber || !newStation) return;
+    try {
+      const productRef = doc(db, ...PATHS.TRACKING, lotNumber);
+      await updateDoc(productRef, {
+        currentStation: newStation,
+        isManualMove: true,
+        status: "in_progress",
+        updatedAt: serverTimestamp(),
+        note: `Handmatig verplaatst naar ${newStation} door ${currentUser?.email || 'Operator'}`
+      });
+      showSuccess(`Product ${lotNumber} verplaatst naar ${newStation}`);
+    } catch (err) {
+      console.error("Fout bij verplaatsen:", err);
+      showError("Fout bij verplaatsen: " + err.message);
+    }
+  };
+
   const handleLinkProduct = async (docId, product) => {
     try {
       await updateDoc(
@@ -933,6 +952,27 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       setItemToFinish(product);
       setFinishModalOpen(true);
       return;
+    }
+
+    // FIX: Handmatige verplaatsing (bijv. reparatie) moet direct naar Nabewerking
+    // Slaat 'Lossen' over en reset de isManualMove flag
+    if (product.isManualMove) {
+      try {
+        const productRef = doc(db, ...PATHS.TRACKING, product.id || product.lotNumber);
+        await updateDoc(productRef, {
+          currentStep: "Nabewerking",
+          currentStation: "Nabewerking",
+          isManualMove: false,
+          updatedAt: serverTimestamp(),
+          note: product.note ? product.note + " (Doorgestuurd naar Nabewerking)" : "Doorgestuurd naar Nabewerking"
+        });
+        showSuccess(`Product ${product.lotNumber} doorgestuurd naar Nabewerking`);
+        return;
+      } catch (error) {
+        console.error("Fout bij doorsturen:", error);
+        showError("Kon product niet doorsturen", "Fout");
+        return;
+      }
     }
 
     try {
@@ -1203,6 +1243,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
                     onBack={handleBack} 
                     orders={rawOrders}
                     products={rawProducts}
+                    onMoveLot={handleMoveLot}
                   />
                 ) : (
                   <Terminal

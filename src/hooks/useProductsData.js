@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { collection, getDocs, query, orderBy } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS, isValidPath } from "../config/dbPaths";
 
 /**
- * useProductsData V6.0 - Build Stabilized
+ * useProductsData V7.0 - Optimized
  * Haalt de productcatalogus op uit /future-factory/production/products
+ * Gebruikt getDocs in plaats van onSnapshot voor betere performance.
  */
 export const useProductsData = (user) => {
   const [products, setProducts] = useState([]);
@@ -28,30 +29,40 @@ export const useProductsData = (user) => {
       return;
     }
 
-    const colRef = collection(db, ...PATHS.PRODUCTS);
-    const q = query(colRef, orderBy("lastUpdated", "desc"));
+    let isMounted = true;
 
-    const unsubscribe = onSnapshot(
-      q,
-      (snap) => {
-        const data = snap.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          // Zorg dat DN/PN altijd nummers zijn voor de filters
-          dn: parseInt(doc.data().dn || doc.data().diameter) || 0,
-          pn: parseFloat(doc.data().pn || doc.data().pressure) || 0,
-        }));
-        setProducts(data);
-        setLoading(false);
-      },
-      (err) => {
+    const fetchProducts = async () => {
+      try {
+        const colRef = collection(db, ...PATHS.PRODUCTS);
+        const q = query(colRef, orderBy("lastUpdated", "desc"));
+
+        const snap = await getDocs(q);
+
+        if (isMounted) {
+          const data = snap.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+            // Zorg dat DN/PN altijd nummers zijn voor de filters
+            dn: parseInt(doc.data().dn || doc.data().diameter) || 0,
+            pn: parseFloat(doc.data().pn || doc.data().pressure) || 0,
+          }));
+          setProducts(data);
+          setLoading(false);
+        }
+      } catch (err) {
         console.error("🔥 Firestore Error (Products):", err.code);
-        setError(err.message);
-        setLoading(false);
+        if (isMounted) {
+          setError(err.message);
+          setLoading(false);
+        }
       }
-    );
+    };
 
-    return () => unsubscribe();
+    fetchProducts();
+
+    return () => {
+      isMounted = false;
+    };
   }, [user]);
 
   return { products, loading, error };

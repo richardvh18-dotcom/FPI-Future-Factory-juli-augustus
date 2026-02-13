@@ -29,6 +29,12 @@ export const useAdminAuth = () => {
 
       console.log("🔐 Auth State Changed:", firebaseUser?.email || "logged out");
 
+      // Stop de vorige listener om permission errors te voorkomen bij logout
+      if (unsubscribeRole) {
+        unsubscribeRole();
+        unsubscribeRole = () => {};
+      }
+
       if (firebaseUser) {
         const currentUid = firebaseUser.uid.trim();
         console.log("🔐 Current UID:", currentUid);

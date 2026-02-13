@@ -16,7 +16,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background-color: #f8fafc; /* slate-50 */
-  /* Voorkomt zoomen op iOS bij input focus */
+  /* Voorkomt zoomen op iOS bij input focus. */
   -webkit-text-size-adjust: 100%;
 }
 
@@ -83,26 +83,27 @@ body {
 }
 
 /* Algemene Scrollbar Styling - FPI Navy/Blue */
-.custom-scrollbar::-webkit-scrollbar {
+.ff-custom-scrollbar::-webkit-scrollbar {
   width: 8px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
+.ff-custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb {
+.ff-custom-scrollbar::-webkit-scrollbar-thumb {
   background: #3b82f6; /* Blue-500 */
   border-radius: 10px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+.ff-custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #2563eb; /* Blue-600 */
 }
 
-.custom-scrollbar {
+.ff-custom-scrollbar {
+  /* Styling voor de scrollbar zelf */
   scrollbar-width: thin;
   scrollbar-color: #3b82f6 transparent;
 }
@@ -132,3 +133,5 @@ body {
     transform: translateY(0);
   }
 }
+
+/* Einde van het bestand */

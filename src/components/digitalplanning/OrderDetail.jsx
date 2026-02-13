@@ -16,13 +16,14 @@ import {
 } from "lucide-react";
 import ProductJourneyModal from "./modals/ProductJourneyModal";
 import ProductDossierModal from "./modals/ProductDossierModal";
-import { format } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 import { nl } from "date-fns/locale";
 
 /**
  * OrderDetail V2.3
  * Toont details van een order en de voortgang van de producten.
  */
+
 const OrderDetail = ({
   order,
   products = [],
@@ -108,8 +109,13 @@ const OrderDetail = ({
         </h3>
         
         <div className="space-y-3">
-          {orderProducts.map((p) => (
-            <div key={p.id || p.lotNumber} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-center group hover:border-blue-200 transition-all">
+          {orderProducts.map((p) => {
+            const inspectionDate = p.inspection?.timestamp ? (p.inspection.timestamp.toDate ? p.inspection.timestamp.toDate() : new Date(p.inspection.timestamp)) : null;
+            const daysInReject = inspectionDate ? differenceInDays(new Date(), inspectionDate) : 0;
+            const isLongReject = daysInReject > 2;
+
+            return (
+              <div key={p.id || p.lotNumber} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-center group hover:border-blue-200 transition-all">
               <div className="flex items-center gap-4">
                 <div className={`p-3 rounded-xl ${p.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : p.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
                   {p.status === 'completed' ? <CheckCircle2 size={20} /> : p.status === 'rejected' ? <AlertTriangle size={20} /> : <Clock size={20} />}
@@ -122,6 +128,14 @@ const OrderDetail = ({
                   <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
                     <span>{p.itemCode}</span>
                     {p.updatedAt && <span>• {p.updatedAt?.toDate ? format(p.updatedAt.toDate(), "dd MMM HH:mm") : ""}</span>}
+                  </div>
+                  <div className="text-xs text-slate-500 font-bold mt-0.5 flex items-center gap-2">
+                    <span className="truncate max-w-[200px]">{p.item || order.item}</span>
+                    {(p.extraCode || order.extraCode) && (
+                      <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 uppercase tracking-wider">
+                        {p.extraCode || order.extraCode}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -147,6 +161,20 @@ const OrderDetail = ({
                   >
                     <Map size={16} />
                   </button>
+                {isManager && onMoveLot && p.inspection?.status === "Tijdelijke afkeur" && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`Verplaats ${p.lotNumber} naar BH31 voor herstel?`)) {
+                        onMoveLot(p.lotNumber, "BH31");
+                      }
+                    }}
+                    className={`p-2 rounded-xl transition-all ${isLongReject ? "text-red-600 hover:text-red-800 hover:bg-red-50" : "text-orange-500 hover:text-orange-700 hover:bg-orange-50"}`}
+                    title={isLongReject ? `Al ${daysInReject} dagen in afkeur! Naar Herstel (BH31)` : "Naar Herstel (BH31)"}
+                  >
+                    <RotateCcw size={16} />
+                  </button>
+                )}
                 {isManager && onMoveLot && (
                   <button
                     onClick={(e) => {
@@ -174,7 +202,8 @@ const OrderDetail = ({
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
           
           {orderProducts.length === 0 && (
             <div className="text-center py-10 text-slate-400 italic text-sm">
@@ -197,6 +226,7 @@ const OrderDetail = ({
           product={viewingDossier}
           onClose={() => setViewingDossier(null)}
           orders={[order]}
+          onMoveLot={onMoveLot}
         />
       )}
     </div>

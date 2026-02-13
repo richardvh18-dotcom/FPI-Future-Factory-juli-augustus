@@ -5,6 +5,7 @@ import { PATHS } from "../config/dbPaths"; // Importeer de centrale paden
 
 /**
  * usePlanningData - Haalt de planning op uit de nieuwe root-structuur.
+ * Realtime: Gebruikt onSnapshot voor live updates.
  */
 export const usePlanningData = () => {
   const [orders, setOrders] = useState([]);
@@ -14,30 +15,24 @@ export const usePlanningData = () => {
   useEffect(() => {
     // Gebruik het nieuwe pad: /future-factory/production/digital_planning
     const planningRef = collection(db, ...PATHS.PLANNING);
-
     const q = query(planningRef, orderBy("deliveryDate", "asc"));
 
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        try {
-          const orderList = snapshot.docs.map((doc) => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              ...data,
-              deliveryDate: data.deliveryDate?.toDate
-                ? data.deliveryDate.toDate()
-                : new Date(data.deliveryDate),
-            };
-          });
+        const orderList = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            deliveryDate: data.deliveryDate?.toDate
+              ? data.deliveryDate.toDate()
+              : new Date(data.deliveryDate),
+          };
+        });
 
-          setOrders(orderList);
-          setLoading(false);
-        } catch (err) {
-          console.error("Data verwerkingsfout:", err);
-          setLoading(false);
-        }
+        setOrders(orderList);
+        setLoading(false);
       },
       (err) => {
         console.error("Planning database error (Check Rules):", err);

@@ -51,6 +51,14 @@ const LossenView = ({ stationId, appId, products }) => {
         
         let isOurStation = itemStationNorm === currentStationNorm;
 
+        // FIX: Als item op 'Lossen' staat, toon het ook op het station van herkomst (bv BH11)
+        if (!isOurStation && (item.currentStep === "Lossen" || normalizeMachine(item.currentStation) === "LOSSEN")) {
+          const originNorm = normalizeMachine(item.originMachine || item.machine || "");
+          if (originNorm === currentStationNorm) {
+            isOurStation = true;
+          }
+        }
+
         // FIX: Flexibele matching voor Nabewerking (Nabewerking vs Nabewerken)
         if (isNabewerking) {
           const itemClean = (itemStationNorm || "").toUpperCase().replace(/\s/g, "");
@@ -104,7 +112,7 @@ const LossenView = ({ stationId, appId, products }) => {
 
         // Of items die status "in_progress" hebben en nog niet finished zijn
         // FIX: 'completed' toegestaan voor BM01/Mazak/Nabewerking omdat inkomende items deze status kunnen hebben van vorig station
-        const isActive = (item.status === "in_progress" || item.status === "Te Lossen" || ((isBM01 || isMazak || isNabewerking) && !["Finished", "GEREED"].includes(item.status))) && item.currentStep !== "Finished" && item.status !== "rejected" && item.currentStep !== "REJECTED";
+        const isActive = (item.status === "in_progress" || item.status === "Te Lossen" || item.status === "Wacht op Lossen" || ((isBM01 || isMazak || isNabewerking) && !["Finished", "GEREED"].includes(item.status))) && item.currentStep !== "Finished" && item.status !== "rejected" && item.currentStep !== "REJECTED";
 
         return isOurStation && isLossenStep && isActive;
       });
@@ -305,7 +313,7 @@ const LossenView = ({ stationId, appId, products }) => {
           <div className="flex items-center gap-2 mb-4 ml-2">
             <ArrowRight size={16} className="text-emerald-500" />
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-              {isBM01 || isMazak || isNabewerking ? "Aan te bieden" : "Wachtend op ontvangst"} ({items.length})
+              {isBM01 || isMazak || isNabewerking ? "Aan te bieden" : (currentStationNorm === "LOSSEN" ? "Wacht op Lossen" : "Wachtend op ontvangst")} ({items.length})
             </h3>
           </div>
           {items.map((item) => (

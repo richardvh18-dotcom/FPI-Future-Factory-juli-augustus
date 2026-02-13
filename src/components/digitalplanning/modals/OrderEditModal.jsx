@@ -78,6 +78,18 @@ const OrderEditModal = ({
                 }
               />
             </div>
+            <div className="col-span-2">
+              <label className="block text-[10px] font-black text-slate-400 uppercase mb-2">
+                Actief Lotnummer
+              </label>
+              <input
+                type="text"
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 transition-all"
+                value={formData.activeLot || ""}
+                onChange={(e) => setFormData({ ...formData, activeLot: e.target.value })}
+                placeholder="Bijv. 26-01-0001"
+              />
+            </div>
           </div>
           <div className="pt-8 border-t border-slate-100 flex flex-col gap-3">
             <button

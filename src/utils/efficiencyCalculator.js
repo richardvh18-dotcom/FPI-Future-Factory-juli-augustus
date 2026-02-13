@@ -1,189 +1,135 @@
-/**
- * efficiencyCalculator.js
- * Berekent productie efficiency op basis van verwachte vs werkelijke tijden
- */
+import { differenceInMinutes, isValid } from "date-fns";
 
 /**
- * Bereken efficiency percentage
- * @param {number} actualMinutes - Werkelijke productietijd in minuten
- * @param {number} targetMinutes - Verwachte productietijd in minuten
- * @returns {number} Efficiency percentage (100 = perfect, >100 = sneller dan verwacht)
+ * ISO 22400 OEE Calculator & Efficiency Helpers
+ * Implementatie van standaard KPI formules voor Manufacturing Execution Systems.
+ */
+
+// --- Basic Time Helpers ---
+
+export const calculateDuration = (startTime, endTime = new Date()) => {
+  if (!startTime) return 0;
+  const start = startTime.toDate ? startTime.toDate() : new Date(startTime);
+  const end = endTime.toDate ? endTime.toDate() : new Date(endTime);
+  
+  if (!isValid(start) || !isValid(end)) return 0;
+  return Math.max(0, differenceInMinutes(end, start));
+};
+
+export const formatMinutes = (minutes) => {
+  if (!minutes) return "0m";
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return h > 0 ? `${h}u ${m}m` : `${m}m`;
+};
+
+// --- ISO 22400 KPI Formulas ---
+
+/**
+ * Berekent Availability (Beschikbaarheid)
+ * ISO 22400 Definitie: Operating Time / Planned Busy Time
+ * @param {number} operatingTimeMinutes - Tijd dat machine daadwerkelijk draaide (uptime)
+ * @param {number} plannedBusyTimeMinutes - Geplande tijd (minus pauzes/onderhoud)
+ * @returns {number} Percentage (0-100)
+ */
+export const calculateAvailability = (operatingTimeMinutes, plannedBusyTimeMinutes) => {
+  if (!plannedBusyTimeMinutes || plannedBusyTimeMinutes === 0) return 0;
+  return Math.min(100, (operatingTimeMinutes / plannedBusyTimeMinutes) * 100);
+};
+
+/**
+ * Berekent Performance (Prestatie)
+ * ISO 22400 Definitie: (Actual Output / Target Output) * 100
+ * @param {number} actualOutput - Aantal daadwerkelijk geproduceerd
+ * @param {number} targetOutput - Doel aantal (gebaseerd op standaard cyclustijd)
+ * @returns {number} Percentage (kan > 100% zijn)
+ */
+export const calculatePerformance = (actualOutput, targetOutput) => {
+  if (!targetOutput || targetOutput === 0) return 0;
+  return (actualOutput / targetOutput) * 100;
+};
+
+/**
+ * Berekent Quality (Kwaliteit)
+ * ISO 22400 Definitie: Good Quantity / Total Quantity
+ * @param {number} goodCount - Aantal goedgekeurde producten
+ * @param {number} totalCount - Totaal aantal geproduceerd (Goed + Afkeur)
+ * @returns {number} Percentage (0-100)
+ */
+export const calculateQuality = (goodCount, totalCount) => {
+  if (!totalCount || totalCount === 0) return 0;
+  return (goodCount / totalCount) * 100;
+};
+
+/**
+ * Berekent OEE (Overall Equipment Effectiveness)
+ * Formule: Availability * Performance * Quality
+ * @param {number} availabilityPct - Percentage (0-100)
+ * @param {number} performancePct - Percentage (0-100+)
+ * @param {number} qualityPct - Percentage (0-100)
+ * @returns {number} OEE Percentage (0-100)
+ */
+export const calculateOEE = (availabilityPct, performancePct, qualityPct) => {
+  // OEE is een vermenigvuldiging van de factoren (als decimalen)
+  const oee = (availabilityPct / 100) * (performancePct / 100) * (qualityPct / 100);
+  return Math.min(100, oee * 100);
+};
+
+// --- Operational Helpers (voor UI & Tracking) ---
+
+/**
+ * Simpele efficiency berekening op basis van tijd (voor real-time monitoring)
+ * Formule: (Target Time / Actual Time) * 100
  */
 export const calculateEfficiency = (actualMinutes, targetMinutes) => {
-  if (!actualMinutes || !targetMinutes || actualMinutes <= 0 || targetMinutes <= 0) {
-    return null;
-  }
-  
-  // Efficiency = (Target tijd / Actual tijd) * 100
-  // 100% = precies op tijd
-  // >100% = sneller dan verwacht (goed!)
-  // <100% = langzamer dan verwacht
-  const efficiency = (targetMinutes / actualMinutes) * 100;
-  return Math.round(efficiency * 10) / 10; // Rond af op 1 decimaal
+  if (!actualMinutes || actualMinutes === 0) return 0;
+  return (targetMinutes / actualMinutes) * 100;
 };
 
-/**
- * Bereken totale efficiency voor een set van producten
- * @param {Array} products - Array van producten met actualTime en targetTime
- * @returns {Object} { averageEfficiency, totalActual, totalTarget, productCount }
- */
-export const calculateBatchEfficiency = (products) => {
-  if (!Array.isArray(products) || products.length === 0) {
-    return {
-      averageEfficiency: null,
-      totalActual: 0,
-      totalTarget: 0,
-      productCount: 0
-    };
-  }
-
-  let totalActual = 0;
-  let totalTarget = 0;
-  let validCount = 0;
-
-  products.forEach(product => {
-    const actual = product.actualTime || product.productionTime || 0;
-    const target = product.targetTime || product.standardTime || 0;
-    
-    if (actual > 0 && target > 0) {
-      totalActual += actual;
-      totalTarget += target;
-      validCount++;
-    }
-  });
-
-  if (validCount === 0) {
-    return {
-      averageEfficiency: null,
-      totalActual,
-      totalTarget,
-      productCount: validCount
-    };
-  }
-
-  const averageEfficiency = calculateEfficiency(totalActual, totalTarget);
-
-  return {
-    averageEfficiency,
-    totalActual,
-    totalTarget,
-    productCount: validCount
-  };
-};
-
-/**
- * Format tijd in minuten naar leesbaar formaat
- * @param {number} minutes - Tijd in minuten
- * @returns {string} Geformatteerde tijd string (bijv. "2u 30m")
- */
-export const formatMinutes = (minutes) => {
-  if (!minutes || minutes <= 0) return '0m';
-  
-  const hours = Math.floor(minutes / 60);
-  const mins = Math.round(minutes % 60);
-  
-  if (hours > 0 && mins > 0) {
-    return `${hours}u ${mins}m`;
-  } else if (hours > 0) {
-    return `${hours}u`;
-  } else {
-    return `${mins}m`;
-  }
-};
-
-/**
- * Bereken tijd verschil tussen start en eind timestamps
- * @param {Date|string|Timestamp} startTime - Start tijd
- * @param {Date|string|Timestamp} endTime - Eind tijd
- * @returns {number} Verschil in minuten
- */
-export const calculateDuration = (startTime, endTime) => {
-  if (!startTime || !endTime) return 0;
-  
-  // Convert Firestore Timestamps to Date
-  const start = startTime?.toDate ? startTime.toDate() : new Date(startTime);
-  const end = endTime?.toDate ? endTime.toDate() : new Date(endTime);
-  
-  const diffMs = end - start;
-  const diffMinutes = Math.round(diffMs / 1000 / 60);
-  
-  return diffMinutes > 0 ? diffMinutes : 0;
-};
-
-/**
- * Get efficiency kleur voor UI
- * @param {number} efficiency - Efficiency percentage
- * @returns {string} Tailwind kleur classes
- */
 export const getEfficiencyColor = (efficiency) => {
-  if (!efficiency) return 'text-slate-400 bg-slate-50';
-  
-  if (efficiency >= 100) return 'text-emerald-700 bg-emerald-50 border-emerald-200';
-  if (efficiency >= 85) return 'text-green-700 bg-green-50 border-green-200';
-  if (efficiency >= 70) return 'text-amber-700 bg-amber-50 border-amber-200';
-  if (efficiency >= 50) return 'text-orange-700 bg-orange-50 border-orange-200';
-  return 'text-rose-700 bg-rose-50 border-rose-200';
+  if (efficiency >= 100) return "text-emerald-600 bg-emerald-50 border-emerald-200"; // Excellent
+  if (efficiency >= 85) return "text-green-600 bg-green-50 border-green-200"; // Good
+  if (efficiency >= 70) return "text-yellow-600 bg-yellow-50 border-yellow-200"; // Average
+  if (efficiency >= 50) return "text-orange-600 bg-orange-50 border-orange-200"; // Poor
+  return "text-red-600 bg-red-50 border-red-200"; // Critical
 };
 
-/**
- * Get efficiency label
- * @param {number} efficiency - Efficiency percentage
- * @returns {string} Label text
- */
-export const getEfficiencyLabel = (efficiency) => {
-  if (!efficiency) return 'Onbekend';
-  
-  if (efficiency >= 100) return 'Uitstekend';
-  if (efficiency >= 85) return 'Goed';
-  if (efficiency >= 70) return 'Voldoende';
-  if (efficiency >= 50) return 'Matig';
-  return 'Onder Norm';
-};
-
-/**
- * Bereken verwachte eindtijd op basis van start en target tijd
- * @param {Date|string|Timestamp} startTime - Start tijd
- * @param {number} targetMinutes - Verwachte duur in minuten
- * @returns {Date} Verwachte eindtijd
- */
-export const calculateExpectedEndTime = (startTime, targetMinutes) => {
-  if (!startTime || !targetMinutes) return null;
-  
-  const start = startTime?.toDate ? startTime.toDate() : new Date(startTime);
-  const expectedEnd = new Date(start.getTime() + (targetMinutes * 60 * 1000));
-  
-  return expectedEnd;
-};
-
-/**
- * Check of een productie achterloopt
- * @param {Date|string|Timestamp} startTime - Start tijd
- * @param {number} targetMinutes - Verwachte duur in minuten
- * @returns {boolean} True als achterlopend
- */
 export const isBehindSchedule = (startTime, targetMinutes) => {
-  if (!startTime || !targetMinutes) return false;
-  
-  const expectedEnd = calculateExpectedEndTime(startTime, targetMinutes);
-  const now = new Date();
-  
-  return now > expectedEnd;
+  const elapsed = calculateDuration(startTime);
+  return elapsed > targetMinutes;
 };
 
 /**
- * Bereken tijd over/onder voor lopende productie
- * @param {Date|string|Timestamp} startTime - Start tijd
- * @param {number} targetMinutes - Verwachte duur in minuten
- * @returns {number} Minuten voor of achter (positief = voor, negatief = achter)
+ * Geeft het aantal minuten dat een order afwijkt van de planning.
+ * Positief = Achter op schema (te lang bezig)
+ * Negatief = Voor op schema (sneller dan gepland)
  */
 export const calculateTimeDeviation = (startTime, targetMinutes) => {
-  if (!startTime || !targetMinutes) return 0;
-  
-  const expectedEnd = calculateExpectedEndTime(startTime, targetMinutes);
-  const now = new Date();
-  
-  const diffMs = expectedEnd - now;
-  const diffMinutes = Math.round(diffMs / 1000 / 60);
-  
-  return diffMinutes; // Positief = nog tijd over, negatief = te laat
+  const elapsed = calculateDuration(startTime);
+  return elapsed - targetMinutes;
+};
+
+/**
+ * Berekent de efficiency voor een batch producten.
+ * @param {Array} products - Lijst met producten (verwacht actualMinutes/targetMinutes)
+ * @returns {number} Efficiency Percentage
+ */
+export const calculateBatchEfficiency = (products) => {
+  if (!Array.isArray(products) || products.length === 0) return 0;
+
+  const totalActual = products.reduce((acc, p) => acc + (Number(p.actualMinutes || p.actualTime || 0)), 0);
+  const totalTarget = products.reduce((acc, p) => acc + (Number(p.targetMinutes || p.targetTime || 0)), 0);
+
+  return calculateEfficiency(totalActual, totalTarget);
+};
+
+/**
+ * Geeft een tekstueel label voor de efficiency score.
+ */
+export const getEfficiencyLabel = (efficiency) => {
+  if (efficiency >= 100) return "Uitstekend";
+  if (efficiency >= 85) return "Goed";
+  if (efficiency >= 70) return "Voldoende";
+  if (efficiency >= 50) return "Matig";
+  return "Kritiek";
 };

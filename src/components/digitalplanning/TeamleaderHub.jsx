@@ -7,9 +7,9 @@ import {
   ClipboardList,
   Download,
 } from "lucide-react";
-import { collection, query, onSnapshot, doc, writeBatch, serverTimestamp, updateDoc } from "firebase/firestore";
+import { collection, query, onSnapshot, doc, writeBatch, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import { db } from "../../config/firebase";
-import { getISOWeek, format, subDays } from "date-fns";
+import { getISOWeek, format, subDays, startOfISOWeek, endOfISOWeek } from "date-fns";
 import { PATHS } from "../../config/dbPaths";
 
 // Helpers & Modals
@@ -42,6 +42,7 @@ const TeamleaderHub = ({
   const [rawOrders, setRawOrders] = useState([]);
   const [rawProducts, setRawProducts] = useState([]);
   const [bezetting, setBezetting] = useState([]);
+  const [archivedProducts, setArchivedProducts] = useState([]);
   const [factoryConfig, setFactoryConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
@@ -104,11 +105,30 @@ const TeamleaderHub = ({
       }
     );
 
+    // FIX: Luister naar het archief van de huidige week om de 'Gereed' KPI correct te vullen
+    const now = new Date();
+    const start = startOfISOWeek(now);
+    const end = endOfISOWeek(now);
+    const year = now.getFullYear();
+    
+    const unsubArchive = onSnapshot(
+      query(
+        collection(db, "future-factory", "production", "archive", String(year), "items"),
+        where("timestamps.finished", ">=", start),
+        where("timestamps.finished", "<=", end)
+      ),
+      (snap) => {
+        setArchivedProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      },
+      (err) => console.warn("Archive Sync Error (Week Stats):", err.code)
+    );
+
     return () => {
       unsubOrders();
       unsubProds();
       unsubOcc();
       unsubConfig();
+      unsubArchive();
     };
   }, []);
 
@@ -195,6 +215,10 @@ const TeamleaderHub = ({
       const mProducts = rawProducts.filter(
         (p) => (p.machine || "").toLowerCase() === stationName.toLowerCase()
       );
+
+      const mArchived = archivedProducts.filter(
+        (p) => (p.machine || p.originMachine || "").toLowerCase() === stationName.toLowerCase()
+      );
       
       // Verbeterde matching voor occupancy (ID of Naam)
       const currentOccupancy = bezetting.filter((b) => {
@@ -225,7 +249,7 @@ const TeamleaderHub = ({
           planned = 0;
           
           // Downstream Actief: Items die wachten op dit station (Aanbod)
-          active = rawProducts.filter(p => {
+          const checkActive = (p) => {
              const pStation = (p.currentStation || "").toUpperCase();
              const pStep = (p.currentStep || "").toUpperCase();
              const pStatus = (p.status || "").toUpperCase();
@@ -240,10 +264,11 @@ const TeamleaderHub = ({
              if (isLossen) return pStation.includes("LOSSEN") || pStep.includes("LOSSEN");
              
              return false;
-          }).length;
+          };
+          active = rawProducts.filter(checkActive).length;
 
           // Downstream Klaar: Items die verwerkt zijn door dit station
-          finished = rawProducts.filter(p => {
+          const checkFinished = (p) => {
              const pStatus = (p.status || "").toUpperCase();
              const pStep = (p.currentStep || "").toUpperCase();
              const isFinishedItem = ['COMPLETED', 'FINISHED', 'GEREED'].includes(pStatus) || pStep === 'FINISHED';
@@ -255,14 +280,15 @@ const TeamleaderHub = ({
              if (isMazak) return lastStation.includes("MAZAK");
              if (isLossen) return lastStation.includes("LOSSEN");
              return false;
-          }).length;
+          };
+          finished = rawProducts.filter(checkFinished).length + archivedProducts.filter(checkFinished).length;
       } else if (!isAlgemeen) {
           // Standaard Productie Machines (niet Algemeen)
           planned = dataStore
             .filter((o) => (o.machine || "").toLowerCase() === stationName.toLowerCase())
             .reduce((acc, o) => acc + Number(o.plan || 0), 0);
           active = mProducts.filter((p) => p.status === "In Production").length;
-          finished = mProducts.filter((p) => p.status === "Finished").length;
+          finished = mProducts.filter((p) => p.status === "Finished").length + mArchived.length;
       }
 
       return {
@@ -302,12 +328,16 @@ const TeamleaderHub = ({
         return true;
       }).length,
 
-      finishedCount: rawProducts.filter((p) => {
-        if (!validOrderIds.has(p.orderId)) return false;
-        const status = p.status || "";
-        const step = p.currentStep || "";
-        return ['Finished', 'completed', 'GEREED'].includes(status) || step === 'Finished';
-      }).length,
+      finishedCount: (() => {
+        const activeFinished = rawProducts.filter((p) => {
+          if (!validOrderIds.has(p.orderId)) return false;
+          const status = p.status || "";
+          const step = p.currentStep || "";
+          return ['Finished', 'completed', 'GEREED'].includes(status) || step === 'Finished';
+        });
+        const archivedFinished = archivedProducts.filter(p => validOrderIds.has(p.orderId));
+        return activeFinished.length + archivedFinished.length;
+      })(),
 
       rejectedCount: rawProducts.filter((p) => {
         if (!validOrderIds.has(p.orderId)) return false;
@@ -404,10 +434,12 @@ const TeamleaderHub = ({
     bezetting,
     factoryConfig,
     fixedScope,
+    archivedProducts,
   ]);
 
   // Handler voor KPI tegels (opent trace modal met juiste data)
   const handleKpiClick = (kpiId, label) => {
+    console.log("KPI Click:", kpiId);
     setModalTitle(label);
     
     if (kpiId === "gepland") {
@@ -426,12 +458,20 @@ const TeamleaderHub = ({
       setModalData(list);
       setShowTraceModal(true);
     } else if (kpiId === "gereed") {
-      const list = rawProducts.filter((p) => {
+      const activeList = rawProducts.filter((p) => {
          const status = p.status || "";
          const step = p.currentStep || "";
          return ['Finished', 'completed', 'GEREED'].includes(status) || step === 'Finished';
       });
-      setModalData(list);
+      
+      // Voeg gearchiveerde items toe die bij deze afdeling horen
+      const validOrderIds = new Set(dataStore.map((o) => o.orderId));
+      const archivedList = archivedProducts.filter(p => validOrderIds.has(p.orderId));
+      
+      // Combineer lijsten
+      const combined = [...activeList, ...archivedList];
+      
+      setModalData(combined);
       setShowTraceModal(true);
     } else if (kpiId === "afkeur") {
       const list = rawProducts.filter((p) => {
@@ -439,6 +479,14 @@ const TeamleaderHub = ({
          const step = p.currentStep || "";
          return ['Rejected', 'rejected', 'AFKEUR'].includes(status) || step === 'REJECTED';
       });
+      setModalData(list);
+      setShowTraceModal(true);
+    } else if (kpiId === "tijdelijke_afkeur" || kpiId === "temp_rejected" || kpiId === "tijdelijke afkeur" || kpiId === "tijdelijk_afkeur") {
+      const list = rawProducts
+        .filter((p) => p.inspection?.status === "Tijdelijke afkeur")
+        .sort((a, b) => {
+          return new Date(a.inspection?.timestamp || 0) - new Date(b.inspection?.timestamp || 0);
+        });
       setModalData(list);
       setShowTraceModal(true);
     } else if (kpiId === "bezetting") {
@@ -569,6 +617,8 @@ const TeamleaderHub = ({
       const productRef = doc(db, ...PATHS.TRACKING, lotNumber);
       await updateDoc(productRef, {
         currentStation: newStation,
+        isManualMove: true,
+        status: "in_progress",
         updatedAt: serverTimestamp(),
         note: `Handmatig verplaatst naar ${newStation} door ${user?.email || 'Teamleader'}`
       });
@@ -744,6 +794,7 @@ const TeamleaderHub = ({
                     onClose={() => setSelectedOrderId(null)}
                     isManager={true}
                     onMoveLot={handleMoveLot}
+                    onOpenDossier={setViewingDossier}
                     showAllStations={true}
                   />
                 ) : (
@@ -800,6 +851,7 @@ const TeamleaderHub = ({
             if (returnToTrace) setShowTraceModal(true);
           }}
           orders={rawOrders}
+          onMoveLot={handleMoveLot}
         />
       )}
     </div>

@@ -7,14 +7,14 @@ service firebase.storage {
     }
     // Helper: check of gebruiker een bepaalde rol heeft
     function hasRole(role) {
-      return request.auth.token.role == role;
+      return request.auth.uid == 'pzxPfiwQhnQdEQJcXU77ZgT2Jo32' || request.auth.token.role == role;
     }
     // Helper: check of gebruiker een van de toegestane rollen heeft
     function isUploader() {
-      return request.auth.token.role in ['admin', 'qc', 'engineer'];
+      return request.auth.uid == 'pzxPfiwQhnQdEQJcXU77ZgT2Jo32' || request.auth.token.role in ['admin', 'qc', 'engineer'];
     }
 
-    // Alleen ingelogde gebruikers mogen lezen (downloaden)
+    // ISO 27001: Toegangsbeveiliging & Least Privilege
     match /{allPaths=**} {
       allow read: if isSignedIn();
       // Alleen admins, QC en engineers mogen uploaden

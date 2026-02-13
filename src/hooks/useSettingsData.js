@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { collection, onSnapshot, doc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS, isValidPath } from "../config/dbPaths";
 
 /**
- * useSettingsData V6.0 - Build Stabilized
- * Gebruikt nu isValidPath (consistent met useProductsData) om crashes te voorkomen.
+ * useSettingsData V7.0 - Optimized with getDoc/getDocs
+ * Vervangt onSnapshot listeners met een eenmalige fetch voor betere performance en lagere kosten.
  */
 export const useSettingsData = (user) => {
   const [settings, setSettings] = useState({
@@ -18,63 +18,63 @@ export const useSettingsData = (user) => {
   });
 
   useEffect(() => {
-    // Stop als er geen gebruiker is (voorkomt permission-denied in console)
     if (!user) {
       setSettings((s) => ({ ...s, loading: false }));
       return;
     }
 
-    const listeners = [];
+    let isMounted = true;
 
-    const subscribeToDoc = (pathKey, stateKey) => {
-      if (!isValidPath(pathKey)) return;
+    const fetchAllSettings = async () => {
+      try {
+        const refs = {
+          generalConfig: isValidPath("GENERAL_SETTINGS") ? doc(db, ...PATHS.GENERAL_SETTINGS) : null,
+          productRange: isValidPath("MATRIX_CONFIG") ? doc(db, ...PATHS.MATRIX_CONFIG) : null,
+          boreDimensions: isValidPath("BORE_DIMENSIONS") ? collection(db, ...PATHS.BORE_DIMENSIONS) : null,
+          cbDimensions: isValidPath("CB_DIMENSIONS") ? collection(db, ...PATHS.CB_DIMENSIONS) : null,
+          tbDimensions: isValidPath("TB_DIMENSIONS") ? collection(db, ...PATHS.TB_DIMENSIONS) : null,
+        };
 
-      const docRef = doc(db, ...PATHS[pathKey]);
-      const unsub = onSnapshot(
-        docRef,
-        (snap) => {
-          if (snap.exists()) {
-            setSettings((prev) => ({ ...prev, [stateKey]: snap.data() }));
-          }
-        },
-        (err) => console.warn(`Doc Sync Error [${stateKey}]:`, err.code)
-      );
-      listeners.push(unsub);
+        const [
+          generalConfigSnap,
+          productRangeSnap,
+          boreDimensionsSnap,
+          cbDimensionsSnap,
+          tbDimensionsSnap,
+        ] = await Promise.all([
+          refs.generalConfig ? getDoc(refs.generalConfig) : null,
+          refs.productRange ? getDoc(refs.productRange) : null,
+          refs.boreDimensions ? getDocs(refs.boreDimensions) : null,
+          refs.cbDimensions ? getDocs(refs.cbDimensions) : null,
+          refs.tbDimensions ? getDocs(refs.tbDimensions) : null,
+        ]);
+
+        if (isMounted) {
+          const newSettings = {
+            generalConfig: generalConfigSnap?.exists() ? generalConfigSnap.data() : {},
+            productRange: productRangeSnap?.exists() ? productRangeSnap.data() : {},
+            boreDimensions: boreDimensionsSnap?.docs.map((d) => ({ id: d.id, ...d.data() })) || [],
+            cbDimensions: cbDimensionsSnap?.docs.map((d) => ({ id: d.id, ...d.data() })) || [],
+            tbDimensions: tbDimensionsSnap?.docs.map((d) => ({ id: d.id, ...d.data() })) || [],
+          };
+
+          setSettings({
+            ...newSettings,
+            loading: false,
+          });
+        }
+      } catch (e) {
+        console.error("Kritieke fout bij ophalen van instellingen:", e);
+        if (isMounted) {
+          setSettings((prev) => ({ ...prev, loading: false }));
+        }
+      }
     };
 
-    const subscribeToCollection = (pathKey, stateKey) => {
-      if (!isValidPath(pathKey)) return;
-
-      const colRef = collection(db, ...PATHS[pathKey]);
-      const unsub = onSnapshot(
-        colRef,
-        (snap) => {
-          const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-          setSettings((prev) => ({ ...prev, [stateKey]: items }));
-        },
-        (err) => console.warn(`Coll Sync Error [${stateKey}]:`, err.code)
-      );
-      listeners.push(unsub);
-    };
-
-    try {
-      subscribeToDoc("GENERAL_SETTINGS", "generalConfig");
-      subscribeToDoc("MATRIX_CONFIG", "productRange");
-      subscribeToCollection("BORE_DIMENSIONS", "boreDimensions");
-      subscribeToCollection("CB_DIMENSIONS", "cbDimensions");
-      subscribeToCollection("TB_DIMENSIONS", "tbDimensions");
-    } catch (e) {
-      console.error("Kritieke fout in settings subscriptions:", e);
-    }
-
-    // Zet loading op false na een korte buffer om UI-flikkering te voorkomen
-    const timeout = setTimeout(() => {
-      setSettings((prev) => ({ ...prev, loading: false }));
-    }, 1500);
+    fetchAllSettings();
 
     return () => {
-      listeners.forEach((u) => u());
-      clearTimeout(timeout);
+      isMounted = false;
     };
   }, [user]);
 

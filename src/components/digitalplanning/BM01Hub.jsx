@@ -10,7 +10,7 @@ import { doc, updateDoc, serverTimestamp, collection, query, where, getDocs, set
 import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 
-const BM01Hub = ({ onBack, orders = [], products = [] }) => {
+const BM01Hub = ({ onBack, orders = [], products = [], onMoveLot }) => {
   const { user } = useAdminAuth();
   // AANGEPAST: Standaard view op 'inspectie' (Aan te bieden)
   const [activeTab, setActiveTab] = useState("inspectie");
@@ -583,6 +583,8 @@ const BM01Hub = ({ onBack, orders = [], products = [] }) => {
                     products={products}
                     onClose={() => setSelectedOrder(null)}
                     showAllStations={true}
+                    onMoveLot={onMoveLot}
+                    isManager={true}
                 />
             </div>
         </div>
@@ -604,6 +606,7 @@ const BM01Hub = ({ onBack, orders = [], products = [] }) => {
             onClose={() => setViewingDossier(null)}
             onAddNote={handleAddQcNote}
             orders={orders}
+            onMoveLot={onMoveLot}
         />
       )}
 

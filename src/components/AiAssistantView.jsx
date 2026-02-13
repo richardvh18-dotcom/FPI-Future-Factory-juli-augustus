@@ -7,7 +7,9 @@ import {
   GraduationCap,
   MessageSquare,
   Paperclip,
+  Download,
 } from "lucide-react";
+import * as XLSX from 'xlsx';
 import { addDoc, collection, doc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "../config/firebase";
 import FlashcardViewer from "./ai/FlashcardViewer";
@@ -16,6 +18,7 @@ import { aiService } from "../services/aiService";
 import { useNotifications } from "../contexts/NotificationContext";
 import { PATHS } from "../config/dbPaths";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
+import { getLivePlanningContext, getRawPlanningData } from "../services/planningContext";
 
 GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -23,12 +26,13 @@ GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 const AiAssistantView = () => {
-  const { showError, showSuccess } = useNotifications();
+  const { showError, showSuccess, showInfo } = useNotifications();
   const location = useLocation();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState("chat"); // 'chat' of 'training'
   const [isLoading, setIsLoading] = useState(false);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
   const messagesEndRef = React.useRef(null);
   const abortControllerRef = React.useRef(null);
 
@@ -182,6 +186,8 @@ Waar kan ik je mee helpen?`,
       } catch (err) {
         console.error("Kon AI context niet laden, gebruik fallback:", err);
         setSystemContext(DEFAULT_CONTEXT);
+      } finally {
+        setIsInitializing(false);
       }
     };
     fetchContext();
@@ -746,11 +752,22 @@ IMPORTANT RULES:
 
       console.log('📤 Sending to AI:', { historyLength: chatHistory.length, lastMessage: messageText.substring(0, 50) });
 
+      // Haal live planning context op en voeg toe aan system prompt
+      let currentSystemContext = systemContext || DEFAULT_CONTEXT;
+      try {
+        const planningContext = await getLivePlanningContext();
+        currentSystemContext += `\n\n${planningContext}`;
+        console.log("✅ Planning context toegevoegd aan prompt");
+      } catch (err) {
+        console.error("Kon planning context niet ophalen:", err);
+      }
+
+
       // Stuur naar AI service met MES context als system prompt
       // Gebruik chatWithContext om automatisch productie data toe te voegen
       const response = await aiService.chatWithContext(
         chatHistory, 
-        systemContext || DEFAULT_CONTEXT,
+        currentSystemContext,
         true, // includeContext - zoek producten en orders
         { signal: abortControllerRef.current.signal }
       );
@@ -815,6 +832,29 @@ IMPORTANT RULES:
     }
   };
 
+  const handleExportExcel = async () => {
+    try {
+      if (showInfo) showInfo("Planning data ophalen...");
+      // Haal meer data op voor de export (bijv. 100 regels)
+      const data = await getRawPlanningData(100);
+      
+      if (data.length === 0) {
+        showError("Geen data gevonden om te exporteren.");
+        return;
+      }
+
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Planning Export");
+      
+      XLSX.writeFile(wb, `FPi_Planning_Export_${new Date().toISOString().slice(0,10)}.xlsx`);
+      showSuccess("Excel bestand gedownload!");
+    } catch (error) {
+      console.error("Export fout:", error);
+      showError("Kon niet exporteren naar Excel.");
+    }
+  };
+
   // --- TRAINING LOGICA ---
   const handleStartTraining = async (e) => {
     e.preventDefault();
@@ -847,6 +887,16 @@ IMPORTANT RULES:
     }
   };
 
+  if (isInitializing) {
+    return (
+      <div className="flex flex-col h-full bg-slate-50 items-center justify-center animate-in fade-in">
+        <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+        <h2 className="text-lg font-bold text-slate-700">AI Assistent Starten...</h2>
+        <p className="text-slate-500 text-sm">Even geduld, we laden de context.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-slate-50 animate-in fade-in">
       {/* HEADER */}
@@ -862,7 +912,7 @@ IMPORTANT RULES:
         </div>
 
         {/* TABS */}
-        <div className="flex bg-slate-100 p-1 rounded-xl">
+        <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
           <button
             onClick={() => setActiveTab("chat")}
             className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${
@@ -882,6 +932,15 @@ IMPORTANT RULES:
             }`}
           >
             <GraduationCap size={16} /> Training
+          </button>
+          
+          {/* Export Button */}
+          <button
+            onClick={handleExportExcel}
+            className="px-3 py-2 rounded-lg text-slate-500 hover:text-green-600 hover:bg-white transition-all border border-transparent hover:border-slate-200"
+            title="Exporteer huidige planning naar Excel"
+          >
+            <Download size={18} />
           </button>
         </div>
       </div>

@@ -5,6 +5,9 @@ import {
   Zap,
   Calendar as CalendarIcon,
   History,
+  AlertCircle,
+  ArrowUpCircle,
+  Clock,
 } from "lucide-react";
 import {
   normalizeMachine,
@@ -22,29 +25,91 @@ const StationDetailModal = ({ stationId, allOrders, allProducts, onClose }) => {
     return allProducts.filter((p) => {
       if (p.currentStep === "Finished" || p.currentStep === "REJECTED")
         return false;
-      const pMachine = String(p.originMachine || p.currentStation || "");
-      return normalizeMachine(pMachine) === stationNorm;
+      
+      const currentNorm = normalizeMachine(p.currentStation || "");
+      const originNorm = normalizeMachine(p.originMachine || "");
+      const machineNorm = normalizeMachine(p.machine || "");
+      const stepNorm = normalizeMachine(p.currentStep || "");
+
+      return currentNorm === stationNorm || originNorm === stationNorm || machineNorm === stationNorm || stepNorm === stationNorm;
     });
   }, [allProducts, stationNorm]);
 
+  // Teller voor items die wachten op lossen
+  const waitingForUnloadCount = useMemo(() => {
+    return activeItems.filter(p => 
+      p.currentStep === "Lossen" || 
+      p.status === "Wacht op Lossen" || 
+      p.status === "Te Lossen" ||
+      (p.currentStation && normalizeMachine(p.currentStation) === "LOSSEN")
+    ).length;
+  }, [activeItems]);
+
   // 2. Planning (Wachtrij)
   const groupedPlanning = useMemo(() => {
+    const now = new Date();
+    const { week: currentWeek, year: currentYear } = getISOWeekInfo(now);
+
     const relevantOrders = allOrders
       .filter((o) => {
         return o.normMachine === stationNorm && o.status !== "completed";
       })
       .sort((a, b) => {
-        if (a.weekYear !== b.weekYear) return a.weekYear - b.weekYear;
-        if (a.weekNumber !== b.weekNumber) return a.weekNumber - b.weekNumber;
         return a.dateObj - b.dateObj;
       });
 
     const groups = relevantOrders.reduce((acc, order) => {
-      const week = order.weekNumber || getISOWeekInfo(new Date()).week;
+      let week = parseInt(order.weekNumber);
+      let year = parseInt(order.weekYear);
+
+      // FIX: Als week/jaar ontbreekt of ongeldig is, probeer uit datum te halen
+      if ((isNaN(week) || isNaN(year)) && order.dateObj) {
+        const d = order.dateObj.toDate ? order.dateObj.toDate() : new Date(order.dateObj);
+        const info = getISOWeekInfo(d);
+        if (isNaN(week)) week = info.week;
+        if (isNaN(year)) year = info.year;
+      }
+
+      // Fallback naar huidig als nog steeds onbekend
+      if (isNaN(week)) week = currentWeek;
+      if (isNaN(year)) year = currentYear;
+
+      // LOGIC: Orders uit verleden meenemen naar huidige week
+      const isPast = year < currentYear || (year === currentYear && week < currentWeek);
+      
+      if (isPast) {
+        week = currentWeek;
+        // year = currentYear; // Impliciet
+      }
+
       if (!acc[week]) acc[week] = [];
-      acc[week].push(order);
+      
+      // Voeg flags toe voor weergave (isOverdue, isMoved)
+      // We nemen aan dat 'isMoved' of 'priority' in de order data zit als deze verplaatst is
+      acc[week].push({ 
+        ...order, 
+        isOverdue: isPast,
+        isPriority: order.isMoved || order.priority === true || order.priority === "high" 
+      });
       return acc;
     }, {});
+
+    // Sorteer binnen de weken: Verplaatst/Prio eerst, dan Plan nummer, dan Datum
+    Object.keys(groups).forEach(week => {
+      groups[week].sort((a, b) => {
+        // 1. Verplaatste / Priority orders bovenaan
+        if (a.isPriority && !b.isPriority) return -1;
+        if (!a.isPriority && b.isPriority) return 1;
+        
+        // 2. Plan volgorde (indien ingesteld)
+        const planA = a.plan || 999;
+        const planB = b.plan || 999;
+        if (planA !== planB) return planA - planB;
+        
+        // 3. Datum
+        return a.dateObj - b.dateObj;
+      });
+    });
 
     const sortedWeeks = Object.keys(groups).sort((a, b) => a - b);
 
@@ -173,6 +238,25 @@ const StationDetailModal = ({ stationId, allOrders, allProducts, onClose }) => {
         <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50/30 flex-1">
           {activeTab === "active" && (
             <div className="space-y-3">
+              {activeItems.length > 0 && (
+                <div className="flex flex-wrap gap-2 px-1 mb-2">
+                   {waitingForUnloadCount > 0 && (
+                     <div className="px-3 py-1.5 bg-orange-50 border border-orange-100 rounded-lg flex items-center gap-2">
+                       <Clock size={12} className="text-orange-500" />
+                       <span className="text-[10px] font-black text-orange-600 uppercase tracking-wide">
+                         Wacht op Lossen: {waitingForUnloadCount}
+                       </span>
+                     </div>
+                   )}
+                   <div className="px-3 py-1.5 bg-green-50 border border-green-100 rounded-lg flex items-center gap-2">
+                     <Activity size={12} className="text-green-500" />
+                     <span className="text-[10px] font-black text-green-600 uppercase tracking-wide">
+                       In Productie: {activeItems.length - waitingForUnloadCount}
+                     </span>
+                   </div>
+                </div>
+              )}
+
               {activeItems.length === 0 ? (
                 <div className="text-center py-12 text-gray-400">
                   <Zap size={48} className="mx-auto mb-4 opacity-20" />
@@ -221,11 +305,15 @@ const StationDetailModal = ({ stationId, allOrders, allProducts, onClose }) => {
                   <div className="space-y-2">
                     {groupedPlanning.groups[week].map((order) => (
                       <div
-                        key={order.id}
-                        className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center hover:shadow-md transition-shadow"
+                          key={order.id || Math.random()}
+                          className={`p-3 rounded-xl border shadow-sm flex justify-between items-center hover:shadow-md transition-shadow ${
+                            order.isPriority 
+                              ? "bg-amber-50 border-amber-300 ring-1 ring-amber-200" 
+                              : "bg-white border-gray-200"
+                          }`}
                       >
                         <div className="flex items-center gap-4">
-                          <div className="bg-blue-50 w-10 h-10 rounded-lg flex items-center justify-center font-black text-blue-600 text-xs">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center font-black text-xs ${order.isPriority ? "bg-amber-200 text-amber-800" : "bg-blue-50 text-blue-600"}`}>
                             {order.plan}
                           </div>
                           <div>
@@ -235,6 +323,21 @@ const StationDetailModal = ({ stationId, allOrders, allProducts, onClose }) => {
                             <p className="text-xs text-gray-500 line-clamp-1">
                               {order.item}
                             </p>
+                              {order.isOverdue && (
+                                <span className="flex items-center gap-1 text-[9px] font-bold text-rose-500 uppercase mt-0.5">
+                                  <AlertCircle size={10} /> Uit vorige week
+                                </span>
+                              )}
+                              {order.isPriority && (
+                                <span className="flex items-center gap-1 text-[9px] font-bold text-amber-600 uppercase mt-0.5">
+                                  <ArrowUpCircle size={10} /> Prioriteit / Verplaatst
+                                </span>
+                              )}
+                              {order.activeLot && (
+                                <p className="text-[9px] font-bold text-blue-500 uppercase tracking-wider mt-0.5">
+                                  Lot: {order.activeLot}
+                                </p>
+                              )}
                           </div>
                         </div>
                         <div className="text-right">

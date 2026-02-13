@@ -32,8 +32,12 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
 
   let nextStepDisplay = "Lossen";
 
-  if (currentStep === "Lossen") {
+  if (product?.isManualMove) {
+    nextStepDisplay = "Nabewerking";
+  } else if (currentStep === "Lossen") {
     nextStepDisplay = itemDesc.includes("FL") ? "Mazak" : "Nabewerking";
+  } else if (currentStep === "Nabewerking" || currentStep === "Mazak") {
+    nextStepDisplay = "Eindinspectie";
   } else if (currentStep === "Eindinspectie" || currentStep === "Inspectie" || product?.currentStation === "BM01") {
     nextStepDisplay = "Gereed";
   }
@@ -55,18 +59,21 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
       // Handle Status Logic
       if (status === "approved") {
         // Normal flow
-        let nextStep = "Lossen";
-        let nextStatus = "Te Lossen";
-        let updateStation = false;
+        let nextStep = nextStepDisplay;
+        let nextStatus = `Wacht op ${nextStep}`;
+        let updateStation = true;
+        let targetStation = nextStep;
 
-        if (currentStep === "Lossen") {
-          nextStep = nextStepDisplay;
-          nextStatus = `Wacht op ${nextStep}`;
-          updateStation = true;
-        } else if (nextStepDisplay === "Gereed") {
+        if (nextStepDisplay === "Gereed") {
           nextStep = "Finished";
           nextStatus = "Finished";
           updateStation = false;
+        } else if (product.isManualMove) {
+          updates.isManualMove = false;
+          nextStep = "Nabewerking";
+          targetStation = "Nabewerking";
+        } else if (nextStep === "Eindinspectie") {
+          targetStation = "BM01";
         }
 
         updates.currentStep = nextStep;
@@ -82,7 +89,7 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
         });
 
         if (updateStation) {
-          updates.currentStation = nextStep;
+          updates.currentStation = targetStation;
           updates.lastStation = product.currentStation || product.machine || "Onbekend";
         }
 
