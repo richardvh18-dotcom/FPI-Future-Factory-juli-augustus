@@ -64,6 +64,7 @@ const LoginView = ({ onLogin, externalError, logoUrl, appName }) => {
       // Maar we kunnen wel debugging info tonen
       console.log("Master Admin UID uit .env:", import.meta.env.VITE_MASTER_ADMIN_UID);
       console.log("Firebase Project:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
+      console.log("VITE_TEST_VAR:", import.meta.env.VITE_TEST_VAR);
       setInternalError("God Mode: Gebruik je normale admin credentials om in te loggen.");
       setLoading(false);
       return;
