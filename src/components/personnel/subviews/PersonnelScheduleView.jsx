@@ -14,6 +14,7 @@ const PersonnelScheduleView = React.memo(({ personnel, viewDate }) => {
       </ul>
     </div>
   );
-};
+
+});
 
 export default PersonnelScheduleView;

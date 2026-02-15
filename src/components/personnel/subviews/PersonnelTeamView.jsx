@@ -17,6 +17,7 @@ const PersonnelTeamView = React.memo(({ personnel, departments }) => {
       ))}
     </div>
   );
-};
+
+});
 
 export default PersonnelTeamView;

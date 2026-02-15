@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { FixedSizeGrid } from "react-window";
+import { Grid } from "react-window";
 import { Search, UserCircle, Edit3, Trash2, Plus, ChevronDown, ChevronUp, Layers, Filter, RotateCcw, ArrowRight } from "lucide-react";
 import { getISOWeek } from "date-fns";
 
@@ -241,7 +241,7 @@ const PersonnelListView = React.memo(({
             </p>
           </div>
         ) : (
-          <FixedSizeGrid
+          <Grid
             columnCount={4}
             rowCount={Math.ceil(filteredPersonnel.length / 4)}
             columnWidth={320}
@@ -256,11 +256,12 @@ const PersonnelListView = React.memo(({
               const p = filteredPersonnel[idx];
               return <div style={style}>{renderCard(p)}</div>;
             }}
-          </FixedSizeGrid>
+          </Grid>
         )
       }
     </div>
   );
-};
+
+});
 
 export default PersonnelListView;

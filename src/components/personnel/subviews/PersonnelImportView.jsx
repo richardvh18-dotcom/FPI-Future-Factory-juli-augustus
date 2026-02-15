@@ -1,5 +1,6 @@
 import React from "react";
 
+
 const PersonnelImportView = React.memo(({ onImport }) => {
   // Dummy import UI
   return (
@@ -13,6 +14,6 @@ const PersonnelImportView = React.memo(({ onImport }) => {
       </button>
     </div>
   );
-};
+});
 
 export default PersonnelImportView;
