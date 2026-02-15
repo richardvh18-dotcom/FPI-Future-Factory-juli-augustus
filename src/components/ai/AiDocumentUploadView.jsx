@@ -32,6 +32,7 @@ GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 const MAX_CHARS = 50000;
+const MAX_FILE_SIZE_MB = 10; // Maximaal 10MB per bestand
 
 const AiDocumentUploadView = () => {
   const [documents, setDocuments] = useState([]);
@@ -108,11 +109,12 @@ JSON Structure:
 IMPORTANT RULES:
 - Return ONLY the JSON object, nothing else
 - NO markdown formatting, NO code blocks, NO explanations
-- summary: samenvatting van het document (max 1000 karakters)
-- fullContext: uitgebreide analyse van de inhoud (max 3000 karakters)
-- keyFacts: alle belangrijke feiten, specificaties en details
+- summary: samenvatting van het document (max 500 karakters)
+- fullContext: uitgebreide analyse van de inhoud (max 2000 karakters)
+- keyFacts: max 10 belangrijkste feiten
 - Arrays van strings voor specifieke categorieën
 - Taal: Nederlands
+- Zorg voor geldige JSON syntax (escape special characters zoals quotes en newlines)
 - Wees volledig en uitgebreid
 - Lege array [] als niets gevonden, lege string "" als niet van toepassing`;
 
@@ -147,7 +149,13 @@ IMPORTANT RULES:
         };
       }
 
-      const analysis = JSON.parse(jsonText);
+      let analysis;
+      try {
+        analysis = JSON.parse(jsonText);
+      } catch (parseErr) {
+        console.error("❌ JSON Parse Error:", parseErr, "\nText:", jsonText.substring(0, 500) + "...");
+        throw new Error("Ongeldige JSON structuur ontvangen van AI");
+      }
       console.log('✅ JSON parsing succesvol');
       
       // Valideer en vul ontbrekende velden
@@ -227,6 +235,16 @@ IMPORTANT RULES:
         type: "error",
         message:
           "Alleen .pdf, .txt, .md, .csv of .json bestanden zijn ondersteund.",
+      });
+      e.target.value = "";
+      return;
+    }
+
+    // Check bestandsgrootte (in bytes)
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      setStatus({
+        type: "error",
+        message: `Bestand is te groot. Maximaal ${MAX_FILE_SIZE_MB}MB toegestaan.`,
       });
       e.target.value = "";
       return;
@@ -360,7 +378,7 @@ IMPORTANT RULES:
             />
           </label>
           <p className="text-xs text-slate-500">
-            Ondersteund: .pdf, .txt, .md, .csv, .json. Max {MAX_CHARS} tekens per document.
+            Ondersteund: .pdf, .txt, .md, .csv, .json. Max {MAX_FILE_SIZE_MB}MB of {MAX_CHARS} tekens.
             Alleen de AI-context wordt opgeslagen; het bestand zelf niet.
           </p>
         </div>
