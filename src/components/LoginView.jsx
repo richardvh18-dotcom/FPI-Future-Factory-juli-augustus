@@ -72,6 +72,7 @@ const LoginView = ({ onLogin, externalError, logoUrl, appName }) => {
     setLoading(true);
     setInternalError(null);
     console.log("🚀 Inlogpoging gestart voor:", email);
+    console.log("Alle env:", import.meta.env);
     console.log("📊 Firebase Project:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
 
     try {
