@@ -130,11 +130,11 @@ const LoginView = ({ onLogin, externalError, logoUrl, appName }) => {
         </div>
 
         {/* Login Card */}
-        <div className="max-w-md w-full bg-white/10 backdrop-blur-xl border-2 border-white/20 rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500 mb-12">
+        <div className={`max-w-md w-full bg-white/10 backdrop-blur-xl border-2 border-white/20 rounded-[40px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-500 mb-12 ${displayError ? 'shake' : ''}`}>
           <div className="p-8 md:p-10 text-left">
 
             {displayError && (
-              <div className="bg-rose-500/20 border-2 border-rose-400/50 backdrop-blur-sm p-4 rounded-2xl flex items-center gap-3 text-rose-200 animate-in shake mb-6">
+              <div className="bg-rose-500/20 border-2 border-rose-400/50 backdrop-blur-sm p-4 rounded-2xl flex items-center gap-3 text-rose-200 animate-in mb-6">
                 <AlertCircle size={18} />
                 <p className="text-xs font-bold uppercase">{displayError}</p>
               </div>

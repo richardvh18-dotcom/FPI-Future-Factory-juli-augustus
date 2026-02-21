@@ -5,6 +5,8 @@
         "deploymentEnabled": {
             "main": true,
             "preview": true
+        {
+            "rewrites": [
+                { "source": "/(.*)", "destination": "/index.html" }
+            ]
         }
-    }
-}

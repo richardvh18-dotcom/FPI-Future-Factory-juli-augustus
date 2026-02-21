@@ -1,24 +1,12 @@
+import { collection, query, onSnapshot, doc, writeBatch, serverTimestamp, updateDoc, where, addDoc, limit, getDocs, deleteDoc, getDoc, setDoc } from "firebase/firestore";
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { LogOut, Loader2, Menu, X, Layers, Clock, Tv, Calendar } from "lucide-react";
-import {
-  collection,
-  query,
-  onSnapshot,
-  doc,
-  updateDoc,
-  setDoc,
-  addDoc,
-  getDoc,
-  serverTimestamp,
-  where,
-  getDocs,
-  deleteDoc,
-} from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
+import { getAuth } from "firebase/auth";
 import { useNotifications } from "../../contexts/NotificationContext";
 
 import {
@@ -151,62 +139,99 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
   // Data Fetching
   useEffect(() => {
-    setLoading(true);
-
-    const ordersRef = collection(db, ...PATHS.PLANNING);
-    const unsubOrders = onSnapshot(query(ordersRef), (snap) => {
-      const loadedOrders = snap.docs.map((doc) => {
-        const data = doc.data();
-        let dateObj = data.plannedDate?.toDate
-          ? data.plannedDate.toDate()
-          : new Date();
-        let { week, year } = getISOWeekInfo(dateObj);
-
-        return {
-          id: doc.id,
-          ...data,
-          orderId: data.orderId || data.orderNumber || doc.id,
-          item: data.item || data.productCode || "Onbekend Item",
-          plan: data.plan || data.quantity || 0,
-          dateObj: dateObj,
-          weekNumber: parseInt(data.week || data.weekNumber || week),
-          weekYear: parseInt(data.year || year),
-        };
-      });
-      setRawOrders(loadedOrders);
+    if (!currentUser) return;
+    
+    // Prevent fetching if user is guest (no permissions)
+    if (!currentUser.role || currentUser.role === 'guest') {
       setLoading(false);
-    });
+      return;
+    }
 
-    const unsubProds = onSnapshot(
-      query(collection(db, ...PATHS.TRACKING)),
-      (snap) => {
-        setRawProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    let isMounted = true;
+    const unsubs = [];
+    const initData = async () => {
+      const auth = getAuth();
+      // 1. Wacht op Auth
+      if (!auth.currentUser && currentUser) {
+        await new Promise(resolve => {
+          const unsubscribe = auth.onAuthStateChanged(() => {
+            unsubscribe();
+            resolve();
+          });
+        });
       }
-    );
-
-    // Occupancy data ophalen
-    const unsubOccupancy = onSnapshot(
-      collection(db, ...PATHS.OCCUPANCY),
-      (snap) => {
-        setOccupancy(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      // 2. Forceer refresh & wacht (Fix voor permission-denied)
+      if (auth.currentUser) {
+        try {
+          await auth.currentUser.getIdToken(true);
+          await new Promise(r => setTimeout(r, 500));
+          await new Promise(r => setTimeout(r, 1000));
+        } catch (e) { 
+          console.warn("Token refresh warning:", e); 
+        }
       }
-    );
-
-    // Personnel data ophalen
-    const unsubPersonnel = onSnapshot(
-      collection(db, ...PATHS.PERSONNEL),
-      (snap) => {
-        setPersonnel(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }
-    );
-
-    return () => {
-      unsubOrders();
-      unsubProds();
-      unsubOccupancy();
-      unsubPersonnel();
+      if (!isMounted) return;
+      setLoading(true);
+      const ordersRef = collection(db, ...PATHS.PLANNING);
+      const unsubOrders = onSnapshot(query(ordersRef, limit(50)), (snap) => {
+        const loadedOrders = snap.docs.map((doc) => {
+          const data = doc.data();
+          let dateObj = data.plannedDate?.toDate
+            ? data.plannedDate.toDate()
+            : new Date();
+          let { week, year } = getISOWeekInfo(dateObj);
+          return {
+            id: doc.id,
+            ...data,
+            orderId: data.orderId || data.orderNumber || doc.id,
+            item: data.item || data.productCode || "Onbekend Item",
+            plan: data.plan || data.quantity || 0,
+            dateObj: dateObj,
+            weekNumber: parseInt(data.week || data.weekNumber || week),
+            weekYear: parseInt(data.year || year),
+          };
+        });
+        if (isMounted) setRawOrders(loadedOrders);
+        setLoading(false);
+      }, (error) => {
+        if (!isMounted) return;
+        console.error("Orders sync error:", error);
+        setLoading(false);
+      });
+      unsubs.push(unsubOrders);
+      const unsubProds = onSnapshot(
+        query(collection(db, ...PATHS.TRACKING), limit(50)),
+        (snap) => {
+          if (isMounted) setRawProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        },
+        (error) => console.warn("Tracking Sync Error:", error)
+      );
+      unsubs.push(unsubProds);
+      // Occupancy data ophalen
+      const unsubOccupancy = onSnapshot(
+        query(collection(db, ...PATHS.OCCUPANCY), limit(50)),
+        (snap) => {
+          if (isMounted) setOccupancy(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        },
+        (error) => console.warn("Occupancy Sync Error:", error)
+      );
+      unsubs.push(unsubOccupancy);
+      // Personnel data ophalen
+      const unsubPersonnel = onSnapshot(
+        query(collection(db, ...PATHS.PERSONNEL), limit(50)),
+        (snap) => {
+          if (isMounted) setPersonnel(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        },
+        (error) => console.warn("Personnel Sync Error:", error)
+      );
+      unsubs.push(unsubPersonnel);
     };
-  }, []);
+    initData();
+    return () => {
+      isMounted = false;
+      unsubs.forEach(u => u());
+    };
+  }, [currentUser]);
 
   // Fetch archive stats for BM01 (Today)
   useEffect(() => {
@@ -223,7 +248,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       
       const unsub = onSnapshot(q, (snap) => {
           setArchivedStats({ done: snap.size });
-      });
+      }, (error) => console.warn("Archive Sync Error:", error));
       
       return () => unsub();
   }, [isBM01]);
@@ -260,6 +285,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
               message: `Product ${item.lotNumber} ligt al meer dan 7 dagen op ${selectedStation} ter reparatie. Graag actie.`,
               type: "alert",
               status: "unread",
+              read: false,
               createdAt: serverTimestamp(),
               source: "WorkstationHub",
               relatedLot: item.lotNumber,
@@ -770,7 +796,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           {
             status: "in_progress",
             lastUpdated: serverTimestamp(),
-            [stationField]: currentStarted + count,
+            [stationField]: currentStarted + stringCount,
           }
         );
       }
@@ -1026,6 +1052,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   };
 
   return (
+    <>
     <div className="flex flex-col w-full h-[100dvh] bg-gray-50/50">
       {/* HEADER */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
@@ -1214,6 +1241,16 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           <div className="flex flex-col justify-center items-center h-full">
             <Loader2 className="animate-spin rounded-full h-12 w-12 text-blue-600 mb-4" />
           </div>
+        ) : (!currentUser?.role || currentUser?.role === 'guest') ? (
+          <div className="flex flex-col justify-center items-center h-full text-slate-400">
+            <div className="p-6 bg-white rounded-2xl shadow-sm border border-slate-200 text-center max-w-md">
+              <h3 className="text-lg font-black uppercase tracking-widest text-slate-700 mb-2">Account In Behandeling</h3>
+              <p className="text-sm font-medium mb-6">Uw accountrechten worden momenteel verwerkt. Probeer het later opnieuw of neem contact op met de beheerder.</p>
+              <button onClick={handleBack} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-wider transition-colors">
+                Terug naar Portal
+              </button>
+            </div>
+          </div>
         ) : (
           <>
             {activeTab === "winding" && (
@@ -1298,7 +1335,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         />
       )}
     </div>
+    </>
   );
-};
-
+}
 export default WorkstationHub;

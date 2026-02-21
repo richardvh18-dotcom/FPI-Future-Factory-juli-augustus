@@ -41,7 +41,7 @@ const ShopFloorMobileApp = lazy(() =>
   import("./components/planning/ShopFloorMobileApp")
 );
 const CalculatorView = lazy(() => import("./components/CalculatorView"));
-const AiAssistantView = lazy(() => import("./components/AiAssistantView.jsx"));
+const AiAssistantView = lazy(() => import("./components/ai/AiAssistantView.jsx"));
 
 /**
  * App.jsx V18.0 - Responsive Design

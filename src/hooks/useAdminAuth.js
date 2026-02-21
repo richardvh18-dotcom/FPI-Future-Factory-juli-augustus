@@ -96,7 +96,7 @@ export const useAdminAuth = () => {
               setLoading(false);
             },
             (err) => {
-              console.error("🔐 Auth Guard Firestore Error:", err.code, err.message);
+              console.error("🔐 Auth Guard Firestore Error:", err.code, err.message, err);
               // Bij een permissie-fout (Rules) vallen we terug op guest status
               setRole("guest");
               setLoading(false);

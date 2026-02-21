@@ -18,6 +18,7 @@ import StationDetailModal from "./modals/StationDetailModal";
 import TraceModal from "./modals/TraceModal";
 import PlanningImportModal from "./modals/PlanningImportModal";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
+import { getAuth } from "firebase/auth";
 import TeamleaderDashboard from "../teamleader/TeamleaderDashboard";
 import TeamleaderGanttView from "../teamleader/TeamleaderGanttView";
 import TeamleaderEfficiencyView from "../teamleader/TeamleaderEfficiencyView";
@@ -27,7 +28,7 @@ import OrderDetail from "./OrderDetail";
 import ProductDossierModal from "./modals/ProductDossierModal";
 
 /**
- * TeamleaderHub V7.2 - Strict Filtering Update
+ * TeamleaderHub V7.3 - Strict Filtering Update & Cleanup
  * Fix voor dubbele planning en vervuiling tussen afdelingen.
  * Gebruikt 'effectiveStations' als centrale bron van waarheid.
  */
@@ -40,13 +41,12 @@ const TeamleaderHub = React.memo(({
   title = "Teamleader Hub",
 }) => {
   const { user } = useAdminAuth();
-  // Debug: toon user rol en modules
-  console.log("[TeamleaderHub] User:", user);
-  if (user) {
-    console.log("[TeamleaderHub] Rol:", user.role);
-    console.log("[TeamleaderHub] Modules:", user.modules);
-  }
+
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const currentWeek = getISOWeek(new Date());
+
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [rawOrders, setRawOrders] = useState([]);
   const [rawProducts, setRawProducts] = useState([]);
   const [bezetting, setBezetting] = useState([]);
   const [archivedProducts, setArchivedProducts] = useState([]);
@@ -67,87 +67,120 @@ const TeamleaderHub = React.memo(({
   const [selectedStationDetail, setSelectedStationDetail] = useState(null);
 
   useEffect(() => {
-    const unsubOrders = onSnapshot(
-      collection(db, ...PATHS.PLANNING),
-      (snap) => {
-        setRawOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); 
+    if (!user) return;
+
+    let isMounted = true;
+    const unsubs = [];
+
+    const initData = async () => {
+
+      const auth = getAuth();
+      
+      // Prevent fetching if user is guest
+      if (!user.role || user.role === 'guest') {
         setLoading(false);
-      },
-      (err) => {
-        console.error("Planning Sync Error:", err);
-        if (err.code === 'permission-denied') return;
-        setDbError(err.code);
-        setLoading(false);
+        return;
       }
-    );
 
-    const unsubProds = onSnapshot(
-      collection(db, ...PATHS.TRACKING),
-      (snap) =>
-        setRawProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      (err) => {
-        if (err.code === 'permission-denied') return;
-        console.warn("Tracked Products Sync Error:", err.code);
+      // Start loading immediately
+      setLoading(true);
+      setDbError(null);
+
+      // Set up listeners immediately, do not wait for token refresh
+      const unsubOrders = onSnapshot(
+        collection(db, ...PATHS.PLANNING),
+        (snap) => {
+          if (!isMounted) return;
+          setRawOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+          setLoading(false);
+        },
+        (err) => {
+          if (!isMounted) return;
+          console.error("Planning Sync Error:", err);
+          setDbError(err.code || "permission-denied");
+          setLoading(false);
+        }
+      );
+      unsubs.push(unsubOrders);
+
+      const unsubProds = onSnapshot(
+        collection(db, ...PATHS.TRACKING),
+        (snap) =>
+          isMounted && setRawProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+        (err) => {
+          if (err.code === 'permission-denied') return;
+          console.warn("Tracked Products Sync Error:", err.code);
+        }
+      );
+      unsubs.push(unsubProds);
+
+      const unsubOcc = onSnapshot(
+        collection(db, ...PATHS.OCCUPANCY),
+        (snap) => {
+          isMounted && setBezetting(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        },
+        (err) => {
+          if (err.code === 'permission-denied') return;
+          console.warn("Occupancy Sync Error:", err.code);
+        }
+      );
+      unsubs.push(unsubOcc);
+
+      const unsubConfig = onSnapshot(
+        doc(db, ...PATHS.FACTORY_CONFIG),
+        (snap) => {
+          if (isMounted && snap.exists()) setFactoryConfig(snap.data());
+        },
+        (err) => {
+          if (err.code === 'permission-denied') return;
+          console.warn("Factory Config Sync Error:", err);
+        }
+      );
+      unsubs.push(unsubConfig);
+
+      const now = new Date();
+      const start = startOfISOWeek(now);
+      const end = endOfISOWeek(now);
+      const year = now.getFullYear();
+      const unsubArchive = onSnapshot(
+        query(
+          collection(db, "future-factory", "production", "archive", String(year), "items"),
+          where("timestamps.finished", ">=", start),
+          where("timestamps.finished", "<=", end)
+        ),
+        (snap) => {
+          isMounted && setArchivedProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        },
+        (err) => console.warn("Archive Sync Error (Week Stats):", err.code)
+      );
+      unsubs.push(unsubArchive);
+
+      // Token refresh in background (optional, for edge cases)
+      if (!auth.currentUser && user) {
+        auth.onAuthStateChanged(() => {});
       }
-    );
-
-    const unsubConfig = onSnapshot(
-      doc(db, ...PATHS.FACTORY_CONFIG),
-      (snap) => {
-        if (snap.exists()) setFactoryConfig(snap.data());
-      },
-      (err) => {
-        if (err.code === 'permission-denied') return;
-        console.warn("Factory Config Sync Error:", err);
+      if (auth.currentUser) {
+        auth.currentUser.getIdToken(true).catch(e => {
+          console.warn("Token refresh failed:", e);
+        });
       }
-    );
+    };
 
-    const now = new Date();
-    const start = startOfISOWeek(now);
-    const end = endOfISOWeek(now);
-    const year = now.getFullYear();
-    
-    const unsubArchive = onSnapshot(
-      query(
-        collection(db, "future-factory", "production", "archive", String(year), "items"),
-        where("timestamps.finished", ">=", start),
-        where("timestamps.finished", "<=", end)
-      ),
-      (snap) => {
-        setArchivedProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      },
-      (err) => console.warn("Archive Sync Error (Week Stats):", err.code)
-    );
+    initData();
 
     return () => {
-      unsubOrders();
-      unsubProds();
-      unsubOcc();
-      unsubConfig();
-      unsubArchive();
+      isMounted = false;
+      unsubs.forEach(unsub => unsub());
     };
-  }, []);
+  }, [user]);
 
   // 1. CENTRALE STATION LOGICA
   // Bepaal welke stations van toepassing zijn. Dit is de enige bron van waarheid.
-  // Verplaats deze declaraties naar boven zodat ze overal beschikbaar zijn in de useMemo
   const safeScope = (fixedScope || "all").toLowerCase();
   const scopeMap = { fittings: "fittings", pipes: "pipes", spools: "spools", pipe: "pipes" };
   const targetSlug = scopeMap[safeScope] || safeScope;
+  
   const effectiveStations = useMemo(() => {
-    // DEBUG: Toon welke afdeling en stations uit de config worden gevonden
-    if (factoryConfig && factoryConfig.departments) {
-      const debugDept = factoryConfig.departments.find(
-        (d) => d.slug === targetSlug || d.id === targetSlug || d.name?.toLowerCase() === targetSlug
-      );
-      console.log('[TeamleaderHub][DEBUG] fixedScope:', safeScope);
-      if (debugDept) {
-        console.log('[TeamleaderHub][DEBUG] Afdeling gevonden:', debugDept.name, debugDept);
-        console.log('[TeamleaderHub][DEBUG] Stations in afdeling:', debugDept.stations);
-      } else {
-        console.log('[TeamleaderHub][DEBUG] Geen afdeling gevonden voor:', targetSlug);
-      }
-    }
     let stations = [];
 
     // Zoek de juiste afdeling (indien niet 'all')
@@ -192,7 +225,7 @@ const TeamleaderHub = React.memo(({
     }
 
     return stations;
-  }, [allowedMachines, factoryConfig, fixedScope]);
+  }, [allowedMachines, factoryConfig, fixedScope, safeScope, targetSlug]);
 
   // 2. Genereer genormaliseerde lijst voor filtering
   const effectiveAllowedNorms = useMemo(() => {
@@ -201,17 +234,8 @@ const TeamleaderHub = React.memo(({
         .filter(n => n && n !== "TEAMLEADER" && n !== "ALGEMEEN");
   }, [effectiveStations]);
 
-  useEffect(() => {
-    console.log('[TeamleaderHub] fixedScope:', fixedScope);
-    console.log('[TeamleaderHub] effectiveStations:', effectiveStations.length);
-    console.log('[TeamleaderHub] effectiveAllowedNorms:', effectiveAllowedNorms);
-  }, [fixedScope, effectiveStations, effectiveAllowedNorms]);
-
   const dataStore = useMemo(() => {
     if (!rawOrders) return [];
-    const scopeMap = { fittings: "fittings", pipes: "pipes", spools: "spools" };
-    const safeScope = (fixedScope || "all").toLowerCase();
-    const targetSlug = scopeMap[safeScope] || safeScope;
 
     return rawOrders
       .map((o) => ({ ...o, normMachine: normalizeMachine(o.machine || "") }))
@@ -246,7 +270,7 @@ const TeamleaderHub = React.memo(({
         // Als er geen stations bekend zijn (en scope is niet 'all'), toon niets om vervuiling te voorkomen
         return false;
       });
-  }, [rawOrders, effectiveAllowedNorms, fixedScope]);
+  }, [rawOrders, effectiveAllowedNorms, fixedScope, targetSlug]);
 
   const selectedOrder = useMemo(() => {
     if (!selectedOrderId) return null;
@@ -265,8 +289,6 @@ const TeamleaderHub = React.memo(({
         machineGridData: [],
       };
 
-    const currentWeek = getISOWeek(new Date());
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
     const validOrderIds = new Set(dataStore.map((o) => o.orderId));
 
     // Gebruik de centraal berekende stations
@@ -523,7 +545,10 @@ const TeamleaderHub = React.memo(({
     fixedScope,
     archivedProducts,
     effectiveAllowedNorms,
-    effectiveStations
+    effectiveStations,
+    safeScope,
+    todayStr,
+    currentWeek
   ]);
 
   const handleKpiClick = (kpiId, label) => {
@@ -593,9 +618,9 @@ const TeamleaderHub = React.memo(({
       setModalData(list);
       setShowTraceModal(true);
     } else if (kpiId === "bezetting") {
-      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const currentDayStr = format(new Date(), 'yyyy-MM-dd');
       const todayData = bezetting
-        .filter(b => b.date === todayStr)
+        .filter(b => b.date === currentDayStr)
         .map(b => ({
           ...b,
           lotNumber: b.operatorName,
@@ -640,7 +665,7 @@ const TeamleaderHub = React.memo(({
 
   const handleCopyYesterday = async (targetDeptId) => {
     const yesterdayStr = format(subDays(new Date(), 1), "yyyy-MM-dd");
-    const todayStr = format(new Date(), "yyyy-MM-dd");
+    const currentDayStr = format(new Date(), "yyyy-MM-dd");
     const yesterdayData = bezetting.filter(
       (o) => o.date === yesterdayStr && o.operatorNumber && o.departmentId === targetDeptId
     );
@@ -655,9 +680,9 @@ const TeamleaderHub = React.memo(({
     try {
       const batch = writeBatch(db);
       yesterdayData.forEach((old) => {
-        const newId = `${todayStr}_${old.departmentId}_${old.machineId}_${old.operatorNumber}`.replace(/[^a-zA-Z0-9]/g, "_");
+        const newId = `${currentDayStr}_${old.departmentId}_${old.machineId}_${old.operatorNumber}`.replace(/[^a-zA-Z0-9]/g, "_");
         const newRef = doc(db, ...PATHS.OCCUPANCY, newId);
-        batch.set(newRef, { ...old, id: newId, date: todayStr, updatedAt: serverTimestamp() }, { merge: true });
+        batch.set(newRef, { ...old, id: newId, date: currentDayStr, updatedAt: serverTimestamp() }, { merge: true });
       });
       await batch.commit();
     } catch (err) {
@@ -669,9 +694,9 @@ const TeamleaderHub = React.memo(({
   };
 
   const handleClearToday = async (targetDeptId) => {
-    const todayStr = format(new Date(), "yyyy-MM-dd");
+    const currentDayStr = format(new Date(), "yyyy-MM-dd");
     const todayData = bezetting.filter(
-      (o) => o.date === todayStr && o.departmentId === targetDeptId
+      (o) => o.date === currentDayStr && o.departmentId === targetDeptId
     );
 
     if (todayData.length === 0) {
@@ -721,6 +746,15 @@ const TeamleaderHub = React.memo(({
         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 italic">
           Productiedata synchroniseren...
         </p>
+      </div>
+    );
+
+  if (!user?.role || user?.role === 'guest')
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-10 text-center">
+        <h3 className="text-xl font-black uppercase italic text-slate-400">Toegang Beperkt</h3>
+        <p className="text-slate-500 text-sm mt-2 max-w-xs">Uw account heeft nog geen rechten om deze data te bekijken.</p>
+        <button onClick={onBack || onExit} className="mt-8 px-8 py-3 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all">Terug</button>
       </div>
     );
 

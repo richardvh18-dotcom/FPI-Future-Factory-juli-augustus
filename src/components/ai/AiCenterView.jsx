@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { BrainCircuit, FileText, Sparkles } from "lucide-react";
+import { BrainCircuit, FileText, Sparkles, Settings } from "lucide-react";
 import AiTrainingView from "./AiTrainingView";
 import AiDocumentUploadView from "./AiDocumentUploadView";
 import FlashcardViewer from "./FlashcardViewer";
+import AiContextManager from "./AiContextManager";
 
 const AiCenterView = () => {
   const [activeTab, setActiveTab] = useState("training");
@@ -54,6 +55,16 @@ const AiCenterView = () => {
         >
           <Sparkles size={14} /> Flashcards
         </button>
+        <button
+          onClick={() => setActiveTab("context")}
+          className={`px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest transition flex items-center gap-2 ${
+            activeTab === "context"
+              ? "bg-emerald-600 text-white shadow"
+              : "bg-white text-slate-600 border border-slate-200"
+          }`}
+        >
+          <Settings size={14} /> Context Beheer
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto bg-slate-50">
@@ -67,6 +78,7 @@ const AiCenterView = () => {
             />
           </div>
         )}
+        {activeTab === "context" && <AiContextManager />}
       </div>
     </div>
   );

@@ -1,3 +1,14 @@
+/* Shake animation for login form */
+.shake {
+  animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+@keyframes shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(4px); }
+  30%, 50%, 70% { transform: translateX(-8px); }
+  40%, 60% { transform: translateX(8px); }
+}
 /* Basis styles voor de FPi Future Factory Portal */
 @tailwind base;
 @tailwind components;
@@ -7,6 +18,13 @@
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
+@font-face {
+  font-family: 'RoktIcons';
+  src: url('https://apps.rokt.com/icons/rokt-icons.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
 }
 
 body {

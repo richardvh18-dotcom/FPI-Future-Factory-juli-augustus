@@ -25,6 +25,7 @@ import {
   deleteDoc,
   serverTimestamp,
   orderBy,
+  getDocs,
 } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
@@ -89,6 +90,35 @@ const AiTrainingView = () => {
     }
   };
 
+  const handleMigration = async () => {
+    if (!window.confirm("Database normaliseren? Dit zorgt ervoor dat alle logs zowel 'question' als 'userInput' velden hebben.")) return;
+    
+    try {
+      const colRef = collection(db, ...PATHS.AI_KNOWLEDGE_BASE);
+      const snap = await getDocs(colRef);
+      let updated = 0;
+      
+      const promises = snap.docs.map(async (d) => {
+        const data = d.data();
+        const updates = {};
+        
+        if (data.userInput && !data.question) updates.question = data.userInput;
+        if (data.question && !data.userInput) updates.userInput = data.question;
+        
+        if (Object.keys(updates).length > 0) {
+          updated++;
+          await updateDoc(doc(db, ...PATHS.AI_KNOWLEDGE_BASE, d.id), updates);
+        }
+      });
+      
+      await Promise.all(promises);
+      alert(`Migratie voltooid: ${updated} records bijgewerkt.`);
+    } catch (e) {
+      console.error(e);
+      alert("Fout: " + e.message);
+    }
+  };
+
   const negativeLogs = logs.filter(
     (l) => l.feedback === "negative" && !l.verified
   );
@@ -126,13 +156,20 @@ const AiTrainingView = () => {
             </span>
           </div>
         </div>
-        <div className="bg-white/5 border border-white/10 p-4 rounded-2xl text-right shrink-0 relative z-10">
+        <div className="bg-white/5 border border-white/10 p-4 rounded-2xl text-right shrink-0 relative z-10 group">
           <span className="text-[8px] font-black text-slate-500 uppercase block mb-1">
             Kennis Records
           </span>
           <span className="text-xl font-black text-blue-400 italic leading-none">
             {logs.length} interacties
           </span>
+          <button 
+            onClick={handleMigration}
+            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-blue-400"
+            title="Normaliseer database velden (Fix lege vragen)"
+          >
+            <RefreshCw size={12} />
+          </button>
         </div>
       </div>
 
@@ -181,7 +218,7 @@ const AiTrainingView = () => {
                         Vraag van Gebruiker
                       </div>
                       <p className="text-sm font-black text-slate-800 leading-relaxed italic">
-                        "{log.question}"
+                        "{log.question || log.userInput}"
                       </p>
                     </div>
                     <div className="bg-rose-50/50 p-6 rounded-[2rem] border border-rose-100 relative">
@@ -279,7 +316,7 @@ const AiTrainingView = () => {
                   </span>
                 </div>
                 <p className="text-xs font-black text-slate-700 truncate italic">
-                  "{log.question}"
+                  "{log.question || log.userInput}"
                 </p>
               </div>
               <div className="flex gap-2">

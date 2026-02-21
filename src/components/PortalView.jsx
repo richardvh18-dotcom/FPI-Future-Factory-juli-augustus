@@ -32,7 +32,7 @@ const PortalView = () => {
   // Ophalen ongelezen berichten voor badge
   const { messages } = useMessages(user);
   const unreadCount = messages
-    ? messages.filter((m) => !m.read && !m.archived).length
+    ? messages.filter((m) => !m.read && m.status !== 'read' && !m.archived).length
     : 0;
 
   // Mobiel detectie
