@@ -474,6 +474,17 @@ const AdminSettingsView = () => {
           <h3 className="text-xs font-black uppercase text-slate-400 tracking-[0.2em] flex items-center gap-3 italic">
             <BrainCircuit size={16} className="text-purple-500" /> AI Kennisbank (System Prompt)
           </h3>
+          
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+            <ShieldCheck size={16} className="text-amber-600 mt-0.5" />
+            <div>
+              <h4 className="text-xs font-black text-amber-800 uppercase tracking-wide">Privacy Protocol</h4>
+              <p className="text-[10px] text-amber-700 mt-1">
+                Om te voldoen aan AVG/GDPR en interne veiligheidsregels, mag de AI <u>geen toegang</u> hebben tot specifieke gebruikersgegevens, wachtwoorden of rol-definities. Voeg deze data niet toe aan de context.
+              </p>
+            </div>
+          </div>
+
           <div className="relative">
             <textarea 
               value={aiPrompt}

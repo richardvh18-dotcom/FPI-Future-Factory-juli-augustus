@@ -1,21 +1,25 @@
 import { getISOWeek, getYear } from "date-fns";
+import i18n from "../i18n";
 
 /**
  * Workstation Logic Utilities
+ * Workstation Logica Hulpmiddelen
  * Helper functies voor WorkstationHub
  */
 
 // Rejection reasons voor afkeur
+// Redenen voor afkeur
+// Let op: Voor dynamische taalwissel zonder reload, gebruik de functie getRejectionReasons()
 export const REJECTION_REASONS = [
-  "Niet conform tekening",
-  "Verkeerde diameter",
-  "Oppervlakteschade",
-  "Barst/scheur",
-  "Materiaaltekort",
-  "Verkeerde specificatie",
-  "Maatafwijking",
-  "Kwaliteit onvoldoende",
-  "Anders",
+  "rejection.notConformDrawing",
+  "rejection.wrongDiameter",
+  "rejection.surfaceDamage",
+  "rejection.crack",
+  "rejection.materialShortage",
+  "rejection.wrongSpec",
+  "rejection.dimensionDeviation",
+  "rejection.qualityInsufficient",
+  "rejection.other",
 ];
 
 // Workstation configuratie
@@ -32,13 +36,14 @@ export const WORKSTATIONS = [
   { id: "BH08", name: "BH08", category: "pipes" },
   { id: "BH09", name: "BH09", category: "pipes" },
   { id: "Mazak", name: "Mazak", category: "post-processing" },
-  { id: "Nabewerking", name: "Nabewerking", category: "post-processing" },
+  { id: "Nabewerking", name: "stations.postProcessing", category: "post-processing" },
   { id: "BM01", name: "BM01", category: "inspection" },
-  { id: "Station BM01", name: "Station BM01", category: "inspection" },
+  { id: "Station BM01", name: "stations.bm01", category: "inspection" },
 ];
 
 /**
  * Get ISO week info from a date
+ * Haal ISO week informatie op van een datum
  */
 export const getISOWeekInfo = (date) => {
   const week = getISOWeek(date);
@@ -47,7 +52,24 @@ export const getISOWeekInfo = (date) => {
 };
 
 /**
+ * Helper om rejection reasons dynamisch op te halen (bij taalwissel)
+ */
+export const getRejectionReasons = () => {
+  // Retourneer vertaalde redenen volgens huidige taal
+  return REJECTION_REASONS.map(r => i18n.t(r));
+};
+// Helper om station-namen te vertalen
+export const getWorkstationName = (name) => {
+  // Als de naam een i18n key is, vertaal deze, anders geef de naam terug
+  if (typeof name === "string" && name.startsWith("stations.")) {
+    return i18n.t(name);
+  }
+  return name;
+};
+
+/**
  * Check if inspection is overdue (more than 7 days)
+ * Controleer of inspectie te laat is (meer dan 7 dagen)
  */
 export const isInspectionOverdue = (timestampString) => {
   if (!timestampString) return false;
@@ -65,6 +87,7 @@ export const isInspectionOverdue = (timestampString) => {
 
 /**
  * Get material info from item code
+ * Haal materiaal informatie op uit item code
  */
 export const getMaterialInfo = (itemCode) => {
   if (!itemCode) return { material: "Unknown", diameter: null };

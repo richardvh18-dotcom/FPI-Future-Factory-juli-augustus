@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import {
   CheckCircle2,
   AlertTriangle,
@@ -19,13 +20,14 @@ const StatusBadge = React.memo(({ status, showIcon = true }) => {
   if (!status) return null;
 
   // Mapping van statussen naar stijlen, labels en iconen
+  const { t } = useTranslation();
   const getStatusConfig = (s) => {
     const cleanStatus = String(s).toLowerCase();
 
     // 1. KWALITEITS LABELS (QC)
     if (cleanStatus === "goed" || cleanStatus === "approved") {
       return {
-        label: "Goed",
+        label: t('status.good'),
         style: "bg-emerald-50 text-emerald-600 border-emerald-200",
         icon: <ShieldCheck size={12} />,
       };
@@ -36,14 +38,14 @@ const StatusBadge = React.memo(({ status, showIcon = true }) => {
       cleanStatus === "held_qc"
     ) {
       return {
-        label: "Herstellen",
+        label: t('status.repair'),
         style: "bg-orange-50 text-orange-600 border-orange-200",
         icon: <Timer size={12} className="animate-spin-slow" />,
       };
     }
     if (cleanStatus === "definitieve afkeur" || cleanStatus === "rejected") {
       return {
-        label: "Afkeur",
+        label: t('status.rejected'),
         style: "bg-rose-50 text-rose-600 border-rose-200",
         icon: <XCircle size={12} />,
       };
@@ -52,7 +54,7 @@ const StatusBadge = React.memo(({ status, showIcon = true }) => {
     // 2. PRODUCTIE STATUSSEN (MES)
     if (cleanStatus === "finished" || cleanStatus === "voltooid") {
       return {
-        label: "Voltooid",
+        label: t('status.finished'),
         style: "bg-blue-50 text-blue-700 border-blue-200",
         icon: <CheckCircle2 size={12} />,
       };
@@ -63,14 +65,14 @@ const StatusBadge = React.memo(({ status, showIcon = true }) => {
       cleanStatus === "bezig"
     ) {
       return {
-        label: "Actief",
+        label: t('status.active'),
         style: "bg-blue-600 text-white border-blue-500 shadow-sm animate-pulse",
         icon: <Zap size={12} fill="currentColor" />,
       };
     }
     if (cleanStatus === "pending" || cleanStatus === "te doen") {
       return {
-        label: "Wachtrij",
+        label: t('status.queue'),
         style: "bg-slate-100 text-slate-500 border-slate-200",
         icon: <Clock size={12} />,
       };

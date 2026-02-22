@@ -5,6 +5,7 @@ import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import WorkstationHub from "./WorkstationHub";
 import TeamleaderHub from "./TeamleaderHub";
+import { useAdminAuth } from "../../hooks/useAdminAuth";
 
 /**
  * DepartmentStationSelector
@@ -46,6 +47,7 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }) => {
         icon: <Cpu size={24} className="text-white" />
       }
     };
+  const { user } = useAdminAuth();
   const [selectedStation, setSelectedStation] = useState(null);
   const [showTeamleader, setShowTeamleader] = useState(false);
   const [factoryConfig, setFactoryConfig] = useState(null);
@@ -83,14 +85,29 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }) => {
       (d) => d.slug === targetSlug || d.id === targetSlug || d.name?.toLowerCase() === targetSlug
     );
     
-    return deptData ? (deptData.stations || [])
+    let availableStations = deptData ? (deptData.stations || [])
       .filter(s => {
         const name = (s.name || "").toLowerCase();
         return name !== "algemeen";
       })
       .map(s => ({ id: s.id || s.name, name: s.name }))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) : [];
-  }, [factoryConfig, department]);
+
+    // Filter op toegewezen stations als de gebruiker beperkingen heeft
+    if (user && user.allowedStations && Array.isArray(user.allowedStations) && user.allowedStations.length > 0) {
+      const allowedNorm = user.allowedStations.map(s => (s || "").toUpperCase().replace(/\s/g, ""));
+      
+      availableStations = availableStations.filter(station => {
+        const sName = (station.name || "").toUpperCase().replace(/\s/g, "");
+        // Check of station naam (bv "BH11") in de allowed lijst staat
+        // Ook checken of "TEAMLEADER" toegestaan is voor de teamleader knop
+        if (sName.includes("TEAMLEADER") && allowedNorm.includes("TEAMLEADER")) return true;
+        return allowedNorm.includes(sName);
+      });
+    }
+
+    return availableStations;
+  }, [factoryConfig, department, user]);
 
   // Als Teamleader is geselecteerd, toon TeamleaderHub
   if (showTeamleader) {
@@ -141,8 +158,14 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }) => {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {stations.map((station) => {
+        {stations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-slate-400 opacity-60">
+            <Users size={48} className="mb-4" />
+            <p className="font-bold uppercase tracking-widest text-sm">Geen stations toegewezen aan uw account</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {stations.map((station) => {
             const key = station.name?.toLowerCase() || station.id?.toLowerCase();
             const isTeamleader = key.includes("teamleader");
             
@@ -171,7 +194,8 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }) => {
               </button>
             );
           })}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

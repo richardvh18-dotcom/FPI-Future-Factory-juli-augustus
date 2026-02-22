@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { ChevronDown, ChevronRight, Send } from "lucide-react";
 
 const RoadmapViewer = ({ user }) => {
-  const [expandedPhase, setExpandedPhase] = useState("4");
+  const [expandedPhase, setExpandedPhase] = useState("8");
   const [newIdea, setNewIdea] = useState("");
 
   const phases = [
@@ -40,7 +40,7 @@ const RoadmapViewer = ({ user }) => {
           title: "Virtualisatie: react-window integratie voor lijsten",
           subtasks: [
             { label: "PlanningListView virtualiseren", status: "completed" },
-            { label: "AdminReferenceTable virtualiseren", status: "completed" }
+            { label: "AdminReferenceTable virtualiseren", status: "pending" }
           ]
         },
         {
@@ -135,6 +135,47 @@ const RoadmapViewer = ({ user }) => {
         "Audit Trail: MultiBel logs terugschrijven naar ACTIVITY_LOGS voor ISO-audit.",
         "Gecentraliseerd Beheer: MultiBel-status per plant monitoren in God Mode dashboard.",
         "Technische koppeling: Firestore event → Cloud Function → MultiBel API → status terug naar app."
+      ],
+    },
+    {
+      id: "8",
+      title: "Optimalisatie & Global Rollout Strategie",
+      status: "🌍 Strategie",
+      items: [
+        {
+          title: "Deel 1: React & DOM Optimalisaties",
+          subtasks: [
+            { label: "Virtualisatie (react-window) techniek", status: "pending" },
+            { label: "Component Memoization (React.memo)", status: "pending" },
+            { label: "Stabiele Referenties (useCallback & useMemo)", status: "pending" }
+          ]
+        },
+        {
+          title: "Deel 2: JavaScript (Taal) Optimalisaties",
+          subtasks: [
+            { label: "Debouncing (Vertraagd uitvoeren)", status: "pending" },
+            { label: "Datastructuren: Map vs Array (O(1))", status: "pending" },
+            { label: "Vermijd Method Chaining bij grote loops", status: "pending" }
+          ]
+        },
+        {
+          title: "Deel 3: TypeScript Optimalisaties",
+          subtasks: [
+            { label: "Type-Only Imports (import type)", status: "pending" },
+            { label: "Voorspelbare Datastructuren (V8 Engine)", status: "pending" },
+            { label: "Voorkom dure Runtime Checks", status: "pending" }
+          ]
+        },
+        {
+          title: "Deel 4: Architectuur & Global Rollout (Multi-Site)",
+          subtasks: [
+            { label: "Database Architectuur (Multi-Tenancy)", status: "pending" },
+            { label: "Authenticatie & Gebruikersrechten (Locatie)", status: "pending" },
+            { label: "Lokalisatie: Talen, Tijdzones en RTL", status: "pending" },
+            { label: "Dynamische Configuratie van de Fabriek", status: "pending" }
+          ]
+        },
+        "Volgende Acties: Refactoring (Deel 1 & 2), Multi-Tenancy opzetten, i18n uitrollen"
       ],
     },
   ];

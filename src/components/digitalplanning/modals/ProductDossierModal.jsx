@@ -25,7 +25,7 @@ import StatusBadge from "../common/StatusBadge";
 import { WORKSTATIONS } from "../../../utils/workstationLogic";
 import { format } from "date-fns";
 import { getISOWeekInfo } from "../../../utils/hubHelpers";
-import { findDrawingForOrder, syncOrderDrawing } from "../../../utils/drawingLinker.js";
+import { findDrawingForOrder, syncOrderDrawing } from "../../../utils/drawingLinker.jsx";
 import { collection, query, where, getDocs, doc, updateDoc, arrayUnion } from "firebase/firestore";
 import { db } from "../../../config/firebase";
 import { PATHS } from "../../../config/dbPaths";

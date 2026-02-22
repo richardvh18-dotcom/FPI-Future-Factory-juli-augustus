@@ -32,7 +32,7 @@ const AdminMessagesView = lazy(() =>
   import("./components/admin/AdminMessagesView")
 ); // NIEUW: Directe import voor route
 const DigitalPlanningHub = lazy(() =>
-  import("./components/digitalplanning/DigitalPlanningHub")
+  import("./components/digitalplanning/DigitalPlanningHub.jsx")
 );
 const MobileScanner = lazy(() =>
   import("./components/digitalplanning/MobileScanner")

@@ -6,10 +6,12 @@
 // Haal API key uit env of gebruik fallback (let op: env is veiliger)
 const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
 
+import i18n from "../i18n";
+
 export const callGemini = async (userQuery, systemPrompt) => {
   if (!apiKey) {
-    console.error("Gemini API Key ontbreekt.");
-    return "Configuratie fout: API sleutel ontbreekt.";
+    console.error(i18n.t("gemini.api_key_missing_log", "Gemini API Key ontbreekt."));
+    return i18n.t("gemini.api_key_missing", "Configuratie fout: API sleutel ontbreekt.");
   }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
@@ -31,10 +33,10 @@ export const callGemini = async (userQuery, systemPrompt) => {
     const result = await response.json();
     return (
       result.candidates?.[0]?.content?.parts?.[0]?.text ||
-      "Geen antwoord ontvangen."
+      i18n.t("gemini.no_response", "Geen antwoord ontvangen.")
     );
   } catch (error) {
-    console.error("Gemini Fout:", error);
-    return "Er ging iets mis bij het verbinden met de AI.";
+    console.error(i18n.t("gemini.error_log", "Gemini Fout:"), error);
+    return i18n.t("gemini.connection_error", "Er ging iets mis bij het verbinden met de AI.");
   }
 };

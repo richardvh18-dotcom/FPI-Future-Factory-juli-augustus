@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   Camera,
   Search,
@@ -27,6 +28,7 @@ import ProductDetailModal from "../products/ProductDetailModal";
  */
 const MobileScanner = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [allOrders, setAllOrders] = useState([]);
   const [allTracked, setAllTracked] = useState([]);
@@ -139,7 +141,7 @@ const MobileScanner = () => {
       }
     } catch (err) {
       console.error("Camera fout:", err);
-      setCameraError("Camera niet bereikbaar. Controleer uw instellingen.");
+      setCameraError(t('scanner.camera_error'));
       setActiveMode("idle");
     }
   };
@@ -282,7 +284,7 @@ const MobileScanner = () => {
     if (machineId) {
       navigate(`/terminal/${machineId}`, { state: { selectedId: item.id } });
     } else {
-      alert("Geen machine gekoppeld aan dit item.");
+      alert(t('scanner.no_machine_linked'));
     }
   };
 
@@ -299,7 +301,7 @@ const MobileScanner = () => {
       if (snap.exists()) {
         setViewingProduct({ id: snap.id, ...snap.data() });
       } else {
-        alert("Product niet gevonden in catalogus.");
+        alert(t('scanner.product_not_found'));
       }
     } catch (err) {
       console.error("Fout bij laden product:", err);
@@ -311,7 +313,7 @@ const MobileScanner = () => {
       <div className="h-screen flex flex-col items-center justify-center bg-slate-900 text-white">
         <Loader2 className="animate-spin text-blue-500 mb-6" size={56} />
         <p className="text-xs font-black uppercase tracking-widest italic animate-pulse">
-          Systeem laden...
+          {t('common.loading', 'Systeem laden...')}
         </p>
       </div>
     );
@@ -328,10 +330,10 @@ const MobileScanner = () => {
         </button>
         <div className="text-center">
           <h1 className="text-xl font-black uppercase italic tracking-tighter leading-none">
-            Global <span className="text-blue-600">Scanner</span>
+            {t('scanner.title').split(' ')[0]} <span className="text-blue-600">{t('scanner.title').split(' ')[1]}</span>
           </h1>
           <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-            Industrial Vision Core
+            {t('scanner.subtitle')}
           </p>
         </div>
         <div className="w-10"></div>
@@ -350,10 +352,10 @@ const MobileScanner = () => {
             </div>
             <div className="text-center relative z-10">
               <span className="font-black uppercase tracking-[0.3em] text-sm block">
-                Open Camera Scanner
+                {t('scanner.open_camera')}
               </span>
               <span className="text-[10px] font-bold text-blue-100/60 uppercase mt-2 italic tracking-widest">
-                Richt op de QR op de bon
+                {t('scanner.point_at_qr')}
               </span>
             </div>
           </button>
@@ -368,7 +370,7 @@ const MobileScanner = () => {
             />
             <input
               type="text"
-              placeholder="Zoek Order, Lot of Item..."
+              placeholder={t('scanner.search_placeholder')}
               className="w-full pl-14 pr-12 py-7 bg-white border-2 border-slate-100 rounded-[30px] shadow-sm outline-none focus:border-blue-500 font-bold transition-all text-lg"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -385,7 +387,7 @@ const MobileScanner = () => {
 
           <div className="space-y-4">
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic ml-4">
-              Resultaten ({searchResults.length})
+              {t('scanner.results')} ({searchResults.length})
             </h3>
 
             <div className="grid grid-cols-1 gap-3">
@@ -445,7 +447,7 @@ const MobileScanner = () => {
                     className="mx-auto text-slate-200 mb-4"
                   />
                   <p className="text-sm font-black uppercase tracking-widest text-slate-400">
-                    Niets gevonden
+                    {t('scanner.no_results')}
                   </p>
                 </div>
               )}
@@ -466,10 +468,10 @@ const MobileScanner = () => {
             </button>
             <div className="text-center">
               <span className="font-black uppercase tracking-[0.4em] text-[11px] text-white italic drop-shadow-lg block">
-                QR Scanner
+                {t('scanner.scan_overlay_title')}
               </span>
               <span className="text-[8px] font-bold text-blue-400 uppercase tracking-widest">
-                Active Precision Scan
+                {t('scanner.scan_overlay_subtitle')}
               </span>
             </div>
             {hasFlash ? (
@@ -526,7 +528,7 @@ const MobileScanner = () => {
                       className="text-white/20 animate-pulse"
                     />
                     <span className="text-[9px] font-black text-white/50 uppercase tracking-[0.4em] drop-shadow-md">
-                      Centraal Uitlijnen
+                      {t('scanner.align_center')}
                     </span>
                   </div>
                 )}
@@ -564,13 +566,13 @@ const MobileScanner = () => {
 
           <div className="p-10 bg-slate-900 border-t border-white/10 z-[320] shadow-2xl">
             <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.3em] text-center mb-8 flex items-center justify-center gap-3 opacity-90 leading-none">
-              Plaats de QR-code in het witte kader
+              {t('scanner.place_qr')}
             </p>
             <button
               onClick={stopCamera}
               className="w-full py-6 bg-white/5 hover:bg-white/10 border-2 border-white/20 text-white rounded-[35px] font-black uppercase text-xs tracking-widest active:scale-95 transition-all shadow-lg"
             >
-              Scanner Sluiten
+              {t('scanner.close')}
             </button>
           </div>
         </div>

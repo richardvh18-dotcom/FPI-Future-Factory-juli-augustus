@@ -734,7 +734,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             occDate.setHours(0, 0, 0, 0);
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            return occDate.getTime() === today.getTime();
+            // Filter: Datum moet vandaag zijn EN de shift moet nu actief zijn
+            return occDate.getTime() === today.getTime() && isShiftActive(occ.shift);
           })
           .map(occ => occ.operatorNumber)
           .filter(Boolean);
@@ -863,7 +864,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           if (!occ.date) return false;
           const occDate = occ.date.toDate ? occ.date.toDate() : new Date(occ.date);
           occDate.setHours(0, 0, 0, 0);
-          return occDate.getTime() === today.getTime();
+          // Filter: Datum moet vandaag zijn EN de shift moet nu actief zijn
+          return occDate.getTime() === today.getTime() && isShiftActive(occ.shift);
         })
         .map(occ => occ.operatorNumber)
         .filter(Boolean);
@@ -1007,11 +1009,35 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         ...PATHS.TRACKING,
         product.id || product.lotNumber
       );
-      await updateDoc(productRef, {
+
+      // Haal operators op voor station "LOSSEN" (Centrale losplaats)
+      const lossenOperators = occupancy
+        .filter(occ => {
+          const stationName = (occ.station || occ.machineId || "").toUpperCase();
+          if (stationName !== "LOSSEN") return false;
+          
+          if (!occ.date) return false;
+          const occDate = occ.date.toDate ? occ.date.toDate() : new Date(occ.date);
+          occDate.setHours(0, 0, 0, 0);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          
+          return occDate.getTime() === today.getTime() && isShiftActive(occ.shift);
+        })
+        .map(occ => occ.operatorNumber)
+        .filter(Boolean);
+
+      const updates = {
         currentStep: "Lossen",
         updatedAt: serverTimestamp(),
         "timestamps.lossen_start": serverTimestamp(),
-      });
+      };
+
+      if (lossenOperators.length > 0) {
+        updates[`personnelTracking.LOSSEN`] = lossenOperators;
+      }
+
+      await updateDoc(productRef, updates);
       setActiveTab("lossen");
     } catch (error) {
       console.error("Fout bij proces:", error);

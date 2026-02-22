@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { lookupProductByManufacturedId } from "./conversionLogic";
 import { PATHS } from "../config/dbPaths";
+import i18n from "../i18n";
 
 /**
  * Zoekt door alle actieve orders en probeert tekeningen te koppelen
@@ -107,7 +108,7 @@ export const syncMissingDrawings = async (appId, onProgress) => {
       await batch.commit();
     }
   } catch (error) {
-    console.error("Fout tijdens sync:", error);
+    console.error(i18n.t("planning.sync_error", "Fout tijdens sync:"), error);
     stats.errors++;
   }
 

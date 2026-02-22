@@ -1,6 +1,7 @@
 import { doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS, getPlanningArchivePath } from "../config/dbPaths";
+import i18n from "../i18n";
 
 // Hulpfunctie om het huidige jaar op te halen
 const getCurrentYear = () => new Date().getFullYear();
@@ -16,7 +17,7 @@ const getCurrentYear = () => new Date().getFullYear();
  */
 export const archiveOrder = async (appId, order, reason) => {
   if (!appId || !order || !order.id) {
-    console.error("Kan niet archiveren: Gegevens ontbreken");
+    console.error(i18n.t("archive.missing_data", "Kan niet archiveren: Gegevens ontbreken"));
     return false;
   }
 
@@ -63,13 +64,11 @@ export const archiveOrder = async (appId, order, reason) => {
   try {
     await batch.commit();
     console.log(
-      `Order ${
-        order.orderId || order.id
-      } succesvol verplaatst naar archief (${year})`
+      i18n.t("archive.success", { order: order.orderId || order.id, year, defaultValue: `Order ${order.orderId || order.id} succesvol verplaatst naar archief (${year})` })
     );
     return true;
   } catch (error) {
-    console.error("Fout bij archiveren:", error);
+    console.error(i18n.t("archive.error", "Fout bij archiveren:"), error);
     // Gooi de error opnieuw zodat de UI het kan tonen
     throw error;
   }

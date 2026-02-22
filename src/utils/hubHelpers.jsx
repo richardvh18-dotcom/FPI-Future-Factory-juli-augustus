@@ -1,5 +1,6 @@
 import React from "react";
 import { Zap, Droplets } from "lucide-react";
+import i18n from "../i18n";
 
 // --- CONFIGURATIE ---
 export const getAppId = () => {
@@ -32,7 +33,7 @@ export const formatDate = (ts) => {
   if (!ts) return "-";
   const d = ts.toDate ? ts.toDate() : new Date(ts);
   if (isNaN(d.getTime())) return String(ts);
-  return d.toLocaleString("nl-NL", {
+  return d.toLocaleString(i18n.language, {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
@@ -58,10 +59,10 @@ export const getMaterialInfo = (itemString) => {
   if (upperItem.includes("CST")) {
     return {
       type: "CST",
-      label: "CST - Conductive",
+      label: i18n.t("material.cst_label", "CST - Conductive"),
       shortLabel: "CST",
       colorClasses: "bg-orange-100 text-orange-800 border-orange-200",
-      warning: "⚠ LET OP: Conductive! Vergeet Carbon niet.",
+      warning: i18n.t("material.cst_warning", "⚠ LET OP: Conductive! Vergeet Carbon niet."),
       icon: <Zap size={12} className="text-orange-600" />,
     };
   }
@@ -69,17 +70,17 @@ export const getMaterialInfo = (itemString) => {
   if (upperItem.includes("EWT")) {
     return {
       type: "EWT",
-      label: "EWT - Water",
+      label: i18n.t("material.ewt_label", "EWT - Water"),
       shortLabel: "EWT",
       colorClasses: "bg-cyan-100 text-cyan-800 border-cyan-200",
-      warning: "⚠ LET OP: EWT! Controleer moffen.",
+      warning: i18n.t("material.ewt_warning", "⚠ LET OP: EWT! Controleer moffen."),
       icon: <Droplets size={12} className="text-cyan-600" />,
     };
   }
 
   return {
     type: "EST",
-    label: "EST - Standaard",
+    label: i18n.t("material.est_label", "EST - Standaard"),
     shortLabel: "EST",
     colorClasses: "bg-slate-100 text-slate-600 border-slate-200",
     warning: null,

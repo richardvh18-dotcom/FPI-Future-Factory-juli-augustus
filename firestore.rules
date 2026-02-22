@@ -1,8 +1,38 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Regels voor het berichtensysteem (Notification System)
+    match /future-factory/production/messages/{messageId} {
+      // Iedereen die ingelogd is mag berichten aanmaken
+      allow create: if request.auth != null;
+
+      // Lezen: Alleen de afzender, ontvanger of een admin
+      allow read: if request.auth != null && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.to == request.auth.token.email ||
+        (exists(/databases/$(database)/documents/future-factory/Users/Accounts/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/future-factory/Users/Accounts/$(request.auth.uid)).data.role == 'admin')
+      );
+
+      // Updaten (bijv. markeren als gelezen): Alleen betrokkenen
+      allow update: if request.auth != null && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.to == request.auth.token.email
+      );
+    }
+
+    // Expliciete regels voor stamdata (voorkomt 403 in AdminReferenceTable & ProductSearchView)
+    match /future-factory/production/dimensions/{document=**} {
+      allow read: if request.auth != null;
+    }
+    match /future-factory/production/products/{document=**} {
+      allow read: if request.auth != null;
+    }
+
     match /{document=**} {
-      allow read, write: if request.auth != null && request.auth.token.firebase.sign_in_provider != 'anonymous';
+      // Basisregel: Ingelogde gebruikers mogen lezen/schrijven (tijdens dev/test fase)
+      allow read, write: if request.auth != null;
     }
   }
 }

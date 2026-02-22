@@ -17,6 +17,7 @@ import {
   Filter,
   Globe,
   X,
+  Wrench,
 } from "lucide-react";
 
 /**
@@ -51,6 +52,7 @@ const Sidebar = ({
     { path: "/inventory", label: t('sidebar.nav.common.inventory'), icon: Package },
     { path: "/assistant", label: t('sidebar.nav.common.ai_training'), icon: Bot },
     { path: "/calculator", label: t('sidebar.nav.common.calculator'), icon: Calculator },
+    { path: "/maintenance", label: t('sidebar.nav.common.maintenance'), icon: Wrench },
     { path: "/messages", label: t('sidebar.nav.common.messages'), icon: Mail, badge: unreadCount },
     { path: "/admin", label: t('sidebar.nav.common.admin'), icon: Settings, adminOnly: true },
   ];

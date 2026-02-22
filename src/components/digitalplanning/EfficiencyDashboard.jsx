@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { 
   BarChart3, 
   Clock, 
@@ -16,6 +17,7 @@ import { db } from '../../config/firebase';
 import { calculateDuration, formatMinutes, getEfficiencyColor } from '../../utils/efficiencyCalculator';
 
 const EfficiencyDashboard = () => {
+  const { t } = useTranslation();
   const [standards, setStandards] = useState([]);
   const [tracking, setTracking] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -166,7 +168,7 @@ const EfficiencyDashboard = () => {
             <Activity size={24} />
           </div>
           <div>
-            <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">Gem. Efficiency</div>
+            <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">{t('efficiency_dashboard.avg_efficiency')}</div>
             <div className="text-2xl font-black text-slate-800">{dashboardData.kpi.avgEfficiency}%</div>
           </div>
         </div>
@@ -176,7 +178,7 @@ const EfficiencyDashboard = () => {
             <TrendingUp size={24} />
           </div>
           <div>
-            <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">Actieve Orders</div>
+            <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">{t('efficiency_dashboard.active_orders')}</div>
             <div className="text-2xl font-black text-slate-800">{dashboardData.kpi.activeCount}</div>
           </div>
         </div>
@@ -186,7 +188,7 @@ const EfficiencyDashboard = () => {
             <Clock size={24} />
           </div>
           <div>
-            <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">Uren Besteed</div>
+            <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">{t('efficiency_dashboard.hours_spent')}</div>
             <div className="text-2xl font-black text-slate-800">{formatMinutes(dashboardData.kpi.totalActual)}</div>
           </div>
         </div>
@@ -196,7 +198,7 @@ const EfficiencyDashboard = () => {
             <AlertTriangle size={24} />
           </div>
           <div>
-            <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">Overschrijdingen</div>
+            <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">{t('efficiency_dashboard.overruns')}</div>
             <div className="text-2xl font-black text-slate-800">{dashboardData.kpi.overrunCount}</div>
           </div>
         </div>
@@ -208,7 +210,7 @@ const EfficiencyDashboard = () => {
           <Search className="text-slate-400" size={20} />
           <input 
             type="text" 
-            placeholder="Zoek op ordernummer..." 
+            placeholder={t('efficiency_dashboard.search_placeholder')} 
             className="bg-transparent border-none focus:ring-0 text-slate-700 font-medium w-full"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -222,14 +224,14 @@ const EfficiencyDashboard = () => {
               onClick={() => setViewMode('active')}
               className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'active' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              Actueel
+              {t('efficiency_dashboard.view_active')}
             </button>
             <button
               onClick={() => setViewMode('archive')}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${viewMode === 'archive' ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <History size={12} />
-              Archief
+              {t('efficiency_dashboard.view_archive')}
             </button>
           </div>
 
@@ -248,8 +250,8 @@ const EfficiencyDashboard = () => {
 
           {viewMode === 'active' && (
             <div className="flex bg-slate-100 rounded-lg p-1">
-              <button onClick={() => setFilterStatus('active')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${filterStatus === 'active' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>Openstaand</button>
-              <button onClick={() => setFilterStatus('all')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${filterStatus === 'all' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>Alles</button>
+              <button onClick={() => setFilterStatus('active')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${filterStatus === 'active' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>{t('efficiency_dashboard.filter_open')}</button>
+              <button onClick={() => setFilterStatus('all')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${filterStatus === 'all' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'}`}>{t('efficiency_dashboard.filter_all')}</button>
             </div>
           )}
         </div>
@@ -266,27 +268,27 @@ const EfficiencyDashboard = () => {
                 <div className="flex items-center gap-3 mb-2">
                   <span className="text-lg font-black text-slate-800">{item.orderId}</span>
                   <span className={`px-2 py-1 rounded-md text-xs font-bold uppercase ${item.isOverrun ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'}`}>
-                    {item.isOverrun ? 'Overschrijding' : 'Op Schema'}
+                    {item.isOverrun ? t('efficiency_dashboard.status_overrun') : t('efficiency_dashboard.status_on_schedule')}
                   </span>
                 </div>
                 <div className="text-sm text-slate-500 flex gap-4">
-                  <span>Aantal: <b>{item.quantity}</b></span>
-                  <span>Geproduceerd: <b>{item.producedQty}</b></span>
-                  <span>Norm: <b>{Math.round(item.minutesPerUnit * 10) / 10}m</b> / stuk</span>
+                  <span>{t('efficiency_dashboard.qty')}: <b>{item.quantity}</b></span>
+                  <span>{t('efficiency_dashboard.produced')}: <b>{item.producedQty}</b></span>
+                  <span>{t('efficiency_dashboard.norm')}: <b>{Math.round(item.minutesPerUnit * 10) / 10}m</b> / {t('efficiency_dashboard.per_piece')}</span>
                   <div className="flex flex-wrap gap-2 mt-1">
                     {item.productionTimeTotal > 0 && (
                       <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-bold border border-blue-100" title="Productie (BM/BA)">
-                        Prod: {formatMinutes(item.productionTimeTotal)}
+                        {t('efficiency_dashboard.prod')}: {formatMinutes(item.productionTimeTotal)}
                       </span>
                     )}
                     {item.postProcessingTimeTotal > 0 && (
                       <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded text-xs font-bold border border-purple-100" title="Nabewerking">
-                        Nabw: {formatMinutes(item.postProcessingTimeTotal)}
+                        {t('efficiency_dashboard.post')}: {formatMinutes(item.postProcessingTimeTotal)}
                       </span>
                     )}
                     {item.qcTimeTotal > 0 && (
-                      <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-xs font-bold border border-amber-100" title="QC Tijd (geëxcludeerd van efficiency)">
-                        QC: {formatMinutes(item.qcTimeTotal)}
+                      <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-xs font-bold border border-amber-100" title={t('efficiency_dashboard.qc_excluded')}>
+                        {t('efficiency_dashboard.qc')}: {formatMinutes(item.qcTimeTotal)}
                       </span>
                     )}
                   </div>
@@ -296,8 +298,8 @@ const EfficiencyDashboard = () => {
               {/* Progress Bar & Stats */}
               <div className="flex-1 flex flex-col justify-center">
                 <div className="flex justify-between text-sm font-bold mb-2">
-                  <span className="text-slate-600">{formatMinutes(item.actualMinutes)} besteed</span>
-                  <span className="text-slate-400">van {formatMinutes(item.standardTimeTotal)}</span>
+                  <span className="text-slate-600">{formatMinutes(item.actualMinutes)} {t('efficiency_dashboard.spent')}</span>
+                  <span className="text-slate-400">{t('efficiency_dashboard.of')} {formatMinutes(item.standardTimeTotal)}</span>
                 </div>
                 <div className="h-4 bg-slate-100 rounded-full overflow-hidden">
                   <div 
@@ -312,7 +314,7 @@ const EfficiencyDashboard = () => {
                 <div className={`text-3xl font-black ${getEfficiencyColor(item.efficiency).split(' ')[0]}`}>
                   {Math.round(item.efficiency)}%
                 </div>
-                <div className="text-xs text-slate-400 font-bold uppercase">Efficiency</div>
+                <div className="text-xs text-slate-400 font-bold uppercase">{t('efficiency_dashboard.efficiency')}</div>
               </div>
             </div>
           </div>
@@ -323,8 +325,8 @@ const EfficiencyDashboard = () => {
             <Timer size={48} className="mx-auto mb-4 opacity-20" />
             <p>
               {viewMode === 'active' 
-                ? "Geen actieve orders met efficiency data gevonden." 
-                : `Geen gearchiveerde data gevonden voor ${selectedYear}.`}
+                ? t('efficiency_dashboard.no_data_active')
+                : t('efficiency_dashboard.no_data_archive', { year: selectedYear })}
             </p>
           </div>
         )}

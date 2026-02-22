@@ -34,6 +34,11 @@ import {
   AlignRight,
   ShieldCheck,
   ChevronRight,
+  Image as ImageIcon,
+  Upload,
+  Code,
+  FilePlus,
+  Search,
 } from "lucide-react";
 import {
   doc,
@@ -45,6 +50,7 @@ import {
   limit,
   serverTimestamp,
   onSnapshot,
+  where,
 } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
@@ -55,6 +61,7 @@ import {
   processLabelData,
   resolveLabelContent,
 } from "../../utils/labelHelpers";
+import { generateZPL, downloadZPL } from "../../utils/zplHelper";
 
 const PIXELS_PER_MM = 3.78;
 const SNAP_THRESHOLD_MM = 1.5;
@@ -83,8 +90,12 @@ const AdminLabelDesigner = ({ onBack }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [savedLabels, setSavedLabels] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [labelLogicRules, setLabelLogicRules] = useState([]);
+  const [selectedLogicCode, setSelectedLogicCode] = useState("");
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const canvasRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // 1. Live Sync met de Root
   useEffect(() => {
@@ -99,6 +110,28 @@ const AdminLabelDesigner = ({ onBack }) => {
 
     return () => unsub();
   }, []);
+
+  // 1b. Fetch Label Logic Rules
+  useEffect(() => {
+    const logicRef = collection(db, "future-factory", "settings", "label_logic");
+    const unsub = onSnapshot(logicRef, (snap) => {
+        const rules = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setLabelLogicRules(rules);
+    });
+    return () => unsub();
+  }, []);
+
+  const filteredVariables = useMemo(() => {
+      if (selectedLogicCode) {
+          const rule = labelLogicRules.find(r => r.productCode === selectedLogicCode);
+          return rule?.variables?.map(v => v.name).sort() || [];
+      }
+      const vars = new Set();
+      labelLogicRules.forEach(r => {
+          r.variables?.forEach(v => { if(v.name) vars.add(v.name); });
+      });
+      return Array.from(vars).sort();
+  }, [labelLogicRules, selectedLogicCode]);
 
   useEffect(() => {
     if (selectedSizeKey !== "Custom" && LABEL_SIZES[selectedSizeKey]) {
@@ -122,9 +155,48 @@ const AdminLabelDesigner = ({ onBack }) => {
     }
   };
 
+  const handleSearchOrder = async (queryText) => {
+    if (!queryText) {
+        fetchLiveOrders(); // Reset naar standaard lijst als leeg
+        return;
+    }
+    setIsLoading(true);
+    try {
+      const term = queryText.trim();
+      // Zoek op orderId (start met...)
+      const q = query(collection(db, ...PATHS.PLANNING), where("orderId", ">=", term), where("orderId", "<=", term + "\uf8ff"), limit(20));
+      const snapshot = await getDocs(q);
+      setAvailableOrders(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error("Zoekfout:", e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const selectOrderForPreview = (order) => {
     setPreviewData(processLabelData(order));
     setShowDataModal(false);
+  };
+
+  const handleDownloadZPL = async () => {
+    const data = previewData || {
+      lotNumber: "TEST-LOT-001",
+      orderId: "TEST-ORDER",
+      itemCode: "TEST-ITEM",
+      item: "Test Product Description",
+      description: "Test Product Description",
+      date: new Date().toLocaleDateString("nl-NL"),
+    };
+
+    const labelConfig = {
+      width: labelWidth,
+      height: labelHeight,
+      elements: elements,
+    };
+
+    const zpl = await generateZPL(labelConfig, data);
+    downloadZPL(zpl, `${labelName.replace(/\s+/g, "_")}_preview.zpl`);
   };
 
   // 3. Designer Acties
@@ -135,16 +207,16 @@ const AdminLabelDesigner = ({ onBack }) => {
       x: 5,
       y: 5,
       width:
-        type === "text" ? 40 : type === "line" ? 30 : type === "box" ? 30 : 20,
+        type === "text" ? 40 : type === "line" ? 30 : type === "box" ? 30 : type === "image" ? 20 : 20,
       height:
-        type === "text" ? 10 : type === "line" ? 0.5 : type === "box" ? 20 : 20,
-      thickness: type === "box" ? 0.5 : undefined,
+        type === "text" ? 10 : type === "line" ? 0.5 : type === "box" ? 20 : type === "image" ? 20 : 20,
+      thickness: type === "box" ? 0.5 : null,
       content:
         type === "text"
           ? "HANDMATIGE TEKST"
           : type === "barcode"
           ? "123456"
-          : "QR_DATA",
+          : type === "image" ? "" : "QR_DATA",
       fontSize: 10,
       align: "left",
       fontFamily: "Arial",
@@ -154,17 +226,20 @@ const AdminLabelDesigner = ({ onBack }) => {
     };
     setElements([...elements, newElement]);
     setSelectedElementId(newElement.id);
+    setHasUnsavedChanges(true);
   };
 
   const updateElement = (id, updates) => {
     setElements(
       elements.map((el) => (el.id === id ? { ...el, ...updates } : el))
     );
+    setHasUnsavedChanges(true);
   };
 
   const removeElement = (id) => {
     setElements(elements.filter((el) => el.id !== id));
     if (selectedElementId === id) setSelectedElementId(null);
+    setHasUnsavedChanges(true);
   };
 
   const alignCenter = (axis) => {
@@ -223,27 +298,89 @@ const AdminLabelDesigner = ({ onBack }) => {
   };
 
   // 5. Opslaan
-  const saveLabel = async () => {
-    if (!labelName.trim()) return alert("Geef het label een naam.");
+  const saveLabel = async (nameOverride = null) => {
+    const nameToUse = nameOverride || labelName;
+    if (!nameToUse.trim()) return alert("Geef het label een naam.");
     setIsLoading(true);
     try {
-      const labelId = labelName.replace(/\s+/g, "_").toLowerCase();
+      const labelId = nameToUse.trim().replace(/[^a-zA-Z0-9-_]/g, "_").toLowerCase();
       const docRef = doc(db, ...PATHS.LABEL_TEMPLATES, labelId);
 
+      // Sanitize elements to ensure no undefined values (Firestore rejects undefined)
+      const sanitizedElements = elements.map(el => {
+        const cleanEl = { ...el };
+        Object.keys(cleanEl).forEach(key => {
+          if (cleanEl[key] === undefined) {
+            cleanEl[key] = null;
+          }
+        });
+        return cleanEl;
+      });
+
       await setDoc(docRef, {
-        name: labelName,
-        sizeKey: selectedSizeKey,
-        width: labelWidth,
-        height: labelHeight,
-        elements: elements,
+        name: nameToUse,
+        sizeKey: selectedSizeKey || "Custom",
+        width: labelWidth || 0,
+        height: labelHeight || 0,
+        elements: sanitizedElements,
         lastUpdated: serverTimestamp(),
         updatedBy: "Admin Designer",
       });
-      alert("Label template opgeslagen!");
+      setHasUnsavedChanges(false);
+      
+      if (nameOverride) {
+          setLabelName(nameToUse);
+          alert(`Label succesvol opgeslagen als '${nameToUse}'!`);
+      } else {
+          alert("Label template opgeslagen!");
+      }
     } catch (e) {
-      alert("Fout bij opslaan.");
+      console.error("Save error:", e);
+      alert("Fout bij opslaan: " + e.message);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSaveAs = () => {
+      const newName = prompt("Voer een naam in voor het nieuwe label:", `${labelName} (Kopie)`);
+      if (newName && newName.trim()) {
+          saveLabel(newName);
+      }
+  };
+
+  const duplicateLabel = async (label) => {
+    const newName = `${label.name} (Kopie)`;
+    if (!window.confirm(`Label dupliceren als '${newName}'?`)) return;
+    
+    setIsLoading(true);
+    try {
+      const labelId = newName.trim().replace(/[^a-zA-Z0-9-_]/g, "_").toLowerCase() + "_" + Date.now();
+      const docRef = doc(db, ...PATHS.LABEL_TEMPLATES, labelId);
+
+      const { id, ...labelData } = label;
+
+      await setDoc(docRef, {
+        ...labelData,
+        name: newName,
+        lastUpdated: serverTimestamp(),
+        updatedBy: "Admin Designer",
+      });
+    } catch (e) {
+      console.error("Duplicate error:", e);
+      alert("Fout bij dupliceren: " + e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteLabel = async (id) => {
+    if (!window.confirm("Weet je zeker dat je dit template wilt verwijderen?")) return;
+    try {
+      await deleteDoc(doc(db, ...PATHS.LABEL_TEMPLATES, id));
+    } catch (e) {
+      console.error("Delete error:", e);
+      alert("Fout bij verwijderen.");
     }
   };
 
@@ -275,6 +412,22 @@ const AdminLabelDesigner = ({ onBack }) => {
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="relative group">
+             <input 
+                type="text" 
+                value={labelName} 
+                onChange={(e) => { setLabelName(e.target.value); setHasUnsavedChanges(true); }}
+                className="w-40 px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-black text-slate-700 outline-none focus:border-blue-500 transition-all placeholder:text-slate-300"
+                placeholder="Label Naam"
+             />
+          </div>
+          <button
+            onClick={handleDownloadZPL}
+            className="p-3 bg-white border-2 border-slate-100 text-slate-600 hover:text-blue-600 hover:border-blue-100 rounded-2xl transition-all shadow-sm"
+            title="Download ZPL Preview"
+          >
+            <Code size={18} />
+          </button>
           <button
             onClick={fetchLiveOrders}
             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 transition-all ${
@@ -290,7 +443,7 @@ const AdminLabelDesigner = ({ onBack }) => {
           <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1">
             <select
               value={selectedSizeKey}
-              onChange={(e) => setSelectedSizeKey(e.target.value)}
+              onChange={(e) => { setSelectedSizeKey(e.target.value); setHasUnsavedChanges(true); }}
               className="bg-transparent text-[10px] font-black uppercase outline-none px-4 py-2 cursor-pointer"
             >
               {Object.keys(LABEL_SIZES).map((s) => (
@@ -303,7 +456,16 @@ const AdminLabelDesigner = ({ onBack }) => {
           </div>
 
           <button
-            onClick={saveLabel}
+            onClick={handleSaveAs}
+            disabled={isLoading}
+            className="p-4 bg-slate-100 text-slate-600 rounded-2xl hover:bg-blue-50 hover:text-blue-600 transition-all shadow-sm active:scale-95 border-2 border-transparent hover:border-blue-100"
+            title="Opslaan als..."
+          >
+            <FilePlus size={18} />
+          </button>
+
+          <button
+            onClick={() => saveLabel()}
             disabled={isLoading}
             className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-blue-600 transition-all shadow-xl active:scale-95 flex items-center gap-3"
           >
@@ -331,6 +493,7 @@ const AdminLabelDesigner = ({ onBack }) => {
                 { type: "box", label: "Kader", icon: Square },
                 { type: "barcode", label: "Barcode", icon: ScanBarcode },
                 { type: "qr", label: "QR Code", icon: QrCode },
+                { type: "image", label: "Afbeelding", icon: ImageIcon },
               ].map((tool) => (
                 <button
                   key={tool.type}
@@ -357,16 +520,40 @@ const AdminLabelDesigner = ({ onBack }) => {
               {savedLabels.map((l) => (
                 <div
                   key={l.id}
-                  onClick={() =>
-                    window.confirm("Huidig ontwerp overschrijven?") &&
-                    (setLabelName(l.name),
-                    setLabelWidth(l.width),
-                    setLabelHeight(l.height),
-                    setElements(l.elements || []),
-                    setSelectedElementId(null))
-                  }
+                  onClick={() => {
+                    if (hasUnsavedChanges && !window.confirm("Huidig ontwerp overschrijven?")) return;
+                    setLabelName(l.name);
+                    setLabelWidth(l.width);
+                    setLabelHeight(l.height);
+                    if (l.sizeKey) setSelectedSizeKey(l.sizeKey);
+                    setElements(l.elements || []);
+                    setSelectedElementId(null);
+                    setHasUnsavedChanges(false);
+                  }}
                   className="group p-4 bg-slate-50 hover:bg-white rounded-[20px] cursor-pointer border-2 border-transparent hover:border-blue-500 transition-all relative shadow-sm"
                 >
+                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        duplicateLabel(l);
+                      }}
+                      className="p-1.5 bg-white text-blue-600 rounded-lg shadow-sm border border-blue-100 hover:bg-blue-50"
+                      title="Dupliceren"
+                    >
+                      <Copy size={12} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteLabel(l.id);
+                      }}
+                      className="p-1.5 bg-white text-rose-600 rounded-lg shadow-sm border border-rose-100 hover:bg-rose-50"
+                      title="Verwijderen"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
                   <p className="font-black text-[11px] text-slate-800 uppercase italic tracking-tight">
                     {l.name}
                   </p>
@@ -468,24 +655,32 @@ const AdminLabelDesigner = ({ onBack }) => {
                         : "hover:ring-1 hover:ring-blue-300"
                     } p-0.5`}
                   >
-                    {el.type === "text" && (
-                      <div
-                        className="leading-tight"
-                        style={{
-                          fontSize: `${el.fontSize * zoom}px`,
-                          fontWeight: el.isBold ? "900" : "normal",
-                          fontFamily: el.fontFamily,
-                          width: `${el.width * PIXELS_PER_MM * zoom}px`,
-                          height: el.height
-                            ? `${el.height * PIXELS_PER_MM * zoom}px`
-                            : "auto",
-                          textAlign: el.align || "left",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {resolveLabelContent(el, previewData).content}
-                      </div>
-                    )}
+                    {el.type === "text" && (() => {
+                      const { content } = resolveLabelContent(el, previewData);
+                      const hasContent = content !== null && content !== undefined && String(content).trim() !== "";
+                      return (
+                        <div
+                          className="leading-tight"
+                          style={{
+                            fontSize: `${el.fontSize * zoom}px`,
+                            fontWeight: el.isBold ? "900" : "normal",
+                            fontFamily: el.fontFamily,
+                            width: `${el.width * PIXELS_PER_MM * zoom}px`,
+                            height: el.height
+                              ? `${el.height * PIXELS_PER_MM * zoom}px`
+                              : "auto",
+                            backgroundColor: el.isInverse ? "black" : "transparent",
+                            color: hasContent ? (el.isInverse ? "white" : "black") : "#cbd5e1",
+                            textAlign: el.align || "left",
+                            overflow: "hidden",
+                            whiteSpace: "pre-wrap",
+                            overflowWrap: "break-word",
+                          }}
+                        >
+                          {hasContent ? content : "no data"}
+                        </div>
+                      );
+                    })()}
                     {el.type === "line" && (
                       <div
                         style={{
@@ -523,6 +718,17 @@ const AdminLabelDesigner = ({ onBack }) => {
                         />
                       </div>
                     )}
+                    {el.type === "image" && (
+                      <div
+                        style={{
+                          width: `${(el.width || 20) * PIXELS_PER_MM * zoom}px`,
+                          height: `${(el.height || 20) * PIXELS_PER_MM * zoom}px`,
+                          display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden"
+                        }}
+                      >
+                        {el.content ? <img src={el.content} alt="img" style={{ width: "100%", height: "100%", objectFit: "contain" }} draggable={false} /> : <ImageIcon size={24 * zoom} className="text-slate-300" />}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -552,39 +758,97 @@ const AdminLabelDesigner = ({ onBack }) => {
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left block ml-1">
                     Inhoud & Variabele
                   </label>
-                  <select
-                    value={selectedElement.variable}
-                    onChange={(e) =>
-                      updateElement(selectedElement.id, {
-                        variable: e.target.value,
-                        content: e.target.value
-                          ? `{${e.target.value}}`
-                          : "Handmatige Tekst",
-                      })
-                    }
-                    className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-xs font-bold"
-                  >
-                    <option value="">Statische Tekst</option>
-                    <option value="lotNumber">Lotnummer</option>
-                    <option value="orderId">Ordernummer</option>
-                    <option value="itemCode">Artikelcode</option>
-                    <option value="productType">Product Type</option>
-                    <option value="diameter">Diameter (DN)</option>
-                    <option value="pressure">Drukklasse (PN)</option>
-                    <option value="date">Productiedatum</option>
-                  </select>
-                  {!selectedElement.variable && (
-                    <input
-                      type="text"
-                      value={selectedElement.content}
-                      onChange={(e) =>
-                        updateElement(selectedElement.id, {
-                          content: e.target.value,
-                        })
-                      }
-                      className="w-full bg-white border-2 border-slate-100 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
-                      placeholder="Vrije tekst..."
-                    />
+                  {selectedElement.type === "image" ? (
+                    <div className="flex flex-col gap-3">
+                       {selectedElement.content && (
+                          <div className="w-full h-24 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-center p-2">
+                             <img src={selectedElement.content} className="max-w-full max-h-full object-contain" alt="preview" />
+                          </div>
+                       )}
+                       <button 
+                         onClick={() => fileInputRef.current?.click()}
+                         className="w-full py-3 bg-blue-50 text-blue-600 rounded-xl text-xs font-bold border border-blue-100 hover:bg-blue-100 transition-all flex items-center justify-center gap-2"
+                       >
+                         <Upload size={14} /> Upload Afbeelding
+                       </button>
+                       <input 
+                          type="file" 
+                          ref={fileInputRef} 
+                          className="hidden" 
+                          accept="image/*"
+                          onChange={(e) => {
+                             const file = e.target.files[0];
+                             if(file) {
+                               const reader = new FileReader();
+                               reader.onload = (ev) => {
+                                  updateElement(selectedElement.id, { content: ev.target.result });
+                               };
+                               reader.readAsDataURL(file);
+                             }
+                          }}
+                       />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="mb-2">
+                          <label className="text-[9px] font-bold text-slate-400 uppercase ml-1 block mb-1">Filter op Product Code</label>
+                          <select
+                              value={selectedLogicCode}
+                              onChange={(e) => setSelectedLogicCode(e.target.value)}
+                              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none text-slate-600"
+                          >
+                              <option value="">-- Alle Variabelen --</option>
+                              {labelLogicRules.sort((a,b) => a.productCode.localeCompare(b.productCode)).map(r => (
+                                  <option key={r.id} value={r.productCode}>{r.productCode}</option>
+                              ))}
+                          </select>
+                      </div>
+                      <select
+                        value={selectedElement.variable}
+                        onChange={(e) =>
+                          updateElement(selectedElement.id, {
+                            variable: e.target.value,
+                            content: e.target.value
+                              ? `{${e.target.value}}`
+                              : "Handmatige Tekst",
+                          })
+                        }
+                        className="w-full bg-slate-50 border-2 border-slate-100 rounded-xl p-3 text-xs font-bold"
+                      >
+                        <option value="">Statische Tekst</option>
+                        <option value="lotNumber">Lotnummer</option>
+                        <option value="orderId">Ordernummer</option>
+                        <option value="itemCode">Artikelcode</option>
+                        <option value="productType">Product Type</option>
+                        <option value="diameter">Diameter (DN)</option>
+                        <option value="pressure">Drukklasse (PN)</option>
+                        <option value="innerDiameter">ID (Inwendige Diameter)</option>
+                        <option value="nprs">NPRs (Nominal Pressure Rating)</option>
+                        <option value="pq">Pq (Qualified Pressure)</option>
+                        <option value="temperature">Temperatuur Limiet</option>
+                        <option value="date">Productiedatum</option>
+                        {filteredVariables.length > 0 && (
+                            <optgroup label={selectedLogicCode ? `Variabelen voor ${selectedLogicCode}` : "Alle Dynamische Variabelen"}>
+                                {filteredVariables.map(v => (
+                                    <option key={v} value={v}>{v}</option>
+                                ))}
+                            </optgroup>
+                        )}
+                      </select>
+                      {!selectedElement.variable && (
+                        <input
+                          type="text"
+                          value={selectedElement.content}
+                          onChange={(e) =>
+                            updateElement(selectedElement.id, {
+                              content: e.target.value,
+                            })
+                          }
+                          className="w-full bg-white border-2 border-slate-100 rounded-xl p-3 text-xs font-bold outline-none focus:border-blue-500"
+                          placeholder="Vrije tekst..."
+                        />
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -606,6 +870,84 @@ const AdminLabelDesigner = ({ onBack }) => {
                       <AlignVerticalJustifyCenter size={14} /> Center Y
                     </button>
                   </div>
+                </div>
+
+                <div className="space-y-4 pt-6 border-t border-slate-50">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left block ml-1">
+                    Vormgeving
+                  </label>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                       <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Rotatie</label>
+                       <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border border-slate-100">
+                          <button onClick={() => updateElement(selectedElement.id, { rotation: (selectedElement.rotation || 0) - 90 })} className="p-1 hover:bg-white rounded shadow-sm text-slate-600"><RotateCcw size={14} /></button>
+                          <span className="flex-1 text-center text-xs font-bold text-slate-700">{selectedElement.rotation || 0}°</span>
+                          <button onClick={() => updateElement(selectedElement.id, { rotation: (selectedElement.rotation || 0) + 90 })} className="p-1 hover:bg-white rounded shadow-sm text-slate-600"><RotateCw size={14} /></button>
+                       </div>
+                    </div>
+
+                    {selectedElement.type === 'text' && (
+                        <div className="space-y-1.5">
+                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Grootte (pt)</label>
+                            <input 
+                                type="number" 
+                                value={selectedElement.fontSize || 10} 
+                                onChange={(e) => updateElement(selectedElement.id, { fontSize: parseInt(e.target.value) })}
+                                className="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold text-center outline-none focus:border-blue-500"
+                            />
+                        </div>
+                    )}
+                  </div>
+
+                  {selectedElement.type === 'text' && (
+                    <div className="flex flex-col gap-2 pt-2">
+                        <div className="space-y-1.5">
+                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Tekst Uitlijning</label>
+                            <div className="flex bg-slate-50 p-1 rounded-lg border border-slate-100">
+                                <button 
+                                    onClick={() => updateElement(selectedElement.id, { align: 'left' })}
+                                    className={`flex-1 p-1.5 rounded flex justify-center ${(!selectedElement.align || selectedElement.align === 'left') ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                    title="Links uitlijnen"
+                                >
+                                    <AlignLeft size={14} />
+                                </button>
+                                <button 
+                                    onClick={() => updateElement(selectedElement.id, { align: 'center' })}
+                                    className={`flex-1 p-1.5 rounded flex justify-center ${selectedElement.align === 'center' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                    title="Centreren"
+                                >
+                                    <AlignCenter size={14} />
+                                </button>
+                                <button 
+                                    onClick={() => updateElement(selectedElement.id, { align: 'right' })}
+                                    className={`flex-1 p-1.5 rounded flex justify-center ${selectedElement.align === 'right' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                    title="Rechts uitlijnen"
+                                >
+                                    <AlignRight size={14} />
+                                </button>
+                            </div>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input 
+                                type="checkbox" 
+                                checked={selectedElement.isBold || false} 
+                                onChange={(e) => updateElement(selectedElement.id, { isBold: e.target.checked })}
+                                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-slate-300"
+                            />
+                            <span className="text-xs font-bold text-slate-600">Vetgedrukt (Bold)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input 
+                                type="checkbox" 
+                                checked={selectedElement.isInverse || false} 
+                                onChange={(e) => updateElement(selectedElement.id, { isInverse: e.target.checked })}
+                                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-slate-300"
+                            />
+                            <span className="text-xs font-bold text-slate-600">Inverse (Wit op Zwart)</span>
+                        </label>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-50">
@@ -652,6 +994,66 @@ const AdminLabelDesigner = ({ onBack }) => {
           </div>
         </div>
       </div>
+
+      {/* DATA SELECTION MODAL */}
+      {showDataModal && (
+        <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white w-full max-w-2xl rounded-[30px] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-black text-slate-800 uppercase text-sm tracking-wide">
+                Selecteer Live Order
+              </h3>
+              <button onClick={() => setShowDataModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-4 border-b border-slate-100 bg-white">
+                <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                        type="text" 
+                        placeholder="Zoek op Ordernummer (bijv. N200...)" 
+                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-sm outline-none focus:border-blue-500 transition-all"
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                handleSearchOrder(e.target.value);
+                            }
+                        }}
+                    />
+                </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50/30">
+              {isLoading ? (
+                <div className="flex justify-center py-10"><Loader2 className="animate-spin text-blue-500" /></div>
+              ) : availableOrders.length === 0 ? (
+                <div className="text-center py-10 text-slate-400 italic text-xs">Geen orders gevonden.</div>
+              ) : (
+                <div className="space-y-2">
+                  {availableOrders.map(order => (
+                    <button
+                      key={order.id}
+                      onClick={() => selectOrderForPreview(order)}
+                      className="w-full text-left p-4 bg-white border border-slate-100 rounded-xl hover:border-blue-400 hover:shadow-md transition-all group"
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="font-black text-slate-800">{order.orderId}</span>
+                        <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded">{order.status || "N/A"}</span>
+                      </div>
+                      <p className="text-xs text-slate-500 font-medium truncate">{order.item || "Geen omschrijving"}</p>
+                      <div className="flex gap-2 mt-2">
+                         {order.itemCode && <span className="text-[9px] font-mono bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100">{order.itemCode}</span>}
+                         {order.lotNumber && <span className="text-[9px] font-mono bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded border border-purple-100">{order.lotNumber}</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

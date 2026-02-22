@@ -17,9 +17,10 @@ import {
 } from "firebase/firestore";
 import { PATHS } from "../config/dbPaths";
 import * as XLSX from "xlsx";
+import i18n from "../i18n";
 
 /**
- * Conversion Logic V5.0 - Full Functionality Restore
+ * Conversie Logica V5.0 - Volledig Herstel Functionaliteit
  * Beheert de koppeling tussen ERP (Infor-LN) codes en technische tekeningen.
  * Pad: /future-factory/settings/conversions/mapping/records
  */
@@ -91,7 +92,7 @@ export const lookupProductByManufacturedId = async (unusedAppId, inputCode) => {
 
     return null;
   } catch (error) {
-    console.error("Fout bij lookup conversie:", error);
+    console.error(i18n.t("conversion.lookup_error", "Fout bij lookup conversie:"), error);
     return null;
   }
 };
@@ -121,7 +122,7 @@ export const findConversionCandidate = async (unusedAppId, specs) => {
 
     return bestMatch || results[0];
   } catch (err) {
-    console.error("Fout bij vinden conversie kandidaat:", err);
+    console.error(i18n.t("conversion.candidate_error", "Fout bij vinden conversie kandidaat:"), err);
     return null;
   }
 };

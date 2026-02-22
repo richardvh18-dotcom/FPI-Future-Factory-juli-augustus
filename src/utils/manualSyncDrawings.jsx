@@ -1,6 +1,7 @@
 import { collection, getDocs, doc, setDoc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS } from "../config/dbPaths";
+import i18n from "../i18n";
 
 /**
  * Zoekt naar overeenkomsten tussen Planning items en Product Catalogus
@@ -8,7 +9,7 @@ import { PATHS } from "../config/dbPaths";
  */
 export const manualSyncDrawings = async (onProgress) => {
   try {
-    console.log("Start manual sync...");
+    console.log(i18n.t("manualsync.start", "Start manual sync..."));
 
     // 1. Haal alle unieke itemCodes uit de planning
     const planningRef = collection(db, ...PATHS.PLANNING);
@@ -66,7 +67,7 @@ export const manualSyncDrawings = async (onProgress) => {
     });
 
     const total = uniqueItems.size;
-    console.log(`Planning bevat ${total} unieke items om te checken.`);
+    console.log(i18n.t("manualsync.planning_count", "Planning bevat {count} unieke items om te checken.", { count: total }));
 
     let current = 0;
     const results = [];
@@ -108,7 +109,7 @@ export const manualSyncDrawings = async (onProgress) => {
       addToIndex(p.productCode);
     });
 
-    console.log(`Catalogus bevat ${productsSnap.size} producten.`);
+    console.log(i18n.t("manualsync.catalog_count", "Catalogus bevat {count} producten.", { count: productsSnap.size }));
 
     // 2b. Haal conversies op voor fallback (Old Code -> New Code)
     const conversionsRef = collection(db, ...PATHS.CONVERSION_MATRIX);
@@ -124,11 +125,11 @@ export const manualSyncDrawings = async (onProgress) => {
             conversionsByOldCode.set(doc.id.trim().toUpperCase(), target);
         }
     });
-    console.log(`Conversie matrix geladen: ${conversionsByOldCode.size} regels.`);
+    console.log(i18n.t("manualsync.conversion_count", "Conversie matrix geladen: {count} regels.", { count: conversionsByOldCode.size }));
     
     // DEBUG: Toon een sample van beschikbare codes om te vergelijken
     const availableKeys = Array.from(productsByCode.keys()).slice(0, 15);
-    console.log("Beschikbare product codes (sample):", availableKeys);
+    console.log(i18n.t("manualsync.available_codes", "Beschikbare product codes (sample):"), availableKeys);
 
     // 3. Itereer en match
     for (const itemCode of uniqueItems) {
@@ -157,12 +158,12 @@ export const manualSyncDrawings = async (onProgress) => {
 
       // DEBUG: Log de eerste paar pogingen om te zien wat er mis gaat
       if (current <= 5) {
-        console.log(`Zoeken naar item: '${itemCode}' (clean: '${cleanCode}') -> ${match ? 'GEVONDEN' : 'NIET GEVONDEN'}`);
+        console.log(`${i18n.t("manualsync.searching", "Zoeken naar item")}: '${itemCode}' (clean: '${cleanCode}') -> ${match ? i18n.t("manualsync.found", "GEVONDEN") : i18n.t("manualsync.not_found", "NIET GEVONDEN")}`);
       }
 
       if (match) {
         // MATCH GEVONDEN! Update planning docs direct met drawing link
-        console.log(`Match found for ${itemCode}: ${match.name} (${match.id})`);
+        console.log(i18n.t("manualsync.match_found", { item: itemCode, name: match.name, id: match.id, defaultValue: `Match found for ${itemCode}: ${match.name} (${match.id})` }));
         const docsToUpdate = planningDocsByCode.get(itemCode);
         if (docsToUpdate && docsToUpdate.length > 0) {
             // Batch updates in chunks of 400
@@ -207,7 +208,7 @@ export const manualSyncDrawings = async (onProgress) => {
                     await batch.commit();
                 }
                 removedCount = docsWithDrawing.length;
-                console.log(`Oude koppeling verwijderd voor: ${itemCode} (${removedCount} items)`);
+                console.log(i18n.t("manualsync.old_link_removed", { item: itemCode, count: removedCount, defaultValue: `Oude koppeling verwijderd voor: ${itemCode} (${removedCount} items)` }));
             }
         }
 
@@ -223,10 +224,10 @@ export const manualSyncDrawings = async (onProgress) => {
       if (onProgress) onProgress(current, total, results);
     }
 
-    console.log(`Sync voltooid. ${savedCount} matches gevonden en opgeslagen.`);
+    console.log(i18n.t("manualsync.sync_done", "Sync voltooid. {count} matches gevonden en opgeslagen.", { count: savedCount }));
     return results;
   } catch (error) {
-    console.error("Manual Sync Error:", error);
+    console.error(i18n.t("manualsync.error", "Manual Sync Error:"), error);
     throw error;
   }
 };

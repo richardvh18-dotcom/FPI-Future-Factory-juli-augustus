@@ -36,6 +36,7 @@ import {
   Beaker,
   ChevronDown,
   Activity,
+  Printer,
 } from "lucide-react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 
@@ -53,6 +54,7 @@ const AdminMatrixManager = React.lazy(() =>
   import("./matrixmanager/AdminMatrixManager")
 );
 const AdminUsersView = React.lazy(() => import("./AdminUsersView"));
+const AdminPrinterManager = React.lazy(() => import("./AdminPrinterManager"));
 const AdminMessagesManagement = React.lazy(() => import("./AdminMessagesManagement"));
 const AdminDatabaseView = React.lazy(() => import("./AdminDatabaseView"));
 const AdminLogView = React.lazy(() => import("./AdminLogView"));
@@ -60,8 +62,8 @@ const AdminSettingsView = React.lazy(() => import("./AdminSettingsView"));
 const ProductionTimeStandardsManager = React.lazy(() => import("./ProductionTimeStandardsManager"));
 const CapacityPlanningView = React.lazy(() => import("../planning/CapacityPlanningView"));
 const EfficiencyDashboard = React.lazy(() => import("../digitalplanning/EfficiencyDashboard"));
-const AdminLabelDesigner = React.lazy(() => import("./AdminLabelDesigner"));
 const AiCenterView = React.lazy(() => import("../ai/AiCenterView"));
+const AdminLabelManager = React.lazy(() => import("./AdminLabelManager"));
 // NIEUW: Referentie Tabel toevoegen
 const AdminReferenceTable = React.lazy(() => import("./AdminReferenceTable"));
 // NIEUW: Monday.com/vPlan-style Planning Views
@@ -233,13 +235,13 @@ const AdminDashboard = () => {
           component: ConversionManager,
         },
         {
-          id: "labels",
-          title: "Label Architect",
-          desc: "Ontwerp Zebra printer labels.",
+          id: "label_manager",
+          title: "Label Manager",
+          desc: "Ontwerp labels en beheer logica.",
           icon: <BoxSelect size={24} className="text-orange-600" />,
           color: "bg-orange-50 border-orange-100",
           roles: ["admin", "engineer"],
-          component: AdminLabelDesigner,
+          component: AdminLabelManager,
         },
       ]
     },
@@ -302,6 +304,15 @@ const AdminDashboard = () => {
           color: "bg-blue-50 border-blue-100",
           roles: ["admin"],
           component: AdminSettingsView,
+        },
+        {
+          id: "printers",
+          title: "Printer Beheer",
+          desc: "Netwerk- en labelprinters configureren.",
+          icon: <Printer size={24} className="text-orange-600" />,
+          color: "bg-orange-50 border-orange-100",
+          roles: ["admin"],
+          component: AdminPrinterManager,
         },
         {
           id: "messages_management",

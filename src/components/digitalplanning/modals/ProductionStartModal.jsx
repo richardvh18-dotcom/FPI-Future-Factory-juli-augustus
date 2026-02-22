@@ -14,14 +14,16 @@ import {
   Activity,
   FileText,
   Code,
+  Wifi,
 } from "lucide-react";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../../../config/firebase";
 import { generateLotNumber } from "../../../utils/lotLogic";
 import { getLotPlaceholder } from "../../../utils/lotPlaceholder";
 import {
   processLabelData,
   resolveLabelContent,
+  applyLabelLogic,
 } from "../../../utils/labelHelpers";
 import { generateZPL, downloadZPL } from "../../../utils/zplHelper";
 
@@ -59,7 +61,14 @@ const ProductionStartModal = ({
   const [loadingLabels, setLoadingLabels] = useState(false);
   const [previewZoom, setPreviewZoom] = useState(1);
   const location = useLocation();
+  
+  const [savedPrinters, setSavedPrinters] = useState([]);
+  const [printConfig, setPrintConfig] = useState({
+    mode: "standard", // 'standard' | 'network'
+    printerIp: ""
+  });
 
+  const [labelRules, setLabelRules] = useState([]);
   const containerRef = useRef(null);
 
   // 1. Label Templates Laden
@@ -92,6 +101,12 @@ const ProductionStartModal = ({
       }
     };
     fetchLabels();
+
+    // Fetch Label Logic Rules
+    const rulesRef = collection(db, "future-factory", "settings", "label_logic");
+    getDocs(rulesRef).then(snap => {
+      setLabelRules(snap.docs.map(d => d.data()));
+    }).catch(err => console.error("Error loading label rules", err));
   }, [isOpen]);
 
   // 1b. Operators ophalen voor dit station
@@ -130,6 +145,29 @@ const ProductionStartModal = ({
     fetchOccupancy();
   }, [isOpen, stationId]);
 
+  // 1c. Printers ophalen
+  useEffect(() => {
+    const printersRef = collection(db, "future-factory", "settings", "printers");
+    const unsub = onSnapshot(printersRef, (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setSavedPrinters(list);
+      
+      // Automatisch printer selecteren: Eerst kijken naar station koppeling, dan naar global default
+      const stationPrinter = list.find(p => p.linkedStations && p.linkedStations.includes(stationId));
+      const globalDefault = list.find(p => p.isDefault);
+      const targetPrinter = stationPrinter || globalDefault;
+
+      if (targetPrinter) {
+        if (targetPrinter.type === 'network') {
+            setPrintConfig(prev => ({ ...prev, mode: 'network', printerIp: targetPrinter.ip }));
+        } else {
+            setPrintConfig(prev => ({ ...prev, mode: 'standard' }));
+        }
+      }
+    });
+    return () => unsub();
+  }, [stationId, isOpen]);
+
   // 2. Lotnummer generatie
   useEffect(() => {
     if (isOpen && order && mode === "auto") {
@@ -150,14 +188,16 @@ const ProductionStartModal = ({
   // 3. Data voor preview
   const previewData = useMemo(() => {
     if (!order) return {};
-    return processLabelData({
+    const baseData = processLabelData({
       ...order,
       orderNumber: order.orderId,
       productId: order.itemCode,
       description: order.item,
       lotNumber: lotNumber || "26-01-XXXX",
     });
-  }, [order, lotNumber]);
+    
+    return applyLabelLogic(baseData, labelRules);
+  }, [order, lotNumber, labelRules]);
 
   const selectedLabel = useMemo(
     () => availableLabels.find((l) => l.id === selectedLabelId),
@@ -176,11 +216,40 @@ const ProductionStartModal = ({
   }, [selectedLabel, isOpen]);
 
   // 5. Browser Print Functie
-  const handlePrint = () => {
+  const handlePrint = async () => {
     if (!selectedLabel) return;
     
-    const quantity = prompt("Hoeveel labels wilt u printen?", "1");
-    if (!quantity || isNaN(quantity) || parseInt(quantity) < 1) return;
+    const quantityStr = prompt("Hoeveel labels wilt u printen?", "1");
+    const quantity = parseInt(quantityStr);
+    if (!quantity || isNaN(quantity) || quantity < 1) return;
+    
+    // NETWERK PRINT (ZPL)
+    if (printConfig.mode === "network") {
+      if (!printConfig.printerIp) {
+        alert("Selecteer eerst een netwerkprinter.");
+        return;
+      }
+      
+      const selectedPrinter = savedPrinters.find(p => p.ip === printConfig.printerIp);
+      const darkness = selectedPrinter?.darkness ? parseInt(selectedPrinter.darkness) : 15;
+      const dpi = selectedPrinter?.dpi ? parseInt(selectedPrinter.dpi) : 203;
+      
+      let zpl = await generateZPL(selectedLabel, previewData, dpi);
+      // Voeg darkness toe als het er nog niet in zit
+      if (!zpl.includes("~SD")) zpl = `~SD${darkness}\n${zpl}`;
+
+      try {
+        for (let i = 0; i < quantity; i++) {
+           await fetch(`http://${printConfig.printerIp}/pstprnt`, { method: "POST", body: zpl, mode: "no-cors" });
+        }
+        alert(`Opdracht verzonden naar ${selectedPrinter?.name || printConfig.printerIp}`);
+      } catch (e) {
+        alert("Fout bij printen naar netwerkprinter: " + e.message);
+      }
+      return;
+    }
+
+    // STANDAARD BROWSER PRINT
     
     const printWindow = window.open("", "_blank", "width=800,height=600");
     const labelW = selectedLabel.width;
@@ -238,9 +307,9 @@ const ProductionStartModal = ({
     printWindow.document.close();
   };
 
-  const handleZPLDownload = () => {
+  const handleZPLDownload = async () => {
     if (!selectedLabel) return;
-    const zpl = generateZPL(selectedLabel, previewData);
+    const zpl = await generateZPL(selectedLabel, previewData);
     downloadZPL(zpl, `label_${order.orderId}_${lotNumber}.zpl`);
   };
 
@@ -609,14 +678,36 @@ const ProductionStartModal = ({
 
           {/* --- PRINT AREA (ALLEEN PRINT KNOP) --- */}
           <div className="w-full max-w-sm bg-white/5 border border-white/10 p-4 rounded-2xl backdrop-blur-md mb-2 flex flex-col gap-3 animate-in slide-in-from-bottom-6 duration-700 text-left">
-            <div className="flex justify-between items-center px-2">
-              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                Printer
-              </span>
-              <span className="text-[8px] font-black text-blue-500 uppercase bg-blue-500/10 px-2 py-0.5 rounded tracking-tighter">
-                Standaard
-              </span>
+            <div className="flex justify-between items-center px-1">
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Printer</span>
+              <div className="flex bg-slate-800/50 p-0.5 rounded-lg border border-white/10">
+                <button 
+                  onClick={() => setPrintConfig({...printConfig, mode: 'standard'})}
+                  className={`px-2 py-1 rounded-md text-[8px] font-black uppercase transition-all ${printConfig.mode === 'standard' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  PDF
+                </button>
+                <button 
+                  onClick={() => setPrintConfig({...printConfig, mode: 'network'})}
+                  className={`px-2 py-1 rounded-md text-[8px] font-black uppercase transition-all flex items-center gap-1 ${printConfig.mode === 'network' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  <Wifi size={8} /> IP
+                </button>
+              </div>
             </div>
+
+            {printConfig.mode === 'network' && (
+              <select 
+                value={printConfig.printerIp}
+                onChange={(e) => setPrintConfig({...printConfig, printerIp: e.target.value})}
+                className="w-full p-2 bg-slate-900 border border-white/10 rounded-lg text-[10px] font-bold text-slate-300 outline-none focus:border-blue-500"
+              >
+                <option value="">-- Kies Printer --</option>
+                {savedPrinters.map(p => (
+                  <option key={p.id} value={p.ip}>{p.name} ({p.ip})</option>
+                ))}
+              </select>
+            )}
 
             <div className="flex gap-2">
                 <button

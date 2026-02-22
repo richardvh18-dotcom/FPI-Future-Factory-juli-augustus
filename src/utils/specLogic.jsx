@@ -1,4 +1,4 @@
-
+import i18n from "../i18n";
 
 /**
  * Geeft een lijst van technische specificatie-sleutels terug voor een bepaald producttype.
@@ -14,7 +14,11 @@ export const getSpecKeysForType = (type, specConfig) => {
     }
   }
   // Fallback voor onbekende types
-  return ["L", "Weight", "Note"];
+  return [
+    i18n.t("spec.L", "L"),
+    i18n.t("spec.Weight", "Weight"),
+    i18n.t("spec.Note", "Note")
+  ];
 };
 
 /**

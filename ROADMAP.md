@@ -38,6 +38,7 @@ Omdat dit project functioneert als een Manufacturing Execution System (MES) voor
 ### 2. ISO/IEC 27001 (Informatiebeveiliging)
 **Relevantie:** Beveiliging is cruciaal bij gebruik van Firebase voor authenticatie en opslag van gevoelige bedrijfsdata.
 **Toepassing:** Implementeer strikte Firestore Security Rules (zie storage.rules) om te voorkomen dat ongeautoriseerde gebruikers data kunnen inzien of wijzigen.
+**AI Privacy:** Zorg dat de AI-context vrij blijft van PII (Users/Roles) conform AVG.
 
 ### 3. ISO 9001 (Kwaliteitsmanagement)
 **Relevantie:** MES wordt gebruikt om aan te tonen dat een productieproces beheerst verloopt.
@@ -114,9 +115,16 @@ Dit document is de **'Single Source of Truth'** voor de technische ontwikkeling.
 - [x] AdminLabelDesigner (659 lines) → Separate label preview & settings
 - **Impact:** -40-50% render time, sneller hot-reloading
 
+- [ ] **React & DOM Optimalisaties (Nieuw):**
+  - [ ] **Virtualisatie:** Implementeer `react-window` voor lijsten >100 items (ProductSearchView).
+  - [ ] **Memoization:** Pas `React.memo` toe op zware componenten (ProductCard) om onnodige re-renders te voorkomen.
+  - [ ] **Stabiele Referenties:** Gebruik `useCallback` en `useMemo` voor event handlers en filters.
+  - [ ] **JavaScript Optimalisatie:** Implementeer Debouncing op zoekbalken en vervang Array.find() door Map-lookups (O(1)).
+  - [ ] **Datastructuren:** Vermijd method chaining (.filter.map.sort) in grote loops.
+
 - [x] **react-window integratie:**
 - [x] PlanningListView (530 lines) - 100%+ sneller met 1000+ orders
-- [x] AdminReferenceTable (421 lines) - Table header sticky + virtual rows
+- [ ] AdminReferenceTable (421 lines) - Table header sticky + virtual rows
 - [x] ProductDetailModal (526 lines) - Lazy-load product images & specs
 - **Impact:** Browser blijft responsief tot 10.000+ records
   - **Impact:** Browser blijft responsief tot 10.000+ records
@@ -235,6 +243,24 @@ Dit document is de **'Single Source of Truth'** voor de technische ontwikkeling.
 
 ---
 
+## 🌍 Fase 8: Global Rollout & Multi-Site (Strategie)
+
+**Doel:** Architectuur gereedmaken voor internationale uitrol (Dubai, Egypte, Houston, etc.).
+**Target:** 2027+
+
+### 8.1 Multi-Tenancy Architectuur
+- [ ] **Database Partitioning:** Splits data per locatie (`/locations/{siteId}/...`) in plaats van één root.
+- [ ] **Global Admin:** Rol die kan wisselen tussen fabrieken (Site Switcher).
+- [ ] **Location-Based Auth:** Gebruikersrechten beperken tot hun specifieke `siteId`.
+
+### 8.2 Lokalisatie & Configuratie
+- [ ] **i18n Implementatie:** Volledige vertaling (NL/EN/AR) via `react-i18next`.
+- [ ] **Tijdzones:** Server-side UTC opslag, client-side lokale tijd conversie voor ploegendiensten.
+- [ ] **Dynamische Factory Config:** 'Settings' collectie per fabriek voor afwijkende machine-opstellingen.
+- [ ] **RTL Support:** CSS aanpassingen voor Arabische weergave (indien nodig).
+
+---
+
 ## 🛠️ Onderhoud & Asset Management
 
 **Target:** Doorlopend, parallel aan andere fases
@@ -248,6 +274,9 @@ Dit document is de **'Single Source of Truth'** voor de technische ontwikkeling.
     - [ ] Phase 2: Admin components → .tsx (PersonnelManager, Terminal)
     - [ ] Phase 3: Utils & helpers → .ts
     - **Batches:** 3 sprints, -20% type-errors
+  - [ ] **TypeScript Optimalisaties:**
+    - [ ] Gebruik `import type` voor kleinere bundles.
+    - [ ] Strikte interfaces voor V8 engine optimalisatie.
   
 - [ ] Firebase SDK Upgrade: v9+ met tree-shaking optimized imports
 - [ ] Remove duplicate logic in label/lot utilities

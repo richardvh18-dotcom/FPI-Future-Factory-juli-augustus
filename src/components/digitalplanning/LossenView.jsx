@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp, getDocs, setDoc, deleteDoc } from "firebase/firestore";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp, getDocs, setDoc, deleteDoc, orderBy, limit, writeBatch } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import {
@@ -8,11 +8,25 @@ import {
   ClipboardCheck,
   History,
   ArrowRight,
+  Printer,
+  X,
+  Tag,
+  Hash,
+  Calendar,
+  Search,
+  Clock,
+  AlertCircle,
+  Trash2,
+  Lock as LockIcon,
+  Wifi,
+  FileText,
 } from "lucide-react";
 import ProductReleaseModal from "./modals/ProductReleaseModal";
 import PostProcessingFinishModal from "./modals/PostProcessingFinishModal";
 import { normalizeMachine } from "../../utils/hubHelpers";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
+import { resolveLabelContent, processLabelData, applyLabelLogic } from "../../utils/labelHelpers";
+import { getISOWeek } from "date-fns";
 
 // Helper om diameter uit item omschrijving te halen (het eerste getal is de diameter)
 const getDiameter = (str) => {
@@ -22,17 +36,160 @@ const getDiameter = (str) => {
   return 0;
 };
 
+const PIXELS_PER_MM = 3.78;
+const getQRCodeUrl = (data) => `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(data)}`;
+const getBarcodeUrl = (data) => `https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(data)}&scale=3&height=10&incltext&guardwhitespace`;
+
+// Helper voor machine code (bv. BH31 -> 431)
+const getMachineCode = (station) => {
+    if (!station) return "000";
+    const match = station.match(/(\d+)/);
+    if (match) return "4" + match[1].padStart(2, '0');
+    return "000";
+};
+
+const getLotPrefix = (station) => {
+    const date = new Date();
+    const year = date.getFullYear().toString().slice(-2);
+    const week = getISOWeek(date).toString().padStart(2, '0');
+    const machineCode = getMachineCode(station);
+    return `40${year}${week}${machineCode}`;
+};
+
 /**
  * LossenView - Beheert de inkomende producten voor een specifiek werkstation.
  * Gefikst: BH31 naar Nabewerking flow hersteld door betere normalisatie.
  * Update: Gebruikt nu 'products' prop indien beschikbaar om dubbele fetching te voorkomen.
  */
-const LossenView = ({ stationId, appId, products }) => {
+const LossenView = ({ stationId, appId, products = [] }) => {
   const { user } = useAdminAuth();
   const [items, setItems] = useState([]);
+  const [occupancy, setOccupancy] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showFinishModal, setShowFinishModal] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printInput, setPrintInput] = useState("");
+
+  // Hub / Planning State
+  const [activeView, setActiveView] = useState("incoming"); // 'incoming' | 'planning'
+  const [planningOrders, setPlanningOrders] = useState([]);
+  const [planningSearch, setPlanningSearch] = useState("");
+  const [planningStationFilter, setPlanningStationFilter] = useState("ALL");
+  const [reserveConfig, setReserveConfig] = useState(null); // { order, count, station }
+  const [generating, setGenerating] = useState(false);
+  const [nextStartLot, setNextStartLot] = useState(null);
+  const [showReservations, setShowReservations] = useState(false);
+  const [showSimplePrintModal, setShowSimplePrintModal] = useState(false);
+  
+  // Printer State
+  const [savedPrinters, setSavedPrinters] = useState([]);
+  const [simplePrintConfig, setSimplePrintConfig] = useState({
+      machine: stationId || "BH12",
+      date: new Date().toISOString().slice(0, 10),
+      startSeq: 1,
+      count: 1,
+      mode: "standard", // 'standard' (USB/Local) | 'network' (IP)
+      printerIp: "",
+      showCutLine: true
+  });
+
+  // Label Preview State
+  const [availableLabels, setAvailableLabels] = useState([]);
+  const [selectedLabelId, setSelectedLabelId] = useState("");
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const containerRef = useRef(null);
+  const [labelRules, setLabelRules] = useState([]);
+
+  const isCentralHub = normalizeMachine(stationId) === "LOSSEN";
+
+  // Haal occupancy data op voor operator tracking
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, ...PATHS.OCCUPANCY), (snap) => {
+      setOccupancy(snap.docs.map(d => d.data()));
+    });
+    return () => unsub();
+  }, []);
+
+  // Sync machine selection with stationId prop
+  useEffect(() => {
+    if (stationId) {
+      setSimplePrintConfig(prev => ({ ...prev, machine: stationId }));
+    }
+  }, [stationId]);
+
+  // Haal opgeslagen printers op uit Firestore
+  useEffect(() => {
+    const printersRef = collection(db, "future-factory", "settings", "printers");
+    const unsub = onSnapshot(printersRef, (snap) => {
+        const printerList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setSavedPrinters(printerList);
+        
+        // Automatisch printer selecteren: Eerst kijken naar station koppeling, dan naar global default
+        const stationPrinter = printerList.find(p => p.linkedStations && p.linkedStations.includes(stationId));
+        const globalDefault = printerList.find(p => p.isDefault);
+        const targetPrinter = stationPrinter || globalDefault;
+
+        if (targetPrinter) {
+            if (targetPrinter.type === 'network') {
+                setSimplePrintConfig(prev => ({ ...prev, mode: 'network', printerIp: targetPrinter.ip }));
+            } else {
+                setSimplePrintConfig(prev => ({ ...prev, mode: 'standard' }));
+            }
+        }
+    });
+    return () => unsub();
+  }, [stationId]);
+
+  // Helper om te checken of een shift momenteel actief is
+  const isShiftActive = (shiftLabel) => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    const currentTime = currentHour * 60 + currentMinute;
+    const label = (shiftLabel || "").toUpperCase();
+    
+    if (label.includes("OCHTEND") || label.includes("MORNING") || label.includes("EARLY")) {
+      return currentTime >= 5 * 60 + 30 && currentTime < 14 * 60;
+    }
+    if (label.includes("AVOND") || label.includes("EVENING") || label.includes("LATE")) {
+      return currentTime >= 14 * 60 && currentTime < 22 * 60 + 30;
+    }
+    if (label.includes("NACHT") || label.includes("NIGHT")) {
+      return currentTime >= 22 * 60 + 30 || currentTime < 5 * 60 + 30;
+    }
+    if (label.includes("DAG") || label === "DAGDIENST") {
+      return currentTime >= 7 * 60 + 15 && currentTime < 16 * 60;
+    }
+    return true;
+  };
+
+  // Bereken actieve operators voor dit station
+  const activeOperators = useMemo(() => {
+    if (!stationId || occupancy.length === 0) return [];
+    const currentStation = normalizeMachine(stationId);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return occupancy.filter(occ => {
+      const occStation = normalizeMachine(occ.station || occ.machineId || "");
+      if (occStation !== currentStation) return false;
+      const occDate = occ.date.toDate ? occ.date.toDate() : new Date(occ.date);
+      occDate.setHours(0, 0, 0, 0);
+      return occDate.getTime() === today.getTime() && isShiftActive(occ.shift);
+    }).map(o => o.operatorNumber).filter(Boolean);
+  }, [occupancy, stationId]);
+
+  // Fetch planning data alleen als we in de Hub view zitten en op de planning tab
+  useEffect(() => {
+    if (isCentralHub && activeView === 'planning') {
+        const q = query(collection(db, ...PATHS.PLANNING), orderBy("orderId", "desc"), limit(100));
+        const unsub = onSnapshot(q, (snap) => {
+            setPlanningOrders(snap.docs.map(d => ({id: d.id, ...d.data()})));
+        });
+        return () => unsub();
+    }
+  }, [isCentralHub, activeView]);
 
   useEffect(() => {
     if (!stationId) return;
@@ -97,13 +254,31 @@ const LossenView = ({ stationId, appId, products }) => {
           const originLabel = normalizeMachine(item.stationLabel || "");
           const current = normalizeMachine(item.currentStation || "");
           
-          const targetMachines = ["BH31", "BH16", "BH11", "31", "16", "11"];
+          let targetMachines = ["BH31", "BH16", "BH11", "31", "16", "11"];
+          let useStrictFilter = false;
+
+          // Filter op toegewezen stations van de gebruiker (indien specifiek ingesteld)
+          if (user && user.allowedStations && user.allowedStations.length > 0) {
+             const userTargets = user.allowedStations
+                .map(s => normalizeMachine(s))
+                .filter(s => s !== "LOSSEN" && s !== "TEAMLEADER");
+             
+             if (userTargets.length > 0) {
+                 targetMachines = userTargets;
+                 useStrictFilter = true;
+             }
+          }
+
           if (targetMachines.includes(origin) || targetMachines.includes(originLabel) || targetMachines.includes(current)) {
-            isOurStation = true;
-          } else if (["BH18", "18"].includes(origin) || ["BH18", "18"].includes(originLabel) || current === "BH18") {
-            // Alleen ID groter dan 300mm van BH18
-            const diameter = getDiameter(item.item || "");
-            if (diameter > 300) isOurStation = true;
+             // BH18 restrictie: alleen > 300mm
+             if (origin === "BH18" || originLabel === "BH18" || current === "BH18" || origin === "18") {
+                 if (getDiameter(item.item || "") > 300) isOurStation = true;
+             } else {
+                 isOurStation = true;
+             }
+          } else if (!useStrictFilter && (["BH18", "18"].includes(origin) || ["BH18", "18"].includes(originLabel) || current === "BH18")) {
+             // Fallback voor BH18 als er geen user filter is (standaard gedrag)
+             if (getDiameter(item.item || "") > 300) isOurStation = true;
           }
         }
 
@@ -154,14 +329,7 @@ const LossenView = ({ stationId, appId, products }) => {
     );
 
     return () => unsubscribe();
-  }, [stationId, appId, products]);
-
-  if (loading)
-    return (
-      <div className="p-12 text-center flex flex-col items-center gap-3">
-        <Loader2 className="animate-spin text-blue-500" size={32} />
-      </div>
-    );
+  }, [stationId, appId, products, user]);
 
   const currentStationNorm = normalizeMachine(stationId);
   const cleanStationId = (currentStationNorm || "").toUpperCase().replace(/\s/g, "");
@@ -195,6 +363,11 @@ const LossenView = ({ stationId, appId, products }) => {
         note: data.note || "",
         processedBy: user?.email || "Unknown",
       };
+
+      // Voeg operators toe aan tracking
+      if (activeOperators.length > 0) {
+        updates[`personnelTracking.${stationId}`] = activeOperators;
+      }
 
       if (status === "completed") {
         if (isBM01) {
@@ -281,8 +454,399 @@ const LossenView = ({ stationId, appId, products }) => {
     }
   };
 
+  // Filter orders voor planning view
+  const filteredOrders = useMemo(() => {
+      let result = planningOrders;
+
+      if (planningStationFilter !== "ALL") {
+          result = result.filter(o => o.machine === planningStationFilter);
+      }
+
+      if (planningSearch) {
+          const lower = planningSearch.toLowerCase();
+          result = result.filter(o => 
+              (o.orderId || "").toLowerCase().includes(lower) || 
+              (o.item || "").toLowerCase().includes(lower)
+          );
+      }
+      return result;
+  }, [planningOrders, planningSearch, planningStationFilter]);
+
+  const uniqueStations = useMemo(() => {
+      const stations = new Set(planningOrders.map(o => o.machine).filter(Boolean));
+      return Array.from(stations).sort();
+  }, [planningOrders]);
+
+  // Filter gereserveerde items uit de products prop
+  const reservedItems = useMemo(() => {
+      // Check welke lotnummers al 'echt' in productie zijn (status != reserved)
+      const activeLots = new Set(products.filter(p => p.status !== "reserved").map(p => p.lotNumber));
+
+      return products
+        .filter(p => p.status === "reserved" && !activeLots.has(p.lotNumber)) // Verberg als lotnummer al actief is
+        .sort((a,b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  }, [products]);
+
+  // Automatische cleanup van verlopen reserveringen (> 24 uur)
+  useEffect(() => {
+    if (!isCentralHub || reservedItems.length === 0) return;
+
+    const cleanupExpired = async () => {
+        const now = new Date();
+        const batch = writeBatch(db);
+        let deleteCount = 0;
+
+        reservedItems.forEach(item => {
+            let expiryDate = item.expiresAt ? (item.expiresAt.toDate ? item.expiresAt.toDate() : new Date(item.expiresAt)) : null;
+            
+            // Fallback: als expiresAt mist, gebruik createdAt + 24u
+            if (!expiryDate && item.createdAt) {
+                const created = item.createdAt.toDate ? item.createdAt.toDate() : new Date(item.createdAt);
+                expiryDate = new Date(created.getTime() + 24 * 60 * 60 * 1000);
+            }
+
+            if (expiryDate && expiryDate < now) {
+                const ref = doc(db, ...PATHS.TRACKING, item.id || item.lotNumber);
+                batch.delete(ref);
+                deleteCount++;
+            }
+        });
+
+        if (deleteCount > 0) {
+            await batch.commit().catch(err => console.error("Cleanup error:", err));
+        }
+    };
+
+    cleanupExpired();
+  }, [reservedItems, isCentralHub]);
+
+  // Fetch Labels voor Reserve Modal
+  useEffect(() => {
+    if (!reserveConfig) return;
+    const fetchLabels = async () => {
+        try {
+            const labelsRef = collection(db, "future-factory", "settings", "label_templates");
+            const snap = await getDocs(labelsRef);
+            const labels = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setAvailableLabels(labels);
+            if (labels.length > 0) {
+                 // Kies standaard een smal label of de eerste
+                 const defaultLabel = labels.find(l => l.name?.toLowerCase().includes("smal") || l.height < 50) || labels[0];
+                 setSelectedLabelId(defaultLabel.id);
+            }
+        } catch (e) {
+            console.error("Labels fetch error", e);
+        }
+
+        try {
+            const rulesRef = collection(db, "future-factory", "settings", "label_logic");
+            const snap = await getDocs(rulesRef);
+            setLabelRules(snap.docs.map(d => d.data()));
+        } catch (e) {
+            console.error("Rules fetch error", e);
+        }
+    };
+    fetchLabels();
+  }, [reserveConfig]);
+
+  // Haal het eerstvolgende beschikbare lotnummer op zodra de modal opent
+  useEffect(() => {
+    if (!reserveConfig || !reserveConfig.station) {
+        setNextStartLot(null);
+        return;
+    }
+    
+    const fetchNextLot = async () => {
+        try {
+            const prefix = getLotPrefix(reserveConfig.station);
+            const trackRef = collection(db, ...PATHS.TRACKING);
+            const q = query(
+                trackRef, 
+                where("lotNumber", ">=", prefix),
+                where("lotNumber", "<=", prefix + "\uf8ff"),
+                orderBy("lotNumber", "desc"), 
+                limit(1)
+            );
+            const snap = await getDocs(q);
+            
+            let nextSeq = 1;
+
+            if (!snap.empty) {
+                const lastLot = snap.docs[0].data().lotNumber;
+                const lastSeqStr = lastLot.slice(-6);
+                const lastSeq = parseInt(lastSeqStr, 10);
+                if (!isNaN(lastSeq)) {
+                    nextSeq = lastSeq + 1;
+                }
+            }
+            
+            const nextLotNumber = `${prefix}${nextSeq.toString().padStart(6, '0')}`;
+            setNextStartLot(nextLotNumber);
+        } catch (e) {
+            console.error("Error fetching next lot", e);
+        }
+    };
+    fetchNextLot();
+  }, [reserveConfig]);
+
+  const selectedLabel = useMemo(() => availableLabels.find(l => l.id === selectedLabelId), [availableLabels, selectedLabelId]);
+
+  const previewData = useMemo(() => {
+    if (!reserveConfig?.order) return {};
+    // Gebruik processLabelData voor volledige verrijking (diameter, pn, type, etc.)
+    const baseData = processLabelData({
+        ...reserveConfig.order,
+        orderNumber: reserveConfig.order.orderId,
+        productId: reserveConfig.order.itemCode || "",
+        description: reserveConfig.order.item,
+        // Toon het echte volgende nummer in de preview, of een placeholder als nog aan het laden
+        lotNumber: nextStartLot || "Laden..."
+    });
+
+    return applyLabelLogic(baseData, labelRules);
+  }, [reserveConfig, nextStartLot, labelRules]);
+
+  useEffect(() => {
+    if (containerRef.current && selectedLabel) {
+        const containerW = containerRef.current.clientWidth;
+        const labelW = selectedLabel.width * PIXELS_PER_MM;
+        setPreviewZoom(Math.min(1, (containerW - 40) / labelW));
+    }
+  }, [selectedLabel, reserveConfig]);
+
+  const handleSimplePrint = async () => {
+      const { machine, date, startSeq, count, printerIp, mode, showCutLine } = simplePrintConfig;
+      if (!date) return;
+      const dateObj = new Date(date);
+      const year = dateObj.getFullYear().toString().slice(-2);
+      const week = getISOWeek(dateObj).toString().padStart(2, '0');
+      const machineCode = getMachineCode(machine);
+      const prefix = `40${year}${week}${machineCode}`;
+
+      // Printer instellingen ophalen
+      const selectedPrinter = savedPrinters.find(p => p.ip === printerIp);
+      const dpi = selectedPrinter?.dpi ? parseInt(selectedPrinter.dpi) : 203;
+      const darkness = selectedPrinter?.darkness ? parseInt(selectedPrinter.darkness) : 15;
+      const scale = dpi / 203;
+
+      // Schalen van coördinaten en groottes op basis van DPI
+      const xQr = Math.round(10 * scale);
+      const yQr = Math.round(10 * scale);
+      const qrMag = Math.max(2, Math.round(2 * scale));
+      const xText = Math.round(100 * scale);
+      const yText = Math.round(20 * scale);
+      const fontSize = Math.round(30 * scale);
+      
+      let zpl = "";
+      
+      for (let i = 0; i < count; i++) {
+          const seq = (startSeq + i).toString().padStart(6, '0');
+          const lot = `${prefix}${seq}`;
+          
+          zpl += `^XA
+~SD${darkness}
+^FO${xQr},${yQr}^BQN,2,${qrMag}^FDQA,${lot}^FS
+^FO${xText},${yText}^A0N,${fontSize},${fontSize}^FD${lot}^FS
+^XZ
+`;
+      }
+
+      let printed = false;
+
+      // MODE: STANDAARD (Browser Print - PDF/Systeem Dialoog)
+      if (mode === "standard") {
+          const printWindow = window.open('', '_blank');
+          if (!printWindow) {
+              alert("Pop-up geblokkeerd. Sta pop-ups toe om te kunnen printen.");
+              return;
+          }
+
+          let html = `
+            <html>
+            <head>
+                <title>Labels Printen</title>
+                <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; }
+                    .label { 
+                        width: 300px; 
+                        height: 120px; 
+                        border-bottom: ${showCutLine ? '1px dashed #000' : 'none'};
+                        margin-bottom: 10px; 
+                        display: flex; 
+                        align-items: center; 
+                        padding: 10px;
+                        page-break-inside: avoid;
+                    }
+                    .qr { width: 40px; height: 40px; margin-right: 15px; }
+                    .text { font-size: 20px; font-weight: bold; }
+                    @media print {
+                        .label { border-bottom: ${showCutLine ? '1px dashed #000' : 'none'}; page-break-after: auto; margin: 0; }
+                        body { padding: 0; margin: 0; }
+                    }
+                </style>
+            </head>
+            <body>
+          `;
+
+          for (let i = 0; i < count; i++) {
+              const seq = (startSeq + i).toString().padStart(6, '0');
+              const lot = `${prefix}${seq}`;
+              html += `
+                <div class="label">
+                    <img src="${getQRCodeUrl(lot)}" class="qr" />
+                    <div class="text">${lot}</div>
+                </div>
+              `;
+          }
+
+          html += `<script>
+            window.onload = () => {
+                setTimeout(() => {
+                    window.print();
+                    // window.close(); // Optioneel: sluit venster na printen
+                }, 800);
+            };
+          </script></body></html>`;
+
+          printWindow.document.write(html);
+          printWindow.document.close();
+          setShowSimplePrintModal(false);
+          return;
+      }
+
+      // MODE: NETWERK (IP)
+      if (mode === "network") {
+          if (!printerIp) {
+              alert("Selecteer eerst een netwerkprinter of vul een IP in.");
+              return;
+          }
+          try {
+              await fetch(`http://${printerIp}/pstprnt`, { method: "POST", body: zpl, mode: "no-cors" });
+              alert(`Opdracht verzonden naar Netwerk Printer (${printerIp})`);
+          } catch (err) {
+              alert("Kon niet printen. Controleer of Zebra Browser Print draait of het IP juist is.\nFout: " + err.message);
+          }
+      }
+      
+      setShowSimplePrintModal(false);
+  };
+
+  const handleReserveConfirm = async () => {
+      if (!reserveConfig || !reserveConfig.order) return;
+      setGenerating(true);
+      try {
+          // 1. Bepaal start lotnummer (volledige string)
+          let startLotFull = nextStartLot;
+          const prefix = getLotPrefix(reserveConfig.station);
+          
+          // Fallback als nextStartLot nog niet geladen is
+          if (!startLotFull) {
+              const trackRef = collection(db, ...PATHS.TRACKING);
+              const q = query(
+                  trackRef, 
+                  where("lotNumber", ">=", prefix),
+                  where("lotNumber", "<=", prefix + "\uf8ff"),
+                  orderBy("lotNumber", "desc"), 
+                  limit(1)
+              );
+              const snap = await getDocs(q);
+              
+              let nextSeq = 1;
+              
+              if (!snap.empty) {
+                  const lastLot = snap.docs[0].data().lotNumber;
+                  const lastSeqStr = lastLot.slice(-6);
+                  const lastSeq = parseInt(lastSeqStr, 10);
+                  if (!isNaN(lastSeq)) {
+                      nextSeq = lastSeq + 1;
+                  }
+              }
+              startLotFull = `${prefix}${nextSeq.toString().padStart(6, '0')}`;
+          }
+
+          // 2. Batch aanmaken
+          const batch = writeBatch(db);
+          const newLots = [];
+          
+          // Parse sequence from startLotFull
+          let currentSeq = parseInt(startLotFull.slice(-6), 10);
+
+          for (let i = 0; i < reserveConfig.count; i++) {
+              const nextLot = `${prefix}${(currentSeq + i).toString().padStart(6, '0')}`;
+              
+              // Construct Document ID consistent with started products (OrderId_ItemCode_LotNumber)
+              const cleanOrderId = String(reserveConfig.order.orderId || "UNKNOWN").trim();
+              const cleanItemCode = String(reserveConfig.order.itemCode || reserveConfig.order.productId || "UNKNOWN").trim();
+              const docId = `${cleanOrderId}_${cleanItemCode}_${nextLot}`.replace(/[^a-zA-Z0-9]/g, "_");
+
+              const docRef = doc(db, ...PATHS.TRACKING, docId);
+              
+              const expiresAt = new Date();
+              expiresAt.setHours(expiresAt.getHours() + 24); // 24 uur geldig
+
+              const payload = {
+                  id: docId,
+                  lotNumber: nextLot,
+                  orderId: reserveConfig.order.orderId || "UNKNOWN",
+                  itemCode: cleanItemCode,
+                  item: reserveConfig.order.item || "",
+                  status: "reserved",
+                  targetStation: reserveConfig.station || "Onbekend",
+                  createdAt: serverTimestamp(),
+                  reservedAt: serverTimestamp(),
+                  expiresAt: expiresAt,
+                  isReservation: true,
+                  note: "Vooraf geprint label"
+              };
+
+              batch.set(docRef, payload);
+              newLots.push(nextLot);
+          }
+
+          await batch.commit();
+          alert(`Succesvol ${newLots.length} labels gereserveerd:\n${newLots.join(", ")}\n\nDeze nummers zijn 24 uur gereserveerd.`);
+          setReserveConfig(null);
+          setNextStartLot(null); // Forceer refresh bij volgende keer openen
+      } catch (err) {
+          console.error("Fout bij reserveren:", err);
+          alert("Fout bij reserveren: " + err.message);
+      } finally {
+          setGenerating(false);
+      }
+  };
+
+  const handleDeleteReservation = async (item) => {
+      if(!window.confirm(`Reservering ${item.lotNumber} vrijgeven? Dit verwijdert het nummer zodat het opnieuw gebruikt kan worden.`)) return;
+      try {
+          await deleteDoc(doc(db, ...PATHS.TRACKING, item.id || item.lotNumber));
+      } catch(err) {
+          console.error(err);
+          alert("Fout bij vrijgeven: " + err.message);
+      }
+  };
+
+  if (loading)
+    return (
+      <div className="p-12 text-center flex flex-col items-center gap-3">
+        <Loader2 className="animate-spin text-blue-500" size={32} />
+      </div>
+    );
+
   return (
-    <div className="p-4 space-y-3 bg-white h-full overflow-y-auto custom-scrollbar text-left">
+    <div className="p-4 space-y-3 bg-white h-full overflow-y-auto custom-scrollbar text-left relative">
+      
+      {/* HUB TABS (Alleen zichtbaar op LOSSEN station) */}
+      {isCentralHub && (
+        <div className="flex bg-slate-100 p-1 rounded-xl mb-4 shrink-0">
+            <button onClick={() => setActiveView("incoming")} className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeView === "incoming" ? "bg-white text-blue-600 shadow-sm" : "text-slate-400"}`}>
+                Inkomend
+            </button>
+            <button onClick={() => setActiveView("planning")} className={`flex-1 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeView === "planning" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-400"}`}>
+                Planning & Labels
+            </button>
+        </div>
+      )}
+
       {selectedProduct && (
         isAdvancedStation ? (
           <PostProcessingFinishModal
@@ -297,71 +861,474 @@ const LossenView = ({ stationId, appId, products }) => {
             product={selectedProduct}
             onClose={() => setSelectedProduct(null)}
             appId={appId}
+            activeOperators={activeOperators}
           />
         )
       )}
 
-      {items.length === 0 ? (
-        <div className="p-12 text-center bg-slate-50 rounded-[40px] border-2 border-dashed border-slate-200 opacity-40">
-          <Package size={48} className="mx-auto mb-4 text-slate-300" />
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-            Geen inkomende items voor {stationId}
-          </p>
+      {/* Print Modal */}
+      {showPrintModal && (
+        <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white w-full max-w-md rounded-[30px] shadow-2xl overflow-hidden flex flex-col">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h3 className="font-black text-slate-800 uppercase text-sm tracking-wide flex items-center gap-2">
+                        <Printer size={18} className="text-blue-600" /> Print Opties
+                    </h3>
+                    <button onClick={() => setShowPrintModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><X size={20} /></button>
+                </div>
+                <div className="p-6 space-y-6">
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Vrij Volgnummer / Tekst</label>
+                        <div className="relative">
+                            <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+                            <input 
+                                type="text" 
+                                value={printInput}
+                                onChange={(e) => setPrintInput(e.target.value)}
+                                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                                placeholder="Bijv. 2024-001"
+                            />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <button 
+                            onClick={() => { alert(`Print Etiket voor: ${printInput}`); setShowPrintModal(false); }}
+                            className="flex flex-col items-center justify-center p-4 bg-blue-50 hover:bg-blue-100 border-2 border-blue-100 rounded-2xl transition-all group"
+                        >
+                            <Tag size={24} className="text-blue-500 mb-2 group-hover:scale-110 transition-transform" />
+                            <span className="text-[10px] font-black text-blue-700 uppercase">Etiket</span>
+                        </button>
+                        <button 
+                            onClick={() => { alert(`Print Volgnummer: ${printInput}`); setShowPrintModal(false); }}
+                            className="flex flex-col items-center justify-center p-4 bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-100 rounded-2xl transition-all group"
+                        >
+                            <Hash size={24} className="text-emerald-500 mb-2 group-hover:scale-110 transition-transform" />
+                            <span className="text-[10px] font-black text-emerald-700 uppercase">Volgnummer</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Simple Print Modal (Alleen Lotnummers) */}
+      {showSimplePrintModal && (
+        <div className="fixed inset-0 z-[220] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white w-full max-w-md rounded-[30px] shadow-2xl overflow-hidden p-6 space-y-6">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+                    <h3 className="font-black text-slate-800 uppercase text-sm flex items-center gap-2">
+                        <Hash size={18} className="text-blue-600" /> Print Losse Lotnummers
+                    </h3>
+                    <button onClick={() => setShowSimplePrintModal(false)}><X size={20} className="text-slate-400" /></button>
+                </div>
+
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Machine</label>
+                        <select
+                            value={simplePrintConfig.machine}
+                            onChange={(e) => setSimplePrintConfig({...simplePrintConfig, machine: e.target.value})}
+                            className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-800 outline-none focus:border-blue-500"
+                        >
+                            {uniqueStations.length > 0 ? uniqueStations.map(s => (
+                                <option key={s} value={s}>{s}</option>
+                            )) : <option value="BH12">BH12</option>}
+                            <option value="BH12">BH12</option>
+                            <option value="BH11">BH11</option>
+                            <option value="Mazak">Mazak</option>
+                        </select>
+                    </div>
+
+                    {/* Printer Mode Selectie */}
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Print Methode</label>
+                        <div className="flex bg-slate-100 p-1 rounded-xl">
+                            <button 
+                                onClick={() => setSimplePrintConfig({...simplePrintConfig, mode: "standard"})}
+                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${simplePrintConfig.mode === "standard" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}
+                            >
+                                <Printer size={14} /> Standaard (Browser)
+                            </button>
+                            <button 
+                                onClick={() => setSimplePrintConfig({...simplePrintConfig, mode: "network"})}
+                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 ${simplePrintConfig.mode === "network" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500"}`}
+                            >
+                                <Wifi size={14} /> Netwerk (IP)
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Netwerk Printer Selectie (Alleen zichtbaar bij Netwerk modus) */}
+                    {simplePrintConfig.mode === "network" && (
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Kies Netwerk Printer</label>
+                        <select
+                            value={simplePrintConfig.printerIp}
+                            onChange={(e) => setSimplePrintConfig({...simplePrintConfig, printerIp: e.target.value})}
+                            className="w-full p-3 bg-white border-2 border-emerald-100 rounded-xl font-bold text-slate-800 outline-none focus:border-emerald-500"
+                        >
+                            <option value="">-- Selecteer Printer --</option>
+                            {savedPrinters.map(p => (
+                                <option key={p.id} value={p.ip}>{p.name} ({p.ip})</option>
+                            ))}
+                        </select>
+                    </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">
+                                Datum (Week {simplePrintConfig.date ? getISOWeek(new Date(simplePrintConfig.date)) : "?"})
+                            </label>
+                            <input 
+                                type="date"
+                                value={simplePrintConfig.date}
+                                onChange={(e) => setSimplePrintConfig({...simplePrintConfig, date: e.target.value})}
+                                className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-blue-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Start Volgnummer</label>
+                            <input 
+                                type="number"
+                                value={simplePrintConfig.startSeq}
+                                onChange={(e) => setSimplePrintConfig({...simplePrintConfig, startSeq: parseInt(e.target.value) || 0})}
+                                className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-blue-500"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Aantal te printen</label>
+                        <input 
+                            type="number"
+                            min="1"
+                            max="100"
+                            value={simplePrintConfig.count}
+                            onChange={(e) => setSimplePrintConfig({...simplePrintConfig, count: parseInt(e.target.value) || 1})}
+                            className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-blue-500"
+                        />
+                    </div>
+
+                    <div className="flex items-center gap-3 py-1 px-1">
+                        <input 
+                            type="checkbox"
+                            id="chkCutLine"
+                            checked={simplePrintConfig.showCutLine}
+                            onChange={(e) => setSimplePrintConfig({...simplePrintConfig, showCutLine: e.target.checked})}
+                            className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <label htmlFor="chkCutLine" className="text-xs font-bold text-slate-700 cursor-pointer select-none">Print Snijlijn (Stippellijn)</label>
+                    </div>
+
+                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 text-center">
+                        <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest block mb-1">Voorbeeld</span>
+                        <span className="font-mono text-xl font-black text-blue-900">
+                            {getLotPrefix(simplePrintConfig.machine).replace(/40\d{4}/, `40${new Date(simplePrintConfig.date).getFullYear().toString().slice(-2)}${getISOWeek(new Date(simplePrintConfig.date)).toString().padStart(2,'0')}`)}{simplePrintConfig.startSeq.toString().padStart(6,'0')}
+                        </span>
+                    </div>
+
+                    <button 
+                        onClick={handleSimplePrint}
+                        className="w-full py-4 text-white rounded-xl font-black uppercase text-xs tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700"
+                    >
+                        <Printer size={16} /> Print Label (ZPL)
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Reserve Modal */}
+      {reserveConfig && (
+          <div className="fixed inset-0 z-[210] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+              <div className="bg-white w-full max-w-md rounded-[30px] shadow-2xl overflow-hidden p-6 space-y-6">
+                  <div className="flex justify-between items-center">
+                      <h3 className="font-black text-slate-800 uppercase text-sm">Etiketten Reserveren</h3>
+                      <button onClick={() => setReserveConfig(null)}><X size={20} className="text-slate-400" /></button>
+                  </div>
+                  
+                  {/* Dynamic Label Preview */}
+                  <div 
+                    ref={containerRef}
+                    className="bg-slate-100 p-4 rounded-xl border border-slate-200 flex items-center justify-center overflow-hidden min-h-[150px]"
+                  >
+                    {selectedLabel ? (
+                        <div
+                          className="bg-white shadow-sm relative transition-all duration-500 origin-center overflow-hidden border border-slate-300"
+                          style={{
+                            width: `${selectedLabel.width * PIXELS_PER_MM * previewZoom}px`,
+                            height: `${selectedLabel.height * PIXELS_PER_MM * previewZoom}px`,
+                          }}
+                        >
+                          {selectedLabel.elements?.map((el, index) => {
+                            const resolved = resolveLabelContent(el, previewData);
+                            const baseStyle = {
+                              position: "absolute",
+                              left: `${el.x * PIXELS_PER_MM * previewZoom}px`,
+                              top: `${el.y * PIXELS_PER_MM * previewZoom}px`,
+                              width: el.width ? `${el.width * PIXELS_PER_MM * previewZoom}px` : "auto",
+                              height: el.height ? `${el.height * PIXELS_PER_MM * previewZoom}px` : "auto",
+                              color: "black",
+                              transform: `rotate(${el.rotation || 0}deg)`,
+                              transformOrigin: "top left",
+                              overflow: "hidden",
+                              textAlign: "left",
+                            };
+
+                            if (el.type === "text") return (
+                                <div key={index} style={{...baseStyle, fontSize: `${el.fontSize * previewZoom}px`, fontWeight: el.isBold ? "900" : "normal", fontFamily: el.fontFamily || "Arial", whiteSpace: "nowrap", lineHeight: "1"}}>
+                                  {resolved.content}
+                                </div>
+                            );
+                            if (el.type === "line") return (
+                                <div key={index} style={{...baseStyle, backgroundColor: "black"}} />
+                            );
+                            if (el.type === "box") return (
+                                <div key={index} style={{...baseStyle, border: `${(el.thickness || 1) * PIXELS_PER_MM * previewZoom}px solid black`, boxSizing: "border-box"}} />
+                            );
+                            if (el.type === "barcode" || el.type === "qr") return (
+                                <div key={index} style={{...baseStyle, display: "flex", alignItems: "center", justifyContent: "center"}}>
+                                  <img src={el.type === "barcode" ? getBarcodeUrl(resolved.content) : getQRCodeUrl(resolved.content)} alt="Code" style={{width: "100%", height: "100%", objectFit: "contain"}} />
+                                </div>
+                            );
+                            return null;
+                          })}
+                        </div>
+                    ) : (
+                        <div className="text-xs text-slate-400 italic">Laden...</div>
+                    )}
+                  </div>
+
+                  {/* Label Selector */}
+                  <div className="space-y-1">
+                      <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Label Formaat</label>
+                      <select 
+                        value={selectedLabelId} 
+                        onChange={(e) => setSelectedLabelId(e.target.value)}
+                        className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
+                      >
+                        {availableLabels.map(l => <option key={l.id} value={l.id}>{l.name} ({l.width}x{l.height}mm)</option>)}
+                      </select>
+                  </div>
+
+                  <div className="space-y-4">
+                      <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Aantal Lotnummers</label>
+                          <input 
+                              type="number" 
+                              min="1" 
+                              max="50"
+                              value={reserveConfig.count}
+                              onChange={(e) => setReserveConfig({...reserveConfig, count: parseInt(e.target.value) || 1})}
+                              className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-800 outline-none focus:border-emerald-500"
+                          />
+                      </div>
+                      <div>
+                          <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Bestemming (Station)</label>
+                          <div className="relative">
+                              <input 
+                                  type="text" 
+                                  placeholder="Bijv. BH31"
+                                  value={reserveConfig.station}
+                                  onChange={(e) => setReserveConfig({...reserveConfig, station: e.target.value.toUpperCase()})}
+                                  className={`w-full p-3 border-2 rounded-xl font-bold text-slate-800 outline-none focus:border-emerald-500 ${reserveConfig.order?.machine ? "bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed" : "bg-white border-slate-200"}`}
+                                  readOnly={!!reserveConfig.order?.machine}
+                              />
+                              {reserveConfig.order?.machine && (
+                                  <LockIcon size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                              )}
+                          </div>
+                      </div>
+                      
+                      {/* Weergave van de te reserveren reeks */}
+                      {nextStartLot && reserveConfig.count > 0 && (
+                        <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                            <span className="text-[9px] font-black text-blue-600 uppercase tracking-widest block mb-1">
+                                Gereserveerde Lotnummers
+                            </span>
+                            <div className="font-mono text-xs font-bold text-blue-900 flex items-center gap-2">
+                                <span>{nextStartLot}</span>
+                                <ArrowRight size={12} className="text-blue-400" />
+                                <span>
+                                    {(() => {
+                                        if (!nextStartLot) return "";
+                                        const p = nextStartLot.slice(0, -6);
+                                        const s = parseInt(nextStartLot.slice(-6), 10);
+                                        return `${p}${(s + reserveConfig.count - 1).toString().padStart(6, '0')}`;
+                                    })()}
+                                </span>
+                            </div>
+                        </div>
+                      )}
+                  </div>
+                  <button 
+                      onClick={handleReserveConfirm}
+                      disabled={generating || !reserveConfig.station}
+                      className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-700 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                      {generating ? <Loader2 className="animate-spin" size={16} /> : <Printer size={16} />}
+                      Reserveer & Print
+                  </button>
+                  <p className="text-[9px] text-slate-400 text-center italic">
+                      Gereserveerde nummers vervallen na 24 uur.
+                  </p>
+              </div>
+          </div>
+      )}
+
+      {/* VIEW SWITCHER LOGIC */}
+      {activeView === "planning" ? (
+        <div className="space-y-6">
+            {/* Zoekbalk & Filter */}
+            <div className="flex flex-col sm:flex-row gap-3 items-center">
+                <div className="relative flex-1">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                        type="text" 
+                        placeholder="Zoek ordernummer..." 
+                        value={planningSearch}
+                        onChange={(e) => setPlanningSearch(e.target.value)}
+                        className="w-full pl-12 pr-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-emerald-500 transition-all"
+                    />
+                </div>
+                <select
+                    value={planningStationFilter}
+                    onChange={(e) => setPlanningStationFilter(e.target.value)}
+                    className="px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-emerald-500 transition-all min-w-[150px]"
+                >
+                    <option value="ALL">Alle Stations</option>
+                    {uniqueStations.map(s => (
+                        <option key={s} value={s}>{s}</option>
+                    ))}
+                </select>
+                <button
+                    onClick={() => setShowReservations(!showReservations)}
+                    className={`px-4 py-3 rounded-2xl font-bold text-sm transition-all border-2 whitespace-nowrap ${showReservations ? 'bg-orange-50 border-orange-200 text-orange-600' : 'bg-white border-slate-100 text-slate-400 hover:border-slate-200'}`}
+                >
+                    {showReservations ? 'Verberg Reserveringen' : 'Toon Reserveringen'}
+                </button>
+                <button
+                    onClick={() => setShowSimplePrintModal(true)}
+                    className="px-4 py-3 bg-blue-50 border-2 border-blue-100 text-blue-600 rounded-2xl font-bold text-sm hover:bg-blue-100 transition-all whitespace-nowrap flex items-center gap-2"
+                >
+                    <Hash size={16} /> Alleen Nummers
+                </button>
+            </div>
+
+            {/* Gereserveerde Items Sectie */}
+            {showReservations && reservedItems.length > 0 && (
+                <div className="bg-orange-50/50 border border-orange-100 rounded-2xl p-4">
+                    <h4 className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <Clock size={12} /> Gereserveerde Labels ({reservedItems.length})
+                    </h4>
+                    <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-2">
+                        {reservedItems.map(item => (
+                            <div key={item.id} className="flex justify-between items-center bg-white p-2 rounded-lg border border-orange-100 shadow-sm">
+                                <div>
+                                    <span className="font-mono font-bold text-xs text-slate-700">{item.lotNumber}</span>
+                                    <span className="text-[9px] text-slate-400 ml-2">{item.targetStation}</span>
+                                </div>
+                                <button onClick={() => handleDeleteReservation(item)} className="p-1.5 text-rose-400 hover:bg-rose-50 rounded-md transition-colors" title="Vrijgeven">
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Order Lijst */}
+            <div className="space-y-3">
+                {filteredOrders.length === 0 ? (
+                    <div className="text-center py-10 text-slate-400 italic text-xs">Geen orders gevonden</div>
+                ) : (
+                    filteredOrders.map(order => (
+                        <div key={order.id} className="bg-white border-2 border-slate-100 rounded-2xl p-4 hover:border-emerald-200 transition-all group">
+                            <div className="flex justify-between items-start mb-3">
+                                <div>
+                                    <h4 className="font-black text-slate-800">{order.orderId}</h4>
+                                    <p className="text-xs text-slate-500 line-clamp-1">{order.item}</p>
+                                </div>
+                                <span className="text-[10px] font-bold bg-slate-100 px-2 py-1 rounded text-slate-500">{order.plan} st</span>
+                            </div>
+                            <button 
+                                onClick={() => setReserveConfig({ order, count: 1, station: order.machine || "" })}
+                                className="w-full py-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded-xl font-bold text-[10px] uppercase tracking-wider flex items-center justify-center gap-2 transition-colors"
+                            >
+                                <Printer size={14} /> Print Labels
+                            </button>
+                        </div>
+                    ))
+                )}
+            </div>
         </div>
       ) : (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 mb-4 ml-2">
-            <ArrowRight size={16} className="text-emerald-500" />
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-              {isBM01 || isMazak || isNabewerking ? "Aan te bieden" : (currentStationNorm === "LOSSEN" ? "Wacht op Lossen" : "Wachtend op ontvangst")} ({items.length})
-            </h3>
-          </div>
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className="bg-white border-2 border-slate-100 rounded-[35px] p-6 shadow-sm hover:border-emerald-300 transition-all group animate-in slide-in-from-bottom-2"
-            >
-              <div className="flex justify-between items-start mb-4">
-                <div className="text-left">
-                  <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">
-                    Lotnummer
-                  </span>
-                  <span className="font-black text-slate-900 text-lg tracking-tighter italic">
-                    {item.lotNumber}
-                  </span>
-                  <p className="text-xs font-bold text-slate-600 mt-1">
-                    {item.item}
-                  </p>
-                </div>
-                <div className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-[9px] font-black uppercase">
-                  Ontvangen
-                </div>
-              </div>
-              <div className="bg-slate-50 rounded-2xl p-4 mb-5 border border-slate-100">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                  Manufactured Item
-                </p>
-                <p className="text-xs font-mono font-bold text-slate-700 truncate">
-                  {item.itemCode}
-                </p>
-                {item.lastStation && (
-                  <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-200/60 opacity-80">
-                    <History size={10} className="text-blue-500" />
-                    <span className="text-[8px] font-black text-slate-500 uppercase italic">
-                      {isBM01 ? "Van: " : "Herkomst: "}{item.lastStation}
-                    </span>
-                  </div>
-                )}
-              </div>
-              <button
-                onClick={() => handleItemClick(item)}
-                className="w-full py-5 bg-slate-900 text-white rounded-[22px] font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-emerald-600 transition-all shadow-lg active:scale-95"
-              >
-                <ClipboardCheck size={18} /> Verwerken & Vrijgeven
-              </button>
+        /* INKOMEND VIEW (Bestaande functionaliteit) */
+        <>
+          {items.length === 0 ? (
+            <div className="p-12 text-center bg-slate-50 rounded-[40px] border-2 border-dashed border-slate-200 opacity-40">
+              <Package size={48} className="mx-auto mb-4 text-slate-300" />
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Geen inkomende items voor {stationId}
+              </p>
             </div>
-          ))}
-        </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-4 ml-2">
+                <ArrowRight size={16} className="text-emerald-500" />
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                  {isBM01 || isMazak || isNabewerking ? "Aan te bieden" : (currentStationNorm === "LOSSEN" ? "Wacht op Lossen" : "Wachtend op ontvangst")} ({items.length})
+                </h3>
+              </div>
+              {items.map((item) => (
+                <div
+                  key={item.id}
+                  className="bg-white border-2 border-slate-100 rounded-[35px] p-6 shadow-sm hover:border-emerald-300 transition-all group animate-in slide-in-from-bottom-2"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="text-left">
+                      <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">
+                        Lotnummer
+                      </span>
+                      <span className="font-black text-slate-900 text-lg tracking-tighter italic">
+                        {item.lotNumber}
+                      </span>
+                      <p className="text-xs font-bold text-slate-600 mt-1">
+                        {item.item}
+                      </p>
+                    </div>
+                    <div className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-[9px] font-black uppercase">
+                      Ontvangen
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 rounded-2xl p-4 mb-5 border border-slate-100">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                      Manufactured Item
+                    </p>
+                    <p className="text-xs font-mono font-bold text-slate-700 truncate">
+                      {item.itemCode}
+                    </p>
+                    {item.lastStation && (
+                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-200/60 opacity-80">
+                        <History size={10} className="text-blue-500" />
+                        <span className="text-[8px] font-black text-slate-500 uppercase italic">
+                          {isBM01 ? "Van: " : "Herkomst: "}{item.lastStation}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleItemClick(item)}
+                    className="w-full py-5 bg-slate-900 text-white rounded-[22px] font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-emerald-600 transition-all shadow-lg active:scale-95"
+                  >
+                    <ClipboardCheck size={18} /> Verwerken & Vrijgeven
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import { collection, query, where, getDocs, doc, setDoc, serverTimestamp } from 
 import { db } from "../config/firebase";
 import { PATHS } from "../config/dbPaths";
 import { calculateDuration } from "./efficiencyCalculator";
+import i18n from "../i18n";
 
 /**
  * Analyseer voltooide producties en update standaard tijden
@@ -42,7 +43,7 @@ export const analyzeAndUpdateStandards = async (options = {}) => {
       ...doc.data()
     }));
 
-    console.log(`[Auto-Learning] Analyzing ${standards.length} standards...`);
+    console.log(i18n.t("autolearning.analyzing", { count: standards.length, defaultValue: `[Auto-Learning] Analyzing ${standards.length} standards...` }));
 
     // Voor elke standaard, analyseer recente voltooide producties
     for (const standard of standards) {
@@ -69,8 +70,7 @@ export const analyzeAndUpdateStandards = async (options = {}) => {
         if (validProducts.length < minSamples) {
           results.skipped++;
           console.log(
-            `[Auto-Learning] Skipped ${standard.itemCode}/${standard.machine}: ` +
-            `only ${validProducts.length} samples (min: ${minSamples})`
+            i18n.t("autolearning.skipped_samples", { item: standard.itemCode, machine: standard.machine, count: validProducts.length, min: minSamples, defaultValue: `[Auto-Learning] Skipped ${standard.itemCode}/${standard.machine}: only ${validProducts.length} samples (min: ${minSamples})` })
           );
           continue;
         }
@@ -105,8 +105,7 @@ export const analyzeAndUpdateStandards = async (options = {}) => {
         if (Math.abs(deviation) < 5) {
           // Minder dan 5% afwijking = geen update nodig
           console.log(
-            `[Auto-Learning] ${standard.itemCode}/${standard.machine}: ` +
-            `deviation ${deviation.toFixed(1)}% is acceptable`
+            i18n.t("autolearning.deviation_acceptable", { item: standard.itemCode, machine: standard.machine, deviation: deviation.toFixed(1), defaultValue: `[Auto-Learning] ${standard.itemCode}/${standard.machine}: deviation ${deviation.toFixed(1)}% is acceptable` })
           );
           continue;
         }
@@ -115,13 +114,12 @@ export const analyzeAndUpdateStandards = async (options = {}) => {
         if (Math.abs(deviation) > maxDeviation) {
           results.errors.push({
             standard: `${standard.itemCode}/${standard.machine}`,
-            reason: `Deviation ${deviation.toFixed(1)}% exceeds maximum ${maxDeviation}%`,
+            reason: i18n.t("autolearning.deviation_exceeded", { deviation: deviation.toFixed(1), max: maxDeviation, defaultValue: `Deviation ${deviation.toFixed(1)}% exceeds maximum ${maxDeviation}%` }),
             currentStandard,
             observedTime
           });
           console.warn(
-            `[Auto-Learning] ${standard.itemCode}/${standard.machine}: ` +
-            `deviation ${deviation.toFixed(1)}% too extreme, skipping`
+            i18n.t("autolearning.deviation_extreme", { item: standard.itemCode, machine: standard.machine, deviation: deviation.toFixed(1), defaultValue: `[Auto-Learning] ${standard.itemCode}/${standard.machine}: deviation ${deviation.toFixed(1)}% too extreme, skipping` })
           );
           continue;
         }
@@ -163,18 +161,16 @@ export const analyzeAndUpdateStandards = async (options = {}) => {
 
           results.updated++;
           console.log(
-            `[Auto-Learning] Updated ${standard.itemCode}/${standard.machine}: ` +
-            `${currentStandard}m → ${roundedNew}m (${actualTimes.length} samples, ${deviation.toFixed(1)}% deviation)`
+            i18n.t("autolearning.updated", { item: standard.itemCode, machine: standard.machine, old: currentStandard, new: roundedNew, samples: actualTimes.length, deviation: deviation.toFixed(1), defaultValue: `[Auto-Learning] Updated ${standard.itemCode}/${standard.machine}: ${currentStandard}m → ${roundedNew}m (${actualTimes.length} samples, ${deviation.toFixed(1)}% deviation)` })
           );
         } else {
           console.log(
-            `[Auto-Learning] [DRY RUN] Would update ${standard.itemCode}/${standard.machine}: ` +
-            `${currentStandard}m → ${roundedNew}m`
+            i18n.t("autolearning.dry_run", { item: standard.itemCode, machine: standard.machine, old: currentStandard, new: roundedNew, defaultValue: `[Auto-Learning] [DRY RUN] Would update ${standard.itemCode}/${standard.machine}: ${currentStandard}m → ${roundedNew}m` })
           );
         }
 
       } catch (error) {
-        console.error(`[Auto-Learning] Error processing ${standard.itemCode}/${standard.machine}:`, error);
+        console.error(i18n.t("autolearning.error_processing", { item: standard.itemCode, machine: standard.machine, defaultValue: `[Auto-Learning] Error processing ${standard.itemCode}/${standard.machine}:` }), error);
         results.errors.push({
           standard: `${standard.itemCode}/${standard.machine}`,
           reason: error.message
@@ -183,14 +179,14 @@ export const analyzeAndUpdateStandards = async (options = {}) => {
     }
 
   } catch (error) {
-    console.error("[Auto-Learning] Fatal error:", error);
+    console.error(i18n.t("autolearning.fatal_error", "[Auto-Learning] Fatal error:"), error);
     results.errors.push({
       standard: "GLOBAL",
       reason: error.message
     });
   }
 
-  console.log("[Auto-Learning] Analysis complete:", results);
+  console.log(i18n.t("autolearning.analysis_complete", "[Auto-Learning] Analysis complete:"), results);
   return results;
 };
 
@@ -199,7 +195,7 @@ export const analyzeAndUpdateStandards = async (options = {}) => {
  * Kan worden aangeroepen vanuit een Cloud Function of cron job
  */
 export const scheduledAutoLearning = async () => {
-  console.log("[Auto-Learning] Starting scheduled analysis...");
+  console.log(i18n.t("autolearning.starting_scheduled", "[Auto-Learning] Starting scheduled analysis..."));
   
   const results = await analyzeAndUpdateStandards({
     minSamples: 10,        // Wacht op minstens 10 voltooide producties

@@ -1,4 +1,5 @@
 import { differenceInMinutes, isValid } from "date-fns";
+import i18n from "../i18n";
 
 /**
  * ISO 22400 OEE Calculator & Efficiency Helpers
@@ -127,9 +128,9 @@ export const calculateBatchEfficiency = (products) => {
  * Geeft een tekstueel label voor de efficiency score.
  */
 export const getEfficiencyLabel = (efficiency) => {
-  if (efficiency >= 100) return "Uitstekend";
-  if (efficiency >= 85) return "Goed";
-  if (efficiency >= 70) return "Voldoende";
-  if (efficiency >= 50) return "Matig";
-  return "Kritiek";
+  if (efficiency >= 100) return i18n.t("efficiency.excellent", "Uitstekend");
+  if (efficiency >= 85) return i18n.t("efficiency.good", "Goed");
+  if (efficiency >= 70) return i18n.t("efficiency.average", "Voldoende");
+  if (efficiency >= 50) return i18n.t("efficiency.poor", "Matig");
+  return i18n.t("efficiency.critical", "Kritiek");
 };

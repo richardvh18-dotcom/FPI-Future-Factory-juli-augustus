@@ -10,6 +10,7 @@
 import { collection, query, getDocs, limit, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { PATHS } from '../config/dbPaths';
+import i18n from '../i18n';
 
 class AIService {
   constructor() {
@@ -416,7 +417,7 @@ class AIService {
       
       if (docs.length > 0) {
         console.log('📚 Gevonden documenten:', docs.map(d => `"${d.fileName}" (${d.characterCount || 0} chars)`).join(', '));
-        contextData += '\n\n📚 RELEVANTE DOCUMENTEN:\n';
+        contextData += `\n\n${i18n.t("ai.context.relevant_docs", "📚 RELEVANTE DOCUMENTEN:")}\n`;
         contextData += '='.repeat(60) + '\n';
 
         docs.slice(0, 3).forEach((docItem, idx) => {
@@ -470,7 +471,7 @@ class AIService {
         console.log('📦 Orders gevonden:', orders.length);
         
         if (orders.length > 0) {
-          contextData += '\n\n📦 PRODUCTIE ORDER INFORMATIE:\n';
+          contextData += `\n\n${i18n.t("ai.context.prod_orders", "📦 PRODUCTIE ORDER INFORMATIE:")}\n`;
           contextData += '='.repeat(60) + '\n';
           
           orders.slice(0, 3).forEach((order, idx) => {
@@ -540,7 +541,7 @@ class AIService {
           contextData += '\n' + '='.repeat(60) + '\n';
         } else {
           console.log('⚠️ Geen orders gevonden voor:', userQuery);
-          contextData += '\n\n⚠️ Geen productie orders gevonden in database voor: ' + userQuery + '\n';
+          contextData += `\n\n${i18n.t("ai.context.no_orders_found", "⚠️ Geen productie orders gevonden in database voor:")} ${userQuery}\n`;
         }
       }
       
@@ -553,7 +554,7 @@ class AIService {
           query.includes('spec')) {
         const products = await this.searchCatalogProducts(userQuery);
         if (products.length > 0) {
-          contextData += '\n\n📋 CATALOGUS PRODUCT INFORMATIE:\n';
+          contextData += `\n\n${i18n.t("ai.context.catalog_info", "📋 CATALOGUS PRODUCT INFORMATIE:")}\n`;
           contextData += '='.repeat(60) + '\n';
           
           products.slice(0, 3).forEach((product, idx) => {
@@ -597,7 +598,7 @@ class AIService {
       return contextData;
     } catch (error) {
       console.error('Error getting context:', error);
-      return '\n\n⚠️ Fout bij ophalen contextgegevens: ' + error.message + '\n';
+      return `\n\n${i18n.t("ai.context.error", "⚠️ Fout bij ophalen contextgegevens:")} ${error.message}\n`;
     }
   }
 
@@ -645,7 +646,7 @@ class AIService {
 
   async chat(messages, systemPrompt = null, options = {}) {
     if (!this.apiKey) {
-      throw new Error('Geen Google AI API key gevonden in .env');
+      throw new Error(i18n.t("gemini.api_key_missing_env", "Geen Google AI API key gevonden in .env"));
     }
 
     // Haal beschikbare model op
@@ -709,7 +710,7 @@ class AIService {
       });
       contents.push({
         role: 'model',
-        parts: [{ text: 'Begrepen. Ik zal je helpen met je vragen over FPi Future Factory.' }]
+        parts: [{ text: i18n.t("ai.system_ack", "Begrepen. Ik zal je helpen met je vragen over FPi Future Factory.") }]
       });
     }
 
@@ -771,14 +772,14 @@ class AIService {
       
       // Check of er een response is
       if (!data.candidates || data.candidates.length === 0) {
-        throw new Error('Geen antwoord ontvangen van AI');
+        throw new Error(i18n.t("gemini.no_answer", "Geen antwoord ontvangen van AI"));
       }
 
       const candidate = data.candidates[0];
       
       // Check blocking
       if (candidate.finishReason === 'SAFETY') {
-        throw new Error('Antwoord geblokkeerd door veiligheidsfilters');
+        throw new Error(i18n.t("gemini.safety_block", "Antwoord geblokkeerd door veiligheidsfilters"));
       }
 
       return candidate.content.parts[0].text;
@@ -809,7 +810,7 @@ class AIService {
       return JSON.parse(cleanedResponse);
     } catch (error) {
       console.error('Failed to parse flashcard JSON:', error);
-      throw new Error('AI returned invalid flashcard format');
+      throw new Error(i18n.t("ai.flashcard_error", "AI returned invalid flashcard format"));
     }
   }
 }

@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { AlertOctagon } from "lucide-react";
 
 /**
@@ -27,14 +28,15 @@ const RejectionAnalysisTile = React.memo(({ products = [] }) => {
 
   const totalRejected = rejected.length;
 
+  const { t } = useTranslation();
   return (
     <div className="bg-white p-6 rounded-[30px] border border-slate-200 shadow-sm col-span-1 md:col-span-2 hover:border-rose-300 transition-colors text-left">
       <div className="flex justify-between items-center mb-4">
         <h4 className="text-sm font-black uppercase text-slate-800 flex items-center gap-2">
-          <AlertOctagon size={18} className="text-rose-500" /> Kwaliteitsanalyse
+          <AlertOctagon size={18} className="text-rose-500" /> {t('rejection.quality_analysis')}
         </h4>
         <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded-lg border border-rose-100">
-          {totalRejected} Totaal
+          {totalRejected} {t('rejection.total')}
         </span>
       </div>
 
@@ -64,7 +66,7 @@ const RejectionAnalysisTile = React.memo(({ products = [] }) => {
           <div className="flex flex-col items-center justify-center py-6 text-slate-300">
             <AlertOctagon size={32} className="mb-2 opacity-50" />
             <p className="text-[10px] font-bold uppercase tracking-widest">
-              Geen afkeur data
+              {t('rejection.no_rejection_data')}
             </p>
           </div>
         )}

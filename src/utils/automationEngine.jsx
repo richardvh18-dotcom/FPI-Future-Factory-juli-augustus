@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS } from "../config/dbPaths";
+import i18n from "../i18n";
 
 /**
  * Automation Engine - Centralized rule evaluation and execution
@@ -41,7 +42,7 @@ export const evaluateCapacityShortage = async (conditions) => {
   return {
     triggered: shortage > threshold,
     message: shortage > threshold 
-      ? `⚠️ Capaciteitstekort: ${Math.round(shortage)}h tekort (threshold: ${threshold}h)`
+      ? i18n.t("automation.capacity_shortage", { shortage: Math.round(shortage), threshold, defaultValue: `⚠️ Capaciteitstekort: ${Math.round(shortage)}h tekort (threshold: ${threshold}h)` })
       : null,
     severity: "warning",
     data: {
@@ -72,7 +73,7 @@ export const evaluateLowEfficiency = async (conditions) => {
   return {
     triggered: efficiencyPercent < threshold,
     message: efficiencyPercent < threshold
-      ? `📉 Lage efficiency: ${efficiencyPercent}% (threshold: ${threshold}%)`
+      ? i18n.t("automation.low_efficiency", { efficiency: efficiencyPercent, threshold, defaultValue: `📉 Lage efficiency: ${efficiencyPercent}% (threshold: ${threshold}%)` })
       : null,
     severity: "warning",
     data: {
@@ -102,7 +103,7 @@ export const evaluateOrderDelay = async (conditions) => {
   return {
     triggered: delayedOrders.length >= minDelayedOrders,
     message: delayedOrders.length >= minDelayedOrders
-      ? `🕐 ${delayedOrders.length} order(s) zijn vertraagd`
+      ? i18n.t("automation.order_delay", { count: delayedOrders.length, defaultValue: `🕐 ${delayedOrders.length} order(s) zijn vertraagd` })
       : null,
     severity: "critical",
     data: {
@@ -129,7 +130,7 @@ export const evaluateMissingOperator = async (conditions) => {
   return {
     triggered: machinesWithoutOperators.length >= threshold,
     message: machinesWithoutOperators.length >= threshold
-      ? `👤 ${machinesWithoutOperators.length} machine(s) zonder operator`
+      ? i18n.t("automation.missing_operator", { count: machinesWithoutOperators.length, defaultValue: `👤 ${machinesWithoutOperators.length} machine(s) zonder operator` })
       : null,
     severity: "warning",
     data: {
@@ -164,7 +165,7 @@ export const evaluateDependencyBlocked = async (conditions) => {
   return {
     triggered: blockedOrders.length >= threshold,
     message: blockedOrders.length >= threshold
-      ? `🔗 ${blockedOrders.length} order(s) geblokkeerd door dependencies`
+      ? i18n.t("automation.dependency_blocked", { count: blockedOrders.length, defaultValue: `🔗 ${blockedOrders.length} order(s) geblokkeerd door dependencies` })
       : null,
     severity: "info",
     data: {
@@ -203,7 +204,7 @@ export const evaluateInspectionOverdue = async (conditions) => {
   return {
     triggered: overdueProducts.length > 0,
     message: overdueProducts.length > 0
-      ? `⏰ ${overdueProducts.length} product(en) ${daysOverdue}+ dagen in tijdelijke afkeur`
+      ? i18n.t("automation.inspection_overdue", { count: overdueProducts.length, days: daysOverdue, defaultValue: `⏰ ${overdueProducts.length} product(en) ${daysOverdue}+ dagen in tijdelijke afkeur` })
       : null,
     severity: "alert",
     data: {
@@ -284,7 +285,7 @@ export const evaluateStandardDeviation = async (conditions) => {
   return {
     triggered: deviatingStandards.length > 0,
     message: deviatingStandards.length > 0
-      ? `📊 ${deviatingStandards.length} standaard(en) wijken significant af`
+      ? i18n.t("automation.standard_deviation", { count: deviatingStandards.length, defaultValue: `📊 ${deviatingStandards.length} standaard(en) wijken significant af` })
       : null,
     severity: "info",
     data: {
@@ -314,7 +315,7 @@ export const evaluateOrderStatusChange = async (conditions) => {
   return {
     triggered: matchingOrders.length > 0,
     message: matchingOrders.length > 0
-      ? `📋 ${matchingOrders.length} order(s) hebben status "${targetStatus}"`
+      ? i18n.t("automation.order_status_change", { count: matchingOrders.length, status: targetStatus, defaultValue: `📋 ${matchingOrders.length} order(s) hebben status "${targetStatus}"` })
       : null,
     severity: "info",
     data: {
@@ -333,7 +334,7 @@ export const evaluateOrderStatusChange = async (conditions) => {
  */
 export const executeSendNotification = async (params, triggerData) => {
   const { 
-    message = "Automation regel uitgevoerd", 
+    message = i18n.t("automation.rule_executed", "Automation regel uitgevoerd"), 
     severity = "info",
     recipients = [] 
   } = params;
@@ -352,7 +353,7 @@ export const executeSendNotification = async (params, triggerData) => {
   // 2. Schrijf naar het centrale berichtensysteem (Inbox)
   await addDoc(collection(db, ...PATHS.MESSAGES), {
     to: "admin", // Zichtbaar voor alle admins
-    subject: `🔔 Automation: ${triggerData.message || "Systeem Alert"}`,
+    subject: `🔔 Automation: ${triggerData.message || i18n.t("automation.system_alert", "Systeem Alert")}`,
     content: message || triggerData.message,
     senderId: "system_automation",
     senderName: "Automation Engine",
@@ -364,7 +365,7 @@ export const executeSendNotification = async (params, triggerData) => {
     priority: severity === "critical" || severity === "alert" ? "urgent" : "normal"
   });
   
-  return { success: true, message: "Notificatie verzonden" };
+  return { success: true, message: i18n.t("automation.notification_sent", "Notificatie verzonden") };
 };
 
 /**
@@ -375,18 +376,18 @@ export const executeUpdateStatus = async (params, triggerData) => {
   
   // This would typically be executed with specific order IDs from trigger data
   // For now, return success
-  return { success: true, message: `Status update naar ${targetStatus} gepland` };
+  return { success: true, message: i18n.t("automation.status_update_planned", { status: targetStatus, defaultValue: `Status update naar ${targetStatus} gepland` }) };
 };
 
 /**
  * Execute create log action
  */
 export const executeCreateLog = async (params, triggerData) => {
-  const { logMessage = "Automation log" } = params;
+  const { logMessage = i18n.t("automation.log_default", "Automation log") } = params;
   
   await addDoc(collection(db, ...PATHS.MESSAGES), {
     to: "admin",
-    subject: "🤖 Automation Event",
+    subject: i18n.t("automation.log_event", "🤖 Automation Event"),
     content: logMessage || triggerData.message,
     senderId: "system_automation",
     senderName: "Automation Engine",
@@ -399,7 +400,7 @@ export const executeCreateLog = async (params, triggerData) => {
     data: triggerData.data
   });
   
-  return { success: true, message: "Log entry aangemaakt" };
+  return { success: true, message: i18n.t("automation.log_created", "Log entry aangemaakt") };
 };
 
 /**
@@ -413,7 +414,7 @@ export const executeAutoLearningUpdate = async (params, triggerData) => {
   } = params;
   
   if (!triggerData.data?.standards) {
-    return { success: false, message: "Geen standaarden gevonden in trigger data" };
+    return { success: false, message: i18n.t("automation.no_standards", "Geen standaarden gevonden in trigger data") };
   }
   
   const standards = triggerData.data.standards;
@@ -458,8 +459,8 @@ export const executeAutoLearningUpdate = async (params, triggerData) => {
   return { 
     success: true, 
     message: dryRun 
-      ? `${standards.length} standaard(en) zouden bijgewerkt worden` 
-      : `${updated} standaard(en) bijgewerkt`
+      ? i18n.t("automation.standards_would_update", { count: standards.length, defaultValue: `${standards.length} standaard(en) zouden bijgewerkt worden` })
+      : i18n.t("automation.standards_updated", { count: updated, defaultValue: `${updated} standaard(en) bijgewerkt` })
   };
 };
 
@@ -469,7 +470,7 @@ export const executeAutoLearningUpdate = async (params, triggerData) => {
  */
 export const executeInspectionReminder = async (params, triggerData) => {
   if (!triggerData.data?.products) {
-    return { success: false, message: "Geen producten gevonden in trigger data" };
+    return { success: false, message: i18n.t("automation.no_products", "Geen producten gevonden in trigger data") };
   }
   
   let reminded = 0;
@@ -478,8 +479,8 @@ export const executeInspectionReminder = async (params, triggerData) => {
     // Send message
     await addDoc(collection(db, ...PATHS.MESSAGES), {
       to: "admin",
-      subject: "⏰ Reminder: Tijdelijke Afkeur",
-      content: `Product ${product.lotNumber} ligt al ${product.daysSince}+ dagen op ${product.station} ter reparatie. Graag actie.`,
+      subject: i18n.t("automation.reminder_subject", "⏰ Reminder: Tijdelijke Afkeur"),
+      content: i18n.t("automation.reminder_content", { lot: product.lotNumber, days: product.daysSince, station: product.station, defaultValue: `Product ${product.lotNumber} ligt al ${product.daysSince}+ dagen op ${product.station} ter reparatie. Graag actie.` }),
       senderId: "system_automation",
       senderName: "Automation Engine",
       from: "system@futurefactory.local",
@@ -497,7 +498,7 @@ export const executeInspectionReminder = async (params, triggerData) => {
   
   return { 
     success: true, 
-    message: `${reminded} reminder(s) verzonden`
+    message: i18n.t("automation.reminders_sent", { count: reminded, defaultValue: `${reminded} reminder(s) verzonden` })
   };
 };
 
@@ -611,7 +612,7 @@ export const executeRuleWithLogging = async (rule) => {
   if (rule.debounceMinutes && await checkDebounce(rule.id, rule.debounceMinutes)) {
     return {
       skipped: true,
-      message: "Skipped due to recent execution (debounce)"
+      message: i18n.t("automation.skipped_debounce", "Skipped due to recent execution (debounce)")
     };
   }
   
@@ -625,7 +626,7 @@ export const executeRuleWithLogging = async (rule) => {
       trigger: rule.trigger,
       action: rule.action,
       status: result.triggered ? "success" : "no_trigger",
-      message: result.message || "No trigger match",
+      message: result.message || i18n.t("automation.no_trigger_match", "No trigger match"),
       data: result.data || null,
       actionResult: result.actionResult || null,
       executedAt: serverTimestamp()

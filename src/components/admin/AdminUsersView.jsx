@@ -67,6 +67,9 @@ const AdminUsersView = () => {
   const [activeTab, setActiveTab] = useState("users"); // 'users' of 'requests'
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [expandedCountries, setExpandedCountries] = useState({}); // State voor inklapbare groepen
+  const [allStations, setAllStations] = useState([]);
+  const [stationFilterCountry, setStationFilterCountry] = useState("All");
+  const [stationFilterDept, setStationFilterDept] = useState("All");
 
   const [newUser, setNewUser] = useState({
     name: "",
@@ -194,6 +197,36 @@ const AdminUsersView = () => {
     );
 
     return () => unsubRequests();
+  }, []);
+
+  // 3. Stations ophalen uit Factory Config voor selectie
+  useEffect(() => {
+    const unsubConfig = onSnapshot(doc(db, ...PATHS.FACTORY_CONFIG), (snap) => {
+      if (snap.exists()) {
+        const config = snap.data();
+        const stations = [];
+        
+        if (config.departments) {
+          config.departments.forEach(dept => {
+            if (dept.stations) {
+              dept.stations.forEach(st => {
+                stations.push({
+                  id: st.name,
+                  name: st.name,
+                  department: dept.title || dept.name || "Overig",
+                  country: dept.country || "Overig"
+                });
+              });
+            }
+          });
+        }
+        // Voeg speciale rollen toe
+        stations.push({ id: 'TEAMLEADER', name: 'Teamleader Hub', department: 'Management', country: 'Global' });
+        
+        setAllStations(stations);
+      }
+    });
+    return () => unsubConfig();
   }, []);
 
   // Voeg nieuwe gebruiker toe
@@ -349,8 +382,14 @@ const AdminUsersView = () => {
 
   // 3. Handlers
   const handleEdit = (user) => {
-    setSelectedUser({ ...user, modules: user.modules || [] });
+    setSelectedUser({ 
+      ...user, 
+      modules: user.modules || [],
+      allowedStations: user.allowedStations || [] 
+    });
     setEditModalTab("profile");
+    setStationFilterCountry("All");
+    setStationFilterDept("All");
     setIsEditing(true);
   };
 
@@ -472,7 +511,9 @@ const AdminUsersView = () => {
         country: selectedUser.country,
         department: selectedUser.department,
         modules: selectedUser.modules || [],
+        allowedStations: selectedUser.allowedStations || [],
         canVerify: selectedUser.canVerify || false,
+        signature: selectedUser.signature || "",
         lastAdminUpdate: serverTimestamp(),
         updatedBy: auth.currentUser?.email || "Master Admin",
       });
@@ -503,6 +544,18 @@ const AdminUsersView = () => {
       alert(err.message);
     }
   };
+
+  // Filter logica voor stations
+  const filteredStations = useMemo(() => {
+    return allStations.filter(s => {
+      if (stationFilterCountry !== "All" && s.country !== stationFilterCountry) return false;
+      if (stationFilterDept !== "All" && s.department !== stationFilterDept) return false;
+      return true;
+    });
+  }, [allStations, stationFilterCountry, stationFilterDept]);
+
+  const uniqueCountries = useMemo(() => ["All", ...new Set(allStations.map(s => s.country))].sort(), [allStations]);
+  const uniqueDepts = useMemo(() => ["All", ...new Set(allStations.filter(s => stationFilterCountry === "All" || s.country === stationFilterCountry).map(s => s.department))].sort(), [allStations, stationFilterCountry]);
 
   if (loading)
     return (
@@ -888,6 +941,12 @@ const AdminUsersView = () => {
               >
                 Extra Modules
               </button>
+              <button
+                onClick={() => setEditModalTab("stations")}
+                className={`py-4 px-6 text-[10px] font-black uppercase tracking-widest border-b-2 transition-all ${editModalTab === "stations" ? "border-blue-600 text-blue-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+              >
+                Station Toegang
+              </button>
             </div>
 
             <div className="p-10 space-y-8 text-left overflow-y-auto custom-scrollbar">
@@ -1012,6 +1071,25 @@ const AdminUsersView = () => {
                     </div>
                   </label>
                 </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">
+                    E-mail Handtekening
+                  </label>
+                  <div className="relative group">
+                    <Edit3
+                      className="absolute left-5 top-4 text-slate-300 group-focus-within:text-blue-500"
+                      size={20}
+                    />
+                    <textarea
+                      className="w-full pl-14 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-[25px] font-medium text-slate-600 outline-none focus:border-blue-500 focus:bg-white transition-all shadow-inner resize-none text-xs"
+                      rows={3}
+                      value={selectedUser.signature || ""}
+                      onChange={(e) => setSelectedUser({ ...selectedUser, signature: e.target.value })}
+                      placeholder="Met vriendelijke groet..."
+                    />
+                  </div>
+                </div>
               </div>
                 </>
               )}
@@ -1077,6 +1155,89 @@ const AdminUsersView = () => {
                       ))}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {editModalTab === "stations" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 flex items-center gap-2">
+                      <MapPin size={14} /> Station Toegang
+                    </label>
+                    <button 
+                        onClick={() => setSelectedUser({...selectedUser, allowedStations: []})}
+                        className="text-[10px] text-rose-500 hover:underline font-bold"
+                    >
+                        Alles wissen (Toegang tot alles)
+                    </button>
+                  </div>
+                  
+                  {/* Filters */}
+                  <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Locatie</label>
+                        <div className="relative">
+                            <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <select 
+                                value={stationFilterCountry}
+                                onChange={(e) => { setStationFilterCountry(e.target.value); setStationFilterDept("All"); }}
+                                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500 cursor-pointer"
+                            >
+                                {uniqueCountries.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-400 uppercase ml-1">Afdeling</label>
+                        <div className="relative">
+                            <Briefcase size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <select 
+                                value={stationFilterDept}
+                                onChange={(e) => setStationFilterDept(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500 cursor-pointer"
+                            >
+                                {uniqueDepts.map(d => <option key={d} value={d}>{d}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+                    {filteredStations.map(station => (
+                      <label key={station.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedUser.allowedStations?.includes(station.id) ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                        <div className={`w-5 h-5 rounded border flex items-center justify-center flex-shrink-0 ${selectedUser.allowedStations?.includes(station.id) ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-slate-300'}`}>
+                          {selectedUser.allowedStations?.includes(station.id) && <Check size={14} />}
+                        </div>
+                        <div className="overflow-hidden">
+                          <div className="font-bold text-sm text-slate-700 truncate">{station.name}</div>
+                          <div className="text-[10px] text-slate-400 truncate">{station.department}</div>
+                        </div>
+                        <input 
+                            type="checkbox" 
+                            className="hidden"
+                            checked={selectedUser.allowedStations?.includes(station.id) || false}
+                            onChange={(e) => {
+                                const current = selectedUser.allowedStations || [];
+                                let updated;
+                                if (e.target.checked) {
+                                    updated = [...current, station.id];
+                                } else {
+                                    updated = current.filter(id => id !== station.id);
+                                }
+                                setSelectedUser({...selectedUser, allowedStations: updated});
+                            }}
+                        />
+                      </label>
+                    ))}
+                    {filteredStations.length === 0 && (
+                        <div className="col-span-full text-center py-8 text-slate-400 text-xs italic">
+                            Geen stations gevonden voor deze selectie.
+                        </div>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400 italic ml-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <span className="font-bold">Let op:</span> Als er geen stations zijn geselecteerd (lijst is leeg), heeft de gebruiker standaard toegang tot <u>alle</u> stations. Selecteer één of meer stations om de toegang te beperken.
+                  </p>
                 </div>
               )}
 

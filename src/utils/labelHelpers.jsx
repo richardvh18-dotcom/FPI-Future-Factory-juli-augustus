@@ -4,14 +4,15 @@
  */
 
 import { format } from "date-fns";
+import i18n from "../i18n";
 
 // Definieer de standaard formaten
 export const LABEL_SIZES = {
-  Standard: { width: 90, height: 55, name: "Standaard (90x55mm)" },
-  Slim: { width: 90, height: 30, name: "Smal (90x30mm)" },
-  Legacy: { width: 100, height: 50, name: "Legacy (100x50mm)" },
-  Large: { width: 100, height: 150, name: "Groot (100x150mm)" },
-  Custom: { width: 100, height: 100, name: "Aangepast" },
+  Standard: { width: 90, height: 55, name: i18n.t("label.size_standard", "Standaard (90x55mm)") },
+  Slim: { width: 90, height: 30, name: i18n.t("label.size_slim", "Smal (90x30mm)") },
+  Legacy: { width: 100, height: 50, name: i18n.t("label.size_legacy", "Legacy (100x50mm)") },
+  Large: { width: 100, height: 150, name: i18n.t("label.size_large", "Groot (100x150mm)") },
+  Custom: { width: 100, height: 100, name: i18n.t("label.size_custom", "Aangepast") },
 };
 
 // --- HULPFUNCTIES VOOR PARSING ---
@@ -218,6 +219,81 @@ export const processLabelData = (data) => {
     lotNumber: lotNumber,
     date: format(new Date(), "dd-MM-yyyy"),
   };
+};
+
+/**
+ * Past dynamische label logica toe op de data.
+ * @param {Object} data - De basis order/product data.
+ * @param {Array} rules - Array van logica regels uit Firestore.
+ * @returns {Object} - Verrijkte data.
+ */
+export const applyLabelLogic = (data, rules) => {
+  if (!rules || rules.length === 0) return data;
+  
+  const enriched = { ...data };
+  const productCode = (data.itemCode || data.productId || "").toUpperCase();
+
+  // Zoek regels die van toepassing zijn op dit product
+  const activeRule = rules.find(r => r.productCode === productCode);
+  
+  if (activeRule && activeRule.variables) {
+    activeRule.variables.forEach(variable => {
+      let value = variable.defaultValue || "";
+      
+      if (variable.mappings) {
+        // Bepaal welk veld de trigger is (default: project)
+        const triggerField = variable.triggerField || "project";
+        
+        // Helper om waarde op te halen (ook uit specs of mappings)
+        const getValue = (field) => {
+            // 1. Directe match
+            if (data[field] !== undefined) return data[field];
+            // 2. Mapping aliases
+            if (field === 'diameter' && data.dn !== undefined) return data.dn;
+            if (field === 'pressure' && data.pn !== undefined) return data.pn;
+            if (field === 'extraCode') return data.extraCode || data.code;
+            // 3. Specs object
+            if (data.specs && data.specs[field] !== undefined) return data.specs[field];
+            
+            // 4. Case-insensitive fallback (voor bijv. NPRs vs nprs)
+            const lowerField = field.toLowerCase();
+            const key = Object.keys(data).find(k => k.toLowerCase() === lowerField);
+            if (key) return data[key];
+            if (data.specs) {
+                const specKey = Object.keys(data.specs).find(k => k.toLowerCase() === lowerField);
+                if (specKey) return data.specs[specKey];
+            }
+            
+            return "";
+        };
+
+        const dataValue = String(getValue(triggerField)).toUpperCase();
+
+        const match = variable.mappings.find(m => {
+            const condition = String(m.condition || m.project || "").trim();
+            const val = String(dataValue).trim();
+            
+            // Numeric check for ranges
+            const numVal = parseFloat(val);
+            if (!isNaN(numVal)) {
+                if (condition.startsWith(">=")) return numVal >= parseFloat(condition.substring(2));
+                if (condition.startsWith("<=")) return numVal <= parseFloat(condition.substring(2));
+                if (condition.startsWith(">")) return numVal > parseFloat(condition.substring(1));
+                if (condition.startsWith("<")) return numVal < parseFloat(condition.substring(1));
+            }
+            
+            if (condition.startsWith("!=")) return val.toUpperCase() !== condition.substring(2).trim().toUpperCase();
+            if (condition.startsWith("==")) return val.toUpperCase() === condition.substring(2).trim().toUpperCase();
+
+            return condition.toUpperCase() === val.toUpperCase();
+        });
+        
+        if (match) value = match.value;
+      }
+      enriched[variable.name] = value;
+    });
+  }
+  return enriched;
 };
 
 /**

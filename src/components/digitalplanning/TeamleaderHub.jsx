@@ -25,7 +25,7 @@ import TeamleaderEfficiencyView from "../teamleader/TeamleaderEfficiencyView";
 import PersonnelOccupancyView from "../personnel/PersonnelOccupancyView";
 import PlanningSidebar from "./PlanningSidebar";
 import OrderDetail from "./OrderDetail";
-import ProductDossierModal from "./modals/ProductDossierModal";
+import ProductDossierModal from "./modals/ProductDossierModal.jsx";
 
 /**
  * TeamleaderHub V7.3 - Strict Filtering Update & Cleanup

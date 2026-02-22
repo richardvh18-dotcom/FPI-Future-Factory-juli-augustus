@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { VERIFICATION_STATUS } from "../data/constants";
 import { PATHS } from "../config/dbPaths";
+import i18n from "../i18n";
 
 /**
  * Product Helpers V8.0
@@ -58,8 +59,7 @@ export const verifyProduct = async (
   if (currentProductData.lastModifiedBy === currentUser?.uid) {
     return {
       success: false,
-      message:
-        "Vier-ogen principe: Je mag je eigen wijzigingen niet verifiëren.",
+      message: i18n.t("product.verify_own_change_error", "Vier-ogen principe: Je mag je eigen wijzigingen niet verifiëren."),
     };
   }
   const productRef = doc(db, ...PATHS.PRODUCTS, productId);

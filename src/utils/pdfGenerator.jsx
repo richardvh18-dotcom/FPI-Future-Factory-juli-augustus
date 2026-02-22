@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import i18n from "../i18n";
 
 /**
  * imageToDataUri: Zet een URL om naar Base64 via een directe fetch.
@@ -15,7 +16,7 @@ const imageToDataUri = async (url) => {
       : `${url}?cb=${Date.now()}`;
 
     const response = await fetch(cleanUrl, { mode: "cors" });
-    if (!response.ok) throw new Error("Netwerk response was niet ok");
+    if (!response.ok) throw new Error(i18n.t("pdf.netwerk_error", "Netwerk response was niet ok"));
 
     const blob = await response.blob();
 
@@ -27,7 +28,7 @@ const imageToDataUri = async (url) => {
     });
   } catch (error) {
     console.error(
-      "PDF Generator Error: Afbeelding kon niet worden gedownload.",
+      i18n.t("pdf.image_download_error", "PDF Generator Error: Afbeelding kon niet worden gedownload."),
       error
     );
     return null;
@@ -41,7 +42,7 @@ const imageToDataUri = async (url) => {
  */
 export const generateProductPDF = async (product, role = "operator") => {
   // Toon een kleine indicatie in de console dat we bezig zijn
-  console.log("PDF genereren voor:", product.name);
+  console.log(i18n.t("pdf.generating_for", "PDF genereren voor:"), product.name);
 
   const doc = new jsPDF();
   const isQC = role === "qc" || role === "admin";
@@ -74,12 +75,12 @@ export const generateProductPDF = async (product, role = "operator") => {
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(`LABEL: ${product.label || "Standaard"}`, 20, 30);
+  doc.text(i18n.t("pdf.label", "LABEL:") + ` ${product.label || i18n.t("pdf.standard", "Standaard")}` , 20, 30);
   if (product.extraCode && product.extraCode !== "-") {
-    doc.text(`EXTRA CODE: ${product.extraCode}`, 20, 36);
+    doc.text(i18n.t("pdf.extra_code", "EXTRA CODE:") + ` ${product.extraCode}`, 20, 36);
   }
-  doc.text(`DATUM: ${new Date().toLocaleDateString("nl-NL")}`, 150, 30);
-  doc.text(`ART.NR: ${product.articleCode || product.id || "-"}`, 150, 36);
+  doc.text(i18n.t("pdf.date", "DATUM:") + ` ${new Date().toLocaleDateString(i18n.language)}`, 150, 30);
+  doc.text(i18n.t("pdf.article_number", "ART.NR:") + ` ${product.articleCode || product.id || "-"}`, 150, 36);
 
   let currentY = 55;
 
@@ -105,7 +106,7 @@ export const generateProductPDF = async (product, role = "operator") => {
       );
       currentY += imgHeight + 15;
     } else {
-      console.warn("Afbeelding overgeslagen wegens laadfout.");
+      console.warn(i18n.t("pdf.image_skip_warning", "Afbeelding overgeslagen wegens laadfout."));
       currentY += 10;
     }
   } else {
@@ -116,7 +117,7 @@ export const generateProductPDF = async (product, role = "operator") => {
   doc.setTextColor(headerColor[0], headerColor[1], headerColor[2]);
   doc.setFontSize(14);
   doc.setFont("helvetica", "bold");
-  doc.text("Technische Maatvoering", 20, currentY);
+  doc.text(i18n.t("pdf.technical_table_title", "Technische Maatvoering"), 20, currentY);
 
   const FITTING_FIELDS = ["TW", "L", "Lo", "R", "Weight"];
   const MOF_FIELDS = ["B1", "B2", "BA", "A", "TWcb", "BD", "W"];
@@ -131,13 +132,21 @@ export const generateProductPDF = async (product, role = "operator") => {
     if (val !== undefined && val !== null && val !== "") {
       let unit = "mm";
       if (key.toLowerCase().includes("weight")) unit = "kg";
-      tableData.push([key, `${val} ${unit}`, ""]);
+      
+      // Probeer de key te vertalen (bijv. Weight -> Gewicht), anders gebruik originele key
+      const translatedKey = i18n.exists(`spec.${key}`) ? i18n.t(`spec.${key}`) : key;
+      
+      tableData.push([translatedKey, `${val} ${unit}`, ""]);
     }
   });
 
   autoTable(doc, {
     startY: currentY + 5,
-    head: [["Variabele", "Nominale Waarde", "Tolerantie"]],
+    head: [[
+      i18n.t("pdf.variable", "Variabele"),
+      i18n.t("pdf.nominal_value", "Nominale Waarde"),
+      i18n.t("pdf.tolerance", "Tolerantie")
+    ]],
     body: tableData,
     theme: "grid",
     headStyles: { fill: headerColor, fontStyle: "bold" },
@@ -153,13 +162,11 @@ export const generateProductPDF = async (product, role = "operator") => {
   doc.setFontSize(8);
   doc.setTextColor(150, 150, 150);
   const footerNote = isQC
-    ? "GEVALIDEERD QC DOCUMENT - Uitsluitend voor interne kwaliteitsborging."
-    : "TECHNISCHE FICHE - Raadpleeg de tekening in de database voor specifieke toleranties.";
+    ? i18n.t("pdf.qc_footer", "GEVALIDEERD QC DOCUMENT - Uitsluitend voor interne kwaliteitsborging.")
+    : i18n.t("pdf.tech_footer", "TECHNISCHE FICHE - Raadpleeg de tekening in de database voor specifieke toleranties.");
   doc.text(footerNote, 20, 285);
 
   // Opslaan
-  const docName = `Productfiche_${
-    product.articleCode || product.id || "Download"
-  }.pdf`;
+  const docName = `${i18n.t("pdf.product_sheet", "Productfiche")}_${product.articleCode || product.id || i18n.t("pdf.download", "Download")}.pdf`;
   doc.save(docName);
 };

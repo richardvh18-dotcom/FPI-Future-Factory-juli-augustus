@@ -3,6 +3,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import TeamleaderHub from "./TeamleaderHub";
+import { useTranslation } from "react-i18next";
 import { Loader2 } from "lucide-react";
 
 /**
@@ -58,11 +59,12 @@ const TeamleaderPipesHub = React.memo((props) => {
 
   const machineIds = stations.map((s) => s.name);
 
+  const { t } = useTranslation();
   return (
     <TeamleaderHub
       {...props}
       fixedScope="pipe"
-      departmentName="Pipe Productions"
+      departmentName={t('teamleader.pipe_productions')}
       allowedMachines={machineIds}
     />
   );

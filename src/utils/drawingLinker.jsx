@@ -2,6 +2,7 @@
 import { collection, getDocs, query, where, updateDoc, doc, limit } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS } from "../config/dbPaths";
+import i18n from "../i18n";
 
 const getAppId = () => {
   if (typeof window !== "undefined" && window.__app_id) return window.__app_id;
@@ -49,7 +50,7 @@ export const findDrawingForOrder = async (order) => {
     
     return null;
   } catch (error) {
-    console.error("Fout bij zoeken tekening:", error);
+    console.error(i18n.t("drawing.search_error", "Fout bij zoeken tekening:"), error);
     return null;
   }
 };
@@ -67,7 +68,7 @@ export const syncOrderDrawing = async (orderId, drawing) => {
     });
     return true;
   } catch (e) {
-    console.error("Update mislukt:", e);
+    console.error(i18n.t("drawing.update_failed", "Update mislukt:"), e);
     return false;
   }
 };
@@ -78,7 +79,7 @@ export const syncOrderDrawing = async (orderId, drawing) => {
  * of verplaatst worden naar een Firebase Cloud Function (Node.js) voor echte automatisering.
  */
 export const runBatchDrawingSync = async () => {
-  console.log("Start batch sync...");
+  console.log(i18n.t("drawing.batch_start", "Start batch sync..."));
   const ordersRef = collection(db, ...PATHS.PLANNING);
   const snap = await getDocs(ordersRef);
   
@@ -94,6 +95,6 @@ export const runBatchDrawingSync = async () => {
       }
     }
   }
-  console.log(`Batch sync klaar. ${count} orders bijgewerkt.`);
+  console.log(i18n.t("drawing.batch_done", { count, defaultValue: `Batch sync klaar. ${count} orders bijgewerkt.` }));
   return count;
 };

@@ -53,7 +53,7 @@ const PortalView = () => {
 
   const displayName = user?.displayName
     ? user.displayName.split(" ")[0]
-    : user?.email?.split("@")[0] || t('common.employee');
+    : user?.email?.split("@")[0] || t('common.employee', 'Medewerker');
 
   // FIX: Werkende uitlog functie
   const handleLogout = async () => {
@@ -74,7 +74,7 @@ const PortalView = () => {
           <button
             onClick={toggleLanguage}
             className="p-3 bg-white/5 hover:bg-cyan-500/20 rounded-full border border-white/10 hover:border-cyan-400/50 text-cyan-300 hover:text-cyan-200 transition-all hover:scale-110 active:scale-95"
-            title="Taal selectie / Language selection"
+            title={t('common.language_selection')}
           >
             <Globe size={20} className="group-hover:rotate-12 transition-transform" />
           </button>
@@ -85,7 +85,7 @@ const PortalView = () => {
         <button
           onClick={handleLogout}
           className="p-3 bg-white/5 hover:bg-white/10 hover:bg-rose-500/20 rounded-full border border-white/10 hover:border-rose-500/50 text-slate-300 hover:text-rose-400 transition-all hover:scale-110 active:scale-95"
-          title={t('common.logout') || "Uitloggen"}
+          title={t('buttons.logout')}
         >
           <LogOut size={20} />
         </button>
@@ -214,14 +214,14 @@ const PortalView = () => {
                 </div>
                 <div>
                   <h2 className="text-xl md:text-2xl font-black text-white uppercase italic tracking-tight mb-2">
-                    Mobile Inspector
+                    {t('portal.tiles.mobile_inspector.title')}
                   </h2>
                   <p className="text-slate-400 text-xs md:text-sm font-medium leading-relaxed max-w-xs">
-                    Kwaliteitscontrole en inspectie op de vloer.
+                    {t('portal.tiles.mobile_inspector.desc')}
                   </p>
                 </div>
                 <div className="mt-4 md:mt-6 flex items-center text-indigo-400 font-bold text-xs uppercase tracking-widest gap-2 group-hover:gap-4 transition-all">
-                  Start Inspectie <ArrowRight size={16} />
+                  {t('portal.tiles.mobile_inspector.action')} <ArrowRight size={16} />
                 </div>
               </div>
             </button>
@@ -244,14 +244,14 @@ const PortalView = () => {
                 </div>
                 <div>
                   <h2 className="text-xl md:text-2xl font-black text-white uppercase italic tracking-tight mb-2">
-                    Beheer
+                    {t('portal.tiles.admin.title')}
                   </h2>
                   <p className="text-slate-400 text-xs md:text-sm font-medium leading-relaxed max-w-xs">
-                    Systeembeheer en instellingen.
+                    {t('portal.tiles.admin.desc')}
                   </p>
                 </div>
                 <div className="mt-4 md:mt-6 flex items-center text-slate-400 font-bold text-xs uppercase tracking-widest gap-2 group-hover:gap-4 transition-all">
-                  Openen <ArrowRight size={16} />
+                  {t('portal.tiles.admin.action')} <ArrowRight size={16} />
                 </div>
               </div>
             </button>

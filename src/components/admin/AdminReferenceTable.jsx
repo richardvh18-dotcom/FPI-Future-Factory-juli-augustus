@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { collection, onSnapshot, query } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS, isValidPath } from "../../config/dbPaths";
@@ -9,13 +9,52 @@ import {
   Table,
   Settings2,
   Database,
-  ChevronRight,
   ShieldCheck,
-  Hash,
   Activity,
-  FileText,
   Info,
 } from "lucide-react";
+
+
+// Simple List implementation to replace react-window and avoid import issues
+const List = ({ height, width, itemCount, itemSize, children: Row, itemData }) => {
+  return (
+    <div style={{ height, width, overflowY: 'auto', overflowX: 'hidden' }}>
+      {Array.from({ length: itemCount }).map((_, index) => (
+        <div key={index} style={{ height: itemSize, width: '100%' }}>
+          <Row index={index} style={{ height: '100%', width: '100%' }} data={itemData} />
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Simple AutoSizer implementation to avoid external dependency issues
+const AutoSizer = ({ children }) => {
+  const ref = useRef(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const observer = new ResizeObserver((entries) => {
+      if (entries[0]) {
+        const { width, height } = entries[0].contentRect;
+        setSize({ width, height });
+      }
+    });
+    observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={ref} style={{ width: "100%", height: "100%", overflow: "hidden" }}>
+      {size.width > 0 && size.height > 0 && (
+        typeof children === "function"
+          ? children(size)
+          : <div style={{color: 'red', fontWeight: 'bold'}}>AutoSizer: children moet een functie zijn die ({'{ height, width }'}) accepteert.</div>
+      )}
+    </div>
+  );
+};
 
 /**
  * AdminReferenceTable V4.0 - Root Sync Edition
@@ -118,11 +157,83 @@ const AdminReferenceTable = () => {
     );
   }, [data, searchTerm]);
 
-  // Stijlen voor tabel elementen
-  const thStyle =
-    "px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] border-b border-slate-100 bg-slate-50/50 sticky top-0 z-10";
-  const tdStyle =
-    "px-8 py-5 text-sm font-bold text-slate-700 border-b border-slate-50";
+  // Grid Template configuratie per tab
+  const gridTemplate = useMemo(() => {
+    switch (activeTab) {
+      case "FITTING_SPECS": return "1.2fr 0.8fr 1fr 1fr 1fr 1fr 1fr";
+      case "BORE_DIMENSIONS": return "2fr 1fr 1fr 1fr 1fr";
+      case "CB_DIMENSIONS": return "1.5fr 1fr 0.8fr 1fr 1fr 1fr";
+      case "TB_DIMENSIONS": return "1.5fr 1fr 1fr 1fr 1fr 1fr";
+      default: return "1fr";
+    }
+  }, [activeTab]);
+
+  // Virtualized Row Component
+  const Row = ({ index, style, data }) => {
+    const { items, activeTab, gridTemplate } = data;
+    const item = items[index];
+    const tdStyle = "px-6 py-0 text-sm font-bold text-slate-700 flex items-center truncate h-full";
+
+    return (
+      <div style={{ ...style, display: 'grid', gridTemplateColumns: gridTemplate }} className="border-b border-slate-50 hover:bg-blue-50/30 transition-all group">
+        {activeTab === "FITTING_SPECS" && (
+          <>
+            <div className={tdStyle}><span className="text-blue-600 font-black italic">ID {item.diameter || item.dn}</span></div>
+            <div className={tdStyle}>PN {item.pressure || item.pn}</div>
+            <div className={`${tdStyle} font-mono`}>{item.TW || "-"}</div>
+            <div className={`${tdStyle} font-mono`}>{item.Lo || "-"}</div>
+            <div className={`${tdStyle} font-mono`}>{item.Lnom || "-"}</div>
+            <div className={`${tdStyle} font-mono`}>{item.R || "-"}</div>
+            <div className={tdStyle}><span className="bg-slate-100 px-2 py-1 rounded-lg text-slate-500 font-black">{item.Weight || "-"} kg</span></div>
+          </>
+        )}
+
+        {activeTab === "BORE_DIMENSIONS" && (
+          <>
+            <div className={tdStyle}>
+              <div className="flex flex-col justify-center">
+                <span className="font-black text-slate-900">ID {item.dn}</span>
+                <span className="text-[9px] text-slate-400 uppercase font-black">PN {item.pn}</span>
+              </div>
+            </div>
+            <div className={tdStyle}><span className="text-blue-600 font-black">{item.pcd} mm</span></div>
+            <div className={tdStyle}>{item.holes}</div>
+            <div className={tdStyle}>
+              <span className="bg-slate-900 text-white px-2 py-1 rounded text-[10px] font-black uppercase">{item.thread || item.boltSize}</span>
+            </div>
+            <div className={tdStyle}>{item.holeSize || "-"} mm</div>
+          </>
+        )}
+
+        {activeTab === "CB_DIMENSIONS" && (
+          <>
+            <div className={`${tdStyle} font-mono text-xs opacity-40`}>{item.id}</div>
+            <div className={tdStyle}><span className="font-black">DN {item.diameter || item.dn}</span></div>
+            <div className={tdStyle}>
+              <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-2 py-1 rounded uppercase">CB</span>
+            </div>
+            <div className={tdStyle}>{item.B1 || item.InsertionDepth || "-"}</div>
+            <div className={tdStyle}>{item.B2 || "-"}</div>
+            <div className={tdStyle}>{item.BD || item.bellOD || "-"}</div>
+          </>
+        )}
+
+        {activeTab === "TB_DIMENSIONS" && (
+          <>
+            <div className={`${tdStyle} font-mono text-xs opacity-40`}>{item.id}</div>
+            <div className={tdStyle}><span className="font-black">DN {item.diameter || item.dn}</span></div>
+            <div className={tdStyle}>{item.B1 || "-"}</div>
+            <div className={tdStyle}>{item.B2 || "-"}</div>
+            <div className={tdStyle}>{item.BA || "-"}</div>
+            <div className={tdStyle}>{item.W || "-"}</div>
+          </>
+        )}
+      </div>
+    );
+  };
+
+  // Header Style
+  const thStyle = "px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center";
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 text-left">
@@ -201,7 +312,7 @@ const AdminReferenceTable = () => {
       </div>
 
       {/* DATA TABEL CONTAINER */}
-      <div className="bg-white rounded-[45px] border border-slate-200 shadow-sm overflow-hidden relative flex flex-col min-h-[500px]">
+      <div className="bg-white rounded-[45px] border border-slate-200 shadow-sm overflow-hidden relative flex flex-col h-[700px]">
         {loading ? (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm">
             <Loader2 className="animate-spin text-blue-600 mb-4" size={40} />
@@ -210,198 +321,53 @@ const AdminReferenceTable = () => {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto custom-scrollbar flex-1">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr>
-                  {/* DYNAMISCHE HEADERS O.B.V. ACTIEVE TAB */}
-                  {activeTab === "FITTING_SPECS" &&
-                    [
-                      "ID (mm)",
-                      "PN",
-                      "TW (min)",
-                      "Lo",
-                      "Lnom",
-                      "R",
-                      "Gewicht (kg)",
-                    ].map((h) => (
-                      <th key={h} className={thStyle}>
-                        {h}
-                      </th>
-                    ))}
-                  {activeTab === "BORE_DIMENSIONS" &&
-                    [
-                      "Config DN/PN",
-                      "PCD (mm)",
-                      "Gaten (n)",
-                      "Draadmaat",
-                      "Gat Ø",
-                    ].map((h) => (
-                      <th key={h} className={thStyle}>
-                        {h}
-                      </th>
-                    ))}
-                  {activeTab === "CB_DIMENSIONS" &&
-                    [
-                      "Record ID",
-                      "DN",
-                      "Mof Type",
-                      "Insertion (B1)",
-                      "Bell (B2)",
-                      "Bell OD (BD)",
-                    ].map((h) => (
-                      <th key={h} className={thStyle}>
-                        {h}
-                      </th>
-                    ))}
-                  {activeTab === "TB_DIMENSIONS" &&
-                    [
-                      "Record ID",
-                      "DN",
-                      "Insertion (B1)",
-                      "Bell (B2)",
-                      "Rand (BA)",
-                      "W (mm)",
-                    ].map((h) => (
-                      <th key={h} className={thStyle}>
-                        {h}
-                      </th>
-                    ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {filteredData.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="hover:bg-blue-50/30 transition-all group"
-                  >
-                    {/* TABS RENDERING LOGICA */}
-                    {activeTab === "FITTING_SPECS" && (
-                      <>
-                        <td className={tdStyle}>
-                          <span className="text-blue-600 font-black italic">
-                            ID {item.diameter || item.dn}
-                          </span>
-                        </td>
-                        <td className={tdStyle}>
-                          PN {item.pressure || item.pn}
-                        </td>
-                        <td className={tdStyle + " font-mono"}>
-                          {item.TW || "-"}
-                        </td>
-                        <td className={tdStyle + " font-mono"}>
-                          {item.Lo || "-"}
-                        </td>
-                        <td className={tdStyle + " font-mono"}>
-                          {item.Lnom || "-"}
-                        </td>
-                        <td className={tdStyle + " font-mono"}>
-                          {item.R || "-"}
-                        </td>
-                        <td className={tdStyle}>
-                          <span className="bg-slate-100 px-2 py-1 rounded-lg text-slate-500 font-black">
-                            {item.Weight || "-"} kg
-                          </span>
-                        </td>
-                      </>
-                    )}
-
-                    {activeTab === "BORE_DIMENSIONS" && (
-                      <>
-                        <td className={tdStyle}>
-                          <div className="flex flex-col">
-                            <span className="font-black text-slate-900">
-                              ID {item.dn}
-                            </span>
-                            <span className="text-[9px] text-slate-400 uppercase font-black">
-                              PN {item.pn}
-                            </span>
-                          </div>
-                        </td>
-                        <td className={tdStyle}>
-                          <span className="text-blue-600 font-black">
-                            {item.pcd} mm
-                          </span>
-                        </td>
-                        <td className={tdStyle}>{item.holes}</td>
-                        <td className={tdStyle}>
-                          <span className="bg-slate-900 text-white px-2 py-1 rounded text-[10px] font-black uppercase">
-                            {item.thread || item.boltSize}
-                          </span>
-                        </td>
-                        <td className={tdStyle}>{item.holeSize || "-"} mm</td>
-                      </>
-                    )}
-
-                    {activeTab === "CB_DIMENSIONS" && (
-                      <>
-                        <td
-                          className={tdStyle + " font-mono text-xs opacity-40"}
-                        >
-                          {item.id}
-                        </td>
-                        <td className={tdStyle}>
-                          <span className="font-black">
-                            DN {item.diameter || item.dn}
-                          </span>
-                        </td>
-                        <td className={tdStyle}>
-                          <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-2 py-1 rounded uppercase">
-                            CB
-                          </span>
-                        </td>
-                        <td className={tdStyle}>
-                          {item.B1 || item.InsertionDepth || "-"}
-                        </td>
-                        <td className={tdStyle}>{item.B2 || "-"}</td>
-                        <td className={tdStyle}>
-                          {item.BD || item.bellOD || "-"}
-                        </td>
-                      </>
-                    )}
-
-                    {activeTab === "TB_DIMENSIONS" && (
-                      <>
-                        <td
-                          className={tdStyle + " font-mono text-xs opacity-40"}
-                        >
-                          {item.id}
-                        </td>
-                        <td className={tdStyle}>
-                          <span className="font-black">
-                            DN {item.diameter || item.dn}
-                          </span>
-                        </td>
-                        <td className={tdStyle}>{item.B1 || "-"}</td>
-                        <td className={tdStyle}>{item.B2 || "-"}</td>
-                        <td className={tdStyle}>{item.BA || "-"}</td>
-                        <td className={tdStyle}>{item.W || "-"}</td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!loading && filteredData.length === 0 && (
-          <div className="p-32 text-center flex flex-col items-center justify-center opacity-40 italic">
-            <div className="p-8 bg-slate-50 rounded-full mb-6">
-              <Database className="text-slate-200" size={64} />
+          <div className="flex-1 flex flex-col">
+            {/* HEADER ROW */}
+            <div className="grid bg-slate-50/80 border-b border-slate-100 sticky top-0 z-10 backdrop-blur-sm" style={{ gridTemplateColumns: gridTemplate, paddingRight: '15px' }}>
+              {activeTab === "FITTING_SPECS" && ["ID (mm)", "PN", "TW (min)", "Lo", "Lnom", "R", "Gewicht (kg)"].map(h => (
+                <div key={h} className={thStyle}>{h}</div>
+              ))}
+              {activeTab === "BORE_DIMENSIONS" && ["Config DN/PN", "PCD (mm)", "Gaten (n)", "Draadmaat", "Gat Ø"].map(h => (
+                <div key={h} className={thStyle}>{h}</div>
+              ))}
+              {activeTab === "CB_DIMENSIONS" && ["Record ID", "DN", "Mof Type", "Insertion (B1)", "Bell (B2)", "Bell OD (BD)"].map(h => (
+                <div key={h} className={thStyle}>{h}</div>
+              ))}
+              {activeTab === "TB_DIMENSIONS" && ["Record ID", "DN", "Insertion (B1)", "Bell (B2)", "Rand (BA)", "W (mm)"].map(h => (
+                <div key={h} className={thStyle}>{h}</div>
+              ))}
             </div>
-            <h4 className="text-lg font-black text-slate-400 uppercase tracking-widest italic leading-none">
-              Geen data gevonden
-            </h4>
-            <p className="text-xs text-slate-300 font-bold uppercase tracking-tighter mt-2">
-              Map: /{PATHS[activeTab]?.join("/")}
-            </p>
+
+            {/* VIRTUALIZED LIST */}
+            <div className="flex-1">
+              {filteredData.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center opacity-40 italic">
+                  <div className="p-8 bg-slate-50 rounded-full mb-6">
+                    <Database className="text-slate-200" size={64} />
+                  </div>
+                  <h4 className="text-lg font-black text-slate-400 uppercase tracking-widest italic leading-none">Geen data gevonden</h4>
+                </div>
+              ) : (
+                <AutoSizer>
+                  {({ height, width }) => (
+                    <List
+                      height={height}
+                      width={width}
+                      itemCount={filteredData.length}
+                      itemSize={60}
+                      itemData={{ items: filteredData, activeTab, gridTemplate }}
+                    >
+                      {Row}
+                    </List>
+                  )}
+                </AutoSizer>
+              )}
+            </div>
           </div>
         )}
 
         {/* Footer Audit Detail */}
-        <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between">
+        <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <Info size={16} className="text-blue-500" />
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic">
