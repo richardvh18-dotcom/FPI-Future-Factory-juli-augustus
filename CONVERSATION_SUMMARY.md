@@ -1,3 +1,147 @@
+# Samenvatting Sessie: Pilot Ready Setup & Dual Deployment
+
+**Datum:** 8 maart 2026
+**Status:** ✅ Production Ready - Actieve Ontwikkelperiode
+
+## 🎯 Doelstellingen
+1. Pilot-ready versie klaarmaken voor productie gebruik
+2. Dual Vercel deployment setup (Production + Preview)
+3. Parallelle ontwikkeling mogelijk maken tijdens pilot
+4. Complete documentatie en workflow guides
+
+## ✅ Geïmplementeerde Setup
+
+### 1. Git Branch Strategie
+- **`FpiFF-Pilot-Ready`** (STABLE)
+  - Production branch voor pilot test
+  - Alleen hotfixes en kritieke bugs
+  - Auto-deploy naar: https://future-factory.vercel.app
+  
+- **`preview-v2`** (DEVELOPMENT)
+  - Ontwikkeling nieuwe features
+  - Experimentele functionaliteit
+  - Auto-deploy naar preview URL
+  - Parallel development track
+
+### 2. Vercel Dual Deployment
+- **Production**: https://future-factory.vercel.app
+  - Branch: `FpiFF-Pilot-Ready`
+  - Voor: Live pilot gebruik
+  - Status: ✅ LIVE
+  - Auto-deploy: Actief bij push
+  
+- **Preview**: https://futurefactoryapp-hdphish87-richard-van-heerdes-projects.vercel.app
+  - Branch: `preview-v2`
+  - Voor: Feature development & testing
+  - Status: ✅ LIVE
+  - Auto-deploy: Actief bij push
+
+### 3. Configuratie Bestanden
+- **`vercel.json`**: Complete Vercel config met security headers
+- **`.vercelignore`**: Geoptimaliseerde deployment files
+- **`setup-vercel.sh`**: Automated deployment script
+- **Environment Variables**: Geconfigureerd in Vercel Dashboard
+
+### 4. Documentatie
+Nieuwe documentatie aangemaakt:
+- **`PILOT_TEST_SCENARIO.md`**: Complete test flow (hersteld en uitgebreid)
+- **`README-PILOT.md`**: Pilot versie documentatie
+- **`WORKFLOW_GUIDE.md`**: Complete guide voor parallel werken
+- **`VERCEL_DEPLOYMENT_GUIDE.md`**: Deployment instructies
+- **`PREVIEW_V2_ROADMAP.md`**: Planning toekomstige features (in preview-v2 branch)
+- **`PUSH_TO_PILOT_REPO.md`**: Instructies voor nieuwe repository
+
+## 📅 Planning & Workflow
+
+### Actieve Ontwikkelperiode: 8 maart - 23 maart 2026
+**Focus:** Finaliseren Production voor pilot start
+
+#### Week 1-2 (8 maart - 23 maart)
+- **Production Branch** (`FpiFF-Pilot-Ready`):
+  - Laatste bug fixes en verfijningen
+  - UX optimalisaties voor operators
+  - Performance testing en optimalisatie
+  - Pilot voorbereiding en validatie
+  - Alleen kritieke wijzigingen
+  
+- **Preview Branch** (`preview-v2`):
+  - Planning nieuwe features (alleen documentatie)
+  - Geen actieve development
+  - Blijft beschikbaar voor toekomstige work
+
+#### Na 23 maart 2026
+- **Pilot Start**: Production freeze (alleen emergency hotfixes)
+- **Preview Development**: Actieve ontwikkeling nieuwe features
+- **Weekly Sync**: Pilot fixes → Preview merge
+
+## 🔄 Workflow Tijdens Ontwikkelperiode (8-23 maart)
+
+### Production Wijzigingen (FpiFF-Pilot-Ready)
+```bash
+git checkout FpiFF-Pilot-Ready
+# Maak wijzigingen...
+git add .
+git commit -m "fix/feat: beschrijving"
+git push origin FpiFF-Pilot-Ready
+# ⚡ Auto-deploy naar Production
+```
+
+### Preview Planning (preview-v2)
+```bash
+git checkout preview-v2
+# Alleen documentatie/planning
+git merge FpiFF-Pilot-Ready  # Sync pilot changes
+git push origin preview-v2
+```
+
+## 🎯 Deliverables voor 23 maart
+
+Voor pilot start moeten afgerond zijn:
+- [ ] Alle kritieke bugs opgelost
+- [ ] Performance geoptimaliseerd (< 2s load)
+- [ ] Alle operators getraind
+- [ ] Test scenario doorlopen en gevalideerd
+- [ ] Backup & rollback procedures getest
+- [ ] Monitoring dashboard actief
+- [ ] Emergency contact lijst klaar
+- [ ] Production freeze procedure gedocumenteerd
+
+## 📊 Success Criteria
+
+Pilot ready betekent:
+- ✅ Beide Vercel deployments LIVE
+- ✅ Auto-deploy werkend voor beide branches
+- ✅ Complete documentatie beschikbaar
+- ✅ Test scenario gevalideerd
+- ✅ Workflow guides compleet
+- ✅ Branch strategie geïmplementeerd
+- ⏳ Production finalisatie (8-23 maart)
+- ⏳ Pilot start voorbereiding
+
+## 🔜 Volgende Stappen (Tot 23 maart)
+
+### Prioriteit 1: Critical Path
+1. Performance optimalisatie Production
+2. Bug fixes uit test feedback
+3. Operator training materiaal
+4. Emergency procedures documenteren
+
+### Prioriteit 2: Nice to Have
+1. UI/UX kleine verbeteringen
+2. Extra validatie checks
+3. Logging uitbreiden
+4. Dashboard optimalisaties
+
+### Preview v2 Feature Planning (Achtergrond)
+Zie `PREVIEW_V2_ROADMAP.md` in preview-v2 branch voor:
+- ERP Integratie (Infor LN)
+- NCR Workflow Automation
+- Statistical Process Control (SPC)
+- AI Features uitbreiding
+- Capacity Planning Optimization
+
+---
+
 # Samenvatting Sessie: Pilot Validatie & Lotnummer Uniekheid
 
 **Datum:** 1 maart 2026
