@@ -14,35 +14,28 @@ import {
   Wifi,
   AlertTriangle,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Database
 } from "lucide-react";
 import { collection, getDocs, query, where, onSnapshot, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 
-// Import met fallback voor dbPaths & firebase om build errors te voorkomen
 import { db, auth, logActivity } from "../../../config/firebase"; 
 import { PATHS } from "../../../config/dbPaths";
 import {
   processLabelData,
   resolveLabelContent,
   applyLabelLogic,
+  filterLabelsByProduct,
+  getBarcodeUrl,
+  getQRCodeUrl,
 } from "../../../utils/labelHelpers";
 import { generateZPL, downloadZPL } from "../../../utils/zplHelper";
-import { isUsbDirectSupported, printRawUsb } from "../../../utils/usbPrintService";
+import { isUsbDirectSupported } from "../../printer/usbPrintService";
+import { queuePrintJob } from "../../../services/printService.js";
 
 const PIXELS_PER_MM = 3.78;
 
-const getQRCodeUrl = (data) =>
-  `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(
-    data || "leeg"
-  )}`;
-
-const getBarcodeUrl = (data) =>
-  `https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(
-    data || "leeg"
-  )}&scale=3&height=10&incltext&guardwhitespace`;
-
 // Functie om ISO week en bijbehorend ISO jaar te berekenen
-// Dit voorkomt mismatches rond de jaarwisseling (bv. 29 dec 2025 is week 1 van 2026)
 const getIsoWeekAndYear = (d) => {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
@@ -59,6 +52,63 @@ const getMachineCode = (station) => {
     'BA07': '417'
   };
   return map[station] || station.replace(/\D/g,'').padStart(3, '0') || '999';
+};
+
+// WebUSB Driver (Lokaal geïntegreerd voor stabiliteit)
+const printViaWebUSB = async (printerData, zplContent) => {
+  if (!navigator.usb) throw new Error("WebUSB wordt niet ondersteund.");
+  
+  let device;
+  // Probeer bekende printer te vinden als vendorId/productId bekend zijn
+  if (printerData && printerData.vendorId && printerData.productId) {
+      const devices = await navigator.usb.getDevices();
+      device = devices.find(d => d.vendorId === printerData.vendorId && d.productId === printerData.productId);
+  }
+  
+  // Als niet gevonden of niet geconfigureerd, vraag gebruiker
+  if (!device) {
+      try {
+          // Filters leeg laten om alle apparaten te tonen
+          device = await navigator.usb.requestDevice({ filters: [] });
+      } catch (err) {
+          if (err.name === 'SecurityError' || err.name === 'NotFoundError') {
+              throw new Error("USB Toegang Geweigerd. Selecteer de printer in de pop-up.");
+          }
+          throw err;
+      }
+  }
+
+  try {
+      if (!device.opened) await device.open();
+  } catch (err) {
+      console.error("USB Open Error:", err);
+      if (err.name === 'SecurityError' || err.message?.includes('Access denied')) {
+           throw new Error("Toegang geweigerd door Windows. De printer is als systeemprinter geïnstalleerd. Voor WebUSB is de WinUSB-driver nodig (via Zadig).");
+      }
+      throw new Error(`Kan printer niet openen: ${err.message}. (WinUSB driver nodig?)`);
+  }
+
+  if (device.configuration === null) await device.selectConfiguration(1);
+  
+  try { 
+      await device.claimInterface(0); 
+  } catch (e) { 
+      console.warn("Interface claim warning:", e);
+  }
+  
+  const encoder = new window.TextEncoder();
+  const data = encoder.encode(zplContent);
+  
+  // Zoek OUT endpoint
+  const interface0 = device.configuration.interfaces[0];
+  const endpoint = interface0?.alternate?.endpoints.find(e => e.direction === "out");
+  const endpointNumber = endpoint ? endpoint.endpointNumber : 1;
+
+  await device.transferOut(endpointNumber, data);
+  
+  try { 
+      await device.close(); 
+  } catch (e) { /* ignore close errors */ }
 };
 
 const ProductionStartModal = ({
@@ -85,7 +135,7 @@ const ProductionStartModal = ({
 
   const [availableLabels, setAvailableLabels] = useState([]);
   const [selectedLabelId, setSelectedLabelId] = useState("");
-  const [, setLoadingLabels] = useState(false);
+  const [loadingLabels, setLoadingLabels] = useState(false);
   const [previewZoom, setPreviewZoom] = useState(1);
   const location = useLocation();
   
@@ -101,11 +151,11 @@ const ProductionStartModal = ({
 
   const [isCheckingLot, setIsCheckingLot] = useState(false);
   const [lotError, setLotError] = useState("");
+  const [isStarting, setIsStarting] = useState(false);
 
   // Autofocus naar ordernummer bij openen in manuele modus
   useEffect(() => {
     if (isOpen && mode === "manual" && orderInputRef.current) {
-      // Kleine delay zodat modal animatie voltooid is
       setTimeout(() => {
         orderInputRef.current?.focus();
       }, 300);
@@ -121,17 +171,27 @@ const ProductionStartModal = ({
         const tplPaths = PATHS?.LABEL_TEMPLATES || ['future-factory', 'settings', 'label_templates'];
         const labelsRef = collection(db, ...tplPaths);
         const querySnapshot = await getDocs(labelsRef);
-        const labels = querySnapshot.docs.map((doc) => ({
+        const allLabels = querySnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
         }));
-        setAvailableLabels(labels);
+        
+        // Filter labels op basis van product tags (bijv. alleen Wavistrong labels voor Wavistrong orders)
+        let filteredLabels = filterLabelsByProduct(allLabels, order);
 
-        if (labels.length > 0) {
-          let defaultLabel = labels.find(
+        // Fallback: Als er geen labels overblijven (bijv. door te strikte tags), toon alles
+        if (filteredLabels.length === 0 && allLabels.length > 0) {
+            console.warn("Geen labels gevonden na filteren. Fallback naar alle labels.");
+            filteredLabels = allLabels;
+        }
+
+        setAvailableLabels(filteredLabels);
+
+        if (filteredLabels.length > 0) {
+          let defaultLabel = filteredLabels.find(
             (l) => l.name?.toLowerCase().includes("smal") || l.height < 45
           );
-          setSelectedLabelId(defaultLabel?.id || labels[0].id);
+          setSelectedLabelId(defaultLabel?.id || filteredLabels[0].id);
         }
       } catch (e) {
         console.error("Fout bij laden labels:", e);
@@ -150,7 +210,7 @@ const ProductionStartModal = ({
     } catch(err) {
       console.error("Error in label fetch", err);
     }
-  }, [isOpen]);
+  }, [isOpen, order]);
 
   // 1b. Operators ophalen voor dit station
   useEffect(() => {
@@ -196,11 +256,9 @@ const ProductionStartModal = ({
           const targetPrinter = stationPrinter || globalDefault;
 
           if (targetPrinter) {
-            if (targetPrinter.type === 'network') {
-                setPrintConfig(prev => ({ ...prev, mode: 'network', printerIp: targetPrinter.ip, printerId: targetPrinter.id }));
-            } else {
-                setPrintConfig(prev => ({ ...prev, mode: 'usb', printerIp: '', printerId: targetPrinter.id }));
-            }
+            // Default naar 'queue' als er een printer is geconfigureerd voor dit station.
+            // De gebruiker kan dit handmatig aanpassen met de print-mode knoppen.
+            setPrintConfig(prev => ({ ...prev, mode: 'queue', printerId: targetPrinter.id }));
           }
         });
         return () => unsub();
@@ -217,12 +275,10 @@ const ProductionStartModal = ({
       const actPaths = PATHS?.ACTIVE_PRODUCTION || ['future-factory', 'production', 'active'];
       const activeRef = collection(db, ...actPaths);
       
-      // Check 1: lotNumber veld
       const qActive = query(activeRef, where("lotNumber", "==", lotToCheck));
       const snapshotActive = await getDocs(qActive);
       if (!snapshotActive.empty) return true;
 
-      // Check 2: activeLot veld (fallback)
       const qActive2 = query(activeRef, where("activeLot", "==", lotToCheck));
       const snapshotActive2 = await getDocs(qActive2);
       if (!snapshotActive2.empty) return true;
@@ -238,30 +294,22 @@ const ProductionStartModal = ({
     }
   };
 
-  // Stap A: Zoek de allerhoogste teller voor deze week/machine, onafhankelijk van het product
   const getHighestSequenceForBaseLot = async (baseLotStr, stationId, weekSuffix) => {
     let maxSeq = 0;
     
-    // 1. Check de "Counter" collectie
-    // We gebruiken nu week-specifieke documenten (bijv. 'BH18_2609')
-    // Dit voorkomt conflicten tussen weken. Oude weken worden bij start opgeruimd.
     const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const counterDocId = `${safeStationId}_${weekSuffix}`;
     const counterRef = doc(db, "future-factory", "production", "counters", counterDocId);
 
-    console.log(`[LotGen] Checking counter: ${counterDocId}`);
-
     try {
         const counterSnap = await getDoc(counterRef);
         if (counterSnap.exists()) {
-            console.log(`[LotGen] Counter hit: ${counterSnap.data().lastSequence}`);
             return counterSnap.data().lastSequence || 0;
         }
     } catch (e) {
         console.error("Fout bij lezen counter:", e);
     }
 
-    // 2. FALLBACK: Als counter nog niet bestaat (eerste keer deze week), zoek in database
     const extractSeq = (lot) => {
         if (!lot || !lot.startsWith(baseLotStr)) return 0;
         const seqStr = lot.substring(baseLotStr.length).replace(/[^0-9]/g, '');
@@ -269,15 +317,12 @@ const ProductionStartModal = ({
         return isNaN(seq) ? 0 : seq;
     };
 
-    // 2a. Check actieve producten in de lijst (memory)
     existingProducts?.forEach(p => {
         const seq = extractSeq(p.lotNumber || p.activeLot);
         if (seq > maxSeq) maxSeq = seq;
     });
 
-    // 2b. Check Database (inclusief archief)
     try {
-        // Active Production - Haal ALLES op (kleine collectie, voorkomt index/query issues)
         const activePath = PATHS?.ACTIVE_PRODUCTION || ['future-factory', 'production', 'active'];
         const activeRef = collection(db, ...activePath);
         const activeSnap = await getDocs(activeRef);
@@ -287,7 +332,6 @@ const ProductionStartModal = ({
             if (seq > maxSeq) maxSeq = seq;
         });
 
-        // Archive - Gebruik query (grote collectie)
         const archivePath = PATHS?.PRODUCTION_ARCHIVE || ['future-factory', 'production', 'archive'];
         const archiveRef = collection(db, ...archivePath);
         const q = query(
@@ -305,16 +349,13 @@ const ProductionStartModal = ({
         console.error("Fout bij ophalen max sequence:", error);
     }
 
-    // 3. Initialiseer de counter voor de volgende keer (Self-healing)
     try {
         await setDoc(counterRef, { lastSequence: maxSeq, updatedAt: serverTimestamp() }, { merge: true });
-        console.log(`[LotGen] Counter initialized at: ${maxSeq}`);
     } catch (e) { console.error("Kon counter niet initialiseren", e); }
 
     return maxSeq;
   };
 
-  // Stap B: Genereer de robuuste FPI code
   useEffect(() => {
     let isMounted = true;
 
@@ -326,30 +367,24 @@ const ProductionStartModal = ({
         const d = new Date();
         const iso = getIsoWeekAndYear(d);
         
-        // FPI Standaard Opbouw:
-        const bedrijf = "40"; // FPI
-        const jaar = iso.year.slice(-2); // 26
-        const week = iso.week; // 09
-        const machine = getMachineCode(stationId); // 418 (voor BH18)
-        const land = "40"; // NL
+        const bedrijf = "40";
+        const jaar = iso.year.slice(-2);
+        const week = iso.week;
+        const machine = getMachineCode(stationId);
+        const land = "40";
 
-        // Basis = "40260941840"
         const baseLot = `${bedrijf}${jaar}${week}${machine}${land}`;
 
-        // Haal het hoogste getal op dat al gebruikt is voor deze basis (bijv. 1)
         const highestSeq = await getHighestSequenceForBaseLot(baseLot, stationId, `${jaar}${week}`);
         
-        // De nieuwe teller wordt het hoogste getal + 1 (dus als er niets is = 1)
         let counter = highestSeq + 1;
         
-        // Voeg 5 nullen toe als padding (00001, 00002, etc.)
-        let newLotNumber = `${baseLot}${String(counter).padStart(5, '0')}`;
+        let newLotNumber = `${baseLot}${String(counter).padStart(4, '0')}`;
 
-        // Noodzekerheid check om echt te garanderen dat deze teller niet in de database zit
         while (await checkLotNumberExists(newLotNumber)) {
             counter++;
-            newLotNumber = `${baseLot}${String(counter).padStart(5, '0')}`;
-            if (counter > 99999) break; 
+            newLotNumber = `${baseLot}${String(counter).padStart(4, '0')}`;
+            if (counter > 9999) break; 
         }
 
         if (isMounted) {
@@ -375,7 +410,6 @@ const ProductionStartModal = ({
     return () => { isMounted = false; };
   }, [isOpen, order, mode, stationId]);
 
-  // Functie om de counter te updaten bij start
   const updateCounterOnStart = async (usedLotNumber, count) => {
       if (!usedLotNumber || mode !== "auto") return;
       try {
@@ -384,32 +418,25 @@ const ProductionStartModal = ({
           const year = iso.year.slice(-2);
           const week = iso.week;
           
-          // 1. Update Huidige Week (bijv. BH18_2609)
           const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
           const counterDocId = `${safeStationId}_${year}${week}`;
           const counterRef = doc(db, "future-factory", "production", "counters", counterDocId);
           
-          // Haal volgnummer uit lotnummer (laatste 5 cijfers)
           const currentSeq = parseInt(usedLotNumber.slice(-5), 10);
-          const newMax = currentSeq + (count - 1); // Als we er 5 maken, is de teller +4
+          const newMax = currentSeq + (count - 1);
 
-          console.log(`[LotGen] Updating counter ${counterDocId} -> ${newMax}`);
           await setDoc(counterRef, { lastSequence: newMax, updatedAt: serverTimestamp() }, { merge: true });
 
-          // 2. Cleanup Oude Weken (Veiligheid: 2 weken bewaren)
-          // Als we in week 11 zitten, wissen we week 9.
           const twoWeeksAgo = new Date();
           twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
           const isoOld = getIsoWeekAndYear(twoWeeksAgo);
           const oldDocId = `${safeStationId}_${isoOld.year.slice(-2)}${isoOld.week}`;
           
-          // Probeer te verwijderen (fire & forget)
           await deleteDoc(doc(db, "future-factory", "production", "counters", oldDocId)).catch(() => {});
 
       } catch (e) { console.error("Kon counter niet updaten:", e); }
   };
 
-  // 3. Data voor preview
   const previewData = useMemo(() => {
     if (!order) return {};
     const baseData = processLabelData({
@@ -428,73 +455,18 @@ const ProductionStartModal = ({
     [availableLabels, selectedLabelId]
   );
 
-  // 4. Zoom berekening voor preview venster
   useEffect(() => {
     if (containerRef.current && selectedLabel) {
       const containerW = containerRef.current.clientWidth - 60;
       const containerH = containerRef.current.clientHeight - 180;
       const labelW = selectedLabel.width * PIXELS_PER_MM;
       const labelH = selectedLabel.height * PIXELS_PER_MM;
-      setPreviewZoom(Math.min(1.4, containerW / labelW, containerH / labelH));
+      setPreviewZoom(Math.min(4, containerW / labelW, containerH / labelH));
     }
   }, [selectedLabel, isOpen]);
 
-  // 5. Browser Print Functie
-  const handlePrint = async () => {
-    if (!selectedLabel) return;
-    
-    const quantityStr = prompt("Hoeveel labels wilt u printen?", "1");
-    const quantity = parseInt(quantityStr);
-    if (!quantity || isNaN(quantity) || quantity < 1) return;
-    
-    if (printConfig.mode === "network") {
-      if (!printConfig.printerIp) {
-        alert("Selecteer eerst een netwerkprinter.");
-        return;
-      }
-      
-      const selectedPrinter = savedPrinters.find(p => p.ip === printConfig.printerIp);
-      const protocol = (selectedPrinter?.protocol || "zpl").toLowerCase();
-      if (protocol !== "zpl") {
-        alert(`Netwerkprinten ondersteunt momenteel alleen ZPL (geselecteerd: ${protocol.toUpperCase()}).`);
-        return;
-      }
-      const darkness = selectedPrinter?.darkness ? parseInt(selectedPrinter.darkness) : 15;
-      const dpi = selectedPrinter?.dpi ? parseInt(selectedPrinter.dpi) : 203;
-      
-      let zpl = await generateZPL(selectedLabel, previewData, dpi);
-      if (!zpl.includes("~SD")) zpl = `~SD${darkness}\n${zpl}`;
-
-      try {
-        for (let i = 0; i < quantity; i++) {
-           await fetch(`http://${printConfig.printerIp}/pstprnt`, { method: "POST", body: zpl, mode: "no-cors" });
-        }
-        alert(`Opdracht verzonden naar ${selectedPrinter?.name || printConfig.printerIp}`);
-      } catch (e) {
-        alert("Fout bij printen naar netwerkprinter: " + e.message);
-      }
-      return;
-    }
-
-    if (printConfig.mode === "usb") {
-      const selectedPrinter = savedPrinters.find(p => p.id === printConfig.printerId) || savedPrinters.find(p => p.type !== "network");
-      const darkness = selectedPrinter?.darkness ? parseInt(selectedPrinter.darkness) : 15;
-      const dpi = selectedPrinter?.dpi ? parseInt(selectedPrinter.dpi) : 203;
-
-      let zpl = await generateZPL(selectedLabel, previewData, dpi);
-      if (!zpl.includes("~SD")) zpl = `~SD${darkness}\n${zpl}`;
-
-      try {
-        for (let i = 0; i < quantity; i++) {
-          await printRawUsb({ content: zpl, printer: selectedPrinter || {} });
-        }
-        alert(`USB-opdracht verzonden${selectedPrinter?.name ? ` naar ${selectedPrinter.name}` : ""}.`);
-      } catch (e) {
-        alert("USB direct print mislukt: " + e.message);
-      }
-      return;
-    }
-
+  // Helper voor standaard browser print (PDF)
+  const printViaBrowser = (quantity) => {
     const printWindow = window.open("", "_blank", "width=800,height=600");
     const labelW = selectedLabel.width;
     const labelH = selectedLabel.height;
@@ -514,7 +486,7 @@ const ProductionStartModal = ({
               for (let i = 0; i < ${quantity}; i++) {
                 window.print();
               }
-              window.close();
+              // window.close(); // Optioneel: sluit venster na printen
             };
           </script>
         </head>
@@ -523,37 +495,126 @@ const ProductionStartModal = ({
             ${selectedLabel.elements
               ?.map((el) => {
                 const res = resolveLabelContent(el, previewData);
-                const style = `left:${el.x}mm; top:${el.y}mm; width:${
-                  el.width || "auto"
-                }mm; height:${el.height || "auto"}mm; font-size:${
-                  el.fontSize
-                }px; font-weight:${
-                  el.isBold ? "900" : "normal"
-                }; transform: rotate(${el.rotation || 0}deg); font-family: sans-serif; white-space: nowrap;`;
-                if (el.type === "text")
-                  return `<div class="el" style="${style}">${res.content}</div>`;
-                if (el.type === "qr")
-                  return `<div class="el" style="${style}"><img src="${getQRCodeUrl(
-                    res.content
-                  )}"></div>`;
-                if (el.type === "barcode")
-                  return `<div class="el" style="${style}"><img src="${getBarcodeUrl(
-                    res.content
-                  )}"></div>`;
+                const style = `left:${el.x}mm; top:${el.y}mm; width:${el.width || "auto"}mm; height:${el.height || "auto"}mm; font-size:${el.fontSize}px; font-weight:${el.isBold ? "900" : "normal"}; transform: rotate(${el.rotation || 0}deg); font-family: sans-serif; white-space: pre-wrap; word-wrap: break-word;`;
+                if (el.type === "text") return `<div class="el" style="${style}">${res.content}</div>`;
+                if (el.type === "qr") return `<div class="el" style="${style}"><img src="${getQRCodeUrl(res.content)}"></div>`;
+                if (el.type === "barcode") return `<div class="el" style="${style}"><img src="${getBarcodeUrl(res.content)}"></div>`;
                 return "";
-              })
-              .join("")}
+              }).join("")}
           </div>
         </body>
-      </html>
-    `;
+      </html>`;
     printWindow.document.write(htmlContent);
     printWindow.document.close();
   };
 
+  const handlePrint = async () => {
+    if (!selectedLabel) return;
+    
+    const quantityStr = prompt("Hoeveel labels wilt u printen?", "1");
+    const quantity = parseInt(quantityStr);
+    if (!quantity || isNaN(quantity) || quantity < 1) return;
+    
+    // MODE: CLOUD WACHTRIJ (Nieuw)
+    if (printConfig.mode === "queue") {
+      try {
+        // --- NIEUWE LOGICA: Vind de juiste printer voor dit station ---
+        // 1. Zoek een printer die specifiek aan dit station gekoppeld is
+        const stationPrinter = savedPrinters.find(p => p.linkedStations?.includes(stationId));
+        // 2. Als niet gevonden, zoek de globale standaard printer
+        const defaultPrinter = savedPrinters.find(p => p.isDefault);
+        // 3. Gebruik de stationsprinter, of de standaard, of geef een foutmelding
+        const targetPrinter = stationPrinter || defaultPrinter;
+
+        if (!targetPrinter) {
+          alert(`Geen printer geconfigureerd voor station '${stationId}' en er is geen standaard printer ingesteld. Ga naar Admin > Printer Beheer.`);
+          return;
+        }
+
+        const zpl = await generateZPL(selectedLabel, previewData, 203);
+        for (let i = 0; i < quantity; i++) {
+           await queuePrintJob(
+             targetPrinter.id, 
+             zpl, 
+             {
+                description: `Label voor ${order.orderId} (Lot: ${lotNumber})`,
+                stationId: stationId || "Onbekend",
+                targetPrinterName: targetPrinter.name,
+                width: selectedLabel.width,
+                height: selectedLabel.height
+             }
+           );
+        }
+        alert(`Opdracht succesvol naar de wachtrij gestuurd voor printer: ${targetPrinter.name}`);
+      } catch (e) {
+        alert("Fout bij versturen naar wachtrij: " + e.message);
+      }
+      return;
+    }
+
+    if (printConfig.mode === "network") {
+      if (!printConfig.printerIp) {
+        alert("Selecteer eerst een netwerkprinter.");
+        return;
+      }
+      
+      const selectedPrinter = savedPrinters.find(p => p.ip === printConfig.printerIp);
+      const protocol = (selectedPrinter?.protocol || "zpl").toLowerCase();
+      if (protocol !== "zpl") {
+        alert(`Netwerkprinten ondersteunt momenteel alleen ZPL (geselecteerd: ${protocol.toUpperCase()}).`);
+        return;
+      }
+      const darkness = selectedPrinter?.darkness ? parseInt(selectedPrinter.darkness) : 15;
+      const dpi = selectedPrinter?.dpi ? parseInt(selectedPrinter.dpi) : 203;
+      
+      let zpl = await generateZPL(selectedLabel, previewData, dpi, resolveLabelContent);
+      if (!zpl.includes("~SD")) zpl = `~SD${darkness}\n${zpl}`;
+
+      try {
+        for (let i = 0; i < quantity; i++) {
+           await fetch(`http://${printConfig.printerIp}/pstprnt`, { method: "POST", body: zpl, mode: "no-cors" });
+        }
+        alert(`Opdracht verzonden naar ${selectedPrinter?.name || printConfig.printerIp}`);
+      } catch (e) {
+        alert("Fout bij printen naar netwerkprinter: " + e.message);
+      }
+      return;
+    }
+
+    if (printConfig.mode === "usb") {
+      const selectedPrinter = savedPrinters.find(p => p.id === printConfig.printerId) || savedPrinters.find(p => p.type !== "network");
+      const darkness = selectedPrinter?.darkness ? parseInt(selectedPrinter.darkness) : 15;
+      const dpi = selectedPrinter?.dpi ? parseInt(selectedPrinter.dpi) : 203;
+
+      let zpl = await generateZPL(selectedLabel, previewData, dpi, resolveLabelContent);
+      if (!zpl.includes("~SD")) zpl = `~SD${darkness}\n${zpl}`;
+
+      try {
+        for (let i = 0; i < quantity; i++) {
+          await printViaWebUSB(selectedPrinter || {}, zpl);
+        }
+        alert(`USB-opdracht verzonden${selectedPrinter?.name ? ` naar ${selectedPrinter.name}` : ""}.`);
+      } catch (e) {
+        console.error("USB Print Error:", e);
+        if (e.message.includes("Toegang geweigerd door Windows") || e.message.toLowerCase().includes("access denied")) {
+          if (window.confirm("USB Toegang Geweigerd: Windows beheert deze printer al.\n\nWil je in plaats daarvan via de browser (PDF) printen?")) {
+            printViaBrowser(quantity);
+          }
+        } else if (e.message.toLowerCase().includes("no device selected")) {
+          alert("Geen printer geselecteerd in de browser pop-up. Probeer het opnieuw en selecteer een printer.");
+        } else {
+          alert(`USB direct print mislukt: ${e.message}`);
+        }
+      }
+      return;
+    }
+
+    printViaBrowser(quantity);
+  };
+
   const handleZPLDownload = async () => {
     if (!selectedLabel) return;
-    const zpl = await generateZPL(selectedLabel, previewData);
+    const zpl = await generateZPL(selectedLabel, previewData, 203, resolveLabelContent);
     downloadZPL(zpl, `label_${order.orderId}_${lotNumber}.zpl`);
   };
 
@@ -563,13 +624,11 @@ const ProductionStartModal = ({
     setOrderError("");
     setOrderValidated(false);
 
-    // Valideer of gescand ordernummer overeenkomt met geselecteerd order
     if (value.trim().length >= 4) {
       const expectedOrderId = order?.orderId?.toUpperCase();
       if (expectedOrderId && value.trim() === expectedOrderId) {
         setOrderValidated(true);
         setOrderError("");
-        // Spring direct naar lotnummer veld
         setTimeout(() => {
           lotInputRef.current?.focus();
         }, 100);
@@ -591,7 +650,6 @@ const ProductionStartModal = ({
       if (exists) {
         setLotError("Dit lotnummer is op dit moment al in productie!");
       } else {
-        // Controleer ook in database
         const existsInDb = await checkLotNumberExists(value.trim());
         if (existsInDb) {
           setLotError("Dit lotnummer is al gebruikt!");
@@ -829,23 +887,34 @@ const ProductionStartModal = ({
               <label className="text-[9px] font-black text-slate-400 uppercase block mb-1.5 ml-2">
                 Label Formaat
               </label>
-              <div className="relative group">
-                <select
-                  value={selectedLabelId}
-                  onChange={(e) => setSelectedLabelId(e.target.value)}
-                  className="w-full p-3 bg-white border-2 border-slate-100 rounded-xl text-xs font-black text-slate-700 outline-none focus:border-blue-600 shadow-sm appearance-none cursor-pointer group-hover:border-slate-300"
-                >
-                  {availableLabels.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name} ({l.width}x{l.height}mm)
-                    </option>
-                  ))}
-                </select>
-                <Printer
-                  size={14}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-                />
-              </div>
+              {loadingLabels ? (
+                <div className="p-3 text-center text-xs text-slate-400 italic flex items-center justify-center gap-2">
+                  <Loader2 size={14} className="animate-spin" /> Labels laden...
+                </div>
+              ) : availableLabels.length === 0 ? (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-700 flex items-center gap-2">
+                  <AlertTriangle size={16} />
+                  <span>Geen geschikte labels gevonden.</span>
+                </div>
+              ) : (
+                <div className="relative group">
+                  <select
+                    value={selectedLabelId}
+                    onChange={(e) => setSelectedLabelId(e.target.value)}
+                    className="w-full p-3 bg-white border-2 border-slate-100 rounded-xl text-xs font-black text-slate-700 outline-none focus:border-blue-600 shadow-sm appearance-none cursor-pointer group-hover:border-slate-300"
+                  >
+                    {availableLabels.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name} ({l.width}x{l.height}mm)
+                      </option>
+                    ))}
+                  </select>
+                  <Printer
+                    size={14}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -854,26 +923,71 @@ const ProductionStartModal = ({
               onClick={onClose}
               className="flex-1 py-5 bg-white border-2 border-slate-100 text-slate-400 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 transition-all"
             >
-              Annuleer
+              Annuleren
             </button>
             <button
               onClick={async () => {
+                if (!selectedLabel) {
+                  alert("Selecteer eerst een label formaat.");
+                  return;
+                }
+                setIsStarting(true);
                 try {
+                  // Genereer ZPL hier, zodat we het kunnen opslaan
+                  const zpl = await generateZPL(selectedLabel, previewData, 203, resolveLabelContent);
+
                   await updateCounterOnStart(mode === "auto" ? lotNumber : manualLotInput, stringCount);
                   await logActivity(auth.currentUser?.uid, "ORDER_RELEASE", `Order started: ${order.orderId}, Lot: ${mode === "auto" ? lotNumber : manualLotInput}`);
-                  onStart(
+                  
+                  // --- NIEUW: Automatisch printen bij 'Auto' modus ---
+                  if (mode === "auto") {
+                    const quantityStr = prompt("Hoeveel labels wilt u printen?", stringCount);
+                    const quantity = parseInt(quantityStr);
+
+                    if (quantity && quantity > 0) {
+                      const stationPrinter = savedPrinters.find(p => p.linkedStations?.includes(stationId));
+                      const defaultPrinter = savedPrinters.find(p => p.isDefault);
+                      const targetPrinter = stationPrinter || defaultPrinter;
+
+                      if (targetPrinter) {
+                        for (let i = 0; i < quantity; i++) {
+                          await queuePrintJob(
+                            targetPrinter.id,
+                            zpl,
+                            {
+                              description: `Label voor ${order.orderId} (Lot: ${lotNumber})`,
+                              stationId: stationId || "Onbekend",
+                              targetPrinterName: targetPrinter.name,
+                              width: selectedLabel.width,
+                              height: selectedLabel.height
+                            }
+                          );
+                        }
+                        alert(`${quantity} label(s) naar de wachtrij gestuurd voor printer: ${targetPrinter.name}`);
+                      } else {
+                        alert(`Geen printer geconfigureerd voor station '${stationId}' en er is geen standaard printer ingesteld. Ga naar Admin > Printer Beheer.`);
+                      }
+                    }
+                  }
+                  // --- Einde auto-print ---
+                  
+                  await onStart(
                     order,
                     mode === "auto" ? lotNumber : manualLotInput,
                     stringCount,
                     manualOrderInput,
                     operatorInput,
-                    selectedOperatorName 
+                    selectedOperatorName,
+                    zpl, // NIEUW: Geef ZPL door
+                    selectedLabelId // NIEUW: Geef template ID door
                   );
                 } catch(e) {
                    console.error(e)
+                   setIsStarting(false);
                 }
               }}
               disabled={
+                isStarting ||
                 (mode === "manual" && (!orderValidated || !manualLotInput || !!lotError || !!orderError)) ||
                 (mode === "auto" && (!lotNumber || isCheckingLot || !!lotError))
               }
@@ -883,8 +997,8 @@ const ProductionStartModal = ({
                   : "bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
               }`}
             >
-              {isCheckingLot ? <Loader2 className="animate-spin" size={20} /> : <PlayCircle size={20} />} 
-              {selectedOperatorName ? `Start (${operatorInput})` : "Order Starten"}
+              {isCheckingLot || isStarting ? <Loader2 className="animate-spin" size={20} /> : <PlayCircle size={20} />} 
+              {isStarting ? "Starten..." : (selectedOperatorName ? `Start (${operatorInput})` : "Order Starten")}
             </button>
           </div>
         </div>
@@ -951,8 +1065,9 @@ const ProductionStartModal = ({
                               : "auto",
                             textAlign: el.align || "left",
                             overflow: "hidden",
-                            whiteSpace: "nowrap",
+                            whiteSpace: "pre-wrap",
                             lineHeight: "1",
+                            wordBreak: "break-word",
                           }}
                         >
                           {displayContent}
@@ -1051,6 +1166,12 @@ const ProductionStartModal = ({
                 >
                   <Wifi size={8} /> IP
                 </button>
+                <button 
+                  onClick={() => setPrintConfig({...printConfig, mode: 'queue'})}
+                  className={`px-2 py-1 rounded-md text-[8px] font-black uppercase transition-all flex items-center gap-1 ${printConfig.mode === 'queue' ? 'bg-purple-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  <Database size={8} /> Wachtrij
+                </button>
               </div>
             </div>
 
@@ -1090,13 +1211,15 @@ const ProductionStartModal = ({
             )}
 
             <div className="flex gap-2">
+                {mode !== "auto" && (
+                <>
                 <button
                 onClick={handlePrint}
                 disabled={!selectedLabel}
-                className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-black uppercase text-sm tracking-[0.2em] shadow-2xl shadow-blue-900/40 hover:bg-blue-500 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-30"
+                className={`flex-1 py-4 text-white rounded-xl font-black uppercase text-sm tracking-[0.2em] shadow-2xl hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-30 ${printConfig.mode === 'queue' ? 'bg-purple-600 shadow-purple-900/40' : 'bg-blue-600 shadow-blue-900/40'}`}
                 >
-                <Printer size={22} />
-                Print
+                {printConfig.mode === 'queue' ? <Database size={22} /> : <Printer size={22} />}
+                {printConfig.mode === 'queue' ? "Verstuur" : "Print"}
                 </button>
 
                 <button
@@ -1108,6 +1231,8 @@ const ProductionStartModal = ({
                 <Code size={18} />
                 ZPL
                 </button>
+                </>
+                )}
             </div>
             <p className="text-[8px] text-slate-500 text-center font-bold uppercase tracking-tighter opacity-50">
               Selecteer aantal bij print prompt

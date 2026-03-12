@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useMessages } from "../hooks/useMessages";
@@ -23,6 +23,7 @@ import {
   Check,
   Pin,
   PinOff,
+  Printer,
 } from "lucide-react";
 
 /**
@@ -47,6 +48,30 @@ const Sidebar = ({
   const [isPinned, setIsPinned] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
 
+  // GLOBAL FIX: Forceer tekst selectie en rechtsklikken (Persistent)
+  useEffect(() => {
+    const styleId = 'global-text-selection-fix';
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.innerHTML = `
+        * {
+          -webkit-user-select: text !important;
+          user-select: text !important;
+          -webkit-touch-callout: default !important;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const handleContextMenu = (e) => e.stopPropagation();
+    window.addEventListener('contextmenu', handleContextMenu, true);
+
+    return () => {
+      window.removeEventListener('contextmenu', handleContextMenu, true);
+    };
+  }, []);
+
   const handleLanguageSelect = async (lang) => {
     i18n.changeLanguage(lang);
     setShowLangMenu(false);
@@ -64,18 +89,23 @@ const Sidebar = ({
 
   const navItems = [
     { path: "/", label: t('sidebar.nav.common.portal'), icon: LayoutGrid },
-    { path: "/planning", label: t('sidebar.nav.common.planning'), icon: Factory },
+    { path: "/planning", label: t('sidebar.nav.common.planning'), icon: Factory, requiredModule: "digital_planning" },
     { path: "/products", label: t('sidebar.nav.common.catalog'), icon: Search },
-    { path: "/inventory", label: t('sidebar.nav.common.inventory'), icon: Package },
-    { path: "/assistant", label: t('sidebar.nav.common.ai_training'), icon: Bot },
+    { path: "/inventory", label: t('sidebar.nav.common.inventory'), icon: Package, requiredModule: "inventory_management" },
+    { path: "/assistant", label: t('sidebar.nav.common.ai_training'), icon: Bot, requiredModule: "ai_assistant" },
     { path: "/calculator", label: t('sidebar.nav.common.calculator'), icon: Calculator },
     { path: "/messages", label: t('sidebar.nav.common.messages'), icon: Mail, badge: unreadCount },
+    { path: "/printer-queue", label: t('sidebar.nav.common.printers', 'Printers'), icon: Printer, requiredModule: "digital_planning" },
     { path: "/admin", label: t('sidebar.nav.common.admin'), icon: Settings, adminOnly: true },
   ];
 
-  const visibleItems = navItems.filter((item) =>
-    item.adminOnly ? isAdmin : true
-  );
+  const visibleItems = navItems.filter((item) => {
+    if (item.adminOnly && !isAdmin) return false;
+    // Admins hebben altijd toegang tot alle modules, ongeacht vinkjes
+    if (isAdmin) return true;
+    if (item.requiredModule && !user?.modules?.includes(item.requiredModule)) return false;
+    return true;
+  });
 
   return (
     <>

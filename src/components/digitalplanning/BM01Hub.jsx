@@ -12,6 +12,8 @@ import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import StatusBadge from "./common/StatusBadge";
 
+const QR_CODE_OK_CONFIRMATION = 'FPI-ACTION-APPROVE-OK';
+
 const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     const { t } = useTranslation();
     const { user } = useAdminAuth();
@@ -30,6 +32,12 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
   const [scanInput, setScanInput] = useState("");
   const [scannerMode, setScannerMode] = useState(true);
   const scanInputRef = useRef(null);
+  const selectedProductRef = useRef(null); // Ref voor race-condition preventie
+
+  // Sync ref met state
+  useEffect(() => {
+    selectedProductRef.current = selectedProduct;
+  }, [selectedProduct]);
 
   // Auto-focus logic voor scanner
   useEffect(() => {
@@ -52,22 +60,32 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     return () => document.removeEventListener('click', handleClick);
   }, [activeTab, showFinishModal, viewingDossier, selectedOrder, scannerMode]);
 
-  const handleScan = (e) => {
+  const handleScan = async (e) => {
     if (e.key === 'Enter') {
-        const code = scanInput.trim();
+        const code = scanInput.trim().toUpperCase();
         if (!code) return;
+
+        // --- NIEUW: Goedkeuren met QR-code ---
+        if (code === QR_CODE_OK_CONFIRMATION && selectedProduct) {
+            const productToProcess = selectedProduct;
+            setScanInput("");
+            // Geef product expliciet mee
+            await handlePostProcessingFinish('completed', { note: 'Goedgekeurd via QR Scan' }, productToProcess);
+            return;
+        }
         
         const found = bm01Products.find(i => 
-            (i.lotNumber || "").toLowerCase() === code.toLowerCase() || 
-            (i.orderId || "").toLowerCase() === code.toLowerCase()
+            (i.lotNumber || "").toUpperCase() === code
         );
         
         if (found) {
-            handleItemClick(found);
+            // Selecteer alleen, open geen modal
+            setSelectedProduct(found);
             setScanInput("");
         } else {
             alert(`Item ${code} niet gevonden in de lijst 'Aan te bieden'.`);
             setScanInput("");
+            setSelectedProduct(null);
         }
         // Na scan altijd weer focus op het scanveld
         setTimeout(() => {
@@ -199,8 +217,8 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
   }, [products, archivedProducts, selectedDate, viewMode]);
 
   const handleItemClick = (item) => {
-    setSelectedProduct(item);
-    setShowFinishModal(true);
+    setSelectedProduct(item); // Selecteer item
+    setShowFinishModal(true); // Open modal voor handmatige actie
   };
 
   const handleCloseModal = () => {
@@ -208,11 +226,12 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     setShowFinishModal(false);
   };
 
-  const handlePostProcessingFinish = async (status, data) => {
-    if (!selectedProduct) return;
+  const handlePostProcessingFinish = async (status, data, productOverride = null) => {
+    const product = productOverride || selectedProduct;
+    if (!product) return;
     
     try {
-      const productRef = doc(db, ...PATHS.TRACKING, selectedProduct.id || selectedProduct.lotNumber);
+      const productRef = doc(db, ...PATHS.TRACKING, product.id || product.lotNumber);
       
       const updates = {
         updatedAt: serverTimestamp(),
@@ -239,20 +258,20 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
 
           // ARCHIVERING LOGICA
           const year = new Date().getFullYear();
-          const archiveRef = doc(db, "future-factory", "production", "archive", String(year), "items", selectedProduct.id || selectedProduct.lotNumber);
+          const archiveRef = doc(db, "future-factory", "production", "archive", String(year), "items", product.id || product.lotNumber);
           
           // Voeg updates toe aan het product object voor archivering
           const finalData = { 
-              ...selectedProduct, 
+              ...product, 
               ...updates,
               // Zorg dat timestamps correct zijn (serverTimestamp werkt niet direct in object copy, dus gebruik new Date() voor archief)
               updatedAt: new Date(),
               timestamps: {
-                  ...selectedProduct.timestamps,
+                  ...product.timestamps,
                   finished: new Date()
               },
               // Voeg de laatste historie stap toe aan de array (belangrijk voor archief!)
-              history: [...(selectedProduct.history || []), historyEntry]
+              history: [...(product.history || []), historyEntry]
           };
 
           // 1. Sla op in archief
@@ -261,7 +280,10 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
           // 2. Verwijder uit actieve tracking
           await deleteDoc(productRef);
 
-          handleCloseModal();
+          // Alleen sluiten als we niet al een nieuwe hebben gescand
+          if (selectedProductRef.current && selectedProductRef.current.id === product.id) {
+              handleCloseModal();
+          }
           return; // Stop hier, want product bestaat niet meer in tracking
       } else if (status === "temp_reject") {
         // Voeg history toe aan updates voor updateDoc
@@ -287,18 +309,18 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         };
         
         // Update order teller bij definitieve afkeur
-        if (selectedProduct.orderId && selectedProduct.orderId !== "NOG_TE_BEPALEN") {
+        if (product.orderId && product.orderId !== "NOG_TE_BEPALEN") {
              try {
                 const orderQuery = query(
                   collection(db, ...PATHS.PLANNING),
-                  where("orderId", "==", selectedProduct.orderId)
+                  where("orderId", "==", product.orderId)
                 );
                 const orderSnap = await getDocs(orderQuery);
                 
                 if (!orderSnap.empty) {
                   const orderDoc = orderSnap.docs[0];
                   const orderData = orderDoc.data();
-                  const originStation = selectedProduct.originMachine || selectedProduct.currentStation;
+                  const originStation = product.originMachine || product.currentStation;
                   const stationField = `started_${(originStation || "").replace(/[^a-zA-Z0-9]/g, '_')}`;
                   const currentStarted = orderData[stationField] || 0;
                   
@@ -315,7 +337,9 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
       }
 
       await updateDoc(productRef, updates);
-      handleCloseModal();
+      if (selectedProductRef.current && selectedProductRef.current.id === product.id) {
+          handleCloseModal();
+      }
     } catch (error) {
       console.error("Fout bij afronden:", error);
     }
@@ -561,7 +585,9 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                         bm01Products.map(item => (
                             <div 
                                 key={item.id}
-                                className="bg-white p-5 rounded-[25px] border border-slate-100 shadow-sm hover:shadow-md transition-all flex justify-between items-center group"
+                                onClick={() => handleItemClick(item)}
+                                className={`p-5 rounded-[25px] border-2 shadow-sm hover:shadow-md transition-all flex justify-between items-center group cursor-pointer
+                                    ${selectedProduct?.id === item.id ? 'bg-purple-50 border-purple-400' : 'bg-white border-slate-100'}`}
                             >
                                 <div className="flex items-center gap-5 overflow-hidden">
                                     <div className="p-4 rounded-2xl shrink-0 bg-purple-50 text-purple-600">

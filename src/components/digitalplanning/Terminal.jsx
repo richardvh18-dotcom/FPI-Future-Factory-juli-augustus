@@ -360,8 +360,47 @@ const Terminal = ({ initialStation }) => {
       });
     }
     
-    const term = sidebarSearch.toLowerCase();
-    return base.filter(o => (o.orderId || "").toLowerCase().includes(term) || (o.item || "").toLowerCase().includes(term));
+    const searchValue = String(sidebarSearch || "").toLowerCase().trim();
+    const tokens = searchValue.split(/\s+/).filter(Boolean);
+
+    if (tokens.length === 0) return base;
+
+    const hasAlphaToken = tokens.some((t) => /[a-z]/i.test(t));
+
+    return base.filter((o) => {
+      const orderFields = [
+        o.orderId,
+        o.orderNumber,
+      ].map((v) => String(v || "").toLowerCase());
+
+      const productFields = [
+        o.item,
+        o.itemCode,
+        o.productId,
+        o.machine,
+        o.extraCode,
+      ].map((v) => String(v || "").toLowerCase());
+
+      const orderText = orderFields.join(" ");
+      const productText = productFields.join(" ");
+      const combinedText = `${orderText} ${productText}`;
+
+      return tokens.every((token) => {
+        const isNumeric = /^\d+$/.test(token);
+        const isOrderLike = /^n\d+$/i.test(token);
+
+        // Slim gedrag: als de query productgericht is (bevat letters),
+        // match numerieke delen niet op ordernummer maar alleen op productvelden.
+        if (hasAlphaToken) {
+          if (isNumeric) return productText.includes(token);
+          if (isOrderLike) return combinedText.includes(token);
+          return productText.includes(token);
+        }
+
+        // Pure numerieke query's mogen breed zoeken (incl. ordernummer).
+        return combinedText.includes(token);
+      });
+    });
   }, [myOrders, finishedOnMachineMap, targetWeekNum, targetYearNum, showAllWeeks, sidebarSearch, isBM01, normalizedStationId, productionProgressMap, absCurrentReal]);
 
   const selectedOrder = useMemo(() => 

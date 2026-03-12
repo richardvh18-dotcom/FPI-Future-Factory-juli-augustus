@@ -46,6 +46,9 @@ const CalculatorView = lazy(() => import("./components/CalculatorView"));
 const AiAssistantView = lazy(() => import("./components/ai/AiAssistantView.jsx"));
 const AdminLogView = lazy(() => import("./components/admin/AdminLogView"));
 
+const PrintQueueAdminView = lazy(() =>
+  import("./components/printer/PrintQueueAdminView")
+);
 /**
  * App.jsx V18.0 - Responsive Design
  * + Mobile menu state management
@@ -227,6 +230,7 @@ const App = () => {
                 <Route path="/calculator" element={<CalculatorView />} />
                 <Route path="/assistant" element={<AiAssistantView />} />
                 <Route path="/messages" element={<AdminMessagesView user={user} />} />
+                <Route path="/printer-queue" element={<PrintQueueAdminView />} />
                 <Route path="/admin/*" element={<AdminDashboard />} />
                 <Route path="/logs" element={<AdminLogView />} />
                 <Route path="/login" element={<LoginView onLogin={handleLogin} error={loginError} logoUrl={generalConfig?.logoUrl} appName={generalConfig?.appName} />} />

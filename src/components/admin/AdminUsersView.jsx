@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Users,
@@ -26,9 +26,13 @@ import {
   Layers,
   Briefcase,
   MapPin,
+  Palette,
+  Tag,
+  Plus,
+  MousePointerClick,
 } from "lucide-react";
 import { db, auth, firebaseConfig, logActivity } from "../../config/firebase";
-import { initializeApp, deleteApp } from "firebase/app";
+import { initializeApp, deleteApp, getApps } from "firebase/app";
 import {
   collection,
   onSnapshot,
@@ -39,17 +43,17 @@ import {
   deleteDoc,
   serverTimestamp,
   setDoc,
+  writeBatch,
+  getDocs,
 } from "firebase/firestore";
 import { PATHS, isValidPath } from "../../config/dbPaths";
 import { createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
 
 /**
- * AdminUsersView V6.2 - Access Controller
- * Beheert alle toegangsrechten en profielen in de root-omgeving.
- * + Wachtrij voor account aanvragen
- * + Uitgebreide filters (Rol, Afdeling)
- * + Inklapbare landgroepen
- * Pad: /future-factory/Users/Accounts/
+ * AdminUsersView V7.0 - Dynamic Role & Access Controller
+ * - Volledig dynamisch rollenbeheer via DB
+ * - Global Text Selection Fix (Force Enable)
+ * - Geavanceerd gebruikersbeheer
  */
 const AdminUsersView = () => {
   const { t } = useTranslation();
@@ -71,6 +75,12 @@ const AdminUsersView = () => {
   const [stationFilterCountry, setStationFilterCountry] = useState("All");
   const [stationFilterDept, setStationFilterDept] = useState("All");
 
+  // Roles State
+  const [roles, setRoles] = useState([]);
+  const [loadingRoles, setLoadingRoles] = useState(true);
+  const [isUsingDefaults, setIsUsingDefaults] = useState(false);
+  const [newRole, setNewRole] = useState({ id: "", label: "", color: "bg-slate-400" });
+
   const [newUser, setNewUser] = useState({
     name: "",
     email: "",
@@ -81,12 +91,21 @@ const AdminUsersView = () => {
     requirePasswordChange: true
   });
 
-  const USER_ROLES = [
-    { id: "admin", label: t('roles.admin', "Master Admin"), color: "bg-blue-600" },
-    { id: "engineer", label: t('roles.engineer', "Process Engineer"), color: "bg-purple-600" },
-    { id: "teamleader", label: t('roles.teamleader', "Teamleider"), color: "bg-emerald-600" },
-    { id: "operator", label: t('roles.operator', "Machine Operator"), color: "bg-orange-600" },
-    { id: "guest", label: t('roles.guest', "Geen Toegang (Guest)"), color: "bg-slate-400" },
+  const ROLE_COLORS = [
+    { bg: "bg-blue-600", label: "Blauw" },
+    { bg: "bg-purple-600", label: "Paars" },
+    { bg: "bg-emerald-600", label: "Groen" },
+    { bg: "bg-orange-600", label: "Oranje" },
+    { bg: "bg-red-600", label: "Rood" },
+    { bg: "bg-pink-600", label: "Roze" },
+    { bg: "bg-cyan-600", label: "Cyaan" },
+    { bg: "bg-slate-400", label: "Grijs" },
+    { bg: "bg-yellow-500", label: "Geel" },
+    { bg: "bg-indigo-600", label: "Indigo" },
+    { bg: "bg-rose-600", label: "Donkerrood" },
+    { bg: "bg-teal-600", label: "Teal" },
+    { bg: "bg-fuchsia-600", label: "Fuchsia" },
+    { bg: "bg-lime-600", label: "Lime" },
   ];
 
   const COUNTRIES = [
@@ -148,6 +167,31 @@ const AdminUsersView = () => {
     );
 
     return () => unsubUsers();
+  }, []);
+
+  // 1b. Live Sync met Roles
+  useEffect(() => {
+    const rolesRef = collection(db, "future-factory", "settings", "roles");
+    const q = query(rolesRef, orderBy("label", "asc"));
+    
+    const unsub = onSnapshot(q, (snap) => {
+        if (!snap.empty) {
+            setRoles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            setIsUsingDefaults(false);
+        } else {
+            // Fallback defaults als DB leeg is
+            setRoles([
+                { id: "admin", label: "Master Admin", color: "bg-blue-600" },
+                { id: "engineer", label: "Process Engineer", color: "bg-purple-600" },
+                { id: "teamleader", label: "Teamleider", color: "bg-emerald-600" },
+                { id: "operator", label: "Machine Operator", color: "bg-orange-600" },
+                { id: "guest", label: "Geen Toegang (Guest)", color: "bg-slate-400" },
+            ]);
+            setIsUsingDefaults(true);
+        }
+        setLoadingRoles(false);
+    });
+    return () => unsub();
   }, []);
 
   // Filtering en Grouping
@@ -248,6 +292,17 @@ const AdminUsersView = () => {
 
     try {
       try {
+        // Controleer of configuratie beschikbaar is
+        if (!firebaseConfig) {
+          throw new Error("Firebase configuratie niet gevonden. Zorg dat 'firebaseConfig' geëxporteerd wordt in src/config/firebase.js");
+        }
+
+        // Voorkom 'App already exists' errors door te checken of hij al bestaat
+        const existingApp = getApps().find(app => app.name === "SecondaryApp");
+        if (existingApp) {
+          await deleteApp(existingApp);
+        }
+
         // Maak een SECONDARY app instance om de user aan te maken 
         // zonder de huidige admin uit te loggen.
         secondaryApp = initializeApp(firebaseConfig, "SecondaryApp");
@@ -331,6 +386,7 @@ const AdminUsersView = () => {
         country: newUser.country || "Nederland",
         department: newUser.department || "Anders",
         role: newUser.role,
+        modules: [], // Standaard geen modules toegang
         requirePasswordChange: newUser.requirePasswordChange, // Gebruik de checkbox waarde
         tempPassword: isExistingUser ? "(bestaand wachtwoord behouden)" : passwordToUse,
         createdAt: serverTimestamp(),
@@ -376,6 +432,43 @@ const AdminUsersView = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  // Role Management Handlers
+  const handleAddRole = async () => {
+      if (!newRole.id || !newRole.label) return alert("ID en Label zijn verplicht");
+      const roleId = newRole.id.toLowerCase().replace(/\s+/g, "_");
+      
+      try {
+          await setDoc(doc(db, "future-factory", "settings", "roles", roleId), {
+              id: roleId,
+              label: newRole.label,
+              color: newRole.color
+          });
+          setNewRole({ id: "", label: "", color: "bg-slate-400" });
+          setStatus({ type: "success", message: "Rol toegevoegd" });
+      } catch (e) {
+          console.error(e);
+          setStatus({ type: "error", message: "Fout bij toevoegen rol" });
+      }
+  };
+
+  const handleDeleteRole = async (roleId) => {
+      if (!window.confirm("Rol verwijderen?")) return;
+      try {
+          await deleteDoc(doc(db, "future-factory", "settings", "roles", roleId));
+      } catch (e) {
+          console.error(e);
+      }
+  };
+
+  const handleInitRoles = async () => {
+    const batch = writeBatch(db);
+    roles.forEach(role => {
+        const ref = doc(db, "future-factory", "settings", "roles", role.id);
+        batch.set(ref, role);
+    });
+    await batch.commit();
   };
 
   // 3. Handlers
@@ -446,6 +539,7 @@ const AdminUsersView = () => {
         country: request.country,
         department: request.department,
         role: "guest", // Standaard rol
+        modules: [], // Standaard geen modules toegang
         requirePasswordChange: true, // Moet wachtwoord wijzigen bij eerste login
         tempPassword: tempPassword, // Voor admin referentie (wordt niet gebruikt voor auth)
         createdAt: serverTimestamp(),
@@ -514,6 +608,7 @@ const AdminUsersView = () => {
         modules: selectedUser.modules || [],
         allowedStations: selectedUser.allowedStations || [],
         canVerify: selectedUser.canVerify || false,
+        receivesCrashReports: selectedUser.receivesCrashReports || false,
         signature: selectedUser.signature || "",
         lastAdminUpdate: serverTimestamp(),
         updatedBy: auth.currentUser?.email || "Master Admin",
@@ -633,7 +728,7 @@ const AdminUsersView = () => {
                 className="w-full pl-12 pr-10 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-500 transition-all appearance-none cursor-pointer text-slate-600"
               >
                 <option value="">{t('adminUsers.allRoles', "Alle Rollen")}</option>
-                {USER_ROLES.map((role) => (
+                {roles.map((role) => (
                   <option key={role.id} value={role.id}>{role.label}</option>
                 ))}
               </select>
@@ -676,6 +771,17 @@ const AdminUsersView = () => {
             {accountRequests.filter(r => r.status === "pending").length > 0 && (
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />
             )}
+          </button>
+          <button
+            onClick={() => setActiveTab("roles")}
+            className={`px-6 py-3 rounded-2xl font-black uppercase text-xs tracking-widest transition-all ${
+              activeTab === "roles"
+                ? "bg-purple-600 text-white"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            <Tag size={16} className="inline mr-2" />
+            {t('adminUsers.roles', "Rollen")}
           </button>
         </div>
       </div>
@@ -761,11 +867,11 @@ const AdminUsersView = () => {
                                     <div className="flex flex-wrap gap-2">
                                       <span
                                         className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest text-white shadow-sm ${
-                                          USER_ROLES.find((r) => r.id === u.role)?.color ||
+                                          roles.find((r) => r.id === u.role)?.color ||
                                           "bg-slate-400"
                                         }`}
                                       >
-                                        {USER_ROLES.find((r) => r.id === u.role)?.label ||
+                                        {roles.find((r) => r.id === u.role)?.label ||
                                           u.role}
                                       </span>
                                       {u.modules && u.modules.length > 0 && (
@@ -824,7 +930,7 @@ const AdminUsersView = () => {
                 </div>
               )}
             </>
-          ) : (
+          ) : activeTab === "requests" ? (
             // Account Aanvragen Wachtrij
             <div className="space-y-4">
               {accountRequests.filter(r => r.status === "pending").length === 0 ? (
@@ -900,6 +1006,90 @@ const AdminUsersView = () => {
                   </div>
                 ))
               )}
+            </div>
+          ) : (
+            // Rollen Beheer
+            <div className="space-y-6">
+                {isUsingDefaults && (
+                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex flex-col md:flex-row justify-between items-center gap-4 animate-in fade-in">
+                        <div className="text-sm text-blue-800">
+                            <p className="font-bold">⚠️ Je gebruikt momenteel tijdelijke standaardrollen.</p>
+                            <p className="text-xs mt-1">Zodra je een eigen rol toevoegt, verdwijnen deze standaarden tenzij je ze eerst opslaat in de database.</p>
+                        </div>
+                        <button 
+                            onClick={handleInitRoles}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-blue-700 whitespace-nowrap flex items-center gap-2 shadow-sm"
+                        >
+                            <Database size={14} />
+                            Standaarden Opslaan in DB
+                        </button>
+                    </div>
+                )}
+
+                <div className="bg-white p-6 rounded-[30px] border border-slate-200 shadow-sm">
+                    <h3 className="text-lg font-black text-slate-800 uppercase italic mb-4">Nieuwe Rol Toevoegen</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-500 uppercase">ID (Slug)</label>
+                            <input 
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-purple-500"
+                                placeholder="bijv. qshc_manager"
+                                value={newRole.id}
+                                onChange={e => setNewRole({...newRole, id: e.target.value})}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-500 uppercase">Label (Weergave)</label>
+                            <input 
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-purple-500"
+                                placeholder="bijv. QSHC Manager"
+                                value={newRole.label}
+                                onChange={e => setNewRole({...newRole, label: e.target.value})}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-500 uppercase">Kleur Label</label>
+                            <div className="flex gap-2 flex-wrap p-2 bg-slate-50 rounded-xl border border-slate-200">
+                                {ROLE_COLORS.map(c => (
+                                    <button
+                                        key={c.bg}
+                                        onClick={() => setNewRole({...newRole, color: c.bg})}
+                                        className={`w-6 h-6 rounded-full ${c.bg} ${newRole.color === c.bg ? 'ring-2 ring-offset-2 ring-slate-400' : ''}`}
+                                        title={c.label}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    <div className="mt-4 flex justify-end">
+                        <button 
+                            onClick={handleAddRole}
+                            className="px-6 py-3 bg-purple-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-purple-700 flex items-center gap-2"
+                        >
+                            <Tag size={16} /> Rol Toevoegen
+                        </button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {roles.map(role => (
+                        <div key={role.id} className="bg-white p-5 rounded-[25px] border border-slate-200 shadow-sm flex items-center justify-between group">
+                            <div className="flex items-center gap-3">
+                                <div className={`w-4 h-4 rounded-full ${role.color}`}></div>
+                                <div>
+                                    <div className="font-black text-slate-800">{role.label}</div>
+                                    <div className="text-xs text-slate-400 font-mono">{role.id}</div>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => handleDeleteRole(role.id)}
+                                className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                            >
+                                <Trash2 size={16} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
             </div>
           )}
         </div>
@@ -1021,7 +1211,7 @@ const AdminUsersView = () => {
                   {t('adminUsers.systemRoleAndAccess', "Systeem Rol & Toegang")}
                 </label>
                 <div className="grid grid-cols-1 gap-3">
-                  {USER_ROLES.map((role) => (
+                  {roles.map((role) => (
                     <button
                       key={role.id}
                       onClick={() =>
@@ -1135,6 +1325,28 @@ const AdminUsersView = () => {
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 flex items-center gap-2">
                       <ShieldAlert size={14} /> {t('adminUsers.adminTools', "Admin Tools")}
                     </label>
+                    
+                    {/* Toggle voor Crash Rapporten */}
+                    <label className="flex items-center justify-between p-4 bg-red-50 rounded-2xl border border-red-100 cursor-pointer hover:border-red-200 transition-all group">
+                      <div>
+                        <div className="font-bold text-sm text-red-900 group-hover:text-red-700 transition-colors">
+                          Ontvang Crash Rapporten
+                        </div>
+                        <div className="text-[10px] text-red-700/60 font-medium">
+                          Notificaties bij systeemfouten
+                        </div>
+                      </div>
+                      <div className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer" 
+                          checked={selectedUser.receivesCrashReports || false}
+                          onChange={(e) => setSelectedUser({ ...selectedUser, receivesCrashReports: e.target.checked })}
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                      </div>
+                    </label>
+
                     <div className="grid grid-cols-1 gap-3">
                       {ADMIN_TOOLS.map(tool => (
                         <label key={tool.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:border-purple-200 transition-all group">
@@ -1429,7 +1641,7 @@ const AdminUsersView = () => {
                   onChange={(e) => setNewUser({...newUser, role: e.target.value})}
                   className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-500 transition-all"
                 >
-                  {USER_ROLES.map(role => (
+                  {roles.map(role => (
                     <option key={role.id} value={role.id}>{role.label}</option>
                   ))}
                 </select>

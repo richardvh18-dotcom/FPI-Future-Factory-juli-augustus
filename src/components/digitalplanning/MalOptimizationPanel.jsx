@@ -1,7 +1,38 @@
 import React, { useMemo } from 'react';
 import StatusBadge from './common/StatusBadge';
+import { format, isValid } from 'date-fns';
 
 const MalOptimizationPanel = ({ currentOrder, allOrders, onSelectOrder }) => {
+  const parseDateSafe = (dateInput) => {
+    if (!dateInput) return null;
+    if (dateInput?.toDate) {
+      const d = dateInput.toDate();
+      return isValid(d) ? d : null;
+    }
+    const d = new Date(dateInput);
+    return isValid(d) ? d : null;
+  };
+
+  const getPlanningInfo = (order) => {
+    const weekRaw = String(order.week || order.weekNumber || '').trim();
+    const deliveryDate = parseDateSafe(order.deliveryDate || order.plannedDate);
+
+    let weekLabel = '';
+    if (weekRaw) {
+      if (weekRaw.toUpperCase().includes('-W')) {
+        const parts = weekRaw.toUpperCase().split('-W');
+        weekLabel = `Week ${parts[1] || weekRaw}`;
+      } else {
+        weekLabel = `Week ${weekRaw}`;
+      }
+    }
+
+    const dateLabel = deliveryDate ? `Leverdatum ${format(deliveryDate, 'dd-MM-yyyy')}` : '';
+
+    if (weekLabel && dateLabel) return `${weekLabel} • ${dateLabel}`;
+    return weekLabel || dateLabel || 'Week/leverdatum onbekend';
+  };
+
   // Zoek orders met hetzelfde product die nog niet klaar zijn
   const relatedOrders = useMemo(() => {
     if (!currentOrder || !allOrders) return [];
@@ -52,6 +83,9 @@ const MalOptimizationPanel = ({ currentOrder, allOrders, onSelectOrder }) => {
               </div>
               <div className="text-[10px] text-gray-500">
                 {order.plan || order.quantity} stuks • {order.project || 'Intern'}
+              </div>
+              <div className="text-[10px] text-blue-700 font-semibold">
+                {getPlanningInfo(order)}
               </div>
             </div>
             

@@ -173,7 +173,7 @@ export const processLabelData = (data) => {
   const lotNumber = String(data.lotNumber || "");
 
   // 1. Bepaal Product Type
-  const productType = parseProductType(desc);
+  let productType = parseProductType(desc);
 
   // 2. Bepaal Drukklasse (EST/CST/EMT + psi)
   let pressureLine = parsePressure(desc);
@@ -206,6 +206,18 @@ export const processLabelData = (data) => {
     radiusText = "R1.0D";
   }
 
+  // --- PRO FEATURES: Conditionele Logica ---
+  
+  // 1. Zware Last Waarschuwing (> 300mm)
+  const diameterVal = parseInt(data.diameter || data.dn || 0);
+  const isHeavyLoad = diameterVal > 300;
+
+  // 2. Export Logica (Engels)
+  const isExport = data.country && data.country !== "Nederland";
+  if (isExport) {
+      if (productType === "ELBOW") productType = "ELBOW (EXPORT)";
+  }
+
   return {
     ...data,
     itemCode: data.itemCode || data.productId || "",
@@ -219,6 +231,10 @@ export const processLabelData = (data) => {
 
     lotNumber: lotNumber,
     date: format(new Date(), "dd-MM-yyyy"),
+    
+    // Pro velden
+    isHeavyLoad,
+    isExport,
   };
 };
 
@@ -342,3 +358,62 @@ export const resolveLabelContent = (contentOrElement, data) => {
 
   return content;
 };
+
+/**
+ * Filtert labels op basis van product eigenschappen en tags.
+ * Gebruik dit in de UI om alleen relevante labels te tonen.
+ * @param {Array} labels - Lijst met beschikbare label templates
+ * @param {Object} product - Het product waarvoor geprint wordt
+ * @returns {Array} Gefilterde labels
+ */
+export const filterLabelsByProduct = (labels, product) => {
+  if (!product || !labels) return labels || [];
+  
+  console.log("Filtering labels for:", product.item || product.description);
+
+  // 1. Normaliseer product data naar tags
+  const productTags = [];
+  const desc = String(product.description || product.item || "").toUpperCase();
+  const type = String(product.productType || product.type || "").toUpperCase();
+  
+  // Basis tags uit type
+  if (type) productTags.push(type);
+
+  // Slimme extractie: Voeg woorden uit omschrijving toe (bv. ELBOW, TEE, FLANGE)
+  const descWords = desc.split(/[\s,./-]+/).filter(w => w.length > 2 && isNaN(w));
+  productTags.push(...descWords);
+
+  // Detecteer types uit omschrijving/data (breid dit uit naar wens)
+  if (desc.includes("WAVISTRONG") || type.includes("WAVISTRONG")) productTags.push("WAVISTRONG");
+  if (desc.includes("FIBERMAR") || type.includes("FIBERMAR")) productTags.push("FIBERMAR");
+  if (desc.includes("EST")) productTags.push("EST");
+  if (desc.includes("CST")) productTags.push("CST");
+  if (desc.includes("EMT")) productTags.push("EMT");
+  if (desc.includes("EWT")) productTags.push("EWT");
+  
+  console.log("Detected Product Tags:", [...new Set(productTags)]);
+
+  // 2. Filter logica
+  const filtered = labels.filter(label => {
+      const labelTags = (label.tags || []).map(t => String(t).toUpperCase()).filter(Boolean);
+      
+      // REGEL 1: Als een label GEEN tags heeft -> Altijd tonen (Generiek label)
+      if (labelTags.length === 0) return true; 
+      
+      // REGEL 2: Als een label WEL tags heeft -> Toon alleen als product minstens 1 matching tag heeft
+      return labelTags.some(tag => productTags.includes(tag));
+  });
+
+  console.log(`Filtered ${labels.length} -> ${filtered.length} labels`);
+  return filtered;
+};
+
+export const getQRCodeUrl = (data) =>
+  `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(
+    data || "leeg"
+  )}`;
+
+export const getBarcodeUrl = (data) =>
+  `https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(
+    data || "leeg"
+  )}&scale=3&height=10&incltext&guardwhitespace`;

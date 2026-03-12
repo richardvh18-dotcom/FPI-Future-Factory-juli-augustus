@@ -733,6 +733,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           personnelTracking: {
             [selectedStation]: stationOperators,
           },
+          labelZPL: null,
+          labelTemplateId: null,
         };
         if (isOverflow) {
           unitData.isOverproduction = true;

@@ -10,6 +10,7 @@ import {
   Trash2,
   Search,
   Database,
+  RefreshCw,
 } from "lucide-react";
 import {
   addDoc,
@@ -20,6 +21,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { db, auth, storage, logActivity } from "../../config/firebase";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
@@ -77,12 +79,15 @@ const AiDocumentUploadView = () => {
   const extractJson = (text) => {
     if (!text) return null;
     
+    // Verwijder markdown code blocks om parsing issues te voorkomen
+    let cleaned = text.replace(/```json/gi, '').replace(/```/g, '');
+    
     // Robuustere JSON extractie: zoek naar eerste { en laatste }
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
     
     if (start !== -1 && end !== -1 && end > start) {
-      return text.substring(start, end + 1);
+      return cleaned.substring(start, end + 1);
     }
     
     return null;
@@ -91,26 +96,31 @@ const AiDocumentUploadView = () => {
   const analyzeDocument = async (text, fileName) => {
     const systemPrompt = `Je bent een AI die bedrijfsdocumenten analyseert voor een MES omgeving.
 
-RETURN ONLY VALID JSON - NO MARKDOWN, NO EXPLANATION, JUST THE JSON OBJECT!
+RETURN ONLY VALID JSON.
+DO NOT include markdown formatting like \`\`\`json.
+DO NOT include explanations.
+Do not output any text before or after the JSON object.
 
 JSON Structure:
 {
-  "title": "",
-  "summary": "",
-  "keyFacts": [],
-  "processes": [],
-  "partNumbers": [],
-  "tolerances": [],
-  "stations": [],
-  "dates": [],
-  "warnings": [],
-  "tags": [],
-  "fullContext": ""
+  "title": "string",
+  "summary": "string",
+  "keyFacts": ["string"],
+  "processes": ["string"],
+  "partNumbers": ["string"],
+  "tolerances": ["string"],
+  "stations": ["string"],
+  "dates": ["string"],
+  "warnings": ["string"],
+  "tags": ["string"],
+  "fullContext": "string"
 }
 
 IMPORTANT RULES:
-- Return ONLY the JSON object, nothing else
-- NO markdown formatting, NO code blocks, NO explanations
+ - Return ONLY the JSON object.
+ - Escape all double quotes inside strings with backslash (e.g. \\").
+ - No trailing commas.
+ - Ensure all strings are properly escaped JSON strings.
 - summary: samenvatting van het document (max 500 karakters)
 - fullContext: uitgebreide analyse van de inhoud (max 2000 karakters)
 - keyFacts: max 10 belangrijkste feiten
@@ -220,6 +230,15 @@ IMPORTANT RULES:
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Check op duplicaten
+    const isDuplicate = documents.some(doc => doc.fileName === file.name);
+    if (isDuplicate) {
+      if (!window.confirm(t('ai.upload.duplicate_warning', { fileName: file.name, defaultValue: `Het document '${file.name}' is al geüpload. Wil je doorgaan en een kopie toevoegen?` }))) {
+        e.target.value = "";
+        return;
+      }
+    }
 
     const allowed = [
       "application/pdf",
@@ -347,6 +366,39 @@ IMPORTANT RULES:
     }
   };
 
+  const handleReanalyze = async (docItem) => {
+    if (!docItem.fullText) {
+      setStatus({ type: "error", message: "Geen tekst gevonden om opnieuw te analyseren." });
+      return;
+    }
+
+    setUploading(true);
+    setStatus({ type: "info", message: `Document '${docItem.fileName}' opnieuw analyseren...` });
+
+    try {
+      const analysisResult = await analyzeDocument(docItem.fullText, docItem.fileName);
+      
+      const docRef = doc(db, ...(PATHS?.AI_DOCUMENTS || ['future-factory', 'settings', 'ai_documents', 'knowledge', 'records']), docItem.id);
+      
+      await updateDoc(docRef, {
+        analysis: analysisResult.analysis,
+        parsed: analysisResult.parsed,
+        tags: analysisResult.analysis?.tags || [],
+      });
+
+      const statusMessage = analysisResult.parsed 
+        ? "✅ Document succesvol opnieuw geanalyseerd."
+        : "⚠️ Opnieuw analyseren resulteerde weer in fallback.";
+
+      setStatus({ type: "success", message: statusMessage });
+    } catch (err) {
+      console.error("Re-analyse fout:", err);
+      setStatus({ type: "error", message: `Fout bij opnieuw analyseren: ${err.message}` });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 max-w-5xl mx-auto p-6 text-left pb-32">
       <div className="bg-slate-900 p-8 rounded-[40px] text-white flex flex-col md:flex-row items-center justify-between relative overflow-hidden shadow-xl mb-6 border border-white/5 gap-6">
@@ -393,7 +445,7 @@ IMPORTANT RULES:
             />
           </label>
           <p className="text-xs text-slate-500">
-            {t('ai.upload.supported_formats', { size: MAX_FILE_SIZE_MB, chars: MAX_CHARS, defaultValue: `Ondersteund: .pdf, .txt, .md, .csv, .json. Max ${MAX_FILE_SIZE_MB}MB of ${MAX_CHARS} tekens. Alleen de AI-context wordt opgeslagen; het bestand zelf niet.` })}
+          {t('ai.upload.supported_formats', { size: MAX_FILE_SIZE_MB, chars: MAX_CHARS, defaultValue: `Ondersteund: .pdf, .txt, .md, .csv, .json. Max ${MAX_FILE_SIZE_MB}MB of ${MAX_CHARS} tekens. Bestanden worden veilig opgeslagen en geanalyseerd voor AI-context.` })}
           </p>
         </div>
 
@@ -511,14 +563,25 @@ IMPORTANT RULES:
                 )}
 
                 {!docItem.parsed && (
-                  <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-700 flex items-start gap-2">
-                    <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" /> 
-                    <div>
-                      <div className="font-bold">{t('ai.upload.fallback_analysis_used', 'Fallback Analyse Gebruikt')}</div>
-                      <div className="text-[9px] mt-0.5">
-                        {t('ai.upload.fallback_analysis_desc', { count: docItem.characterCount?.toLocaleString() || '?', defaultValue: `AI kon geen gestructureerd JSON genereren, maar document is wel verwerkt en doorzoekbaar. De volledige tekst (${docItem.characterCount?.toLocaleString() || '?'} karakters) is opgeslagen voor context.` })}
+                  <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-700 flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle size={12} className="mt-0.5 flex-shrink-0" /> 
+                      <div>
+                        <div className="font-bold">{t('ai.upload.fallback_analysis_used', 'Fallback Analyse Gebruikt')}</div>
+                        <div className="text-[9px] mt-0.5">
+                          {t('ai.upload.fallback_analysis_desc', { count: docItem.characterCount?.toLocaleString() || '?', defaultValue: `AI kon geen gestructureerd JSON genereren, maar document is wel verwerkt en doorzoekbaar. De volledige tekst (${docItem.characterCount?.toLocaleString() || '?'} karakters) is opgeslagen voor context.` })}
+                        </div>
                       </div>
                     </div>
+                    <button 
+                      onClick={() => handleReanalyze(docItem)}
+                      disabled={uploading}
+                      className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg text-[9px] font-bold transition-colors flex items-center gap-1 shrink-0"
+                      title="Probeer opnieuw te analyseren met AI"
+                    >
+                      <RefreshCw size={10} className={uploading ? "animate-spin" : ""} />
+                      Opnieuw
+                    </button>
                   </div>
                 )}
               </div>

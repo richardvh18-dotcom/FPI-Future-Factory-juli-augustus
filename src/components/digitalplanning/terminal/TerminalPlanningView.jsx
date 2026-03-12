@@ -99,58 +99,62 @@ const TerminalPlanningView = ({
   return (
     <>
       {/* Sidebar Planning */}
-      <div className={`w-full lg:w-5/12 p-4 md:p-6 bg-white border-r border-slate-100 flex flex-col overflow-hidden ${selectedOrderId ? "hidden lg:flex" : "flex"} text-left`}>
-        <div className="relative mb-4 text-left">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
-          <input
-            type="text" placeholder="Zoek order..."
-            className="w-full pl-12 pr-10 py-4 bg-slate-50 border-2 border-slate-100 rounded-[20px] text-sm font-bold outline-none focus:border-blue-500 transition-all shadow-sm"
-            value={searchTerm} onChange={(e) => onSearchChange(e.target.value)}
-          />
-        </div>
+      <div className={`w-full lg:w-7/12 p-4 md:p-6 bg-white border-r border-slate-100 flex flex-col overflow-hidden ${selectedOrderId ? "hidden lg:flex" : "flex"} text-left`}>
+        {/* Compacte header: zoek + week/filter + sync */}
+        <div className="mb-3 flex flex-col lg:flex-row lg:items-center gap-2 text-left">
+          {/* Search Bar */}
+          <div className="relative text-left lg:flex-[1.2]">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} />
+            <input
+              type="text" placeholder="Zoek order of product..."
+              className="w-full pl-12 pr-10 py-2.5 bg-slate-50 border-2 border-slate-100 rounded-[20px] text-base font-bold outline-none focus:border-blue-500 transition-all shadow-sm"
+              value={searchTerm} onChange={(e) => onSearchChange(e.target.value)}
+            />
+          </div>
 
-        {/* Handmatige Sync Knop */}
-        <div className="flex justify-end mb-4 px-2">
+          {/* Week Selector + Alles Knop + Sync - Naast elkaar */}
+          <div className="flex gap-2 shrink-0 text-left lg:flex-1">
+            {!isBM01 && (
+              <>
+                <div className="flex-1 flex justify-between items-center bg-slate-100 p-2 rounded-[25px] border border-slate-200">
+                  <button onClick={() => onDateChange('prev')} className="p-2 bg-white rounded-2xl shadow-sm hover:text-blue-500 active:scale-90"><ChevronLeft size={18} /></button>
+                  <div 
+                    className="text-center px-4 cursor-pointer select-none flex-1"
+                    onDoubleClick={() => onDateChange('reset')}
+                    title="Dubbelklik om naar vandaag te gaan"
+                  >
+                    <span className="text-[9px] font-black text-slate-400 uppercase block mb-0.5">Week</span>
+                    <span className="text-lg font-black text-slate-900 italic tracking-tighter">{showAllWeeks ? "Overzicht" : targetWeekNum}</span>
+                  </div>
+                  <button onClick={() => onDateChange('next')} className="p-2 bg-white rounded-2xl shadow-sm hover:text-blue-500 active:scale-90"><ChevronRight size={18} /></button>
+                </div>
+                
+                <button
+                  onClick={onToggleAllWeeks}
+                  className={`px-4 py-2 rounded-2xl border transition-all font-black text-[9px] uppercase tracking-widest flex items-center gap-2 shadow-sm whitespace-nowrap ${
+                    showAllWeeks ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-slate-100 text-slate-400 hover:text-slate-600"
+                  }`}
+                >
+                  <Layers size={16} /> <span className="hidden sm:inline">Alles</span>
+                </button>
+              </>
+            )}
+
             <button 
                 onClick={handleManualSync} 
                 disabled={isSyncing}
-                className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-50"
+                className="px-3 py-2 rounded-2xl border border-slate-100 bg-white flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-50 whitespace-nowrap"
+                title="Sync tekeningen"
             >
                 <RefreshCw size={12} className={isSyncing ? "animate-spin" : ""} />
-                {isSyncing ? `Syncen... ${syncProgress}%` : "Sync Tekeningen"}
+                <span className="hidden sm:inline">{isSyncing ? `Syncen... ${syncProgress}%` : "Sync"}</span>
             </button>
-        </div>
-        
-        {/* Week Selector + Alles Knop */}
-        {!isBM01 && (
-        <div className="flex items-center gap-2 mb-6 shrink-0 text-left">
-          <div className="flex-1 flex justify-between items-center bg-slate-100 p-2 rounded-[25px] border border-slate-200">
-            <button onClick={() => onDateChange('prev')} className="p-3 bg-white rounded-2xl shadow-sm hover:text-blue-500 active:scale-90"><ChevronLeft size={20} /></button>
-            <div 
-              className="text-center px-4 cursor-pointer select-none"
-              onDoubleClick={() => onDateChange('reset')}
-              title="Dubbelklik om naar vandaag te gaan"
-            >
-              <span className="text-[10px] font-black text-slate-400 uppercase block mb-0.5">Week</span>
-              <span className="text-xl font-black text-slate-900 italic tracking-tighter">{showAllWeeks ? "Overzicht" : targetWeekNum}</span>
-            </div>
-            <button onClick={() => onDateChange('next')} className="p-3 bg-white rounded-2xl shadow-sm hover:text-blue-500 active:scale-90"><ChevronRight size={20} /></button>
           </div>
-          
-          <button
-            onClick={onToggleAllWeeks}
-            className={`p-4 rounded-2xl border transition-all font-black text-[10px] uppercase tracking-widest flex items-center gap-2 shadow-sm ${
-              showAllWeeks ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-slate-100 text-slate-400 hover:text-slate-600"
-            }`}
-          >
-            <Layers size={20} /> <span className="hidden sm:inline">Alles</span>
-          </button>
         </div>
-        )}
 
-        <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-1 text-left text-left">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-3 custom-scrollbar pr-1 pb-10 text-left text-left">
           {sortedOrders.length === 0 ? (
-            <div className="p-12 text-center opacity-30 italic font-bold uppercase text-xs">Geen orders voor week {targetWeekNum}</div>
+            <div className="p-12 text-center opacity-30 italic font-bold uppercase text-sm">Geen orders voor week {targetWeekNum}</div>
           ) : (
             sortedOrders.map((order) => {
               const produced = productionProgressMap[String(order.orderId || "").trim()] || 0;
@@ -161,11 +165,35 @@ const TerminalPlanningView = ({
               const isDelegated = order.machine !== order.returnStation && order.returnStation;
               
               // Zoek vergelijkbare orders (zelfde itemCode of item) voor mal-optimalisatie
-              const similarCount = orders.filter(o => 
+              const relatedOrders = orders.filter(o => 
                 o.id !== order.id && 
                 ((order.itemCode && o.itemCode === order.itemCode) || 
                  (!order.itemCode && o.item === order.item))
-              ).length;
+              );
+              const similarCount = relatedOrders.length;
+              const relatedPlanningPreview = relatedOrders
+                .slice(0, 2)
+                .map((rel) => {
+                  const weekRaw = String(rel.week || rel.weekNumber || "").trim();
+                  let weekText = "";
+                  if (weekRaw) {
+                    if (weekRaw.toUpperCase().includes("-W")) {
+                      const parts = weekRaw.toUpperCase().split("-W");
+                      weekText = `W${parts[1] || weekRaw}`;
+                    } else {
+                      weekText = `W${weekRaw}`;
+                    }
+                  }
+
+                  const relDate = parseDateSafe(rel.deliveryDate || rel.plannedDate);
+                  const dateText = relDate ? format(relDate, "dd-MM", { locale: nl }) : "";
+
+                  if (weekText && dateText) return `${rel.orderId || rel.orderNumber}: ${weekText} • ${dateText}`;
+                  if (weekText) return `${rel.orderId || rel.orderNumber}: ${weekText}`;
+                  if (dateText) return `${rel.orderId || rel.orderNumber}: ${dateText}`;
+                  return `${rel.orderId || rel.orderNumber}: onbekend`;
+                })
+                .join(" | ");
 
               const isPriority = order.isMoved || order.priority === true || ["high", "urgent", "immediate"].includes(order.priority);
               const isOverdue = order.weekNumber && targetWeekNum && parseInt(order.weekNumber) < parseInt(targetWeekNum);
@@ -174,7 +202,7 @@ const TerminalPlanningView = ({
                 <div
                   key={order.id}
                   onClick={() => onSelectOrder(order.id)}
-                  className={`p-4 md:p-5 rounded-[25px] border-2 transition-all flex items-center justify-between relative overflow-hidden cursor-pointer ${
+                  className={`p-5 md:p-6 rounded-[25px] border-2 transition-all flex items-center justify-between relative overflow-hidden cursor-pointer ${
                     selectedOrderId === order.id 
                       ? "bg-blue-50 border-blue-500 shadow-sm" 
                       : isPriority 
@@ -200,38 +228,38 @@ const TerminalPlanningView = ({
                       <FileImage size={20} />
                     </button>
                     <div className="text-left overflow-hidden">
-                      <h4 className="font-black text-sm leading-none flex items-center gap-2 text-left">
+                      <h4 className="font-black text-base leading-none flex items-center gap-2 text-left">
                         {order.orderId}
                         {order.extraCode && <span className="text-slate-400 text-xs font-normal">({order.extraCode})</span>}
                         {isNew && <Sparkles size={10} className="text-emerald-500" />}
                       </h4>
-                      <p className="text-[10px] font-bold text-slate-400 truncate uppercase text-left">
+                      <p className="text-sm font-bold text-slate-400 truncate uppercase text-left">
                         {order.item}
                         {order.itemCode && <span className="ml-1 opacity-70">({order.itemCode})</span>}
                       </p>
                       {isOverdue && (
-                        <span className="flex items-center gap-1 text-[9px] font-bold text-rose-500 uppercase mt-1">
+                        <span className="flex items-center gap-1 text-xs font-bold text-rose-500 uppercase mt-1">
                           <AlertCircle size={10} /> Uit vorige week
                         </span>
                       )}
                       {isPriority && (
-                        <span className="flex items-center gap-1 text-[9px] font-bold text-amber-600 uppercase mt-1">
+                        <span className="flex items-center gap-1 text-xs font-bold text-amber-600 uppercase mt-1">
                           <ArrowUpCircle size={10} /> Prioriteit / Verplaatst
                         </span>
                       )}
-                      <p className="text-[9px] font-black text-slate-300 uppercase tracking-wider mt-0.5">{order.machine}</p>
+                      <p className="text-xs font-black text-slate-300 uppercase tracking-wider mt-0.5">{order.machine}</p>
                       {order.activeLot && (
-                        <p className="text-[9px] font-bold text-blue-500 uppercase tracking-wider mt-0.5">
+                        <p className="text-xs font-bold text-blue-500 uppercase tracking-wider mt-0.5">
                           Lot: {order.activeLot}
                         </p>
                       )}
                       {isDelegated && (
                         <div className="mt-1">
-                            <span className="text-[9px] font-black text-purple-600 bg-purple-50 px-2 py-0.5 rounded border border-purple-100 flex items-center gap-1 w-fit">
+                            <span className="text-xs font-black text-purple-600 bg-purple-50 px-2 py-0.5 rounded border border-purple-100 flex items-center gap-1 w-fit">
                                 <Factory size={10} /> Bij {order.delegatedTo || "Extern"}
                             </span>
                             {readyFromSpools > 0 && (
-                                <span className="text-[9px] font-black text-emerald-600 block mt-0.5">✅ {readyFromSpools} gereed voor start</span>
+                                <span className="text-xs font-black text-emerald-600 block mt-0.5">✅ {readyFromSpools} gereed voor start</span>
                             )}
                         </div>
                       )}
@@ -239,14 +267,19 @@ const TerminalPlanningView = ({
                   </div>
                   <div className="flex flex-col items-end gap-1 text-right">
                     <StatusBadge status={order.status} />
-                    <span className="text-[10px] font-black text-slate-900 block italic leading-none">{produced} / {total} ST</span>
-                    <span className={`text-[9px] uppercase tracking-tighter ${getUrgencyColor(order.deliveryDate)} text-right`}>
+                    <span className="text-sm font-black text-slate-900 block italic leading-none">{produced} / {total} ST</span>
+                    <span className={`text-xs uppercase tracking-tighter ${getUrgencyColor(order.deliveryDate)} text-right`}>
                       {dDate ? format(dDate, "dd-MM", { locale: nl }) : "--"}
                     </span>
                     {similarCount > 0 && (
-                      <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded mt-1 flex items-center gap-1">
-                        <Layers size={10} /> +{similarCount} order
-                      </span>
+                      <div className="mt-1">
+                        <span className="text-xs font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded flex items-center gap-1 w-fit">
+                          <Layers size={10} /> +{similarCount} order
+                        </span>
+                        <p className="text-[11px] font-semibold text-blue-700 mt-1 leading-tight max-w-[220px] truncate" title={relatedPlanningPreview}>
+                          {relatedPlanningPreview}
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>

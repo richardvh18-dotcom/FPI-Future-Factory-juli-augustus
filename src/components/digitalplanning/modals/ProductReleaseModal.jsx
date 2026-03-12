@@ -1,8 +1,10 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { X, CheckCircle, ArrowRight, AlertTriangle, Ruler, AlertOctagon, FileText } from "lucide-react";
 import { doc, updateDoc, arrayUnion, serverTimestamp, collection, query, where, getDocs, increment } from "firebase/firestore";
 import { db } from "../../../config/firebase";
 import { PATHS } from "../../../config/dbPaths";
+import { REJECTION_REASONS } from "../../../utils/workstationLogic";
 
 /**
  * ProductReleaseModal
@@ -11,11 +13,13 @@ import { PATHS } from "../../../config/dbPaths";
  * UPDATE: Uitgebreide functionaliteit voor Lossen (metingen, afkeur opties).
  */
 const ProductReleaseModal = ({ product, onClose, onComplete }) => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   
   // Form state
   const [status, setStatus] = useState("approved"); // approved, temp_reject, rejected
   const [measurements, setMeasurements] = useState({});
+  const [errors, setErrors] = useState({});
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
 
@@ -42,8 +46,50 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
     nextStepDisplay = "Gereed";
   }
 
+  // Validatie helper voor metingen
+  const hasValidMeasurements = () => {
+    if (isFlange) {
+      return measurements.TF && String(measurements.TF).trim() !== "";
+    }
+    // Standaard fitting
+    const hasTW = measurements.TW && String(measurements.TW).trim() !== "";
+    const hasCB = !isCB || (measurements.TWcb && String(measurements.TWcb).trim() !== "");
+    const hasTB = !isTB || (measurements.TWtb && String(measurements.TWtb).trim() !== "");
+    
+    return hasTW && hasCB && hasTB;
+  };
+
+  const validateForm = () => {
+    const newErrors = {};
+    if (isLossenStep && status === 'approved') {
+      if (isFlange) {
+        if (!measurements.TF || String(measurements.TF).trim() === "") newErrors.TF = true;
+      } else {
+        if (!measurements.TW || String(measurements.TW).trim() === "") newErrors.TW = true;
+        if (isCB && (!measurements.TWcb || String(measurements.TWcb).trim() === "")) newErrors.TWcb = true;
+        if (isTB && (!measurements.TWtb || String(measurements.TWtb).trim() === "")) newErrors.TWtb = true;
+      }
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleMeasurementChange = (field, value) => {
+    setMeasurements(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
   const handleRelease = async (e) => {
     e.stopPropagation(); // Voorkom dat clicks erdoorheen vallen
+    
+    if (!validateForm()) return;
+
     setLoading(true);
     
     try {
@@ -237,8 +283,8 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
                     <input
                       type="number"
                       value={measurements.TF || ""}
-                      onChange={(e) => setMeasurements({...measurements, TF: e.target.value})}
-                      className="w-full p-3 rounded-xl border border-slate-200 font-bold text-slate-700 focus:border-blue-500 outline-none"
+                      onChange={(e) => handleMeasurementChange('TF', e.target.value)}
+                      className={`w-full p-3 rounded-xl border font-bold text-slate-700 focus:border-blue-500 outline-none transition-colors ${errors.TF ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
                       placeholder="Waarde..."
                     />
                   </div>
@@ -249,8 +295,8 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
                       <input
                         type="number"
                         value={measurements.TW || ""}
-                        onChange={(e) => setMeasurements({...measurements, TW: e.target.value})}
-                        className="w-full p-3 rounded-xl border border-slate-200 font-bold text-slate-700 focus:border-blue-500 outline-none"
+                        onChange={(e) => handleMeasurementChange('TW', e.target.value)}
+                        className={`w-full p-3 rounded-xl border font-bold text-slate-700 focus:border-blue-500 outline-none transition-colors ${errors.TW ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
                         placeholder="Waarde..."
                       />
                     </div>
@@ -260,8 +306,8 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
                         <input
                           type="number"
                           value={measurements.TWcb || ""}
-                          onChange={(e) => setMeasurements({...measurements, TWcb: e.target.value})}
-                          className="w-full p-3 rounded-xl border border-slate-200 font-bold text-slate-700 focus:border-blue-500 outline-none"
+                          onChange={(e) => handleMeasurementChange('TWcb', e.target.value)}
+                          className={`w-full p-3 rounded-xl border font-bold text-slate-700 focus:border-blue-500 outline-none transition-colors ${errors.TWcb ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
                           placeholder="Waarde..."
                         />
                       </div>
@@ -272,8 +318,8 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
                         <input
                           type="number"
                           value={measurements.TWtb || ""}
-                          onChange={(e) => setMeasurements({...measurements, TWtb: e.target.value})}
-                          className="w-full p-3 rounded-xl border border-slate-200 font-bold text-slate-700 focus:border-blue-500 outline-none"
+                          onChange={(e) => handleMeasurementChange('TWtb', e.target.value)}
+                          className={`w-full p-3 rounded-xl border font-bold text-slate-700 focus:border-blue-500 outline-none transition-colors ${errors.TWtb ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
                           placeholder="Waarde..."
                         />
                       </div>
@@ -288,14 +334,14 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
           {status !== "approved" && (
             <div className="mb-4 md:mb-6">
               <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 md:mb-3">Reden van afkeur</h4>
-              <div className="grid grid-cols-2 gap-2">
-                {["Sticker onjuist", "Onjuiste maatvoering", "Beschadiging", "Anders"].map((r) => (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {REJECTION_REASONS.map((r) => (
                   <button
                     key={r}
-                    onClick={() => setReason(r)}
-                    className={`p-3 rounded-xl text-xs font-bold border text-left ${reason === r ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                    onClick={() => setReason(t(r, r))}
+                    className={`p-3 rounded-xl text-xs font-bold border text-left ${reason === t(r, r) ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"}`}
                   >
-                    {r}
+                    {t(r, r)}
                   </button>
                 ))}
               </div>

@@ -46,21 +46,17 @@ class ErrorBoundary extends React.Component {
       };
 
       await addDoc(messagesRef, {
-        type: 'alert', // Zorgt voor rode markering in Message Center
-        title: `🔥 CRASH: ${errorData.message.substring(0, 40)}...`,
-        body: `KRITIEKE SYSTEEMFOUT\n\nGebruiker: ${currentUser?.displayName || 'Anoniem'} (${currentUser?.email || 'Geen email'})\nLocatie: ${window.location.href}\n\nFoutmelding:\n${errorData.message}\n\nStacktrace:\n${errorData.stack}\n\nComponent Stack:\n${errorData.componentStack}`,
+        type: 'SYSTEM_ERROR', // Aangepast: SYSTEM_ERROR voor correcte styling in AdminMessagesView
+        subject: `🔥 CRASH: ${errorData.message.substring(0, 40)}...`, // Aangepast: title -> subject
+        content: `KRITIEKE SYSTEEMFOUT\n\nGebruiker: ${currentUser?.displayName || 'Anoniem'} (${currentUser?.email || 'Geen email'})\nLocatie: ${window.location.href}\n\nFoutmelding:\n${errorData.message}`, // Aangepast: body -> content
         to: 'admin', // Target voor admin filters
         priority: 'high', // Hoge prioriteit
         read: false,
         archived: false,
         timestamp: serverTimestamp(),
-        senderId: currentUser?.uid || 'system',
-        senderName: 'System Error Boundary',
-        metadata: {
-          userAgent: navigator.userAgent,
-          screenSize: `${window.innerWidth}x${window.innerHeight}`,
-          url: window.location.href
-        }
+        senderId: 'system_crash_reporter', // Aangepast: vaste senderId
+        senderName: 'System Crash Reporter', // Aangepast: vaste senderName
+        data: errorData // Aangepast: data veld toegevoegd met technische details
       });
 
       this.setState({ reportStatus: 'success' });

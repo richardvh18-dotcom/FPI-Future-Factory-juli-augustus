@@ -29,6 +29,10 @@ const AdminProductListView = ({ products = [], onDelete, onEdit, user }) => {
   const [processingId, setProcessingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("All");
+  const safeProducts = useMemo(
+    () => (Array.isArray(products) ? products.filter((p) => p && typeof p === "object") : []),
+    [products]
+  );
 
   // State voor open/dichtgeklapte groepen (Standaard: eerste groep open)
   const [expandedGroups, setExpandedGroups] = useState({
@@ -37,20 +41,21 @@ const AdminProductListView = ({ products = [], onDelete, onEdit, user }) => {
 
   // 1. FILTERING
   const filteredProducts = useMemo(() => {
-    if (!products) return [];
+    if (!safeProducts.length) return [];
     const term = searchTerm.toLowerCase();
+    const includesTerm = (value) => String(value || "").toLowerCase().includes(term);
 
-    return products.filter((product) => {
+    return safeProducts.filter((product) => {
       const matchesSearch =
-        product.name?.toLowerCase().includes(term) ||
-        product.displayId?.toLowerCase().includes(term) ||
-        product.articleCode?.toLowerCase().includes(term) ||
-        product.extraCode?.toLowerCase().includes(term);
+        includesTerm(product.name) ||
+        includesTerm(product.displayId) ||
+        includesTerm(product.articleCode) ||
+        includesTerm(product.extraCode);
 
       const matchesType = filterType === "All" || product.type === filterType;
       return matchesSearch && matchesType;
     });
-  }, [products, searchTerm, filterType]);
+  }, [safeProducts, searchTerm, filterType]);
 
   // 2. GROUPING LOGIC
   const groupedData = useMemo(() => {
@@ -104,8 +109,8 @@ const AdminProductListView = ({ products = [], onDelete, onEdit, user }) => {
   };
 
   const uniqueTypes = useMemo(
-    () => ["All", ...new Set(products.map((p) => p.type))].sort(),
-    [products]
+    () => ["All", ...new Set(safeProducts.map((p) => p.type).filter(Boolean))].sort(),
+    [safeProducts]
   );
 
   return (
@@ -137,9 +142,9 @@ const AdminProductListView = ({ products = [], onDelete, onEdit, user }) => {
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
             >
-              {uniqueTypes.map((t) => (
-                <option key={t} value={t}>
-                  {t === "All" ? t('adminProductListView.allTypes') : t}
+              {uniqueTypes.map((typeOption) => (
+                <option key={typeOption} value={typeOption}>
+                  {typeOption === "All" ? t('adminProductListView.allTypes') : typeOption}
                 </option>
               ))}
             </select>

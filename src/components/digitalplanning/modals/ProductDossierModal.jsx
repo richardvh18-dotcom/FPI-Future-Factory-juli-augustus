@@ -15,6 +15,8 @@ import {
   Loader2,
   Star,
   Zap,
+  Code,
+  Copy,
 } from "lucide-react";
 import StatusBadge from "../common/StatusBadge";
 import { WORKSTATIONS } from "../../../utils/workstationLogic";
@@ -414,6 +416,39 @@ const ProductDossierModal = ({
                   <p className="text-sm font-medium text-slate-700 italic">
                     {parentOrder.notes}
                   </p>
+                </div>
+              )}
+
+              {/* ZPL Code Display (Indien beschikbaar) */}
+              {product.labelZPL && (
+                <div className="lg:col-span-4 mt-4 pt-4 border-t border-blue-200/50">
+                  <h4 className="text-[9px] font-black text-blue-400 uppercase mb-2">Label Preview & ZPL</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Preview Image */}
+                    <div className="bg-white/60 p-2 rounded-lg border border-blue-100/50 flex items-center justify-center">
+                      <img 
+                        src={`http://api.labelary.com/v1/printers/8dpmm/labels/4x6/0/${encodeURIComponent(product.labelZPL)}`} 
+                        alt="Label Preview"
+                        className="max-w-full h-auto shadow-md"
+                      />
+                    </div>
+                    {/* ZPL Code */}
+                    <div className="bg-white/60 rounded-lg p-2 border border-blue-100/50 relative">
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText(product.labelZPL);
+                          alert("ZPL code gekopieerd naar klembord");
+                        }}
+                        className="absolute top-2 right-2 text-[9px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors bg-white/50 px-1.5 py-0.5 rounded-md"
+                        title="Kopieer ZPL code"
+                      >
+                        <Copy size={10} /> Kopiëren
+                      </button>
+                      <pre className="text-[7px] font-mono text-slate-500 overflow-x-auto whitespace-pre-wrap h-32 custom-scrollbar">
+                        {product.labelZPL}
+                      </pre>
+                    </div>
+                  </div>
                 </div>
               )}
             </section>

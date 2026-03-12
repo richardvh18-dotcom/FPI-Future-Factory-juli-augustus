@@ -41,6 +41,11 @@ export const PATHS = {
   LABEL_TEMPLATES: [BASE, "settings", "label_templates"],
   LABEL_LOGIC: [BASE, "settings", "label_logic"],
   PRINTERS: [BASE, "settings", "printers"],
+  
+  // --- PRINTER SERVICE ---
+  PRINT_QUEUE: [BASE, "production", "print_queue"],
+  PRINT_LISTENERS: [BASE, "settings", "print_listeners"],
+  
   AI_CONFIG: [BASE, "settings", "ai_config", "main"],
 
   // --- LOGGING & AUDIT (Collecties: oneven segmenten) ---

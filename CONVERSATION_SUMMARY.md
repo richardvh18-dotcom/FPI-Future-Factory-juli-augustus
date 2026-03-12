@@ -1,3 +1,55 @@
+# Samenvatting Sessie: Eindrapport Code Audit & Pilot Config
+
+**Datum:** 8 maart 2026
+**Status:** Actie Vereist / Pilot Ready Setup
+
+## 🎯 Doelstellingen
+1.  Verwerken van het eindrapport "Code Audit & Configuratie".
+2.  Technische voorbereiding voor de **Pilot Start op 30 maart 2026** (datum gewijzigd).
+3.  Implementeren van strikte omgevingsscheiding en beveiliging.
+
+## 📋 Actiepunten uit Eindrapport
+
+### 1. Kritieke Opschoning (Build-Check)
+-   **Verwijderen:** `src/components/ai/AiCenterView,jsx` (illegale bestandsnaam).
+-   **Verwijderen:** `vite.config.js` (conflict met `.ts` versie).
+-   **Verwijderen:** `src/components/AiAssistantView.jsx` (duplicaat).
+
+### 2. Configuratie & Beveiliging
+-   **Database Paden:** Strikte scheiding tussen Productie (`/future-factory/`) en Preview (`/artifacts/`).
+-   **Firestore Rules:** Updates vereist voor nieuwe root-paden.
+-   **Auth:** Wachtwoord-reset via e-mail uitschakelen voor operators; Admin override toevoegen.
+
+### 3. Label Optimalisatie (ZPL)
+-   **Dynamische Lengte:** `^LL` commando toepassen om witruimte te verwijderen.
+-   **Smart Cutter:** `^GS` commando voor snijden na batch (niet per stuk).
+-   **Layout:** Ondersteuning voor 2-koloms printen op 90mm papier.
+
+## 🔜 Vervolgstappen
+-   Uitvoeren van `cleanup_pilot.sh`.
+-   Implementeren van de ZPL-logica in `zplHelper.js`.
+
+# Samenvatting Sessie: Efficiency & AI Documentatie Finalisatie
+
+**Datum:** 8 maart 2026 (Vervolg)
+**Status:** Gedocumenteerd
+
+## 🎯 Doelstellingen
+1.  Finaliseren van technische documentatie voor Efficiency Tracking en AI features.
+2.  Vastleggen van configuratie en gebruikshandleidingen voor de pilot.
+
+## ✅ Opgeleverde Documentatie
+
+### 1. Efficiency Tracking (`EFFICIENCY_TRACKING.md`)
+-   **Handleiding:** Complete gids voor het `ProductionTimeStandardsManager` en `EfficiencyDashboard`.
+-   **Metrics:** Gedetailleerde uitleg van efficiency berekeningen (Target vs Actual) en batch efficiency.
+-   **Beheer:** Instructies voor het instellen van standaardtijden en CSV import/export.
+
+### 2. AI Assistent Setup (`AI_SETUP.md`)
+-   **Configuratie:** Setup instructies voor Google Gemini API (8000 tokens).
+-   **Features:** Beschrijving van Chat Modus, Training Modus en Document Analyse.
+-   **Integratie:** Uitleg over de header zoekbalk integratie.
+
 # Samenvatting Sessie: Pilot Ready Setup & Dual Deployment
 
 **Datum:** 8 maart 2026
@@ -788,6 +840,106 @@ Ondanks de eerdere implementatie bleven lotnummers op `00001` hangen bij opeenvo
 
 # Samenvatting Sessie: Pilot Support & Bugfix (Order Afronding)
 
+**Datum:** 10 maart 2026
+**Status:** Geïmplementeerd
+
+## 🎯 Doelstellingen
+1.  Versnellen van de goedkeuringsflow op de werkvloer.
+2.  Implementeren van een "OK" QR-code scan om klikken te vermijden.
+3.  Zorgen voor een robuuste, snelle scanervaring.
+4.  Oplossen van een crash in de `LossenView` component.
+5.  Corrigeren van "placeholder" teksten in afkeur-modals.
+
+## ✅ Geïmplementeerde Wijzigingen
+
+### 1. "Scan-en-Klaar" Workflow
+-   **Nieuwe Flow:** Operators kunnen nu een product selecteren door het lotnummer te scannen en vervolgens een algemene "OK" QR-code scannen om het product direct goed te keuren en door te sturen. Handmatig klikken is alleen nog nodig bij afkeur.
+-   **Componenten:** De logica is geïmplementeerd in `LossenView.jsx` en `BM01Hub.jsx`.
+-   **Visuele Feedback:** Het geselecteerde product krijgt een duidelijke visuele markering (paarse rand) zodat de operator weet welk item wordt goedgekeurd.
+-   **Snelheid:** De scan-input wordt direct na de "OK" scan vrijgemaakt, zodat de operator onmiddellijk het volgende lotnummer kan scannen zonder te wachten op de database-update. Een `useRef` is toegevoegd om race conditions te voorkomen.
+
+### 2. Uitzondering voor "Lossen"
+-   **Verplichte Meting:** De "OK" QR-code functionaliteit is **uitgeschakeld** voor het "Lossen" station.
+-   **Directe Modal:** Bij het scannen van een lotnummer op het "Lossen" station opent nu direct de `ProductReleaseModal` zodat de verplichte meetwaarden ingevoerd kunnen worden.
+-   **Validatie:** De "Afronden" knop in de `ProductReleaseModal` is niet langer geblokkeerd. In plaats daarvan krijgen lege, verplichte meetvelden een rode rand als de gebruiker probeert op te slaan zonder deze in te vullen.
+
+### 3. "OK" QR-code Printen (Admin)
+-   **PDF Generatie:** In `AdminPrinterManager.jsx` is de "duimpje" knop per printer vervangen door één centrale knop: "Print 'OK' QR (A4)".
+-   **Functionaliteit:** Deze knop genereert een A4 PDF met een grote (10x10 cm) QR-code (`FPI-ACTION-APPROVE-OK`) die direct op een kantoorprinter kan worden afgedrukt.
+
+### 4. Bulk Lotnummer Printen (Admin)
+-   **Nieuwe Functionaliteit:** Een "Lotnummers" knop is toegevoegd aan `AdminPrinterManager.jsx` die een modal opent.
+-   **Modal:** Hiermee kunnen admins in bulk een serie lotnummers (oplopend of identiek) genereren en printen voor een specifiek station en week.
+
+### 5. Bugfixes & Stabiliteit
+-   **Crash Fix:** Een `ReferenceError: reserveConfig is not defined` in `LossenView.jsx` is opgelost door de ontbrekende state variabelen te declareren. Dit was waarschijnlijk het gevolg van een incomplete code merge.
+-   **Placeholder Fix:** De afkeur-redenen in `ProductReleaseModal.jsx` en `PostProcessingFinishModal.jsx` toonden vertaal-sleutels (placeholders). Dit is opgelost door de `t()` functie correct toe te passen met een fallback, zodat altijd een leesbare tekst wordt getoond.
+
+---
+
+**Datum:** 10 maart 2026 (Vervolg)
+**Status:** Gediagnosticeerd & Opgelost
+
+## 🚨 Probleem
+De gebruiker rapporteerde een wit scherm bij het navigeren naar de `LossenView`. De meegeleverde console log toonde een `Uncaught ReferenceError: reserveConfig is not defined`.
+
+## 🔧 Diagnose & Oplossing
+-   **Oorzaak:** De fout werd veroorzaakt door het aanroepen van een state variabele (`reserveConfig`) die niet was gedeclareerd in de `LossenView.jsx` component. Dit is een typisch gevolg van een incomplete code merge.
+-   **Fix:** De ontbrekende state variabelen (`reserveConfig`, `availableLabels`, etc.) zijn bovenaan de `LossenView` component toegevoegd met `useState(null)`. Dit lost de crash op en herstelt de functionaliteit van de pagina.
+
+---
+
+**Datum:** 10 maart 2026 (Vervolg 2)
+**Status:** Geïmplementeerd
+
+## 🎯 Doelstelling
+De afkeur-redenen in de pop-up voor "Lossen" en "Nabewerken" tonen "placeholders" (vertaal-sleutels) in plaats van de leesbare tekst. Dit moet worden gecorrigeerd.
+
+## ✅ Geïmplementeerde Wijzigingen
+
+### 1. `ProductReleaseModal.jsx` (Lossen)
+-   **Probleem:** De `t()` functie van `react-i18next` werd niet gebruikt om de redenen te vertalen.
+-   **Oplossing:** De `REJECTION_REASONS` array wordt nu gemapt en elke reden wordt door de `t()` functie gehaald. Er is een fallback toegevoegd (`t(r, r)`), zodat als een vertaling ontbreekt, de sleutel zelf wordt getoond in plaats van een lege knop.
+
+### 2. `PostProcessingFinishModal.jsx` (Nabewerken)
+-   **Probleem:** Vergelijkbaar met de `ProductReleaseModal`, de vertaalfunctie werd niet correct toegepast.
+-   **Oplossing:** Ook hier is de `t()` functie aangepast naar `t(reason, reason)` om een fallback te bieden en de "placeholder" weergave te voorkomen.
+
+---
+
+**Datum:** 10 maart 2026 (Vervolg 3)
+**Status:** Geïmplementeerd
+
+## 🎯 Doelstelling
+De knop "Print 'OK' QR" moet niet per printer (met een duimpje) beschikbaar zijn, maar als één centrale knop die een A4 PDF genereert met een grote QR-code, printbaar op een standaard kantoorprinter.
+
+## ✅ Geïmplementeerde Wijzigingen
+
+### 1. `AdminPrinterManager.jsx`
+-   **Knop Verplaatst:** De "duimpje" knop per printer is verwijderd. Er is een nieuwe, prominente knop "Print 'OK' QR (A4)" toegevoegd naast de "Nieuwe Printer Toevoegen" knop.
+-   **PDF Generatie:** De `jspdf` bibliotheek wordt nu gebruikt om een A4-document te creëren.
+-   **QR-code:** Een QR-code van 10x10 cm met de waarde `FPI-ACTION-APPROVE-OK` wordt gegenereerd via een externe API en in het midden van de PDF geplaatst.
+-   **Gebruikersflow:** Een klik op de knop opent de PDF direct in een nieuw browsertabblad, klaar om afgedrukt te worden.
+
+---
+
+**Datum:** 10 maart 2026 (Vervolg 4)
+**Status:** Geïmplementeerd
+
+## 🎯 Doelstelling
+Voeg een functie toe aan de "Print Stations" pagina (`AdminPrinterManager`) om in bulk lotnummer-labels te kunnen printen.
+
+## ✅ Geïmplementeerde Wijzigingen
+
+### 1. `AdminPrinterManager.jsx`
+-   **Nieuwe Knop:** Een "Lotnummers" knop is toegevoegd aan de header.
+-   **`LotPrintModal` Component:** Een nieuw modaal venster is gecreëerd voor het configureren van de printopdracht.
+-   **Functionaliteit:** Gebruikers kunnen een station, datum, start-volgnummer, aantal en printmodus (oplopend of identiek) selecteren.
+-   **Bulk Printen:** De `handleBulkLotPrint` functie genereert de FPI-standaard lotnummers en stuurt de ZPL-code voor elk label naar de geselecteerde printer (zowel Netwerk als USB wordt ondersteund).
+-   **Preview:** De modal toont een live preview van het eerstvolgende te genereren lotnummer.
+
+---
+
 **Datum:** 2 maart 2026
 **Status:** Gediagnosticeerd
 
@@ -1222,3 +1374,246 @@ De Role Switcher functionaliteit werkt nog steeds niet naar behoren. Dit is toeg
 
 ## 🔜 Vervolgstappen
 -   Starten met Fase 5: Integratie van `MeasurementInput` in de `WorkstationHub`.
+
+# Samenvatting Sessie: AI Persistentie & Label Designer Upgrade
+
+**Datum:** 8 maart 2026
+**Status:** Geïmplementeerd
+
+## 🎯 Doelstellingen
+1.  Behouden van context in de AI Database Assistent.
+2.  Verbeteren van de gebruiksvriendelijkheid van de Label Designer (Fouten herstellen).
+3.  Finaliseren van dynamisch rollenbeheer.
+
+## ✅ Geïmplementeerde Wijzigingen
+
+### 1. Admin Database AI (`AdminDatabaseView.jsx`)
+-   **Persistentie:** De chatgeschiedenis met de AI wordt nu opgeslagen in `localStorage`. Bij het herladen van de pagina blijft het gesprek behouden.
+-   **Beheer:** Knop toegevoegd om de chatgeschiedenis te wissen en opnieuw te beginnen.
+
+### 2. Label Designer (`AdminLabelDesigner.jsx`)
+-   **Undo Functie:** Volledige geschiedenis-tracking toegevoegd. Gebruikers kunnen wijzigingen (verplaatsen, toevoegen, verwijderen) ongedaan maken.
+-   **Kopieer Functie:** Mogelijkheid om het ontwerp van een bestaand label te kopiëren naar het huidige canvas zonder de metadata te overschrijven.
+-   **Multi-Select:** Ondersteuning voor het selecteren en verplaatsen van meerdere elementen tegelijk.
+
+### 3. Gebruikers & Rollen (`AdminUsersView.jsx`)
+-   **Dynamische Rollen:** Rollen worden nu volledig uit de database (`settings/roles`) geladen in plaats van hardcoded.
+-   **Initialisatie:** Knop "Standaarden Opslaan" toegevoegd om de standaardrollen (Admin, Operator, etc.) in de database te injecteren als deze leeg is.
+
+## 🔜 Vervolgstappen
+-   Testen van de nieuwe Label Designer functies op een tablet.
+-   Verder met Fase 5: Integratie van `MeasurementInput` in de `WorkstationHub`.
+
+# Samenvatting Sessie: Printing Architectuur & Reparatie Flow
+
+**Datum:** 9 maart 2026
+**Status:** Geïmplementeerd & Gedocumenteerd
+
+## 🎯 Doelstellingen
+1.  Formaliseren van de print-architectuur voor stabiel labelen (USB & Netwerk).
+2.  Implementeren van de specifieke Reparatie Flow (BH31) voor afgekeurde producten.
+3.  Automatisering van de repository setup voor de pilot.
+
+## ✅ Geïmplementeerde Wijzigingen
+
+### 1. Printing Architectuur (`PRINTING_ARCHITECTURE.md`)
+-   **Architectuur:** "Store and Forward" mechanisme vastgelegd via Firestore `print_queue`.
+-   **Hybrid Printing:** Ondersteuning voor zowel directe IP-printing (Netwerk) als USB-printing via lokale Node.js listener (voor BH18).
+-   **Fallback:** Browser-based PDF generatie blijft beschikbaar als fallback.
+
+### 2. Reparatie Flow (BH31)
+-   **`WorkstationHub.jsx`**: Specifieke afhandeling toegevoegd voor station `BH31`. Items op dit station openen nu de `RepairModal` in plaats van de standaard finish modal.
+-   **`Terminal.jsx`**: Reparatie-items (status `Tijdelijke afkeur` of handmatige verplaatsing) verschijnen nu expliciet in de lijst met directe toegang tot reparatie-acties.
+-   **`LossenView.jsx`**: Routing logica bijgewerkt zodat items met `Tijdelijke afkeur` correct doorstromen naar de reparatie-wachtrij.
+
+### 3. DevTools & Scripts
+-   **`create-pilot-repo.sh`**: Bash script toegevoegd om automatisch de `Future-Factory-Pilot-Ready` repository aan te maken en de code te pushen.
+
+## 🔜 Vervolgstappen
+-   Testen van de fysieke USB-print flow op de BH18 PC.
+-   Starten met Fase 5: Integratie van `MeasurementInput` voor QC-metingen.
+
+# Samenvatting Sessie: Browser-based Print Queue & USB Service Refactor
+
+**Datum:** 10 maart 2026
+**Status:** Geïmplementeerd
+
+## 🎯 Doelstellingen
+1.  Vereenvoudigen van de print-architectuur door de Node.js listener te vervangen door een browser-oplossing.
+2.  Centraliseren van USB-print functionaliteit.
+3.  Implementeren van een volwaardig "Print Station" dashboard.
+
+## ✅ Geïmplementeerde Wijzigingen
+
+### 1. Nieuwe Print Architectuur (Pull-based)
+*   **Geen Node.js meer:** De noodzaak voor een lokaal script is vervallen. De `PrintQueueAdminView.jsx` fungeert nu als de actieve listener.
+*   **Print Station Dashboard:** `PrintQueueAdminView.jsx` is uitgebreid met:
+    *   **Auto-Print:** Automatisch printen van nieuwe taken via WebUSB.
+    *   **Reprint:** Zoeken op lotnummer en opnieuw printen (inclusief preview).
+    *   **Station Selectie:** Filteren op specifiek station.
+
+### 2. Refactoring & Cleanup
+*   **Service Verplaatsing:** `usbPrintService.js` verplaatst van `src/components/admin/` naar `src/components/printer/` voor logische groepering.
+*   **Imports Bijgewerkt:** Referenties in `AdminPrinterManager.jsx`, `ProductionStartModal.jsx` en `PrintQueueAdminView.jsx` aangepast.
+*   **Bestanden Verwijderd:** Oude versies van `PrintQueueAdminView.jsx` en `usbPrintService.js` zijn opgeruimd.
+
+## 🔜 Vervolgstappen
+*   Fysieke test op de werkvloer: Een PC/Tablet met USB-printer open laten staan op de "Print Wachtrij" pagina met "Auto-Print" aan.
+*   Starten met Fase 5: Integratie van `MeasurementInput` voor QC-metingen.
+
+# Samenvatting Sessie: Print Queue Verfijning & Auto-Start Flow
+
+**Datum:** 10 maart 2026 (Vervolg)
+**Status:** Geïmplementeerd
+
+## 🎯 Doelstellingen
+1.  Optimaliseren van de "Auto" start-flow in `ProductionStartModal`.
+2.  Verbeteren van de label-preview en stabiliteit in de Print Wachtrij.
+3.  Oplossen van bugs in sortering en filtering.
+
+## ✅ Geïmplementeerde Wijzigingen
+
+### 1. Production Start (`ProductionStartModal.jsx`)
+*   **Auto-Queue:** Standaard printmodus is nu 'queue' als er een printer gekoppeld is aan het station.
+*   **Auto-Print Flow:** In "Auto" modus vraagt "Order Starten" nu direct om het aantal labels en stuurt deze naar de wachtrij. Handmatige printknoppen zijn verborgen voor een schonere UI.
+*   **Metadata:** Labelafmetingen (`width`, `height`) worden meegestuurd naar de wachtrij voor correcte previews.
+*   **UX:** Laad-indicatoren toegevoegd aan actieknoppen.
+
+### 2. Print Wachtrij (`PrintQueueAdminView.jsx`)
+*   **Preview:** `LabelVisualPreview` gelijkgetrokken met de productiemodal (ondersteuning voor lijnen, kaders, tekstuitlijning).
+*   **Smart Sizing:** Preview past zich automatisch aan op basis van de metadata van de taak (bijv. 4x2" vs 4x6").
+*   **Bugfixes:** Sortering op `createdAt` (nieuwste bovenaan) en filtering op `metadata` velden hersteld. Syntaxfouten opgelost.
+
+### 3. Services
+*   **Refactor:** `usbPrintService` definitief verplaatst naar `src/components/printer/`.
+
+## 🔜 Vervolgstappen
+*   Fysieke validatie van de "Auto" flow op BH18.
+*   Starten met Fase 5: Integratie van `MeasurementInput` in de `WorkstationHub`.
+
+# Samenvatting Sessie: Integratie Optimalisatieplan
+
+**Datum:** 12 maart 2026
+**Status:** Geïntegreerd & Afgerond
+
+## 🎯 Doelstellingen
+1.  Vastleggen van de optimalisatiestrategie uit `OPTIMIZATION_PLAN.md` voor de Full Digital Pilot.
+2.  Opschonen van het losse planningsbestand.
+
+## 📋 Optimalisatieplan (Pilot BH18 & BM01)
+
+### 1. Code & Infrastructuur
+-   **Merge:** Samenvoegen van backend functies en activeren ERP-Sync (`infor_sync_service.js`).
+-   **Opschoning:** Verwijderen van conflicterende bestanden en duplicaten.
+
+### 2. UX & Werkvloer
+-   **Scanner:** Optimalisatie snelheid en autofocus voor tablets.
+-   **Interface:** Knoppen vergroten (min. 64px) voor handschoenbediening.
+-   **Offline:** Lokale cache check voor start/stop acties.
+
+### 3. Digitale Flow (Paperless)
+-   **Flow:** BH18 -> Lossen -> Nabewerking -> Eindinspectie (BM01).
+-   **Validatie:** Unieke lotnummer check (`getDoc`) vóór start om duplicaten te voorkomen.
+
+### 4. Performance
+-   **Data:** Wekelijks archiveren van voltooide orders en indexen controleren.
+
+# Samenvatting Sessie: Integratie Optimalisatie Gids
+
+**Datum:** 12 maart 2026
+**Status:** Geïntegreerd & Afgerond
+
+## 🎯 Doelstellingen
+1.  Vastleggen van de technische optimalisatie-strategieën uit `OPTIMIZATION_GUIDE.md`.
+2.  Opschonen van het losse documentatiebestand.
+
+## 📋 Optimalisatie Gids (Samenvatting)
+
+### 1. ✅ Reeds Geïmplementeerd
+-   **Code Splitting:** Lazy loading voor zware routes (Bundle size -40%).
+-   **Firestore Rules:** Efficiënte `isSignedIn()` checks zonder recursieve lookups.
+-   **Centrale DB Paden:** `src/config/dbPaths.js` voor consistentie.
+
+### 2. 📋 Aanbevolen Optimalisaties
+-   **React.memo:** Voor high-frequency components om re-renders te beperken.
+-   **useMemo:** Voor zware filters in `WorkstationHub`.
+-   **i18n:** Consistent gebruik van keys i.p.v. hardcoded strings.
+-   **Virtual Scrolling:** `react-window` voor grote lijsten in `ProductSearchView`.
+-   **Query Optimalisatie:** Server-side filtering met Firestore `query()` in plaats van client-side.
+
+### 3. Monitoring
+-   **Metrics:** Target TTI < 3s, Initial Load < 2s.
+-   **Roadmap:** Fase 1 (Quick Wins) afgerond, focus op Fase 2 (Stabiliteit) en Fase 3 (Schaalbaarheid).
+
+# Samenvatting Sessie: Integratie Pilot Test Scenario
+
+**Datum:** 12 maart 2026
+**Status:** Geïntegreerd & Afgerond
+
+## 🎯 Doelstellingen
+1.  Vastleggen van het formele testscenario uit `PILOT_TEST_SCENARIO.md` voor de Full Digital Pilot.
+2.  Opschonen van het losse documentatiebestand.
+
+## 📋 Test Scenario Samenvatting (Full Digital Flow)
+
+### 1. Scope & Flow
+-   **Traject:** BH18 (Wikkelen) -> Lossen -> Nabewerking -> BM01 (Eindcontrole).
+-   **Product:** GRE Fitting (uniek lotnummer per stuk).
+
+### 2. Test Fases
+-   **Fase 1:** Order Starten op BH18 (Validatie uniekheid lotnummer).
+-   **Fase 2:** Afronden Wikkelen & Doorsturen (Status: `Wacht op Lossen`).
+-   **Fase 3:** Lossen (Status: `Te Nabewerken` / `Te Keuren`).
+-   **Fase 4:** Nabewerking (Optioneel).
+-   **Fase 5:** Eindcontrole op BM01 (Archivering & PDF Export).
+-   **Fase 6:** Validatie Productie Dossier (Compleetheid historie).
+-   **Fase 7:** Multi-Item Order Test (Correcte tellers bij deel-afronding).
+-   **Fase 8:** Stress Test (Meerdere operators tegelijk).
+
+### 3. Success Criteria
+-   100% Traceerbaarheid (geen dataverlies).
+-   Unieke lotnummers.
+-   Correcte tellers in planning.
+-   PDF Export functioneel.
+
+# Samenvatting Sessie: Bugfixes & Optimalisaties (Print/Routing)
+
+**Datum:** 12 maart 2026
+**Status:** Geanalyseerd & Actie Vereist
+
+## 🎯 Doelstellingen
+1.  Optimaliseren van Tablet weergave voor Workstation.
+2.  Verbeteren van de annuleer-flow bij Wikkelen.
+3.  Grondige herziening van ZPL-printing (Batching, Formaat, UX).
+4.  Correctie van routing logica voor Lossen en Reparaties.
+
+## 🚨 Gemelde Problemen & Wensen
+
+### 1. UX & Workstation (Tablet)
+-   **Optimalisatie:** De workstation view moet nog optimaler werken op tablets.
+
+### 2. Wikkelen (Annuleren)
+-   **Feature:** Mogelijkheid om een order te annuleren tijdens het wikkelen.
+-   **Gevolg:** Item moet uit `tracked_products` verwijderd worden en het lotnummer moet vrijgegeven worden voor hergebruik.
+
+### 3. Printing (ZPL Issues)
+-   **Driver Conflict:** Zadig driver (voor WebUSB) blokkeert andere Windows programma's om te printen.
+-   **Formaat:** Labels worden niet op het gekozen formaat geprint (worden 'in elkaar gedrukt'). Groot label kiezen resulteert toch in klein formaat.
+-   **Batching:**
+    -   Lotnummers worden nu per stuk geprint (cut-off na elk label).
+    -   **Eis:** Een reeks moet als 1 opdracht worden verstuurd, met cut-off pas aan het einde.
+    -   **Eis:** 2 labels kiezen bij start moet 1 opdracht zijn (geen 2 losse opdrachten).
+-   **UX:** Print popup op PC is storend (komt boven in beeld). Vervangen door subtiele melding/notificatie.
+
+### 4. Routing & Logica
+-   **Lossen:** Diameter-check werkt niet altijd goed, waardoor items niet in de juiste tab verschijnen.
+-   **Reparatie (Tijdelijke Afkeur):**
+    -   Duidelijker onderscheid tussen routing naar BH31 (extern) of Nabewerking (intern).
+    -   Keuzemenu toevoegen voor *wat* er gerepareerd is.
+    -   **Flow:** Na reparatie direct weer in normale flow: Nabewerking -> Eindinspectie (BM01).
+
+## 🔜 Actieplan
+-   **Printen:** `ProductionStartModal.jsx` aanpassen om ZPL commando's samen te voegen (batching) en expliciete `^PW` en `^LL` (formaat) commando's mee te sturen.
+-   **Wikkelen:** Prullenbak-icoon toevoegen in `TerminalProductionView.jsx` met delete-logica.
+-   **Routing:** Regex voor diameter in `LossenView.jsx` verbeteren en reparatie-flow in `Terminal.jsx` updaten.
+-   **UX:** Popups vervangen door Toast notificaties.

@@ -167,7 +167,7 @@ const PostProcessingFinishModal = ({
                         <Check size={8} className="text-white" />
                       )}
                     </div>
-                    {t(reason)}
+                    {t(reason, reason)}
                   </div>
                 ))}
               </div>

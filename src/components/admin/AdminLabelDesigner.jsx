@@ -30,6 +30,9 @@ import {
   Code,
   FilePlus,
   Search,
+  Edit2,
+  Undo,
+  Plus,
 } from "lucide-react";
 import {
   doc,
@@ -42,6 +45,8 @@ import {
   serverTimestamp,
   onSnapshot,
   where,
+  getDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
@@ -68,9 +73,12 @@ const AdminLabelDesigner = ({ onBack }) => {
   const [selectedSizeKey, setSelectedSizeKey] = useState("Standard");
   const [labelWidth, setLabelWidth] = useState(LABEL_SIZES.Standard.width);
   const [labelHeight, setLabelHeight] = useState(LABEL_SIZES.Standard.height);
+  const [labelTags, setLabelTags] = useState([]);
+  const [showTagManager, setShowTagManager] = useState(false);
+  const [tagSearch, setTagSearch] = useState("");
 
   const [elements, setElements] = useState([]);
-  const [selectedElementId, setSelectedElementId] = useState(null);
+  const [selectedElementIds, setSelectedElementIds] = useState([]);
   const [zoom, setZoom] = useState(1.2);
   const [showGrid, setShowGrid] = useState(true);
   const [guidelines, setGuidelines] = useState([]);
@@ -84,6 +92,12 @@ const AdminLabelDesigner = ({ onBack }) => {
   const [labelLogicRules, setLabelLogicRules] = useState([]);
   const [selectedLogicCode, setSelectedLogicCode] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  // Nieuwe state voor afdelingen
+  const [templateSearch, setTemplateSearch] = useState("");
+  const [departments, setDepartments] = useState([]);
+  const [assignedDepartment, setAssignedDepartment] = useState("All");
+  const [history, setHistory] = useState([]);
 
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -112,6 +126,22 @@ const AdminLabelDesigner = ({ onBack }) => {
     return () => unsub();
   }, []);
 
+  // 1c. Fetch Departments for assignment
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      try {
+        const docRef = doc(db, ...PATHS.FACTORY_CONFIG);
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          setDepartments(snap.data().departments || []);
+        }
+      } catch (e) {
+        console.error("Error fetching departments:", e);
+      }
+    };
+    fetchDepartments();
+  }, []);
+
   const filteredVariables = useMemo(() => {
       if (selectedLogicCode) {
           const rule = labelLogicRules.find(r => r.productCode === selectedLogicCode);
@@ -130,6 +160,77 @@ const AdminLabelDesigner = ({ onBack }) => {
       setLabelHeight(LABEL_SIZES[selectedSizeKey].height);
     }
   }, [selectedSizeKey]);
+
+  // Helper om alle unieke tags te verzamelen
+  const allUniqueTags = useMemo(() => {
+    const tags = new Set();
+    savedLabels.forEach(l => {
+      if (l.tags && Array.isArray(l.tags)) {
+        l.tags.forEach(t => tags.add(t));
+      }
+    });
+    return Array.from(tags).sort();
+  }, [savedLabels]);
+
+  const groupedLabels = useMemo(() => {
+    const groups = {};
+    
+    const filtered = savedLabels.filter(l => 
+        l.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
+        l.tags?.some(t => t.toLowerCase().includes(templateSearch.toLowerCase()))
+    );
+
+    const sortedLabels = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+
+    sortedLabels.forEach(label => {
+      const groupKey = label.tags && label.tags.length > 0 ? label.tags[0] : "Generiek";
+      
+      if (!groups[groupKey]) {
+        groups[groupKey] = [];
+      }
+      groups[groupKey].push(label);
+    });
+
+    const sortedGroupKeys = Object.keys(groups).sort((a, b) => {
+        if (a === "Generiek") return 1;
+        if (b === "Generiek") return -1;
+        return a.localeCompare(b);
+    });
+
+    return { groups, sortedGroupKeys };
+  }, [savedLabels, templateSearch]);
+
+  const deleteTagGlobally = async (tagToDelete) => {
+    if (!window.confirm(t('adminLabelDesigner.confirmGlobalTagDelete', `Weet je zeker dat je de tag '${tagToDelete}' overal wilt verwijderen? Dit past ${savedLabels.filter(l => l.tags?.includes(tagToDelete)).length} templates aan.`))) return;
+    
+    setIsLoading(true);
+    try {
+      const batch = writeBatch(db);
+      let count = 0;
+      
+      savedLabels.forEach(label => {
+        if (label.tags && label.tags.includes(tagToDelete)) {
+          const newTags = label.tags.filter(t => t !== tagToDelete);
+          const docRef = doc(db, ...PATHS.LABEL_TEMPLATES, label.id);
+          batch.update(docRef, { tags: newTags, lastUpdated: serverTimestamp() });
+          count++;
+        }
+      });
+
+      if (count > 0) {
+        await batch.commit();
+        if (labelTags.includes(tagToDelete)) {
+            setLabelTags(labelTags.filter(t => t !== tagToDelete));
+        }
+        alert(`Tag '${tagToDelete}' is verwijderd van ${count} templates.`);
+      }
+    } catch (e) {
+      console.error("Tag delete error:", e);
+      alert("Fout bij verwijderen tag: " + e.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // 2. Data Preview Handlers
   const fetchLiveOrders = async () => {
@@ -186,12 +287,118 @@ const AdminLabelDesigner = ({ onBack }) => {
       elements: elements,
     };
 
-    const zpl = await generateZPL(labelConfig, data);
+    const zpl = await generateZPL(labelConfig, data, 203, resolveLabelContent, t);
     downloadZPL(zpl, `${labelName.replace(/\s+/g, "_")}_preview.zpl`);
   };
 
+  const addToHistory = () => {
+    setHistory(prev => [...prev, { 
+      elements: [...elements],
+      labelWidth,
+      labelHeight,
+      selectedSizeKey,
+      assignedDepartment,
+      labelTags: [...labelTags]
+    }]);
+  };
+
+  const handleUndo = () => {
+    if (history.length === 0) return;
+    const previous = history[history.length - 1];
+    setElements(previous.elements);
+    setLabelWidth(previous.labelWidth);
+    setLabelHeight(previous.labelHeight);
+    setSelectedSizeKey(previous.selectedSizeKey);
+    setAssignedDepartment(previous.assignedDepartment);
+    setLabelTags(previous.labelTags || []);
+    setHistory(prev => prev.slice(0, -1));
+  };
+
+  const handleCopyFrom = (sourceId) => {
+    const sourceLabel = savedLabels.find(l => l.id === sourceId);
+    if (!sourceLabel) return;
+
+    if (hasUnsavedChanges && !window.confirm(t('adminLabelDesigner.overwriteConfirm', 'Huidige wijzigingen worden overschreven. Doorgaan?'))) {
+        return;
+    }
+
+    addToHistory();
+
+    setLabelWidth(sourceLabel.width);
+    setLabelHeight(sourceLabel.height);
+    if (sourceLabel.sizeKey) setSelectedSizeKey(sourceLabel.sizeKey);
+    setAssignedDepartment(sourceLabel.department || "All");
+    setLabelTags([]); // Reset tags bij kopiëren van ontwerp om vervuiling te voorkomen
+    
+    const copiedElements = (sourceLabel.elements || []).map(el => ({
+        ...el,
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 5)
+    }));
+    
+    setElements(copiedElements);
+    setSelectedElementIds([]);
+    setHasUnsavedChanges(true);
+  };
+
+  const handleNewDesign = () => {
+    if (hasUnsavedChanges && !window.confirm(t('adminLabelDesigner.overwriteConfirm'))) return;
+    setLabelName(t('adminLabelDesigner.newLabel'));
+    setLabelWidth(LABEL_SIZES.Standard.width);
+    setLabelHeight(LABEL_SIZES.Standard.height);
+    setSelectedSizeKey("Standard");
+    setAssignedDepartment("All");
+    setLabelTags([]);
+    setElements([]);
+    setSelectedElementIds([]);
+    setHasUnsavedChanges(false);
+    setHistory([]);
+  };
+
+  // 6. Keyboard Navigation (Pijltjestoetsen voor precisie)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+      if (selectedElementIds.length === 0) return;
+
+      const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
+      if (!isArrowKey) return;
+
+      e.preventDefault();
+
+      // Voeg toe aan geschiedenis bij start van beweging (niet bij repeat)
+      if (!e.repeat) {
+          addToHistory();
+      }
+
+      const step = e.shiftKey ? 1 : 0.1; // 1mm (Shift) of 0.1mm (Precies)
+      let dx = 0;
+      let dy = 0;
+
+      switch (e.key) {
+        case 'ArrowUp': dy = -step; break;
+        case 'ArrowDown': dy = step; break;
+        case 'ArrowLeft': dx = -step; break;
+        case 'ArrowRight': dx = step; break;
+      }
+
+      setElements(prev => prev.map(el => {
+        if (selectedElementIds.includes(el.id)) {
+          const newX = Math.round((el.x + dx) * 100) / 100;
+          const newY = Math.round((el.y + dy) * 100) / 100;
+          return { ...el, x: Math.max(0, newX), y: Math.max(0, newY) };
+        }
+        return el;
+      }));
+      setHasUnsavedChanges(true);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedElementIds, elements, labelWidth, labelHeight, selectedSizeKey, assignedDepartment, labelTags]);
+
   // 3. Designer Acties
   const addElement = (type) => {
+    addToHistory();
     const newElement = {
       id: Date.now().toString(),
       type,
@@ -216,65 +423,119 @@ const AdminLabelDesigner = ({ onBack }) => {
       variable: "",
     };
     setElements([...elements, newElement]);
-    setSelectedElementId(newElement.id);
+    setSelectedElementIds([newElement.id]);
     setHasUnsavedChanges(true);
   };
 
   const updateElement = (id, updates) => {
     setElements(
-      elements.map((el) => (el.id === id ? { ...el, ...updates } : el))
+      elements.map((el) => (selectedElementIds.includes(el.id) ? { ...el, ...updates } : el))
     );
     setHasUnsavedChanges(true);
   };
 
-  const removeElement = (id) => {
-    setElements(elements.filter((el) => el.id !== id));
-    if (selectedElementId === id) setSelectedElementId(null);
+  const removeSelected = () => {
+    addToHistory();
+    setElements(elements.filter((el) => !selectedElementIds.includes(el.id)));
+    setSelectedElementIds([]);
     setHasUnsavedChanges(true);
   };
 
   const alignCenter = (axis) => {
-    if (!selectedElementId) return;
-    const el = elements.find((e) => e.id === selectedElementId);
-    if (axis === "x")
-      updateElement(el.id, { x: (labelWidth - (el.width || 0)) / 2 });
-    else if (axis === "y")
-      updateElement(el.id, { y: (labelHeight - (el.height || 0)) / 2 });
+    if (selectedElementIds.length === 0) return;
+    addToHistory();
+    setElements(elements.map((el) => {
+        if (selectedElementIds.includes(el.id)) {
+            const updates = {};
+            if (axis === "x") updates.x = (labelWidth - (el.width || 0)) / 2;
+            else if (axis === "y") updates.y = (labelHeight - (el.height || 0)) / 2;
+            return { ...el, ...updates };
+        }
+        return el;
+    }));
   };
 
   // 4. Drag Engine met Snapping
   const handleMouseDown = (e, id) => {
     e.stopPropagation();
-    setSelectedElementId(id);
-    const element = elements.find((el) => el.id === id);
-    const labelCenterX = labelWidth / 2;
-    const labelCenterY = labelHeight / 2;
+    addToHistory();
+    
+    let newSelection = [...selectedElementIds];
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+        if (newSelection.includes(id)) {
+            newSelection = newSelection.filter(sid => sid !== id);
+        } else {
+            newSelection.push(id);
+        }
+    } else {
+        if (!newSelection.includes(id)) {
+            newSelection = [id];
+        }
+    }
+    setSelectedElementIds(newSelection);
+
+    if (!newSelection.includes(id)) return;
+
     const startX = e.clientX;
     const startY = e.clientY;
+    
+    const initialPositions = {};
+    newSelection.forEach(sid => {
+        const el = elements.find(e => e.id === sid);
+        if (el) initialPositions[sid] = { x: el.x, y: el.y };
+    });
 
     const handleMouseMove = (moveEvent) => {
       const deltaX = (moveEvent.clientX - startX) / zoom / PIXELS_PER_MM;
       const deltaY = (moveEvent.clientY - startY) / zoom / PIXELS_PER_MM;
-      let newX = Math.max(0, element.x + deltaX);
-      let newY = Math.max(0, element.y + deltaY);
 
+      const primaryEl = elements.find(e => e.id === id);
+      const initialPrimary = initialPositions[id];
+      
+      let snapDeltaX = 0;
+      let snapDeltaY = 0;
       const activeGuidelines = [];
-      const myWidth = element.width || 0;
-      const myHeight = element.height || 0;
-      const myCenterX = newX + myWidth / 2;
-      const myCenterY = newY + myHeight / 2;
 
-      if (Math.abs(myCenterX - labelCenterX) < SNAP_THRESHOLD_MM) {
-        newX = labelCenterX - myWidth / 2;
-        activeGuidelines.push({ type: "vertical", pos: labelCenterX });
-      }
-      if (Math.abs(myCenterY - labelCenterY) < SNAP_THRESHOLD_MM) {
-        newY = labelCenterY - myHeight / 2;
-        activeGuidelines.push({ type: "horizontal", pos: labelCenterY });
-      }
+      if (primaryEl && initialPrimary) {
+          const primaryNewX = Math.max(0, initialPrimary.x + deltaX);
+          const primaryNewY = Math.max(0, initialPrimary.y + deltaY);
+          
+          const labelCenterX = labelWidth / 2;
+          const labelCenterY = labelHeight / 2;
+          
+          const myWidth = primaryEl.width || 0;
+          const myHeight = primaryEl.height || 0;
+          const myCenterX = primaryNewX + myWidth / 2;
+          const myCenterY = primaryNewY + myHeight / 2;
 
+          if (Math.abs(myCenterX - labelCenterX) < SNAP_THRESHOLD_MM) {
+            snapDeltaX = (labelCenterX - myWidth / 2) - primaryNewX;
+            activeGuidelines.push({ type: "vertical", pos: labelCenterX });
+          }
+          if (Math.abs(myCenterY - labelCenterY) < SNAP_THRESHOLD_MM) {
+            snapDeltaY = (labelCenterY - myHeight / 2) - primaryNewY;
+            activeGuidelines.push({ type: "horizontal", pos: labelCenterY });
+          }
+      }
       setGuidelines(activeGuidelines);
-      updateElement(id, { x: newX, y: newY });
+
+      const finalDeltaX = deltaX + snapDeltaX;
+      const finalDeltaY = deltaY + snapDeltaY;
+
+      setElements(prevElements => prevElements.map(el => {
+          if (newSelection.includes(el.id)) {
+              const init = initialPositions[el.id];
+              if (init) {
+                  return {
+                      ...el,
+                      x: Math.max(0, init.x + finalDeltaX),
+                      y: Math.max(0, init.y + finalDeltaY)
+                  };
+              }
+          }
+          return el;
+      }));
+      setHasUnsavedChanges(true);
     };
 
     const handleMouseUp = () => {
@@ -287,7 +548,7 @@ const AdminLabelDesigner = ({ onBack }) => {
   };
 
   // 5. Opslaan
-  const saveLabel = async (nameOverride = null) => {
+  const saveLabel = async (nameOverride = null, tagsOverride = null) => {
     const nameToUse = nameOverride || labelName;
     if (!nameToUse.trim()) return alert(t('adminLabelDesigner.enterLabelName'));
     setIsLoading(true);
@@ -306,12 +567,16 @@ const AdminLabelDesigner = ({ onBack }) => {
         return cleanEl;
       });
 
+      const tagsToSave = tagsOverride !== null ? tagsOverride : (labelTags || []);
+
       await setDoc(docRef, {
         name: nameToUse,
         sizeKey: selectedSizeKey || "Custom",
         width: labelWidth || 0,
         height: labelHeight || 0,
         elements: sanitizedElements,
+        department: assignedDepartment,
+        tags: tagsToSave,
         lastUpdated: serverTimestamp(),
         updatedBy: "Admin Designer",
       });
@@ -320,6 +585,7 @@ const AdminLabelDesigner = ({ onBack }) => {
       
       if (nameOverride) {
           setLabelName(nameToUse);
+          if (tagsOverride !== null) setLabelTags(tagsOverride);
           alert(t('adminLabelDesigner.labelSavedAs', { name: nameToUse }));
       } else {
           alert(t('adminLabelDesigner.labelSaved'));
@@ -335,8 +601,48 @@ const AdminLabelDesigner = ({ onBack }) => {
   const handleSaveAs = () => {
       const newName = prompt(t('adminLabelDesigner.enterNameForNew'), `${labelName}${t('adminLabelDesigner.copySuffix')}`);
       if (newName && newName.trim()) {
-          saveLabel(newName);
+          saveLabel(newName, []); // Reset tags bij 'Opslaan Als' (nieuwe kopie)
       }
+  };
+
+  const renameLabel = async (label) => {
+    const newName = prompt(t('adminLabelDesigner.enterNewName', 'Nieuwe naam voor label:'), label.name);
+    if (!newName || newName.trim() === "" || newName === label.name) return;
+
+    setIsLoading(true);
+    try {
+      const newLabelId = newName.trim().replace(/[^a-zA-Z0-9-_]/g, "_").toLowerCase();
+      const oldLabelId = label.id;
+
+      if (savedLabels.some(l => l.id === newLabelId)) {
+          alert(t('adminLabelDesigner.nameExists', 'Een label met deze naam bestaat al.'));
+          setIsLoading(false);
+          return;
+      }
+
+      const newDocRef = doc(db, ...PATHS.LABEL_TEMPLATES, newLabelId);
+      const oldDocRef = doc(db, ...PATHS.LABEL_TEMPLATES, oldLabelId);
+
+      const labelData = { ...label };
+      delete labelData.id;
+      labelData.name = newName;
+      labelData.lastUpdated = serverTimestamp();
+      labelData.updatedBy = "Admin Designer";
+
+      await setDoc(newDocRef, labelData);
+      await deleteDoc(oldDocRef);
+      
+      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Label template renamed: ${label.name} -> ${newName}`);
+      
+      if (labelName === label.name) {
+          setLabelName(newName);
+      }
+    } catch (e) {
+      console.error("Rename error:", e);
+      alert(t('adminLabelDesigner.renameError', 'Fout bij hernoemen: ') + e.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const duplicateLabel = async (label) => {
@@ -350,6 +656,9 @@ const AdminLabelDesigner = ({ onBack }) => {
 
       const labelData = { ...label };
       delete labelData.id;
+      
+      // Tags niet meekopiëren bij dupliceren (elk label eigen tags)
+      labelData.tags = [];
 
       await setDoc(docRef, {
         ...labelData,
@@ -376,7 +685,7 @@ const AdminLabelDesigner = ({ onBack }) => {
     }
   };
 
-  const selectedElement = elements.find((el) => el.id === selectedElementId);
+  const selectedElement = elements.find((el) => el.id === selectedElementIds[selectedElementIds.length - 1]);
 
   return (
     <div className="flex flex-col h-full w-full bg-slate-100 overflow-hidden text-left animate-in fade-in">
@@ -413,9 +722,16 @@ const AdminLabelDesigner = ({ onBack }) => {
              />
           </div>
           <button
+            onClick={handleNewDesign}
+            className="p-3 bg-white border-2 border-slate-100 text-slate-600 hover:text-blue-600 hover:border-blue-100 rounded-2xl transition-all shadow-sm"
+            title={t('common.new')}
+          >
+            <Plus size={18} />
+          </button>
+          <button
             onClick={handleDownloadZPL}
             className="p-3 bg-white border-2 border-slate-100 text-slate-600 hover:text-blue-600 hover:border-blue-100 rounded-2xl transition-all shadow-sm"
-            title="Download ZPL Preview"
+            title={t('adminLabelDesigner.downloadZplPreview', 'Download ZPL Preview')}
           >
             <Code size={18} />
           </button>
@@ -431,6 +747,20 @@ const AdminLabelDesigner = ({ onBack }) => {
             {previewData ? t('liveDataLinked') : t('linkLiveOrder')}
           </button>
 
+          <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1" title={t('adminLabelDesigner.copyFromTooltip', 'Kopieer ontwerp')}>
+             <div className="pl-3 text-slate-400"><Copy size={14} /></div>
+             <select
+              onChange={(e) => handleCopyFrom(e.target.value)}
+              className="bg-transparent text-[10px] font-black uppercase outline-none pr-4 py-2 cursor-pointer max-w-[100px]"
+              value=""
+            >
+              <option value="" disabled>{t('common.copy', 'Kopieer...')}</option>
+              {savedLabels.map(l => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1">
             <select
               value={selectedSizeKey}
@@ -442,7 +772,41 @@ const AdminLabelDesigner = ({ onBack }) => {
                   {LABEL_SIZES[s].name}
                 </option>
               ))}
-              <option value="Custom">{t('customSize')}</option>
+              <option value="Custom">{t('customSize', 'Custom Size')}</option>
+            </select>
+            {selectedSizeKey === "Custom" && (
+              <div className="flex items-center gap-1 pr-2 border-l border-slate-200 pl-2 animate-in fade-in slide-in-from-left-2">
+                <input
+                  type="number"
+                  value={labelWidth}
+                  onChange={(e) => { setLabelWidth(Number(e.target.value)); setHasUnsavedChanges(true); }}
+                  className="w-10 bg-transparent text-[10px] font-bold text-center outline-none border-b border-slate-300 focus:border-blue-500"
+                  title={t('widthMm')}
+                />
+                <span className="text-[10px] text-slate-400">x</span>
+                <input
+                  type="number"
+                  value={labelHeight}
+                  onChange={(e) => { setLabelHeight(Number(e.target.value)); setHasUnsavedChanges(true); }}
+                  className="w-10 bg-transparent text-[10px] font-bold text-center outline-none border-b border-slate-300 focus:border-blue-500"
+                  title={t('heightMm')}
+                />
+                <span className="text-[10px] text-slate-400">mm</span>
+              </div>
+            )}
+          </div>
+
+          {/* Nieuwe Department Selector */}
+          <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1">
+            <select
+              value={assignedDepartment}
+              onChange={(e) => { setAssignedDepartment(e.target.value); setHasUnsavedChanges(true); }}
+              className="bg-transparent text-[10px] font-black uppercase outline-none px-4 py-2 cursor-pointer max-w-[150px]"
+            >
+              <option value="All">{t('adminUsers.allDepartments', 'Alle Afdelingen')}</option>
+              {departments.map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
             </select>
           </div>
 
@@ -502,56 +866,90 @@ const AdminLabelDesigner = ({ onBack }) => {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 custom-scrollbar text-left">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
-              {t('myTemplates')}
-            </h3>
-            <div className="space-y-2">
-              {savedLabels.map((l) => (
-                <div
-                  key={l.id}
-                  onClick={() => {
-                    if (hasUnsavedChanges && !window.confirm(t('adminLabelDesigner.overwriteConfirm'))) return;
-                    setLabelName(l.name);
-                    setLabelWidth(l.width);
-                    setLabelHeight(l.height);
-                    if (l.sizeKey) setSelectedSizeKey(l.sizeKey);
-                    setElements(l.elements || []);
-                    setSelectedElementId(null);
-                    setHasUnsavedChanges(false);
-                  }}
-                  className="group p-4 bg-slate-50 hover:bg-white rounded-[20px] cursor-pointer border-2 border-transparent hover:border-blue-500 transition-all relative shadow-sm"
-                >
-                  <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        duplicateLabel(l);
-                      }}
-                      className="p-1.5 bg-white text-blue-600 rounded-lg shadow-sm border border-blue-100 hover:bg-blue-50"
-                      title={t('adminLabelDesigner.duplicateTitle')}
-                    >
-                      <Copy size={12} />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteLabel(l.id);
-                      }}
-                      className="p-1.5 bg-white text-rose-600 rounded-lg shadow-sm border border-rose-100 hover:bg-rose-50"
-                      title={t('adminLabelDesigner.deleteTitle')}
-                    >
-                      <Trash2 size={12} />
-                    </button>
+          <div className="flex-1 overflow-y-auto p-6 custom-scrollbar text-left flex flex-col">
+            <div className="mb-4">
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input 
+                  type="text"
+                  placeholder={t('adminLabelDesigner.searchTemplates', 'Zoek templates...')}
+                  value={templateSearch}
+                  onChange={e => setTemplateSearch(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto custom-scrollbar -mr-3 pr-3 space-y-4">
+              {groupedLabels.sortedGroupKeys.map(groupKey => (
+                <div key={groupKey}>
+                  <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-2 sticky top-0 bg-slate-50/80 backdrop-blur-sm py-1">
+                    {groupKey}
+                  </h4>
+                  <div className="space-y-2">
+                    {groupedLabels.groups[groupKey].map((l) => (
+                      <div
+                        key={l.id}
+                        onClick={() => {
+                          if (hasUnsavedChanges && !window.confirm(t('adminLabelDesigner.overwriteConfirm'))) return;
+                          setLabelName(l.name);
+                          setLabelWidth(l.width);
+                          setLabelHeight(l.height);
+                          if (l.sizeKey) setSelectedSizeKey(l.sizeKey);
+                          setAssignedDepartment(l.department || "All");
+                          setLabelTags(l.tags || []);
+                          setElements(l.elements || []);
+                          setSelectedElementIds([]);
+                          setHasUnsavedChanges(false);
+                        }}
+                        className="group p-4 bg-slate-50 hover:bg-white rounded-[20px] cursor-pointer border-2 border-transparent hover:border-blue-500 transition-all relative shadow-sm"
+                      >
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); renameLabel(l); }}
+                            className="p-1.5 bg-white text-orange-600 rounded-lg shadow-sm border border-orange-100 hover:bg-orange-50"
+                            title={t('adminLabelDesigner.renameTitle', 'Hernoemen')}
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); duplicateLabel(l); }}
+                            className="p-1.5 bg-white text-blue-600 rounded-lg shadow-sm border border-blue-100 hover:bg-blue-50"
+                            title={t('adminLabelDesigner.duplicateTitle')}
+                          >
+                            <Copy size={12} />
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteLabel(l.id); }}
+                            className="p-1.5 bg-white text-rose-600 rounded-lg shadow-sm border border-rose-100 hover:bg-rose-50"
+                            title={t('adminLabelDesigner.deleteTitle')}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                        <p className="font-black text-[11px] text-slate-800 uppercase italic tracking-tight">
+                          {l.name}
+                        </p>
+                        <p className="text-[9px] font-mono font-bold text-slate-400 mt-1">
+                          {l.width}x{l.height}{t('mm')} • {l.department && l.department !== 'All' ? (departments.find(d => d.id === l.department)?.name || l.department) : t('common.all', 'Alle')}
+                        </p>
+                        {l.tags && l.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {l.tags.map((tag, idx) => (
+                              <span key={idx} className="text-[8px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 uppercase tracking-tight">{tag}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                  <p className="font-black text-[11px] text-slate-800 uppercase italic tracking-tight">
-                    {l.name}
-                  </p>
-                  <p className="text-[9px] font-mono font-bold text-slate-400 mt-1">
-                    {l.width}x{l.height}{t('mm')}
-                  </p>
                 </div>
               ))}
+              {groupedLabels.sortedGroupKeys.length === 0 && (
+                <div className="text-center text-slate-400 italic text-xs py-10">
+                  {t('adminLabelDesigner.noTemplatesFound', 'Geen templates gevonden.')}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -570,7 +968,7 @@ const AdminLabelDesigner = ({ onBack }) => {
                 {Math.round(zoom * 100)}%
               </span>
               <button
-                onClick={() => setZoom((z) => Math.min(2.5, z + 0.1))}
+                onClick={() => setZoom((z) => Math.min(4, z + 0.1))}
                 className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400"
               >
                 <ZoomIn size={18} />
@@ -585,11 +983,21 @@ const AdminLabelDesigner = ({ onBack }) => {
             >
               <Grid size={18} />
             </button>
+            <button
+              onClick={handleUndo}
+              disabled={history.length === 0}
+              className={`p-2 rounded-xl transition-all ${
+                history.length > 0 ? "text-slate-600 hover:bg-slate-100" : "text-slate-300 cursor-not-allowed"
+              }`}
+              title={t('common.undo', 'Ongedaan maken')}
+            >
+              <Undo size={18} />
+            </button>
           </div>
 
           <div
             className="w-full h-full flex items-center justify-center p-20 overflow-auto"
-            onClick={() => setSelectedElementId(null)}
+            onClick={() => setSelectedElementIds([])}
           >
             <div
               ref={canvasRef}
@@ -640,7 +1048,7 @@ const AdminLabelDesigner = ({ onBack }) => {
                 >
                   <div
                     className={`transition-all ${
-                      selectedElementId === el.id
+                      selectedElementIds.includes(el.id)
                         ? "ring-2 ring-blue-500 ring-offset-4 bg-blue-50/20"
                         : "hover:ring-1 hover:ring-blue-300"
                     } p-0.5`}
@@ -736,11 +1144,70 @@ const AdminLabelDesigner = ({ onBack }) => {
 
           <div className="p-6 overflow-y-auto flex-1 custom-scrollbar text-left">
             {!selectedElement ? (
-              <div className="h-full flex flex-col items-center justify-center text-slate-300 opacity-50 py-20">
-                <BoxSelect size={64} className="animate-pulse" />
-                <p className="text-[9px] font-black uppercase tracking-widest mt-4">
-                  {t('selectElement')}
-                </p>
+              <div className="space-y-6 animate-in slide-in-from-right-2">
+                <div className="border-b border-slate-100 pb-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                      Label Koppelingen (Tags)
+                    </h4>
+                    <button
+                      onClick={() => setShowTagManager(true)}
+                      className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1"
+                    >
+                      <Settings size={10} /> {t('adminLabelDesigner.manageTags', 'Beheer')}
+                    </button>
+                  </div>
+                  <div className="space-y-3">
+                    <input
+                      type="text" 
+                      placeholder={t('adminLabelDesigner.tagPlaceholder', 'bv. Wavistrong, EMT, EST')}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 transition-all"
+                      onBlur={(e) => {
+                        const val = e.target.value;
+                        if (val) {
+                          const newTags = val.split(',').map(t => t.trim().toUpperCase()).filter(t => t);
+                          const uniqueNewTags = [...new Set(newTags)].filter(t => !labelTags.includes(t));
+                          if (uniqueNewTags.length > 0) {
+                            addToHistory();
+                            setLabelTags([...labelTags, ...uniqueNewTags]);
+                            setHasUnsavedChanges(true);
+                          }
+                          e.target.value = '';
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const val = e.target.value;
+                          if (val) {
+                            const newTags = val.split(',').map(t => t.trim().toUpperCase()).filter(t => t);
+                            const uniqueNewTags = [...new Set(newTags)].filter(t => !labelTags.includes(t));
+                            if (uniqueNewTags.length > 0) {
+                              addToHistory();
+                              setLabelTags([...labelTags, ...uniqueNewTags]);
+                              setHasUnsavedChanges(true);
+                            }
+                            e.target.value = '';
+                          }
+                        }
+                      }}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {labelTags.map(tag => (
+                        <span key={tag} className="bg-blue-50 text-blue-600 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase flex items-center gap-1.5 border border-blue-100">
+                          {tag}
+                          <button onClick={() => {
+                            addToHistory();
+                            setLabelTags(labelTags.filter(t => t !== tag));
+                            setHasUnsavedChanges(true);
+                          }} className="hover:text-blue-800"><X size={10} /></button>
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-slate-400 italic leading-relaxed">
+                      {t('adminLabelDesigner.tagHelpText', 'Voeg tags toe om dit label te koppelen aan specifieke productsoorten. Als er geen tags zijn, is dit label beschikbaar voor alle producten.')}
+                    </p>
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="space-y-8 animate-in slide-in-from-right-2">
@@ -869,7 +1336,7 @@ const AdminLabelDesigner = ({ onBack }) => {
                   
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1.5">
-                      <label className="text-[8px] font-black text-slate-400 uppercase ml-1">{t('rotation')}</label>
+                      <label className="text-[8px] font-black text-slate-400 uppercase ml-1">{t('rotation', 'Rotation')}</label>
                        <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border border-slate-100">
                           <button onClick={() => updateElement(selectedElement.id, { rotation: (selectedElement.rotation || 0) - 90 })} className="p-1 hover:bg-white rounded shadow-sm text-slate-600"><RotateCcw size={14} /></button>
                           <span className="flex-1 text-center text-xs font-bold text-slate-700">{selectedElement.rotation || 0}°</span>
@@ -879,7 +1346,7 @@ const AdminLabelDesigner = ({ onBack }) => {
 
                     {selectedElement.type === 'text' && (
                         <div className="space-y-1.5">
-                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">{t('fontSizePt')}</label>
+                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">{t('fontSizePt', 'Grootte (pt)')}</label>
                             <input 
                                 type="number" 
                                 value={selectedElement.fontSize || 10} 
@@ -893,7 +1360,7 @@ const AdminLabelDesigner = ({ onBack }) => {
                   {selectedElement.type === 'text' && (
                     <div className="flex flex-col gap-2 pt-2">
                         <div className="space-y-1.5">
-                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">{t('textAlignment')}</label>
+                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">{t('textAlignment', 'Tekst Uitlijning')}</label>
                             <div className="flex bg-slate-50 p-1 rounded-lg border border-slate-100">
                                 <button 
                                     onClick={() => updateElement(selectedElement.id, { align: 'left' })}
@@ -925,7 +1392,7 @@ const AdminLabelDesigner = ({ onBack }) => {
                                 onChange={(e) => updateElement(selectedElement.id, { isBold: e.target.checked })}
                                 className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-slate-300"
                             />
-                            <span className="text-xs font-bold text-slate-600">{t('bold')}</span>
+                            <span className="text-xs font-bold text-slate-600">{t('bold', 'Vetgedrukt (Bold)')}</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer select-none">
                             <input 
@@ -934,7 +1401,7 @@ const AdminLabelDesigner = ({ onBack }) => {
                                 onChange={(e) => updateElement(selectedElement.id, { isInverse: e.target.checked })}
                                 className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-slate-300"
                             />
-                            <span className="text-xs font-bold text-slate-600">{t('inverse')}</span>
+                            <span className="text-xs font-bold text-slate-600">{t('inverse', 'Inverse (Wit op Zwart)')}</span>
                         </label>
                     </div>
                   )}
@@ -974,10 +1441,10 @@ const AdminLabelDesigner = ({ onBack }) => {
                 </div>
 
                 <button
-                  onClick={() => removeElement(selectedElement.id)}
+                  onClick={removeSelected}
                   className="w-full py-4 mt-8 bg-rose-50 text-rose-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-100 transition-all flex items-center justify-center gap-2 border border-rose-100 active:scale-95"
                 >
-                  <Trash2 size={16} /> {t('removeElement')}
+                  <Trash2 size={16} /> {t('removeElement', 'Verwijder Element')}
                 </button>
               </div>
             )}
@@ -1040,6 +1507,78 @@ const AdminLabelDesigner = ({ onBack }) => {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAG MANAGER MODAL */}
+      {showTagManager && (
+        <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white w-full max-w-md rounded-[30px] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-black text-slate-800 uppercase text-sm tracking-wide">
+                {t('adminLabelDesigner.tagManagement', 'Tag Beheer')}
+              </h3>
+              <button onClick={() => setShowTagManager(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto custom-scrollbar">
+              <p className="text-xs text-slate-500 mb-4">
+                {t('adminLabelDesigner.tagManagerHelpText', 'Klik op een tag om deze toe te voegen aan (of te verwijderen van) het huidige ontwerp.')}
+              </p>
+              
+              <div className="relative mb-4">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                <input 
+                  type="text" 
+                  placeholder={t('adminLabelDesigner.searchTags', 'Zoek tags...')}
+                  value={tagSearch}
+                  onChange={(e) => setTagSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {allUniqueTags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase())).length === 0 ? (
+                  <span className="text-xs text-slate-400 italic">{t('adminLabelDesigner.noTagsFound', 'Geen tags gevonden.')}</span>
+                ) : (
+                  allUniqueTags
+                    .filter(t => t.toLowerCase().includes(tagSearch.toLowerCase()))
+                    .map(tag => {
+                      const isSelected = labelTags.includes(tag);
+                      return (
+                    <div key={tag} className={`group flex items-center gap-1 border rounded-lg pl-3 pr-1 py-1 transition-all ${isSelected ? 'bg-blue-100 border-blue-300' : 'bg-slate-100 hover:bg-blue-50 border-slate-200 hover:border-blue-200'}`}>
+                      <button 
+                        onClick={() => {
+                          addToHistory();
+                          if (isSelected) {
+                            setLabelTags(labelTags.filter(t => t !== tag));
+                          } else {
+                            setLabelTags([...labelTags, tag]);
+                          }
+                          setHasUnsavedChanges(true);
+                        }}
+                        className={`text-xs font-bold ${isSelected ? 'text-blue-700' : 'text-slate-700 group-hover:text-blue-700'}`}
+                      >
+                        {tag}
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteTagGlobally(tag);
+                        }}
+                        className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-md transition-colors"
+                        title={t('adminLabelDesigner.deleteTagGlobally', 'Verwijder overal')}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  )})
+                )}
+              </div>
             </div>
           </div>
         </div>

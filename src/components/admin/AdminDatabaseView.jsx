@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Database, RefreshCw, Trash2, Layers, Table, SearchCode, Fingerprint, Activity, Terminal, FileText, Loader2, Folder, File, ArrowUp } from "lucide-react";
+import { Database, RefreshCw, Trash2, Layers, Table, SearchCode, Fingerprint, Activity, Terminal, FileText, Loader2, Folder, File, ArrowUp, Bot, Send, X, MessageSquare } from "lucide-react";
 import { db, storage } from "../../config/firebase";
 import {
   collection,
@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { PATHS, isValidPath } from "../../config/dbPaths";
 import { ref, listAll, getDownloadURL } from "firebase/storage";
+import { callGemini } from "../../utils/helpers";
 
 /**
  * AdminDatabaseView V4.1 - Root-Ready Forensic Edition
@@ -89,6 +90,64 @@ const AdminDatabaseView = () => {
   const [storageFiles, setStorageFiles] = useState([]);
   const [storageLoading, setStorageLoading] = useState(false);
   const [storagePath, setStoragePath] = useState("");
+
+  // AI Chat State
+  const [showAiChat, setShowAiChat] = useState(false);
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiMessages, setAiMessages] = useState(() => {
+    const saved = localStorage.getItem("admin_db_ai_chat");
+    return saved ? JSON.parse(saved) : [{ role: 'ai', content: "Hallo! Ik ben de Database Assistent. Ik heb toegang tot de volledige structuur van de database. Wat wil je weten?" }];
+  });
+  const [aiLoading, setAiLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    if (showAiChat) {
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [aiMessages, showAiChat]);
+
+  useEffect(() => {
+    localStorage.setItem("admin_db_ai_chat", JSON.stringify(aiMessages));
+  }, [aiMessages]);
+
+  const generateDbContext = () => {
+    let context = "Je bent een Database Architect en Expert voor het Future Factory MES systeem. Je hebt volledige kennis van de Firestore database structuur.\n\nHIER IS DE DATABASE STRUCTUUR (PATHS):\n";
+    Object.entries(PATHS).forEach(([key, path]) => {
+      if (Array.isArray(path)) {
+        context += `- ${key}: /${path.join("/")}\n`;
+      }
+    });
+    context += "\nINSTRUCTIES:\n1. Gebruik deze paden om uit te leggen waar specifieke data wordt opgeslagen.\n2. Als een gebruiker vraagt 'waar staan de producten?', antwoord dan met het pad voor PRODUCTS.\n3. Geef technisch advies over query-structuur indien gevraagd.\n4. Antwoord altijd in het Nederlands.\n5. Wees beknopt en professioneel.";
+    return context;
+  };
+
+  const handleAskAi = async (e) => {
+    e.preventDefault();
+    if (!aiQuery.trim()) return;
+
+    const userQ = aiQuery;
+    setAiMessages(prev => [...prev, { role: 'user', content: userQ }]);
+    setAiQuery("");
+    setAiLoading(true);
+
+    try {
+      const systemPrompt = generateDbContext();
+      const response = await callGemini(userQ, systemPrompt);
+      setAiMessages(prev => [...prev, { role: 'ai', content: response }]);
+    } catch (err) {
+      setAiMessages(prev => [...prev, { role: 'ai', content: "Fout bij verbinden met AI service." }]);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const handleClearChat = () => {
+    if(window.confirm("Gespreksgeschiedenis wissen?")) {
+        const initial = [{ role: 'ai', content: "Hallo! Ik ben de Database Assistent. Ik heb toegang tot de volledige structuur van de database. Wat wil je weten?" }];
+        setAiMessages(initial);
+    }
+  };
 
   // 2. PRIMARY FETCH (Gebruikt dbPaths.js)
   const fetchPathData = async () => {
@@ -182,6 +241,13 @@ const AdminDatabaseView = () => {
         </div>
         
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAiChat(!showAiChat)}
+            className={`p-2 rounded-lg transition-colors border border-transparent ${showAiChat ? 'bg-purple-100 text-purple-600 border-purple-200' : 'hover:bg-slate-100 text-slate-500 hover:text-purple-600'}`}
+            title="AI Database Assistent"
+          >
+            <Bot size={18} />
+          </button>
           <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
             <button
               onClick={() => setViewMode("database")}
@@ -217,7 +283,7 @@ const AdminDatabaseView = () => {
       </div>
 
       {/* MAIN CONTENT WRAPPER */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
         {/* SIDEBAR - Tree View */}
         <div className="w-64 bg-white border-r border-slate-200 flex flex-col overflow-y-auto py-4">
           <div className="px-4 mb-2">
@@ -416,6 +482,70 @@ const AdminDatabaseView = () => {
                 </div>
               )}
               </div>
+            </div>
+          )}
+
+          {/* AI CHAT SIDEBAR */}
+          {showAiChat && (
+            <div className="w-96 bg-white border-l border-slate-200 flex flex-col shadow-xl z-30 absolute right-0 top-0 bottom-0 animate-in slide-in-from-right duration-300">
+                {/* Header */}
+                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-purple-50/50">
+                    <div className="flex items-center gap-2 text-purple-700 font-black uppercase text-xs tracking-widest">
+                        <Bot size={16} /> Database AI
+                    </div>
+                    <div className="flex items-center gap-1">
+                        <button 
+                            onClick={handleClearChat}
+                            className="p-1 hover:bg-white rounded-lg text-slate-400 hover:text-rose-500 transition-colors"
+                            title="Gesprek wissen"
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                        <button onClick={() => setShowAiChat(false)} className="p-1 hover:bg-white rounded-lg text-slate-400 transition-colors">
+                            <X size={16} />
+                        </button>
+                    </div>
+                </div>
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 custom-scrollbar">
+                    {aiMessages.map((msg, idx) => (
+                        <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed ${
+                                msg.role === 'user' 
+                                ? 'bg-blue-600 text-white rounded-tr-none' 
+                                : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none shadow-sm'
+                            }`}>
+                                {msg.content}
+                            </div>
+                        </div>
+                    ))}
+                    {aiLoading && (
+                        <div className="flex justify-start">
+                            <div className="bg-white border border-slate-200 p-3 rounded-2xl rounded-tl-none shadow-sm">
+                                <Loader2 size={16} className="animate-spin text-purple-500" />
+                            </div>
+                        </div>
+                    )}
+                    <div ref={chatEndRef} />
+                </div>
+                {/* Input */}
+                <form onSubmit={handleAskAi} className="p-4 border-t border-slate-100 bg-white">
+                    <div className="relative">
+                        <input 
+                            className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10 transition-all"
+                            placeholder="Vraag over collecties of paden..."
+                            value={aiQuery}
+                            onChange={e => setAiQuery(e.target.value)}
+                        />
+                        <button 
+                            type="submit" 
+                            disabled={aiLoading || !aiQuery.trim()}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                        >
+                            <Send size={14} />
+                        </button>
+                    </div>
+                </form>
             </div>
           )}
         </div>

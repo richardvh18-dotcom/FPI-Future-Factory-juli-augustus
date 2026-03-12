@@ -52,6 +52,19 @@ const AdminMessagesView = ({ user: propUser }) => {
   const { user: authUser, isAdmin } = useAdminAuth();
   const { showSuccess, showError } = useNotifications();
   const user = propUser || authUser;
+  
+  // Live user profile sync om instellingen (zoals receivesCrashReports) direct toe te passen
+  const [liveUser, setLiveUser] = useState(user);
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = onSnapshot(doc(db, ...PATHS.USERS, user.uid), (snap) => {
+      if (snap.exists()) {
+        setLiveUser({ ...user, ...snap.data() });
+      }
+    });
+    return () => unsub();
+  }, [user?.uid]);
+
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -63,17 +76,17 @@ const AdminMessagesView = ({ user: propUser }) => {
 
   // Bepaal relevante groepen voor de huidige gebruiker (voor filtering en query)
   const userGroups = useMemo(() => {
-    if (!user?.email) return [];
-    const groups = [user.email];
+    if (!liveUser?.email) return [];
+    const groups = [liveUser.email];
     
-    if (user.department) {
-        const dept = user.department.toLowerCase();
+    if (liveUser.department) {
+        const dept = liveUser.department.toLowerCase();
         if (dept.includes('spools')) groups.push('SPOOLS_TEAM');
         if (dept.includes('fittings')) groups.push('FITTINGS_TEAM');
         if (dept.includes('pipes')) groups.push('PIPES_TEAM');
     }
     return groups;
-  }, [user]);
+  }, [liveUser]);
 
   // 1. Live Sync met de Root Messages collectie
   useEffect(() => {
@@ -91,12 +104,12 @@ const AdminMessagesView = ({ user: propUser }) => {
     } else {
       // Niet-admins mogen alleen eigen berichten zien (security rule checkt senderId/to)
       // Dit voorkomt 'Missing or insufficient permissions' errors
-      if (!user?.email) return;
+      if (!liveUser?.email) return;
       
       q = query(
         messagesRef,
         // We verwijderen orderBy hier om de index-fout te voorkomen. Sortering gebeurt nu client-side.
-        or(where("to", "in", userGroups), where("senderId", "==", user.uid))
+        or(where("to", "in", userGroups), where("senderId", "==", liveUser.uid))
       );
     }
 
@@ -115,12 +128,17 @@ const AdminMessagesView = ({ user: propUser }) => {
         // Filteren op basis van rechten
         const visibleMsgs = msgs.filter((m) => {
           const isForMe = userGroups.includes(m.to);
-          const isFromMe = m.senderId === user?.uid;
+          const isFromMe = m.senderId === liveUser?.uid;
           // Admin berichten zijn voor 'admin', de groep 'admins' of systeem errors
-          const isForAdmins = m.to === "admin" || m.targetGroup === "admins" || m.type === "SYSTEM_ERROR";
+          const isForAdmins = m.to === "admin" || m.targetGroup === "admins";
           
           // Admins zien alles voor admins + eigen berichten
-          if (isAdmin) return isForMe || isFromMe || isForAdmins;
+          if (isAdmin) {
+            if (m.type === "SYSTEM_ERROR") {
+              return liveUser?.receivesCrashReports === true;
+            }
+            return isForMe || isFromMe || isForAdmins;
+          }
           
           // Niet-admins zien alleen eigen berichten
           return isForMe || isFromMe;
@@ -137,11 +155,11 @@ const AdminMessagesView = ({ user: propUser }) => {
     );
 
     return () => unsubscribe();
-  }, [user, isAdmin, userGroups]);
+  }, [liveUser, isAdmin, userGroups]);
 
   // 2. Bericht Acties
   const handleMarkAsRead = async (thread) => {
-    const unreadMessages = thread.messages.filter(m => !m.read && m.senderId !== user?.uid);
+    const unreadMessages = thread.messages.filter(m => !m.read && m.senderId !== liveUser?.uid);
     if (unreadMessages.length === 0) return;
 
     unreadMessages.forEach(async (msg) => {
@@ -261,10 +279,10 @@ const AdminMessagesView = ({ user: propUser }) => {
         group.timestamp = m.timestamp;
         group.lastMessage = m;
       }
-      if (!m.read && m.senderId !== user?.uid) {
+      if (!m.read && m.senderId !== liveUser?.uid) {
         group.hasUnread = true;
       }
-      if (m.senderName && m.senderId !== user?.uid) {
+      if (m.senderName && m.senderId !== liveUser?.uid) {
         group.participants.add(m.senderName);
       }
     });
@@ -394,7 +412,7 @@ const AdminMessagesView = ({ user: propUser }) => {
           ) : (
             threads.map((thread) => {
               const lastMsg = thread.lastMessage;
-              const isFromMe = lastMsg.senderId === user?.uid;
+              const isFromMe = lastMsg.senderId === liveUser?.uid;
               const isUnread = thread.hasUnread;
               const participants = Array.from(thread.participants).join(", ") || (isFromMe ? `Aan: ${lastMsg.toName || lastMsg.to}` : "Onbekend");
 
@@ -547,7 +565,7 @@ const AdminMessagesView = ({ user: propUser }) => {
             <div className="p-6 overflow-y-auto flex-1 text-left bg-slate-50/50">
               <div className="max-w-4xl mx-auto space-y-6">
                 {selectedThread.messages.sort((a,b) => a.timestamp - b.timestamp).map((msg) => {
-                  const isMe = msg.senderId === user?.uid;
+                  const isMe = msg.senderId === liveUser?.uid;
                   return (
                     <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                       <div className={`max-w-[85%] p-6 rounded-[24px] shadow-sm border ${
@@ -565,9 +583,19 @@ const AdminMessagesView = ({ user: propUser }) => {
                         </div>
                         
                         {msg.type === 'SYSTEM_ERROR' ? (
-                          <pre className="bg-black/20 p-3 rounded-xl text-[10px] font-mono whitespace-pre-wrap overflow-x-auto">
-                            {msg.content}
-                          </pre>
+                          <div className="space-y-3">
+                            <pre className="bg-black/20 p-3 rounded-xl text-[10px] font-mono whitespace-pre-wrap overflow-x-auto">
+                              {msg.content}
+                            </pre>
+                            {(msg.data || msg.errorDetails || msg.stack) && (
+                              <div className="bg-red-50 border border-red-100 p-3 rounded-xl">
+                                <p className="text-[9px] font-black text-red-700 uppercase tracking-widest mb-2">Technische Details & Stacktrace</p>
+                                <pre className="text-[9px] font-mono text-red-600 whitespace-pre-wrap overflow-x-auto">
+                                  {typeof (msg.data || msg.errorDetails || msg.stack) === 'object' ? JSON.stringify(msg.data || msg.errorDetails || msg.stack, null, 2) : (msg.data || msg.errorDetails || msg.stack)}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <div className="whitespace-pre-wrap text-sm font-medium leading-relaxed">
                             {msg.content}

@@ -69,7 +69,7 @@ const AdminLotCounters = () => {
         {counters.map(c => {
           const machineCode = getMachineCode(c.station);
           // Formaat: Bedrijf(40) + Jaar + Week + Machine + Land(40) + Volgnummer
-          const fullLot = `40${c.year}${c.week}${machineCode}40${String(c.lastSequence).padStart(5, '0')}`;
+          const fullLot = `40${c.year}${c.week}${machineCode}40${String(c.lastSequence).padStart(4, '0')}`;
           
           return (
           <div key={c.id} className="p-5 border-2 border-slate-100 rounded-2xl bg-slate-50/50 hover:border-blue-200 transition-all group">

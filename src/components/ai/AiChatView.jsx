@@ -312,6 +312,33 @@ const AiChatView = () => {
         currentSystemContext += `\n\n${planningContext}`;
       } catch (err) { console.error("Kon planning context niet ophalen:", err); }
 
+      // Kennisbank documenten toevoegen (Context Search)
+      try {
+        const docsRef = collection(db, ...(PATHS?.AI_DOCUMENTS || ['future-factory', 'settings', 'ai_documents', 'knowledge', 'records']));
+        // Haal de 5 meest recente documenten op voor context
+        const docsSnap = await getDocs(query(docsRef, orderBy("uploadedAt", "desc"), limit(5)));
+        
+        if (!docsSnap.empty) {
+          let docContext = "\n\n## KENNISBANK DOCUMENTEN (RECENT):\n";
+          docsSnap.forEach(doc => {
+            const data = doc.data();
+            if (data.analysis) {
+              docContext += `### ${data.fileName}\n`;
+              docContext += `Samenvatting: ${data.analysis.summary}\n`;
+              if (data.analysis.keyFacts && data.analysis.keyFacts.length > 0) {
+                docContext += `Feiten: ${data.analysis.keyFacts.join(", ")}\n`;
+              }
+              // Als de vraag specifiek over dit document gaat (naam match), voeg meer details toe
+              if (messageText.toLowerCase().includes(data.fileName.toLowerCase()) && data.analysis.fullContext) {
+                 docContext += `Details: ${data.analysis.fullContext}\n`;
+              }
+              docContext += "\n";
+            }
+          });
+          currentSystemContext += docContext;
+        }
+      } catch (err) { console.error("Kon documenten niet ophalen:", err); }
+
       const response = await aiService.chatWithContext(chatHistory, currentSystemContext, true, { signal: abortControllerRef.current.signal });
       setMessages((prev) => [...prev, { role: "assistant", content: response }]);
       showSuccess('Antwoord ontvangen!');
