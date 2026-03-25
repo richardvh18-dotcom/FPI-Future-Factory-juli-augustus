@@ -14,11 +14,9 @@ import {
   CheckCircle2,
   AlertCircle,
   Settings,
-  BrainCircuit,
   Rocket,
-  Hash,
 } from "lucide-react";
-import { doc, onSnapshot, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
+import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, ACTIVE_SITE } from "../../config/dbPaths";
 
@@ -42,7 +40,6 @@ const PRESET_LOGOS = [
   },
 ];
 
-import AdminLotCounters from "./AdminLotCounters";
 
 /**
  * AdminSettingsView V6.0 - Root Integrated
@@ -65,7 +62,6 @@ const AdminSettingsView = () => {
     maintenanceMode: false,
     uploadedLogos: [], // Array om alle geüploade logo's bij te houden
   });
-  const [aiPrompt, setAiPrompt] = useState("");
 
   // 1. Live Sync met de Root
   useEffect(() => {
@@ -90,18 +86,6 @@ const AdminSettingsView = () => {
     return () => unsubscribe();
   }, []);
 
-  // 1b. Laad AI Context (losse fetch om traffic te sparen)
-  useEffect(() => {
-    const fetchAiConfig = async () => {
-      try {
-        const docRef = doc(db, ...PATHS.AI_CONFIG);
-        const snap = await getDoc(docRef);
-        if (snap.exists()) setAiPrompt(snap.data().systemPrompt || "");
-      } catch (e) { console.error(e); }
-    };
-    fetchAiConfig();
-  }, []);
-
   // 2. Opslaan naar de Root
   const handleSave = async () => {
     setSaving(true);
@@ -117,14 +101,6 @@ const AdminSettingsView = () => {
         },
         { merge: true }
       );
-
-      // Sla AI prompt apart op
-      if (aiPrompt) {
-        await setDoc(doc(db, ...PATHS.AI_CONFIG), {
-          systemPrompt: aiPrompt,
-          lastUpdated: serverTimestamp()
-        }, { merge: true });
-      }
 
       await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", "General settings updated");
 
@@ -249,17 +225,6 @@ const AdminSettingsView = () => {
         >
           <Settings size={16} />
           Algemeen
-        </button>
-        <button
-          onClick={() => setActiveTab("counters")}
-          className={`px-6 py-3 rounded-2xl font-black uppercase text-xs tracking-widest transition-all flex items-center gap-2 ${
-            activeTab === "counters"
-              ? "bg-slate-900 text-white shadow-lg"
-              : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-200"
-          }`}
-        >
-          <Hash size={16} />
-          Lotnummers
         </button>
       </div>
 
@@ -509,35 +474,6 @@ const AdminSettingsView = () => {
           )}
         </div>
 
-        {/* AI CONFIGURATIE */}
-        <div className="space-y-4 pt-6 border-t border-slate-100">
-          <h3 className="text-xs font-black uppercase text-slate-400 tracking-[0.2em] flex items-center gap-3 italic">
-            <BrainCircuit size={16} className="text-purple-500" /> AI Kennisbank (System Prompt)
-          </h3>
-          
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
-            <ShieldCheck size={16} className="text-amber-600 mt-0.5" />
-            <div>
-              <h4 className="text-xs font-black text-amber-800 uppercase tracking-wide">Privacy Protocol</h4>
-              <p className="text-[10px] text-amber-700 mt-1">
-                Om te voldoen aan AVG/GDPR en interne veiligheidsregels, mag de AI <u>geen toegang</u> hebben tot specifieke gebruikersgegevens, wachtwoorden of rol-definities. Voeg deze data niet toe aan de context.
-              </p>
-            </div>
-          </div>
-
-          <div className="relative">
-            <textarea 
-              value={aiPrompt}
-              onChange={(e) => setAiPrompt(e.target.value)}
-              className="w-full h-64 p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-mono text-xs text-slate-600 outline-none focus:border-purple-500 transition-all resize-y"
-              placeholder="Plak hier de volledige context en instructies voor de AI..."
-            />
-            <div className="absolute bottom-4 right-4 text-[9px] font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-200">
-              {aiPrompt.length} karakters
-            </div>
-          </div>
-        </div>
-
         {/* RECHTS: SAVE BUTTON */}
         <div className="space-y-4">
           <button
@@ -559,10 +495,6 @@ const AdminSettingsView = () => {
           </button>
         </div>
       </div>
-      )}
-
-      {activeTab === "counters" && (
-        <AdminLotCounters />
       )}
 
       {/* STATUS MELDINGEN */}

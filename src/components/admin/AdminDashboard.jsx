@@ -34,6 +34,7 @@ import {
   Printer,
   BarChart3,
   FileText,
+  QrCode,
 } from "lucide-react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 
@@ -49,6 +50,7 @@ const PersonnelManager = React.lazy(() => import("./PersonnelManager"));
 const AdminMatrixManager = React.lazy(() =>
   import("./matrixmanager/AdminMatrixManager")
 );
+const AdminBadgeGenerator = React.lazy(() => import("./AdminBadgeGenerator"));
 const AdminUsersView = React.lazy(() => import("./AdminUsersView"));
 const AdminPrinterManager = React.lazy(() => import("./AdminPrinterManager"));
 const AdminMessagesManagement = React.lazy(() => import("./AdminMessagesManagement"));
@@ -319,6 +321,15 @@ const AdminDashboard = () => {
           component: AdminUsersView,
         },
         {
+          id: "badge_generator",
+          title: "Login Badges",
+          desc: "Genereer QR-code inlogpasjes voor snelle toegang.",
+          icon: <QrCode size={24} className="text-indigo-600" />,
+          color: "bg-indigo-50 border-indigo-100",
+          roles: ["admin"],
+          component: AdminBadgeGenerator,
+        },
+        {
           id: "settings",
           title: "Systeem Instellingen",
           desc: "Globale applicatie-configuratie.",
@@ -422,12 +433,20 @@ const AdminDashboard = () => {
     ...category,
     items: category.items.filter(item => {
       const hasRole = item.roles.some(r => r.toLowerCase() === currentRole);
-      
-      // Module check: Admin heeft altijd toegang, anders check modules array
-      if (item.requiredModule && currentRole !== 'admin') {
-        return hasRole && user?.modules?.includes(item.requiredModule);
+
+      // Admins hebben altijd volledige toegang
+      if (currentRole === 'admin') return hasRole;
+
+      if (item.requiredModule) {
+        // Nieuw systeem: check permissions object (moduleId → [featureIds])
+        const perms = user?.permissions || {};
+        const modulePerms = perms[item.requiredModule] || [];
+        const hasViaPermissions = modulePerms.length > 0;
+        // Fallback: oud modules-array systeem
+        const hasViaModules = (user?.modules || []).includes(item.requiredModule);
+        return hasRole && (hasViaPermissions || hasViaModules);
       }
-      
+
       return hasRole;
     })
   })).filter(category => category.items.length > 0); // Only show categories with accessible items

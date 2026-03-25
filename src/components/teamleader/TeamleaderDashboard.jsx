@@ -4,6 +4,7 @@ import {
   Zap,
   CheckCircle2,
   AlertOctagon,
+  Star,
   Users,
   Cpu,
   Clock,
@@ -19,7 +20,7 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }) => {
         <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest ml-1 mb-3">
           Productie KPI's
         </h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
             {
               id: "gepland",
@@ -55,6 +56,13 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }) => {
               val: metrics.tempRejectedCount || 0,
               icon: AlertTriangle,
               color: "text-orange-500",
+            },
+            {
+              id: "prioriteit",
+              label: "Prioriteit",
+              val: metrics.priorityCount || 0,
+              icon: Star,
+              color: "text-amber-500",
             },
           ].map((item) => (
             <div

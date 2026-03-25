@@ -9,6 +9,7 @@ import {
   User,
 } from "lucide-react";
 import { format } from "date-fns";
+import { toDateSafe } from "../../../utils/dateUtils";
 import StatusBadge from "../common/StatusBadge";
 
 /**
@@ -18,6 +19,35 @@ import StatusBadge from "../common/StatusBadge";
 const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick }) => {
   const [sortConfig, setSortConfig] = useState({ key: 'updatedAt', direction: 'desc' });
   const [searchTerm, setSearchTerm] = useState("");
+
+  const getPriorityLevel = (item) => {
+    const rawPriority = item?.priority;
+    const normalizedPriority =
+      rawPriority === true
+        ? "high"
+        : String(rawPriority || "").toLowerCase().trim();
+
+    if (normalizedPriority === "immediate") return "immediate";
+    if (normalizedPriority === "urgent") return "urgent";
+    if (normalizedPriority === "high") return "high";
+    if (item?.isMoved) return "high";
+    if (item?.isUrgent) return "urgent";
+    return "normal";
+  };
+
+  const getPriorityBadge = (item) => {
+    const level = getPriorityLevel(item);
+    if (level === "immediate") {
+      return { label: "1e Prio", className: "bg-rose-100 text-rose-700 border border-rose-200" };
+    }
+    if (level === "urgent") {
+      return { label: "Spoed", className: "bg-orange-100 text-orange-700 border border-orange-200" };
+    }
+    if (level === "high") {
+      return { label: "Prio", className: "bg-amber-100 text-amber-700 border border-amber-200" };
+    }
+    return null;
+  };
 
   const filteredData = useMemo(() => {
     if (!searchTerm) return data;
@@ -46,7 +76,7 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick }) => {
         // Speciale handling voor datums en fallbacks
         if (sortConfig.key === 'updatedAt') {
              const getDate = (obj) => obj.updatedAt || obj.lastUpdated || obj.createdAt;
-             const getMillis = (d) => d?.toDate ? d.toDate().getTime() : (new Date(d).getTime() || 0);
+             const getMillis = (d) => toDateSafe(d)?.getTime() || 0;
              
              aValue = getMillis(getDate(a));
              bValue = getMillis(getDate(b));
@@ -73,10 +103,9 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick }) => {
   };
 
   const formatDisplayDate = (dateInput) => {
-    if (!dateInput) return "-";
+    const date = toDateSafe(dateInput);
+    if (!date) return "-";
     try {
-      const date = dateInput.toDate ? dateInput.toDate() : new Date(dateInput);
-      if (isNaN(date.getTime())) return "-";
       return format(date, "dd-MM-yyyy HH:mm");
     } catch {
       return "-";
@@ -173,14 +202,34 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick }) => {
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {sortedData.map((item, idx) => (
+                      (() => {
+                        const priorityBadge = getPriorityBadge(item);
+                        const priorityLevel = getPriorityLevel(item);
+
+                        return (
                       <tr
                         key={idx}
-                        className="hover:bg-blue-50/30 transition-colors group cursor-pointer"
+                        className={`hover:bg-blue-50/30 transition-colors group cursor-pointer border-l-4 ${
+                          priorityLevel === "immediate"
+                            ? "border-l-rose-400"
+                            : priorityLevel === "urgent"
+                              ? "border-l-orange-400"
+                              : priorityLevel === "high"
+                                ? "border-l-amber-400"
+                                : "border-l-transparent"
+                        }`}
                         onClick={() => onRowClick && onRowClick(item)}
                       >
                         <td className="px-6 py-4">
-                          <div className="font-black text-slate-900 text-sm">
-                            {item.lotNumber || item.orderId}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className="font-black text-slate-900 text-sm">
+                              {item.lotNumber || item.orderId}
+                            </div>
+                            {priorityBadge && (
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${priorityBadge.className}`}>
+                                {priorityBadge.label}
+                              </span>
+                            )}
                           </div>
                           {item.lotNumber && (
                             <div className="text-[9px] font-bold text-slate-400 uppercase">
@@ -208,7 +257,14 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick }) => {
                           )}
                         </td>
                         <td className="px-6 py-4">
-                          <StatusBadge status={item.status} />
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <StatusBadge status={item.status} />
+                            {priorityBadge && (
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${priorityBadge.className}`}>
+                                {priorityBadge.label}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="text-slate-900 font-bold">
@@ -216,6 +272,8 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick }) => {
                           </div>
                         </td>
                       </tr>
+                        );
+                      })()
                     ))}
                   </tbody>
                 </table>

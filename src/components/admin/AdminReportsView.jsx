@@ -25,11 +25,12 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import { collection, query, where, getDocs, orderBy, limit } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, limit, doc, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import { nl } from "date-fns/locale";
+import { normalizeMachine } from "../../utils/hubHelpers";
 
 /**
  * AdminReportsView - Centrale Rapportage Module
@@ -53,6 +54,105 @@ const AdminReportsView = () => {
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
   const [expandedSections, setExpandedSections] = useState([]);
+  const [offeredDepartmentFilter, setOfferedDepartmentFilter] = useState("ALL");
+  const [offeredWorkstationFilter, setOfferedWorkstationFilter] = useState("ALL");
+  const [offeredKpiFilter, setOfferedKpiFilter] = useState("ALL"); // ALL | COMPLETED | OFFERED | PRODUCED_NOT_OFFERED
+  const [productionDepartmentFilter, setProductionDepartmentFilter] = useState("ALL");
+  const [factoryDepartments, setFactoryDepartments] = useState([]);
+  const [kpiPopup, setKpiPopup] = useState({ open: false, type: null }); // COMPLETED | OFFERED | PRODUCED_NOT_OFFERED
+  const [measurementDetailMode, setMeasurementDetailMode] = useState("current_week"); // current_week | browse_week | all
+  const [measurementWeekOffset, setMeasurementWeekOffset] = useState(0);
+  const [measurementLotNumberSearch, setMeasurementLotNumberSearch] = useState("");
+
+  useEffect(() => {
+    const loadFactoryDepartments = async () => {
+      try {
+        const configRef = doc(db, ...PATHS.FACTORY_CONFIG);
+        const configSnap = await getDoc(configRef);
+        if (!configSnap.exists()) {
+          setFactoryDepartments([]);
+          return;
+        }
+
+        const data = configSnap.data() || {};
+        const departments = Array.isArray(data.departments) ? data.departments : [];
+        setFactoryDepartments(departments);
+      } catch (error) {
+        console.error("Error loading factory departments:", error);
+        setFactoryDepartments([]);
+      }
+    };
+
+    loadFactoryDepartments();
+  }, []);
+
+  const factoryDepartmentMeta = useMemo(() => {
+    const normalizeDeptLabel = (value) =>
+      String(value || "")
+        .replace(/\u00A0/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+
+    const toDisplayDeptLabel = (value) => {
+      const normalized = normalizeDeptLabel(value);
+      if (!normalized) return "Onbekend";
+      return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+    };
+
+    const list = (factoryDepartments || []).map((dept) => {
+      const key = String(dept?.slug || dept?.id || dept?.name || "").trim().toLowerCase();
+      const label = toDisplayDeptLabel(dept?.name || dept?.slug || dept?.id || "Onbekend");
+      const stations = (dept?.stations || [])
+        .map((s) => normalizeMachine(s?.name || s?.id || ""))
+        .filter(Boolean);
+      return { key, label, stations };
+    }).filter((d) => d.key);
+
+    const byKey = list.reduce((acc, d) => {
+      acc[d.key] = d;
+      return acc;
+    }, {});
+
+    const byLabel = list.reduce((acc, d) => {
+      const normalizedLabel = normalizeDeptLabel(d.label) || "onbekend";
+      const displayLabel = toDisplayDeptLabel(d.label);
+      if (!acc[normalizedLabel]) {
+        acc[normalizedLabel] = {
+          label: displayLabel,
+          keys: new Set(),
+          stations: new Set(),
+        };
+      }
+      acc[normalizedLabel].keys.add(d.key);
+      d.stations.forEach((s) => acc[normalizedLabel].stations.add(s));
+      return acc;
+    }, {});
+
+    const byLabelList = Object.values(byLabel).map((entry) => ({
+      label: entry.label,
+      keys: Array.from(entry.keys),
+      stations: Array.from(entry.stations),
+    }));
+
+    const keyToLabel = {};
+    const normalizedLabelToLabel = {};
+    const stationToLabel = {};
+
+    byLabelList.forEach((entry) => {
+      const normalizedLabel = normalizeDeptLabel(entry.label);
+      if (normalizedLabel) normalizedLabelToLabel[normalizedLabel] = entry.label;
+      entry.keys.forEach((k) => {
+        keyToLabel[String(k || "").trim().toLowerCase()] = entry.label;
+      });
+      entry.stations.forEach((s) => {
+        const ns = normalizeMachine(s);
+        if (ns) stationToLabel[ns] = entry.label;
+      });
+    });
+
+    return { list, byKey, byLabelList, keyToLabel, normalizedLabelToLabel, stationToLabel };
+  }, [factoryDepartments]);
 
   // Report Categories
   const reportCategories = [
@@ -344,34 +444,215 @@ const AdminReportsView = () => {
     return null;
   };
 
-  // Fetch real production data
-  const fetchProductionData = async () => {
+  const getDepartmentLabel = (item) => {
+    const normalizeRaw = (value) =>
+      String(value || "")
+        .replace(/\u00A0/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+
+    const rawDepartment = normalizeRaw(item?.department || item?.originalDepartment || "");
+
+    // Station-naar-afdeling mapping uit factory config heeft prioriteit
+    // omdat data soms een verouderde department field bevat.
+    const machineCandidate =
+      item?.originMachine ||
+      item?.machine ||
+      item?.currentStation ||
+      item?.lastStation ||
+      "";
+    const normalizedMachine = normalizeMachine(machineCandidate);
+    if (normalizedMachine && factoryDepartmentMeta.stationToLabel[normalizedMachine]) {
+      return factoryDepartmentMeta.stationToLabel[normalizedMachine];
+    }
+
+    if (rawDepartment && factoryDepartmentMeta.keyToLabel[rawDepartment]) {
+      return factoryDepartmentMeta.keyToLabel[rawDepartment];
+    }
+
+    if (rawDepartment && factoryDepartmentMeta.normalizedLabelToLabel[rawDepartment]) {
+      return factoryDepartmentMeta.normalizedLabelToLabel[rawDepartment];
+    }
+
+    const exact = factoryDepartmentMeta.list.find((d) => d.key === rawDepartment);
+    if (exact) return exact.label;
+
+    const byContains = factoryDepartmentMeta.list.find(
+      (d) => rawDepartment && (d.key.includes(rawDepartment) || rawDepartment.includes(d.key))
+    );
+    if (byContains) return byContains.label;
+
+    const findByKeyword = (keyword) =>
+      factoryDepartmentMeta.byLabelList.find((d) => d.label.toLowerCase().includes(keyword))?.label;
+
+    if (rawDepartment.includes("pipe")) return findByKeyword("pipe") || "Pipes";
+    if (rawDepartment.includes("fit")) return findByKeyword("fit") || "Fittings";
+    if (rawDepartment.includes("spool")) return findByKeyword("spool") || "Spools";
+
+    const n = normalizedMachine;
+
+    if (["BH05", "BH07", "BH08", "BH09", "BA05", "BA07", "BA08", "BA09"].includes(n)) {
+      return findByKeyword("pipe") || "Pipes";
+    }
+    if (n.includes("SPOOL")) return findByKeyword("spool") || "Spools";
+    if (
+      n.includes("BM01") ||
+      n.includes("NABEWERK") ||
+      n.includes("MAZAK") ||
+      ["BH11", "BH12", "BH15", "BH16", "BH17", "BH18", "BH31"].includes(n)
+    ) {
+      return findByKeyword("fit") || "Fittings";
+    }
+
+    return "Onbekend";
+  };
+
+  const getDepartmentDisplayLabel = (deptKey) => {
+    const raw = String(deptKey || "")
+      .replace(/\u00A0/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!raw) return "Onbekend";
+
+    const key = raw.toLowerCase();
+    if (factoryDepartmentMeta.keyToLabel[key]) return factoryDepartmentMeta.keyToLabel[key];
+    if (factoryDepartmentMeta.normalizedLabelToLabel[key]) return factoryDepartmentMeta.normalizedLabelToLabel[key];
+    if (key === "onbekend") return "Onbekend";
+
+    return raw;
+  };
+
+  const getWorkstationLabel = (item) => {
+    const machineCandidate =
+      item?.originMachine ||
+      item?.machine ||
+      item?.currentStation ||
+      item?.lastStation ||
+      "";
+    const n = normalizeMachine(machineCandidate);
+    if (!n) return "Onbekend";
+
+    if (n === "BA05") return "BH05";
+    if (n === "BA07") return "BH07";
+    if (n === "BA08") return "BH08";
+    if (n === "BA09") return "BH09";
+    return n;
+  };
+
+  const isDepartmentScopedReport = (reportId) =>
+    ["production_output", "lead_time", "order_completion", "wip_status"].includes(reportId);
+
+  const openKpiPopup = (type) => {
+    setOfferedKpiFilter(type);
+    setKpiPopup({ open: true, type });
+  };
+
+  const closeKpiPopup = () => {
+    setKpiPopup({ open: false, type: null });
+  };
+
+  const formatHoursAsHM = (hoursValue) => {
+    const numeric = Number(hoursValue || 0);
+    if (!Number.isFinite(numeric) || numeric < 0) return "0u 00m";
+    const totalMinutes = Math.round(numeric * 60);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${h}u ${String(m).padStart(2, "0")}m`;
+  };
+
+  const getMeasurementDetailDateRange = () => {
+    if (measurementDetailMode === "all") {
+      return { startDate: null, endDate: null };
+    }
+
+    const offsetWeeks = measurementDetailMode === "browse_week" ? measurementWeekOffset : 0;
+    const baseDate = subDays(new Date(), offsetWeeks * 7);
+    return {
+      startDate: startOfWeek(baseDate, { weekStartsOn: 1 }),
+      endDate: endOfWeek(baseDate, { weekStartsOn: 1 }),
+    };
+  };
+
+  const isCompletedAtInspection = (item) => {
+    const status = String(item?.status || "").toLowerCase();
+    const step = String(item?.currentStep || "").toLowerCase();
+    const station = String(item?.currentStation || "").toLowerCase();
+    return (
+      status === "completed" ||
+      status === "gereed" ||
+      step === "finished" ||
+      station === "gereed" ||
+      !!item?.timestamps?.finished
+    );
+  };
+
+  const isOfferedToInspection = (item) => {
+    const status = String(item?.status || "").toLowerCase();
+    const station = String(item?.currentStation || "").toUpperCase();
+    const step = String(item?.currentStep || "").toUpperCase();
+    return (
+      status.includes("te keuren") ||
+      station.includes("BM01") ||
+      step.includes("EINDINSPECTIE") ||
+      !!item?.timestamps?.eindinspectie_start
+    );
+  };
+
+  const isProducedButNotOffered = (item) => {
+    if (isCompletedAtInspection(item) || isOfferedToInspection(item)) return false;
+
+    const status = String(item?.status || "").toLowerCase();
+    const step = String(item?.currentStep || "").toLowerCase();
+
+    const hasProductionSignals =
+      !!item?.timestamps?.station_start ||
+      !!item?.timestamps?.started ||
+      !!item?.timestamps?.lossen_start ||
+      !!item?.timestamps?.nabewerking_start ||
+      status === "in_progress" ||
+      status === "te nabewerken" ||
+      status === "te lossen" ||
+      step.includes("wikkel") ||
+      step.includes("lossen") ||
+      step.includes("nabewerk") ||
+      step.includes("in progress");
+
+    return hasProductionSignals;
+  };
+
+  const fetchTrackingProductsInRange = async () => {
     const { startDate, endDate } = getDateRange();
 
+    const trackingQuery = query(collection(db, ...PATHS.TRACKING), limit(3000));
+    const trackingSnap = await getDocs(trackingQuery);
+    const products = trackingSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((p) => {
+        const itemDate = getItemDate(p);
+        return itemDate ? isWithinInterval(itemDate, { start: startDate, end: endDate }) : true;
+      });
+
+    const byDepartment = productionDepartmentFilter !== "ALL"
+      ? products.filter((p) => getDepartmentDisplayLabel(getDepartmentLabel(p)) === productionDepartmentFilter)
+      : products;
+
+    return filters.station !== "ALL"
+      ? byDepartment.filter((p) => (p.currentStation || "").toUpperCase().includes(filters.station))
+      : byDepartment;
+  };
+
+  // Generic production overview (fallback)
+  const fetchProductionData = async () => {
     try {
-      // Fetch tracking data (producten)
-      const trackingQuery = query(collection(db, ...PATHS.TRACKING), limit(3000));
-      const trackingSnap = await getDocs(trackingQuery);
-      const products = trackingSnap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((p) => {
-          const itemDate = getItemDate(p);
-          return itemDate ? isWithinInterval(itemDate, { start: startDate, end: endDate }) : true;
-        });
+      const filteredProducts = await fetchTrackingProductsInRange();
 
-      // Filter by station if selected
-      const filteredProducts = filters.station !== "ALL" 
-        ? products.filter((p) => (p.currentStation || "").toUpperCase().includes(filters.station))
-        : products;
-
-      // Calculate totals per station
       const stationCounts = {};
       filteredProducts.forEach((p) => {
         const station = p.currentStation || p.machine || "Unknown";
         stationCounts[station] = (stationCounts[station] || 0) + 1;
       });
 
-      // Calculate completed vs in-progress
       const completed = filteredProducts.filter(
         (p) => p.status === "completed" || p.currentStep === "Finished"
       ).length;
@@ -382,52 +663,243 @@ const AdminReportsView = () => {
         (p) => p.status === "rejected" || p.currentStep === "REJECTED"
       ).length;
 
-      // Build chart data
-      const chartData = Object.entries(stationCounts)
-        .map(([label, value]) => ({ label, value }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 10); // Top 10
-
-      // Calculate previous period for comparison
-      const prevPeriodDays = Math.max(1, Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)));
-      const prevStartDate = subDays(startDate, prevPeriodDays);
-      const prevQuery = query(collection(db, ...PATHS.TRACKING), limit(3000));
-      const prevSnap = await getDocs(prevQuery);
-      const prevTotal = prevSnap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((p) => {
-          const itemDate = getItemDate(p);
-          if (!itemDate) return false;
-          return itemDate >= prevStartDate && itemDate < startDate;
-        }).length;
-      const change = prevTotal > 0 ? (((filteredProducts.length - prevTotal) / prevTotal) * 100).toFixed(1) : 0;
-
       return {
         summary: {
           total: filteredProducts.length,
-          change: parseFloat(change),
-          trend: change >= 0 ? "up" : "down",
+          change: 0,
+          trend: "up",
           completed,
           inProgress,
           rejected,
         },
-        chartData,
+        chartData: Object.entries(stationCounts)
+          .map(([label, value]) => ({ label, value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 10),
         details: Object.entries(
           filteredProducts.reduce((acc, p) => {
             const orderKey = p.orderId || "Geen Order";
-            if (!acc[orderKey]) {
-              acc[orderKey] = { name: orderKey, count: 0, status: "in_progress" };
-            }
+            if (!acc[orderKey]) acc[orderKey] = { name: orderKey, count: 0, status: "in_progress" };
             acc[orderKey].count++;
-            if (p.status === "completed") {
-              acc[orderKey].status = "completed";
-            }
+            if (p.status === "completed") acc[orderKey].status = "completed";
             return acc;
           }, {})
         ).map(([_, data], idx) => ({ id: idx + 1, ...data })),
       };
     } catch (error) {
       console.error("Error fetching production data:", error);
+      throw error;
+    }
+  };
+
+  const fetchProductionOutputData = async () => {
+    try {
+      const products = await fetchTrackingProductsInRange();
+      const completedProducts = products.filter((p) => p.status === "completed" || p.currentStep === "Finished");
+
+      const byStation = {};
+      const byShift = { Ochtend: 0, Middag: 0, Nacht: 0 };
+      completedProducts.forEach((p) => {
+        const station = p.currentStation || p.machine || "Unknown";
+        byStation[station] = (byStation[station] || 0) + 1;
+
+        const d = getItemDate(p);
+        const hour = d ? d.getHours() : 0;
+        if (hour >= 6 && hour < 14) byShift.Ochtend += 1;
+        else if (hour >= 14 && hour < 22) byShift.Middag += 1;
+        else byShift.Nacht += 1;
+      });
+
+      return {
+        summary: {
+          total: completedProducts.length,
+          change: 0,
+          trend: "up",
+          completed: completedProducts.length,
+          inProgress: products.length - completedProducts.length,
+          rejected: products.filter((p) => p.status === "rejected" || p.currentStep === "REJECTED").length,
+        },
+        chartData: Object.entries(byStation)
+          .map(([label, value]) => ({ label, value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 10),
+        details: Object.entries(byShift).map(([name, count], idx) => ({
+          id: idx + 1,
+          name: `Shift ${name}`,
+          count,
+          status: "completed",
+        })),
+      };
+    } catch (error) {
+      console.error("Error fetching production output data:", error);
+      throw error;
+    }
+  };
+
+  const fetchLeadTimeData = async () => {
+    try {
+      const products = await fetchTrackingProductsInRange();
+
+      const leadTimes = products
+        .map((p) => {
+          const start = p?.timestamps?.station_start?.toDate?.()
+            || (p?.timestamps?.station_start ? new Date(p.timestamps.station_start) : null)
+            || p?.timestamps?.started?.toDate?.()
+            || (p?.timestamps?.started ? new Date(p.timestamps.started) : null)
+            || p?.createdAt?.toDate?.()
+            || (p?.createdAt ? new Date(p.createdAt) : null);
+
+          const end = p?.timestamps?.finished?.toDate?.()
+            || (p?.timestamps?.finished ? new Date(p.timestamps.finished) : null)
+            || p?.timestamps?.completed?.toDate?.()
+            || (p?.timestamps?.completed ? new Date(p.timestamps.completed) : null)
+            || p?.updatedAt?.toDate?.()
+            || (p?.updatedAt ? new Date(p.updatedAt) : null);
+
+          if (!start || !end) return null;
+          const diffMs = end.getTime() - start.getTime();
+          if (!Number.isFinite(diffMs) || diffMs <= 0) return null;
+
+          return {
+            station: p.currentStation || p.machine || "Unknown",
+            orderId: p.orderId || "Geen Order",
+            hours: diffMs / (1000 * 60 * 60),
+          };
+        })
+        .filter(Boolean);
+
+      const values = leadTimes.map((x) => x.hours);
+      const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+      const min = values.length ? Math.min(...values) : 0;
+      const max = values.length ? Math.max(...values) : 0;
+
+      const byStation = {};
+      leadTimes.forEach((x) => {
+        if (!byStation[x.station]) byStation[x.station] = { total: 0, count: 0 };
+        byStation[x.station].total += x.hours;
+        byStation[x.station].count += 1;
+      });
+
+      return {
+        summary: {
+          total: Number(avg.toFixed(1)),
+          change: 0,
+          trend: "down",
+        },
+        chartData: Object.entries(byStation)
+          .map(([label, v]) => ({ label, value: Number((v.total / v.count).toFixed(1)) }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 10),
+        details: [
+          { id: 1, name: "Gemiddelde", count: `${Number(avg.toFixed(1))} u (${formatHoursAsHM(avg)})`, status: "active" },
+          { id: 2, name: "Kortste", count: `${Number(min.toFixed(1))} u (${formatHoursAsHM(min)})`, status: "active" },
+          { id: 3, name: "Langste", count: `${Number(max.toFixed(1))} u (${formatHoursAsHM(max)})`, status: "active" },
+        ],
+      };
+    } catch (error) {
+      console.error("Error fetching lead time data:", error);
+      throw error;
+    }
+  };
+
+  const fetchOrderCompletionData = async () => {
+    try {
+      const products = await fetchTrackingProductsInRange();
+      const now = new Date();
+
+      const byOrder = {};
+      products.forEach((p) => {
+        const orderId = p.orderId || "Geen Order";
+        if (!byOrder[orderId]) {
+          byOrder[orderId] = {
+            orderId,
+            total: 0,
+            completed: 0,
+            dueDate: p.dueDate || p.deliveryDate || p.plannedDate || null,
+          };
+        }
+        byOrder[orderId].total += 1;
+        if (p.status === "completed" || p.currentStep === "Finished") byOrder[orderId].completed += 1;
+      });
+
+      const orders = Object.values(byOrder);
+      const completedOrders = orders.filter((o) => o.total > 0 && o.completed === o.total);
+      const inProgressOrders = orders.filter((o) => o.completed > 0 && o.completed < o.total);
+      const backlogOrders = orders.filter((o) => o.completed === 0);
+
+      const delayedOrders = orders.filter((o) => {
+        if (!o.dueDate) return false;
+        const due = o.dueDate?.toDate?.() || new Date(o.dueDate);
+        if (!(due instanceof Date) || Number.isNaN(due.getTime())) return false;
+        return due < now && o.completed < o.total;
+      });
+
+      return {
+        summary: {
+          total: orders.length,
+          change: 0,
+          trend: completedOrders.length >= delayedOrders.length ? "up" : "down",
+        },
+        chartData: [
+          { label: "Voltooid", value: completedOrders.length },
+          { label: "Lopend", value: inProgressOrders.length },
+          { label: "Backlog", value: backlogOrders.length },
+          { label: "Vertraagd", value: delayedOrders.length },
+        ],
+        details: orders
+          .sort((a, b) => (b.completed / Math.max(b.total, 1)) - (a.completed / Math.max(a.total, 1)))
+          .slice(0, 30)
+          .map((o, idx) => ({
+            id: idx + 1,
+            name: o.orderId,
+            count: `${o.completed}/${o.total}`,
+            status: o.completed === o.total ? "completed" : o.completed > 0 ? "active" : "in_progress",
+          })),
+      };
+    } catch (error) {
+      console.error("Error fetching order completion data:", error);
+      throw error;
+    }
+  };
+
+  const fetchWipStatusData = async () => {
+    try {
+      const products = await fetchTrackingProductsInRange();
+      const wipItems = products.filter((p) => {
+        const status = String(p.status || "").toLowerCase();
+        const step = String(p.currentStep || "").toLowerCase();
+        return !(status === "completed" || step === "finished" || status === "rejected" || step === "rejected");
+      });
+
+      const byStep = {};
+      wipItems.forEach((p) => {
+        const step = p.currentStep || p.currentStation || "Onbekend";
+        byStep[step] = (byStep[step] || 0) + 1;
+      });
+
+      const tempRejectCount = wipItems.filter((p) => {
+        const status = String(p.status || "").toLowerCase();
+        const step = String(p.currentStep || "").toLowerCase();
+        return status.includes("temp") || step.includes("temp");
+      }).length;
+
+      return {
+        summary: {
+          total: wipItems.length,
+          change: 0,
+          trend: "up",
+        },
+        chartData: Object.entries(byStep)
+          .map(([label, value]) => ({ label, value }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 10),
+        details: [
+          { id: 1, name: "Actieve WIP Items", count: wipItems.length, status: "active" },
+          { id: 2, name: "Temp Reject in WIP", count: tempRejectCount, status: tempRejectCount > 0 ? "temp_reject" : "active" },
+        ],
+      };
+    } catch (error) {
+      console.error("Error fetching WIP status data:", error);
       throw error;
     }
   };
@@ -732,11 +1204,13 @@ const AdminReportsView = () => {
   };
 
   const fetchMeasurementsData = async () => {
-    const { startDate, endDate } = getDateRange();
+    const { startDate, endDate } = getMeasurementDetailDateRange();
 
     try {
-      const yearStart = startDate.getFullYear();
-      const yearEnd = endDate.getFullYear();
+      const effectiveStart = startDate || subDays(new Date(), 365 * 3);
+      const effectiveEnd = endDate || new Date();
+      const yearStart = effectiveStart.getFullYear();
+      const yearEnd = effectiveEnd.getFullYear();
       const years = [];
       for (let y = yearStart; y <= yearEnd; y++) years.push(y);
 
@@ -767,6 +1241,7 @@ const AdminReportsView = () => {
 
       const products = Array.from(mapByKey.values())
         .filter((p) => {
+          if (!startDate || !endDate) return true;
           const itemDate = getItemDate(p);
           return itemDate ? isWithinInterval(itemDate, { start: startDate, end: endDate }) : true;
         });
@@ -779,6 +1254,11 @@ const AdminReportsView = () => {
           measurementFieldCount[field] = (measurementFieldCount[field] || 0) + 1;
         });
       });
+
+      const tgKey = Object.keys(measurementFieldCount).find((k) => k.toLowerCase() === "tg") || "TG";
+      const brixKey = Object.keys(measurementFieldCount).find((k) => k.toLowerCase() === "brix") || "Brix";
+      measurementFieldCount[tgKey] = measurementFieldCount[tgKey] || 0;
+      measurementFieldCount[brixKey] = measurementFieldCount[brixKey] || 0;
 
       return {
         summary: {
@@ -794,6 +1274,8 @@ const AdminReportsView = () => {
           id: idx + 1,
           name: `${p.lotNumber || p.id}${p.source === "archive" ? " (archief)" : ""}`,
           count: Object.keys(p.measurements || {}).length,
+          tgValue: (p.measurements?.TG ?? p.measurements?.tg ?? p.measurements?.Tg ?? "-").toString(),
+          brixValue: (p.measurements?.Brix ?? p.measurements?.brix ?? p.measurements?.BRIX ?? "-").toString(),
           measurementSummary: Object.entries(p.measurements || {})
             .slice(0, 5)
             .map(([k, v]) => `${k}: ${v}`)
@@ -811,25 +1293,83 @@ const AdminReportsView = () => {
     const { startDate, endDate } = getDateRange();
 
     try {
-      const trackingSnap = await getDocs(query(collection(db, ...PATHS.TRACKING), limit(4000)));
-      const products = trackingSnap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((p) => {
-          const itemDate = getItemDate(p) || p.timestamps?.eindinspectie_start?.toDate?.();
-          return itemDate ? isWithinInterval(itemDate, { start: startDate, end: endDate }) : true;
-        });
+      const yearStart = startDate.getFullYear();
+      const yearEnd = endDate.getFullYear();
+      const years = [];
+      for (let y = yearStart; y <= yearEnd; y++) years.push(y);
 
-      const offeredItems = products.filter((p) => {
-        const status = String(p.status || "").toLowerCase();
-        const station = String(p.currentStation || "").toUpperCase();
-        const step = String(p.currentStep || "").toUpperCase();
-        return (
-          status.includes("te keuren") ||
-          station.includes("BM01") ||
-          step.includes("EINDINSPECTIE") ||
-          !!p.timestamps?.eindinspectie_start
-        );
+      const [trackingSnap, ...archiveSnaps] = await Promise.all([
+        getDocs(query(collection(db, ...PATHS.TRACKING), limit(4000))),
+        ...years.map((year) =>
+          getDocs(
+            query(
+              collection(db, "future-factory", "production", "archive", String(year), "items"),
+              limit(4000)
+            )
+          )
+        ),
+      ]);
+
+      const trackingProducts = trackingSnap.docs.map((d) => ({ id: d.id, source: "tracking", ...d.data() }));
+      const archivedProducts = archiveSnaps.flatMap((snap) =>
+        snap.docs.map((d) => ({ id: d.id, source: "archive", ...d.data() }))
+      );
+
+      const byKey = new Map();
+      [...archivedProducts, ...trackingProducts].forEach((p) => {
+        const key = p.lotNumber || p.id;
+        if (!key) return;
+        byKey.set(key, p);
       });
+      const allProducts = Array.from(byKey.values());
+
+      const getDepartmentFilterLabel = (item) => getDepartmentDisplayLabel(getDepartmentLabel(item));
+
+      const itemMatchesOfferedFilters = (item) => {
+        const department = getDepartmentFilterLabel(item);
+        const workstation = getWorkstationLabel(item);
+        if (offeredDepartmentFilter !== "ALL" && department !== offeredDepartmentFilter) return false;
+        if (offeredWorkstationFilter !== "ALL" && workstation !== offeredWorkstationFilter) return false;
+        return true;
+      };
+
+      const allDepartments = factoryDepartmentMeta.byLabelList.map((d) => d.label);
+      const departmentWorkstationsMap = factoryDepartmentMeta.byLabelList.reduce((acc, d) => {
+        acc[d.label] = d.stations;
+        return acc;
+      }, {});
+
+      const allWorkstations = Array.from(
+        new Set(factoryDepartmentMeta.byLabelList.flatMap((d) => d.stations || []))
+      ).sort();
+
+      const filteredWorkstations = offeredDepartmentFilter === "ALL"
+        ? allWorkstations
+        : (departmentWorkstationsMap[offeredDepartmentFilter] || []).slice().sort();
+
+      // Gereedmeldingen tellen op gereedmeld-datum (timestamps.finished), niet op planningsweek.
+      const completedItems = allProducts.filter((p) => {
+        if (!isCompletedAtInspection(p)) return false;
+        const finishedDate = p?.timestamps?.finished?.toDate?.()
+          || (p?.timestamps?.finished ? new Date(p.timestamps.finished) : null)
+          || p?.timestamps?.completed?.toDate?.()
+          || (p?.timestamps?.completed ? new Date(p.timestamps.completed) : null)
+          || getItemDate(p);
+        if (!finishedDate || Number.isNaN(finishedDate.getTime())) return false;
+        return isWithinInterval(finishedDate, { start: startDate, end: endDate });
+      }).filter(itemMatchesOfferedFilters);
+
+      const activeProducedNotOffered = trackingProducts.filter((p) => {
+        const itemDate = getItemDate(p);
+        if (itemDate && !isWithinInterval(itemDate, { start: startDate, end: endDate })) return false;
+        return isProducedButNotOffered(p);
+      }).filter(itemMatchesOfferedFilters);
+
+      const offeredItems = trackingProducts.filter((p) => {
+        const itemDate = getItemDate(p) || p.timestamps?.eindinspectie_start?.toDate?.();
+        if (itemDate && !isWithinInterval(itemDate, { start: startDate, end: endDate })) return false;
+        return isOfferedToInspection(p);
+      }).filter(itemMatchesOfferedFilters);
 
       const grouped = {};
       offeredItems.forEach((p) => {
@@ -839,19 +1379,123 @@ const AdminReportsView = () => {
         grouped[key] = (grouped[key] || 0) + 1;
       });
 
+      const departmentBuckets = {};
+      completedItems.forEach((p) => {
+        const dept = getDepartmentFilterLabel(p);
+        if (!departmentBuckets[dept]) {
+          departmentBuckets[dept] = {
+            department: dept,
+            completedAtInspection: 0,
+            offeredToInspection: 0,
+            producedNotOffered: 0,
+          };
+        }
+        departmentBuckets[dept].completedAtInspection += 1;
+      });
+
+      activeProducedNotOffered.forEach((p) => {
+        const dept = getDepartmentFilterLabel(p);
+        if (!departmentBuckets[dept]) {
+          departmentBuckets[dept] = {
+            department: dept,
+            completedAtInspection: 0,
+            offeredToInspection: 0,
+            producedNotOffered: 0,
+          };
+        }
+        departmentBuckets[dept].producedNotOffered += 1;
+      });
+
+      offeredItems.forEach((p) => {
+        const dept = getDepartmentFilterLabel(p);
+        if (!departmentBuckets[dept]) {
+          departmentBuckets[dept] = {
+            department: dept,
+            completedAtInspection: 0,
+            offeredToInspection: 0,
+            producedNotOffered: 0,
+          };
+        }
+        departmentBuckets[dept].offeredToInspection += 1;
+      });
+
+      const departmentOverview = Object.values(departmentBuckets)
+        .map((d) => ({
+          ...d,
+          totalReported: d.completedAtInspection,
+        }))
+        .sort((a, b) => b.completedAtInspection - a.completedAtInspection || b.producedNotOffered - a.producedNotOffered);
+
+      const stationBuckets = {};
+      completedItems.forEach((p) => {
+        const station = getWorkstationLabel(p);
+        if (!stationBuckets[station]) {
+          stationBuckets[station] = {
+            workstation: station,
+            completedAtInspection: 0,
+            offeredToInspection: 0,
+            producedNotOffered: 0,
+          };
+        }
+        stationBuckets[station].completedAtInspection += 1;
+      });
+
+      activeProducedNotOffered.forEach((p) => {
+        const station = getWorkstationLabel(p);
+        if (!stationBuckets[station]) {
+          stationBuckets[station] = {
+            workstation: station,
+            completedAtInspection: 0,
+            offeredToInspection: 0,
+            producedNotOffered: 0,
+          };
+        }
+        stationBuckets[station].producedNotOffered += 1;
+      });
+
+      offeredItems.forEach((p) => {
+        const station = getWorkstationLabel(p);
+        if (!stationBuckets[station]) {
+          stationBuckets[station] = {
+            workstation: station,
+            completedAtInspection: 0,
+            offeredToInspection: 0,
+            producedNotOffered: 0,
+          };
+        }
+        stationBuckets[station].offeredToInspection += 1;
+      });
+
+      const stationOverview = Object.values(stationBuckets).sort(
+        (a, b) => b.completedAtInspection - a.completedAtInspection || b.producedNotOffered - a.producedNotOffered
+      );
+
       const sortedEntries = Object.entries(grouped).sort(([a], [b]) => (a > b ? 1 : -1));
+      const totalCompleted = completedItems.length;
+      const totalProducedNotOffered = activeProducedNotOffered.length;
 
       return {
         summary: {
-          total: offeredItems.length,
+          total: totalCompleted,
           change: 0,
           trend: "up",
+          offeredTotal: offeredItems.length,
+          producedNotOfferedTotal: totalProducedNotOffered,
+          departmentsWithOutput: departmentOverview.filter((d) => d.completedAtInspection > 0 || d.producedNotOffered > 0).length,
+          workstationsWithOutput: stationOverview.filter((s) => s.completedAtInspection > 0 || s.producedNotOffered > 0).length,
         },
-        chartData: sortedEntries.map(([label, value]) => ({ label, value })).slice(-12),
-        details: sortedEntries
-          .slice(-30)
-          .reverse()
-          .map(([period, count], idx) => ({ id: idx + 1, name: period, count, status: "completed" })),
+        chartData: departmentOverview.map((d) => ({ label: d.department, value: d.completedAtInspection })),
+        details: departmentOverview.map((d, idx) => ({
+          id: idx + 1,
+          name: getDepartmentDisplayLabel(d.department),
+          count: `${d.completedAtInspection} gereed | ${d.producedNotOffered} nog niet aangeboden`,
+          status: d.producedNotOffered > 0 ? "in_progress" : "completed",
+        })),
+        timelineData: sortedEntries.map(([label, value]) => ({ label, value })).slice(-12),
+        departmentOverview,
+        stationOverview,
+        availableDepartments: allDepartments,
+        availableWorkstations: filteredWorkstations,
       };
     } catch (error) {
       console.error("Error fetching offered totals data:", error);
@@ -871,7 +1515,15 @@ const AdminReportsView = () => {
     try {
       let data;
 
-      if (targetReport.id === "worked_hours") {
+      if (targetReport.id === "production_output") {
+        data = await fetchProductionOutputData();
+      } else if (targetReport.id === "lead_time") {
+        data = await fetchLeadTimeData();
+      } else if (targetReport.id === "order_completion") {
+        data = await fetchOrderCompletionData();
+      } else if (targetReport.id === "wip_status") {
+        data = await fetchWipStatusData();
+      } else if (targetReport.id === "worked_hours") {
         data = await fetchWorkedHoursData();
       } else if (targetReport.id === "temp_reject_overview") {
         data = await fetchTempRejectData();
@@ -882,8 +1534,8 @@ const AdminReportsView = () => {
       }
 
       // Select appropriate data fetch function based on category
-      else if (targetReport.id.includes("production") || targetReport.id.includes("output") || 
-          targetReport.id.includes("order") || targetReport.id.includes("wip")) {
+        else if (targetReport.id.includes("production") || targetReport.id.includes("output") || 
+          targetReport.id.includes("order") || targetReport.id.includes("wip") || targetReport.id.includes("lead")) {
         data = await fetchProductionData();
       } else if (targetReport.id.includes("rejection") || targetReport.id.includes("quality") || 
                  targetReport.id.includes("first") || targetReport.id.includes("rework") || 
@@ -1032,6 +1684,36 @@ const AdminReportsView = () => {
 
     downloadBlob(csvContent, "text/csv;charset=utf-8", buildExportFilename("csv"));
   };
+
+  useEffect(() => {
+    if (selectedReport?.id !== "offered_totals") return;
+    generateReportData(selectedReport);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offeredDepartmentFilter, offeredWorkstationFilter]);
+
+  useEffect(() => {
+    if (!selectedReport?.id) return;
+    if (!isDepartmentScopedReport(selectedReport.id)) return;
+    generateReportData(selectedReport);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productionDepartmentFilter]);
+
+  useEffect(() => {
+    if (selectedReport?.id !== "product_measurements") return;
+    generateReportData(selectedReport);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [measurementDetailMode, measurementWeekOffset]);
+
+  useEffect(() => {
+    if (selectedReport?.id !== "offered_totals") return;
+    if (!reportData?.availableDepartments?.length) return;
+    if (offeredDepartmentFilter !== "ALL" && !reportData.availableDepartments.includes(offeredDepartmentFilter)) {
+      setOfferedDepartmentFilter("ALL");
+    }
+    if (offeredWorkstationFilter !== "ALL" && !reportData?.availableWorkstations?.includes(offeredWorkstationFilter)) {
+      setOfferedWorkstationFilter("ALL");
+    }
+  }, [reportData, selectedReport, offeredDepartmentFilter, offeredWorkstationFilter]);
 
   // Render category selection
   if (!selectedCategory) {
@@ -1203,18 +1885,20 @@ const AdminReportsView = () => {
               <option value="custom">Custom Periode</option>
             </select>
 
-            <select
-              value={filters.station}
-              onChange={(e) => setFilters({ ...filters, station: e.target.value })}
-              className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
-            >
-              <option value="ALL">Alle Werkstations</option>
-              <option value="BH11">BH11</option>
-              <option value="BH16">BH16</option>
-              <option value="BH18">BH18</option>
-              <option value="BH31">BH31</option>
-              <option value="BM01">BM01</option>
-            </select>
+            {selectedReport?.id !== "offered_totals" && (
+              <select
+                value={filters.station}
+                onChange={(e) => setFilters({ ...filters, station: e.target.value })}
+                className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
+              >
+                <option value="ALL">Alle Werkstations</option>
+                <option value="BH11">BH11</option>
+                <option value="BH16">BH16</option>
+                <option value="BH18">BH18</option>
+                <option value="BH31">BH31</option>
+                <option value="BM01">BM01</option>
+              </select>
+            )}
 
             <button
               onClick={generateReportData}
@@ -1223,6 +1907,51 @@ const AdminReportsView = () => {
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Filter size={16} />}
               {loading ? "Laden..." : "Genereer Rapport"}
             </button>
+
+            {isDepartmentScopedReport(selectedReport?.id) && (
+              <select
+                value={productionDepartmentFilter}
+                onChange={(e) => setProductionDepartmentFilter(e.target.value)}
+                className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
+              >
+                <option value="ALL">Alle Afdelingen</option>
+                {factoryDepartmentMeta.byLabelList
+                  .map((d) => d.label)
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((label) => (
+                    <option key={label} value={label}>{label}</option>
+                  ))}
+              </select>
+            )}
+
+            {selectedReport?.id === "offered_totals" && (
+              <>
+                <select
+                  value={offeredDepartmentFilter}
+                  onChange={(e) => {
+                    setOfferedDepartmentFilter(e.target.value);
+                    setOfferedWorkstationFilter("ALL");
+                  }}
+                  className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
+                >
+                  <option value="ALL">Alle Afdelingen</option>
+                  {(reportData?.availableDepartments || []).map((dept) => (
+                    <option key={dept} value={dept}>{getDepartmentDisplayLabel(dept)}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={offeredWorkstationFilter}
+                  onChange={(e) => setOfferedWorkstationFilter(e.target.value)}
+                  className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
+                >
+                  <option value="ALL">Alle Werkstations</option>
+                  {(reportData?.availableWorkstations || []).map((station) => (
+                    <option key={station} value={station}>{station}</option>
+                  ))}
+                </select>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1239,9 +1968,15 @@ const AdminReportsView = () => {
             <div className="space-y-6">
               {/* Summary Cards */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="p-6 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => selectedReport?.id === "offered_totals" && openKpiPopup("COMPLETED")}
+                  className={`p-6 bg-white rounded-2xl border shadow-sm text-left w-full ${selectedReport?.id === "offered_totals" ? "hover:border-blue-300 transition-colors" : "border-slate-200"} ${selectedReport?.id === "offered_totals" && offeredKpiFilter === "COMPLETED" ? "border-blue-500 ring-2 ring-blue-100" : "border-slate-200"}`}
+                >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-bold text-slate-500 uppercase">Totaal</span>
+                    <span className="text-xs font-bold text-slate-500 uppercase">
+                      {selectedReport?.id === "offered_totals" ? "Gereedgemeld Totaal" : "Totaal"}
+                    </span>
                     {reportData.summary.change !== undefined && (
                       <div className={`px-2 py-1 rounded-lg text-xs font-bold ${reportData.summary.trend === 'up' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                         {reportData.summary.trend === 'up' ? '↑' : '↓'} {Math.abs(reportData.summary.change)}%
@@ -1249,7 +1984,20 @@ const AdminReportsView = () => {
                     )}
                   </div>
                   <div className="text-4xl font-black text-slate-800">{reportData.summary.total.toLocaleString()}</div>
-                </div>
+                </button>
+
+                {selectedReport?.id === "offered_totals" && reportData.summary.offeredTotal !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() => openKpiPopup("OFFERED")}
+                    className={`p-6 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-2xl border text-left w-full hover:border-emerald-300 transition-colors ${offeredKpiFilter === "OFFERED" ? "border-emerald-500 ring-2 ring-emerald-100" : "border-emerald-200"}`}
+                  >
+                    <span className="text-xs font-bold text-emerald-700 uppercase block mb-2">Totaal Aangeboden</span>
+                    <div className="text-4xl font-black text-emerald-900">
+                      {reportData.summary.offeredTotal.toLocaleString()}
+                    </div>
+                  </button>
+                )}
 
                 {/* Conditionally show FTR for quality reports */}
                 {reportData.summary.ftrPercentage !== undefined && (
@@ -1267,6 +2015,37 @@ const AdminReportsView = () => {
                     <span className="text-xs font-bold text-blue-700 uppercase block mb-2">Voltooid</span>
                     <div className="text-4xl font-black text-blue-900">
                       {reportData.summary.completed.toLocaleString()}
+                    </div>
+                  </div>
+                )}
+
+                {selectedReport?.id === "offered_totals" && reportData.summary.producedNotOfferedTotal !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() => openKpiPopup("PRODUCED_NOT_OFFERED")}
+                    className={`p-6 bg-gradient-to-br from-amber-50 to-amber-100 rounded-2xl border text-left w-full hover:border-amber-300 transition-colors ${offeredKpiFilter === "PRODUCED_NOT_OFFERED" ? "border-amber-500 ring-2 ring-amber-100" : "border-amber-200"}`}
+                  >
+                    <span className="text-xs font-bold text-amber-700 uppercase block mb-2">Geproduceerd, Niet Aangeboden</span>
+                    <div className="text-4xl font-black text-amber-900">
+                      {reportData.summary.producedNotOfferedTotal.toLocaleString()}
+                    </div>
+                  </button>
+                )}
+
+                {selectedReport?.id === "offered_totals" && reportData.summary.departmentsWithOutput !== undefined && (
+                  <div className="p-6 bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-2xl border border-indigo-200">
+                    <span className="text-xs font-bold text-indigo-700 uppercase block mb-2">Afdelingen Met Output</span>
+                    <div className="text-4xl font-black text-indigo-900">
+                      {reportData.summary.departmentsWithOutput.toLocaleString()}
+                    </div>
+                  </div>
+                )}
+
+                {selectedReport?.id === "offered_totals" && reportData.summary.workstationsWithOutput !== undefined && (
+                  <div className="p-6 bg-gradient-to-br from-sky-50 to-sky-100 rounded-2xl border border-sky-200">
+                    <span className="text-xs font-bold text-sky-700 uppercase block mb-2">Werkstations Met Output</span>
+                    <div className="text-4xl font-black text-sky-900">
+                      {reportData.summary.workstationsWithOutput.toLocaleString()}
                     </div>
                   </div>
                 )}
@@ -1302,11 +2081,19 @@ const AdminReportsView = () => {
               {/* Chart */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
                 <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-6">
-                  Overzicht per Werkstation
+                  {selectedReport?.id === "offered_totals" ? "Gereedgemeld per Afdeling" : "Overzicht per Werkstation"}
                 </h3>
+                {selectedReport?.id === "offered_totals" && (
+                  <p className="text-xs text-slate-500 mb-4">
+                    Actieve KPI-filter: {offeredKpiFilter === "COMPLETED" ? "Gereedgemeld" : offeredKpiFilter === "OFFERED" ? "Aangeboden" : offeredKpiFilter === "PRODUCED_NOT_OFFERED" ? "Geproduceerd, niet aangeboden" : "Alles"}
+                  </p>
+                )}
                 <div className="space-y-3">
-                  {reportData.chartData.map((item, index) => {
-                    const maxValue = Math.max(...reportData.chartData.map((d) => d.value));
+                  {(selectedReport?.id === "offered_totals" && offeredKpiFilter === "PRODUCED_NOT_OFFERED"
+                    ? (reportData.departmentOverview || []).map((d) => ({ label: getDepartmentDisplayLabel(d.department), value: d.producedNotOffered }))
+                    : (reportData.chartData || []).map((d) => ({ label: getDepartmentDisplayLabel(d.label), value: d.value }))
+                  ).map((item, index, arr) => {
+                    const maxValue = Math.max(1, ...arr.map((d) => d.value));
                     const percentage = (item.value / maxValue) * 100;
                     
                     return (
@@ -1331,30 +2118,323 @@ const AdminReportsView = () => {
                 </div>
               </div>
 
+              {selectedReport?.id === "offered_totals" && Array.isArray(reportData.departmentOverview) && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-slate-200">
+                    <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">
+                      Afdelingsoverzicht Gereedmelding
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
+                            Afdeling
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
+                            Gereedgemeld (Eindinspectie)
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
+                            Geproduceerd, Nog Niet Aangeboden
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {reportData.departmentOverview
+                          .filter((dept) => {
+                            if (offeredKpiFilter === "COMPLETED") return dept.completedAtInspection > 0;
+                            if (offeredKpiFilter === "PRODUCED_NOT_OFFERED") return dept.producedNotOffered > 0;
+                            return true;
+                          })
+                          .map((dept) => (
+                          <tr key={dept.department} className="hover:bg-slate-50">
+                            <td className="px-6 py-4 text-sm font-semibold text-slate-800">{getDepartmentDisplayLabel(dept.department)}</td>
+                            <td className="px-6 py-4 text-sm text-slate-700">{dept.completedAtInspection.toLocaleString()}</td>
+                            <td className="px-6 py-4 text-sm text-slate-700">{dept.producedNotOffered.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {selectedReport?.id === "offered_totals" && Array.isArray(reportData.stationOverview) && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-slate-200">
+                    <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">
+                      Werkstation Overzicht
+                    </h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-slate-50 border-b border-slate-200">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
+                            Werkstation
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
+                            Gereedgemeld
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
+                            Geproduceerd, Nog Niet Aangeboden
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {reportData.stationOverview
+                          .filter((station) => {
+                            if (offeredKpiFilter === "COMPLETED") return station.completedAtInspection > 0;
+                            if (offeredKpiFilter === "PRODUCED_NOT_OFFERED") return station.producedNotOffered > 0;
+                            return true;
+                          })
+                          .map((station) => (
+                            <tr key={station.workstation} className="hover:bg-slate-50">
+                              <td className="px-6 py-4 text-sm font-semibold text-slate-800">{station.workstation}</td>
+                              <td className="px-6 py-4 text-sm text-slate-700">{station.completedAtInspection.toLocaleString()}</td>
+                              <td className="px-6 py-4 text-sm text-slate-700">{station.producedNotOffered.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {selectedReport?.id === "offered_totals" && kpiPopup.open && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+                  <div className="bg-white w-full max-w-6xl rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+                    <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">
+                          {kpiPopup.type === "COMPLETED" && "KPI Detail: Gereedgemeld"}
+                          {kpiPopup.type === "OFFERED" && "KPI Detail: Aangeboden"}
+                          {kpiPopup.type === "PRODUCED_NOT_OFFERED" && "KPI Detail: Geproduceerd, Niet Aangeboden"}
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-1">Per afdeling en per werkstation binnen de huidige periode/filters.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={closeKpiPopup}
+                        className="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-bold hover:bg-slate-200"
+                      >
+                        Sluiten
+                      </button>
+                    </div>
+
+                    <div className="p-6 overflow-auto space-y-6">
+                      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-200">
+                          <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Per Afdeling</h4>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-slate-50 border-b border-slate-200">
+                              <tr>
+                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Afdeling</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Aantal</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                              {(reportData.departmentOverview || [])
+                                .map((dept) => ({
+                                  label: getDepartmentDisplayLabel(dept.department),
+                                  value:
+                                    kpiPopup.type === "COMPLETED"
+                                      ? dept.completedAtInspection
+                                      : kpiPopup.type === "OFFERED"
+                                      ? (dept.offeredToInspection || 0)
+                                      : dept.producedNotOffered,
+                                }))
+                                .filter((row) => row.value > 0)
+                                .sort((a, b) => b.value - a.value)
+                                .map((row) => (
+                                  <tr key={`popup-dept-${row.label}`} className="hover:bg-slate-50">
+                                    <td className="px-6 py-4 text-sm font-semibold text-slate-800">{row.label}</td>
+                                    <td className="px-6 py-4 text-sm text-slate-700">{row.value.toLocaleString()}</td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-200">
+                          <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Per Werkstation</h4>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full">
+                            <thead className="bg-slate-50 border-b border-slate-200">
+                              <tr>
+                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Werkstation</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Aantal</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-200">
+                              {(reportData.stationOverview || [])
+                                .map((station) => ({
+                                  label: station.workstation,
+                                  value:
+                                    kpiPopup.type === "COMPLETED"
+                                      ? station.completedAtInspection
+                                      : kpiPopup.type === "OFFERED"
+                                      ? (station.offeredToInspection || 0)
+                                      : station.producedNotOffered,
+                                }))
+                                .filter((row) => row.value > 0)
+                                .sort((a, b) => b.value - a.value)
+                                .map((row) => (
+                                  <tr key={`popup-station-${row.label}`} className="hover:bg-slate-50">
+                                    <td className="px-6 py-4 text-sm font-semibold text-slate-800">{row.label}</td>
+                                    <td className="px-6 py-4 text-sm text-slate-700">{row.value.toLocaleString()}</td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {selectedReport?.id === "offered_totals" && Array.isArray(reportData.timelineData) && reportData.timelineData.length > 0 && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                  <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-6">
+                    Aangeboden Trend (Dag/Week)
+                  </h3>
+                  <div className="space-y-3">
+                    {reportData.timelineData.map((item, index) => {
+                      const maxValue = Math.max(1, ...reportData.timelineData.map((d) => d.value));
+                      const percentage = (item.value / maxValue) * 100;
+
+                      return (
+                        <div key={`timeline-${index}`} className="flex items-center gap-4">
+                          <div
+                            className="w-36 shrink-0 text-sm font-black text-slate-700 truncate"
+                            title={item.label}
+                          >
+                            {item.label}
+                          </div>
+                          <div className="flex-1 min-w-0 bg-slate-100 rounded-full h-8 overflow-hidden">
+                            <div
+                              className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-full flex items-center justify-end px-3 transition-all duration-500"
+                              style={{ width: `${percentage}%` }}
+                            >
+                              <span className="text-white text-xs font-bold">{item.value}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Details Table */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-200">
                   <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">
                     Gedetailleerd Overzicht
                   </h3>
+                  {selectedReport?.id === "product_measurements" && (
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <select
+                        value={measurementDetailMode}
+                        onChange={(e) => {
+                          const mode = e.target.value;
+                          setMeasurementDetailMode(mode);
+                          if (mode !== "browse_week") setMeasurementWeekOffset(0);
+                        }}
+                        className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700"
+                      >
+                        <option value="current_week">Huidige Week</option>
+                        <option value="browse_week">Terugbladeren per Week</option>
+                        <option value="all">Alles</option>
+                      </select>
+
+                      {measurementDetailMode === "browse_week" && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setMeasurementWeekOffset((prev) => prev + 1)}
+                            className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-200"
+                          >
+                            ← Oudere Week
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMeasurementWeekOffset((prev) => Math.max(prev - 1, 0))}
+                            disabled={measurementWeekOffset === 0}
+                            className="px-3 py-2 bg-slate-100 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Nieuwere Week →
+                          </button>
+                          <span className="text-xs text-slate-500 font-semibold">
+                            {measurementWeekOffset === 0 ? "Deze week" : `${measurementWeekOffset} week(en) terug`}
+                          </span>
+                        </>
+                      )}
+                      <input
+                        type="text"
+                        placeholder="Zoeken op lotnummer..."
+                        value={measurementLotNumberSearch}
+                        onChange={(e) => setMeasurementLotNumberSearch(e.target.value)}
+                        className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 placeholder-slate-400"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-slate-50 border-b border-slate-200">
                       <tr>
                         <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
-                          Product
+                          {selectedReport?.id === "lead_time"
+                            ? "Doorlooptijd Metric"
+                            : selectedReport?.id === "order_completion"
+                            ? "Order"
+                            : selectedReport?.id === "wip_status"
+                            ? "WIP Segment"
+                            : selectedReport?.id === "production_output"
+                            ? "Output Segment"
+                            : "Product"}
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
-                          {selectedReport?.id === "product_measurements" ? "Metingen" : "Aantal"}
+                          {selectedReport?.id === "product_measurements"
+                            ? "Metingen"
+                            : selectedReport?.id === "lead_time"
+                            ? "Waarde"
+                            : selectedReport?.id === "order_completion"
+                            ? "Voortgang"
+                            : "Aantal"}
                         </th>
+                        {selectedReport?.id === "product_measurements" && (
+                          <>
+                            <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
+                              TG
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
+                              Brix
+                            </th>
+                          </>
+                        )}
                         <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">
                           Status
                         </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                      {reportData.details.map((detail) => (
+                      {reportData.details
+                        .filter((detail) => {
+                          if (selectedReport?.id === "product_measurements" && measurementLotNumberSearch.trim()) {
+                            return detail.name.toLowerCase().includes(measurementLotNumberSearch.toLowerCase());
+                          }
+                          return true;
+                        })
+                        .map((detail) => (
                         <tr key={detail.id} className="hover:bg-slate-50">
                           <td className="px-6 py-4 text-sm font-medium text-slate-800">{detail.name}</td>
                           <td className="px-6 py-4 text-sm text-slate-600">
@@ -1367,6 +2447,12 @@ const AdminReportsView = () => {
                               detail.count
                             )}
                           </td>
+                          {selectedReport?.id === "product_measurements" && (
+                            <>
+                              <td className="px-6 py-4 text-sm text-slate-700 font-semibold">{detail.tgValue || "-"}</td>
+                              <td className="px-6 py-4 text-sm text-slate-700 font-semibold">{detail.brixValue || "-"}</td>
+                            </>
+                          )}
                           <td className="px-6 py-4">
                             <span
                               className={`px-2 py-1 rounded-lg text-xs font-bold ${

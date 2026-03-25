@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { doc, onSnapshot } from "firebase/firestore";
-import { db } from "../config/firebase";
+import { doc, onSnapshot, getDoc } from "firebase/firestore";
+import { db, auth } from "../config/firebase";
 import { PATHS } from "../config/dbPaths";
+import { parseAuthQR } from "../utils/qrAuth";
+import MobileScanner from "./MobileScanner";
 import {
   Factory,
   KeyRound,
@@ -13,6 +16,8 @@ import {
   ShieldCheck,
   Globe,
   Check,
+  QrCode,
+  X,
 } from "lucide-react";
 import AccountRequestModal from "./AccountRequestModal";
 
@@ -23,11 +28,13 @@ import AccountRequestModal from "./AccountRequestModal";
  */
 const LoginView = ({ onLogin, externalError, logoUrl, appName }) => {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState({ appName: appName || "Future Factory", logoUrl: logoUrl || "" });
   const [showLangMenu, setShowLangMenu] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
   // Load settings for logo and app name
   useEffect(() => {
@@ -80,12 +87,54 @@ const LoginView = ({ onLogin, externalError, logoUrl, appName }) => {
 
     try {
       await onLogin(email, password);
+      
+      setTimeout(async () => {
+        let destination = "/";
+        try {
+          if (auth.currentUser) {
+            const userSnap = await getDoc(doc(db, ...PATHS.USERS, auth.currentUser.uid));
+            if (userSnap.exists() && userSnap.data().defaultRoute) {
+              destination = userSnap.data().defaultRoute;
+            }
+          }
+        } catch (e) { console.error("Error fetching user defaults", e); }
+        navigate(destination);
+      }, 500);
     } catch (err) {
       console.error("❌ Login Component Fout:", err);
       setInternalError(t('login.error_auth', 'Login failed'));
-
-    } finally {
       setLoading(false);
+    }
+  };
+
+  const handleScan = async (scannedData) => {
+    if (!scannedData) return;
+    
+    const credentials = parseAuthQR(scannedData);
+    
+    if (credentials) {
+      setShowScanner(false);
+      setLoading(true);
+      try {
+        await onLogin(credentials.email, credentials.password);
+        
+        setTimeout(async () => {
+          let destination = credentials.redirectPath || "/planning";
+          try {
+            if (auth.currentUser) {
+              const userSnap = await getDoc(doc(db, ...PATHS.USERS, auth.currentUser.uid));
+              if (userSnap.exists() && userSnap.data().defaultRoute) {
+                destination = userSnap.data().defaultRoute;
+              }
+            }
+          } catch (e) { console.error("Error fetching user defaults", e); }
+          navigate(destination);
+        }, 500);
+      } catch (_err) {
+        // eslint-disable-next-line no-unused-vars
+        setInternalError(t('login.error_auth', 'Login failed'));
+        setLoading(false);
+      }
     }
   };
 
@@ -246,6 +295,21 @@ const LoginView = ({ onLogin, externalError, logoUrl, appName }) => {
                 )}
               </button>
 
+              <div className="relative flex py-2 items-center">
+                <div className="flex-grow border-t border-white/10"></div>
+                <span className="flex-shrink-0 mx-4 text-[9px] font-bold text-cyan-200/40 uppercase tracking-widest">{t('common.or', 'OF')}</span>
+                <div className="flex-grow border-t border-white/10"></div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowScanner(true)}
+                className="w-full bg-emerald-600/90 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-[0.2em] hover:bg-emerald-500 transition-all flex items-center justify-center gap-3 shadow-lg active:scale-95"
+              >
+                <QrCode size={18} />
+                {t('login.scan_badge', 'Scan Login Badge')}
+              </button>
+
               <button
                 type="button"
                 onClick={(e) => {
@@ -270,6 +334,25 @@ const LoginView = ({ onLogin, externalError, logoUrl, appName }) => {
           </div>
         </div>
       </div>
+
+      {/* Scanner Modal */}
+      {showScanner && (
+        <div className="fixed inset-0 z-[200] bg-black/90 flex flex-col items-center justify-center p-4 animate-in fade-in">
+          <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden relative">
+            <div className="p-4 bg-slate-900 flex justify-between items-center text-white">
+              <h3 className="font-bold text-sm uppercase tracking-widest">{t('login.scan_badge', 'Scan Login Badge')}</h3>
+              <button onClick={() => setShowScanner(false)} className="p-2 hover:bg-white/10 rounded-full"><X size={20} /></button>
+            </div>
+            <div className="h-80 bg-black relative">
+              <MobileScanner onScan={handleScan} active={showScanner} />
+              <div className="absolute inset-0 border-2 border-emerald-500/50 m-12 rounded-2xl pointer-events-none animate-pulse"></div>
+            </div>
+            <div className="p-6 text-center text-slate-500 text-xs font-bold uppercase tracking-wide">
+              {t('login.scan_instruction', 'Houd de QR-code voor de camera')}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Account Request Modal */}
       <AccountRequestModal 

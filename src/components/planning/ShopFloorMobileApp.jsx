@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { 
   Activity, 
   CheckCircle,
@@ -38,6 +39,7 @@ import StatusBadge from "../digitalplanning/common/StatusBadge";
  * Overzicht van alle machines, downtimes, QC issues en order status
  */
 const ShopFloorMobileApp = () => {
+  const { t } = useTranslation();
   const { user, role } = useAdminAuth();
   const [machines, setMachines] = useState([]);
   const [allOrders, setAllOrders] = useState([]);
@@ -433,8 +435,8 @@ const ShopFloorMobileApp = () => {
       <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6">
         <div className="text-center text-white">
           <AlertTriangle className="mx-auto mb-4 text-amber-500" size={48} />
-          <div className="text-xl font-bold mb-2">Niet ingelogd</div>
-          <div className="text-sm text-slate-400">Log in om toegang te krijgen</div>
+          <div className="text-xl font-bold mb-2">{t("planning.shopFloor.notLoggedIn", "Niet ingelogd")}</div>
+          <div className="text-sm text-slate-400">{t("planning.shopFloor.loginToAccess", "Log in om toegang te krijgen")}</div>
         </div>
       </div>
     );
@@ -445,25 +447,25 @@ const ShopFloorMobileApp = () => {
     
     try {
       const commonData = {
-        machine: scanResult.data.machine || "Onbekend",
+        machine: scanResult.data.machine || t("planning.shopFloor.unknown", "Onbekend"),
         createdAt: serverTimestamp(),
         createdBy: user.uid,
-        operatorName: user.displayName || "Operator",
+        operatorName: user.displayName || t("planning.shopFloor.operator", "Operator"),
         orderId: scanResult.data.orderId || scanResult.data.id || null
       };
 
       if (issueType === 'downtime') {
         await addDoc(collection(db, ...PATHS.DOWNTIME), {
           ...commonData,
-          reason: issueDescription || "Gemeld door operator",
+          reason: issueDescription || t("planning.shopFloor.reportedByOperator", "Gemeld door operator"),
           status: "active",
           type: "unplanned"
         });
       } else {
         await addDoc(collection(db, ...PATHS.DEFECTS), {
           ...commonData,
-          defectType: "Operator Melding",
-          description: issueDescription || "Defect gemeld via scanner",
+          defectType: t("planning.shopFloor.operatorReport", "Operator Melding"),
+          description: issueDescription || t("planning.shopFloor.defectReportedViaScanner", "Defect gemeld via scanner"),
           severity: "medium",
           status: "open",
           lotNumber: scanResult.data.lotNumber || null,
@@ -472,8 +474,13 @@ const ShopFloorMobileApp = () => {
 
       // Stuur notificatie naar teamleider (Alert)
       await addDoc(collection(db, ...PATHS.MESSAGES), {
-        title: issueType === 'downtime' ? "⚠️ Stilstand Gemeld" : "🚩 Defect Gemeld",
-        message: `${user.displayName || 'Operator'} meldt ${issueType === 'downtime' ? 'stilstand' : 'defect'} op ${commonData.machine}: ${issueDescription || 'Geen toelichting'}`,
+        title: issueType === 'downtime' ? t("planning.shopFloor.downtimeReportedTitle", "⚠️ Stilstand Gemeld") : t("planning.shopFloor.defectReportedTitle", "🚩 Defect Gemeld"),
+        message: t("planning.shopFloor.issueNotificationMessage", "{{name}} meldt {{issue}} op {{machine}}: {{description}}", {
+          name: user.displayName || t("planning.shopFloor.operator", "Operator"),
+          issue: issueType === 'downtime' ? t("planning.shopFloor.downtime", "stilstand") : t("planning.shopFloor.defect", "defect"),
+          machine: commonData.machine,
+          description: issueDescription || t("planning.shopFloor.noExplanation", "Geen toelichting"),
+        }),
         type: "alert",
         priority: "high",
         status: "unread",
@@ -487,10 +494,10 @@ const ShopFloorMobileApp = () => {
       setShowIssueModal(false);
       setIssueDescription("");
       setIssueType(null);
-      alert("Melding succesvol verstuurd");
+      alert(t("planning.shopFloor.issueSent", "Melding succesvol verstuurd"));
     } catch (error) {
       console.error("Error reporting issue:", error);
-      alert("Fout bij versturen melding.");
+      alert(t("planning.shopFloor.issueSendError", "Fout bij versturen melding."));
     }
   };
 
@@ -506,11 +513,11 @@ const ShopFloorMobileApp = () => {
              </div>
              <div>
                <h1 className="font-black text-lg text-slate-800 leading-none">Operator</h1>
-               <p className="text-[10px] font-bold text-slate-400 uppercase">Scanner</p>
+               <p className="text-[10px] font-bold text-slate-400 uppercase">{t("planning.shopFloor.scanner", "Scanner")}</p>
              </div>
            </div>
            <div className="bg-slate-100 px-3 py-1 rounded-full text-xs font-bold text-slate-600">
-             {user?.displayName?.split(' ')[0] || 'Op'}
+             {user?.displayName?.split(' ')[0] || t("planning.shopFloor.operatorShort", "Op")}
            </div>
         </div>
 
@@ -526,9 +533,9 @@ const ShopFloorMobileApp = () => {
                 </div>
                 
                 <h2 className="text-2xl font-black text-slate-800 mb-2">
-                  {scanResult.type === 'product' ? 'Product Gevonden' :
-                   scanResult.type === 'order' ? 'Order Gevonden' :
-                   scanResult.type === 'personnel' ? 'Personeel' : 'Niet Gevonden'}
+                  {scanResult.type === 'product' ? t("planning.shopFloor.productFound", "Product Gevonden") :
+                   scanResult.type === 'order' ? t("planning.shopFloor.orderFound", "Order Gevonden") :
+                   scanResult.type === 'personnel' ? t("planning.shopFloor.personnel", "Personeel") : t("planning.shopFloor.notFound", "Niet Gevonden")}
                 </h2>
                 
                 <div className="w-full bg-slate-50 rounded-xl p-4 mb-6 text-left space-y-3">
@@ -537,18 +544,19 @@ const ShopFloorMobileApp = () => {
                        {scanResult.data.lotNumber && (
                          <div>
                            <span className="text-[10px] font-bold text-slate-400 uppercase block">Lotnummer</span>
+                           <span className="text-[10px] font-bold text-slate-400 uppercase block">{t("planning.shopFloor.lotNumber", "Lotnummer")}</span>
                            <span className="text-lg font-bold text-slate-900">{scanResult.data.lotNumber}</span>
                          </div>
                        )}
                        {(scanResult.data.orderId || scanResult.data.id) && (
                          <div>
-                           <span className="text-[10px] font-bold text-slate-400 uppercase block">ID / Order</span>
+                           <span className="text-[10px] font-bold text-slate-400 uppercase block">{t("planning.shopFloor.idOrder", "ID / Order")}</span>
                            <span className="text-base font-bold text-slate-900">{scanResult.data.orderId || scanResult.data.id}</span>
                          </div>
                        )}
                        {scanResult.data.status && (
                          <div>
-                           <span className="text-[10px] font-bold text-slate-400 uppercase block">Status</span>
+                           <span className="text-[10px] font-bold text-slate-400 uppercase block">{t("planning.shopFloor.status", "Status")}</span>
                            <span className="inline-block px-2 py-1 bg-white rounded border border-slate-200 text-sm font-bold text-slate-700 mt-1">
                              {scanResult.data.status}
                            </span>
@@ -556,7 +564,7 @@ const ShopFloorMobileApp = () => {
                        )}
                      </>
                    ) : (
-                     <p className="text-slate-500 font-medium">Geen gegevens gevonden voor code: <span className="font-mono font-bold">{scanResult.code}</span></p>
+                     <p className="text-slate-500 font-medium">{t("planning.shopFloor.noDataForCode", "Geen gegevens gevonden voor code:")} <span className="font-mono font-bold">{scanResult.code}</span></p>
                    )}
                 </div>
 
@@ -570,7 +578,7 @@ const ShopFloorMobileApp = () => {
                       className="py-4 bg-red-50 text-red-600 rounded-2xl font-bold text-xs uppercase flex flex-col items-center justify-center gap-2 border-2 border-red-100 active:scale-95 transition-all"
                     >
                       <AlertTriangle size={24} />
-                      Defect
+                      {t("planning.shopFloor.defect", "Defect")}
                     </button>
                     <button 
                       onClick={() => {
@@ -580,7 +588,7 @@ const ShopFloorMobileApp = () => {
                       className="py-4 bg-orange-50 text-orange-600 rounded-2xl font-bold text-xs uppercase flex flex-col items-center justify-center gap-2 border-2 border-orange-100 active:scale-95 transition-all"
                     >
                       <Clock size={24} />
-                      Stilstand
+                      {t("planning.shopFloor.downtime", "Stilstand")}
                     </button>
                   </div>
                 )}
@@ -589,7 +597,7 @@ const ShopFloorMobileApp = () => {
                   onClick={closeScanner}
                   className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all"
                 >
-                  Volgende Scan
+                  {t("planning.shopFloor.nextScan", "Volgende Scan")}
                 </button>
              </div>
            ) : showScanner ? (
@@ -603,11 +611,11 @@ const ShopFloorMobileApp = () => {
                   <div className="bg-white/20 p-6 rounded-full">
                     <ScanLine size={48} />
                   </div>
-                  <span className="text-2xl font-black uppercase tracking-widest">Scan QR</span>
+                  <span className="text-2xl font-black uppercase tracking-widest">{t("planning.shopFloor.scanQr", "Scan QR")}</span>
                 </button>
 
                 <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200">
-                  <label className="text-xs font-bold text-slate-400 uppercase block mb-2">Of zoek handmatig</label>
+                  <label className="text-xs font-bold text-slate-400 uppercase block mb-2">{t("planning.shopFloor.orSearchManually", "Of zoek handmatig")}</label>
                   <form 
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -623,7 +631,7 @@ const ShopFloorMobileApp = () => {
                       value={operatorCode}
                       onChange={(e) => setOperatorCode(e.target.value)}
                       className="flex-1 bg-slate-50 border-2 border-slate-100 rounded-xl px-4 py-3 font-bold text-slate-800 outline-none focus:border-blue-500 transition-all"
-                      placeholder="Code invoeren..."
+                      placeholder={t("planning.shopFloor.enterCode", "Code invoeren...")}
                     />
                     <button type="submit" className="bg-slate-900 text-white px-6 rounded-xl font-bold">
                       <ArrowRight size={20} />
@@ -638,15 +646,15 @@ const ShopFloorMobileApp = () => {
              <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
                <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl">
                  <h3 className="text-xl font-black text-slate-800 mb-2">
-                   {issueType === 'defect' ? 'Defect Melden' : 'Stilstand Melden'}
+                   {issueType === 'defect' ? t("planning.shopFloor.reportDefect", "Defect Melden") : t("planning.shopFloor.reportDowntime", "Stilstand Melden")}
                  </h3>
                  <p className="text-sm text-slate-500 mb-4">
-                   {scanResult?.data?.lotNumber ? `Lot: ${scanResult.data.lotNumber}` : `Item: ${scanResult?.data?.orderId || 'Onbekend'}`}
+                   {scanResult?.data?.lotNumber ? `${t("planning.shopFloor.lot", "Lot")}: ${scanResult.data.lotNumber}` : `${t("planning.shopFloor.item", "Item")}: ${scanResult?.data?.orderId || t("planning.shopFloor.unknown", "Onbekend")}`}
                  </p>
                  
                  <textarea
                    className="w-full p-4 bg-slate-50 rounded-xl border-2 border-slate-100 font-bold text-slate-700 outline-none focus:border-blue-500 min-h-[120px] mb-4"
-                   placeholder="Beschrijf het probleem..."
+                   placeholder={t("planning.shopFloor.describeProblem", "Beschrijf het probleem...")}
                    value={issueDescription}
                    onChange={(e) => setIssueDescription(e.target.value)}
                  />
@@ -656,7 +664,7 @@ const ShopFloorMobileApp = () => {
                      onClick={() => setShowIssueModal(false)}
                      className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold uppercase text-xs"
                    >
-                     Annuleren
+                       {t("planning.shopFloor.cancel", "Annuleren")}
                    </button>
                    <button 
                      onClick={submitIssue}
@@ -664,7 +672,7 @@ const ShopFloorMobileApp = () => {
                        issueType === 'defect' ? 'bg-red-600' : 'bg-orange-500'
                      }`}
                    >
-                     Versturen
+                     {t("planning.shopFloor.send", "Versturen")}
                    </button>
                  </div>
                </div>
@@ -699,23 +707,23 @@ const ShopFloorMobileApp = () => {
                     <>
                       <div className="text-center mb-4">
                         <CheckCircle className="mx-auto text-emerald-500 mb-2" size={48} />
-                        <div className="text-2xl font-black text-slate-800">Product Gevonden</div>
+                        <div className="text-2xl font-black text-slate-800">{t("planning.shopFloor.productFound", "Product Gevonden")}</div>
                       </div>
                       <div className="space-y-3">
                         <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Lotnummer</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.lotNumber", "Lotnummer")}</div>
                           <div className="text-lg font-bold text-slate-900">{scanResult.data.lotNumber}</div>
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Order</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.order", "Order")}</div>
                           <div className="text-sm font-bold text-slate-700">{scanResult.data.orderId}</div>
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Machine</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.machine", "Machine")}</div>
                           <div className="text-sm font-bold text-slate-700">{scanResult.data.machine}</div>
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Status</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.status", "Status")}</div>
                           <StatusBadge status={scanResult.data.status} />
                         </div>
                       </div>
@@ -724,7 +732,7 @@ const ShopFloorMobileApp = () => {
                           onClick={() => { setProductToMove(scanResult.data); closeScanner(); }}
                           className="w-full mt-2 py-3 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
                         >
-                          <ArrowRightLeft size={18} /> Verplaats Product
+                          <ArrowRightLeft size={18} /> {t("planning.shopFloor.moveProduct", "Verplaats Product")}
                         </button>
                       )}
                     </>
@@ -732,23 +740,23 @@ const ShopFloorMobileApp = () => {
                     <>
                       <div className="text-center mb-4">
                         <CheckCircle className="mx-auto text-blue-500 mb-2" size={48} />
-                        <div className="text-2xl font-black text-slate-800">Order Gevonden</div>
+                        <div className="text-2xl font-black text-slate-800">{t("planning.shopFloor.orderFound", "Order Gevonden")}</div>
                       </div>
                       <div className="space-y-3">
                         <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Order ID</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.orderId", "Order ID")}</div>
                           <div className="text-lg font-bold text-slate-900">{scanResult.data.orderId}</div>
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Item</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.item", "Item")}</div>
                           <div className="text-sm font-bold text-slate-700">{scanResult.data.item}</div>
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Machine</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.machine", "Machine")}</div>
                           <div className="text-sm font-bold text-slate-700">{scanResult.data.machine}</div>
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Status</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.status", "Status")}</div>
                           <StatusBadge status={scanResult.data.status} />
                         </div>
                       </div>
@@ -756,27 +764,27 @@ const ShopFloorMobileApp = () => {
                         onClick={() => { closeScanner(); setSelectedOrder(scanResult.data); }}
                         className="w-full mt-4 py-3 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-xl font-bold transition-colors"
                       >
-                        Bekijk Details
+                        {t("planning.shopFloor.viewDetails", "Bekijk Details")}
                       </button>
                     </>
                   ) : scanResult.type === "personnel" ? (
                     <>
                       <div className="text-center mb-4">
                         <UserCheck className="mx-auto text-purple-500 mb-2" size={48} />
-                        <div className="text-2xl font-black text-slate-800">Personeel</div>
+                        <div className="text-2xl font-black text-slate-800">{t("planning.shopFloor.personnel", "Personeel")}</div>
                       </div>
                       <div className="space-y-3">
                         <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Naam</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.name", "Naam")}</div>
                           <div className="text-lg font-bold text-slate-900">{scanResult.data.name}</div>
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Personeelsnummer</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.employeeNumber", "Personeelsnummer")}</div>
                           <div className="text-sm font-bold text-slate-700">{scanResult.data.employeeNumber}</div>
                         </div>
                         <div>
-                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">Afdeling</div>
-                          <div className="text-sm font-bold text-slate-700">{scanResult.data.departmentId || "Algemeen"}</div>
+                          <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.department", "Afdeling")}</div>
+                          <div className="text-sm font-bold text-slate-700">{scanResult.data.departmentId || t("planning.shopFloor.general", "Algemeen")}</div>
                         </div>
                       </div>
                     </>
@@ -784,10 +792,10 @@ const ShopFloorMobileApp = () => {
                     <>
                       <div className="text-center mb-4">
                         <AlertTriangle className="mx-auto text-amber-500 mb-2" size={48} />
-                        <div className="text-2xl font-black text-slate-800">Niet Gevonden</div>
+                        <div className="text-2xl font-black text-slate-800">{t("planning.shopFloor.notFound", "Niet Gevonden")}</div>
                       </div>
                       <div className="text-center text-slate-600">
-                        Code <span className="font-mono font-bold">{scanResult.code}</span> niet gevonden in systeem.
+                        {t("planning.shopFloor.codeNotFound", "Code")} <span className="font-mono font-bold">{scanResult.code}</span> {t("planning.shopFloor.notFoundInSystem", "niet gevonden in systeem.")}
                       </div>
                     </>
                   )}
@@ -796,7 +804,7 @@ const ShopFloorMobileApp = () => {
                     onClick={closeScanner}
                     className="w-full mt-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition-colors"
                   >
-                    Sluiten
+                    {t("planning.shopFloor.close", "Sluiten")}
                   </button>
                 </div>
               </div>
@@ -817,7 +825,7 @@ const ShopFloorMobileApp = () => {
                   {selectedOrder.orderId || selectedOrder.item}
                 </h3>
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                  Order Details
+                  {t("planning.shopFloor.orderDetails", "Order Details")}
                 </p>
               </div>
               <button 
@@ -838,22 +846,23 @@ const ShopFloorMobileApp = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Product</div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{t("planning.shopFloor.product", "Product")}</div>
                   <div className="font-bold text-slate-800 text-sm">{selectedOrder.itemCode || selectedOrder.item}</div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Aantal</div>
-                  <div className="font-bold text-slate-800 text-sm">{selectedOrder.plan || 0} stuks</div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{t("planning.shopFloor.quantity", "Aantal")}</div>
+                  <div className="font-bold text-slate-800 text-sm">{t("planning.shopFloor.quantityPieces", "{{count}} stuks", { count: selectedOrder.plan || 0 })}</div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Machine</div>
-                  <div className="font-bold text-slate-800 text-sm">{selectedOrder.machine || "Niet toegewezen"}</div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{t("planning.shopFloor.machine", "Machine")}</div>
+                  <div className="font-bold text-slate-800 text-sm">{selectedOrder.machine || t("planning.shopFloor.notAssigned", "Niet toegewezen")}</div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Geplande Datum</div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{t("planning.shopFloor.plannedDate", "Geplande Datum")}</div>
                   <div className="font-bold text-slate-800 text-sm">
                     {selectedOrder.plannedDate?.seconds 
                       ? format(new Date(selectedOrder.plannedDate.seconds * 1000), 'dd MMM yyyy', { locale: nl })
-                      : "Niet gepland"}
+                      : t("planning.shopFloor.notPlanned", "Niet gepland")}
                   </div>
                 </div>
               </div>
@@ -862,7 +871,7 @@ const ShopFloorMobileApp = () => {
               {selectedOrder.notes && (
                 <div className="p-4 bg-yellow-50 rounded-2xl border border-yellow-100">
                   <div className="text-[10px] font-black text-yellow-600 uppercase mb-1 flex items-center gap-2">
-                    <Info size={12} /> Notities
+                    <Info size={12} /> {t("planning.shopFloor.notes", "Notities")}
                   </div>
                   <p className="text-sm text-yellow-800 italic">"{selectedOrder.notes}"</p>
                 </div>
@@ -872,6 +881,7 @@ const ShopFloorMobileApp = () => {
               {selectedOrderProducts.length > 0 && (
                 <div className="mt-6 pt-6 border-t border-slate-100">
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Producten ({selectedOrderProducts.length})</h4>
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">{t("planning.shopFloor.productsCount", "Producten ({{count}})", { count: selectedOrderProducts.length })}</h4>
                   <div className="space-y-2">
                     {selectedOrderProducts.map(p => (
                       <div key={p.id} className="bg-slate-50 p-3 rounded-xl flex justify-between items-center border border-slate-100">
@@ -897,7 +907,7 @@ const ShopFloorMobileApp = () => {
                 onClick={() => setSelectedOrder(null)}
                 className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-800 transition-all"
               >
-                Sluiten
+                {t("planning.shopFloor.close", "Sluiten")}
               </button>
             </div>
           </div>
@@ -910,9 +920,9 @@ const ShopFloorMobileApp = () => {
       <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 p-6 shadow-lg sticky top-0 z-10">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <div className="text-white text-2xl font-black">Mobile Inspector</div>
+            <div className="text-white text-2xl font-black">{t("planning.shopFloor.mobileInspector", "Mobile Inspector")}</div>
             <div className="text-indigo-200 text-sm font-bold mt-1">
-              Werkvloer Overzicht
+              {t("planning.shopFloor.floorOverview", "Werkvloer Overzicht")}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -931,7 +941,7 @@ const ShopFloorMobileApp = () => {
         {/* Stats Cards */}
         <div className="grid grid-cols-4 gap-3">
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3">
-            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">Actief</div>
+            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">{t("planning.shopFloor.active", "Actief")}</div>
             <div className="text-white text-2xl font-black flex items-baseline gap-1">
               {issuesSummary.activeMachines}
               <span className="text-sm font-bold opacity-60">/ {activeProductsCount}</span>
@@ -939,15 +949,15 @@ const ShopFloorMobileApp = () => {
             <div className="text-[8px] text-white/40 font-bold uppercase mt-1">Machines / Producten</div>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3">
-            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">Stilstand</div>
+            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">{t("planning.shopFloor.downtime", "Stilstand")}</div>
             <div className="text-white text-2xl font-black">{issuesSummary.totalDowntime}</div>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3">
-            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">Defecten</div>
+            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">{t("planning.shopFloor.defects", "Defecten")}</div>
             <div className="text-white text-2xl font-black">{issuesSummary.totalDefects}</div>
           </div>
           <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3">
-            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">Issues</div>
+            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">{t("planning.shopFloor.issues", "Issues")}</div>
             <div className="text-white text-2xl font-black">{issuesSummary.machinesWithIssues}</div>
           </div>
         </div>
@@ -961,7 +971,7 @@ const ShopFloorMobileApp = () => {
              <div className="flex items-center gap-2 px-4 py-3 bg-slate-100 rounded-xl text-slate-600 font-bold text-sm w-full border border-slate-200">
                <Building2 size={16} />
                {selectedDepartment}
-               <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded text-slate-500 ml-auto uppercase tracking-wider">Toegewezen</span>
+               <span className="text-[10px] bg-slate-200 px-2 py-0.5 rounded text-slate-500 ml-auto uppercase tracking-wider">{t("planning.shopFloor.assigned", "Toegewezen")}</span>
              </div>
            ) : (
              <div className="relative w-full">
@@ -983,7 +993,7 @@ const ShopFloorMobileApp = () => {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
             type="text"
-            placeholder="Zoek machine, operator, order..."
+            placeholder={t("planning.shopFloor.searchPlaceholder", "Zoek machine, operator, order...")}
             className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 transition-all"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -999,7 +1009,7 @@ const ShopFloorMobileApp = () => {
                 : "bg-slate-100 text-slate-600"
             }`}
           >
-            Alle ({machineStats.length})
+            {t("planning.shopFloor.allMachines", "Alle", { count: machineStats.length })} ({machineStats.length})
           </button>
           <button
             onClick={() => setFilterStatus("active")}
@@ -1009,7 +1019,7 @@ const ShopFloorMobileApp = () => {
                 : "bg-slate-100 text-slate-600"
             }`}
           >
-            Actief ({issuesSummary.activeMachines})
+            {t("planning.shopFloor.active", "Actief")} ({issuesSummary.activeMachines})
           </button>
           <button
             onClick={() => setFilterStatus("issues")}
@@ -1019,7 +1029,7 @@ const ShopFloorMobileApp = () => {
                 : "bg-slate-100 text-slate-600"
             }`}
           >
-            Issues ({issuesSummary.machinesWithIssues})
+            {t("planning.shopFloor.issues", "Issues")} ({issuesSummary.machinesWithIssues})
           </button>
         </div>
       </div>
@@ -1035,7 +1045,7 @@ const ShopFloorMobileApp = () => {
                 : "text-slate-500 hover:bg-slate-50"
             }`}
           >
-            Overzicht
+            {t("planning.shopFloor.overview", "Overzicht")}
           </button>
           <button
             onClick={() => setActiveView("downtime")}
@@ -1045,7 +1055,7 @@ const ShopFloorMobileApp = () => {
                 : "text-slate-500 hover:bg-slate-50"
             }`}
           >
-            Stilstand {issuesSummary.totalDowntime > 0 && (
+            {t("planning.shopFloor.downtime", "Stilstand")} {issuesSummary.totalDowntime > 0 && (
               <span className="bg-orange-500 text-white text-[10px] px-2 py-0.5 rounded-full">
                 {issuesSummary.totalDowntime}
               </span>
@@ -1059,7 +1069,7 @@ const ShopFloorMobileApp = () => {
                 : "text-slate-500 hover:bg-slate-50"
             }`}
           >
-            QC {issuesSummary.totalDefects > 0 && (
+            {t("planning.shopFloor.qc", "QC")} {issuesSummary.totalDefects > 0 && (
               <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">
                 {issuesSummary.totalDefects}
               </span>
@@ -1073,7 +1083,7 @@ const ShopFloorMobileApp = () => {
                 : "text-slate-500 hover:bg-slate-50"
             }`}
           >
-            Orders
+            {t("planning.shopFloor.orders", "Orders")}
           </button>
         </div>
       </div>
@@ -1085,7 +1095,7 @@ const ShopFloorMobileApp = () => {
             {filteredMachines.length === 0 ? (
               <div className="text-center py-12 text-slate-400">
                 <Filter size={48} className="mx-auto mb-4 opacity-30" />
-                <div className="font-bold text-sm">Geen machines gevonden</div>
+                <div className="font-bold text-sm">{t("planning.shopFloor.noMachinesFound", "Geen machines gevonden")}</div>
               </div>
             ) : (
               filteredMachines.map(machine => (
@@ -1113,6 +1123,7 @@ const ShopFloorMobileApp = () => {
                         <UserCheck size={14} className={machine.operatorName ? "text-emerald-600" : "text-slate-300"} />
                         <span className={machine.operatorName ? "text-slate-800" : "text-slate-400 italic"}>
                           {machine.operatorName || "Geen operator"}
+                          {machine.operatorName || t("planning.shopFloor.noOperator", "Geen operator")}
                         </span>
                       </div>
                     </div>
@@ -1123,7 +1134,7 @@ const ShopFloorMobileApp = () => {
                           ? "bg-emerald-100 text-emerald-700"
                           : "bg-slate-100 text-slate-600"
                     }`}>
-                      {machine.status === "issue" ? "🔴 Issue" : machine.status === "active" ? "🟢 Actief" : "⚪ Idle"}
+                      {machine.status === "issue" ? t("planning.shopFloor.issueStatus", "🔴 Issue") : machine.status === "active" ? t("planning.shopFloor.activeStatus", "🟢 Actief") : t("planning.shopFloor.idleStatus", "⚪ Idle")}
                     </div>
                   </div>
 
@@ -1138,14 +1149,14 @@ const ShopFloorMobileApp = () => {
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <PlayCircle size={14} className="text-blue-600" />
-                        <div className="text-xs font-bold text-blue-900">In Productie</div>
+                        <div className="text-xs font-bold text-blue-900">{t("planning.shopFloor.inProduction", "In Productie")}</div>
                       </div>
                       <div className="text-sm font-black text-slate-800">
                         {machine.activeOrder.orderId || machine.activeOrder.item}
                       </div>
                       {machine.activeOrder.plan && (
                         <div className="text-xs text-slate-600 mt-1">
-                          {machine.activeOrder.plan} stuks
+                          {t("planning.shopFloor.quantityPieces", "{{count}} stuks", { count: machine.activeOrder.plan })}
                         </div>
                       )}
                     </div>
@@ -1157,13 +1168,13 @@ const ShopFloorMobileApp = () => {
                       {machine.downtimeCount > 0 && (
                         <div className="flex items-center gap-2 text-orange-700 bg-orange-50 px-3 py-2 rounded-lg">
                           <XCircle size={16} />
-                          <span className="text-xs font-bold">{machine.downtimeCount} stilstand meldingen</span>
+                          <span className="text-xs font-bold">{t("planning.shopFloor.downtimeReports", "{{count}} stilstand meldingen", { count: machine.downtimeCount })}</span>
                         </div>
                       )}
                       {machine.defectCount > 0 && (
                         <div className="flex items-center gap-2 text-red-700 bg-red-50 px-3 py-2 rounded-lg">
                           <AlertTriangle size={16} />
-                          <span className="text-xs font-bold">{machine.defectCount} kwaliteit issues</span>
+                          <span className="text-xs font-bold">{t("planning.shopFloor.qualityIssues", "{{count}} kwaliteit issues", { count: machine.defectCount })}</span>
                         </div>
                       )}
                     </div>
@@ -1179,11 +1190,11 @@ const ShopFloorMobileApp = () => {
                       className="flex items-center gap-1 text-slate-600 hover:text-blue-600 transition-colors"
                     >
                       <Package size={14} />
-                      <span className="text-xs font-bold">{machine.ordersCount} orders</span>
+                      <span className="text-xs font-bold">{t("planning.shopFloor.ordersCount", "{{count}} orders", { count: machine.ordersCount })}</span>
                     </button>
                     <div className="flex items-center gap-1 text-slate-600">
                       <Activity size={14} />
-                      <span className="text-xs font-bold">{machine.activeProductsCount} actief</span>
+                      <span className="text-xs font-bold">{t("planning.shopFloor.activeCount", "{{count}} actief", { count: machine.activeProductsCount })}</span>
                     </div>
                     {machine.hoursPerWeek && (
                       <div className="flex items-center gap-1 text-slate-600">

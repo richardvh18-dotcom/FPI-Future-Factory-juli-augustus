@@ -13,6 +13,7 @@ import {
   getMaterialInfo,
   isInspectionOverdue,
 } from "../../../utils/workstationLogic";
+import { formatDateTimeSafe, toDateSafe } from "../../../utils/dateUtils";
 
 const ActiveProductionView = ({
   activeUnits,
@@ -21,12 +22,22 @@ const ActiveProductionView = ({
   onProcessUnit,
   onClickUnit,
 }) => {
+  const formatTimeLabel = (value) => {
+    const date = toDateSafe(value);
+    if (!date) return "";
+
+    return date.toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   // Alleen tonen als we NIET op BM01 zitten (die heeft een andere view)
   if (selectedStation === "BM01" || selectedStation === "Station BM01")
     return null;
 
   return (
-    <div className="col-span-12 lg:col-span-4 flex flex-col gap-6 overflow-y-auto custom-scrollbar">
+    <div className="col-span-12 lg:col-span-4 flex flex-col gap-6 pb-20 md:pb-24">
       <div className="bg-white rounded-2xl border border-blue-100 shadow-sm overflow-hidden">
         <div className="bg-blue-50/50 p-4 border-b border-blue-100 flex items-center justify-between">
           <h3 className="font-black text-blue-800 text-sm uppercase tracking-tight flex items-center gap-2">
@@ -36,7 +47,7 @@ const ActiveProductionView = ({
             {activeUnits.length}
           </span>
         </div>
-        <div className="p-2">
+        <div className="p-2 pb-6 md:pb-8">
           {activeUnits.length > 0 ? (
             <div className="space-y-2">
               {activeUnits.map((unit) => {
@@ -88,12 +99,7 @@ const ActiveProductionView = ({
                         </p>
                       </div>
                       <span className="text-[10px] font-mono text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">
-                        {unit.startTime
-                          ? new Date(unit.startTime).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : ""}
+                        {formatTimeLabel(unit.startTime)}
                       </span>
                     </div>
 
@@ -113,11 +119,12 @@ const ActiveProductionView = ({
                           </p>
                         )}
                         <p className="text-gray-400 mt-1 text-[9px]">
-                          {unit.inspection.timestamp
-                            ? new Date(
-                                unit.inspection.timestamp
-                              ).toLocaleString()
-                            : ""}
+                          {formatDateTimeSafe(
+                            unit.inspection.timestamp,
+                            "nl-NL",
+                            undefined,
+                            ""
+                          )}
                         </p>
 
                         {isOverdue && (

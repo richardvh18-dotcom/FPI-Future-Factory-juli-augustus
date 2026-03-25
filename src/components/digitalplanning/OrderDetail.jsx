@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   X,
@@ -15,6 +15,7 @@ import {
   Cpu,
   Ban,
   Copy,
+  Save,
 } from "lucide-react";
 import ProductMoveModal from "./ProductMoveModal";
 import ProductJourneyModal from "./modals/ProductJourneyModal";
@@ -58,11 +59,27 @@ const OrderDetail = React.memo(({
   const [showOrderMoveModal, setShowOrderMoveModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [moveConfirmData, setMoveConfirmData] = useState(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [planDraft, setPlanDraft] = useState("");
+  const [isSavingNote, setIsSavingNote] = useState(false);
 
   const orderProducts = useMemo(() => {
     if (!order) return [];
     return products.filter((p) => p.orderId === order.orderId);
   }, [order, products]);
+
+  const canEditOrderNotes = ['admin', 'teamleader', 'planner'].includes(role);
+  const canEditOrderPlan = ['admin', 'teamleader', 'planner'].includes(role);
+  const visibleOrderNote = String(order?.notes || order?.poText || "").trim();
+  const visibleOrderPlan = Number(order?.plan) || 0;
+
+  useEffect(() => {
+    setNoteDraft(visibleOrderNote);
+  }, [order?.id, order?.notes, order?.poText]);
+
+  useEffect(() => {
+    setPlanDraft(String(visibleOrderPlan || ""));
+  }, [order?.id, order?.plan]);
 
   if (!order) return null;
 
@@ -197,6 +214,57 @@ const OrderDetail = React.memo(({
     showSuccess("Ordernummer gekopieerd");
   };
 
+  const normalizedPlanDraft = String(planDraft || "").trim().replace(",", ".");
+  const parsedPlanDraft = parseFloat(normalizedPlanDraft);
+  const nextPlan = Number.isNaN(parsedPlanDraft) ? null : parsedPlanDraft;
+  const hasNoteChanged = String(noteDraft || "").trim() !== visibleOrderNote;
+  const hasPlanChanged = canEditOrderPlan && nextPlan !== null && nextPlan !== visibleOrderPlan;
+  const hasPendingChanges = hasNoteChanged || hasPlanChanged;
+  const normalizedPriority =
+    order?.priority === true
+      ? "high"
+      : String(order?.priority || "").toLowerCase().trim();
+  const priorityBadge =
+    normalizedPriority === "immediate"
+      ? { label: "1e Prio", className: "bg-rose-100 text-rose-700" }
+      : normalizedPriority === "urgent" || order?.isUrgent
+        ? { label: t("digitalplanning.order_detail.urgent"), className: "bg-orange-100 text-orange-700" }
+        : (normalizedPriority === "high" || order?.isMoved)
+          ? { label: "Prio", className: "bg-amber-100 text-amber-700" }
+          : null;
+
+  const handleSaveOrderChanges = async () => {
+    if (!order?.id || isSavingNote || !hasPendingChanges) return;
+    if (canEditOrderPlan && (nextPlan === null || nextPlan < 0)) {
+      showError("Aantal moet een geldig getal zijn (0 of hoger)");
+      return;
+    }
+
+    const trimmedNote = String(noteDraft || "").trim();
+
+    try {
+      setIsSavingNote(true);
+      const orderRef = doc(db, ...PATHS.PLANNING, order.id);
+      const updates = {
+        notes: trimmedNote,
+        poText: trimmedNote,
+        lastUpdated: serverTimestamp()
+      };
+
+      if (hasPlanChanged) {
+        updates.plan = nextPlan;
+      }
+
+      await updateDoc(orderRef, updates);
+      showSuccess("Wijzigingen opgeslagen");
+    } catch (err) {
+      console.error("Error saving order changes:", err);
+      showError("Opslaan wijzigingen mislukt: " + err.message);
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
+
   const departments = [
     { id: "FITTINGS", label: "Fittings" },
     { id: "PIPES", label: "Pipes" },
@@ -216,9 +284,19 @@ const OrderDetail = React.memo(({
             >
               <Copy size={16} />
             </button>
-            {order.isUrgent && (
-              <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">
-                {t("digitalplanning.order_detail.urgent")}
+            {order.extraCode && order.extraCode !== "-" && (
+              <span className="px-2 py-0.5 bg-amber-400 text-amber-900 border border-amber-500 rounded-lg text-[10px] font-black uppercase tracking-wide">
+                {order.extraCode}
+              </span>
+            )}
+            {hasPendingChanges && (
+              <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-700 border border-amber-200">
+                Niet opgeslagen
+              </span>
+            )}
+            {priorityBadge && (
+              <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${priorityBadge.className}`}>
+                {priorityBadge.label}
               </span>
             )}
           </div>
@@ -240,7 +318,21 @@ const OrderDetail = React.memo(({
         </div>
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.amount")}</span>
-          <span className="font-bold text-slate-700">{order.plan} stuks</span>
+          {canEditOrderPlan ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={planDraft}
+                onChange={(e) => setPlanDraft(e.target.value)}
+                className="w-24 px-2 py-1 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
+              />
+              <span className="font-bold text-slate-700">stuks</span>
+            </div>
+          ) : (
+            <span className="font-bold text-slate-700">{order.plan} stuks</span>
+          )}
         </div>
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.machine")}</span>
@@ -250,6 +342,27 @@ const OrderDetail = React.memo(({
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.status")}</span>
           <StatusBadge status={order.status} />
         </div>
+      </div>
+
+      <div className="p-6 border-b border-slate-100 bg-amber-50/40">
+        <div className="flex items-center justify-between gap-4 mb-2">
+          <h3 className="text-[10px] font-black text-amber-700 uppercase tracking-widest">
+            PO Text / Opmerking
+          </h3>
+        </div>
+
+        {canEditOrderNotes ? (
+          <textarea
+            value={noteDraft}
+            onChange={(e) => setNoteDraft(e.target.value)}
+            placeholder="Voeg opmerking toe voor operator/teamleader..."
+            className="w-full min-h-[90px] p-3 bg-white border border-amber-200 rounded-xl text-sm text-slate-700 font-medium outline-none focus:border-amber-500"
+          />
+        ) : (
+          <div className="w-full min-h-[52px] p-3 bg-white border border-amber-200 rounded-xl text-sm text-slate-700 font-medium whitespace-pre-wrap">
+            {visibleOrderNote || "Geen opmerking"}
+          </div>
+        )}
       </div>
 
       {/* Products List */}
@@ -380,6 +493,21 @@ const OrderDetail = React.memo(({
       {/* Footer Actions for Manager */}
       {isManager && (
         <div className="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0 flex gap-3 overflow-x-auto items-center">
+           {(canEditOrderNotes || canEditOrderPlan) && (
+             <button
+               onClick={handleSaveOrderChanges}
+               disabled={isSavingNote || !hasPendingChanges}
+               className={`flex items-center gap-2 px-4 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap active:scale-95 border ${
+                 hasPendingChanges
+                   ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md border-emerald-600"
+                   : "bg-white text-slate-300 border-slate-200"
+               }`}
+             >
+               <Save size={16} />
+               {isSavingNote ? "Opslaan..." : "Opslaan"}
+             </button>
+           )}
+
            <button
              onClick={() => setShowOrderMoveModal(true)}
              className="flex items-center gap-2 px-4 py-3 bg-blue-600 text-white hover:bg-blue-700 shadow-md rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap active:scale-95"

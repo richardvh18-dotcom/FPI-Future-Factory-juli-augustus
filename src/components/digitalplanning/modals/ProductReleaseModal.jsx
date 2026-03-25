@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, CheckCircle, ArrowRight, AlertTriangle, Ruler, AlertOctagon, FileText } from "lucide-react";
 import { doc, updateDoc, arrayUnion, serverTimestamp, collection, query, where, getDocs, increment } from "firebase/firestore";
@@ -6,15 +6,30 @@ import { db } from "../../../config/firebase";
 import { PATHS } from "../../../config/dbPaths";
 import { REJECTION_REASONS } from "../../../utils/workstationLogic";
 
+const PILOT_ALLOW_INCOMPLETE_LOSSEN_MEASUREMENTS = true;
+
+const REJECTION_REASON_FALLBACKS = {
+  "rejection.notConformDrawing": "Niet conform tekening",
+  "rejection.wrongDiameter": "Verkeerde diameter",
+  "rejection.surfaceDamage": "Oppervlakteschade",
+  "rejection.crack": "Scheur",
+  "rejection.materialShortage": "Materiaaltekort",
+  "rejection.wrongSpec": "Verkeerde specificatie",
+  "rejection.dimensionDeviation": "Maatafwijking",
+  "rejection.qualityInsufficient": "Kwaliteit onvoldoende",
+  "rejection.other": "Overig",
+};
+
 /**
  * ProductReleaseModal
  * Verschijnt wanneer een operator op "Gereedmelden" klikt.
  * Stuurt het product door naar de volgende stap (bijv. van Wikkelen -> Lossen).
  * UPDATE: Uitgebreide functionaliteit voor Lossen (metingen, afkeur opties).
  */
-const ProductReleaseModal = ({ product, onClose, onComplete }) => {
+const ProductReleaseModal = ({ product, onClose, onComplete, autoApproveTrigger = 0 }) => {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
+  const lastAutoApproveRef = useRef(0);
   
   // Form state
   const [status, setStatus] = useState("approved"); // approved, temp_reject, rejected
@@ -22,6 +37,12 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
   const [errors, setErrors] = useState({});
   const [reason, setReason] = useState("");
   const [comment, setComment] = useState("");
+
+  const getReasonLabel = (reasonKey) => {
+    const translated = t(reasonKey);
+    if (translated && translated !== reasonKey) return translated;
+    return REJECTION_REASON_FALLBACKS[reasonKey] || reasonKey;
+  };
 
   // Determine product type for measurements
   const itemDesc = (product?.item || "").toUpperCase();
@@ -85,10 +106,14 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
     }
   };
 
-  const handleRelease = async (e) => {
-    e.stopPropagation(); // Voorkom dat clicks erdoorheen vallen
-    
-    if (!validateForm()) return;
+  const executeRelease = async () => {
+    const isFormValid = validateForm();
+    const mayProceedInPilot =
+      PILOT_ALLOW_INCOMPLETE_LOSSEN_MEASUREMENTS &&
+      isLossenStep &&
+      status === "approved";
+
+    if (!isFormValid && !mayProceedInPilot) return;
 
     setLoading(true);
     
@@ -227,6 +252,21 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
     }
   };
 
+  const handleRelease = async (e) => {
+    e?.stopPropagation?.(); // Voorkom dat clicks erdoorheen vallen
+    await executeRelease();
+  };
+
+  useEffect(() => {
+    if (!autoApproveTrigger) return;
+    if (autoApproveTrigger === lastAutoApproveRef.current) return;
+    // Veiligheid: in Lossen nooit auto-approve via QR, daar zijn metingen verplicht.
+    if (isLossenStep) return;
+
+    lastAutoApproveRef.current = autoApproveTrigger;
+    executeRelease();
+  }, [autoApproveTrigger, isLossenStep]);
+
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg md:max-w-2xl overflow-hidden flex flex-col max-h-[95vh] md:max-h-[90vh]">
@@ -259,13 +299,13 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
                 onClick={() => setStatus("temp_reject")}
                 className={`p-2 md:p-3 rounded-xl border-2 font-black uppercase text-[10px] md:text-xs flex flex-col items-center gap-1 md:gap-2 ${status === "temp_reject" ? "border-orange-500 bg-orange-50 text-orange-700" : "border-slate-100 text-slate-400 hover:border-orange-200"}`}
               >
-                <AlertTriangle size={20} className="md:w-6 md:h-6" /> Tijdelijk Afkeur
+                <AlertTriangle size={20} className="md:w-6 md:h-6" /> Tijdelijke afkeur
               </button>
               <button
                 onClick={() => setStatus("rejected")}
                 className={`p-2 md:p-3 rounded-xl border-2 font-black uppercase text-[10px] md:text-xs flex flex-col items-center gap-1 md:gap-2 ${status === "rejected" ? "border-rose-500 bg-rose-50 text-rose-700" : "border-slate-100 text-slate-400 hover:border-rose-200"}`}
               >
-                <AlertOctagon size={20} className="md:w-6 md:h-6" /> Definitief Afkeur
+                <AlertOctagon size={20} className="md:w-6 md:h-6" /> Definitieve afkeur
               </button>
             </div>
           )}
@@ -338,10 +378,10 @@ const ProductReleaseModal = ({ product, onClose, onComplete }) => {
                 {REJECTION_REASONS.map((r) => (
                   <button
                     key={r}
-                    onClick={() => setReason(t(r, r))}
-                    className={`p-3 rounded-xl text-xs font-bold border text-left ${reason === t(r, r) ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"}`}
+                    onClick={() => setReason(getReasonLabel(r))}
+                    className={`p-3 rounded-xl text-xs font-bold border text-left ${reason === getReasonLabel(r) ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"}`}
                   >
-                    {t(r, r)}
+                    {getReasonLabel(r)}
                   </button>
                 ))}
               </div>

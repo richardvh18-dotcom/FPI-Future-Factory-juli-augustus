@@ -1,23 +1,36 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
-import { db, auth } from '../../config/firebase'; // Zorg dat auth hier geïmporteerd is
-import { collection, onSnapshot, orderBy, query, doc, updateDoc, deleteDoc, where, serverTimestamp, getDocs, limit } from 'firebase/firestore';
+import { db, auth } from '../../config/firebase';
+import { 
+  collection, onSnapshot, orderBy, query, doc, updateDoc, 
+  deleteDoc, where, serverTimestamp, getDocs, limit, getDoc, documentId
+} from 'firebase/firestore';
 import { PATHS } from '../../config/dbPaths';
 import { formatDistanceToNow } from 'date-fns';
 import { nl } from 'date-fns/locale';
-import { Loader2, RefreshCw, Trash2, AlertTriangle, CheckCircle, Printer, Usb, Play, Server, ArrowLeft, Layers, Power, Zap, Search, Hash, RotateCcw, FileText, Eye, X } from 'lucide-react';
-import { printRawUsb, isUsbDirectSupported } from './usbPrintService';
-import { generateZPL } from '../../utils/zplHelper';
-import { processLabelData, resolveLabelContent, applyLabelLogic, getQRCodeUrl, getBarcodeUrl } from '../../utils/labelHelpers';
+import { 
+  Loader2, RefreshCw, Trash2, AlertTriangle, CheckCircle, 
+  Printer, Usb, Play, ArrowLeft, Zap, Search, Hash, 
+  RotateCcw, Eye, X, Server, Tag, Plus, ChevronDown
+} from 'lucide-react';
+import { generatePrintData, generateLotBatchZPL } from '../../utils/zplHelper';
+import { getDriver } from '../../utils/printerDrivers';
+import { processLabelData, resolveLabelContent, applyLabelLogic, getQRCodeUrl, getBarcodeUrl, filterTempOrderLabelsByProduct } from '../../utils/labelHelpers';
+import { getISOWeekInfo, getStationMachineCode } from '../../utils/lotLogic';
+import AutoScaledLabelPreview from './AutoScaledLabelPreview';
 
 const PIXELS_PER_MM = 3.78;
+const PREVIEW_ROLL_WIDTH_MM = 90;
 
+// Local Helper: StatusBadge
 const StatusBadge = ({ status }) => {
   const config = {
     pending: { icon: <Loader2 className="animate-spin text-yellow-500" size={16} />, text: 'Wachtend', color: 'bg-yellow-100 text-yellow-800' },
     printing: { icon: <RefreshCw className="animate-spin text-blue-500" size={16} />, text: 'Printen', color: 'bg-blue-100 text-blue-800' },
     completed: { icon: <CheckCircle className="text-green-500" size={16} />, text: 'Voltooid', color: 'bg-green-100 text-green-800' },
     error: { icon: <AlertTriangle className="text-red-500" size={16} />, text: 'Fout', color: 'bg-red-100 text-red-800' },
+    processing: { icon: <RefreshCw className="animate-spin text-blue-500" size={16} />, text: 'Verwerken', color: 'bg-blue-100 text-blue-800' }
   };
   const current = config[status] || config.pending;
   return (
@@ -28,112 +41,491 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-const LabelVisualPreview = ({ label, data, zoom = 1 }) => {
-  if (!label) return <div className="w-48 h-32 bg-slate-200 flex items-center justify-center text-xs text-slate-400 italic">Geen template</div>;
+// Local Helper: WebUSB logic
+const isUsbDirectSupported = () => 'usb' in navigator;
+
+const printRawUsb = async (device, content) => {
+  if (!device) throw new Error("Geen printer verbonden");
+  if (!device.opened) await device.open();
+  if (device.configuration === null) await device.selectConfiguration(1);
+  try { await device.claimInterface(0); } catch(e) { /* ignore */ }
+  
+  const encoder = new TextEncoder();
+  const data = encoder.encode(content);
+  const interface0 = device.configuration.interfaces[0];
+  const endpoint = interface0.alternate.endpoints.find(e => e.direction === 'out');
+  const endpointNumber = endpoint ? endpoint.endpointNumber : 1;
+  
+  await device.transferOut(endpointNumber, data);
+};
+
+const normalizeQueuePrintPayload = (content, quantity) => {
+  const base = String(content || "").trim();
+  if (!base) return "";
+  const qty = Number.isFinite(Number(quantity)) && Number(quantity) > 0
+    ? Math.max(1, Math.floor(Number(quantity)))
+    : 1;
+  return Array.from({ length: qty }, () => base).join("\n");
+};
+
+// --- Helper voor Tijdelijke Labels ---
+const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, isExpanded, onToggle, printerDpi = 203 }) => {
+  const topOptions = useMemo(() => {
+    const normalizedProduct = {
+      itemCode: item.itemCode || item.Item || item.Artikel || item.item || '',
+      productId: item.productId || item.itemCode || item.Item || item.Artikel || item.item || '',
+      description: item.description || item.Description || item.Omschrijving || '',
+      item: item.item || item.description || item.Description || item.Omschrijving || '',
+      extraCode: item.extraCode || item.Code || ''
+    };
+
+    return filterTempOrderLabelsByProduct(labelTemplates || [], normalizedProduct);
+  }, [item, labelTemplates]);
+
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+
+  useEffect(() => {
+     if (topOptions.length > 0) {
+       const isValidSelection = topOptions.some(t => t.id === selectedTemplateId);
+       if (!selectedTemplateId || !isValidSelection) {
+         setSelectedTemplateId(topOptions[0]?.id || "");
+       }
+     } else if (selectedTemplateId) {
+       setSelectedTemplateId("");
+     }
+    }, [topOptions, selectedTemplateId]);
+
+    const selectedTemplate = topOptions.find(t => t.id === selectedTemplateId) || topOptions[0];
+  
+  const previewData = useMemo(() => {
+    if (!isExpanded) return {};
+    const order = item.orderId || item.Order || item.Productieorder || item.id || "ONBEKEND";
+    const itemCode = item.itemCode || item.item || item.Item || item.Artikel || "";
+    const desc = item.description || item.Description || item.Omschrijving || "";
+
+    const labelData = processLabelData({
+        ...item,
+        orderNumber: order,
+        productId: itemCode,
+        description: desc,
+        lotNumber: item.lotNumber || order
+    });
+    return applyLabelLogic(labelData, labelRules || []);
+  }, [item, labelRules, isExpanded]);
 
   return (
-    <div
-      className="bg-white shadow-lg relative overflow-hidden border"
-      style={{
-        width: `${label.width * PIXELS_PER_MM * zoom}px`,
-        height: `${label.height * PIXELS_PER_MM * zoom}px`,
-      }}
-    >
-      {label.elements?.map((el, index) => {
-        const resolved = resolveLabelContent(el, data);
-        const displayContent = resolved.content;
-        const baseStyle = {
-          position: "absolute",
-          left: `${el.x * PIXELS_PER_MM * zoom}px`,
-          top: `${el.y * PIXELS_PER_MM * zoom}px`,
-          width: el.width
-            ? `${el.width * PIXELS_PER_MM * zoom}px`
-            : "auto",
-          height: el.height
-            ? `${el.height * PIXELS_PER_MM * zoom}px`
-            : "auto",
-          color: "black",
-          transform: `rotate(${el.rotation || 0}deg)`,
-          transformOrigin: "top left",
-          overflow: "hidden",
-          textAlign: "left",
-        };
-
-        if (el.type === "text")
-          return (
-            <div
-              key={index}
-              style={{
-                ...baseStyle,
-                fontSize: `${el.fontSize * zoom}px`,
-                fontWeight: el.isBold ? "900" : "normal",
-                fontFamily: el.fontFamily || "Arial, sans-serif",
-                textAlign: el.align || "left",
-                whiteSpace: "nowrap",
-                lineHeight: "1",
-              }}
-            >
-              {displayContent}
-            </div>
-          );
-
-        if (el.type === "line")
-          return (
-            <div
-              key={index}
-              style={{
-                ...baseStyle,
-                width: `${el.width * PIXELS_PER_MM * zoom}px`,
-                height: `${el.height * PIXELS_PER_MM * zoom}px`,
-                backgroundColor: "black",
-              }}
-            />
-          );
-
-        if (el.type === "box")
-          return (
-            <div
-              key={index}
-              style={{
-                ...baseStyle,
-                width: `${el.width * PIXELS_PER_MM * zoom}px`,
-                height: `${el.height * PIXELS_PER_MM * zoom}px`,
-                border: `${(el.thickness || 1) * PIXELS_PER_MM * zoom}px solid black`,
-                boxSizing: "border-box",
-              }}
-            />
-          );
-        
-        if (el.type === "qr" || el.type === "barcode")
-          return (
-             <div key={index} style={{
-                 ...baseStyle, 
-                 width: `${(el.width || 20) * PIXELS_PER_MM * zoom}px`, 
-                 height: `${(el.height || 20) * PIXELS_PER_MM * zoom}px`,
-                 background: "#f8fafc",
-                 border: "1px solid #cbd5e1",
-                 display: "flex",
-                 alignItems: "center",
-                 justifyContent: "center",
-             }}>
-                {el.type === 'barcode' ? (
-                    <img 
-                        src={getBarcodeUrl(displayContent)} 
-                        alt="code" 
-                        style={{ width: "80%", height: "80%", objectFit: "fill" }} 
-                    />
+    <div className={`p-0 bg-white border-2 hover:border-emerald-300 rounded-[24px] transition-all shadow-sm hover:shadow-md group overflow-hidden ${isExpanded ? 'border-emerald-500' : 'border-slate-100'}`}>
+      <div 
+        className="p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 cursor-pointer"
+        onClick={onToggle}
+      >
+        <div className="flex-1">
+          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+            <CheckCircle size={12} /> Gevonden Data
+          </p>
+          <p className="text-xl font-black text-slate-800 tracking-tight leading-none mb-1">
+            {item.orderId || item.Order || item.Productieorder || item.id || "ONBEKEND"}
+          </p>
+          {(item.itemCode || item.item || item.Item || item.Artikel) && (
+            <p className="text-sm font-bold text-slate-600 uppercase tracking-wider mb-0.5 mt-2">
+              {item.itemCode || item.item || item.Item || item.Artikel}
+            </p>
+          )}
+          {(item.description || item.Description || item.Omschrijving) && (
+            <p className="text-[10px] text-slate-400 italic font-medium line-clamp-2">
+              {item.description || item.Description || item.Omschrijving}
+            </p>
+          )}
+        </div>
+        <div className="shrink-0 w-full sm:w-auto flex justify-end">
+           <button 
+             className={`p-3 rounded-full transition-colors flex items-center justify-center ${isExpanded ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-50 text-slate-400 group-hover:bg-emerald-50 group-hover:text-emerald-600'}`}
+           >
+             <ChevronDown size={20} className={`transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+           </button>
+        </div>
+      </div>
+      
+      {isExpanded && (
+        <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex flex-col md:flex-row gap-6 animate-in slide-in-from-top-2">
+          <div className="flex-1 flex flex-col gap-4">
+            <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Label Formaat / Template</label>
+                {topOptions.length > 0 ? (
+                  <select 
+                    className="w-full p-4 border-2 border-slate-200 rounded-xl text-sm font-bold bg-white outline-none focus:border-emerald-500 transition-colors cursor-pointer"
+                    value={selectedTemplateId}
+                    onChange={e => setSelectedTemplateId(e.target.value)}
+                  >
+                    {topOptions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
                 ) : (
-                    <img 
-                        src={getQRCodeUrl(displayContent)} 
-                        alt="code" 
-                        style={{ width: "80%", height: "80%", objectFit: "contain" }} 
-                    />
+                  <div className="text-xs text-orange-500 italic p-4 bg-orange-50 rounded-xl border border-orange-100">Geen tijdelijke labels met passende tags gevonden voor dit product.</div>
                 )}
-             </div>
-          );
+            </div>
+            
+            <button 
+              onClick={() => onPrint(item, selectedTemplateId)} 
+              disabled={!selectedTemplateId || topOptions.length === 0}
+              className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 disabled:opacity-50 mt-auto"
+            >
+              <Printer size={18} /> Etiket Printen
+            </button>
+          </div>
+          
+          <div className="w-full md:w-96 lg:w-[450px] shrink-0 flex flex-col items-center justify-center bg-white border-2 border-slate-200 p-4 rounded-3xl relative min-h-[250px] shadow-inner">
+             <span className="absolute top-4 left-4 text-[10px] font-black text-slate-400 uppercase tracking-widest z-10">Live Preview</span>
+             {selectedTemplate ? (
+                 <div className="w-full h-full flex items-center justify-center pt-8 pb-2">
+                    <AutoScaledLabelPreview label={selectedTemplate} data={previewData} printerDpi={printerDpi} />
+                 </div>
+             ) : (
+                 <span className="text-xs text-slate-400 italic">Selecteer een template</span>
+             )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
-        return null;
-      })}
+// --- Modal: Tijdelijke Labels Zoeken ---
+const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = [], printerDpi = 203 }) => {
+  const { t } = useTranslation();
+  const [orderStr, setOrderStr] = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [expandedItemId, setExpandedItemId] = useState(null);
+
+  useEffect(() => {
+    if (results.length === 1) {
+        setExpandedItemId(results[0].id || 0);
+    } else {
+        setExpandedItemId(null);
+    }
+  }, [results]);
+
+  const handleSearch = async () => {
+    if (!orderStr) return;
+    setLoading(true);
+    setResults([]);
+    setExpandedItemId(null);
+    try {
+      let searchStr = orderStr.trim().toUpperCase();
+      // Als de gebruiker per ongeluk een heel databasepad plakt, pak het laatste stuk (de ID)
+      if (searchStr.includes('/')) {
+        searchStr = searchStr.split('/').filter(Boolean).pop();
+      }
+
+      // Genereer logische FPI voorvoegsels
+      let searchOptions = [searchStr];
+      const digitsMatch = searchStr.match(/\d+/);
+      if (digitsMatch) {
+          const digits = digitsMatch[0];
+          if (digits.length >= 3) {
+              searchOptions.push(`N${digits}`);
+              searchOptions.push(`N20${digits}`);
+              searchOptions.push(`N200${digits}`);
+              searchOptions.push(`N21${digits}`);
+              searchOptions.push(`N210${digits}`);
+              searchOptions.push(`P${digits}`);
+          }
+      }
+
+      const uniqueOptions = Array.from(new Set(searchOptions)).slice(0, 15);
+      const colRef = collection(db, ...PATHS.TEMP_PLANNING);
+      const planRef = collection(db, ...PATHS.PLANNING);
+      
+      let foundDocs = new Map();
+      const addDocs = (snap) => {
+        if (snap && snap.docs) {
+          snap.docs.forEach(d => foundDocs.set(d.id, { id: d.id, ...d.data() }));
+        }
+      };
+
+      // 1. Direct op Document ID proberen
+      for (const opt of uniqueOptions) {
+          try {
+              const docRef = doc(db, ...PATHS.TEMP_PLANNING, opt);
+              const docSnap = await getDoc(docRef);
+              if (docSnap.exists()) {
+                  foundDocs.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
+              }
+              const planDocRef = doc(db, ...PATHS.PLANNING, opt);
+              const planDocSnap = await getDoc(planDocRef);
+              if (planDocSnap.exists()) {
+                  foundDocs.set(planDocSnap.id, { id: planDocSnap.id, ...planDocSnap.data() });
+              }
+          } catch(e) {}
+      }
+
+      // 2. Parallelle exacte zoekopdrachten
+      const exactQueries = [
+        getDocs(query(colRef, where("orderId", "in", uniqueOptions))),
+        getDocs(query(colRef, where("Order", "in", uniqueOptions))),
+        getDocs(query(colRef, where("Productieorder", "in", uniqueOptions))),
+        getDocs(query(colRef, where("order", "in", uniqueOptions))),
+        getDocs(query(planRef, where("orderId", "in", uniqueOptions))),
+        getDocs(query(planRef, where("Order", "in", uniqueOptions))),
+        getDocs(query(planRef, where("Productieorder", "in", uniqueOptions))),
+        getDocs(query(planRef, where("order", "in", uniqueOptions)))
+      ];
+      const exactSnaps = await Promise.all(exactQueries.map(p => p.catch(() => null)));
+      exactSnaps.forEach(addDocs);
+        
+      // 3. 'Begint met' zoekopdrachten (als we nog weinig of niks hebben)
+      if (foundDocs.size < 5 && searchStr.length >= 3) {
+        const startOptions = [searchStr];
+        if (digitsMatch && digitsMatch[0].length >= 3) {
+            startOptions.push(`N200${digitsMatch[0]}`);
+            startOptions.push(`N20${digitsMatch[0]}`);
+            startOptions.push(`N210${digitsMatch[0]}`);
+            startOptions.push(`N21${digitsMatch[0]}`);
+        }
+        
+        const startsWithQueries = [];
+        Array.from(new Set(startOptions)).forEach(opt => {
+            startsWithQueries.push(getDocs(query(colRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(colRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(colRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
+          startsWithQueries.push(getDocs(query(planRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
+          startsWithQueries.push(getDocs(query(planRef, where("Productieorder", ">=", opt), where("Productieorder", "<=", opt + "\uf8ff"), limit(10))));
+          startsWithQueries.push(getDocs(query(planRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
+        });
+
+        const startSnaps = await Promise.all(startsWithQueries.map(p => p.catch(() => null)));
+        startSnaps.forEach(addDocs);
+      }
+      
+      setResults(Array.from(foundDocs.values()));
+    } catch (e) {
+      console.error("Zoekfout temp labels:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-4xl rounded-[40px] shadow-2xl overflow-hidden relative border border-slate-100">
+        {/* Achtergrond Decoratie */}
+        <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
+          <Tag size={180} className="text-slate-900 -rotate-12" />
+        </div>
+
+        <div className="p-8 md:p-10 relative z-10 flex flex-col h-full max-h-[90vh]">
+          {/* Header */}
+          <div className="flex justify-between items-start mb-8">
+            <div className="flex items-center gap-4">
+              <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl shadow-sm border border-emerald-100/50">
+                <Tag size={28} strokeWidth={2.5} />
+              </div>
+              <div>
+                <h3 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-1">
+                  Order <span className="text-emerald-600">Labels</span>
+                </h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  Legacy / Nood-etiketten zoeken
+                </p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-full transition-colors"><X size={20} /></button>
+          </div>
+
+          {/* Search Bar */}
+          <div className="flex flex-col sm:flex-row gap-3 mb-6 shrink-0">
+            <div className="relative flex-1 group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" size={18} />
+              <input 
+                type="text" 
+                placeholder={t('printer.searchOrderPlaceholder', 'TYP ORDERNUMMER (BIJV. N20000)')}
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase outline-none focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all text-sm text-slate-900 placeholder:text-slate-400"
+                value={orderStr}
+                onChange={(e) => setOrderStr(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              />
+            </div>
+            <button 
+              onClick={handleSearch} 
+              disabled={loading || !orderStr.trim()} 
+              className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? <Loader2 className="animate-spin" size={18} /> : "Zoeken"}
+            </button>
+          </div>
+
+          {/* Results Area */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar -mx-2 px-2 pb-2">
+            {results.length > 0 && (
+              <div className="space-y-3">
+                {results.map((item, idx) => (
+                  <TempLabelItem 
+                    key={idx} 
+                    item={item} 
+                    labelTemplates={labelTemplates} 
+                    labelRules={labelRules}
+                    onPrint={onPrint} 
+                    isExpanded={expandedItemId === (item.id || idx)}
+                    onToggle={() => setExpandedItemId(expandedItemId === (item.id || idx) ? null : (item.id || idx))}
+                    printerDpi={printerDpi}
+                  />
+                ))}
+              </div>
+            )}
+            
+            {results.length === 0 && orderStr && !loading && (
+              <div className="py-12 border-2 border-dashed border-slate-200 rounded-[30px] flex flex-col items-center justify-center text-center bg-slate-50/50">
+                <div className="p-4 bg-slate-100 text-slate-400 rounded-full mb-3">
+                  <Search size={24} />
+                </div>
+                <p className="text-sm font-black text-slate-600 uppercase tracking-widest">Niets Gevonden</p>
+                <p className="text-xs text-slate-400 font-medium mt-1">Geen order gevonden in tijdelijke import voor "{orderStr}".</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Modal: Lotnummers Printen ---
+const LotPrintModal = ({ onClose, stationGroups, onPrintBatch, printer }) => {
+  const [station, setStation] = useState(stationGroups[0] || "");
+  const [weekOffset, setWeekOffset] = useState(0); // -1,0,1
+  const [count, setCount] = useState(1);
+  const [startNum, setStartNum] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (stationGroups.length > 0 && !stationGroups.includes(station)) {
+      setStation(stationGroups[0]);
+    }
+  }, [stationGroups, station]);
+
+  const handleGenerate = async (e) => {
+    e.preventDefault();
+    if (!station) {
+      alert("Geen station beschikbaar in factory config.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const now = new Date();
+      now.setDate(now.getDate() + (Number(weekOffset) * 7));
+      const { week, year } = getISOWeekInfo(now);
+      const yy = String(year).slice(-2);
+      const ww = String(week).padStart(2, '0');
+      const machineCode = getStationMachineCode(station);
+      const baseLot = `40${yy}${ww}${machineCode}40`;
+
+      const lots = [];
+      for (let i = 0; i < count; i++) {
+        const currentNum = String(startNum + i).padStart(4, '0');
+        lots.push(`${baseLot}${currentNum}`);
+      }
+
+      const parsedDpi = printer?.dpi ? parseInt(printer.dpi, 10) : NaN;
+      const fallbackDpi = getDriver(printer)?.nativeDpi;
+      const dpi = Number.isFinite(parsedDpi) && parsedDpi > 0
+        ? parsedDpi
+        : (Number.isFinite(fallbackDpi) && fallbackDpi > 0 ? fallbackDpi : 203);
+      const darkness = printer?.darkness ? parseInt(printer.darkness, 10) : 15;
+      const zplBatch = generateLotBatchZPL({
+        lots,
+        printerDpi: dpi,
+        darkness,
+      });
+
+      await onPrintBatch(zplBatch, lots.length);
+      alert(`${count} lotnummer(s) direct geprint via USB!`);
+      onClose();
+    } catch(err) {
+      console.error(err);
+      alert("Fout bij genereren: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const previewNow = new Date();
+  previewNow.setDate(previewNow.getDate() + (Number(weekOffset) * 7));
+  const { week: previewWeek, year: previewYear } = getISOWeekInfo(previewNow);
+  const previewYY = String(previewYear).slice(-2);
+  const previewWW = String(previewWeek).padStart(2, '0');
+  const previewMachineCode = getStationMachineCode(station);
+  const previewBaseLot = `40${previewYY}${previewWW}${previewMachineCode}40`;
+  const previewLots = Array.from({ length: Math.min(5, Math.max(1, count)) }, (_, i) => {
+    const seq = startNum + i;
+    return `${previewBaseLot}${String(seq).padStart(4, '0')}`;
+  });
+
+  return (
+    <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in overflow-y-auto">
+      <div className="bg-white w-full max-w-2xl rounded-[30px] shadow-2xl p-8 my-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-black text-slate-800 uppercase italic flex items-center gap-2">
+            <Printer className="text-blue-500" /> Lotnummers Printen
+          </h3>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full"><X size={20} /></button>
+        </div>
+        
+        <form onSubmit={handleGenerate} className="space-y-4">
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Station / Machine</label>
+            <select value={station} onChange={e => setStation(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50" disabled={stationGroups.length === 0}>
+              {stationGroups.length === 0 && <option value="">Geen stations gevonden</option>}
+              {stationGroups.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Week</label>
+            <select value={String(weekOffset)} onChange={(e) => setWeekOffset(parseInt(e.target.value, 10) || 0)} className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50">
+              <option value="-1">Vorige week</option>
+              <option value="0">Huidige week</option>
+              <option value="1">Volgende week</option>
+            </select>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">ISO week {previewWW}</p>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Start Volgnummer</label>
+              <input type="number" min="1" max="9999" value={startNum} onChange={e => setStartNum(parseInt(e.target.value, 10) || 1)} className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Aantal Labels</label>
+              <input type="number" min="1" max="100" value={count} onChange={e => setCount(parseInt(e.target.value, 10) || 1)} className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50" />
+            </div>
+          </div>
+          <div className="bg-slate-50 p-6 rounded-2xl border-2 border-slate-100 flex flex-col items-center mt-2">
+            <p className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest w-full text-left">Live Preview (max 5)</p>
+            <div className="w-full border border-slate-200 rounded-xl overflow-hidden bg-white" style={{ maxWidth: '90mm' }}>
+              {previewLots.map((lot) => (
+                <div key={lot} className="w-full h-[13mm] px-2 flex items-center gap-2 border-b border-dashed border-slate-300 last:border-b-0" style={{ maxWidth: '90mm' }}>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=64x64&data=${encodeURIComponent(lot)}`}
+                    alt="QR links"
+                    className="w-8 h-8 object-contain"
+                  />
+                  <p className="text-xl sm:text-2xl font-black text-slate-900 font-mono tracking-[0.08em] leading-none break-all flex-1 text-center">
+                    {lot}
+                  </p>
+                </div>
+              ))}
+              {count > 5 && (
+                <p className="text-[11px] font-bold text-slate-500 text-center">+{count - 5} extra labels worden geprint</p>
+              )}
+            </div>
+          </div>
+
+          <button type="submit" disabled={loading} className="w-full mt-4 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-blue-700 transition-all flex justify-center items-center gap-2">
+            {loading ? <Loader2 className="animate-spin" size={18} /> : <Printer size={18} />}
+            Genereer & Print
+          </button>
+        </form>
+      </div>
     </div>
   );
 };
@@ -149,6 +541,9 @@ const PrintQueueAdminView = () => {
   const [autoPrint, setAutoPrint] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
+
+  const [showTempModal, setShowTempModal] = useState(false);
+  const [showLotModal, setShowLotModal] = useState(false);
   
   // Nieuwe state voor navigatie en reprint
   const [viewMode, setViewMode] = useState('overview'); // 'overview' | 'station'
@@ -160,14 +555,17 @@ const PrintQueueAdminView = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [selectedLabelId, setSelectedLabelId] = useState('');
   const [previewJob, setPreviewJob] = useState(null);
-  const [previewSize, setPreviewSize] = useState("4x6"); // Default Labelary size
+  const [previewSize, setPreviewSize] = useState("3.54x5.91");
+  const [previewSizeLabel, setPreviewSizeLabel] = useState("90x150 mm");
 
   useEffect(() => {
     if (previewJob?.metadata?.width && previewJob?.metadata?.height) {
-        // Convert mm to inches (approx) for Labelary API
-        const w = Math.round(previewJob.metadata.width / 25.4);
-        const h = Math.round(previewJob.metadata.height / 25.4);
-        setPreviewSize(`${w}x${h}`);
+        const widthMm = PREVIEW_ROLL_WIDTH_MM;
+        const heightMm = Number(previewJob.metadata.height);
+        const widthInches = (widthMm / 25.4).toFixed(2);
+        const heightInches = (heightMm / 25.4).toFixed(2);
+        setPreviewSize(`${widthInches}x${heightInches}`);
+        setPreviewSizeLabel(`${widthMm}x${heightMm} mm`);
     }
   }, [previewJob]);
 
@@ -232,12 +630,18 @@ const PrintQueueAdminView = () => {
 
   // Auto-print logica
   useEffect(() => {
-    if (!autoPrint || !usbDevice || isProcessing || !selectedStation) return;
+    const matchedPrinter = usbDevice
+      ? printers.find((p) => p.vendorId === usbDevice.vendorId && p.productId === usbDevice.productId)
+      : null;
+    const currentPrinterId = matchedPrinter?.id || printers.find((p) => p.isDefault)?.id || printers[0]?.id || null;
+    if (!autoPrint || !usbDevice || isProcessing || !currentPrinterId) return;
 
-    const pendingJobs = printJobs.filter(j =>
-      (j.metadata?.stationId === selectedStation || j.metadata?.targetPrinterName === selectedStation) &&
-      j.status === 'pending'
-    );
+    const pendingJobs = printJobs.filter((j) => {
+      if (j.status !== 'pending') return false;
+      if (j.printerId !== currentPrinterId) return false;
+      if (!selectedStation) return true;
+      return j.metadata?.stationId === selectedStation || j.metadata?.targetPrinterName === selectedStation;
+    });
 
     if (pendingJobs.length > 0) {
       const processQueue = async () => {
@@ -256,10 +660,18 @@ const PrintQueueAdminView = () => {
       };
       processQueue();
     }
-  }, [printJobs, autoPrint, usbDevice, isProcessing, selectedStation]);
+  }, [printJobs, autoPrint, usbDevice, isProcessing, selectedStation, printers]);
 
   const filteredJobs = useMemo(() => {
     let jobs = printJobs;
+    const matchedPrinter = usbDevice
+      ? printers.find((p) => p.vendorId === usbDevice.vendorId && p.productId === usbDevice.productId)
+      : null;
+    const currentPrinterId = matchedPrinter?.id || printers.find((p) => p.isDefault)?.id || printers[0]?.id || null;
+
+    if (currentPrinterId) {
+      jobs = jobs.filter((j) => j.printerId === currentPrinterId);
+    }
     
     // Filter op station als er een geselecteerd is
     if (selectedStation) {
@@ -271,17 +683,36 @@ const PrintQueueAdminView = () => {
     }
     
     return jobs;
-  }, [printJobs, printers, role, selectedStation]);
+  }, [printJobs, printers, role, selectedStation, usbDevice]);
+
+  const activeQueuePrinter = useMemo(() => {
+    if (usbDevice) {
+      const matched = printers.find(
+        (p) => p.vendorId === usbDevice.vendorId && p.productId === usbDevice.productId
+      );
+      if (matched) return matched;
+    }
+    return printers.find((p) => p.isDefault) || printers[0] || null;
+  }, [printers, usbDevice]);
 
   const stationGroups = useMemo(() => {
-    const groups = new Set();
-    printers.forEach(p => {
-      if (p.linkedStations && Array.isArray(p.linkedStations)) {
-        p.linkedStations.forEach(s => groups.add(s));
-      }
-    });
-    return Array.from(groups).sort();
-  }, [printers]);
+    if (!activeQueuePrinter) return [];
+    const stations = Array.isArray(activeQueuePrinter.queueStations)
+      ? activeQueuePrinter.queueStations
+      : (activeQueuePrinter.linkedStations || []);
+    return Array.from(new Set(stations.map((s) => String(s || '').trim()).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [activeQueuePrinter]);
+
+  const printerDpi = useMemo(() => {
+    const parsed = parseInt(activeQueuePrinter?.dpi, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 203;
+  }, [activeQueuePrinter]);
+
+  const printerDarkness = useMemo(() => {
+    const parsed = parseInt(activeQueuePrinter?.darkness, 10);
+    return Number.isFinite(parsed) ? parsed : 15;
+  }, [activeQueuePrinter]);
 
   const handleConnectUsb = async () => {
     setError('');
@@ -296,11 +727,30 @@ const PrintQueueAdminView = () => {
     }
   };
 
+  const handleDirectLotPrintBatch = async (batchData, lotCount) => {
+    let deviceToUse = usbDevice;
+    if (!deviceToUse) {
+      deviceToUse = await navigator.usb.requestDevice({ filters: [] });
+      setUsbDevice(deviceToUse);
+      localStorage.setItem('usb_printer_vendor', deviceToUse.vendorId);
+      localStorage.setItem('usb_printer_product', deviceToUse.productId);
+    }
+
+    await printRawUsb(deviceToUse, batchData);
+    setError('');
+  };
+
   const handlePrintJob = async (job) => {
     if (!usbDevice) throw new Error("Geen USB printer verbonden.");
     await updateDoc(doc(db, ...PATHS.PRINT_QUEUE, job.id), { status: 'printing', processedAt: serverTimestamp() });
     try {
-      await printRawUsb(usbDevice, job.zpl);
+      // Use printData (standard) or zpl field
+      const content = job.printData || job.zpl;
+      if (!content) throw new Error("Geen printdata gevonden in job.");
+      const quantity = getJobQuantity(job) || 1;
+      const payload = normalizeQueuePrintPayload(content, quantity);
+      
+      await printRawUsb(usbDevice, payload);
       await updateDoc(doc(db, ...PATHS.PRINT_QUEUE, job.id), { status: 'completed', printedAt: serverTimestamp() });
     } catch (e) {
       await updateDoc(doc(db, ...PATHS.PRINT_QUEUE, job.id), { status: 'error', error: e.message });
@@ -328,6 +778,20 @@ const PrintQueueAdminView = () => {
     await deleteDoc(jobRef);
   };
 
+  const getJobSizeLabel = (job) => {
+    const height = Number(job?.metadata?.height);
+    if (!height) return null;
+    return `${PREVIEW_ROLL_WIDTH_MM}x${height} mm`;
+  };
+
+  const getJobQuantity = (job) => {
+    const quantity = Number(job?.metadata?.quantity);
+    if (Number.isFinite(quantity) && quantity > 0) return quantity;
+    const description = String(job?.metadata?.description || job?.description || '');
+    const match = description.match(/\(x(\d+)\)/i);
+    return match ? Number(match[1]) : null;
+  };
+
   const handleSearchProduct = async (e) => {
     e.preventDefault();
     if (!reprintSearch.trim()) return;
@@ -336,9 +800,10 @@ const PrintQueueAdminView = () => {
     setReprintResult(null);
     setError('');
 
+    const searchStr = reprintSearch.trim().toUpperCase();
     try {
       const trackingRef = collection(db, ...PATHS.TRACKING);
-      const q = query(trackingRef, where("lotNumber", "==", reprintSearch.trim()), limit(1));
+      const q = query(trackingRef, where("lotNumber", "==", searchStr), limit(1));
       const snap = await getDocs(q);
 
       if (!snap.empty) {
@@ -350,7 +815,7 @@ const PrintQueueAdminView = () => {
       } else {
         const currentYear = new Date().getFullYear();
         const archiveRef = collection(db, "future-factory", "production", "archive", String(currentYear), "items");
-        const qArch = query(archiveRef, where("lotNumber", "==", reprintSearch.trim()), limit(1));
+        const qArch = query(archiveRef, where("lotNumber", "==", searchStr), limit(1));
         const snapArch = await getDocs(qArch);
         
         if (!snapArch.empty) {
@@ -413,8 +878,9 @@ const PrintQueueAdminView = () => {
           description: reprintResult.item
         });
         
+        // Gebruik generatePrintData (consistent met rest van app)
         const processedData = applyLabelLogic(labelData, labelRules);
-        zpl = await generateZPL(template, processedData);
+        zpl = await generatePrintData(template, processedData, printerDpi);
       }
 
       await printRawUsb(usbDevice, zpl);
@@ -425,6 +891,49 @@ const PrintQueueAdminView = () => {
       setError("Print fout: " + err.message);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleTempLegacyPrint = async (orderData, templateId) => {
+    const template = labelTemplates.find(t => t.id === templateId);
+    const dpi = printerDpi;
+    const dotsPerMm = dpi / 25.4;
+    const darkness = printerDarkness;
+    
+    const order = orderData.orderId || orderData.Order || orderData.Productieorder || orderData.id || "ONBEKEND";
+    const item = orderData.itemCode || orderData.item || orderData.Item || orderData.Artikel || "";
+    const desc = orderData.description || orderData.Description || orderData.Omschrijving || "";
+    
+    let zpl = "";
+
+    if (template) {
+        const labelData = processLabelData({
+            ...orderData,
+            orderNumber: order,
+            productId: item,
+            description: desc,
+            lotNumber: orderData.lotNumber || order
+        });
+        const processedData = applyLabelLogic(labelData, labelRules);
+        zpl = await generatePrintData(template, processedData, dpi);
+    } else {
+        zpl = `^XA
+^PW${Math.round(90 * dotsPerMm)}
+~SD${darkness}
+^FO${Math.round(5 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^A0N,${Math.round(8 * dotsPerMm)},${Math.round(6 * dotsPerMm)}^FDOrder: ${order}^FS
+^FO${Math.round(5 * dotsPerMm)},${Math.round(15 * dotsPerMm)}^A0N,${Math.round(6 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^FDItem: ${item}^FS
+^FO${Math.round(5 * dotsPerMm)},${Math.round(25 * dotsPerMm)}^A0N,${Math.round(5 * dotsPerMm)},${Math.round(4 * dotsPerMm)}^FD${desc.substring(0, 40)}^FS
+^FO${Math.round(60 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^BQN,2,${Math.max(2, Math.round(4 * dpi / 203))}^FDQA,${order}^FS
+^XZ`;
+    }
+
+    try {
+      if (!usbDevice) throw new Error("Geen USB printer verbonden. Koppel eerst een printer via de knop rechtsboven.");
+      await printRawUsb(usbDevice, zpl);
+      alert(`Label voor ${order} direct geprint via USB!`);
+      setShowTempModal(false);
+    } catch (e) {
+      alert("USB Print Fout: " + e.message);
     }
   };
 
@@ -477,13 +986,58 @@ const PrintQueueAdminView = () => {
         )}
       </div>
       
+      {/* TEGELS VOOR OPERATORS (LOTNUMMERS & TIJDELIJKE LABELS) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        {/* Tegel: Lotnummers Printen */}
+        <button
+          type="button"
+          onClick={() => setShowLotModal(true)}
+          className="flex items-center gap-4 bg-white border-2 border-slate-200 hover:border-blue-500 rounded-2xl p-4 transition-all hover:shadow-lg group text-left"
+        >
+          <div className="p-4 bg-blue-50 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
+            <Printer size={24} />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">
+              Lotnummers Afdrukken
+            </h3>
+            <p className="text-xs text-slate-500 font-medium mt-1">
+              Genereer en print een serie nieuwe FPI lotnummers
+            </p>
+          </div>
+        </button>
+
+        {/* Tegel: Tijdelijke Labels */}
+        <button
+          type="button"
+          onClick={() => setShowTempModal(true)}
+          className="flex items-center gap-4 bg-white border-2 border-slate-200 hover:border-emerald-500 rounded-2xl p-4 transition-all hover:shadow-lg group text-left"
+        >
+          <div className="p-4 bg-emerald-50 text-emerald-600 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+            <Tag size={24} />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-slate-800 uppercase tracking-wide">
+              Order Labels
+            </h3>
+            <p className="text-xs text-slate-500 font-medium mt-1">
+              Print snelle labels voor onderhanden werk of afkeur
+            </p>
+          </div>
+        </button>
+      </div>
+
       {error && <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center gap-2"><AlertTriangle size={20}/> {error}</div>}
 
       {viewMode === 'overview' ? (
       <div className="mb-8">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {stationGroups.map(station => {
-            const pendingCount = printJobs.filter(j => j.metadata?.stationId === station && j.status === 'pending').length;
+            const pendingCount = printJobs.filter((j) => {
+              if (j.status !== 'pending') return false;
+              if (activeQueuePrinter?.id && j.printerId !== activeQueuePrinter.id) return false;
+              return j.metadata?.stationId === station || j.metadata?.targetPrinterName === station;
+            }).length;
             
             return (
               <button 
@@ -513,7 +1067,7 @@ const PrintQueueAdminView = () => {
           
           {stationGroups.length === 0 && (
             <div className="col-span-full text-center py-12 text-slate-400 italic">
-              Geen stations geconfigureerd. Ga naar Printer Beheer om stations te koppelen.
+              Geen Queue Stations geconfigureerd. Stel ze in via Printer Beheer - Queue Stations.
             </div>
           )}
         </div>
@@ -532,7 +1086,7 @@ const PrintQueueAdminView = () => {
                   <input 
                     type="text" 
                     value={reprintSearch}
-                    onChange={(e) => setReprintSearch(e.target.value)}
+                    onChange={(e) => setReprintSearch(e.target.value.toUpperCase())}
                     placeholder="Scan of typ lotnummer..."
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 outline-none font-bold uppercase"
                   />
@@ -568,7 +1122,7 @@ const PrintQueueAdminView = () => {
                     
                     <div className="border-l border-slate-100 pl-6 flex flex-col items-center justify-center bg-slate-50/50 rounded-r-xl">
                         <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Preview</p>
-                        <LabelVisualPreview label={selectedLabelTemplate} data={reprintPreviewData} />
+                        <AutoScaledLabelPreview label={selectedLabelTemplate} data={reprintPreviewData} className="w-64" printerDpi={printerDpi} />
                     </div>
                 </div>
 
@@ -617,7 +1171,11 @@ const PrintQueueAdminView = () => {
                 </td>
                 <td className="px-6 py-4 font-medium text-slate-900">
                   {job.metadata?.description || job.description}
-                  {job.metadata?.stationId && <span className="ml-2 text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold">{job.metadata.stationId}</span>}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {job.metadata?.stationId && <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold">{job.metadata.stationId}</span>}
+                    {getJobSizeLabel(job) && <span className="text-[10px] bg-blue-50 px-2 py-0.5 rounded text-blue-700 font-bold">{getJobSizeLabel(job)}</span>}
+                    {getJobQuantity(job) && <span className="text-[10px] bg-emerald-50 px-2 py-0.5 rounded text-emerald-700 font-bold">Aantal: {getJobQuantity(job)}</span>}
+                  </div>
                   {job.status === 'error' && <p className="text-red-600 text-xs mt-1">{job.error}</p>}
                 </td>
                 <td className="px-6 py-4">
@@ -675,29 +1233,52 @@ const PrintQueueAdminView = () => {
                 <div className="p-4 border-b flex justify-between items-center bg-slate-50">
                      <div className="flex items-center gap-3">
                         <h3 className="font-bold text-slate-800">Label Voorbeeld</h3>
-                        <select 
-                            value={previewSize} 
-                            onChange={(e) => setPreviewSize(e.target.value)}
-                            className="text-[10px] font-bold uppercase bg-white border border-slate-300 rounded-lg px-2 py-1 outline-none focus:border-blue-500"
-                        >
-                            <option value="4x6">4x6" (Standaard)</option>
-                            <option value="4x2">4x2" (Klein/Fittings)</option>
-                            <option value="4x3">4x3"</option>
-                            <option value="2x1">2x1"</option>
-                        </select>
+                        <span className="text-[10px] font-bold uppercase text-slate-500">{previewSizeLabel}</span>
                      </div>
                     <button onClick={() => setPreviewJob(null)} className="p-1 hover:bg-slate-200 rounded-full"><X size={20}/></button>
                 </div>
-                <div className="p-8 flex justify-center bg-slate-100">
-                    <img 
-                         src={`http://api.labelary.com/v1/printers/8dpmm/labels/${previewSize}/0/${encodeURIComponent(previewJob.zpl)}`} 
-                        alt="Label Preview" 
-                        className="shadow-lg max-w-full border"
-                    />
+                <div className="p-8 flex justify-center items-center bg-slate-100 min-h-[300px] overflow-hidden">
+                    {(() => {
+                        // Controleer of de job gekoppeld is aan een bekende interne template
+                        const template = labelTemplates.find(t => t.id === previewJob.metadata?.templateId);
+                        
+                        if (template) {
+                            return (
+                                <div className="w-full max-w-sm flex justify-center bg-white shadow-xl border border-slate-200 p-2 rounded-lg">
+                                    <AutoScaledLabelPreview 
+                                        label={template} 
+                                        data={previewJob.metadata?.variables || {}} 
+                                      printerDpi={printerDpi}
+                                    />
+                                </div>
+                            );
+                        }
+                        
+                        // Fallback naar de externe Labelary API als het pure (legacy) ZPL is
+                        return (
+                            <img 
+                                src={`https://api.labelary.com/v1/printers/8dpmm/labels/${previewSize}/0/${encodeURIComponent(previewJob.zpl || previewJob.printData || "")}`} 
+                                alt="Label Preview" 
+                                className="shadow-lg max-w-full border bg-white"
+                            />
+                        );
+                    })()}
                 </div>
-                <div className="p-4 text-center text-xs text-slate-400">Gegenereerd via Labelary API</div>
+                <div className="p-4 text-center text-xs text-slate-400">
+                    {labelTemplates.some(t => t.id === previewJob.metadata?.templateId) 
+                        ? "Interne Visual Preview (AutoScaled)" 
+                        : "Gegenereerd via Labelary API"}
+                </div>
             </div>
         </div>
+      )}
+
+      {showTempModal && (
+        <TempLabelModal onClose={() => setShowTempModal(false)} onPrint={handleTempLegacyPrint} labelTemplates={labelTemplates} labelRules={labelRules} printerDpi={printerDpi} />
+      )}
+
+      {showLotModal && (
+        <LotPrintModal onClose={() => setShowLotModal(false)} stationGroups={stationGroups} onPrintBatch={handleDirectLotPrintBatch} printer={activeQueuePrinter} />
       )}
     </div>
   );

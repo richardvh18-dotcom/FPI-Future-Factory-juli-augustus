@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Zap, ChevronRight, ArrowLeft, ClipboardCheck, ScanBarcode } from "lucide-react";
+import { Zap, ChevronRight, ArrowLeft, ClipboardCheck, ScanBarcode, Trash2, FileText } from "lucide-react";
 
 const TerminalProductionView = ({
   activeWikkelingen = [],
@@ -8,6 +8,7 @@ const TerminalProductionView = ({
   onSelectTracked,
   selectedWikkeling,
   onReleaseProduct,
+  onCancelProduction,
   scanInput = "",
   setScanInput = () => {},
   onScan = () => {},
@@ -15,6 +16,47 @@ const TerminalProductionView = ({
   scannerMode = true
 }) => {
   const { t } = useTranslation();
+  const itemRefs = useRef({});
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+
+        if (activeWikkelingen.length === 0) return;
+
+        const currentIndex = activeWikkelingen.findIndex(p => p.id === selectedTrackedId);
+
+        let nextIndex;
+        if (e.key === 'ArrowDown') {
+          nextIndex = currentIndex >= 0 ? (currentIndex + 1) % activeWikkelingen.length : 0;
+        } else { // ArrowUp
+          nextIndex = currentIndex > 0 ? currentIndex - 1 : activeWikkelingen.length - 1;
+        }
+
+        const nextItem = activeWikkelingen[nextIndex];
+        if (nextItem) {
+          onSelectTracked(nextItem.id);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeWikkelingen, selectedTrackedId, onSelectTracked]);
+
+  // Scroll selected item into view
+  useEffect(() => {
+    if (selectedTrackedId && itemRefs.current[selectedTrackedId]) {
+      itemRefs.current[selectedTrackedId].scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    }
+  }, [selectedTrackedId]);
   
   return (
     <>
@@ -66,27 +108,50 @@ const TerminalProductionView = ({
           </h3>
           <span className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-[10px] font-black">{activeWikkelingen.length}</span>
         </div>
-        <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar text-left text-left">
+        <div
+          className="flex-1 overflow-y-auto space-y-3 custom-scrollbar text-left text-left pb-24"
+          style={{ paddingBottom: "max(6rem, env(safe-area-inset-bottom))" }}
+        >
           {activeWikkelingen.map((prod) => (
             <div
-              key={prod.id} onClick={() => onSelectTracked(prod.id)}
-              className={`p-5 rounded-[30px] border-2 transition-all cursor-pointer flex items-center justify-between ${
+              key={prod.id}
+              ref={el => (itemRefs.current[prod.id] = el)}
+              onClick={() => onSelectTracked(prod.id)}
+              className={`p-5 rounded-[30px] border-2 transition-all cursor-pointer flex items-center justify-between group ${
                 selectedTrackedId === prod.id ? "bg-orange-50 border-orange-500 shadow-md" : "bg-white border-slate-100"
               } text-left`}
             >
               <div className="flex items-center gap-4 text-left">
                 <div className="p-3 bg-orange-50 text-orange-600 rounded-2xl text-left"><Zap size={20} /></div>
                 <div className="text-left text-left">
-                  <h4 className="font-black italic leading-none mb-1 text-left">{prod.lotNumber}</h4>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase text-left">Order: {prod.orderId}</p>
+                  <h4 className="font-black italic leading-none mb-1">{prod.lotNumber}</h4>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase">Order: {prod.orderId}</p>
                 </div>
               </div>
-              <ChevronRight size={18} className="text-slate-300" />
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (window.confirm(`Weet je zeker dat je lot ${prod.lotNumber} wilt annuleren? Dit kan niet ongedaan worden gemaakt.`)) {
+                      onCancelProduction(prod.id);
+                    }
+                  }}
+                  className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Annuleer productie"
+                >
+                  <Trash2 size={20} />
+                </button>
+                <ChevronRight size={20} className="text-slate-300" />
+              </div>
             </div>
           ))}
         </div>
       </div>
-      <div className={`flex-1 p-6 md:p-8 bg-slate-50 flex flex-col overflow-y-auto custom-scrollbar ${!selectedTrackedId ? "hidden lg:flex" : "flex"} text-left`}>
+      <div
+        className={`flex-1 p-6 md:p-8 bg-slate-50 flex flex-col overflow-y-auto custom-scrollbar ${!selectedTrackedId ? "hidden lg:flex" : "flex"} text-left pb-24`}
+        style={{ paddingBottom: "max(6rem, env(safe-area-inset-bottom))" }}
+      >
          {selectedWikkeling ? (
           <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-500 text-left">
             <div className="bg-slate-900 rounded-[35px] p-6 text-white flex justify-between items-center border-4 border-orange-500/20 relative overflow-hidden shadow-xl text-left">
@@ -97,6 +162,14 @@ const TerminalProductionView = ({
               </div>
               <div className="p-3 bg-orange-600 rounded-2xl shadow-lg animate-pulse"><Zap size={24} /></div>
             </div>
+            
+            {selectedWikkeling.notes && (
+              <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+                <h4 className="text-xs font-black text-amber-800 uppercase tracking-widest mb-2 flex items-center gap-2"><FileText size={14} /> PO Text / Opmerkingen</h4>
+                <p className="text-sm font-medium text-slate-700 italic">"{selectedWikkeling.notes}"</p>
+              </div>
+            )}
+
             <div className="bg-white rounded-[40px] p-8 border border-slate-200 shadow-sm space-y-8 text-left">
               <button onClick={() => onReleaseProduct(selectedWikkeling)} className="w-full py-6 bg-slate-900 text-white rounded-[30px] font-black uppercase text-base shadow-xl hover:bg-emerald-600 transition-all flex items-center justify-center gap-4 active:scale-95 group">
                 <ClipboardCheck size={28} /> Product Gereedmelden

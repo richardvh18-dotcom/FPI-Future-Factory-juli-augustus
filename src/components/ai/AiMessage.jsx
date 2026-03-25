@@ -1,7 +1,7 @@
 import React from "react";
-import { X as LucideX } from "lucide-react";
+import { X as LucideX, ThumbsUp } from "lucide-react";
 
-const AiMessage = ({ message, factoryStructure, onNavigate, onReject, onQuery }) => {
+const AiMessage = ({ message, factoryStructure, onNavigate, onReject, onLike, onQuery }) => {
   const { role, content } = message;
 
   // Formatter voor AI responses
@@ -100,6 +100,16 @@ const AiMessage = ({ message, factoryStructure, onNavigate, onReject, onQuery })
         {role === "user" ? content : (
           <>
             <div className="prose prose-sm max-w-none">{formatResponse(content)}</div>
+            {onLike && (
+              <button
+                title="Goed antwoord — opslaan in geheugen"
+                onClick={onLike}
+                className="absolute top-2 right-9 p-1 rounded-full bg-green-50 hover:bg-green-200 text-green-600 border border-green-100 shadow-sm transition-all"
+                style={{ zIndex: 10 }}
+              >
+                <ThumbsUp size={16} />
+              </button>
+            )}
             <button
               title="Markeer als foutief/hallucinatie"
               onClick={onReject}

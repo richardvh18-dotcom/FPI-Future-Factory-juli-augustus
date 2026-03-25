@@ -2,9 +2,9 @@ import { collection, query, onSnapshot, doc, serverTimestamp, updateDoc, where, 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { LogOut, Loader2, Menu, X, Clock, Calendar } from "lucide-react";
-import { db } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { LogOut, Loader2, Menu, X, Clock, Calendar, ScanBarcode, UserCheck } from "lucide-react";
+import { db, logActivity } from "../../config/firebase";
+import { PATHS, getArchiveItemsPath } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { getAuth } from "firebase/auth";
 import { useNotifications } from "../../contexts/NotificationContext";
@@ -16,7 +16,8 @@ import {
   getNextFlowState,
   getStepForStation,
 } from "../../utils/workstationLogic";
-import { normalizeMachine } from "../../utils/hubHelpers";
+import { normalizeMachine, FITTING_MACHINES, PIPE_MACHINES } from "../../utils/hubHelpers";
+import { toDateSafe } from "../../utils/dateUtils";
 import ActiveProductionView from "./views/ActiveProductionView";
 import PostProcessingFinishModal from "./modals/PostProcessingFinishModal";
 
@@ -39,6 +40,93 @@ const getDiameter = (str) => {
   const match = str.match(/(\d+)/);
   if (match) return parseInt(match[1], 10);
   return 0;
+};
+
+const getLossenTypeAndDiameter = (rawText) => {
+  const text = String(rawText || "").toUpperCase();
+  const isTB = text.includes("TB");
+  const isCB = text.includes("CB");
+
+  const numberMatches = Array.from(text.matchAll(/\d{2,4}/g)).map((m) => ({
+    value: Number(m[0]),
+    index: m.index || 0,
+  }));
+
+  const candidates = numberMatches.filter((n) => Number.isFinite(n.value) && n.value >= 25 && n.value <= 1000);
+
+  if (candidates.length === 0) {
+    return { isTB, isCB, diameter: 0 };
+  }
+
+  const typeIdx = Math.max(text.indexOf("TB"), text.indexOf("CB"));
+  if (typeIdx >= 0) {
+    const nearest = candidates.reduce((best, cur) => {
+      if (!best) return cur;
+      return Math.abs(cur.index - typeIdx) < Math.abs(best.index - typeIdx) ? cur : best;
+    }, null);
+    return { isTB, isCB, diameter: nearest?.value || 0 };
+  }
+
+  return { isTB, isCB, diameter: candidates[0]?.value || 0 };
+};
+
+// Bepaal lossen route op basis van product type (TB/CB) en diameter
+// TB 25-300mm  → tab lossen (lokaal)
+// TB > 300mm   → station LOSSEN (centraal)
+// CB 25-350mm  → tab lossen (lokaal)
+// CB > 350mm   → station LOSSEN (centraal)
+// Uitzondering BH18: Elbow met AB-mof (o.a. ABAB) gaat altijd naar station LOSSEN.
+const getLossenRoute = (itemText, originStation = "") => {
+  const text = String(itemText || "").toUpperCase();
+  const origin = normalizeMachine(originStation || "");
+  const isBh18Origin = origin === "BH18" || origin === "18";
+  const isElbow = /\bELB(OW)?\b/.test(text);
+  const hasAbMof = text.includes("ABAB") || /\bAB\b/.test(text);
+
+  if (isBh18Origin && isElbow && hasAbMof) return "STATION";
+
+  const { isTB, isCB, diameter } = getLossenTypeAndDiameter(itemText);
+  if (isTB && diameter > 300) return "STATION";
+  if (isCB && diameter > 350) return "STATION";
+  return "TAB";
+};
+
+const getTodayString = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const normalizePlanningStatus = (status) => String(status || "").trim().toLowerCase();
+
+const isInactivePlanningStatus = (status) => {
+  const normalized = normalizePlanningStatus(status);
+  return ["completed", "cancelled", "shipped", "rejected", "finished", "deleted"].includes(normalized);
+};
+
+const getCurrentShiftKey = (date = new Date()) => {
+  const currentMinutes = date.getHours() * 60 + date.getMinutes();
+
+  if (currentMinutes >= 5 * 60 + 30 && currentMinutes < 14 * 60) return "VROEG";
+  if (currentMinutes >= 14 * 60 && currentMinutes < 22 * 60 + 30) return "LAAT";
+  return "NACHT";
+};
+
+const getCurrentShiftLabel = (date = new Date()) => {
+  const key = getCurrentShiftKey(date);
+  if (key === "VROEG") return "VROEGE DIENST";
+  if (key === "LAAT") return "LATE DIENST";
+  return "NACHTDIENST";
+};
+
+const shiftMatchesBucket = (shiftLabel, bucket) => {
+  const label = String(shiftLabel || "").toUpperCase();
+  if (bucket === "VROEG") return label.includes("VROEGE") || label.includes("OCHTEND") || label.includes("MORNING") || label.includes("EARLY");
+  if (bucket === "LAAT") return label.includes("LATE") || label.includes("AVOND") || label.includes("EVENING");
+  if (bucket === "NACHT") return label.includes("NACHT") || label.includes("NIGHT");
+  return false;
 };
 
 const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
@@ -76,6 +164,14 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   const [itemToFinish, setItemToFinish] = useState(null);
   const [showRepairModal, setShowRepairModal] = useState(false);
   const [itemToRepair, setItemToRepair] = useState(null);
+  const [showOperatorCheckinModal, setShowOperatorCheckinModal] = useState(false);
+  const [operatorBadgeInput, setOperatorBadgeInput] = useState("");
+  const [isCheckingInOperator, setIsCheckingInOperator] = useState(false);
+  const [checkedInOperator, setCheckedInOperator] = useState(null);
+  const [dismissedPromptShift, setDismissedPromptShift] = useState(null);
+  const [timeHeartbeat, setTimeHeartbeat] = useState(Date.now());
+  const lastShiftRef = useRef(getCurrentShiftKey(new Date()));
+  const lastAutoCheckoutMinuteRef = useRef("");
 
   const currentAppId = getAppId();
   const isPostProcessing = [
@@ -87,6 +183,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   ].includes((selectedStation || "").toLowerCase());
 
   const isBM01 = (selectedStation || "").toUpperCase().replace(/\s/g, "") === "BM01" || (selectedStation || "").toUpperCase().includes("BM01");
+  const requiresShiftCheckin = !["admin", "teamleader", "planner"].includes(String(currentUser?.role || "").toLowerCase());
+  const currentShiftKey = useMemo(() => getCurrentShiftKey(new Date(timeHeartbeat)), [timeHeartbeat]);
 
   // Initiele Tab en Station Setup
   useEffect(() => {
@@ -102,6 +200,24 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       }
     }
   }, [initialStationId]);
+
+  useEffect(() => {
+    if (!requiresShiftCheckin || !selectedStation) return;
+    setCheckedInOperator(null);
+    setOperatorBadgeInput("");
+  }, [selectedStation, requiresShiftCheckin]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setTimeHeartbeat(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (lastShiftRef.current !== currentShiftKey) {
+      setDismissedPromptShift(null);
+      lastShiftRef.current = currentShiftKey;
+    }
+  }, [currentShiftKey]);
 
   // Als searchOrder is meegegeven, zoek en select die order
   useEffect(() => {
@@ -179,7 +295,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       // OPTIMIZED: Verlaagde limit voor snellere loading
       const q = query(
         ordersRef, 
-        where("status", "not-in", ["completed", "cancelled", "shipped", "COMPLETED", "CANCELLED", "SHIPPED"]),
+        where("status", "not-in", ["completed", "cancelled", "shipped", "rejected", "finished", "COMPLETED", "CANCELLED", "SHIPPED", "REJECTED", "FINISHED"]),
         limit(200) // Verlaagd van 1000 naar 200 voor snellere performance
       );
       const unsubOrders = onSnapshot(q, (snap) => {
@@ -208,21 +324,30 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         setLoading(false);
       });
       unsubs.push(unsubOrders);
+      
+      // OPTIMIZED: Only fetch active products to reduce read operations
       const unsubProds = onSnapshot(
-        query(collection(db, ...PATHS.TRACKING), limit(50)),
+        query(collection(db, ...PATHS.TRACKING), where("status", "not-in", ["completed", "shipped", "deleted"]), limit(200)),
         (snap) => {
           if (isMounted) setRawProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         },
         (error) => console.warn("Tracking Sync Error:", error)
       );
       unsubs.push(unsubProds);
-      // Occupancy data ophalen
+      
+      // OPTIMIZED: Occupancy data - try to filter by today
       const unsubOccupancy = onSnapshot(
-        query(collection(db, ...PATHS.OCCUPANCY), limit(50)),
+        query(collection(db, ...PATHS.OCCUPANCY), where("date", "==", getTodayString()), limit(100)),
         (snap) => {
           if (isMounted) setOccupancy(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         },
-        (error) => console.warn("Occupancy Sync Error:", error)
+        (error) => {
+          console.warn("Occupancy Sync Error (filtered), fallback to limit:", error);
+          // Fallback if index missing or date format mismatch
+          onSnapshot(query(collection(db, ...PATHS.OCCUPANCY), limit(50)), (snap) => {
+             if (isMounted) setOccupancy(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+          });
+        }
       );
       unsubs.push(unsubOccupancy);
       // Personnel data ophalen
@@ -251,7 +376,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       const year = today.getFullYear();
       
       const q = query(
-          collection(db, "future-factory", "production", "archive", String(year), "items"),
+          collection(db, ...getArchiveItemsPath(year)),
           where("timestamps.finished", ">=", today)
       );
       
@@ -322,7 +447,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   // Huidige operator voor dit werkstation berekenen  // Shift color helper
   const getShiftColor = (shiftLabel) => {
     const label = (shiftLabel || "").toUpperCase();
-    if (label.includes(t("digitalplanning.workstation.shift_morning_label").toUpperCase()) || label.includes("MORNING") || label.includes("EARLY")) {
+    if (label.includes(t("digitalplanning.workstation.shift_morning_label").toUpperCase()) || label.includes("MORNING") || label.includes("EARLY") || label.includes("VROEGE")) {
       return "bg-amber-100 text-amber-800 border-amber-300";
     }
     if (label.includes(t("digitalplanning.workstation.shift_evening_label").toUpperCase()) || label.includes("EVENING") || label.includes("LATE")) {
@@ -347,7 +472,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     const label = (shiftLabel || "").toUpperCase();
     
     // Ochtend: 05:30 - 14:00
-    if (label.includes("OCHTEND") || label.includes("MORNING") || label.includes("EARLY")) {
+    if (label.includes("OCHTEND") || label.includes("MORNING") || label.includes("EARLY") || label.includes("VROEGE")) {
       const startTime = 5 * 60 + 30; // 05:30
       const endTime = 14 * 60; // 14:00
       return currentTime >= startTime && currentTime < endTime;
@@ -389,14 +514,17 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     return occupancy
       .filter((occ) => {
         if (normalizeMachine(occ.machineId || occ.station) !== normalizedStation) return false;
+        const isActiveOccupancy = occ.isActive !== false && !occ.checkedOutAt;
         if (!occ.date) return false;
         
+        if (!isActiveOccupancy) return false;
         const occDate = occ.date.toDate ? occ.date.toDate() : new Date(occ.date);
         occDate.setHours(0, 0, 0, 0);
         
         if (occDate.getTime() !== today.getTime()) return false;
         
         // FILTER: Alleen tonen als de shift momenteel actief is
+        return isShiftActive(occ.shift);
         return isShiftActive(occ.shift);
       })
       .map(occ => {
@@ -408,6 +536,203 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         };
       });
   }, [selectedStation, occupancy, personnel]);
+
+  useEffect(() => {
+    if (!requiresShiftCheckin || !selectedStation) return;
+    if (showOperatorCheckinModal) return;
+    if (stationOccupancy.length > 0) return;
+    if (dismissedPromptShift === currentShiftKey) return;
+    // Auto-popup tijdelijk uitgeschakeld — operator meldt zich aan via de knop in de header
+    // setShowOperatorCheckinModal(true);
+  }, [
+    requiresShiftCheckin,
+    selectedStation,
+    showOperatorCheckinModal,
+    stationOccupancy.length,
+    dismissedPromptShift,
+    currentShiftKey,
+  ]);
+
+  useEffect(() => {
+    if (!selectedStation) return;
+
+    const now = new Date(timeHeartbeat);
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    let targetBucket = null;
+
+    if (currentMinutes === 13 * 60 + 59) targetBucket = "VROEG";
+    if (currentMinutes === 21 * 60 + 59) targetBucket = "LAAT";
+    if (!targetBucket) return;
+
+    const minuteKey = `${getTodayString()}_${now.getHours()}_${now.getMinutes()}_${selectedStation}_${targetBucket}`;
+    if (lastAutoCheckoutMinuteRef.current === minuteKey) return;
+    lastAutoCheckoutMinuteRef.current = minuteKey;
+
+    const runAutoCheckout = async () => {
+      try {
+        const todayStr = getTodayString();
+        const stationNorm = normalizeMachine(selectedStation);
+        const occSnap = await getDocs(
+          query(collection(db, ...PATHS.OCCUPANCY), where("date", "==", todayStr), limit(300))
+        );
+
+        const toCheckout = occSnap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((entry) => {
+            const sameStation = normalizeMachine(entry.machineId || entry.station) === stationNorm;
+            const isActive = entry.isActive !== false && !entry.checkedOutAt;
+            return sameStation && isActive && shiftMatchesBucket(entry.shift, targetBucket);
+          });
+
+        await Promise.all(
+          toCheckout.map(async (entry) => {
+            const previousHours = Number(entry.hoursWorked || 0);
+            const checkedInDate = toDateSafe(entry.checkedInAt);
+            const elapsedHours = checkedInDate ? Math.max(0, (now.getTime() - checkedInDate.getTime()) / 3600000) : 0;
+            const finalHours = Number((previousHours + elapsedHours).toFixed(2));
+
+            await updateDoc(doc(db, ...PATHS.OCCUPANCY, entry.id), {
+              hoursWorked: finalHours,
+              checkedOutAt: serverTimestamp(),
+              isActive: false,
+              updatedAt: serverTimestamp(),
+            });
+          })
+        );
+
+        if (toCheckout.length > 0) {
+          setCheckedInOperator(null);
+          setDismissedPromptShift(null);
+          showInfo(`Automatisch uitgecheckt (${targetBucket === "VROEG" ? "vroege dienst" : "late dienst"}).`);
+        }
+      } catch (err) {
+        console.error("Auto shift checkout fout:", err);
+      }
+    };
+
+    runAutoCheckout();
+  }, [selectedStation, timeHeartbeat, showInfo]);
+
+  const handleOperatorShiftCheckin = async () => {
+    const rawBadge = String(operatorBadgeInput || "").trim();
+    if (!rawBadge) {
+      showWarning("Scan of vul eerst een personeelsnummer in.", "Personeel");
+      return;
+    }
+
+    setIsCheckingInOperator(true);
+    try {
+      const normalizedBadge = rawBadge.toUpperCase();
+
+      let person = personnel.find((p) => {
+        const id = String(p.id || "").toUpperCase();
+        const empNo = String(p.employeeNumber || "").toUpperCase();
+        return id === normalizedBadge || empNo === normalizedBadge;
+      });
+
+      if (!person) {
+        const byEmployeeSnap = await getDocs(
+          query(collection(db, ...PATHS.PERSONNEL), where("employeeNumber", "==", rawBadge), limit(1))
+        );
+        if (!byEmployeeSnap.empty) {
+          const d = byEmployeeSnap.docs[0];
+          person = { id: d.id, ...d.data() };
+        }
+      }
+
+      if (!person) {
+        const personDoc = await getDoc(doc(db, ...PATHS.PERSONNEL, rawBadge));
+        if (personDoc.exists()) {
+          person = { id: personDoc.id, ...personDoc.data() };
+        }
+      }
+
+      if (!person) {
+        showError(`Personeelsnummer ${rawBadge} niet gevonden in Personeel.`);
+        return;
+      }
+
+      const now = new Date();
+      const todayStr = getTodayString();
+      const operatorNumber = String(person.employeeNumber || person.id || rawBadge);
+
+      const occSnap = await getDocs(
+        query(collection(db, ...PATHS.OCCUPANCY), where("date", "==", todayStr), limit(300))
+      );
+
+      const activeEntries = occSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((entry) => {
+          const sameOperator = String(entry.operatorNumber || "").toUpperCase() === operatorNumber.toUpperCase();
+          const isActive = entry.isActive !== false && !entry.checkedOutAt;
+          return sameOperator && isActive;
+        });
+
+      await Promise.all(
+        activeEntries.map(async (entry) => {
+          const previousHours = Number(entry.hoursWorked || 0);
+          const checkedInDate = toDateSafe(entry.checkedInAt);
+          const elapsedHours = checkedInDate ? Math.max(0, (now.getTime() - checkedInDate.getTime()) / 3600000) : 0;
+          const finalHours = Number((previousHours + elapsedHours).toFixed(2));
+
+          await updateDoc(doc(db, ...PATHS.OCCUPANCY, entry.id), {
+            hoursWorked: finalHours,
+            checkedOutAt: serverTimestamp(),
+            isActive: false,
+            movedToMachineId: selectedStation,
+            updatedAt: serverTimestamp(),
+          });
+        })
+      );
+
+      const machineNorm = (normalizeMachine(selectedStation) || selectedStation || "").replace(/[^a-zA-Z0-9]/g, "_");
+      const occId = `${todayStr}_${machineNorm}_${operatorNumber}_${Date.now()}`;
+
+      await setDoc(doc(db, ...PATHS.OCCUPANCY, occId), {
+        departmentId: person.departmentId || "fittings",
+        machineId: selectedStation,
+        operatorNumber,
+        operatorName: person.name || `Operator ${operatorNumber}`,
+        date: todayStr,
+        hoursWorked: 0,
+        isPloeg: false,
+        shift: getCurrentShiftLabel(),
+        isLoan: false,
+        checkedInAt: serverTimestamp(),
+        checkedOutAt: null,
+        isActive: true,
+        source: "workstation_checkin",
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      if (person.id) {
+        await updateDoc(doc(db, ...PATHS.PERSONNEL, person.id), {
+          currentMachineId: selectedStation,
+          lastBadgeScanAt: serverTimestamp(),
+          lastBadgeScanBy: currentUser?.uid || null,
+        }).catch(() => {});
+      }
+
+      setCheckedInOperator({
+        number: operatorNumber,
+        name: person.name || `Operator ${operatorNumber}`,
+        machineId: selectedStation,
+      });
+      setOperatorBadgeInput("");
+
+      if (activeEntries.length > 0) {
+        showSuccess(`${person.name || operatorNumber} overgezet naar ${selectedStation}.`);
+      } else {
+        showSuccess(`${person.name || operatorNumber} aangemeld op ${selectedStation}.`);
+      }
+      showInfo("Je kunt direct nog een operator scannen.");
+    } catch (err) {
+      console.error("Operator check-in fout:", err);
+      showError(`Aanmelden op station mislukt: ${err.message}`);
+    } finally {
+      setIsCheckingInOperator(false);
+    }
+  };
 
   // NIEUW: Rotatie logica voor operators (elke 10s wisselen)
   const [currentOperatorIndex, setCurrentOperatorIndex] = useState(0);
@@ -430,7 +755,53 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       return rawOrders;
 
     const currentStationNorm = normalizeMachine(selectedStation);
+    const isFittingsStation = FITTING_MACHINES
+      .map((s) => normalizeMachine(s))
+      .includes(currentStationNorm);
     const stationField = `started_${selectedStation.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+    const pipeStationsNorm = new Set(PIPE_MACHINES.map((s) => normalizeMachine(s)));
+    const fittingStationsNorm = new Set(FITTING_MACHINES.map((s) => normalizeMachine(s)));
+
+    const routePresenceByOrder = {};
+    rawOrders.forEach((order) => {
+      const orderId = String(order.orderId || "").trim();
+      if (!orderId) return;
+
+      const machineNorm = normalizeMachine(order.machine || "");
+      if (!routePresenceByOrder[orderId]) {
+        routePresenceByOrder[orderId] = { hasPipe: false, hasFitting: false };
+      }
+
+      if (pipeStationsNorm.has(machineNorm)) routePresenceByOrder[orderId].hasPipe = true;
+      if (fittingStationsNorm.has(machineNorm)) routePresenceByOrder[orderId].hasFitting = true;
+    });
+
+    const pipeProgressCountByOrder = new Map();
+    rawProducts.forEach((p) => {
+      const orderId = String(p.orderId || "").trim();
+      if (!orderId) return;
+
+      const sourceStationNorm = normalizeMachine(
+        p.originMachine || p.machine || p.currentStation || ""
+      );
+      if (!pipeStationsNorm.has(sourceStationNorm)) return;
+
+      if (p.status === "rejected" || p.currentStep === "REJECTED") return;
+
+      const stepUpper = String(p.currentStep || "").toUpperCase();
+      const statusLower = String(p.status || "").toLowerCase();
+      const hasProgress =
+        statusLower === "completed" ||
+        (stepUpper && stepUpper !== "WIKKELEN" && stepUpper !== "HOLD_AREA");
+
+      if (hasProgress) {
+        pipeProgressCountByOrder.set(
+          orderId,
+          (pipeProgressCountByOrder.get(orderId) || 0) + 1
+        );
+      }
+    });
     
     const orderStats = {};
     rawProducts.forEach((p) => {
@@ -449,7 +820,32 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
     return rawOrders
       .filter((o) => {
-        if (o.status === "cancelled") return false;
+        if (isInactivePlanningStatus(o.status)) return false;
+
+        // Cross-station N2100: toon order in Fittingen pas als Spoolbouw
+        // voldoende output heeft opgeleverd (x van y gating).
+        const orderId = String(o.orderId || "").trim().toUpperCase();
+        if (isFittingsStation && orderId.startsWith("N2100")) {
+          const orderKey = String(o.orderId || "").trim();
+          const routeInfo = routePresenceByOrder[orderKey];
+          const isHybrid = routeInfo?.hasPipe && routeInfo?.hasFitting;
+
+          if (isHybrid) {
+            const readyCount = pipeProgressCountByOrder.get(orderKey) || 0;
+            const explicitReleaseCount = Number(
+              o.releaseToFittingsAtCount || o.spoolReleaseCount || 0
+            );
+            const plannedCount = Math.max(0, Number(o.plan || o.quantity || 0));
+            const requiredCount = explicitReleaseCount > 0
+              ? explicitReleaseCount
+              : Math.max(1, plannedCount);
+
+            if (readyCount < requiredCount) {
+              return false;
+            }
+          }
+        }
+
         const orderMachineNorm = normalizeMachine(o.machine);
         return (
           o.machine === selectedStation ||
@@ -478,15 +874,16 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   const stationStats = useMemo(() => {
     const currentStationNorm = normalizeMachine(selectedStation);
     const cleanStationId = (currentStationNorm || "").toUpperCase().replace(/\s/g, "");
-    
-    // Check voor downstream stations (Nabewerking, Mazak, Lossen)
-    // BM01 wordt apart afgehandeld via stationOrders (bevat alle orders)
-    const isDownstream = ["NABEWERKING", "MAZAK", "LOSSEN", "NABEWERKEN", "BM01", "STATIONBM01"].includes(cleanStationId) || cleanStationId.includes("NABEWERK") || cleanStationId.includes("BM01");
+
+    const isBm01Station = cleanStationId.includes("BM01");
     const isLossenStation = cleanStationId === "LOSSEN";
+    const isNabewerkingStation = cleanStationId === "NABEWERKING" || cleanStationId === "NABEWERKEN" || cleanStationId.includes("NABEWERK");
+    const isMazakStation = cleanStationId === "MAZAK";
+    const isDownstream = isBm01Station || isLossenStation || isNabewerkingStation || isMazakStation;
 
     if (isDownstream) {
         // BM01 Specifieke KPI Logica
-        if (cleanStationId.includes("BM01")) {
+      if (isBm01Station) {
             // Plan: Totaal van alle orders (want BM01 is centraal)
             let plan = 0;
             stationOrders.forEach(o => plan += Number(o.plan || 0));
@@ -514,83 +911,46 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             return { plan, todo, done };
         }
 
-        let todoCount = 0;
-        let doneCount = 0;
+        const isActiveProduct = (p) => {
+          const pStep = (p.currentStep || "").toUpperCase();
+          const pStatus = String(p.status || "").toLowerCase();
+          return pStep !== "FINISHED" && pStep !== "REJECTED" && pStatus !== "completed" && pStatus !== "rejected";
+        };
 
-        rawProducts.forEach(p => {
-            const pStationNorm = normalizeMachine(p.currentStation || "");
-            const pLastStationNorm = normalizeMachine(p.lastStation || "");
-            const pStep = p.currentStep || "";
-            
-            // Check of item actief is (niet klaar/afgekeurd)
-            const isActive = p.status !== "completed" && p.currentStep !== "Finished" && p.status !== "rejected" && p.currentStep !== "REJECTED";
+        const todoCount = rawProducts.filter((p) => {
+          const pStationNorm = normalizeMachine(p.currentStation || "");
+          const pStep = p.currentStep || "";
+          if (!isActiveProduct(p)) return false;
 
-            // 1. Bereken TODO (Nog)
-            let isHere = false;
-            if (isLossenStation) {
-                // Voor Lossen station: items met stap 'Lossen' EN specifieke herkomst regels
-                if (pStep === "Lossen" && isActive) {
-                    const origin = normalizeMachine(p.originMachine || p.machine || "");
-                    const originLabel = normalizeMachine(p.stationLabel || "");
-                    const current = normalizeMachine(p.currentStation || "");
-                    const targetMachines = ["BH31", "BH16", "BH11", "31", "16", "11"];
+          if (isLossenStation) {
+            return pStep === "Lossen" || pStationNorm === "LOSSEN";
+          }
+          if (isNabewerkingStation) {
+            return pStationNorm === "NABEWERKING" || pStationNorm === "NABEWERKEN" || String(pStationNorm || "").includes("NABEWERK");
+          }
+          if (isMazakStation) {
+            return pStationNorm === "MAZAK";
+          }
+          return pStationNorm === currentStationNorm;
+        }).length;
 
-                    if (targetMachines.includes(origin) || targetMachines.includes(originLabel) || targetMachines.includes(current)) {
-                        isHere = true;
-                    } else if (["BH18", "18"].includes(origin) || ["BH18", "18"].includes(originLabel) || current === "BH18") {
-                        // Alleen ID groter dan 300mm van BH18
-                        const diameter = getDiameter(p.item || "");
-                        if (diameter > 300) isHere = true;
-                    }
-                }
-            } else {
-                // Voor Nabewerking/Mazak/BM01: items op dit station
-                if (cleanStationId.includes("BM01")) {
-                     const pStepUpper = pStep.toUpperCase();
-                     // BM01 specifieke check: ook kijken naar step 'Eindinspectie' of 'BM01'
-                     if ((pStationNorm === currentStationNorm || pStepUpper.includes("INSPECTIE") || pStepUpper === "BM01") && isActive) {
-                         isHere = true;
-                     }
-                } else {
-                     if (pStationNorm === currentStationNorm && isActive) isHere = true;
-                }
-            }
-            
-            if (isHere) todoCount++;
+        const doneCount = rawProducts.filter((p) => {
+          const pLastStationNorm = normalizeMachine(p.lastStation || "");
+          const pStationNorm = normalizeMachine(p.currentStation || "");
+          const isFinished = p.status === "completed" || p.currentStep === "Finished";
 
-            // 2. Bereken DONE (Gereed)
-            let wasHere = false;
-            if (isLossenStation) {
-                const origin = normalizeMachine(p.originMachine || p.machine || "");
-                const originLabel = normalizeMachine(p.stationLabel || "");
-                
-                const targetMachines = ["BH31", "BH16", "BH11", "31", "16", "11"];
-                let isRelevant = false;
-
-                if (targetMachines.includes(origin) || targetMachines.includes(originLabel)) {
-                    isRelevant = true;
-                } else if (["BH18", "18"].includes(origin) || ["BH18", "18"].includes(originLabel)) {
-                    const diameter = getDiameter(p.item || "");
-                    if (diameter > 300) isRelevant = true;
-                }
-
-                // Als relevant en stap is verder dan Lossen (en niet Wikkelen)
-                if (isRelevant && pStep !== "Wikkelen" && pStep !== "Lossen" && pStep !== "HOLD_AREA") {
-                    wasHere = true;
-                }
-            } else {
-                if (pLastStationNorm === currentStationNorm) wasHere = true;
-                if (pStationNorm === currentStationNorm && (p.status === "completed" || p.currentStep === "Finished")) wasHere = true;
-                
-                // BM01 specifieke check voor finished items die naar GEREED zijn gegaan
-                if (cleanStationId.includes("BM01")) {
-                    if ((p.status === "completed" || p.currentStep === "Finished") && (pStationNorm === "GEREED" && pLastStationNorm === "BM01")) {
-                        wasHere = true;
-                    }
-                }
-            }
-            if (wasHere) doneCount++;
-        });
+          if (isLossenStation) {
+            // Alles dat Lossen al verlaten heeft of afgerond is na Lossen
+            return pLastStationNorm === "LOSSEN" || (pStationNorm === "LOSSEN" && isFinished);
+          }
+          if (isNabewerkingStation) {
+            return pLastStationNorm === "NABEWERKING" || pLastStationNorm === "NABEWERKEN" || String(pLastStationNorm || "").includes("NABEWERK") || ((pStationNorm === "NABEWERKING" || pStationNorm === "NABEWERKEN" || String(pStationNorm || "").includes("NABEWERK")) && isFinished);
+          }
+          if (isMazakStation) {
+            return pLastStationNorm === "MAZAK" || (pStationNorm === "MAZAK" && isFinished);
+          }
+          return pLastStationNorm === currentStationNorm || (pStationNorm === currentStationNorm && isFinished);
+        }).length;
 
         return { plan: todoCount + doneCount, done: doneCount, todo: todoCount };
     }
@@ -657,6 +1017,19 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     });
   }, [rawProducts, selectedStation]);
 
+  const selectedStationNormForHeader = normalizeMachine(selectedStation);
+  const selectedStationCleanForHeader = (selectedStationNormForHeader || "").toUpperCase().replace(/\s/g, "");
+  const isBm01HeaderStation = selectedStationCleanForHeader.includes("BM01");
+  const isTwoKpiHeaderStation =
+    selectedStationCleanForHeader === "LOSSEN" ||
+    selectedStationCleanForHeader === "MAZAK" ||
+    selectedStationCleanForHeader === "NABEWERKING" ||
+    selectedStationCleanForHeader === "NABEWERKEN" ||
+    selectedStationCleanForHeader.includes("NABEWERK");
+  const todoHeaderLabel = isBm01HeaderStation
+    ? t("digitalplanning.terminal.tab_to_offer")
+    : t("digitalplanning.workstation.todo");
+
   // Handlers
   const handleBack = () => {
     if (onExit) {
@@ -669,7 +1042,12 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   const handleStartProduction = async (
     order,
     customLotNumber,
-    stringCount = 1
+    stringCount = 1,
+    _manualOrderInput,
+    _operatorInput,
+    _selectedOperatorName,
+    labelZplData,
+    labelTemplateId
   ) => {
     if (!currentUser || !customLotNumber) return;
     try {
@@ -677,6 +1055,14 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       const prefix = customLotNumber.slice(0, -4);
       const startSeq = parseInt(customLotNumber.slice(-4), 10);
       let overflowItems = [];
+
+      const buildLotSpecificLabelZpl = (targetLotNumber) => {
+        if (typeof labelZplData !== "string" || !labelZplData.trim()) return null;
+        if (!customLotNumber || targetLotNumber === customLotNumber) return labelZplData;
+        // Bij string-runs vervangen we het start-lot in de ZPL zodat elk tracked item
+        // zijn eigen herprintbare labelinhoud bewaart.
+        return labelZplData.split(customLotNumber).join(targetLotNumber);
+      };
 
       for (let i = 0; i < stringCount; i++) {
         const currentSeq = startSeq + i;
@@ -712,6 +1098,16 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           .filter(Boolean);
 
         const flowState = getNextFlowState('START_WINDING');
+        const lotSpecificLabelZpl = buildLotSpecificLabelZpl(currentLotNumber);
+        const labelAudit = lotSpecificLabelZpl
+          ? {
+              timestamp: now.toISOString(),
+              user: currentUser?.email || "Operator",
+              station: selectedStation,
+              source: "production_start",
+              templateId: labelTemplateId || null,
+            }
+          : null;
 
         const unitData = {
           lotNumber: currentLotNumber,
@@ -733,8 +1129,9 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           personnelTracking: {
             [selectedStation]: stationOperators,
           },
-          labelZPL: null,
-          labelTemplateId: null,
+          labelZPL: lotSpecificLabelZpl,
+          labelTemplateId: labelTemplateId || null,
+          labelLastPrint: labelAudit,
         };
         if (isOverflow) {
           unitData.isOverproduction = true;
@@ -900,7 +1297,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
           // ARCHIVERING LOGICA VOOR BM01 (indien hier afgehandeld)
           const year = new Date().getFullYear();
-          const archiveRef = doc(db, "future-factory", "production", "archive", String(year), "items", itemToFinish.id || itemToFinish.lotNumber);
+          const archiveRef = doc(db, ...getArchiveItemsPath(year), itemToFinish.id || itemToFinish.lotNumber);
           
           const finalData = { 
               ...itemToFinish, 
@@ -1082,6 +1479,11 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
       const flowState = getNextFlowState('FINISH_WINDING');
 
+      const lossenRoute = getLossenRoute(
+        `${product.item || ""} ${product.description || ""} ${product.itemCode || ""}`,
+        selectedStation
+      );
+
       const updates = {
         currentStep: flowState.currentStep || "Wacht op Lossen",
         status: flowState.status || "Te Lossen",
@@ -1089,12 +1491,24 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         "timestamps.lossen_start": serverTimestamp(),
       };
 
+      // Grote moffen gaan naar centraal station LOSSEN, kleine/middelgrote blijven lokaal
+      if (lossenRoute === "STATION") {
+        updates.currentStation = "LOSSEN";
+      } else {
+        // Houd lokale Lossen-tab robuust: zet expliciet station/step/status
+        updates.currentStation = selectedStation;
+        updates.currentStep = "Wacht op Lossen";
+        updates.status = "Te Lossen";
+      }
+
       if (lossenOperators.length > 0) {
         updates[`personnelTracking.LOSSEN`] = lossenOperators;
       }
 
       await updateDoc(productRef, updates);
-      setActiveTab("lossen");
+      if (lossenRoute === "TAB") {
+        setActiveTab("lossen");
+      }
     } catch (error) {
       console.error("Fout bij proces:", error);
       showError("Kon status niet updaten", "Fout bij proces");
@@ -1164,6 +1578,95 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     }
   };
 
+  // NIEUW: Handler voor annuleren productie (Prullenbak)
+  const handleCancelProduction = async (productId) => {
+    if (!productId) return;
+    
+    // Zoek het product voor details (lotnummer, orderId)
+    const product = rawProducts.find(p => p.id === productId);
+    if (!product) return;
+
+    if (!window.confirm(t("digitalplanning.workstation.confirm_cancel", { lot: product.lotNumber, defaultValue: `Weet je zeker dat je lot ${product.lotNumber} wilt annuleren?` }))) return;
+
+    try {
+      const cancelledLot = String(product.lotNumber || "").trim();
+      const lotSeq = Number.parseInt(cancelledLot.slice(-4), 10);
+      const lotWeekSuffix = cancelledLot.length >= 6 ? cancelledLot.slice(2, 6) : "";
+      const lotStation = String(product.originMachine || selectedStation || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+      // 1) Verwijder het actieve product
+      const productRef = doc(db, ...PATHS.TRACKING, productId);
+      await deleteDoc(productRef);
+
+      // Update order teller in planning (verminder 'started' count)
+      if (product.orderId && product.orderId !== "NOG_TE_BEPALEN") {
+        const order = rawOrders.find(o => o.orderId === product.orderId);
+        if (order) {
+           const stationField = `started_${selectedStation.replace(/[^a-zA-Z0-9]/g, '_')}`;
+           // Gebruik increment(-1) voor atomicity
+           await updateDoc(doc(db, ...PATHS.PLANNING, order.id), {
+             [stationField]: increment(-1),
+             lastUpdated: serverTimestamp()
+           }).catch(e => console.warn("Kon orderteller niet verlagen:", e));
+        }
+      }
+
+      // 2) Geef lotvolgnummer vrij voor hergebruik (recycled sequence pool)
+      if (lotWeekSuffix && Number.isFinite(lotSeq) && lotSeq > 0) {
+        const counterDocId = `${lotStation}_${lotWeekSuffix}`;
+        const counterRef = doc(db, "future-factory", "production", "counters", counterDocId);
+        const counterSnap = await getDoc(counterRef);
+        const existing = counterSnap.exists() && Array.isArray(counterSnap.data()?.recycledSequences)
+          ? counterSnap.data().recycledSequences
+              .map((n) => Number(n))
+              .filter((n) => Number.isFinite(n) && n > 0)
+          : [];
+        const nextRecycled = Array.from(new Set([...existing, lotSeq])).sort((a, b) => a - b);
+        await setDoc(counterRef, {
+          recycledSequences: nextRecycled,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
+
+      // 3) Verwijder pending print queue jobs voor dit lot/order
+      let removedQueueJobs = 0;
+      try {
+        const queueSnap = await getDocs(query(collection(db, ...PATHS.PRINT_QUEUE), where("status", "==", "pending"), limit(200)));
+        const lotUpper = cancelledLot.toUpperCase();
+        const orderUpper = String(product.orderId || "").toUpperCase();
+
+        const toDelete = queueSnap.docs.filter((d) => {
+          const data = d.data() || {};
+          const md = data.metadata || {};
+          const mdLot = String(md.lotNumber || md.variables?.lotNumber || "").toUpperCase();
+          const mdOrder = String(md.orderId || md.variables?.orderNumber || "").toUpperCase();
+          const desc = String(md.description || data.description || "").toUpperCase();
+
+          if (lotUpper && (mdLot === lotUpper || desc.includes(lotUpper))) return true;
+          if (orderUpper && (mdOrder === orderUpper || desc.includes(orderUpper))) return true;
+          return false;
+        });
+
+        for (const d of toDelete) {
+          await deleteDoc(doc(db, ...PATHS.PRINT_QUEUE, d.id));
+          removedQueueJobs += 1;
+        }
+      } catch (queueErr) {
+        console.warn("Queue cleanup bij annuleren mislukt:", queueErr);
+      }
+
+      await logActivity(
+        currentUser?.uid,
+        "PRODUCTION_CANCEL",
+        `Production cancelled for lot ${product.lotNumber} on ${selectedStation}; sequence recycled=${Number.isFinite(lotSeq) ? lotSeq : 'n/a'}; queue jobs removed=${removedQueueJobs}`
+      );
+      showSuccess(t("digitalplanning.workstation.cancel_success", "Productie geannuleerd"));
+    } catch (err) {
+      console.error("Error cancelling production:", err);
+      showError(t("digitalplanning.workstation.cancel_error", "Fout bij annuleren"));
+    }
+  };
+
   // Pull to Refresh Logic
   const [pullStartY, setPullStartY] = useState(0);
   const [pullDistance, setPullDistance] = useState(0);
@@ -1221,13 +1724,15 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
             {/* KPI Tegels */}
             <div className="hidden lg:flex items-center gap-2 ml-2 border-l border-slate-200 pl-4">
-              <div className="flex flex-col items-center px-3 py-1 bg-blue-50 rounded-lg border border-blue-100 min-w-[60px]">
-                <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest leading-none mb-0.5">{t("digitalplanning.dashboard.plan")}</span>
-                <span className="text-sm font-black text-blue-700 leading-none">{stationStats.plan}</span>
-              </div>
+              {!isTwoKpiHeaderStation && (
+                <div className="flex flex-col items-center px-3 py-1 bg-blue-50 rounded-lg border border-blue-100 min-w-[60px]">
+                  <span className="text-[8px] font-black text-blue-400 uppercase tracking-widest leading-none mb-0.5">{t("digitalplanning.dashboard.plan")}</span>
+                  <span className="text-sm font-black text-blue-700 leading-none">{stationStats.plan}</span>
+                </div>
+              )}
               <div className="flex flex-col items-center px-3 py-1 bg-orange-50 rounded-lg border border-orange-100 min-w-[60px]">
                 <span className="text-[8px] font-black text-orange-400 uppercase tracking-widest leading-none mb-0.5">
-                  {["BM01", "Station BM01", "Mazak", "Nabewerking"].includes(selectedStation) ? t("digitalplanning.terminal.tab_to_offer") : t("digitalplanning.workstation.todo")}
+                  {todoHeaderLabel}
                 </span>
                 <span className="text-sm font-black text-orange-700 leading-none">{stationStats.todo}</span>
               </div>
@@ -1238,7 +1743,15 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             </div>
 
             {/* Midden: Bezetting Info */}
-            <div className="hidden xl:flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-slate-200 shadow-sm min-w-[200px] justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                setShowOperatorCheckinModal(true);
+                setOperatorBadgeInput("");
+              }}
+              className="hidden xl:flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-slate-200 shadow-sm min-w-[200px] justify-center hover:bg-slate-50 transition-colors"
+              title="Klik om operator aan te melden"
+            >
               <Clock className="w-4 h-4 text-slate-500" />
               {stationOccupancy.length > 0 ? (
                 <div
@@ -1253,7 +1766,14 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
               ) : (
                 <span className="text-xs font-bold text-slate-400 uppercase italic">{t("digitalplanning.workstation.no_operator")}</span>
               )}
-            </div>
+            </button>
+
+            {requiresShiftCheckin && checkedInOperator && (
+              <div className="hidden xl:flex items-center gap-2 px-3 py-2 bg-emerald-50 rounded-lg border border-emerald-200 shadow-sm">
+                <UserCheck className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-black text-emerald-700 uppercase">{checkedInOperator.name}</span>
+              </div>
+            )}
 
             {/* Rechts: Datum, Tijd & Week - helemaal rechts met flex-1 */}
             <div className="flex-1 hidden lg:flex justify-end items-center">
@@ -1282,13 +1802,15 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
                 {isMobileMenuOpen && (
                   <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-200 p-2 flex flex-col gap-1 z-50 animate-in slide-in-from-top-2">
                     {/* KPI Info voor mobiel */}
-                    <div className="grid grid-cols-3 gap-2 mb-2">
-                      <div className="px-2 py-2 bg-blue-50 rounded-lg border border-blue-100 text-center">
-                        <span className="text-[8px] font-black text-blue-400 uppercase block">{t("digitalplanning.dashboard.plan")}</span>
-                        <span className="text-xs font-black text-blue-700">{stationStats.plan}</span>
-                      </div>
+                    <div className={`grid ${isTwoKpiHeaderStation ? 'grid-cols-2' : 'grid-cols-3'} gap-2 mb-2`}>
+                      {!isTwoKpiHeaderStation && (
+                        <div className="px-2 py-2 bg-blue-50 rounded-lg border border-blue-100 text-center">
+                          <span className="text-[8px] font-black text-blue-400 uppercase block">{t("digitalplanning.dashboard.plan")}</span>
+                          <span className="text-xs font-black text-blue-700">{stationStats.plan}</span>
+                        </div>
+                      )}
                       <div className="px-2 py-2 bg-orange-50 rounded-lg border border-orange-100 text-center">
-                        <span className="text-[8px] font-black text-orange-400 uppercase block">{t("digitalplanning.terminal.tab_to_offer")}</span>
+                        <span className="text-[8px] font-black text-orange-400 uppercase block">{todoHeaderLabel}</span>
                         <span className="text-xs font-black text-orange-700">{stationStats.todo}</span>
                       </div>
                       <div className="px-2 py-2 bg-emerald-50 rounded-lg border border-emerald-100 text-center">
@@ -1402,6 +1924,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       <div 
         ref={contentRef}
         className={`flex-1 overflow-y-auto w-full ${activeTab === 'terminal' ? 'p-0' : 'p-2 sm:p-6 lg:p-8'} relative`}
+        style={{ paddingBottom: "max(8rem, env(safe-area-inset-bottom))" }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -1485,6 +2008,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
                     products={rawProducts}
                     orders={stationOrders}
                     onBack={() => setActiveTab("planning")}
+                    onCancelProduction={handleCancelProduction}
                   />
                 )}
               </div>
@@ -1494,15 +2018,17 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       </div>
 
       {/* MODALS */}
-      <ProductionStartModal
-        order={selectedOrder}
-        isOpen={showStartModal}
-        onClose={() => setShowStartModal(false)}
-        onStart={handleStartProduction}
-        stationId={selectedStation}
-        existingProducts={rawProducts}
-        onOpenProductInfo={handleOpenProductInfo}
-      />
+      {showStartModal && selectedOrder && (
+        <ProductionStartModal
+          order={selectedOrder}
+          isOpen={showStartModal}
+          onClose={() => setShowStartModal(false)}
+          onStart={handleStartProduction}
+          stationId={selectedStation}
+          existingProducts={rawProducts}
+          onOpenProductInfo={handleOpenProductInfo}
+        />
+      )}
       {linkedProductData && (
         <ProductDetailModal
           product={linkedProductData}
@@ -1537,6 +2063,74 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             onClose={() => { setShowRepairModal(false); setItemToRepair(null); }}
             onConfirm={handleRepairComplete}
         />
+      )}
+
+      {showOperatorCheckinModal && (
+        <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl p-6">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+                  <ScanBarcode size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 uppercase">Operator Aanmelden</h3>
+                  <p className="text-xs text-slate-500 font-bold">Station: {selectedStation}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDismissedPromptShift(currentShiftKey);
+                  setShowOperatorCheckinModal(false);
+                }}
+                className="px-2 py-1 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 font-bold text-xs uppercase"
+              >
+                Later
+              </button>
+            </div>
+
+            <p className="text-sm text-slate-600 mb-4">
+              Scan badge/QR of vul personeelsnummer in om de shift op deze machine te starten. Je kunt meerdere operators achter elkaar aanmelden.
+            </p>
+
+            <input
+              type="text"
+              value={operatorBadgeInput}
+              onChange={(e) => setOperatorBadgeInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleOperatorShiftCheckin();
+                }
+              }}
+              placeholder="Personeelsnummer"
+              autoFocus
+              className="w-full p-3 rounded-xl border-2 border-slate-200 font-bold text-slate-800 outline-none focus:border-blue-500"
+            />
+
+            <button
+              onClick={handleOperatorShiftCheckin}
+              disabled={isCheckingInOperator}
+              className="w-full mt-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest disabled:opacity-60"
+            >
+              {isCheckingInOperator ? "Aanmelden..." : "Aanmelden Op Machine"}
+            </button>
+
+            {stationOccupancy.length > 0 && (
+              <div className="mt-4 p-3 rounded-xl border border-slate-200 bg-slate-50">
+                <p className="text-[11px] font-black uppercase text-slate-500 mb-2">Nu ingelogd op dit station</p>
+                <div className="flex flex-wrap gap-2">
+                  {stationOccupancy.map((occ, idx) => (
+                    <span key={`${occ.operatorNumber || occ.id || idx}_${idx}`} className="px-2 py-1 rounded-md text-[10px] font-bold uppercase border border-slate-200 bg-white text-slate-700">
+                      {occ.operatorName}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
     </>

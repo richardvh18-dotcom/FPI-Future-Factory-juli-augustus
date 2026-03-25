@@ -173,7 +173,7 @@ const AdminMatrixManager = () => {
   const TABS = [
     { id: "matrix", label: "Beschikbaarheid", icon: <Grid size={14} /> },
     { id: "drilling", label: "Boringen", icon: <Target size={14} /> }, // NIEUW: Tab voor boorpatronen
-    { id: "ranges", label: "Wanddiktes", icon: <TableProperties size={14} /> },
+    { id: "ranges", label: "Tolerantie Manager", icon: <TableProperties size={14} /> },
     { id: "library", label: "Bibliotheek", icon: <Settings size={14} /> },
     { id: "blueprints", label: "Blauwdrukken", icon: <Layers size={14} /> },
     { id: "dimensions", label: "Maatvoering", icon: <Ruler size={14} /> },

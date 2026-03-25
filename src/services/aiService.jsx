@@ -7,7 +7,7 @@
  * VITE_GOOGLE_AI_KEY=AIza...
  */
 
-import { collection, query, getDocs, limit } from 'firebase/firestore';
+import { collection, query, getDocs, addDoc, setDoc, getDoc, doc, limit, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { PATHS } from '../config/dbPaths';
 import i18n from '../i18n';
@@ -409,7 +409,20 @@ class AIService {
       const query = userQuery.toLowerCase();
       
       console.log('🔍 AI Context: Zoeken naar:', userQuery);
-      
+
+      // GEHEUGEN: Eerder geleerde feiten uit goedgekeurde antwoorden
+      try {
+        const memories = await this.getRelevantMemories(userQuery);
+        if (memories.length > 0) {
+          contextData += '\n\n## GELEERD GEHEUGEN (goedgekeurde antwoorden):\n';
+          memories.forEach(mem => {
+            contextData += `- **${mem.topic}**: ${mem.content}\n`;
+          });
+          contextData += '\n';
+          console.log(`🧠 ${memories.length} geheugen-item(s) gevonden voor context`);
+        }
+      } catch (err) { console.warn('Kon geheugen niet laden voor context:', err); }
+
       // EERSTE: Probeer ALTIJD document context te vinden
       // Doe een brede zoekactie in alle documenten
       const docs = await this.searchAiDocuments(userQuery);
@@ -786,6 +799,104 @@ class AIService {
     } catch (error) {
       console.error('Gemini Chat Error:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Sla een geleerd feit op in het AI geheugen (Firestore)
+   * Wordt opgeslagen wanneer de gebruiker een antwoord goedkeurt (thumbs up)
+   */
+  async saveMemory({ topic, content, sourceQuestion = "", sourceAnswer = "", userId = null, category = "approved_answer" }) {
+    try {
+      const keywords = [...new Set([
+        ...this.extractSearchTerms(topic),
+        ...this.extractSearchTerms(sourceQuestion),
+      ])];
+      await addDoc(collection(db, ...PATHS.AI_MEMORY), {
+        category,
+        topic,
+        content,
+        sourceQuestion,
+        sourceAnswer,
+        userId,
+        keywords,
+        learnedAt: serverTimestamp(),
+        useCount: 0,
+        active: true,
+      });
+      console.log('💾 AI Geheugen opgeslagen:', topic);
+    } catch (error) {
+      console.error('Error saving AI memory:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Laad relevante herinneringen op basis van de gebruikersvraag
+   * Filtert client-side op keyword overlap
+   */
+  async getRelevantMemories(userQuery) {
+    try {
+      const memRef = collection(db, ...PATHS.AI_MEMORY);
+      const q = query(memRef, limit(60));
+      const snap = await getDocs(q);
+      const memories = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(m => m.active !== false);
+
+      const terms = this.extractSearchTerms(userQuery);
+      if (terms.length === 0) return [];
+
+      return memories
+        .filter(mem => {
+          const haystack = `${mem.topic || ''} ${mem.content || ''} ${(mem.keywords || []).join(' ')}`.toLowerCase();
+          return terms.some(t => haystack.includes(t));
+        })
+        .slice(0, 5);
+    } catch (error) {
+      console.error('Error fetching AI memories:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Sla de volledige gesprekgeschiedenis op per gebruiker (max 50 berichten)
+   */
+  async saveConversation({ userId, sessionId, messages }) {
+    if (!userId) return;
+    try {
+      const userDocRef = doc(db, ...PATHS.AI_CONVERSATIONS, userId);
+      const toSave = messages.slice(-50).map(m => ({
+        role: m.role,
+        content: (m.content || '').substring(0, 2000),
+        sessionId: sessionId || '',
+        timestamp: new Date().toISOString(),
+      }));
+      await setDoc(userDocRef, {
+        messages: toSave,
+        sessionId: sessionId || '',
+        lastUpdated: serverTimestamp(),
+        userId,
+      });
+    } catch (error) {
+      console.error('Error saving conversation:', error);
+    }
+  }
+
+  /**
+   * Laad de meest recente gesprekgeschiedenis van een gebruiker
+   * @returns {{ messages: Array, sessionId: string } | null}
+   */
+  async loadRecentConversation(userId) {
+    if (!userId) return null;
+    try {
+      const userDocRef = doc(db, ...PATHS.AI_CONVERSATIONS, userId);
+      const snap = await getDoc(userDocRef);
+      if (!snap.exists()) return null;
+      return snap.data();
+    } catch (error) {
+      console.error('Error loading conversation:', error);
+      return null;
     }
   }
 

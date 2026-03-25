@@ -5,6 +5,7 @@ import { nl } from 'date-fns/locale';
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../../../config/firebase";
 import { PATHS } from "../../../config/dbPaths";
+import { toDateSafe } from "../../../utils/dateUtils";
 
 const ProductJourneyModal = ({ product, onClose }) => {
   const [enrichedHistory, setEnrichedHistory] = useState([]);
@@ -25,8 +26,8 @@ const ProductJourneyModal = ({ product, onClose }) => {
         if (!entry.station || (!entry.timestamp && !entry.time)) return entry;
 
         try {
-          const ts = entry.timestamp?.toDate ? entry.timestamp.toDate() : new Date(entry.timestamp || entry.time);
-          if (isNaN(ts.getTime())) return entry;
+          const ts = toDateSafe(entry.timestamp || entry.time);
+          if (!ts || isNaN(ts.getTime())) return entry;
           
           const dateStr = ts.toISOString().split('T')[0];
           const station = entry.station;
@@ -56,8 +57,8 @@ const ProductJourneyModal = ({ product, onClose }) => {
       
       // Sorteer de verrijkte historie
       const sorted = enriched.sort((a, b) => {
-        const tA = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
-        const tB = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+        const tA = toDateSafe(a.timestamp || a.time)?.getTime() || 0;
+        const tB = toDateSafe(b.timestamp || b.time)?.getTime() || 0;
         return tA - tB;
       });
       
@@ -69,15 +70,14 @@ const ProductJourneyModal = ({ product, onClose }) => {
   if (!product) return null;
 
   const history = enrichedHistory.length > 0 ? enrichedHistory : [...(product.history || [])].sort((a, b) => {
-    const tA = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
-    const tB = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+    const tA = toDateSafe(a.timestamp || a.time)?.getTime() || 0;
+    const tB = toDateSafe(b.timestamp || b.time)?.getTime() || 0;
     return tA - tB;
   });
 
   const formatTime = (val) => {
-    if (!val) return "-";
-    const date = val.toDate ? val.toDate() : new Date(val);
-    if (isNaN(date.getTime())) return "-";
+    const date = toDateSafe(val);
+    if (!date || isNaN(date.getTime())) return "-";
     return format(date, "dd MMM HH:mm", { locale: nl });
   };
 

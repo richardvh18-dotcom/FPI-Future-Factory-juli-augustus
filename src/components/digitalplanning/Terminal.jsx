@@ -15,16 +15,17 @@ import {
   getDoc,
   query,
   where,
-  arrayUnion
+  arrayUnion,
+  increment
 } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
+import { toDateSafe } from "../../utils/dateUtils";
 import {
   getISOWeek,
   getISOWeekYear,
   addWeeks,
   subWeeks,
-  isValid,
 } from "date-fns";
 import ProductReleaseModal from "./modals/ProductReleaseModal";
 import ProductionStartModal from "./modals/ProductionStartModal";
@@ -38,13 +39,15 @@ import TerminalManualInput from "./terminal/TerminalManualInput";
 import MalOptimizationPanel from "./MalOptimizationPanel";
 import RepairModal from "./modals/RepairModal";
 
+const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
+
 /**
  * Workstation Terminal - V22.5
  * - Oplossing voor 2026 weeknotatie (W3 vs W03).
  * - Automatische selectie-reset bij navigatie.
  * - Alles-knop toegevoegd en zoekknop uit toolbar verwijderd.
  */
-const Terminal = ({ initialStation }) => {
+const Terminal = ({ initialStation, onCancelProduction }) => {
   const { t } = useTranslation();
   const { user } = useAdminAuth();
 
@@ -59,6 +62,7 @@ const Terminal = ({ initialStation }) => {
   const isMazak = normalizedStationId === "MAZAK" || cleanStationId === "MAZAK";
   const isLossenStation = normalizedStationId === "LOSSEN";
   const isSimpleViewStation = isNabewerking || isMazak || isLossenStation;
+  const isBH18 = cleanStationId === "BH18" || normalizedStationId === "BH18";
   const isBH31 = normalizedStationId === "BH31";
   const isBM01 = cleanStationId === "BM01" || cleanStationId === "STATIONBM01" || normalizedStationId.includes("BM01");
 
@@ -75,6 +79,7 @@ const Terminal = ({ initialStation }) => {
   const [manualInputValue, setManualInputValue] = useState("");
   const [showStartModal, setShowStartModal] = useState(false);
   const [productToRelease, setProductToRelease] = useState(null);
+  const [releaseAutoApproveToken, setReleaseAutoApproveToken] = useState(0);
   const [viewingProduct, setViewingProduct] = useState(null);
   const [showRepairModal, setShowRepairModal] = useState(false);
   const [itemToRepair, setItemToRepair] = useState(null);
@@ -98,6 +103,7 @@ const Terminal = ({ initialStation }) => {
   const absCurrentReal = currentRealYear * 52 + currentRealWeek;
 
   const appId = typeof __app_id !== "undefined" ? __app_id : "fittings-app-v1";
+  const stationCounterField = `started_${String(effectiveStationId || stationId || "").replace(/[^a-zA-Z0-9]/g, '_')}`;
 
   // Forceer tab reset bij station wissel
   useEffect(() => {
@@ -116,10 +122,19 @@ const Terminal = ({ initialStation }) => {
 
   // Helpers
   const parseDateSafe = (dateInput) => {
-    if (!dateInput) return null;
-    if (dateInput.toDate) return dateInput.toDate();
-    const d = new Date(dateInput);
-    return isValid(d) ? d : null;
+    return toDateSafe(dateInput);
+  };
+
+  const normalizePlanningStatus = (status) => String(status || "").trim().toLowerCase();
+
+  const isInactivePlanningStatus = (status) => {
+    const normalized = normalizePlanningStatus(status);
+    return ["completed", "cancelled", "shipped", "rejected", "finished", "deleted"].includes(normalized);
+  };
+
+  const isPlannedLikeStatus = (status) => {
+    const normalized = normalizePlanningStatus(status);
+    return ["planned", "delegated", "pending", "waiting"].includes(normalized);
   };
 
   // Real-time Data Sync
@@ -127,10 +142,10 @@ const Terminal = ({ initialStation }) => {
     if (!stationId) return;
     setLoading(true);
     
-    // PERFORMANCE: Haal alleen actieve orders op (server-side filtering)
+    // PERFORMANCE: Haal alleen niet-afgeronde orders op (server-side filtering)
     const q = query(
       collection(db, ...PATHS.PLANNING),
-      where("status", "in", ["planned", "in_progress", "delegated", "pending"])
+      where("status", "not-in", ["completed", "COMPLETED", "cancelled", "CANCELLED", "shipped", "SHIPPED", "rejected", "REJECTED", "finished", "FINISHED"])
     );
 
     const unsubOrders = onSnapshot(q, (snap) => {
@@ -148,18 +163,29 @@ const Terminal = ({ initialStation }) => {
           pYear = parseInt(parts[0]) || 0;
           pWeek = parseInt(parts[1]) || 0;
         } 
-        // 2. Fallback naar datum object
-        else if (data.plannedDate) {
-          const d = parseDateSafe(data.plannedDate);
-          if (d) {
-            pYear = getISOWeekYear(d);
-            pWeek = getISOWeek(d);
+        // 2. Bereken week uit leverdatum/geplande datum (betrouwbaarder dan los weeknummer)
+        else {
+          const dateCandidates = [
+            data.plannedDeliveryDate,
+            data.deliveryDate,
+            data.dueDate,
+            data.plannedDate,
+            data.date,
+          ];
+          for (const candidate of dateCandidates) {
+            if (!candidate) continue;
+            const d = parseDateSafe(candidate);
+            if (d && Number.isFinite(d.getTime())) {
+              pYear = getISOWeekYear(d);
+              pWeek = getISOWeek(d);
+              break;
+            }
           }
-        }
-        // 3. Fallback naar losse nummers (week/year velden) als er geen datum of -W string is
-        else if (data.week || data.weekNumber) {
-             pWeek = parseInt(data.week || data.weekNumber) || 0;
-             pYear = parseInt(data.year || data.weekYear) || new Date().getFullYear();
+          // 3. Als er geen datum gevonden is, gebruik het ruwe weeknummer als laatste resort
+          if (!pWeek && (data.week || data.weekNumber)) {
+            pWeek = parseInt(data.week || data.weekNumber) || 0;
+            pYear = parseInt(data.year || data.weekYear) || new Date().getFullYear();
+          }
         }
         
         return { 
@@ -289,18 +315,23 @@ const Terminal = ({ initialStation }) => {
     const enrichedOrders = myOrders.map(o => ({
         ...o,
         // FIX: Combineer opgeslagen 'produced' (archived) met live 'finishedOnMachine' (active)
-        produced: (o.produced || 0) + (finishedOnMachineMap[o.orderId] || 0)
+        produced: (o.produced || 0) + (finishedOnMachineMap[o.orderId] || 0),
+        startedAtStation: Number(o[stationCounterField] || 0)
     }));
 
     const base = enrichedOrders.filter((o) => {
       // FIX: Gebruik 'plan' als fallback voor 'quantity', anders is quantity 0 en wordt de order verborgen (0 >= 0)
       const quantity = o.quantity || o.plan || 0;
+      const startedAtStation = Number(o.startedAtStation || 0);
       
-      // BUGFIX: Voltooide orders ALTIJD verbergen uit de actieve lijst, ook als 'Alles tonen' aan staat.
-      // Een order is klaar voor deze machine als alle stuks voorbij de wikkel-fase zijn.
+      // Verberg order zodra alle geplande stuks voor dit station gestart zijn.
+      // Als later een definitieve afkeur de started-teller verlaagt, komt de order automatisch terug.
+      if (!isBM01 && quantity > 0 && startedAtStation >= quantity) return false;
+
+      // Fallback: ook volledig geproduceerde orders uit actieve lijst houden.
       if (quantity > 0 && o.produced >= quantity) return false;
 
-      if (o.status !== "pending" && o.status !== "in_progress" && o.status !== "planned" && o.status !== "delegated") return false;
+      if (isInactivePlanningStatus(o.status)) return false;
       
       // FIX: BH31 (Reparatie) orders verdwijnen uit planning zodra ze in behandeling zijn
       // Tenzij er specifiek naar gezocht wordt
@@ -321,7 +352,7 @@ const Terminal = ({ initialStation }) => {
 
       // Als we de HUIDIGE week bekijken, toon ook de backlog (alles uit verleden dat niet af is)
       if (absTarget === absCurrentReal) {
-          if (o.status === "in_progress") return true; // ALTIJD tonen in huidige week als actief (ook als gepland in toekomst)
+            if (normalizePlanningStatus(o.status) === "in_progress" || normalizePlanningStatus(o.status) === "in production") return true; // ALTIJD tonen in huidige week als actief (ook als gepland in toekomst)
           if (absOrder === absTarget) return true; // Deze week
           if (absOrder < absTarget) return true;   // Backlog
       } else {
@@ -334,6 +365,20 @@ const Terminal = ({ initialStation }) => {
 
     if (!sidebarSearch) {
       return base.sort((a, b) => {
+        const priorityRank = (order) => {
+          const normalizedPriority =
+            order?.priority === true
+              ? "high"
+              : String(order?.priority || "").toLowerCase().trim();
+          if (normalizedPriority === "immediate") return 3;
+          if (normalizedPriority === "urgent" || order?.isUrgent) return 2;
+          if (normalizedPriority === "high" || order?.isMoved) return 1;
+          return 0;
+        };
+
+        const prioDiff = priorityRank(b) - priorityRank(a);
+        if (prioDiff !== 0) return prioDiff;
+
         const absOrderA = a.parsedYear * 52 + a.parsedWeek;
         const absOrderB = b.parsedYear * 52 + b.parsedWeek;
         
@@ -345,11 +390,11 @@ const Terminal = ({ initialStation }) => {
         if (!isBacklogA && isBacklogB) return -1;
 
         // 2. Status 'planned' of 'delegated' (Nieuw toegewezen) bovenaan binnen de groep
-        const isPlannedA = a.status === "planned" || a.status === "delegated";
-        const isPlannedB = b.status === "planned" || b.status === "delegated";
+        const isPlannedA = isPlannedLikeStatus(a.status);
+        const isPlannedB = isPlannedLikeStatus(b.status);
         if (isPlannedA !== isPlannedB) return isPlannedA ? -1 : 1;
 
-        // 3. Urgentie
+        // 3. Urgentie (legacy fallback)
         if (a.isUrgent !== b.isUrgent) return a.isUrgent ? -1 : 1;
         
         // 4. Week (Oplopend)
@@ -401,7 +446,7 @@ const Terminal = ({ initialStation }) => {
         return combinedText.includes(token);
       });
     });
-  }, [myOrders, finishedOnMachineMap, targetWeekNum, targetYearNum, showAllWeeks, sidebarSearch, isBM01, normalizedStationId, productionProgressMap, absCurrentReal]);
+  }, [myOrders, finishedOnMachineMap, stationCounterField, targetWeekNum, targetYearNum, showAllWeeks, sidebarSearch, isBM01, normalizedStationId, productionProgressMap, absCurrentReal]);
 
   const selectedOrder = useMemo(() => 
     myOrders.find(o => o.id === selectedOrderId || o.orderId === selectedOrderId), 
@@ -436,6 +481,35 @@ const Terminal = ({ initialStation }) => {
     if (e.key === 'Enter') {
       const code = scanInput.trim();
       if (!code) return;
+
+      const codeUpper = code.toUpperCase();
+
+      // Zelfde OK-QR als Nabewerken: alleen toegestaan op BH18 in de Wikkelen->Lossen overgang.
+      if (codeUpper === QR_CODE_OK_CONFIRMATION) {
+        const isWikkelenStep = (selectedWikkeling?.currentStep || "").toLowerCase() === "wikkelen";
+
+        if (!isBH18) {
+          alert("OK-QR is op dit station niet beschikbaar. Gebruik deze alleen op BH18 (Wikkelen) en in Nabewerken/BM01.");
+          setScanInput("");
+          setTimeout(() => {
+            scanInputRef.current?.focus();
+          }, 50);
+          return;
+        }
+
+        if (selectedWikkeling && isWikkelenStep) {
+          setProductToRelease(selectedWikkeling);
+          setReleaseAutoApproveToken(Date.now());
+          setScanInput("");
+        } else {
+          alert("Selecteer eerst een actief BH18-item in stap Wikkelen voordat je de OK-QR scant.");
+          setScanInput("");
+          setTimeout(() => {
+            scanInputRef.current?.focus();
+          }, 50);
+        }
+        return;
+      }
       
       const found = activeWikkelingen.find(i => 
         (i.lotNumber || "").toLowerCase() === code.toLowerCase() || 
@@ -480,27 +554,93 @@ const Terminal = ({ initialStation }) => {
     }
   };
 
-  const handleStartProduction = async (order, lot) => {
+  const handleStartProduction = async (
+    order,
+    lot,
+    _stringCount,
+    _manualOrderInput,
+    _operatorInput,
+    _selectedOperatorName,
+    labelZplData,
+    labelTemplateId
+  ) => {
     try {
       const timestamp = serverTimestamp();
+      const nowIso = new Date().toISOString();
       const cleanOrderId = String(order.orderId).trim();
       const cleanItemCode = String(order.itemCode || order.productId).trim();
-      const docId = `${cleanOrderId}_${cleanItemCode}_${lot}`.replace(/[^a-zA-Z0-9]/g, "_");
+      const totalToProduce = Math.max(1, parseInt(_stringCount, 10) || 1);
+      const startLot = String(lot || "").trim().toUpperCase();
+      const hasLabel = typeof labelZplData === "string" && !!labelZplData.trim();
+      const lotMatch = startLot.match(/^(.*?)(\d+)$/);
 
-      await setDoc(doc(db, ...PATHS.TRACKING, docId), {
-        id: docId, orderId: order.orderId, lotNumber: lot, itemCode: cleanItemCode,
-        machine: effectiveStationId, stationLabel: stationName, status: "In Production",
-        currentStation: effectiveStationId,
-        currentStep: "Wikkelen", createdAt: timestamp, updatedAt: timestamp,
-        history: [{
-          action: "Start Wikkelen", station: stationName, timestamp: new Date().toISOString(),
-          user: user?.email || "Operator",
-        }],
-        item: order.item || "",
-      });
+      const buildLotNumber = (offset) => {
+        if (!lotMatch) {
+          return offset === 0 ? startLot : `${startLot}_${offset + 1}`;
+        }
+        const prefix = lotMatch[1] || "";
+        const numericPart = lotMatch[2] || "";
+        const width = numericPart.length;
+        const startSequence = Number(numericPart);
+        if (!Number.isFinite(startSequence)) {
+          return offset === 0 ? startLot : `${startLot}_${offset + 1}`;
+        }
+        return `${prefix}${String(startSequence + offset).padStart(width, "0")}`;
+      };
+
+      const buildLotSpecificLabelZpl = (targetLot) => {
+        if (!hasLabel) return null;
+        if (!startLot || targetLot === startLot) return labelZplData;
+        return labelZplData.split(startLot).join(targetLot);
+      };
+
+      const createdLots = [];
+
+      for (let i = 0; i < totalToProduce; i++) {
+        const currentLot = buildLotNumber(i);
+        const docId = `${cleanOrderId}_${cleanItemCode}_${currentLot}`.replace(/[^a-zA-Z0-9]/g, "_");
+        const lotSpecificLabelZpl = buildLotSpecificLabelZpl(currentLot);
+
+        await setDoc(doc(db, ...PATHS.TRACKING, docId), {
+          id: docId,
+          orderId: order.orderId,
+          lotNumber: currentLot,
+          itemCode: cleanItemCode,
+          machine: effectiveStationId,
+          stationLabel: stationName,
+          status: "In Production",
+          currentStation: effectiveStationId,
+          currentStep: "Wikkelen",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          history: [{
+            action: "Start Wikkelen",
+            station: stationName,
+            timestamp: new Date().toISOString(),
+            user: user?.email || "Operator",
+          }],
+          item: order.item || "",
+          labelZPL: lotSpecificLabelZpl,
+          labelTemplateId: labelTemplateId || null,
+          labelLastPrint: lotSpecificLabelZpl
+            ? {
+                timestamp: nowIso,
+                user: user?.email || "Operator",
+                station: effectiveStationId,
+                source: "production_start",
+                templateId: labelTemplateId || null,
+              }
+            : null,
+        });
+
+        createdLots.push(currentLot);
+      }
 
       await updateDoc(doc(db, ...PATHS.PLANNING, order.id), {
-        status: "in_progress", activeLot: lot, actualStart: timestamp,
+        status: "in_progress",
+        activeLot: createdLots[0] || startLot,
+        actualStart: timestamp,
+        [stationCounterField]: increment(totalToProduce),
       });
 
       setShowStartModal(false);
@@ -652,6 +792,7 @@ const Terminal = ({ initialStation }) => {
                 onScan={handleScan}
                 scanInputRef={scanInputRef}
                 scannerMode={scannerMode}
+                onCancelProduction={onCancelProduction}
               />
             ) : (
               /* TAB LOSSEN */
@@ -687,6 +828,7 @@ const Terminal = ({ initialStation }) => {
       {productToRelease && (
         <ProductReleaseModal
           isOpen={true} product={productToRelease}
+          autoApproveTrigger={releaseAutoApproveToken}
           onClose={() => { setProductToRelease(null); setSelectedTrackedId(null); }}
           appId={appId}
         />

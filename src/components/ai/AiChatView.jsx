@@ -47,6 +47,7 @@ const AiChatView = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
+  const sessionId = useRef(Date.now().toString());
 
   const [messages, setMessages] = useState([
     {
@@ -104,6 +105,24 @@ const AiChatView = () => {
           setSystemContext(docSnap.data().systemPrompt);
         } else {
           setSystemContext(DEFAULT_CONTEXT);
+        }
+
+        // Vorige gesprek herstellen (indien aanwezig en recenter dan 24u)
+        try {
+          const uid = auth.currentUser?.uid;
+          if (uid) {
+            const saved = await aiService.loadRecentConversation(uid);
+            if (saved?.messages?.length > 1) {
+              const lastUpdated = saved.lastUpdated?.toDate?.() || null;
+              const within24h = lastUpdated && (Date.now() - lastUpdated.getTime()) < 86400000;
+              if (within24h) {
+                sessionId.current = saved.sessionId || sessionId.current;
+                setMessages(saved.messages.map(m => ({ role: m.role, content: m.content })));
+              }
+            }
+          }
+        } catch (err) {
+          console.warn('Kon vorig gesprek niet laden:', err);
         }
       } catch (err) {
         console.error("Kon AI context niet laden, gebruik fallback:", err);
@@ -342,6 +361,12 @@ const AiChatView = () => {
       const response = await aiService.chatWithContext(chatHistory, currentSystemContext, true, { signal: abortControllerRef.current.signal });
       setMessages((prev) => [...prev, { role: "assistant", content: response }]);
       showSuccess('Antwoord ontvangen!');
+
+      // Gesprek opslaan in Firestore (fire-and-forget)
+      if (auth.currentUser?.uid) {
+        const toSave = [...messages, userMsg, { role: "assistant", content: response }];
+        aiService.saveConversation({ userId: auth.currentUser.uid, sessionId: sessionId.current, messages: toSave });
+      }
     } catch (error) {
       if (error?.name === 'AbortError') {
         setMessages((prev) => [...prev, { role: "assistant", content: "⏹️ Antwoord gestopt op verzoek." }]);
@@ -360,6 +385,11 @@ const AiChatView = () => {
     if (abortControllerRef.current) abortControllerRef.current.abort();
   };
 
+  const handleNewConversation = () => {
+    sessionId.current = Date.now().toString();
+    setMessages([{ role: "assistant", content: getWelcomeMessage(i18n.language, t) }]);
+  };
+
   if (isInitializing) {
     return (
       <div className="flex flex-col h-full bg-slate-50 items-center justify-center animate-in fade-in">
@@ -372,6 +402,16 @@ const AiChatView = () => {
 
   return (
     <div className="h-full flex flex-col max-w-4xl mx-auto">
+      <div className="flex items-center justify-between px-6 py-2 border-b border-slate-200 bg-white shrink-0">
+        <span className="text-xs text-slate-400 select-none">AI Assistent</span>
+        <button
+          onClick={handleNewConversation}
+          className="text-xs text-slate-500 hover:text-red-600 transition-colors"
+          title="Nieuw gesprek starten"
+        >
+          Nieuw gesprek
+        </button>
+      </div>
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {messages.map((msg, idx) => (
           <AiMessage 
@@ -380,6 +420,23 @@ const AiChatView = () => {
             factoryStructure={factoryStructure}
             onNavigate={navigate}
             onQuery={(text) => handleSendChat(null, text)}
+            onLike={msg.role === "assistant" && idx > 0 ? async () => {
+              const questionMsg = messages[idx - 1];
+              if (!questionMsg) return;
+              try {
+                await aiService.saveMemory({
+                  topic: questionMsg.content.substring(0, 80),
+                  content: msg.content.substring(0, 1000),
+                  sourceQuestion: questionMsg.content,
+                  sourceAnswer: msg.content,
+                  userId: auth.currentUser?.uid || null,
+                  category: 'approved_answer',
+                });
+                showSuccess("✓ Onthouden voor toekomstige vragen.");
+              } catch (err) {
+                showError("Kon antwoord niet opslaan in geheugen.");
+              }
+            } : undefined}
             onReject={async () => {
               await logRejectedAnswer({ content: msg.content, userInput: messages[idx - 1]?.content || "", context: systemContext, userId: auth.currentUser?.uid || null });
               showSuccess("Antwoord gemarkeerd voor AI review.");

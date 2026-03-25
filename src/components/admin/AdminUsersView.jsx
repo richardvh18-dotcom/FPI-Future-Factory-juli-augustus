@@ -71,6 +71,7 @@ const AdminUsersView = () => {
   const [activeTab, setActiveTab] = useState("users"); // 'users' of 'requests'
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [expandedCountries, setExpandedCountries] = useState({}); // State voor inklapbare groepen
+  const [expandedModules, setExpandedModules] = useState({}); // State voor uitgevouwen modules in permissions
   const [allStations, setAllStations] = useState([]);
   const [stationFilterCountry, setStationFilterCountry] = useState("All");
   const [stationFilterDept, setStationFilterDept] = useState("All");
@@ -131,6 +132,95 @@ const AdminUsersView = () => {
     "Anders"
   ];
 
+  // ─── KERN MODULES ─────────────────────────────────────────────────────────
+  // Planning, Catalogus en Inbox zijn altijd beschikbaar voor iedere gebruiker.
+  // Sub-features kun je wél per gebruiker aan/uitzetten.
+  const CORE_MODULE_FEATURES = {
+    planning: {
+      label: "Planning",
+      description: "Afdelingen, werkstations en productie starten",
+      alwaysEnabled: true,
+      features: [
+        { id: "terminal_view", label: "Terminal / Werkstation", description: "Productie starten en lotnummers verwerken" },
+        { id: "capacity_planning", label: "Capaciteits Planning", description: "Capaciteit en werkstations inplannen" },
+        { id: "production_times", label: "Productie Tijden", description: "Productie schema's en doorlooptijden" },
+        { id: "demand_planning", label: "Vraag Planning", description: "Vraagplanning en vooruitzichten" },
+      ]
+    },
+    catalog: {
+      label: "Catalogus",
+      description: "Alle tekeningen, producten en specificaties",
+      alwaysEnabled: true,
+      features: [
+        { id: "product_search", label: "Product Zoeken", description: "Producten en materialen zoeken" },
+        { id: "drawing_viewer", label: "Tekeningen Bekijken", description: "Technische tekeningen inzien" },
+        { id: "ai_chat", label: "AI Chat (in Catalogus)", description: "AI-assistent binnen de catalogus" },
+      ]
+    },
+    inbox: {
+      label: "Inbox / Berichten",
+      description: "Notificaties, mededelingen en directe berichten",
+      alwaysEnabled: true,
+      features: [
+        { id: "notifications", label: "Notificaties", description: "Systeemmeldingen en alerts" },
+        { id: "announcements", label: "Mededelingen", description: "Bedrijfsmededelingen" },
+        { id: "direct_messages", label: "Directe Berichten", description: "Persoonlijke berichten sturen en ontvangen" },
+      ]
+    },
+  };
+
+  // ─── OPTIONELE MODULES ────────────────────────────────────────────────────
+  // Deze modules moeten expliciet worden ingeschakeld per gebruiker.
+  const MODULE_FEATURES = {
+    digital_planning: {
+      label: "Planning Tools (Admin Hub)",
+      description: "Geavanceerde planningsmodules: Capaciteit, Kanban, Tijden, Scenario's",
+      features: [
+        { id: "capacity_planning", label: "Capaciteits Planning", description: "Vergelijk beschikbare uren met geplande vraag" },
+        { id: "production_times", label: "Productie Tijden", description: "Standaard tijden en normen beheren" },
+        { id: "kanban", label: "Kanban Board", description: "Visuele orderworkflow met drag-and-drop" },
+        { id: "order_dependencies", label: "Order Dependencies", description: "Critical path analyse tussen orders" },
+        { id: "scenarios", label: "Scenario Planning", description: "What-if analyse simulator" },
+      ]
+    },
+    ai_assistant: {
+      label: t('modules.ai', "AI Assistent (Volledig)"),
+      description: t('modules.aiDesc', "Volledige AI helper buiten de catalogus"),
+      features: [
+        { id: "chat_enabled", label: "Chat Functie", description: "AI chat interface" },
+        { id: "document_analysis", label: "Document Analyse", description: "Documenten en teksten analyseren" },
+        { id: "recommendations", label: "Aanbevelingen", description: "AI-gestuurd advies" },
+        { id: "ai_training", label: "AI Training & QA", description: "AI antwoorden en kennisbank beheren" },
+      ]
+    },
+    quality_control: {
+      label: t('modules.qc', "Kwaliteitscontrole (QC)"),
+      description: t('modules.qcDesc', "Toegang tot meetwaarden en NCR"),
+      features: [
+        { id: "measurements", label: "Meetwaarden", description: "TG, Brix en andere metingen" },
+        { id: "ncr_management", label: "NCR Beheer", description: "Non-conformity reports" },
+        { id: "inspection", label: "Inspectie", description: "Eindcontrole en inspecties" },
+        { id: "shopfloor_mobile", label: "Mobile Inspector", description: "Tablet app voor teamleiders en QC op de werkvloer" },
+      ]
+    },
+    inventory_management: {
+      label: t('modules.inventory', "Voorraadbeheer"),
+      description: t('modules.inventoryDesc', "Beheer van gereedschap en materialen"),
+      features: [
+        { id: "stock_tracking", label: "Voorraadbijhouding", description: "Materiaal tracking en niveaus" },
+        { id: "tools_management", label: "Gereedschapbeheer", description: "Gereedschap en uitrusting" },
+      ]
+    },
+    maintenance: {
+      label: t('modules.maintenance', "Onderhoud"),
+      description: t('modules.maintenanceDesc', "Meldingen en onderhoudsbeheer"),
+      features: [
+        { id: "maintenance_requests", label: "Onderhoudsmeldingen", description: "Equipment onderhoud melden" },
+        { id: "downtime_tracking", label: "Downtime Tracking", description: "Machine downtime registratie" },
+      ]
+    },
+  };
+
   const EXTRA_MODULES = [
     { id: "quality_control", label: t('modules.qc', "Kwaliteitscontrole (QC)"), description: t('modules.qcDesc', "Toegang tot meetwaarden en NCR") },
     { id: "inventory_management", label: t('modules.inventory', "Voorraadbeheer"), description: t('modules.inventoryDesc', "Beheer van gereedschap en materialen") },
@@ -139,12 +229,8 @@ const AdminUsersView = () => {
     { id: "maintenance", label: t('modules.maintenance', "Onderhoud"), description: t('modules.maintenanceDesc', "Meldingen en onderhoudsbeheer") },
   ];
 
-  const ADMIN_TOOLS = [
-    { id: "admin_products", label: t('tools.products', "Product Beheer"), description: t('tools.productsDesc', "Product & Matrix Manager toegang") },
-    { id: "admin_factory", label: t('tools.factory', "Fabriek & Personeel"), description: t('tools.factoryDesc', "Beheer shifts, lijnen en medewerkers") },
-    { id: "admin_settings", label: t('tools.settings', "Systeem Instellingen"), description: t('tools.settingsDesc', "Globale configuratie en berichten") },
-    { id: "admin_logs", label: t('tools.logs', "Logs & Database"), description: t('tools.logsDesc', "Systeemlogs en database inspectie") },
-  ];
+  // Admin tool IDs die gemigreerd worden uit het oude modules-systeem
+  const LEGACY_ADMIN_TOOL_IDS = ["admin_products", "admin_factory", "admin_settings", "admin_logs"];
 
   // 1. Live Sync met de Root Accounts collectie
   useEffect(() => {
@@ -476,11 +562,13 @@ const AdminUsersView = () => {
     setSelectedUser({ 
       ...user, 
       modules: user.modules || [],
+      permissions: user.permissions || {},
       allowedStations: user.allowedStations || [] 
     });
     setEditModalTab("profile");
     setStationFilterCountry("All");
     setStationFilterDept("All");
+    setExpandedModules({}); // Reset expanded modules
     setIsEditing(true);
   };
 
@@ -605,8 +693,12 @@ const AdminUsersView = () => {
         role: selectedUser.role,
         country: selectedUser.country,
         department: selectedUser.department,
-        modules: selectedUser.modules || [],
+        // Migreer: verwijder legacy admin tool IDs uit modules-array (vervangen door rolsysteem)
+        modules: (selectedUser.modules || []).filter(m => !LEGACY_ADMIN_TOOL_IDS.includes(m)),
+        permissions: selectedUser.permissions || {}, // Granulaire module/feature permissions
         allowedStations: selectedUser.allowedStations || [],
+        defaultRoute: selectedUser.defaultRoute || "",
+        defaultStation: selectedUser.defaultStation || "",
         canVerify: selectedUser.canVerify || false,
         receivesCrashReports: selectedUser.receivesCrashReports || false,
         signature: selectedUser.signature || "",
@@ -642,6 +734,54 @@ const AdminUsersView = () => {
     } catch (err) {
       alert(err.message);
     }
+  };
+
+  // Helper functies voor granulaire module permissions
+  const toggleFeature = (moduleId, featureId) => {
+    if (!selectedUser) return;
+    const currentPermissions = selectedUser.permissions || {};
+    const modulePerms = currentPermissions[moduleId] || [];
+    
+    const newModulePerms = modulePerms.includes(featureId)
+      ? modulePerms.filter(f => f !== featureId)
+      : [...modulePerms, featureId];
+    
+    setSelectedUser({
+      ...selectedUser,
+      permissions: {
+        ...currentPermissions,
+        [moduleId]: newModulePerms
+      }
+    });
+  };
+
+  const toggleModuleAll = (moduleId, enable) => {
+    if (!selectedUser) return;
+    const module = MODULE_FEATURES[moduleId];
+    if (!module) return;
+    
+    const currentPermissions = selectedUser.permissions || {};
+    const featureIds = module.features.map(f => f.id);
+    
+    setSelectedUser({
+      ...selectedUser,
+      permissions: {
+        ...currentPermissions,
+        [moduleId]: enable ? featureIds : []
+      }
+    });
+  };
+
+  const hasModule = (moduleId) => {
+    const perms = selectedUser?.permissions || {};
+    const modulePerms = perms[moduleId] || [];
+    return modulePerms.length > 0;
+  };
+
+  const getModuleFeatureCount = (moduleId) => {
+    const perms = selectedUser?.permissions || {};
+    const modulePerms = perms[moduleId] || [];
+    return modulePerms.length;
   };
 
   // Filter logica voor stations
@@ -1265,6 +1405,22 @@ const AdminUsersView = () => {
                     </div>
                   </label>
                 </div>
+            
+            <div className="space-y-2 pt-4 border-t border-slate-50">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">
+                Startpagina (Na inloggen)
+              </label>
+              <div className="relative group">
+                <Globe className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500" size={18} />
+                <input
+                  className="w-full pl-14 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-[20px] font-bold text-xs outline-none focus:border-blue-500 transition-all shadow-inner"
+                  value={selectedUser.defaultRoute || ""}
+                  onChange={(e) => setSelectedUser({ ...selectedUser, defaultRoute: e.target.value })}
+                  placeholder="Bijv. /planning of /"
+                />
+              </div>
+              <p className="text-[9px] text-slate-400 italic ml-2 mt-1">Systeem stuurt de gebruiker hier direct naartoe (bijv. na QR scan).</p>
+            </div>
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">
@@ -1290,43 +1446,183 @@ const AdminUsersView = () => {
 
               {editModalTab === "modules" && (
                 <div className="space-y-8">
-                  {/* Functionele Modules */}
+
+                  {/* ── KERN MODULES (altijd aan) ── */}
                   <div className="space-y-4">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 flex items-center gap-2">
-                      <Layers size={14} /> {t('adminUsers.functionalModules', "Functionele Modules")}
-                    </label>
-                    <div className="grid grid-cols-1 gap-3">
-                      {EXTRA_MODULES.map(module => (
-                        <label key={module.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:border-blue-200 transition-all group">
-                          <div>
-                            <div className="font-bold text-sm text-slate-700 group-hover:text-blue-700 transition-colors">{module.label}</div>
-                            <div className="text-[10px] text-slate-400 font-medium">{module.description}</div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] ml-2 flex items-center gap-2">
+                        <CheckCircle2 size={14} /> Kern Modules — Altijd Beschikbaar
+                      </label>
+                    </div>
+                    <p className="text-[9px] text-slate-500 italic ml-2">Planning, Catalogus en Inbox zijn standaard aan voor iedereen. Je kunt sub-onderdelen per gebruiker beperken.</p>
+                    
+                    <div className="space-y-3">
+                      {Object.entries(CORE_MODULE_FEATURES).map(([moduleId, module]) => {
+                        const isExpanded = expandedModules[moduleId];
+                        const perms = selectedUser?.permissions || {};
+                        const modulePerms = perms[moduleId] || [];
+                        // Als geen permissions gezet → alle features aan (standaard)
+                        const allOn = modulePerms.length === 0;
+                        const featureCount = allOn ? module.features.length : modulePerms.length;
+
+                        return (
+                          <div key={moduleId} className="border border-emerald-200 rounded-2xl overflow-hidden">
+                            {/* Module Header */}
+                            <button
+                              type="button"
+                              onClick={() => setExpandedModules({ ...expandedModules, [moduleId]: !isExpanded })}
+                              className="w-full flex items-center justify-between p-4 bg-emerald-50 hover:bg-emerald-100 transition-all"
+                            >
+                              <div className="flex items-center gap-4 flex-1">
+                                {/* Altijd aan badge — niet uitschakelbaar */}
+                                <span className="flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-[9px] font-black uppercase shrink-0">
+                                  <CheckCircle2 size={10} /> Altijd aan
+                                </span>
+                                <div className="text-left">
+                                  <div className="font-bold text-sm text-emerald-900">{module.label}</div>
+                                  <div className="text-[10px] text-slate-500 font-medium">{module.description}</div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className={`px-2 py-1 rounded-lg text-[9px] font-bold ${allOn ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                                  {featureCount}/{module.features.length} actief
+                                </span>
+                                <ChevronDown size={16} className={`text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                              </div>
+                            </button>
+
+                            {/* Sub-features van kern-module */}
+                            {isExpanded && (
+                              <div className="bg-white border-t border-emerald-100 p-4 space-y-3">
+                                <p className="text-[9px] text-slate-400 italic ml-2 mb-2">Schakel uit om deze gebruiker toegang te ontzeggen tot dit sub-onderdeel.</p>
+                                {module.features.map(feature => {
+                                  const isChecked = allOn || (perms[moduleId] || []).includes(feature.id);
+
+                                  const handleToggle = () => {
+                                    const current = allOn ? module.features.map(f => f.id) : (perms[moduleId] || []);
+                                    const next = isChecked
+                                      ? current.filter(f => f !== feature.id)
+                                      : [...current, feature.id];
+                                    setSelectedUser({
+                                      ...selectedUser,
+                                      permissions: { ...perms, [moduleId]: next }
+                                    });
+                                  };
+
+                                  return (
+                                    <label key={feature.id} className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all group ml-2 ${
+                                      isChecked ? "bg-emerald-50 border-emerald-200 hover:border-emerald-400" : "bg-slate-50 border-slate-200 hover:border-red-300 hover:bg-red-50"
+                                    }`}>
+                                      <div className="flex-1">
+                                        <div className={`font-semibold text-xs ${isChecked ? "text-emerald-800" : "text-slate-400 line-through"}`}>{feature.label}</div>
+                                        <div className="text-[9px] text-slate-400">{feature.description}</div>
+                                      </div>
+                                      <div className="relative inline-flex items-center cursor-pointer ml-4">
+                                        <input type="checkbox" className="sr-only peer" checked={isChecked} onChange={handleToggle} />
+                                        <div className={`w-9 h-5 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all ${
+                                          isChecked ? "bg-emerald-500" : "bg-slate-300"
+                                        }`}></div>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
-                          <div className="relative inline-flex items-center cursor-pointer">
-                            <input 
-                              type="checkbox" 
-                              className="sr-only peer" 
-                              checked={selectedUser.modules?.includes(module.id)}
-                              onChange={(e) => {
-                                const currentModules = selectedUser.modules || [];
-                                const newModules = e.target.checked ? [...currentModules, module.id] : currentModules.filter(id => id !== module.id);
-                                setSelectedUser({ ...selectedUser, modules: newModules });
-                              }}
-                            />
-                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                          </div>
-                        </label>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 
-                  {/* Admin Tools */}
+                  {/* ── OPTIONELE MODULES ── */}
                   <div className="space-y-4">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 flex items-center gap-2">
-                      <ShieldAlert size={14} /> {t('adminUsers.adminTools', "Admin Tools")}
+                      <Layers size={14} /> Optionele Modules
                     </label>
+                    <p className="text-[9px] text-slate-500 italic ml-2">Schakel in per gebruiker. Per module kun je per sub-onderdeel verdere toegang bepalen.</p>
                     
-                    {/* Toggle voor Crash Rapporten */}
+                    <div className="space-y-3">
+                      {Object.entries(MODULE_FEATURES).map(([moduleId, module]) => {
+                        const isExpanded = expandedModules[moduleId];
+                        const featureCount = getModuleFeatureCount(moduleId);
+                        const hasAccess = hasModule(moduleId);
+                        
+                        return (
+                          <div key={moduleId} className="border border-slate-200 rounded-2xl overflow-hidden">
+                            {/* Module Header */}
+                            <button
+                              type="button"
+                              onClick={() => setExpandedModules({ ...expandedModules, [moduleId]: !isExpanded })}
+                              className={`w-full flex items-center justify-between p-4 transition-all ${
+                                hasAccess ? "bg-blue-50 hover:bg-blue-100" : "bg-slate-50 hover:bg-slate-100"
+                              }`}
+                            >
+                              <div className="flex items-center gap-4 flex-1">
+                                <label
+                                  htmlFor={`module-toggle-${moduleId}`}
+                                  className="relative inline-flex items-center cursor-pointer shrink-0"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <input
+                                    id={`module-toggle-${moduleId}`}
+                                    type="checkbox"
+                                    className="sr-only peer"
+                                    checked={hasAccess}
+                                    onChange={() => toggleModuleAll(moduleId, !hasAccess)}
+                                  />
+                                  <div className={`w-11 h-6 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all ${
+                                    hasAccess ? "bg-blue-600" : "bg-slate-200"
+                                  }`}></div>
+                                </label>
+                                <div className="text-left">
+                                  <div className={`font-bold text-sm ${hasAccess ? "text-blue-900" : "text-slate-700"}`}>{module.label}</div>
+                                  <div className="text-[10px] text-slate-500 font-medium">{module.description}</div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                {featureCount > 0 && (
+                                  <span className="px-2 py-1 rounded-lg text-[9px] font-bold bg-blue-100 text-blue-700">
+                                    {featureCount}/{module.features.length}
+                                  </span>
+                                )}
+                                <ChevronDown size={16} className={`text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                              </div>
+                            </button>
+                            
+                            {/* Sub-features */}
+                            {isExpanded && (
+                              <div className="bg-white border-t border-slate-100 p-4 space-y-3">
+                                {module.features.map(feature => {
+                                  const perms = selectedUser?.permissions || {};
+                                  const isChecked = (perms[moduleId] || []).includes(feature.id);
+                                  return (
+                                    <label key={feature.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100 cursor-pointer hover:border-blue-300 hover:bg-blue-50 transition-all group ml-2">
+                                      <div className="flex-1">
+                                        <div className="font-semibold text-xs text-slate-700 group-hover:text-blue-700">{feature.label}</div>
+                                        <div className="text-[9px] text-slate-400 group-hover:text-slate-500">{feature.description}</div>
+                                      </div>
+                                      <div className="relative inline-flex items-center cursor-pointer ml-4">
+                                        <input type="checkbox" className="sr-only peer" checked={isChecked} onChange={() => toggleFeature(moduleId, feature.id)} />
+                                        <div className={`w-9 h-5 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all ${
+                                          isChecked ? "bg-blue-600" : "bg-slate-300"
+                                        }`}></div>
+                                      </div>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Notificatie instellingen */}
+                  <div className="space-y-4">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 flex items-center gap-2">
+                      <ShieldAlert size={14} /> Notificaties
+                    </label>
                     <label className="flex items-center justify-between p-4 bg-red-50 rounded-2xl border border-red-100 cursor-pointer hover:border-red-200 transition-all group">
                       <div>
                         <div className="font-bold text-sm text-red-900 group-hover:text-red-700 transition-colors">
@@ -1346,30 +1642,6 @@ const AdminUsersView = () => {
                         <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
                       </div>
                     </label>
-
-                    <div className="grid grid-cols-1 gap-3">
-                      {ADMIN_TOOLS.map(tool => (
-                        <label key={tool.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:border-purple-200 transition-all group">
-                          <div>
-                            <div className="font-bold text-sm text-slate-700 group-hover:text-purple-700 transition-colors">{tool.label}</div>
-                            <div className="text-[10px] text-slate-400 font-medium">{tool.description}</div>
-                          </div>
-                          <div className="relative inline-flex items-center cursor-pointer">
-                            <input 
-                              type="checkbox" 
-                              className="sr-only peer" 
-                              checked={selectedUser.modules?.includes(tool.id)}
-                              onChange={(e) => {
-                                const currentModules = selectedUser.modules || [];
-                                const newModules = e.target.checked ? [...currentModules, tool.id] : currentModules.filter(id => id !== tool.id);
-                                setSelectedUser({ ...selectedUser, modules: newModules });
-                              }}
-                            />
-                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
                   </div>
                 </div>
               )}
@@ -1454,6 +1726,25 @@ const AdminUsersView = () => {
                   <p className="text-[10px] text-slate-400 italic ml-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
                     <span className="font-bold">{t('common.attention', "Let op:")}</span> {t('adminUsers.stationAccessWarning1', "Als er geen stations zijn geselecteerd (lijst is leeg), heeft de gebruiker standaard toegang tot")} <u>{t('common.all', "alle")}</u> {t('adminUsers.stationAccessWarning2', "stations. Selecteer één of meer stations om de toegang te beperken.")}
                   </p>
+
+                <div className="mt-6 pt-6 border-t border-slate-100 space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">
+                    Voorkeursstation (Direct Openen)
+                  </label>
+                  <div className="relative">
+                    <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                    <select
+                      value={selectedUser.defaultStation || ""}
+                      onChange={(e) => setSelectedUser({ ...selectedUser, defaultStation: e.target.value })}
+                      className="w-full pl-12 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-[20px] font-bold text-xs outline-none focus:border-blue-500 appearance-none cursor-pointer"
+                    >
+                      <option value="">Geen voorkeur (Zelf kiezen)</option>
+                      {allStations.map(s => <option key={s.id} value={s.id}>{s.name} ({s.department})</option>)}
+                    </select>
+                    <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                  <p className="text-[9px] text-slate-400 italic ml-2 mt-1">Indien ingesteld, opent dit station automatisch in de Planning module.</p>
+                </div>
                 </div>
               )}
 

@@ -89,22 +89,31 @@ const Sidebar = ({
 
   const navItems = [
     { path: "/", label: t('sidebar.nav.common.portal'), icon: LayoutGrid },
-    { path: "/planning", label: t('sidebar.nav.common.planning'), icon: Factory, requiredModule: "digital_planning" },
+    // Kern-modules: altijd zichtbaar voor alle gebruikers
+    { path: "/planning", label: t('sidebar.nav.common.planning'), icon: Factory },
     { path: "/products", label: t('sidebar.nav.common.catalog'), icon: Search },
+    { path: "/messages", label: t('sidebar.nav.common.messages'), icon: Mail, badge: unreadCount },
+    // Optionele modules: alleen zichtbaar als module actief is
     { path: "/inventory", label: t('sidebar.nav.common.inventory'), icon: Package, requiredModule: "inventory_management" },
     { path: "/assistant", label: t('sidebar.nav.common.ai_training'), icon: Bot, requiredModule: "ai_assistant" },
     { path: "/calculator", label: t('sidebar.nav.common.calculator'), icon: Calculator },
-    { path: "/messages", label: t('sidebar.nav.common.messages'), icon: Mail, badge: unreadCount },
     { path: "/printer-queue", label: t('sidebar.nav.common.printers', 'Printers'), icon: Printer, requiredModule: "digital_planning" },
     { path: "/admin", label: t('sidebar.nav.common.admin'), icon: Settings, adminOnly: true },
   ];
 
   const visibleItems = navItems.filter((item) => {
     if (item.adminOnly && !isAdmin) return false;
-    // Admins hebben altijd toegang tot alle modules, ongeacht vinkjes
+    // Admins hebben altijd toegang tot alle modules
     if (isAdmin) return true;
-    if (item.requiredModule && !user?.modules?.includes(item.requiredModule)) return false;
-    return true;
+    // Items zonder requiredModule zijn altijd zichtbaar (kern-modules)
+    if (!item.requiredModule) return true;
+    // Optionele modules: check via permissions (nieuw systeem) of modules (oud systeem)
+    const perms = user?.permissions || {};
+    const modulePerms = perms[item.requiredModule] || [];
+    if (modulePerms.length > 0) return true;
+    // Fallback op oud modules-array systeem
+    if (user?.modules?.includes(item.requiredModule)) return true;
+    return false;
   });
 
   return (

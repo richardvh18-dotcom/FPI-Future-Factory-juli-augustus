@@ -652,7 +652,7 @@ const PersonnelManager = () => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-50/50">
-        <div className="max-w-7xl mx-auto pb-40">
+        <div className={`${activeTab === "assignment" ? "w-full" : "max-w-7xl mx-auto"} pb-40`}>
           {/* TAB 1: BEZETTING PER STATION */}
           {activeTab === "assignment" && (
             <PersonnelOccupancyView
