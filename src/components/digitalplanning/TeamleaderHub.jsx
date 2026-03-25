@@ -7,15 +7,17 @@ import {
   AlertTriangle,
   ClipboardList,
   Download,
+  Table,
   Plus,
   BrainCircuit,
   Menu,
   X,
 } from "lucide-react";
-import { collection, query, onSnapshot, doc, writeBatch, serverTimestamp, updateDoc, where, addDoc } from "firebase/firestore";
+import { collection, query, onSnapshot, doc, writeBatch, serverTimestamp, updateDoc, where, addDoc, getDocs, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { getISOWeek, format, subDays, startOfISOWeek, endOfISOWeek } from "date-fns";
 import { PATHS } from "../../config/dbPaths";
+import * as XLSX from "xlsx";
 
 // Helpers & Modals
 import { normalizeMachine } from "../../utils/hubHelpers";
@@ -62,6 +64,7 @@ const TeamleaderHub = React.memo(({
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
   const [selectedOrderId, setSelectedOrderId] = useState(null);
+  const [selectedSidebarEntry, setSelectedSidebarEntry] = useState(null);
   const [isCopying, setIsCopying] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [showAddOrderModal, setShowAddOrderModal] = useState(false);
@@ -326,6 +329,199 @@ const TeamleaderHub = React.memo(({
     return dataStore.find((o) => o.id === selectedOrderId || o.orderId === selectedOrderId);
   }, [dataStore, selectedOrderId]);
 
+  const selectedDetailEntry = useMemo(() => {
+    if (selectedOrder) return selectedOrder;
+    if (selectedSidebarEntry?.isArchivedOrder) return selectedSidebarEntry;
+    return null;
+  }, [selectedOrder, selectedSidebarEntry]);
+
+  const selectedSidebarEntryId = useMemo(() => {
+    if (selectedSidebarEntry?.orderId) return selectedSidebarEntry.orderId;
+    if (selectedSidebarEntry?.id) return selectedSidebarEntry.id;
+    return selectedOrderId;
+  }, [selectedSidebarEntry, selectedOrderId]);
+
+  const handleSidebarSelect = async (entry) => {
+    if (!entry) {
+      setSelectedOrderId(null);
+      setSelectedSidebarEntry(null);
+      return;
+    }
+
+    const entryOrderId = String(entry.orderId || entry.id || "").trim();
+    if (!entryOrderId) return;
+    setSelectedSidebarEntry(entry);
+
+    // History-items uit de sidebar zijn samenvattingen; haal het echte archiefitem op voor volledige history.
+    if (entry.isArchivedOrder) {
+      setSelectedOrderId(null);
+      try {
+        const baseYear = new Date().getFullYear();
+        const years = [baseYear, baseYear - 1, baseYear - 2, baseYear - 3];
+        const snapshots = await Promise.all(
+          years.map((year) =>
+            getDocs(
+              query(
+                collection(db, "future-factory", "production", "archive", String(year), "items"),
+                where("orderId", "==", entryOrderId),
+                limit(100)
+              )
+            )
+          )
+        );
+
+        const candidates = snapshots.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        const best = candidates
+          .sort((a, b) => {
+            const ta = a?.timestamps?.finished?.toMillis
+              ? a.timestamps.finished.toMillis()
+              : new Date(a?.timestamps?.finished || a?.updatedAt || 0).getTime();
+            const tb = b?.timestamps?.finished?.toMillis
+              ? b.timestamps.finished.toMillis()
+              : new Date(b?.timestamps?.finished || b?.updatedAt || 0).getTime();
+            return tb - ta;
+          })[0];
+
+        if (best) {
+          const lotNumbers = Array.from(
+            new Set(
+              candidates
+                .map((c) => String(c.lotNumber || c.activeLot || "").trim())
+                .filter(Boolean)
+            )
+          );
+
+          setSelectedSidebarEntry({
+            ...entry,
+            status: "completed",
+            archived: true,
+            isArchivedOrder: true,
+            archivedCandidates: candidates,
+            lotNumbers,
+            lotNumbersText: lotNumbers.join(" "),
+            machine: best.machine || best.originMachine || entry.machine,
+            item: best.item || best.itemDescription || entry.item,
+          });
+          return;
+        }
+      } catch (err) {
+        console.warn("Kon archiefdossier niet laden:", err);
+      }
+
+      // Fallback: toon samenvatting in rechterpaneel, zonder popup.
+      const fallbackItem = {
+        ...entry,
+        status: "completed",
+        archived: true,
+        isArchivedOrder: true,
+      };
+      setSelectedSidebarEntry(fallbackItem);
+      return;
+    }
+
+    setSelectedOrderId(entry.id || entryOrderId);
+  };
+
+  const handleOpenArchivedLotDossier = async (lotNumber) => {
+    if (!selectedSidebarEntry?.isArchivedOrder) return;
+
+    const lot = String(lotNumber || "").trim();
+    const localCandidates = Array.isArray(selectedSidebarEntry.archivedCandidates)
+      ? selectedSidebarEntry.archivedCandidates
+      : [];
+
+    let best = null;
+
+    if (localCandidates.length > 0) {
+      const scoped = lot
+        ? localCandidates.filter((c) => String(c.lotNumber || c.activeLot || "").trim() === lot)
+        : localCandidates;
+
+      best = scoped.sort((a, b) => {
+        const ta = a?.timestamps?.finished?.toMillis
+          ? a.timestamps.finished.toMillis()
+          : new Date(a?.timestamps?.finished || a?.updatedAt || 0).getTime();
+        const tb = b?.timestamps?.finished?.toMillis
+          ? b.timestamps.finished.toMillis()
+          : new Date(b?.timestamps?.finished || b?.updatedAt || 0).getTime();
+        return tb - ta;
+      })[0] || null;
+    }
+
+    if (!best) {
+      try {
+        const orderId = String(selectedSidebarEntry.orderId || selectedSidebarEntry.id || "").trim();
+        const baseYear = new Date().getFullYear();
+        const years = [baseYear, baseYear - 1, baseYear - 2, baseYear - 3];
+        const snaps = await Promise.all(
+          years.map((year) =>
+            getDocs(
+              query(
+                collection(db, "future-factory", "production", "archive", String(year), "items"),
+                where("orderId", "==", orderId),
+                limit(150)
+              )
+            )
+          )
+        );
+
+        const candidates = snaps
+          .flatMap((s) => s.docs.map((d) => ({ id: d.id, ...d.data() })))
+          .filter((c) => {
+            if (!lot) return true;
+            return String(c.lotNumber || c.activeLot || "").trim() === lot;
+          });
+
+        best = candidates.sort((a, b) => {
+          const ta = a?.timestamps?.finished?.toMillis
+            ? a.timestamps.finished.toMillis()
+            : new Date(a?.timestamps?.finished || a?.updatedAt || 0).getTime();
+          const tb = b?.timestamps?.finished?.toMillis
+            ? b.timestamps.finished.toMillis()
+            : new Date(b?.timestamps?.finished || b?.updatedAt || 0).getTime();
+          return tb - ta;
+        })[0] || null;
+      } catch (err) {
+        console.warn("Kon dossier voor lot niet laden:", err);
+      }
+    }
+
+    if (best) {
+      setViewingDossier({
+        ...best,
+        status: "completed",
+        archived: true,
+        isArchivedOrder: true,
+      });
+      return;
+    }
+
+    // Laatste fallback: open de samenvatting als dossier
+    setViewingDossier({
+      ...selectedSidebarEntry,
+      status: "completed",
+      archived: true,
+      lotNumber: lot || selectedSidebarEntry.lotNumber,
+    });
+  };
+
+  const getPriorityLevel = (order) => {
+    const rawPriority = order?.priority;
+    const normalizedPriority =
+      rawPriority === true
+        ? "high"
+        : String(rawPriority || "").toLowerCase().trim();
+
+    if (normalizedPriority === "immediate") return "immediate";
+    if (normalizedPriority === "urgent") return "urgent";
+    if (normalizedPriority === "high") return "high";
+    if (order?.isMoved) return "high";
+    if (order?.isUrgent) return "urgent";
+    return "normal";
+  };
+
+  const isPriorityOrder = (order) => getPriorityLevel(order) !== "normal";
+
   // Dashboard Data Berekening
   const metrics = useMemo(() => {
     if (loading)
@@ -334,6 +530,7 @@ const TeamleaderHub = React.memo(({
         activeCount: 0,
         finishedCount: 0,
         rejectedCount: 0,
+        priorityCount: 0,
         bezettingAantal: 0,
         machineGridData: [],
       };
@@ -510,6 +707,8 @@ const TeamleaderHub = React.memo(({
         return ['Rejected', 'rejected', 'AFKEUR'].includes(status) || step === 'REJECTED';
       }).length,
 
+      priorityCount: dataStore.filter((o) => isPriorityOrder(o)).length,
+
       tempRejectedCount: rawProducts.filter((p) => {
         if (!validOrderIds.has(p.orderId)) return false;
         return p.inspection?.status === "Tijdelijke afkeur";
@@ -661,6 +860,22 @@ const TeamleaderHub = React.memo(({
         }));
     }
 
+    else if (activeKpi === "prioriteit") {
+      data = dataStore
+        .filter((o) => isPriorityOrder(o))
+        .sort((a, b) => {
+          const rankA = getPriorityLevel(a) === "immediate" ? 3 : getPriorityLevel(a) === "urgent" ? 2 : 1;
+          const rankB = getPriorityLevel(b) === "immediate" ? 3 : getPriorityLevel(b) === "urgent" ? 2 : 1;
+          if (rankA !== rankB) return rankB - rankA;
+
+          const dateA = a.dateObj ? new Date(a.dateObj).getTime() : Number.MAX_SAFE_INTEGER;
+          const dateB = b.dateObj ? new Date(b.dateObj).getTime() : Number.MAX_SAFE_INTEGER;
+          if (dateA !== dateB) return dateA - dateB;
+
+          return String(a.orderId || "").localeCompare(String(b.orderId || ""));
+        });
+    }
+
     // Clean up machine names (remove _INBOX)
     return data.map(item => ({
         ...item,
@@ -702,6 +917,116 @@ const TeamleaderHub = React.memo(({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const formatMachineForPlanner = (machine) => {
+    const raw = String(machine || "").trim().toUpperCase();
+    if (!raw) return "ONBEKEND";
+    if (raw.startsWith("40")) return raw;
+    if (/^(BH|BM|BA|\d{4,5})/.test(raw)) return `40${raw}`;
+    return raw;
+  };
+
+  const getOrderDate = (order) => {
+    const value = order?.plannedDate || order?.date || order?.deliveryDate || null;
+    if (!value) return null;
+    if (value?.toDate) return value.toDate();
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  };
+
+  const handlePlannerExcelExport = () => {
+    if (dataStore.length === 0) {
+      alert("Geen data om te exporteren.");
+      return;
+    }
+
+    const filtered = dataStore.filter((o) => normalizeMachine(o.machine || "") !== "BH18");
+    if (filtered.length === 0) {
+      alert("Geen exportdata beschikbaar buiten BH18.");
+      return;
+    }
+
+    const byMachine = filtered.reduce((acc, order) => {
+      const machineKey = formatMachineForPlanner(order.machine || "ONBEKEND");
+      if (!acc[machineKey]) acc[machineKey] = [];
+      acc[machineKey].push(order);
+      return acc;
+    }, {});
+
+    const workbook = XLSX.utils.book_new();
+
+    Object.entries(byMachine)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([machine, orders]) => {
+        const aoa = [];
+        aoa.push([machine, "", "Printdatum:", format(new Date(), "M/d/yyyy")]);
+        aoa.push([]);
+        aoa.push([
+          "Machine",
+          "datum",
+          "Week",
+          "order",
+          "PO Text",
+          "Project",
+          "Project Desc",
+          "Manufactured Item",
+          "Item Desc",
+          "code",
+          "Drawing",
+          "Plan",
+          "to do",
+          "Gewikkeld",
+          "Finish",
+        ]);
+
+        orders
+          .slice()
+          .sort((a, b) => {
+            const ad = getOrderDate(a)?.getTime() || 0;
+            const bd = getOrderDate(b)?.getTime() || 0;
+            if (ad !== bd) return ad - bd;
+            return String(a.orderId || "").localeCompare(String(b.orderId || ""));
+          })
+          .forEach((o) => {
+            const date = getOrderDate(o);
+            const week = o.weekNumber || (date ? getISOWeek(date) : "");
+            const plan = parseInt(o.plan || o.quantity || 0, 10) || 0;
+            const wrapped = parseInt(o.finishValue || o.wrapped || 0, 10) || 0;
+            const toDo = Math.max(plan - wrapped, 0);
+            const machineCode = formatMachineForPlanner(o.machine || machine);
+            const dateValue = date ? format(date, "M/d/yyyy") : "";
+
+            aoa.push([
+              machineCode,
+              dateValue,
+              week,
+              o.orderId || "",
+              o.notes || o.poText || "",
+              o.project || "",
+              o.projectDesc || "",
+              o.itemCode || "",
+              o.item || o.itemDescription || "",
+              o.extraCode || o.code || "",
+              o.drawing || "",
+              plan,
+              toDo,
+              wrapped,
+              "",
+            ]);
+          });
+
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        ws["!cols"] = [
+          { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 14 }, { wch: 18 }, { wch: 14 }, { wch: 20 },
+          { wch: 28 }, { wch: 28 }, { wch: 10 }, { wch: 18 }, { wch: 8 }, { wch: 8 },
+          { wch: 10 }, { wch: 10 },
+        ];
+
+        XLSX.utils.book_append_sheet(workbook, ws, machine.slice(0, 31));
+      });
+
+    XLSX.writeFile(workbook, `planner_export_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
   };
 
   const handleCopyYesterday = async (targetDeptId) => {
@@ -892,6 +1217,7 @@ const TeamleaderHub = React.memo(({
                 <BrainCircuit size={16} /> <span className="hidden sm:inline">AI Analyse</span>
               </button>
             )}
+            <button onClick={handlePlannerExcelExport} className="p-2 bg-white border border-slate-200 text-emerald-700 rounded-xl shadow-sm hover:bg-emerald-50 transition-all" title={t('teamleader.export_planner_excel', 'Exporteer Planner Excel')}><Table size={20} /></button>
             <button onClick={handleExport} className="p-2 bg-white border border-slate-200 text-slate-600 rounded-xl shadow-sm hover:bg-slate-50 transition-all" title={t('teamleader.export_csv', 'Exporteer CSV')}><Download size={20} /></button>
             <button onClick={() => setShowAddOrderModal(true)} className="px-4 py-2 bg-emerald-600 text-white rounded-xl shadow-lg font-black text-[10px] uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-all whitespace-nowrap"><Plus size={16} /> <span className="hidden sm:inline">{t('teamleader.new_order', 'Nieuwe Order')}</span></button>
             <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-blue-600 text-white rounded-xl shadow-lg font-black text-[10px] uppercase tracking-wider flex items-center gap-2 active:scale-95 transition-all whitespace-nowrap"><FileSpreadsheet size={16} /> <span className="hidden sm:inline">{t('teamleader.import', 'Import')}</span></button>
@@ -925,6 +1251,7 @@ const TeamleaderHub = React.memo(({
                 )}
                 <button onClick={() => { setShowAddOrderModal(true); setIsMobileMenuOpen(false); }} className="px-4 py-3 rounded-lg text-xs font-black uppercase text-left w-full text-emerald-600 hover:bg-emerald-50 flex items-center gap-2"><Plus size={16} /> {t('teamleader.new_order', 'Nieuwe Order')}</button>
                 <button onClick={() => { setShowImportModal(true); setIsMobileMenuOpen(false); }} className="px-4 py-3 rounded-lg text-xs font-black uppercase text-left w-full text-blue-600 hover:bg-blue-50 flex items-center gap-2"><FileSpreadsheet size={16} /> {t('teamleader.import', 'Import')}</button>
+                <button onClick={() => { handlePlannerExcelExport(); setIsMobileMenuOpen(false); }} className="px-4 py-3 rounded-lg text-xs font-black uppercase text-left w-full text-emerald-700 hover:bg-emerald-50 flex items-center gap-2"><Table size={16} /> {t('teamleader.export_planner_excel', 'Exporteer Planner Excel')}</button>
                 <button onClick={() => { handleExport(); setIsMobileMenuOpen(false); }} className="px-4 py-3 rounded-lg text-xs font-black uppercase text-left w-full text-slate-600 hover:bg-slate-50 flex items-center gap-2"><Download size={16} /> {t('teamleader.export_csv', 'Exporteer CSV')}</button>
               </div>
             )}
@@ -948,15 +1275,15 @@ const TeamleaderHub = React.memo(({
             <TeamleaderGanttView metrics={metrics} />
           ) : (
             <div className="h-full flex gap-6 overflow-hidden">
-              <div className={`shrink-0 flex flex-col min-h-0 transition-all duration-300 ${selectedOrder ? 'hidden lg:flex w-96' : 'w-full lg:w-96'}`}>
-                <PlanningSidebar orders={dataStore} selectedOrderId={selectedOrderId} onSelect={setSelectedOrderId} />
+              <div className={`shrink-0 flex flex-col min-h-0 transition-all duration-300 ${selectedDetailEntry ? 'hidden lg:flex w-[38rem]' : 'w-full lg:w-[38rem]'}`}>
+                <PlanningSidebar orders={dataStore} selectedOrderId={selectedSidebarEntryId} onSelect={handleSidebarSelect} />
               </div>
-              <div className={`flex-1 bg-white rounded-[40px] border border-slate-200 shadow-sm flex flex-col overflow-hidden ${selectedOrder ? 'flex' : 'hidden lg:flex'}`}>
+              <div className={`flex-1 bg-white rounded-[40px] border border-slate-200 shadow-sm flex flex-col overflow-hidden ${selectedDetailEntry ? 'flex' : 'hidden lg:flex'}`}>
                 {selectedOrder ? (
                   <OrderDetail 
                     order={selectedOrder} 
                     products={rawProducts} 
-                    onClose={() => setSelectedOrderId(null)} 
+                    onClose={() => { setSelectedOrderId(null); setSelectedSidebarEntry(null); }} 
                     isManager={true} 
                     onMoveLot={handleMoveLot} 
                     onOpenDossier={setViewingDossier} 
@@ -964,6 +1291,61 @@ const TeamleaderHub = React.memo(({
                     currentDepartment={targetSlug}
                     allowedStations={effectiveStations}
                   />
+                ) : selectedSidebarEntry?.isArchivedOrder ? (
+                  <div className="h-full flex flex-col p-8 lg:p-10 text-left overflow-y-auto">
+                    <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-6">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">History / Archief</p>
+                        <h3 className="text-2xl font-black text-slate-900 italic tracking-tight mt-1">{selectedSidebarEntry.orderId || selectedSidebarEntry.id || '-'}</h3>
+                        <p className="text-sm font-bold text-slate-500 mt-1">{selectedSidebarEntry.item || selectedSidebarEntry.itemDescription || '-'}</p>
+                      </div>
+                      <button
+                        onClick={() => { setSelectedOrderId(null); setSelectedSidebarEntry(null); }}
+                        className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-black uppercase tracking-widest hover:bg-slate-200"
+                      >
+                        Sluiten
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                      <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Status</p>
+                        <p className="text-sm font-bold text-slate-800 mt-1">Voltooid (Archief)</p>
+                      </div>
+                      <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Machine</p>
+                        <p className="text-sm font-bold text-slate-800 mt-1">{selectedSidebarEntry.machine || selectedSidebarEntry.originMachine || '-'}</p>
+                      </div>
+                      <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 md:col-span-2">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Lotnummers</p>
+                        {Array.isArray(selectedSidebarEntry.lotNumbers) && selectedSidebarEntry.lotNumbers.length > 0 ? (
+                          <div className="mt-2 space-y-2">
+                            {selectedSidebarEntry.lotNumbers.map((lot) => (
+                              <div key={lot} className="flex items-center justify-between gap-3 rounded-xl bg-white border border-slate-200 px-3 py-2">
+                                <span className="text-sm font-bold text-slate-800 break-all">{lot}</span>
+                                <button
+                                  onClick={() => handleOpenArchivedLotDossier(lot)}
+                                  className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"
+                                >
+                                  Open dossier
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-white border border-slate-200 px-3 py-2">
+                            <span className="text-sm font-bold text-slate-800 break-all">{selectedSidebarEntry.lotNumber || selectedSidebarEntry.lotNumbersText || '-'}</span>
+                            <button
+                              onClick={() => handleOpenArchivedLotDossier(selectedSidebarEntry.lotNumber)}
+                              className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"
+                            >
+                              Open dossier
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 ) : (
                   <div className="flex-1 flex flex-col justify-center items-center opacity-40 italic text-center">
                     <ClipboardList size={64} className="mb-4 text-slate-300" />
@@ -1032,7 +1414,7 @@ const TeamleaderHub = React.memo(({
         </div>
       )}
 
-      {selectedStationDetail && <StationDetailModal stationId={selectedStationDetail} allOrders={dataStore} allProducts={rawProducts} onClose={() => setSelectedStationDetail(null)} />}
+      {selectedStationDetail && <StationDetailModal stationId={selectedStationDetail} allOrders={dataStore} allProducts={rawProducts} allArchivedProducts={archivedProducts} onClose={() => setSelectedStationDetail(null)} />}
       
       <TraceModal 
         isOpen={!!activeKpi} 

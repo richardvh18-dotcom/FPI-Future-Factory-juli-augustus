@@ -11,9 +11,59 @@
  */
 
 // Conversie helpers (203 DPI standaard)
-const DEFAULT_DPI = 8; // 203 DPI = 8 dots/mm
+const DEFAULT_DPI = 203 / 25.4; // dots/mm
 const mmToDots = (mm) => Math.round(mm * DPI);
 let DPI = DEFAULT_DPI;
+
+const getLongestLineLength = (value) => {
+    const lines = String(value || "").split(/\r?\n/);
+    return lines.reduce((maxLen, line) => Math.max(maxLen, line.length), 0);
+};
+
+const getTextMetrics = (el, content, rot = 'N') => {
+    const requestedHeight = mmToDots((el.fontSize || 12) / 2.8);
+    const hasExplicitWidth = Number.isFinite(Number(el.fontWidth));
+    const explicitWidth = hasExplicitWidth
+        ? mmToDots((el.fontWidth || 12) / 2.8)
+        : 0;
+    const naturalWidth = explicitWidth || Math.max(1, Math.round(requestedHeight * 0.48));
+
+    if (!el.width) {
+        return {
+            fontHeight: requestedHeight,
+            fontWidth: explicitWidth,
+            widthDots: null,
+        };
+    }
+
+    // Bij verticale tekst (90/270) is de effectieve wrap-richting omgedraaid.
+    // Gebruik dan de element-hoogte als breedte voor ^FB wrap.
+    const wrapWidthMm = (rot === 'R' || rot === 'B')
+        ? (Number(el.height) || Number(el.width) || 0)
+        : Number(el.width);
+    const rawWidthDots = mmToDots(wrapWidthMm);
+    const innerWidthDots = Math.max(1, rawWidthDots - mmToDots(0.8));
+    const maxLines = Math.max(1, Number(el.maxLines) || 1);
+    // Het beschikbare regelbudget staat bij verticale tekst op de X-as (element.width).
+    const lineBudgetMm = (rot === 'R' || rot === 'B')
+        ? (Number(el.width) || Number(el.height) || 0)
+        : (Number(el.height) || 0);
+    const heightLimitDots = lineBudgetMm
+        ? Math.max(1, Math.floor(mmToDots(lineBudgetMm) / maxLines))
+        : requestedHeight;
+    const longestLineLength = Math.max(1, getLongestLineLength(content));
+    const maxCharWidth = Math.max(1, Math.floor((innerWidthDots * 0.98) / longestLineLength));
+    const fittedWidth = Math.min(naturalWidth, maxCharWidth);
+    const fittedHeight = Math.max(1, Math.min(heightLimitDots, requestedHeight));
+
+    return {
+        fontHeight: fittedHeight,
+        // Laat ZPL de natuurlijke karakterbreedte gebruiken als er geen expliciete fontWidth is.
+        // Dit voorkomt dat tekst in print te dun wordt t.o.v. de visuele preview.
+        fontWidth: hasExplicitWidth ? fittedWidth : 0,
+        widthDots: innerWidthDots,
+    };
+};
 
 /**
  * Vervangt placeholders zoals {itemCode} met echte data
@@ -30,9 +80,9 @@ const parseContent = (text, data) => {
  * @param {number} printerDpi - DPI van de printer (default 203)
  * @returns {string} ZPL string
  */
-export const generateZPL = (template, data, printerDpi = 203, resolveFn = null, t = null) => {
+export const generatePrintData = (template, data, printerDpi = 203, resolveFn = null, t = null) => {
     // Update globale DPI setting
-    DPI = printerDpi === 300 ? 12 : 8;
+    DPI = (Number(printerDpi) > 0 ? Number(printerDpi) : 203) / 25.4;
 
     // Fallback voor oude aanroepen (backward compatibility)
     // Als eerste argument geen template object is met elements, behandelen we het als 'data'
@@ -88,27 +138,45 @@ export const generateZPL = (template, data, printerDpi = 203, resolveFn = null, 
         }
         
         // Positie berekenen
-        const x = globalXOffset + mmToDots(el.x);
-        const y = mmToDots(el.y);
+        const baseX = globalXOffset + mmToDots(el.x);
+        const baseY = mmToDots(el.y);
         
         // Rotatie
         const rotationMap = { 0: 'N', 90: 'R', 180: 'I', 270: 'B' };
         const rot = rotationMap[el.rotation || 0] || 'N';
 
-        // Start Field
-        zpl += `^FO${x},${y}`;
-
         // TYPE: TEXT
         if (el.type === 'text') {
-            const fontHeight = mmToDots((el.fontSize || 12) / 2.8); // Ruwe conversie pt naar mm naar dots
-            const fontWidth = fontHeight; // Monospace ratio
+            const { fontHeight, fontWidth, widthDots } = getTextMetrics(el, content, rot);
+            const elementHeightDots = el.height ? mmToDots(el.height) : 0;
+            const printableMinX = mmToDots(1);
+            const printableMaxX = mmToDots(width) - mmToDots(1);
+            const rotatedOffsetX = mmToDots(1);
+            const rotatedOffsetY = mmToDots(2);
+
+            let x = baseX;
+            let y = baseY;
+
+            // ZPL roteert tekst anders dan de visuele editor; corrigeer verticale tekst
+            // zodat deze niet naar rechts buiten de labelmarge verschuift.
+            if (rot === 'R' || rot === 'B') {
+                const verticalCompensation = Math.max(
+                    mmToDots(2),
+                    elementHeightDots,
+                    Math.round(fontHeight * 0.85)
+                );
+                x = x - verticalCompensation + rotatedOffsetX;
+                y += rotatedOffsetY;
+            }
+
+            x = Math.max(printableMinX, Math.min(x, printableMaxX));
             
             // Font selectie (0 is scalable standard)
+            zpl += `^FO${x},${y}`;
             zpl += `^A0${rot},${fontHeight},${fontWidth}`;
             
             // Field Block voor wrapping en alignment
-            if (el.width) {
-                const widthDots = mmToDots(el.width);
+            if (widthDots) {
                 const alignMap = { 'left': 'L', 'center': 'C', 'right': 'R', 'justify': 'J' };
                 const align = alignMap[el.align] || 'L';
                 zpl += `^FB${widthDots},${el.maxLines || 1},0,${align},0`;
@@ -124,6 +192,9 @@ export const generateZPL = (template, data, printerDpi = 203, resolveFn = null, 
 
         // TYPE: BARCODE (Code 128)
         else if (el.type === 'barcode') {
+            const x = baseX;
+            const y = baseY;
+            zpl += `^FO${x},${y}`;
             const h = mmToDots(el.height || 10);
             const w = el.moduleWidth || 2; // Module width (dikte streepjes)
             const showText = el.showText ? 'Y' : 'N';
@@ -134,6 +205,9 @@ export const generateZPL = (template, data, printerDpi = 203, resolveFn = null, 
 
         // TYPE: QR CODE
         else if (el.type === 'qr') {
+            const x = baseX;
+            const y = baseY;
+            zpl += `^FO${x},${y}`;
             // ^BQ orientation, model, magnification, error correction, mask
             const mag = el.magnification || 4; // Grootte (1-10)
             zpl += `^BQN,2,${mag},Q,7`;
@@ -142,6 +216,9 @@ export const generateZPL = (template, data, printerDpi = 203, resolveFn = null, 
 
         // TYPE: BOX / LINE
         else if (el.type === 'box' || el.type === 'line') {
+            const x = baseX;
+            const y = baseY;
+            zpl += `^FO${x},${y}`;
             const w = mmToDots(el.width || 1);
             const h = mmToDots(el.height || 1);
             const t = mmToDots(el.thickness || 0.5);
@@ -151,6 +228,9 @@ export const generateZPL = (template, data, printerDpi = 203, resolveFn = null, 
 
         // TYPE: IMAGE (Placeholder voor logo's)
         else if (el.type === 'image' && el.hexData) {
+            const x = baseX;
+            const y = baseY;
+            zpl += `^FO${x},${y}`;
             // ^GFA = Graphic Field ASCII
             // Dit vereist dat de image data al geconverteerd is naar ZPL Hex formaat
             zpl += `^GFA,${el.byteCount},${el.totalBytes},${el.rowBytes},${el.hexData}^FS`;
@@ -163,12 +243,85 @@ export const generateZPL = (template, data, printerDpi = 203, resolveFn = null, 
         zpl += "^GS";  // Group Separator (Batch Cut)
         zpl += "^PQ1,0,1,Y"; // Print Quantity & Override Pause
     } else {
-        zpl += "^MMT"; // Tear-off Mode
+        // Houd modus consistent tijdens batch om onverwachte media-beweging te vermijden.
+        zpl += "^MMC";
         zpl += "^PQ1,0,1,N";
     }
 
     zpl += "^XZ"; // Einde Format
     return zpl;
+};
+
+/**
+ * Genereert een volledige ZPL batch voor lotnummers op 90mm labels.
+ * Houdt font-/positie- en cutter/backfeed-gedrag consistent over alle schermen.
+ */
+export const generateLotBatchZPL = ({
+    lots = [],
+    printerDpi = 203,
+    darkness = 15,
+    labelWidthMm = 90,
+    labelHeightMm = 13,
+    qrSizeMm = 9,
+    qrXmm = 2,
+    qrYmm = 2.5,
+    qrCellWidth = null,
+    textYmm = 2.5,
+    textHeightMm = 6.5,
+    rightMarginMm = 2,
+    gapAfterQrMm = 2,
+    lotTextShiftRightMm = 0,
+    separatorXmm = 2,
+    separatorYmm = 12.4,
+    separatorWidthMm = 86
+} = {}) => {
+    if (!Array.isArray(lots) || lots.length === 0) return "";
+
+    const dotsPerMm = printerDpi === 300 ? 12 : 8;
+    const toDots = (mm) => Math.round(mm * dotsPerMm);
+
+    const leftQrX = toDots(qrXmm);
+    const qrY = toDots(qrYmm);
+    const textY = toDots(textYmm);
+    const fontHeightDots = toDots(textHeightMm);
+    const targetQrSizeDots = toDots(qrSizeMm);
+    const autoQrCellWidth = Math.max(2, Math.round(targetQrSizeDots / 24));
+    const effectiveQrCellWidth = Number.isFinite(Number(qrCellWidth)) && Number(qrCellWidth) > 0
+        ? Number(qrCellWidth)
+        : autoQrCellWidth;
+    const textAreaStartDots = toDots(qrXmm + qrSizeMm + gapAfterQrMm);
+    const textAreaWidthDots = toDots(labelWidthMm - rightMarginMm - (qrXmm + qrSizeMm + gapAfterQrMm));
+    const lotChars = Math.max(15, ...lots.map((lot) => String(lot || "").length));
+    const spreadFactor = 2.0;
+    const fontWidthDots = Math.max(1, Math.round((textAreaWidthDots / lotChars) * spreadFactor));
+    const estimatedTextWidthDots = lotChars * fontWidthDots;
+    const lotTextShiftRightDots = toDots(lotTextShiftRightMm);
+    const textX = Math.max(
+        textAreaStartDots,
+        textAreaStartDots + Math.round((textAreaWidthDots - estimatedTextWidthDots) / 2) + lotTextShiftRightDots
+    );
+
+    let zplBatch = "";
+    lots.forEach((lot, index) => {
+        const isLast = index === lots.length - 1;
+        zplBatch += "^XA";
+        zplBatch += "^CI28";
+        zplBatch += isLast ? "^MMC" : "^MMT";
+        zplBatch += `^PW${toDots(labelWidthMm)}`;
+        zplBatch += `^LL${toDots(labelHeightMm)}`;
+        zplBatch += `^MD${darkness}`;
+        zplBatch += `^FO${leftQrX},${qrY}^BQN,2,${effectiveQrCellWidth},Q,7^FDQA,${lot}^FS`;
+        zplBatch += `^FO${textX},${textY}^A0N,${fontHeightDots},${fontWidthDots}^FD${lot}^FS`;
+        zplBatch += `^FO${toDots(separatorXmm)},${toDots(separatorYmm)}^GB${toDots(separatorWidthMm)},1,1^FS`;
+        if (isLast) {
+            zplBatch += "^PQ1,0,1,Y";
+        } else {
+            zplBatch += "^PQ1,0,1,N";
+        }
+        zplBatch += "^XZ";
+    });
+
+    return zplBatch;
 };
 
 // --- LEGACY SUPPORT (Voor hardcoded tests) ---
@@ -185,7 +338,7 @@ const generateLegacyZPL = (data, options) => {
             { type: 'barcode', x: 2, y: 27, height: 8, content: data.lotNumber, showText: true }
         ]
     };
-    return generateZPL(template, { ...data, ...options });
+    return generatePrintData(template, { ...data, ...options });
 };
 
 /**
@@ -205,7 +358,7 @@ export const getTestZPL = () => {
         ]
     };
     
-    return generateZPL(testTemplate, { 
+    return generatePrintData(testTemplate, { 
         var1: "Werkt!", 
         isLastOfBatch: true 
     });

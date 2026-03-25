@@ -480,11 +480,17 @@ const PersonnelOccupancyView = ({
                 </div>
 
                 {expandedSections[dept.id] !== false && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2 animate-in zoom-in-95 duration-200 text-left">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 animate-in zoom-in-95 duration-200 text-left">
                         {dept.stations.map(station => {
                             const mId = station.name;
                             const isTL = mId.toLowerCase().includes("teamleader");
-                            const stationOccupancy = occupancy.filter(b => normalizeMachine(b.machineId) === normalizeMachine(mId) && b.date === dateToUse && b.departmentId === dept.id);
+                            const stationOccupancy = occupancy.filter((b) => {
+                              const sameMachine = normalizeMachine(b.machineId) === normalizeMachine(mId);
+                              const sameDate = b.date === dateToUse;
+                              const sameDept = b.departmentId === dept.id;
+                              const isActive = b.isActive !== false && !b.checkedOutAt;
+                              return sameMachine && sameDate && sameDept && isActive;
+                            });
                             const isBusy = stationOccupancy.length > 0;
                             const byShift = {};
                             stationOccupancy.forEach(occ => {
@@ -496,7 +502,7 @@ const PersonnelOccupancyView = ({
                             return (
                                 <div
                                   key={station.id}
-                                  className={`p-1.5 rounded-xl border-2 transition-all duration-500 relative flex flex-col shadow-sm h-64 lg:h-72 ${isTL ? (isBusy ? 'bg-slate-900 border-amber-400 ring-2 ring-amber-400/10 shadow-xl' : 'bg-slate-900 border-slate-800 opacity-80 shadow-inner') : (isBusy ? 'bg-white border-blue-500 ring-2 ring-blue-50/50' : 'bg-white border-slate-100 hover:border-blue-200')}`}
+                                  className={`p-1.5 rounded-xl border-2 transition-all duration-500 relative flex flex-col shadow-sm min-h-[16rem] max-h-[24rem] ${isTL ? (isBusy ? 'bg-slate-900 border-amber-400 ring-2 ring-amber-400/10 shadow-xl' : 'bg-slate-900 border-slate-800 opacity-80 shadow-inner') : (isBusy ? 'bg-white border-blue-500 ring-2 ring-blue-50/50' : 'bg-white border-slate-100 hover:border-blue-200')}`}
                                   style={{ cursor: editable ? 'pointer' : 'default' }}
                                   onClick={() => {
                                     if (editable) {
@@ -535,7 +541,7 @@ const PersonnelOccupancyView = ({
                                                   className={`p-1 rounded-lg border flex flex-col gap-0.5 animate-in slide-in-from-right-1 cursor-pointer hover:scale-[1.02] transition-all ${isTL ? 'bg-white/5 border-white/10 text-white' : `${shiftColors.bg} ${shiftColors.border}`} ${occ.isLoan ? 'ring-2 ring-green-400' : `ring-1 ${shiftColors.ring}`}`}>
                                                     <div className="flex items-center justify-between text-left">
                                                         <div className="text-left overflow-hidden text-left flex-1">
-                                                            <h5 className={`text-[9px] font-black uppercase italic truncate mb-0.5 text-left ${isTL ? 'text-amber-400' : shiftColors.text}`}>{occ.operatorName || "Naamloos"}</h5>
+                                                            <h5 className={`text-[11px] sm:text-xs font-black uppercase italic truncate mb-0.5 text-left ${isTL ? 'text-amber-400' : shiftColors.text}`}>{occ.operatorName || "Naamloos"}</h5>
                                                             <div className="flex items-center gap-1 opacity-70 text-left flex-wrap">
                                                                 <span className={`text-[6px] font-black px-1 py-0 rounded ${occ.isPloeg ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>{occ.shift || (occ.isPloeg ? 'PLOEG' : 'DAG')}</span>
                                                                 <span className={`text-[6px] font-bold uppercase ${isTL ? 'text-slate-400' : 'text-slate-600'}`}>#{occ.operatorNumber || "?"}</span>
@@ -551,7 +557,7 @@ const PersonnelOccupancyView = ({
                                                     </div>
                                                     <div className={`pt-1 border-t flex items-center justify-between ${isTL ? 'border-white/5' : 'border-slate-300/60'}`}>
                                                       <div className="flex items-center gap-1"><Clock size={8} className={shiftColors.text} /><span className={`text-[6px] font-black uppercase tracking-tighter ${isTL ? 'text-slate-500' : 'text-slate-500'}`}>Inzet:</span></div>
-                                                      <span className={`text-[8px] font-black ${isTL ? 'text-white' : shiftColors.text}`}>{occ.hoursWorked?.toFixed(1) || 0}u</span>
+                                                      <span className={`text-[10px] sm:text-[11px] font-black ${isTL ? 'text-white' : shiftColors.text}`}>{occ.hoursWorked?.toFixed(1) || 0}u</span>
                                                     </div>
                                                 </div>
                                               ))}

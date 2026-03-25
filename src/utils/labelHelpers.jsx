@@ -4,6 +4,7 @@
  */
 
 import { format } from "date-fns";
+import QRCode from "qrcode";
 import i18n from "../i18n";
 
 // Definieer de standaard formaten
@@ -37,15 +38,15 @@ const barToPsi = (bar) => {
 
 // Zoekt drukklasse (EST20, CST16, EMT25, EDF11)
 const parsePressure = (text) => {
-  // Zoek naar patroon: EST, CST, EMT, EDF gevolgd door cijfers
-  const match = text.match(/\b(EST|CST|EMT|EDF)\s*(\d+)\b/i);
+  // Zoek naar patroon: EST, CST, EMT, EDF, EWT gevolgd door cijfers
+  const match = text.match(/\b(EST|CST|EMT|EDF|EWT)\s*(\d+(?:\.\d+)?)\b/i);
 
   if (match) {
     let type = match[1].toUpperCase();
     const bar = match[2];
 
     // Correctie: Als het EDF is (of iets anders dan de standaard 3), map naar EST?
-    if (!["EST", "CST", "EMT"].includes(type)) {
+    if (!["EST", "CST", "EMT", "EWT"].includes(type)) {
       type = "EST";
     }
 
@@ -62,6 +63,21 @@ const parsePressure = (text) => {
     return `EST ${bar} (${psi}psi)`;
   }
 
+  // Als alleen klasse-token aanwezig is (bijv. "EST ABAB"), toon alleen type zonder waarde.
+  const bareTypeMatch = text.match(/\b(EST|CST|EMT|EWT|EDF)\b/i);
+  if (bareTypeMatch) {
+    let type = bareTypeMatch[1].toUpperCase();
+    if (![
+      "EST",
+      "CST",
+      "EMT",
+      "EWT",
+    ].includes(type)) {
+      type = "EST";
+    }
+    return type;
+  }
+
   return ""; // Leeg laten als echt niets gevonden is
 };
 
@@ -69,7 +85,7 @@ const parsePressure = (text) => {
 const parseConnections = (text) => {
   // Zoekt patronen zoals CB-CB, TB-TB, of aan elkaar TBTB, FLTB
   const match = text.match(
-    /\b(TB|CB|FL|AM)-?(TB|CB|FL|AM)(-?(TB|CB|FL|AM))?\b/i
+    /\b(TB|CB|FL|AM|AB|CS|CF|FB)-?(TB|CB|FL|AM|AB|CS|CF|FB)(-?(TB|CB|FL|AM|AB|CS|CF|FB))?\b/i
   );
 
   if (match) {
@@ -82,9 +98,14 @@ const parseConnections = (text) => {
 // Bepaalt productnaam + graden (voor elbows)
 const parseProductType = (text) => {
   const upper = text.toUpperCase();
+  const teePairMatch = upper.match(/(\d+)\s*[xX/]\s*(\d+)/);
+  const hasTee = upper.includes("TEE");
+  const isUnequalBySize = teePairMatch && teePairMatch[1] !== teePairMatch[2];
   let type = upper.includes("ELB") || upper.includes("BOCHT")
     ? "ELBOW"
-    : upper.includes("UNEQUAL") || upper.includes("VERLOOP TEE")
+    : upper.includes("ADAPTOR") || upper.includes("ADAPTER")
+      ? "ADAPTOR"
+    : upper.includes("UNEQUAL") || upper.includes("VERLOOP TEE") || (hasTee && isUnequalBySize)
       ? "UNEQUAL-TEE"
       : upper.includes("TEE")
         ? "EQUAL-TEE"
@@ -94,9 +115,9 @@ const parseProductType = (text) => {
             ? "BLIND FLANGE"
             : upper.includes("FLANGE") || upper.includes("FLENS")
               ? "FLANGE"
-              : upper.includes("CONC")
+              : upper.includes("CONC") || upper.includes("REDCON") || upper.includes("RED CON")
                 ? "CONCENTRIC REDUCER"
-                : upper.includes("ECC")
+                : upper.includes("ECC") || upper.includes("REDECC") || upper.includes("RED ECC")
                   ? "ECCENTRIC REDUCER"
                   : upper.includes("REDUCER") || upper.includes("VERLOOP")
                     ? "REDUCER"
@@ -121,40 +142,54 @@ const parseProductType = (text) => {
 };
 
 // Bepaalt ID in mm en inch
-const parseDimensions = (text, productType) => {
+const parseDimensions = (text, productType, data = {}) => {
   // 1. Check voor Reducer patroon (400x300) of (400/300)
-  const reducerMatch = text.match(/(\d+)\s*[xX/]\s*(\d+)/);
+  const reducerMatch = text?.match(/(\d+)\s*[xX/]\s*(\d+)/);
+  const upperText = String(text || "").toUpperCase();
+  const needsDualId =
+    productType.includes("REDUCER") ||
+    productType.includes("TEE") ||
+    upperText.includes("REDCON") ||
+    upperText.includes("RED CON") ||
+    upperText.includes("REDECC") ||
+    upperText.includes("RED ECC");
 
-  if (
-    reducerMatch &&
-    (productType.includes("REDUCER") || productType.includes("TEE"))
-  ) {
+  if (reducerMatch && needsDualId) {
     const d1 = reducerMatch[1];
     const d2 = reducerMatch[2];
-    if (parseInt(d1) > 25 && parseInt(d2) > 25) {
-      return `ID: ${d1}x${d2}mm ${toInches(d1)}x${toInches(d2)}`;
+    if (parseInt(d1) >= 25 && parseInt(d2) >= 25) {
+      const inch1 = Math.round((parseFloat(d1) / 25.4) * 2) / 2;
+      const inch2 = Math.round((parseFloat(d2) / 25.4) * 2) / 2;
+      return `ID: ${d1}x${d2}mm (${inch1}"x${inch2}")`;
     }
   }
 
   // 2. Check voor standaard ID
-  const idMatch = text.match(/(\d+)(?=[RmM/])/i) || text.match(/\b(\d+)\b/);
+  const idMatch = text?.match(/(\d+)(?=[RmM/])/i) || text?.match(/\b(\d+)\b/);
+  let val = null;
 
-  if (idMatch) {
-    const val = parseInt(idMatch[1]);
-    if (val > 25 && val !== 45 && val !== 90) {
-      return `ID: ${val}mm ${toInches(val)}`;
-    }
-
-    const fallbackMatch = text.match(/(\d{2,4})/g);
-    if (fallbackMatch) {
-      const maxVal = Math.max(...fallbackMatch.map((n) => parseInt(n)));
-      if (maxVal > 25) {
-        return `ID: ${maxVal}mm ${toInches(maxVal)}`;
-      }
-    }
+  if (idMatch) val = parseInt(idMatch[1]);
+  
+  // Fallback naar gestructureerde data als regex faalt of per ongeluk een hoek (45,90) oppikt
+  if ((!val || val <= 25 || val === 45 || val === 90) && (data.dn || data.diameter)) {
+     val = parseInt(data.dn || data.diameter);
   }
 
-  return "ID: ???";
+  if (val > 25 && val !== 45 && val !== 90) {
+    return `ID: ${val}mm ${toInches(val)}`;
+  }
+
+  if (text) {
+      const fallbackMatch = text.match(/(\d{2,4})/g);
+      if (fallbackMatch) {
+        const maxVal = Math.max(...fallbackMatch.map((n) => parseInt(n)));
+        if (maxVal > 25) {
+          return `ID: ${maxVal}mm ${toInches(maxVal)}`;
+        }
+      }
+  }
+
+  return data.dn || data.diameter ? `ID: ${parseInt(data.dn || data.diameter)}mm ${toInches(data.dn || data.diameter)}` : "ID: ???";
 };
 
 // Hulpfunctie om geneste object properties te vinden
@@ -175,17 +210,32 @@ export const processLabelData = (data) => {
   // 1. Bepaal Product Type
   let productType = parseProductType(desc);
 
+  // FIX: EWT Detectie - Als EWT in de tekst staat, en het is geen bekende vorm, zet type op EWT
+  if (desc.toUpperCase().includes("EWT")) {
+    // Behoud vorm (Elbow, Tee, etc) indien gevonden, anders wordt het EWT
+    if (!productType.match(/(ELBOW|TEE|REDUCER|FLANGE|COUPLER)/)) {
+      productType = "EWT";
+    }
+  }
+
   // 2. Bepaal Drukklasse (EST/CST/EMT + psi)
   let pressureLine = parsePressure(desc);
-  // Fallback: als regex faalt, gebruik specs OF default EST 20
+  // Fallback: als regex faalt, gebruik specs; anders leeg laten (geen ??).
   if (!pressureLine) {
     if (data.specs?.pressure) {
       const bar = data.specs.pressure;
       const psi = barToPsi(bar);
       pressureLine = `EST ${bar} (${psi}psi)`;
     } else {
-      pressureLine = "EST ?? (??psi)";
+      pressureLine = "";
     }
+  }
+
+  // Bepaal Pressure Line EMT (zoekt specifiek naar waarden zoals "EMT 30/10" of "EMT30/10")
+  let pressureLineEmt = "";
+  const emtMatch = desc.match(/EMT\s*(\d+\/\d+)/i) || (data.productId || "").match(/EMT\s*(\d+\/\d+)/i) || (data.itemCode || "").match(/EMT\s*(\d+\/\d+)/i);
+  if (emtMatch) {
+      pressureLineEmt = `EMT ${emtMatch[1]}`;
   }
 
   // 3. Bepaal Connecties
@@ -195,7 +245,7 @@ export const processLabelData = (data) => {
   }
 
   // 4. Bepaal Afmetingen
-  let idLine = parseDimensions(desc, productType);
+  let idLine = parseDimensions(desc, productType, data);
 
   // 5. Radius logic
   let radiusText = "";
@@ -218,6 +268,38 @@ export const processLabelData = (data) => {
       if (productType === "ELBOW") productType = "ELBOW (EXPORT)";
   }
 
+  // 3. A2G3 Specifieke Logica (Joint Code op basis van ID)
+  // ID < 100 -> EST50
+  // 100 <= ID < 150 -> EST40
+  // ID >= 150 -> EST32
+  let jointCode = data.jointCode || "";
+  // Zoek A2G3 in alle relevante velden voor betere detectie
+  const fullContext = [
+      data.itemCode, 
+      data.productId, 
+      desc, 
+      data.orderId, 
+      data.extraCode,
+      data.articleCode
+  ].join(" ").toUpperCase();
+
+  if (fullContext.includes("A2G3")) {
+      // Gebruik de berekende idLine om het getal te vinden
+      const idVal = idLine.match(/(\d+)/)?.[1]; 
+      const id = parseInt(idVal || data.innerDiameter || data.diameter || 0, 10);
+      
+      let suffix = "";
+      if (id > 0) {
+        if (id < 100) suffix = "50";
+        else if (id >= 100 && id < 150) suffix = "40";
+        else if (id >= 150) suffix = "32";
+      }
+      
+      jointCode = `Joint code : EST${suffix}`;
+  }
+
+  const diameterInch = toInches(diameterVal);
+
   return {
     ...data,
     itemCode: data.itemCode || data.productId || "",
@@ -226,13 +308,17 @@ export const processLabelData = (data) => {
     idLine: idLine,
     productType: productType,
     pressureLine: pressureLine,
+    pressureLineEmt: pressureLineEmt,
     connectionLine: connectionLine,
     radiusText: radiusText,
 
     lotNumber: lotNumber,
+    jointCode: jointCode, // Toegevoegd voor A2G3 logica
     date: format(new Date(), "dd-MM-yyyy"),
     
     // Pro velden
+    diameterInch,
+    diameterWithInches: diameterVal > 0 ? `${diameterVal}mm ${diameterInch}` : "",
     isHeavyLoad,
     isExport,
   };
@@ -331,10 +417,18 @@ export const resolveLabelContent = (contentOrElement, data) => {
     return contentOrElement;
   }
 
+  // Auto-upgrade van hardcoded teksten in oude labels naar de dynamische idLine (met inches)
+  if (content === "ID: {diameter}mm" || content === "ID: {dn}mm" || content === "ID:{diameter}mm") {
+      content = "{idLine}";
+  }
+
   const matches = content.match(/{([^}]+)}/g);
 
   if (matches) {
-    matches.forEach((match) => {
+    // Deduplicate matches om dubbele verwerking te voorkomen
+    const uniqueMatches = [...new Set(matches)];
+
+    uniqueMatches.forEach((match) => {
       const key = match.slice(1, -1);
       const value = key === "date"
         ? format(new Date(), "dd-MM-yyyy")
@@ -345,7 +439,8 @@ export const resolveLabelContent = (contentOrElement, data) => {
             : "";
         })();
 
-      content = content.replace(match, value);
+      // Vervang ALLE voorkomens van de placeholder (niet alleen de eerste)
+      content = content.split(match).join(value);
     });
   }
 
@@ -366,52 +461,150 @@ export const resolveLabelContent = (contentOrElement, data) => {
  * @param {Object} product - Het product waarvoor geprint wordt
  * @returns {Array} Gefilterde labels
  */
-export const filterLabelsByProduct = (labels, product) => {
+export const filterLabelsByProduct = (labels, product, options = {}) => {
   if (!product || !labels) return labels || [];
-  
-  console.log("Filtering labels for:", product.item || product.description);
 
-  // 1. Normaliseer product data naar tags
-  const productTags = [];
+  if (options.strictTempOrderLabels) {
+    return filterTempOrderLabelsByProduct(labels, product);
+  }
+
+  const excludeTempOrderLabels = options.excludeTempOrderLabels === true;
+  const sourceLabels = excludeTempOrderLabels
+    ? labels.filter((label) => {
+        const tags = (label.tags || []).map((t) => String(t).toUpperCase().trim());
+        const name = String(label.name || "").toUpperCase();
+        return (
+          !tags.includes("TIJDELIJK") &&
+          !tags.includes("TEMP") &&
+          !name.includes("TIJDELIJK") &&
+          !name.includes("TEMP") &&
+          !name.includes("ORDER LABEL") &&
+          !name.includes("NOOD")
+        );
+      })
+    : labels;
+  
+  // 1. Normaliseer product data naar tags (Set voor unieke waarden)
+  const productTags = new Set();
   const desc = String(product.description || product.item || "").toUpperCase();
   const type = String(product.productType || product.type || "").toUpperCase();
   
   // Basis tags uit type
-  if (type) productTags.push(type);
+  if (type) productTags.add(type);
 
-  // Slimme extractie: Voeg woorden uit omschrijving toe (bv. ELBOW, TEE, FLANGE)
-  const descWords = desc.split(/[\s,./-]+/).filter(w => w.length > 2 && isNaN(w));
-  productTags.push(...descWords);
+  // Verbeterde Type Detectie: Zoek naar specifieke producttypen in de omschrijving
+  const knownTypes = ["ELBOW", "TEE", "REDUCER", "FLANGE", "COUPLER", "BLIND FLANGE", "CONCENTRIC REDUCER", "ECCENTRIC REDUCER", "UNEQUAL-TEE", "EQUAL-TEE"];
+  knownTypes.forEach(knownType => {
+    if (desc.includes(knownType)) {
+      productTags.add(knownType.split('-')[0]); // Add "TEE" for "EQUAL-TEE"
+    }
+  });
 
-  // Detecteer types uit omschrijving/data (breid dit uit naar wens)
-  if (desc.includes("WAVISTRONG") || type.includes("WAVISTRONG")) productTags.push("WAVISTRONG");
-  if (desc.includes("FIBERMAR") || type.includes("FIBERMAR")) productTags.push("FIBERMAR");
-  if (desc.includes("EST")) productTags.push("EST");
-  if (desc.includes("CST")) productTags.push("CST");
-  if (desc.includes("EMT")) productTags.push("EMT");
-  if (desc.includes("EWT")) productTags.push("EWT");
+  // Detecteer specifieke productlijnen uit omschrijving/data
+  if (desc.includes("WAVISTRONG") || type.includes("WAVISTRONG")) productTags.add("WAVISTRONG");
+  if (desc.includes("FIBERMAR") || type.includes("FIBERMAR")) productTags.add("FIBERMAR");
+  if (desc.includes("EST")) productTags.add("EST");
+  if (desc.includes("CST")) productTags.add("CST");
+  if (desc.includes("EMT")) productTags.add("EMT");
+  if (desc.includes("EWT")) productTags.add("EWT");
   
-  console.log("Detected Product Tags:", [...new Set(productTags)]);
-
   // 2. Filter logica
-  const filtered = labels.filter(label => {
+  return sourceLabels.filter(label => {
       const labelTags = (label.tags || []).map(t => String(t).toUpperCase()).filter(Boolean);
       
       // REGEL 1: Als een label GEEN tags heeft -> Altijd tonen (Generiek label)
       if (labelTags.length === 0) return true; 
       
       // REGEL 2: Als een label WEL tags heeft -> Toon alleen als product minstens 1 matching tag heeft
-      return labelTags.some(tag => productTags.includes(tag));
+      return labelTags.some(tag => productTags.has(tag));
   });
-
-  console.log(`Filtered ${labels.length} -> ${filtered.length} labels`);
-  return filtered;
 };
 
-export const getQRCodeUrl = (data) =>
-  `https://api.qrserver.com/v1/create-qr-code/?size=150x150&margin=0&data=${encodeURIComponent(
-    data || "leeg"
-  )}`;
+/**
+ * Strikte filtering voor Legacy / Nood-etiketten (Order Labels).
+ * Regels:
+ * - Label moet tag TIJDELIJK of TEMP hebben.
+ * - Item met A-code (A1S1/A2G3/A2E5/...) => alleen labels met exact die code-tag.
+ * - Item met EMT => alleen labels met EMT.
+ * - Item met CST/EST/EWT => alleen labels met diezelfde tag(s).
+ * - Geen specifieke item-tag => alle tijdelijke labels.
+ */
+export const filterTempOrderLabelsByProduct = (labels, product) => {
+  if (!product || !labels) return labels || [];
+
+  const itemText = `${product.itemCode || product.productId || ""} ${product.description || product.item || ""} ${product.extraCode || product.code || ""} ${product.productType || product.type || ""}`.toUpperCase();
+  const normalizedItemText = itemText.replace(/[^A-Z0-9]+/g, " ").trim();
+
+  const hasItemTag = (tag) => {
+    const upperTag = String(tag || "").toUpperCase();
+    return new RegExp(`\\b${upperTag}(?:\\d+)?\\b`).test(normalizedItemText);
+  };
+
+  const itemCstEstEwt = ["CST", "EST", "EWT"].filter(hasItemTag);
+  const itemHasEmt = hasItemTag("EMT");
+  const itemCodeTags = Array.from(new Set((normalizedItemText.match(/\bA\d[A-Z]\d\b/g) || [])));
+  const itemHasAdapter = hasItemTag("ADAPTOR") || hasItemTag("ADAPTER");
+
+  const normalizedTags = (label) => (label.tags || []).map(tag => String(tag).toUpperCase().trim());
+  const hasAdapterTag = (tags) => tags.includes("ADAPTOR") || tags.includes("ADAPTER");
+
+  const tempLabels = labels.filter(label => {
+    const tags = normalizedTags(label);
+    return tags.includes("TIJDELIJK") || tags.includes("TEMP");
+  });
+
+  const hasAnyAdapterLabel = tempLabels.some(label => hasAdapterTag(normalizedTags(label)));
+
+  return tempLabels.filter(label => {
+    const tags = normalizedTags(label);
+
+    // Adapter items: als er adapter-labels bestaan, toon alleen die labels
+    if (itemHasAdapter && hasAnyAdapterLabel) {
+      return hasAdapterTag(tags);
+    }
+
+    // Hoogste prioriteit: A-code
+    if (itemCodeTags.length > 0) {
+      return itemCodeTags.some(codeTag => tags.includes(codeTag));
+    }
+
+    // Daarna EMT
+    if (itemHasEmt) {
+      return tags.includes("EMT");
+    }
+
+    // Daarna CST/EST/EWT
+    if (itemCstEstEwt.length > 0) {
+      return itemCstEstEwt.some(tag => tags.includes(tag));
+    }
+
+    // Geen specifieke tag gevonden in item
+    return true;
+  });
+};
+
+const qrDataUrlCache = new Map();
+
+export const getQRCodeDataUrl = async (data, size = 150) => {
+  const value = String(data || "leeg");
+  const width = Math.max(64, Number(size) || 150);
+  const cacheKey = `${width}::${value}`;
+  const cached = qrDataUrlCache.get(cacheKey);
+  if (cached) return cached;
+
+  const dataUrl = await QRCode.toDataURL(value, {
+    errorCorrectionLevel: "H",
+    margin: 1,
+    width,
+    color: { dark: "#000000", light: "#FFFFFF" },
+  });
+
+  qrDataUrlCache.set(cacheKey, dataUrl);
+  return dataUrl;
+};
+
+// Backward-compatible alias; returns a Promise<string> just like getQRCodeDataUrl.
+export const getQRCodeUrl = (data, size = 150) => getQRCodeDataUrl(data, size);
 
 export const getBarcodeUrl = (data) =>
   `https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(

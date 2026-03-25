@@ -289,7 +289,6 @@ const PortalView = () => {
             </button>
           )}
 
-          {/* Tegel 5: Beheer (Admin Only) */}
           {isAdmin && (
             <button
               type="button"

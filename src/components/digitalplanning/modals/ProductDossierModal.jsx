@@ -15,20 +15,23 @@ import {
   Loader2,
   Star,
   Zap,
-  Code,
-  Copy,
+  Eye,
+  EyeOff,
+  Printer,
 } from "lucide-react";
 import StatusBadge from "../common/StatusBadge";
 import { WORKSTATIONS } from "../../../utils/workstationLogic";
 import { format } from "date-fns";
 import { getISOWeekInfo } from "../../../utils/hubHelpers";
 import { findDrawingForOrder, syncOrderDrawing } from "../../../utils/drawingLinker.jsx";
-import { collection, query, where, getDocs, doc, updateDoc, arrayUnion } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, updateDoc, arrayUnion, limit } from "firebase/firestore";
 import { db } from "../../../config/firebase";
 import { PATHS } from "../../../config/dbPaths";
 import { useAdminAuth } from "../../../hooks/useAdminAuth";
 import ProductDetailModal from "../../products/ProductDetailModal";
 import ConfirmationModal from "./ConfirmationModal";
+import { formatDateTimeSafe, toDateSafe } from "../../../utils/dateUtils";
+import { queuePrintJob } from "../../../services/printService";
 
 /**
  * ProductDossierModal: Toont proces-stappen, kwaliteitsmetingen en order-info.
@@ -52,6 +55,12 @@ const ProductDossierModal = ({
   const [catalogProduct, setCatalogProduct] = useState(null);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
   const [historyWithOperators, setHistoryWithOperators] = useState([]);
+  const [isReprinting, setIsReprinting] = useState(false);
+  const [reprintQuantity, setReprintQuantity] = useState("1");
+  const [showLabelPreview, setShowLabelPreview] = useState(false);
+  const [resolvedLabelZPL, setResolvedLabelZPL] = useState("");
+  const [resolvedLabelTemplateId, setResolvedLabelTemplateId] = useState(null);
+  const [isResolvingLabel, setIsResolvingLabel] = useState(false);
   const { role } = useAdminAuth();
   const canEditPriority = ["admin", "teamleader"].includes(role);
   const [showConfirmMove, setShowConfirmMove] = useState(false);
@@ -69,7 +78,10 @@ const ProductDossierModal = ({
   const handleSetPriority = async (level) => {
     if (!parentOrder.id) return;
     // Toggle logic: als huidige priority gelijk is aan gekozen level, zet uit (false)
-    const currentPrio = parentOrder.priority === true ? "high" : parentOrder.priority;
+    const currentPrio =
+      parentOrder.priority === true
+        ? "high"
+        : String(parentOrder.priority || "").toLowerCase().trim();
     const newPriority = currentPrio === level ? false : level;
 
     try {
@@ -102,8 +114,119 @@ const ProductDossierModal = ({
 
   if (!isOpen || !product) return null;
 
-  const parentOrder = orders.find((o) => o.orderId === product.orderId) || {};
+  const productOrderId =
+    product.orderId ||
+    product.order ||
+    product.orderNumber ||
+    product.orderNr ||
+    product.parentOrderId ||
+    "";
+
+  const parentOrder =
+    orders.find((o) => {
+      const orderKeys = [o.orderId, o.order, o.orderNumber, o.orderNr, o.id]
+        .filter(Boolean)
+        .map((v) => String(v));
+      return orderKeys.includes(String(productOrderId));
+    }) ||
+    {};
+
+  const displayOrderId =
+    productOrderId ||
+    parentOrder.orderId ||
+    parentOrder.orderNumber ||
+    parentOrder.order ||
+    parentOrder.orderNr ||
+    parentOrder.id ||
+    "-";
+
   const hasDrawing = parentOrder.drawing && parentOrder.drawing !== "-" && parentOrder.drawing !== "";
+  const effectiveLabelZPL = String(resolvedLabelZPL || product?.labelZPL || "").trim();
+  const previewLabelSize = useMemo(() => {
+    const fallback = "4x6";
+    if (!effectiveLabelZPL) return fallback;
+
+    const pwMatch = effectiveLabelZPL.match(/\^PW(\d{2,5})/i);
+    const llMatch = effectiveLabelZPL.match(/\^LL(\d{2,5})/i);
+    const pwDots = pwMatch ? Number(pwMatch[1]) : null;
+    const llDots = llMatch ? Number(llMatch[1]) : null;
+
+    if (!Number.isFinite(pwDots) || !Number.isFinite(llDots) || pwDots <= 0 || llDots <= 0) {
+      return fallback;
+    }
+
+    // 8 dpmm = 203 dpi (Labelary endpoint used below)
+    const dpi = 203;
+    const widthIn = Math.min(12, Math.max(1, pwDots / dpi));
+    const heightIn = Math.min(12, Math.max(1, llDots / dpi));
+
+    return `${widthIn.toFixed(2)}x${heightIn.toFixed(2)}`;
+  }, [effectiveLabelZPL]);
+  const normalizedParentPriority =
+    parentOrder.priority === true
+      ? "high"
+      : String(parentOrder.priority || "").toLowerCase().trim();
+
+  React.useEffect(() => {
+    const resolveLabelFromQueue = async () => {
+      if (!isOpen || !product) return;
+
+      const directZpl = String(product?.labelZPL || "").trim();
+      if (directZpl) {
+        setResolvedLabelZPL(directZpl);
+        setResolvedLabelTemplateId(product?.labelTemplateId || null);
+        return;
+      }
+
+      const lot = String(product?.lotNumber || product?.id || "").trim();
+      const order = String(product?.orderId || productOrderId || "").trim();
+      if (!lot && !order) {
+        setResolvedLabelZPL("");
+        setResolvedLabelTemplateId(null);
+        return;
+      }
+
+      setIsResolvingLabel(true);
+      try {
+        const queuePath = PATHS?.PRINT_QUEUE || ["future-factory", "production", "print_queue"];
+        const queueRef = collection(db, ...queuePath);
+        const calls = [];
+
+        if (lot) calls.push(getDocs(query(queueRef, where("metadata.lotNumber", "==", lot), limit(20))));
+        if (order) calls.push(getDocs(query(queueRef, where("metadata.orderId", "==", order), limit(20))));
+
+        const snaps = await Promise.all(calls);
+        const candidates = snaps.flatMap((snap) =>
+          snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        );
+
+        const uniqueById = new Map(candidates.map((c) => [c.id, c]));
+        const best = Array.from(uniqueById.values())
+          .filter((j) => String(j?.zpl || j?.printData || "").trim())
+          .sort((a, b) => {
+            const ta = a?.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+            const tb = b?.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+            return tb - ta;
+          })[0];
+
+        setResolvedLabelZPL(String(best?.zpl || best?.printData || "").trim());
+        setResolvedLabelTemplateId(best?.metadata?.templateId || null);
+      } catch (e) {
+        console.warn("Kon labeldata niet uit print queue ophalen:", e);
+        setResolvedLabelZPL("");
+        setResolvedLabelTemplateId(null);
+      } finally {
+        setIsResolvingLabel(false);
+      }
+    };
+
+    resolveLabelFromQueue();
+  }, [isOpen, product, productOrderId]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    setShowLabelPreview(false);
+  }, [isOpen, product?.id, product?.lotNumber]);
 
   const handleOpenDetail = async () => {
     if (!hasDrawing) return;
@@ -164,8 +287,8 @@ const ProductDossierModal = ({
         if (!entry.station || (!entry.timestamp && !entry.time)) return entry;
 
         try {
-          const ts = entry.timestamp?.toDate ? entry.timestamp.toDate() : new Date(entry.timestamp || entry.time);
-          if (isNaN(ts.getTime())) return entry;
+          const ts = toDateSafe(entry.timestamp || entry.time);
+          if (!ts || isNaN(ts.getTime())) return entry;
           
           const dateStr = ts.toISOString().split('T')[0];
           const station = entry.station;
@@ -198,10 +321,8 @@ const ProductDossierModal = ({
   }, [product, isOpen]);
 
   const formatDeadline = (val) => {
-    if (!val) return "-";
-    if (val?.toDate) return format(val.toDate(), "dd-MM-yyyy");
-    const date = new Date(val);
-    if (!isNaN(date.getTime())) return format(date, "dd-MM-yyyy");
+    const date = toDateSafe(val);
+    if (date) return format(date, "dd-MM-yyyy");
     return String(val);
   };
 
@@ -249,6 +370,56 @@ const ProductDossierModal = ({
     onClose();
   };
 
+  const printerHasStation = (printer, station) => {
+    if (!printer || !station) return false;
+    const linked = Array.isArray(printer.linkedStations) ? printer.linkedStations : [];
+    const queue = Array.isArray(printer.queueStations) ? printer.queueStations : [];
+    return [...linked, ...queue].includes(station);
+  };
+
+  const handleReprintLabel = async () => {
+    const zplToReprint = String(effectiveLabelZPL || "").trim();
+    if (!zplToReprint) {
+      alert("Geen labeldata gevonden om te herprinten.");
+      return;
+    }
+
+    setIsReprinting(true);
+    try {
+      const BM01_STATION = "BM01";
+      const quantity = Math.max(1, parseInt(reprintQuantity, 10) || 1);
+      const prnPaths = PATHS?.PRINTERS || ["future-factory", "settings", "printers"];
+      const snap = await getDocs(collection(db, ...prnPaths));
+      const printers = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      const stationPrinter = printers.find((p) => printerHasStation(p, BM01_STATION));
+      const fallbackDefault = printers.find((p) => p.isDefault);
+      const targetPrinter = stationPrinter || fallbackDefault || null;
+
+      if (!targetPrinter) {
+        throw new Error("Geen BM01/default printer gevonden in Printer Beheer.");
+      }
+
+      await queuePrintJob(targetPrinter.id, zplToReprint, {
+        description: `Herprint label voor ${displayOrderId} (Lot: ${product.lotNumber || product.id || "-"}) (x${quantity})`,
+        quantity,
+        orderId: displayOrderId,
+        lotNumber: product.lotNumber || product.id || null,
+        stationId: BM01_STATION,
+        templateId: product.labelTemplateId || resolvedLabelTemplateId || null,
+        targetPrinterName: targetPrinter.name || targetPrinter.id,
+        source: "product_dossier_reprint",
+      });
+
+      alert(`${quantity} herprint(s) naar wachtrij gestuurd (${targetPrinter.name || targetPrinter.id}) via station BM01.`);
+    } catch (e) {
+      console.error("Herprint mislukt:", e);
+      alert(`Herprint mislukt: ${e.message}`);
+    } finally {
+      setIsReprinting(false);
+    }
+  };
+
   return (
     <>
       <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[250] flex items-center justify-center p-4 lg:p-10 animate-in fade-in">
@@ -277,16 +448,16 @@ const ProductDossierModal = ({
                   )}
                   {(parentOrder.priority || parentOrder.isMoved) && (
                     <p className={`text-xs font-bold uppercase tracking-wider mt-1 flex items-center gap-1 ${
-                      parentOrder.priority === "immediate" ? "text-rose-500" :
-                      parentOrder.priority === "urgent" ? "text-orange-500" :
+                      normalizedParentPriority === "immediate" ? "text-rose-500" :
+                      normalizedParentPriority === "urgent" ? "text-orange-500" :
                       "text-amber-400"
                     }`}>
                       <ArrowRightLeft size={12} /> 
                       {parentOrder.isMoved ? "Verplaatst" : ""}
                       {parentOrder.isMoved && parentOrder.priority ? " & " : ""}
-                      {parentOrder.priority === "immediate" ? "1e Prio" : 
-                       parentOrder.priority === "urgent" ? "Spoed" : 
-                       (parentOrder.priority === "high" || parentOrder.priority === true) ? "Prio" : ""}
+                      {normalizedParentPriority === "immediate" ? "1e Prio" : 
+                       normalizedParentPriority === "urgent" ? "Spoed" : 
+                       (normalizedParentPriority === "high" || parentOrder.priority === true) ? "Prio" : ""}
                     </p>
                   )}
                   {canEditPriority && parentOrder.id && (
@@ -294,34 +465,34 @@ const ProductDossierModal = ({
                       <button
                         onClick={() => handleSetPriority("high")}
                         className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${
-                          parentOrder.priority === "high" || parentOrder.priority === true
+                          normalizedParentPriority === "high" || parentOrder.priority === true
                             ? "bg-amber-500 text-white hover:bg-amber-600 shadow-lg shadow-amber-500/20"
                             : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/10"
                         }`}
                       >
-                        <Star size={12} fill={parentOrder.priority === "high" || parentOrder.priority === true ? "currentColor" : "none"} />
+                        <Star size={12} fill={normalizedParentPriority === "high" || parentOrder.priority === true ? "currentColor" : "none"} />
                         Prio
                       </button>
                       <button
                         onClick={() => handleSetPriority("urgent")}
                         className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${
-                          parentOrder.priority === "urgent"
+                          normalizedParentPriority === "urgent"
                             ? "bg-orange-500 text-white hover:bg-orange-600 shadow-lg shadow-orange-500/20"
                             : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/10"
                         }`}
                       >
-                        <AlertTriangle size={12} fill={parentOrder.priority === "urgent" ? "currentColor" : "none"} />
+                        <AlertTriangle size={12} fill={normalizedParentPriority === "urgent" ? "currentColor" : "none"} />
                         Spoed
                       </button>
                       <button
                         onClick={() => handleSetPriority("immediate")}
                         className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${
-                          parentOrder.priority === "immediate"
+                          normalizedParentPriority === "immediate"
                             ? "bg-rose-500 text-white hover:bg-rose-600 shadow-lg shadow-rose-500/20"
                             : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/10"
                         }`}
                       >
-                        <Zap size={12} fill={parentOrder.priority === "immediate" ? "currentColor" : "none"} />
+                        <Zap size={12} fill={normalizedParentPriority === "immediate" ? "currentColor" : "none"} />
                         1e Prio
                       </button>
                     </div>
@@ -356,6 +527,14 @@ const ProductDossierModal = ({
                 <h4 className="font-black text-xs uppercase text-blue-900 tracking-widest">
                   Order Informatie
                 </h4>
+              </div>
+              <div>
+                <span className="text-[9px] font-black text-blue-400 uppercase">
+                  Order
+                </span>
+                <p className="text-sm font-bold text-slate-800">
+                  {displayOrderId}
+                </p>
               </div>
               <div>
                 <span className="text-[9px] font-black text-blue-400 uppercase">
@@ -419,38 +598,71 @@ const ProductDossierModal = ({
                 </div>
               )}
 
-              {/* ZPL Code Display (Indien beschikbaar) */}
-              {product.labelZPL && (
-                <div className="lg:col-span-4 mt-4 pt-4 border-t border-blue-200/50">
-                  <h4 className="text-[9px] font-black text-blue-400 uppercase mb-2">Label Preview & ZPL</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Preview Image */}
-                    <div className="bg-white/60 p-2 rounded-lg border border-blue-100/50 flex items-center justify-center">
-                      <img 
-                        src={`http://api.labelary.com/v1/printers/8dpmm/labels/4x6/0/${encodeURIComponent(product.labelZPL)}`} 
-                        alt="Label Preview"
-                        className="max-w-full h-auto shadow-md"
-                      />
-                    </div>
-                    {/* ZPL Code */}
-                    <div className="bg-white/60 rounded-lg p-2 border border-blue-100/50 relative">
-                      <button 
-                        onClick={() => {
-                          navigator.clipboard.writeText(product.labelZPL);
-                          alert("ZPL code gekopieerd naar klembord");
-                        }}
-                        className="absolute top-2 right-2 text-[9px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-colors bg-white/50 px-1.5 py-0.5 rounded-md"
-                        title="Kopieer ZPL code"
-                      >
-                        <Copy size={10} /> Kopiëren
-                      </button>
-                      <pre className="text-[7px] font-mono text-slate-500 overflow-x-auto whitespace-pre-wrap h-32 custom-scrollbar">
-                        {product.labelZPL}
-                      </pre>
-                    </div>
+              {/* Label sectie altijd zichtbaar; toont status/fallback als ZPL ontbreekt */}
+              <div className="lg:col-span-4 mt-4 pt-4 border-t border-blue-200/50">
+                <h4 className="text-[9px] font-black text-blue-400 uppercase mb-2">Label (Her)print</h4>
+                {isResolvingLabel ? (
+                  <div className="bg-white/60 p-4 rounded-lg border border-blue-100/50 text-xs font-bold text-slate-500 flex items-center gap-2">
+                    <Loader2 size={14} className="animate-spin" /> Labelgegevens laden...
                   </div>
-                </div>
-              )}
+                ) : effectiveLabelZPL ? (
+                  <>
+                    <div className="bg-white/60 rounded-lg p-3 border border-blue-100/50 flex flex-wrap items-center gap-2">
+                        <select
+                          value={reprintQuantity}
+                          onChange={(e) => setReprintQuantity(e.target.value)}
+                          disabled={isReprinting}
+                          className="text-[10px] font-bold text-slate-700 bg-white/90 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-300 disabled:opacity-50"
+                          title="Aantal herprints"
+                        >
+                          <option value="1">1x</option>
+                          <option value="2">2x</option>
+                          <option value="5">5x</option>
+                          <option value="10">10x</option>
+                        </select>
+                        <button
+                          onClick={handleReprintLabel}
+                          disabled={isReprinting}
+                          className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 transition-colors bg-emerald-100/80 hover:bg-emerald-200/80 px-2 py-1 rounded-md disabled:opacity-50"
+                          title="Herprint label via BM01 (Print Queue)"
+                        >
+                          {isReprinting ? <Loader2 size={12} className="animate-spin" /> : <Printer size={12} />}
+                          {isReprinting ? "Verzenden..." : "Herprint BM01"}
+                        </button>
+                        <button
+                          onClick={() => setShowLabelPreview((prev) => !prev)}
+                          className="text-[10px] font-bold text-blue-700 hover:text-blue-900 flex items-center gap-1 transition-colors bg-blue-100/80 hover:bg-blue-200/80 px-2 py-1 rounded-md"
+                          title={showLabelPreview ? "Verberg label voorbeeld" : "Toon label voorbeeld"}
+                        >
+                          {showLabelPreview ? <EyeOff size={12} /> : <Eye size={12} />}
+                          {showLabelPreview ? "Verberg voorbeeld" : "Toon voorbeeld"}
+                        </button>
+                    </div>
+
+                    {showLabelPreview && (
+                      <div className="mt-3 bg-white/60 p-2 rounded-lg border border-blue-100/50 flex items-center justify-center overflow-hidden">
+                        <img
+                          src={`http://api.labelary.com/v1/printers/8dpmm/labels/${previewLabelSize}/0/${encodeURIComponent(effectiveLabelZPL)}`}
+                          alt="Label Preview"
+                          className="w-full max-w-[520px] max-h-[50vh] object-contain shadow-md"
+                        />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="bg-white/60 p-4 rounded-lg border border-blue-100/50 flex items-center justify-between gap-3">
+                    <span className="text-xs font-bold text-slate-500">Geen opgeslagen label gevonden voor dit product.</span>
+                    <button
+                      onClick={handleReprintLabel}
+                      disabled
+                      className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-md cursor-not-allowed"
+                      title="Geen labeldata beschikbaar"
+                    >
+                      Herprint BM01
+                    </button>
+                  </div>
+                )}
+              </div>
             </section>
 
             {/* Actual Status */}
@@ -559,7 +771,7 @@ const ProductDossierModal = ({
                             {note.user || "Systeem"}
                           </span>
                           <span className="text-[10px] font-mono text-slate-400">
-                            {new Date(note.timestamp).toLocaleString()}
+                            {formatDateTimeSafe(note.timestamp)}
                           </span>
                         </div>
                         <p className="text-sm text-slate-700 font-medium whitespace-pre-wrap">
@@ -645,12 +857,7 @@ const ProductDossierModal = ({
                         )}
                       </div>
                       <span className="text-[10px] font-mono font-bold text-slate-400">
-                        {(() => {
-                          const val = entry.time || entry.timestamp;
-                          if (!val) return "-";
-                          const date = val.toDate ? val.toDate() : new Date(val);
-                          return isNaN(date.getTime()) ? "-" : date.toLocaleString("nl-NL");
-                        })()}
+                        {formatDateTimeSafe(entry.time || entry.timestamp)}
                       </span>
                     </div>
                   </div>

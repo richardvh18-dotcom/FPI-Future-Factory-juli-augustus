@@ -5,6 +5,7 @@ import { PATHS } from '../../config/dbPaths';
 import { formatDistanceToNow } from 'date-fns';
 import { nl } from 'date-fns/locale';
 import { Loader2, RefreshCw, Trash2, Wifi, WifiOff, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useNotifications } from '../../contexts/NotificationContext';
 
 const StatusBadge = ({ status }) => {
   const config = {
@@ -23,6 +24,7 @@ const StatusBadge = ({ status }) => {
 };
 
 const PrintQueueAdminView = () => {
+  const { showSuccess, showError } = useNotifications();
   const [printJobs, setPrintJobs] = useState([]);
   const [listeners, setListeners] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,14 +49,26 @@ const PrintQueueAdminView = () => {
 
   const handleReprint = async (jobId) => {
     if (!window.confirm("Weet u zeker dat u deze taak opnieuw wilt printen?")) return;
-    const jobRef = doc(db, ...PATHS.PRINT_QUEUE, jobId);
-    await updateDoc(jobRef, { status: 'pending', retries: (printJobs.find(j => j.id === jobId)?.retries || 0) + 1 });
+    try {
+      const jobRef = doc(db, ...PATHS.PRINT_QUEUE, jobId);
+      await updateDoc(jobRef, { status: 'pending', retries: (printJobs.find(j => j.id === jobId)?.retries || 0) + 1 });
+      showSuccess("Taak opnieuw in wachtrij geplaatst");
+    } catch (e) {
+      console.error(e);
+      showError("Fout bij opnieuw printen");
+    }
   };
 
   const handleDelete = async (jobId) => {
     if (!window.confirm("Weet u zeker dat u deze taak permanent wilt verwijderen?")) return;
-    const jobRef = doc(db, ...PATHS.PRINT_QUEUE, jobId);
-    await deleteDoc(jobRef);
+    try {
+      const jobRef = doc(db, ...PATHS.PRINT_QUEUE, jobId);
+      await deleteDoc(jobRef);
+      showSuccess("Taak verwijderd");
+    } catch (e) {
+      console.error(e);
+      showError("Fout bij verwijderen");
+    }
   };
 
   return (

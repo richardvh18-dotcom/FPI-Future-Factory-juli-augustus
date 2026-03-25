@@ -1,6 +1,24 @@
 import { db, auth } from "../config/firebase";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
+const sanitizeFirestoreValue = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeFirestoreValue(item))
+      .filter((item) => item !== undefined);
+  }
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .map(([key, nestedValue]) => [key, sanitizeFirestoreValue(nestedValue)])
+        .filter(([, nestedValue]) => nestedValue !== undefined)
+    );
+  }
+  return value;
+};
+
 /**
  * Stuurt een ZPL printopdracht naar de Firestore wachtrij.
  * Deze wordt opgepikt door de lokale Node.js listener op de productievloer.
@@ -12,6 +30,11 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 export const queuePrintJob = async (printerId, zplData, metadata = {}) => {
   try {
     const queueRef = collection(db, "future-factory", "production", "print_queue");
+    const sanitizedMetadata = sanitizeFirestoreValue({
+      ...metadata,
+      userAgent: navigator.userAgent,
+      requesterEmail: auth.currentUser?.email || "unknown"
+    });
     
     const jobData = {
       printerId: printerId,
@@ -19,11 +42,7 @@ export const queuePrintJob = async (printerId, zplData, metadata = {}) => {
       status: "pending", // pending -> printing -> completed
       createdAt: serverTimestamp(),
       createdBy: auth.currentUser?.uid || "unknown",
-      metadata: {
-        ...metadata,
-        userAgent: navigator.userAgent,
-        requesterEmail: auth.currentUser?.email || "unknown"
-      },
+      metadata: sanitizedMetadata,
       retryCount: 0
     };
 

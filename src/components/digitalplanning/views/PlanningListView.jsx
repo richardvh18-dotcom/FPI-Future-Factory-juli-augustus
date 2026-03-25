@@ -22,27 +22,26 @@ import {
 } from "lucide-react";
 import {
   format,
-  isValid,
   getISOWeek,
   getISOWeekYear,
   addWeeks,
   subWeeks,
-  parseISO,
   differenceInDays,
 } from "date-fns";
 import { nl } from "date-fns/locale";
+import { toDateSafe } from "../../../utils/dateUtils";
 
 // Importeer de centrale StatusBadge (vanuit ../common/)
 import StatusBadge from "../common/StatusBadge";
 import { syncMissingDrawings } from "../../../utils/planningSyncLogic";
 
 const parseDateSafe = (dateInput) => {
-  if (!dateInput) return null;
-  if (dateInput.toDate) return dateInput.toDate();
-  const d = new Date(dateInput);
-  if (isValid(d)) return d;
-  const dIso = parseISO(dateInput);
-  return isValid(dIso) ? dIso : null;
+  return toDateSafe(dateInput);
+};
+
+const formatDateLabel = (dateInput, pattern, options = {}, fallback = "-") => {
+  const parsedDate = parseDateSafe(dateInput);
+  return parsedDate ? format(parsedDate, pattern, options) : fallback;
 };
 
 // --- SUB-COMPONENT: DETAIL VIEW ---
@@ -170,13 +169,9 @@ const OrderDetailPane = ({ order, onClose }) => {
                     Uiterste Leverdatum
                   </span>
                   <span className="text-sm font-bold text-slate-900">
-                    {order.deliveryDate
-                      ? format(
-                          parseDateSafe(order.deliveryDate),
-                          "eeee dd MMMM yyyy",
-                          { locale: nl }
-                        )
-                      : "-"}
+                    {formatDateLabel(order.deliveryDate, "eeee dd MMMM yyyy", {
+                      locale: nl,
+                    })}
                   </span>
                 </div>
                 <div className="text-right">
@@ -184,9 +179,7 @@ const OrderDetailPane = ({ order, onClose }) => {
                     Geplande Start (-2w)
                   </span>
                   <span className="text-sm font-black text-blue-600 underline underline-offset-4">
-                    {order.plannedDate
-                      ? format(parseDateSafe(order.plannedDate), "dd-MM-yyyy")
-                      : "-"}
+                    {formatDateLabel(order.plannedDate, "dd-MM-yyyy")}
                   </span>
                 </div>
               </div>
@@ -473,16 +466,17 @@ const PlanningListView = ({
                       )}`}
                     >
                       <Calendar size={12} className="opacity-50" />
-                      {order.plannedDate
-                        ? format(parseDateSafe(order.plannedDate), "dd MMM", {
-                            locale: nl,
-                          })
-                        : "Geen datum"}
+                      {formatDateLabel(
+                        order.plannedDate,
+                        "dd MMM",
+                        { locale: nl },
+                        "Geen datum"
+                      )}
                     </span>
                     {order.deliveryDate && (
                       <span className="text-[9px] text-slate-300 font-bold uppercase flex items-center gap-1 border-l border-slate-100 pl-3">
                         <Clock size={10} />
-                        E: {format(parseDateSafe(order.deliveryDate), "dd-MM")}
+                        E: {formatDateLabel(order.deliveryDate, "dd-MM")}
                       </span>
                     )}
                   </div>

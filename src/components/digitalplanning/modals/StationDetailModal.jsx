@@ -17,9 +17,21 @@ import {
 } from "../../../utils/hubHelpers";
 import StatusBadge from "../common/StatusBadge";
 
-const StationDetailModal = ({ stationId, allOrders, allProducts, onClose }) => {
+const StationDetailModal = ({
+  stationId,
+  allOrders,
+  allProducts,
+  allArchivedProducts = [],
+  onClose,
+}) => {
   const [activeTab, setActiveTab] = useState("active");
   const [historyFilter, setHistoryFilter] = useState("week");
+  const historyFilterLabels = {
+    week: "Deze week",
+    "2weeks": "2 weken",
+    month: "30 dagen",
+    all: "Alles",
+  };
   const stationNorm = normalizeMachine(stationId);
 
   // Failsafe: als stationNorm een BA-station is en de parent scope is 'fittings', render niets
@@ -138,14 +150,25 @@ const StationDetailModal = ({ stationId, allOrders, allProducts, onClose }) => {
   const historyItems = useMemo(() => {
     const now = new Date();
     const currentWeekInfo = getISOWeekInfo(now);
+    const sourceProducts = [...allProducts, ...allArchivedProducts];
 
-    return allProducts
+    return sourceProducts
       .filter((p) => {
-        const pMachine = String(p.originMachine || p.currentStation || "");
+        const pMachine = String(
+          p.lastStation || p.originMachine || p.currentStation || p.machine || ""
+        );
+
+        const statusNorm = String(p.status || "").toUpperCase();
+        const stepNorm = String(p.currentStep || "").toUpperCase();
+        const isFinished =
+          statusNorm === "FINISHED" ||
+          statusNorm === "COMPLETED" ||
+          statusNorm === "GEREED" ||
+          stepNorm === "FINISHED";
 
         if (
           normalizeMachine(pMachine) !== stationNorm ||
-          p.currentStep !== "Finished"
+          !isFinished
         ) {
           return false;
         }
@@ -177,9 +200,17 @@ const StationDetailModal = ({ stationId, allOrders, allProducts, onClose }) => {
         return true;
       })
       .sort(
-        (a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0)
+        (a, b) => {
+          const aTime = a.updatedAt?.toDate
+            ? a.updatedAt.toDate().getTime()
+            : new Date(a.updatedAt || 0).getTime() || 0;
+          const bTime = b.updatedAt?.toDate
+            ? b.updatedAt.toDate().getTime()
+            : new Date(b.updatedAt || 0).getTime() || 0;
+          return bTime - aTime;
+        }
       );
-  }, [allProducts, stationNorm, historyFilter]);
+  }, [allProducts, allArchivedProducts, stationNorm, historyFilter]);
 
   return (
     <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -401,7 +432,7 @@ const StationDetailModal = ({ stationId, allOrders, allProducts, onClose }) => {
                         : "text-gray-400 hover:text-gray-600"
                     }`}
                   >
-                    {f === "all" ? "Alles" : f}
+                    {historyFilterLabels[f] || f}
                   </button>
                 ))}
               </div>

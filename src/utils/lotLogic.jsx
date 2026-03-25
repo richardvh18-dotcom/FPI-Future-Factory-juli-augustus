@@ -88,8 +88,22 @@ const stationToCode = {
   BA09: "409",
 };
 
+export const getStationMachineCode = (stationId) => {
+  if (!stationId) return "400";
+
+  const normalized = String(stationId).toUpperCase().trim();
+  if (stationToCode[normalized]) return stationToCode[normalized];
+
+  const digits = normalized.replace(/\D/g, "");
+  if (!digits) return "400";
+
+  if (digits.length === 3) return digits;
+  if (digits.length === 1) return `40${digits}`;
+  return `4${digits.slice(-2).padStart(2, "0")}`;
+};
+
 export const getLotPlaceholder = (stationId) => {
   if (!stationId) return "402608400000000";
-  const code = stationToCode[stationId.toUpperCase()] || "400";
+  const code = getStationMachineCode(stationId);
   return `402608${code}0000`;
 };

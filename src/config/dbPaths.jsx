@@ -14,6 +14,7 @@ export const PATHS = {
   TRACKING: [BASE, "production", "tracked_products"],
   MESSAGES: [BASE, "production", "messages"],
   OCCUPANCY: [BASE, "production", "machine_occupancy"],
+  TEMP_PLANNING: [BASE, "temp_labels", "orders"], // Tijdelijk pad voor legacy labels
   INVENTORY: [BASE, "production", "inventory"],
   PRODUCTION_STANDARDS: [BASE, "production", "time_standards"],
   EFFICIENCY_HOURS: [BASE, "production", "efficiency_hours"],
@@ -58,6 +59,8 @@ export const PATHS = {
   DRAWING_LIBRARY: [BASE, "settings", "media", "drawings", "records"],
   AI_KNOWLEDGE_BASE: [BASE, "settings", "ai_knowledge_base", "training", "records"],
   AI_DOCUMENTS: [BASE, "settings", "ai_documents", "knowledge", "records"],
+  AI_MEMORY: [BASE, "settings", "ai_memory"],
+  AI_CONVERSATIONS: [BASE, "settings", "ai_conversations"],
 
   // --- AUTOMATION & NOTIFICATIES ---
   AUTOMATION_RULES: [BASE, "automation", "rules"],
@@ -91,12 +94,20 @@ export const getPathString = (pathArray) =>
   Array.isArray(pathArray) ? pathArray.join("/") : "";
 
 /**
- * getPlanningArchivePath - Genereert het pad voor gearchiveerde planningen
+ * getArchiveItemsPath - Genereert het pad voor gearchiveerde productie-items
  * @param {number|string} year - Het jaar van het archief
- * @param {string} type - Type archief ('archive' of 'rejected')
  */
-export const getPlanningArchivePath = (year, type = "archive") => {
-  return [BASE, "production", `${type}_${year}_planning`];
+export const getArchiveItemsPath = (year) => {
+  return [BASE, "production", "archive", String(year), "items"];
+};
+
+/**
+ * getPlanningArchivePath - Genereert het pad voor gearchiveerde planningsorders
+ * Alle orders (archive én rejected) gaan naar hetzelfde pad; reden staat in archiveReason veld.
+ * @param {number|string} year - Het jaar van het archief
+ */
+export const getPlanningArchivePath = (year) => {
+  return [BASE, "production", "archive", String(year), "planning"];
 };
 
 /**

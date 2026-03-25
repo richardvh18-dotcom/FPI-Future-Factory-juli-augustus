@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Users,
   Clock,
@@ -40,6 +41,7 @@ import { normalizeMachine } from "../../utils/hubHelpers";
  * Toont het verschil tussen capaciteit en demand
  */
 const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNavigate }) => {
+  const { t } = useTranslation();
   const { user, role, isAdmin } = useAdminAuth();
   const [loading, setLoading] = useState(true);
   const [occupancy, setOccupancy] = useState([]);
@@ -320,6 +322,13 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
 
   // Bereken geplande uren op basis van orders en standaard tijden
   const demandMetrics = useMemo(() => {
+    const getSplitHours = (order) => {
+      const bh = parseFloat(order.plannedHoursBH || 0) || 0;
+      const nab = parseFloat(order.plannedHoursNabewerken || 0) || 0;
+      const bm01 = parseFloat(order.plannedHoursBM01 || 0) || 0;
+      return { bh, nab, bm01, total: bh + nab + bm01 };
+    };
+
     // Filter orders voor de geselecteerde periode
     let periodOrders = planningOrders.filter(order => {
       let orderDate = new Date();
@@ -378,8 +387,10 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     let missingStandardsList = [];
 
     periodOrders.forEach(order => {
-      const planCount = parseInt(order.plan || 0);
+      const planCount = parseInt(order.quantity || order.plan || 0);
       totalPlannedUnits += planCount;
+      const importedPlannedHours = parseFloat(order.plannedHours || 0) || 0;
+      const splitHours = getSplitHours(order);
 
       // 1. Check eerst of er specifieke uren zijn geïmporteerd (Infor LN) - case-insensitive match
       let importedInfo = efficiencyData[order.orderId];
@@ -396,6 +407,14 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         ordersWithStandards++;
         hoursFromEfficiency += hoursNeeded;
         ordersWithEfficiency++;
+      } else if (splitHours.total > 0) {
+        // Nieuwe PlanningImportModal met gesplitste stationuren (1715/1740/1020).
+        estimatedHours += splitHours.total;
+        ordersWithStandards++;
+      } else if (importedPlannedHours > 0) {
+        // Nieuwe planning import (plannedHours) direct gebruiken als vraag in uren.
+        estimatedHours += importedPlannedHours;
+        ordersWithStandards++;
       } else {
         // 2. Fallback: Zoek standaard tijd voor dit product op deze machine
         const standard = timeStandards.find(std => 
@@ -429,6 +448,15 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
   // Bereken balans per machine (Vraag vs Aanbod)
   const machineBreakdown = useMemo(() => {
     const breakdown = {};
+
+    const addDemandToMachine = (machineName, hours) => {
+      const normalizedMachine = normalizeMachine(machineName || "");
+      const safeHours = parseFloat(hours || 0) || 0;
+      if (!normalizedMachine || safeHours <= 0) return;
+
+      if (!breakdown[normalizedMachine]) breakdown[normalizedMachine] = { capacity: 0, demand: 0 };
+      breakdown[normalizedMachine].demand += safeHours;
+    };
 
     // 1. Capaciteit per machine (Occupancy)
     occupancy.forEach(occ => {
@@ -475,6 +503,20 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
 
       if (!breakdown[machine]) breakdown[machine] = { capacity: 0, demand: 0 };
 
+      const splitBH = parseFloat(order.plannedHoursBH || 0) || 0;
+      const splitNabewerken = parseFloat(order.plannedHoursNabewerken || 0) || 0;
+      const splitBM01 = parseFloat(order.plannedHoursBM01 || 0) || 0;
+      const hasSplitHours = splitBH > 0 || splitNabewerken > 0 || splitBM01 > 0;
+
+      if (hasSplitHours) {
+        // Zet importuren op de juiste stations:
+        // 1715 -> hoofdmachine (BH), 1740 -> NABEWERKING, 1020 -> BM01.
+        addDemandToMachine(machine, splitBH);
+        addDemandToMachine("NABEWERKING", splitNabewerken);
+        addDemandToMachine("BM01", splitBM01);
+        return;
+      }
+
       let hoursNeeded = 0;
       // Case-insensitive efficiencyData lookup
       let importedInfo = efficiencyData[order.orderId];
@@ -482,7 +524,8 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         const key = Object.keys(efficiencyData).find(k => k.toLowerCase() === order.orderId.toLowerCase());
         if (key) importedInfo = efficiencyData[key];
       }
-      const planCount = parseInt(order.plan || 0);
+      const planCount = parseInt(order.quantity || order.plan || 0);
+      const importedPlannedHours = parseFloat(order.plannedHours || 0) || 0;
 
       if (importedInfo) {
         // Check of we gesplitste data hebben (Productie vs Nabewerking)
@@ -507,6 +550,8 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
             // Fallback voor oude imports zonder splitsing
             hoursNeeded = (importedInfo.minutesPerUnit * planCount) / 60;
         }
+      } else if (importedPlannedHours > 0) {
+        hoursNeeded = importedPlannedHours;
       } else {
         const standard = timeStandards.find(std => 
           std.itemCode === order.item && 
@@ -792,11 +837,11 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         {/* Tabs Navigation */}
         <div className="flex bg-slate-100 p-1 rounded-xl overflow-x-auto max-w-full no-scrollbar shrink-0 justify-center">
           {[
-            { id: "capacity", label: "Capaciteit", icon: BarChart3 },
-            { id: "efficiency", label: "Efficiency", icon: Activity },
-            { id: "gantt", label: "Gantt", icon: LayoutDashboard },
-            { id: "timetracking", label: "Time Tracking", icon: Clock },
-            { id: "heatmap", label: "Heatmap", icon: BarChart2 },
+            { id: "capacity", label: t("planning.capacity.tabs.capacity", "Capaciteit"), icon: BarChart3 },
+            { id: "efficiency", label: t("planning.capacity.tabs.efficiency", "Efficiency"), icon: Activity },
+            { id: "gantt", label: t("planning.capacity.tabs.gantt", "Gantt"), icon: LayoutDashboard },
+            { id: "timetracking", label: t("planning.capacity.tabs.timetracking", "Time Tracking"), icon: Clock },
+            { id: "heatmap", label: t("planning.capacity.tabs.heatmap", "Heatmap"), icon: BarChart2 },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -820,7 +865,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
             {/* Department Filter */}
             <div className="flex items-center gap-3">
               <label className="text-xs text-slate-500 font-bold uppercase tracking-widest hidden sm:block">
-                Afdeling:
+                {t("planning.capacity.department", "Afdeling:")}
               </label>
               {canChangeFilter ? (
                 <div className="relative">
@@ -839,7 +884,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
               ) : (
                 <div className="bg-slate-100 border border-slate-200 rounded-lg px-4 py-2 text-sm font-bold text-slate-700 flex items-center gap-2">
                   {selectedDepartment}
-                  <span className="text-xs text-blue-500">(toegewezen)</span>
+                  <span className="text-xs text-blue-500">{t("planning.capacity.assigned", "(toegewezen)")}</span>
                 </div>
               )}
             </div>
@@ -851,7 +896,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
                 className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 rounded-lg transition-colors text-xs font-bold"
               >
                 <Upload size={16} />
-                <span className="hidden sm:inline">Upload</span>
+                <span className="hidden sm:inline">{t("planning.capacity.upload", "Upload")}</span>
               </button>
               <button
                 onClick={exportToPDF}
@@ -879,17 +924,17 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <h2 className="text-2xl font-black uppercase italic tracking-tighter leading-none">
-                Capaciteits <span className="text-blue-400">Planning</span>
+                {t("planning.capacity.titlePrefix", "Capaciteits")} <span className="text-blue-400">{t("planning.capacity.titleAccent", "Planning")}</span>
               </h2>
               <div className="flex items-center gap-4 mt-4">
                 {/* Time Period Selector */}
                 <div className="flex gap-2">
                   {[
-                    { value: "week", label: "Week", icon: "📅" },
-                    { value: "ytd", label: "YTD", icon: "📈" },
-                    { value: "year", label: "Jaar", icon: "📊" },
-                    { value: "future", label: "Toekomst", icon: "🔮" },
-                    { value: "yoy", label: "YoY Vergelijking", icon: "📉" }
+                    { value: "week", label: t("planning.capacity.periods.week", "Week"), icon: "📅" },
+                    { value: "ytd", label: t("planning.capacity.periods.ytd", "YTD"), icon: "📈" },
+                    { value: "year", label: t("planning.capacity.periods.year", "Jaar"), icon: "📊" },
+                    { value: "future", label: t("planning.capacity.periods.future", "Toekomst"), icon: "🔮" },
+                    { value: "yoy", label: t("planning.capacity.periods.yoy", "YoY Vergelijking"), icon: "📉" }
                   ].map(option => (
                     <button
                       key={option.value}
@@ -923,7 +968,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
                 {/* Comparison Year (voor YoY) */}
                 {timePeriod === "yoy" && (
                   <>
-                    <span className="text-xs text-slate-400">vs</span>
+                    <span className="text-xs text-slate-400">{t("planning.capacity.vs", "vs")}</span>
                     <select
                       value={comparisonYear}
                       onChange={(e) => setComparisonYear(parseInt(e.target.value))}
@@ -978,22 +1023,22 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
           <div className="flex items-center justify-between mb-4">
             <Users className="text-slate-600" size={24} />
             <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-black">
-              Totaal
+              {t("planning.capacity.metrics.total", "Totaal")}
             </span>
           </div>
           <div className="text-4xl font-black text-slate-600 mb-2">
             {capacityMetrics.totalProductionHours}u
           </div>
           <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-            Beschikbare Mens-uren
+            {t("planning.capacity.metrics.availableHours", "Beschikbare Mens-uren")}
           </div>
           <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-slate-600">Operators</span>
+              <span className="text-slate-600">{t("planning.capacity.metrics.operators", "Operators")}</span>
               <span className="font-bold">{capacityMetrics.operatorCount}</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-slate-600">Overhead</span>
+              <span className="text-slate-600">{t("planning.capacity.metrics.overhead", "Overhead")}</span>
               <span className="font-bold">{capacityMetrics.overheadHours}u</span>
             </div>
           </div>
@@ -1004,22 +1049,22 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
           <div className="flex items-center justify-between mb-4">
             <Activity className="text-emerald-600" size={24} />
             <span className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs font-black">
-              Productie
+              {t("planning.capacity.metrics.production", "Productie")}
             </span>
           </div>
           <div className="text-4xl font-black text-emerald-600 mb-2">
             {capacityMetrics.realProductionHours}u
           </div>
           <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-            BH/BA stations
+            {t("planning.capacity.metrics.bhbaStations", "BH/BA stations")}
           </div>
           <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-slate-600">Ratio</span>
+              <span className="text-slate-600">{t("planning.capacity.metrics.ratio", "Ratio")}</span>
               <span className="font-bold">{capacityMetrics.productionRatio}%</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-slate-600">Support</span>
+              <span className="text-slate-600">{t("planning.capacity.metrics.support", "Support")}</span>
               <span className="font-bold">{capacityMetrics.supportHours}u</span>
             </div>
           </div>
@@ -1030,31 +1075,31 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
           <div className="flex items-center justify-between mb-4">
             <Calendar className="text-blue-600" size={24} />
             <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-black">
-              Planning
+              {t("planning.capacity.metrics.planning", "Planning")}
             </span>
           </div>
           <div className="text-4xl font-black text-blue-600 mb-2">
             {demandMetrics.estimatedHours}u
           </div>
           <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-            Benodigde Order-uren
+            {t("planning.capacity.metrics.requiredOrderHours", "Benodigde Order-uren")}
           </div>
           <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-slate-600">Orders</span>
+              <span className="text-slate-600">{t("planning.capacity.metrics.orders", "Orders")}</span>
               <span className="font-bold">{demandMetrics.totalOrders}</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-slate-600">Units</span>
+              <span className="text-slate-600">{t("planning.capacity.metrics.units", "Units")}</span>
               <span className="font-bold">{demandMetrics.totalPlannedUnits}</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-slate-600">Met standaard</span>
+              <span className="text-slate-600">{t("planning.capacity.metrics.withStandard", "Met standaard")}</span>
               <span className="font-bold">{demandMetrics.ordersWithStandards}/{demandMetrics.totalOrders}</span>
             </div>
             {demandMetrics.hoursFromEfficiency > 0 && (
               <div className="flex justify-between text-xs pt-2 mt-2 border-t border-slate-100">
-                <span className="text-purple-600 font-bold">Uit Efficiency</span>
+                <span className="text-purple-600 font-bold">{t("planning.capacity.metrics.fromEfficiency", "Uit Efficiency")}</span>
                 <span className="font-black text-purple-600">{demandMetrics.hoursFromEfficiency}u ({demandMetrics.ordersWithEfficiency})</span>
               </div>
             )}
@@ -1078,7 +1123,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
                 ? 'bg-emerald-100 text-emerald-700'
                 : 'bg-rose-100 text-rose-700'
             }`}>
-              {gap.status === 'surplus' ? 'Overschot' : 'Tekort'}
+              {gap.status === 'surplus' ? t("planning.capacity.metrics.surplus", "Overschot") : t("planning.capacity.metrics.shortage", "Tekort")}
             </span>
           </div>
           <div className={`text-4xl font-black mb-2 ${
@@ -1087,11 +1132,11 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
             {gap.status === 'surplus' ? '+' : ''}{gap.hours}u
           </div>
           <div className="text-xs text-slate-500 uppercase tracking-widest font-bold">
-            {gap.status === 'surplus' ? 'Overcapaciteit' : 'Ondercapaciteit'}
+            {gap.status === 'surplus' ? t("planning.capacity.metrics.overcapacity", "Overcapaciteit") : t("planning.capacity.metrics.undercapacity", "Ondercapaciteit")}
           </div>
           <div className="mt-4 pt-4 border-t border-slate-100">
             <div className="flex justify-between text-xs">
-              <span className="text-slate-600">Percentage</span>
+              <span className="text-slate-600">{t("planning.capacity.metrics.percentage", "Percentage")}</span>
               <span className={`font-black ${
                 gap.status === 'surplus' ? 'text-emerald-600' : 'text-rose-600'
               }`}>
@@ -1106,7 +1151,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
       <div className="bg-white border-2 border-slate-200 rounded-2xl p-6">
         <h3 className="text-sm font-black uppercase tracking-widest text-slate-700 mb-4 flex items-center gap-2">
           <Activity size={18} />
-          Machine Capaciteit Balans
+          {t("planning.capacity.machineBalance", "Machine Capaciteit Balans")}
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {machineBreakdown.map((item) => (
@@ -1125,21 +1170,21 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
                     ? 'bg-red-100 text-red-700' 
                     : 'bg-emerald-100 text-emerald-700'
                 }`}>
-                  {item.status === 'shortage' ? 'Tekort' : 'Overschot'}
+                  {item.status === 'shortage' ? t("planning.capacity.metrics.shortage", "Tekort") : t("planning.capacity.metrics.surplus", "Overschot")}
                 </span>
               </div>
               
               <div className="space-y-1.5 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-slate-500 font-bold">Beschikbaar (Mensen):</span>
+                  <span className="text-slate-500 font-bold">{t("planning.capacity.machine.availablePeople", "Beschikbaar (Mensen):")}</span>
                   <span className="font-bold text-slate-700">{item.capacity}u</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500 font-bold">Nodig (Orders):</span>
+                  <span className="text-slate-500 font-bold">{t("planning.capacity.machine.requiredOrders", "Nodig (Orders):")}</span>
                   <span className="font-bold text-slate-700">{item.demand}u</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-500 font-bold">Bezettingsgraad:</span>
+                  <span className="text-slate-500 font-bold">{t("planning.capacity.machine.utilization", "Bezettingsgraad:")}</span>
                   <span className={`font-bold ${item.utilization > 100 ? 'text-red-600' : 'text-slate-700'}`}>
                     {item.utilization}%
                   </span>
@@ -1147,7 +1192,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
                 <div className={`flex justify-between pt-2 border-t ${
                   item.status === 'shortage' ? 'border-red-200' : 'border-emerald-200'
                 }`}>
-                  <span className="font-black uppercase">Verschil:</span>
+                  <span className="font-black uppercase">{t("planning.capacity.machine.difference", "Verschil:")}</span>
                   <span className={`font-black text-sm ${
                     item.status === 'shortage' ? 'text-red-600' : 'text-emerald-600'
                   }`}>
@@ -1160,7 +1205,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
           
           {machineBreakdown.length === 0 && (
             <div className="col-span-full text-center py-8 text-slate-400 italic text-xs">
-              Geen data beschikbaar voor deze periode/afdeling.
+              {t("planning.capacity.noDataForPeriod", "Geen data beschikbaar voor deze periode/afdeling.")}
             </div>
           )}
         </div>
@@ -1173,24 +1218,24 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
             <AlertTriangle className="text-amber-600 flex-shrink-0" size={20} />
             <div className="flex-1">
               <div className="text-sm font-bold text-amber-900">
-                Ontbrekende Standaard Tijden
+                {t("planning.capacity.missingStandardsTitle", "Ontbrekende Standaard Tijden")}
               </div>
               <div className="text-xs text-amber-700 mt-1">
-                {demandMetrics.ordersWithoutStandards} orders hebben geen standaard productietijd ingesteld.
+                {t("planning.capacity.missingStandardsMessage", "{{count}} orders hebben geen standaard productietijd ingesteld.", { count: demandMetrics.ordersWithoutStandards })}
                 {onNavigate ? (
                   <button onClick={() => onNavigate("production_standards")} className="underline font-bold hover:text-amber-900 ml-1">
-                    Ga naar Productie Tijden
+                    {t("planning.capacity.goToProductionTimes", "Ga naar Productie Tijden")}
                   </button>
                 ) : (
-                  <span> Ga naar <strong>Productie Tijden</strong></span>
+                  <span> {t("planning.capacity.goTo", "Ga naar")} <strong>{t("planning.capacity.productionTimes", "Productie Tijden")}</strong></span>
                 )}
-                 om deze toe te voegen voor nauwkeurigere capaciteitsberekening.
+                 {t("planning.capacity.missingStandardsSuffix", "om deze toe te voegen voor nauwkeurigere capaciteitsberekening.")}
               </div>
               <button 
                 onClick={() => setShowMissingStandards(!showMissingStandards)}
                 className="flex items-center gap-1 text-xs font-bold text-amber-800 mt-2 hover:text-amber-900 transition-colors"
               >
-                {showMissingStandards ? "Verberg lijst" : "Toon lijst"} 
+                {showMissingStandards ? t("planning.capacity.hideList", "Verberg lijst") : t("planning.capacity.showList", "Toon lijst")} 
                 {showMissingStandards ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
             </div>
@@ -1202,11 +1247,11 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
                 <table className="w-full text-left text-xs">
                   <thead className="bg-amber-100/50 text-amber-900 font-bold sticky top-0">
                     <tr>
-                      <th className="px-3 py-2">Order</th>
-                      <th className="px-3 py-2">Item Code</th>
-                      <th className="px-3 py-2">Omschrijving</th>
-                      <th className="px-3 py-2">Machine</th>
-                      <th className="px-3 py-2 text-right">Aantal</th>
+                      <th className="px-3 py-2">{t("planning.capacity.table.order", "Order")}</th>
+                      <th className="px-3 py-2">{t("planning.capacity.table.itemCode", "Item Code")}</th>
+                      <th className="px-3 py-2">{t("planning.capacity.table.description", "Omschrijving")}</th>
+                      <th className="px-3 py-2">{t("planning.capacity.table.machine", "Machine")}</th>
+                      <th className="px-3 py-2 text-right">{t("planning.capacity.table.quantity", "Aantal")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-amber-100">
@@ -1231,7 +1276,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
       <div className="bg-white border-2 border-slate-200 rounded-2xl p-6">
         <h3 className="text-sm font-black uppercase tracking-widest text-slate-700 mb-4 flex items-center gap-2">
           <Target size={18} />
-          Aanbevelingen
+          {t("planning.capacity.recommendationsTitle", "Aanbevelingen")}
         </h3>
         <div className="space-y-3">
           {gap.status === 'shortage' ? (
@@ -1239,9 +1284,9 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
               <div className="flex items-start gap-3 p-3 bg-rose-50 rounded-xl">
                 <AlertTriangle className="text-rose-600 flex-shrink-0 mt-0.5" size={16} />
                 <div className="text-xs">
-                  <div className="font-bold text-rose-900">Onderbezetting</div>
+                  <div className="font-bold text-rose-900">{t("planning.capacity.recommendations.shortageTitle", "Onderbezetting")}</div>
                   <div className="text-rose-700 mt-1">
-                    Er zijn {Math.abs(gap.hours)} uur te weinig. Overweeg extra shifts, overuren, of herplan niet-kritische orders.
+                    {t("planning.capacity.recommendations.shortageText", "Er zijn {{hours}} uur te weinig. Overweeg extra shifts, overuren, of herplan niet-kritische orders.", { hours: Math.abs(gap.hours) })}
                   </div>
                 </div>
               </div>
@@ -1251,9 +1296,9 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
               <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-xl">
                 <CheckCircle2 className="text-emerald-600 flex-shrink-0 mt-0.5" size={16} />
                 <div className="text-xs">
-                  <div className="font-bold text-emerald-900">Capaciteit Beschikbaar</div>
+                  <div className="font-bold text-emerald-900">{t("planning.capacity.recommendations.availableTitle", "Capaciteit Beschikbaar")}</div>
                   <div className="text-emerald-700 mt-1">
-                    Er zijn {gap.hours} uur over. Mogelijkheden: extra orders aannemen, preventief onderhoud, training, of proces optimalisatie.
+                    {t("planning.capacity.recommendations.availableText", "Er zijn {{hours}} uur over. Mogelijkheden: extra orders aannemen, preventief onderhoud, training, of proces optimalisatie.", { hours: gap.hours })}
                   </div>
                 </div>
               </div>
@@ -1264,10 +1309,9 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
             <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-xl">
               <Zap className="text-amber-600 flex-shrink-0 mt-0.5" size={16} />
               <div className="text-xs">
-                <div className="font-bold text-amber-900">Lage Efficiency</div>
+                <div className="font-bold text-amber-900">{t("planning.capacity.recommendations.lowEfficiencyTitle", "Lage Efficiency")}</div>
                 <div className="text-amber-700 mt-1">
-                  Slechts {capacityMetrics.efficiency}% van de tijd wordt productief gebruikt. 
-                  Analyseer waar tijd verloren gaat: setup, wachttijden, materiaal tekorten?
+                  {t("planning.capacity.recommendations.lowEfficiencyText", "Slechts {{efficiency}}% van de tijd wordt productief gebruikt. Analyseer waar tijd verloren gaat: setup, wachttijden, materiaal tekorten?", { efficiency: capacityMetrics.efficiency })}
                 </div>
               </div>
             </div>
@@ -1279,11 +1323,11 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white border-2 border-slate-200 rounded-2xl p-6">
           <h3 className="text-sm font-black uppercase tracking-widest text-slate-700 mb-4">
-            Uren Verdeling
+            {t("planning.capacity.hoursDistribution", "Uren Verdeling")}
           </h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-600">Productie (BH/BA)</span>
+              <span className="text-xs text-slate-600">{t("planning.capacity.breakdown.productionBhba", "Productie (BH/BA)")}</span>
               <div className="flex items-center gap-2">
                 <div className="w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div 
@@ -1297,7 +1341,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
               </div>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-600">Support</span>
+              <span className="text-xs text-slate-600">{t("planning.capacity.metrics.support", "Support")}</span>
               <div className="flex items-center gap-2">
                 <div className="w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div 
@@ -1311,7 +1355,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
               </div>
             </div>
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-              <span className="text-xs text-slate-600">Overhead</span>
+              <span className="text-xs text-slate-600">{t("planning.capacity.metrics.overhead", "Overhead")}</span>
               <div className="flex items-center gap-2">
                 <div className="w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div 
@@ -1329,11 +1373,11 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
 
         <div className="bg-white border-2 border-slate-200 rounded-2xl p-6">
           <h3 className="text-sm font-black uppercase tracking-widest text-slate-700 mb-4">
-            Planning Status
+            {t("planning.capacity.planningStatus", "Planning Status")}
           </h3>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-600">Infor LN (Efficiency)</span>
+              <span className="text-xs text-slate-600">{t("planning.capacity.status.inforLn", "Infor LN (Efficiency)")}</span>
               <div className="flex items-center gap-2">
                 <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div 
@@ -1352,7 +1396,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-600">Standaard DB</span>
+              <span className="text-xs text-slate-600">{t("planning.capacity.status.standardDb", "Standaard DB")}</span>
               <div className="flex items-center gap-2">
                 <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div 
@@ -1371,7 +1415,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
             </div>
 
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-600">Zonder data</span>
+              <span className="text-xs text-slate-600">{t("planning.capacity.status.withoutData", "Zonder data")}</span>
               <div className="flex items-center gap-2">
                 <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div 
@@ -1398,7 +1442,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
           <div className="flex items-center gap-2 mb-4">
             <AlertCircle className="text-red-600" size={20} />
             <h3 className="text-sm font-black uppercase tracking-widest text-slate-700">
-              Geïdentificeerde Knelpunten
+              {t("planning.capacity.bottlenecksTitle", "Geïdentificeerde Knelpunten")}
             </h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1416,7 +1460,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
                       <div className={`text-xs font-bold mt-2 ${
                         bottleneck.severity === 'high' ? 'text-red-600' : 'text-amber-600'
                       }`}>
-                        Prioriteit: {bottleneck.severity.toUpperCase()}
+                        {t("planning.capacity.priority", "Prioriteit")}: {bottleneck.severity.toUpperCase()}
                       </div>
                     </div>
                   </div>
@@ -1432,7 +1476,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         <div className="flex items-center gap-2 mb-4">
           <Brain className="text-purple-600" size={20} />
           <h3 className="text-sm font-black uppercase tracking-widest text-slate-700">
-            Voorspelling Volgende Week
+            {t("planning.capacity.predictionTitle", "Voorspelling Volgende Week")}
           </h3>
           <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full font-bold">
             BETA
@@ -1441,31 +1485,31 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-white rounded-xl p-4 border border-purple-100">
-            <div className="text-xs text-slate-600 uppercase tracking-wider mb-1">Verwachte Vraag</div>
+            <div className="text-xs text-slate-600 uppercase tracking-wider mb-1">{t("planning.capacity.prediction.expectedDemand", "Verwachte Vraag")}</div>
             <div className="text-2xl font-black text-purple-600">{prediction.nextWeekDemand}u</div>
-            <div className="text-xs text-slate-500 mt-1">+10% trend groei</div>
+            <div className="text-xs text-slate-500 mt-1">{t("planning.capacity.prediction.trendGrowth", "+10% trend groei")}</div>
           </div>
           
           <div className="bg-white rounded-xl p-4 border border-purple-100">
-            <div className="text-xs text-slate-600 uppercase tracking-wider mb-1">Voorspeld Verschil</div>
+            <div className="text-xs text-slate-600 uppercase tracking-wider mb-1">{t("planning.capacity.prediction.predictedGap", "Voorspeld Verschil")}</div>
             <div className={`text-2xl font-black ${prediction.nextWeekGap >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
               {prediction.nextWeekGap}u
             </div>
             <div className="text-xs text-slate-500 mt-1">
-              {prediction.trend === 'increasing_pressure' ? '⚠️ Toenemende druk' : '✓ Beheersbaar'}
+              {prediction.trend === 'increasing_pressure' ? t("planning.capacity.prediction.increasingPressure", "⚠️ Toenemende druk") : t("planning.capacity.prediction.manageable", "✓ Beheersbaar")}
             </div>
           </div>
           
           <div className="bg-white rounded-xl p-4 border border-purple-100">
-            <div className="text-xs text-slate-600 uppercase tracking-wider mb-1">Betrouwbaarheid</div>
+            <div className="text-xs text-slate-600 uppercase tracking-wider mb-1">{t("planning.capacity.prediction.confidence", "Betrouwbaarheid")}</div>
             <div className={`text-2xl font-black ${
               prediction.confidence === 'high' ? 'text-emerald-600' : 
               prediction.confidence === 'medium' ? 'text-amber-600' : 'text-slate-400'
             }`}>
-              {prediction.confidence === 'high' ? 'Hoog' : prediction.confidence === 'medium' ? 'Middel' : 'Laag'}
+              {prediction.confidence === 'high' ? t("planning.capacity.prediction.high", "Hoog") : prediction.confidence === 'medium' ? t("planning.capacity.prediction.medium", "Middel") : t("planning.capacity.prediction.low", "Laag")}
             </div>
             <div className="text-xs text-slate-500 mt-1">
-              {demandMetrics.ordersWithStandards > 0 ? `${demandMetrics.ordersWithStandards} orders met data` : 'Onvoldoende data'}
+              {demandMetrics.ordersWithStandards > 0 ? t("planning.capacity.prediction.ordersWithData", "{{count}} orders met data", { count: demandMetrics.ordersWithStandards }) : t("planning.capacity.prediction.insufficientData", "Onvoldoende data")}
             </div>
           </div>
         </div>

@@ -57,23 +57,68 @@ import {
   processLabelData,
   resolveLabelContent,
 } from "../../utils/labelHelpers";
-import { generateZPL, downloadZPL } from "../../utils/zplHelper";
+import { generatePrintData, downloadZPL } from "../../utils/zplHelper";
+import { getDriver } from "../../utils/printerDrivers";
+import AutoScaledLabelPreview from "../printer/AutoScaledLabelPreview";
 
 const PIXELS_PER_MM = 3.78;
+const CSS_PIXELS_PER_POINT = 96 / 72;
 const SNAP_THRESHOLD_MM = 1.5;
+
+const getLongestPreviewLineLength = (value) => {
+  const lines = String(value || "").split(/\r?\n/);
+  return lines.reduce((maxLen, line) => Math.max(maxLen, line.length), 0);
+};
+
+const getPreviewTextStyle = (element, content, zoom) => {
+  const baseFontPx = (element.fontSize || 10) * CSS_PIXELS_PER_POINT * zoom;
+  const blockWidthPx = (element.width || 0) * PIXELS_PER_MM * zoom;
+  const maxLines = Math.max(1, Number(element.maxLines) || 1);
+  const blockHeightPx = element.height
+    ? element.height * PIXELS_PER_MM * zoom
+    : null;
+
+  if (!blockWidthPx) {
+    return {
+      fontSize: `${baseFontPx}px`,
+      lineHeight: "1.05",
+    };
+  }
+
+  const longestLineLength = Math.max(1, getLongestPreviewLineLength(content));
+  const widthLimitedFontPx = (blockWidthPx * 0.92) / (longestLineLength * 0.52);
+  const heightLimitedFontPx = blockHeightPx
+    ? (blockHeightPx * 0.9) / maxLines
+    : baseFontPx;
+  const fittedFontPx = Math.max(1, Math.min(baseFontPx, widthLimitedFontPx, heightLimitedFontPx));
+
+  return {
+    fontSize: `${fittedFontPx}px`,
+    lineHeight: "1.05",
+  };
+};
+const LABEL_FOLDER_OPTIONS = [
+  "Tijdelijk Wavistrong",
+  "Tijdelijk Fibermar",
+  "Tijdelijk Code",
+  "Wavistrong",
+  "Fibermar",
+  "Code",
+];
 
 /**
  * AdminLabelDesigner V4.2 - Standalone Admin Edition
  * Beheert labelontwerpen in de root: /future-factory/settings/label_templates/records/
  * Verplaatst van matrixmanager naar hoofd admin map.
  */
-const AdminLabelDesigner = ({ onBack }) => {
+const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
   const { t } = useTranslation();
   const [labelName, setLabelName] = useState(t('adminLabelDesigner.newLabel'));
   const [selectedSizeKey, setSelectedSizeKey] = useState("Standard");
   const [labelWidth, setLabelWidth] = useState(LABEL_SIZES.Standard.width);
   const [labelHeight, setLabelHeight] = useState(LABEL_SIZES.Standard.height);
   const [labelTags, setLabelTags] = useState([]);
+  const [labelFolder, setLabelFolder] = useState("");
   const [showTagManager, setShowTagManager] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
 
@@ -94,13 +139,14 @@ const AdminLabelDesigner = ({ onBack }) => {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Nieuwe state voor afdelingen
-  const [templateSearch, setTemplateSearch] = useState("");
   const [departments, setDepartments] = useState([]);
   const [assignedDepartment, setAssignedDepartment] = useState("All");
   const [history, setHistory] = useState([]);
+  const [stationFilter, setStationFilter] = useState("");
 
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
+  const lastOpenedFromPropRef = useRef(null);
 
   // 1. Live Sync met de Root
   useEffect(() => {
@@ -142,17 +188,86 @@ const AdminLabelDesigner = ({ onBack }) => {
     fetchDepartments();
   }, []);
 
+  const allStations = useMemo(() => {
+    const stations = new Set();
+    departments.forEach(dept => {
+      if (dept.stations) {
+        dept.stations.forEach(s => stations.add(s.name));
+      }
+    });
+    return Array.from(stations).sort();
+  }, [departments]);
+
+  // Helper voor navigatie beveiliging (Dirty State Check)
+  const confirmDiscardChanges = () => {
+    if (!hasUnsavedChanges) return true;
+    return window.confirm(t('adminLabelDesigner.overwriteConfirm', 'Je hebt niet-opgeslagen wijzigingen. Wil je deze negeren en doorgaan zonder op te slaan?'));
+  };
+
+  const loadLabelIntoDesigner = (label) => {
+    if (!label) return;
+    if (!confirmDiscardChanges()) return;
+
+    setLabelName(label.name);
+    setLabelWidth(label.width);
+    setLabelHeight(label.height);
+    if (label.sizeKey) setSelectedSizeKey(label.sizeKey);
+    setAssignedDepartment(label.department || "All");
+    setLabelTags(label.tags || []);
+    setLabelFolder(label.folder || inferFolderFromTags(label.tags || []));
+    setElements(label.elements || []);
+    setSelectedElementIds([]);
+    setHasUnsavedChanges(false);
+  };
+
+  useEffect(() => {
+    if (!openLabelId) return;
+    if (lastOpenedFromPropRef.current === openLabelId) return;
+    if (!savedLabels || savedLabels.length === 0) return;
+
+    const targetLabel = savedLabels.find(l => l.id === openLabelId);
+    if (!targetLabel) return;
+
+    loadLabelIntoDesigner(targetLabel);
+    lastOpenedFromPropRef.current = openLabelId;
+  }, [openLabelId, savedLabels]);
+
+  const handleBack = () => {
+    if (confirmDiscardChanges()) {
+      onBack();
+    }
+  };
+
+  const selectedElement = elements.find((el) => el.id === selectedElementIds[selectedElementIds.length - 1]);
+
   const filteredVariables = useMemo(() => {
+      // Start with a set of all possible dynamic variables from all logic rules.
+      const allVars = new Set();
+      labelLogicRules.forEach(r => {
+          r.variables?.forEach(v => { if(v.name) allVars.add(v.name); });
+      });
+
+      // If a specific product code is selected to filter the list
       if (selectedLogicCode) {
           const rule = labelLogicRules.find(r => r.productCode === selectedLogicCode);
-          return rule?.variables?.map(v => v.name).sort() || [];
+          const ruleVars = new Set(rule?.variables?.map(v => v.name) || []);
+          
+          // Always add the currently selected element's variable to the list,
+          // so it's visible even if it doesn't belong to the filtered rule.
+          if (selectedElement?.variable) {
+              ruleVars.add(selectedElement.variable);
+          }
+          return Array.from(ruleVars).sort();
       }
-      const vars = new Set();
-      labelLogicRules.forEach(r => {
-          r.variables?.forEach(v => { if(v.name) vars.add(v.name); });
-      });
-      return Array.from(vars).sort();
-  }, [labelLogicRules, selectedLogicCode]);
+      
+      // If no filter is active, show all variables.
+      // Also ensure the current element's variable is present, just in case it's orphaned.
+      if (selectedElement?.variable) {
+        allVars.add(selectedElement.variable);
+      }
+
+      return Array.from(allVars).sort();
+  }, [labelLogicRules, selectedLogicCode, selectedElement]);
 
   useEffect(() => {
     if (selectedSizeKey !== "Custom" && LABEL_SIZES[selectedSizeKey]) {
@@ -172,33 +287,21 @@ const AdminLabelDesigner = ({ onBack }) => {
     return Array.from(tags).sort();
   }, [savedLabels]);
 
-  const groupedLabels = useMemo(() => {
-    const groups = {};
-    
-    const filtered = savedLabels.filter(l => 
-        l.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
-        l.tags?.some(t => t.toLowerCase().includes(templateSearch.toLowerCase()))
-    );
+  const inferFolderFromTags = (tags = []) => {
+    const upperTags = tags.map(t => String(t).toUpperCase());
+    const isTemp = upperTags.includes("TIJDELIJK") || upperTags.includes("TEMP");
+    const hasWavi = upperTags.includes("WAVISTRONG");
+    const hasFiber = upperTags.includes("FIBERMAR");
+    const hasCode = upperTags.includes("CODE");
 
-    const sortedLabels = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
-
-    sortedLabels.forEach(label => {
-      const groupKey = label.tags && label.tags.length > 0 ? label.tags[0] : "Generiek";
-      
-      if (!groups[groupKey]) {
-        groups[groupKey] = [];
-      }
-      groups[groupKey].push(label);
-    });
-
-    const sortedGroupKeys = Object.keys(groups).sort((a, b) => {
-        if (a === "Generiek") return 1;
-        if (b === "Generiek") return -1;
-        return a.localeCompare(b);
-    });
-
-    return { groups, sortedGroupKeys };
-  }, [savedLabels, templateSearch]);
+    if (isTemp && hasWavi) return "Tijdelijk Wavistrong";
+    if (isTemp && hasFiber) return "Tijdelijk Fibermar";
+    if (isTemp && hasCode) return "Tijdelijk Code";
+    if (hasWavi) return "Wavistrong";
+    if (hasFiber) return "Fibermar";
+    if (hasCode) return "Code";
+    return "";
+  };
 
   const deleteTagGlobally = async (tagToDelete) => {
     if (!window.confirm(t('adminLabelDesigner.confirmGlobalTagDelete', `Weet je zeker dat je de tag '${tagToDelete}' overal wilt verwijderen? Dit past ${savedLabels.filter(l => l.tags?.includes(tagToDelete)).length} templates aan.`))) return;
@@ -234,6 +337,7 @@ const AdminLabelDesigner = ({ onBack }) => {
 
   // 2. Data Preview Handlers
   const fetchLiveOrders = async () => {
+    setStationFilter("");
     setIsLoading(true);
     try {
       const q = query(collection(db, ...PATHS.PLANNING), limit(15));
@@ -247,9 +351,28 @@ const AdminLabelDesigner = ({ onBack }) => {
     }
   };
 
+  const handleStationFilterChange = async (station) => {
+    setStationFilter(station);
+    setIsLoading(true);
+    try {
+      let q;
+      if (station) {
+        q = query(collection(db, ...PATHS.PLANNING), where("machine", "==", station), limit(500));
+      } else {
+        q = query(collection(db, ...PATHS.PLANNING), limit(15));
+      }
+      const snapshot = await getDocs(q);
+      setAvailableOrders(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error("Filter fout:", e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSearchOrder = async (queryText) => {
     if (!queryText) {
-        fetchLiveOrders(); // Reset naar standaard lijst als leeg
+        handleStationFilterChange(stationFilter); // Reset naar huidig filter
         return;
     }
     setIsLoading(true);
@@ -287,8 +410,21 @@ const AdminLabelDesigner = ({ onBack }) => {
       elements: elements,
     };
 
-    const zpl = await generateZPL(labelConfig, data, 203, resolveLabelContent, t);
-    downloadZPL(zpl, `${labelName.replace(/\s+/g, "_")}_preview.zpl`);
+    let resolvedDpi = 203;
+    try {
+      const printerSnap = await getDocs(collection(db, ...PATHS.PRINTERS));
+      const printers = printerSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const targetPrinter = printers.find((p) => p.isDefault) || printers[0] || null;
+      const driver = getDriver(targetPrinter);
+      if (Number.isFinite(driver?.nativeDpi) && driver.nativeDpi > 0) {
+        resolvedDpi = driver.nativeDpi;
+      }
+    } catch (e) {
+      console.warn("Kon printer-DPI niet bepalen, fallback naar 203 DPI:", e);
+    }
+
+    const printData = await generatePrintData(labelConfig, data, resolvedDpi, resolveLabelContent, t);
+    downloadZPL(printData, `${labelName.replace(/\s+/g, "_")}_preview.zpl`);
   };
 
   const addToHistory = () => {
@@ -298,7 +434,8 @@ const AdminLabelDesigner = ({ onBack }) => {
       labelHeight,
       selectedSizeKey,
       assignedDepartment,
-      labelTags: [...labelTags]
+      labelTags: [...labelTags],
+      labelFolder,
     }]);
   };
 
@@ -311,6 +448,7 @@ const AdminLabelDesigner = ({ onBack }) => {
     setSelectedSizeKey(previous.selectedSizeKey);
     setAssignedDepartment(previous.assignedDepartment);
     setLabelTags(previous.labelTags || []);
+    setLabelFolder(previous.labelFolder || "");
     setHistory(prev => prev.slice(0, -1));
   };
 
@@ -318,7 +456,7 @@ const AdminLabelDesigner = ({ onBack }) => {
     const sourceLabel = savedLabels.find(l => l.id === sourceId);
     if (!sourceLabel) return;
 
-    if (hasUnsavedChanges && !window.confirm(t('adminLabelDesigner.overwriteConfirm', 'Huidige wijzigingen worden overschreven. Doorgaan?'))) {
+    if (!confirmDiscardChanges()) {
         return;
     }
 
@@ -329,6 +467,7 @@ const AdminLabelDesigner = ({ onBack }) => {
     if (sourceLabel.sizeKey) setSelectedSizeKey(sourceLabel.sizeKey);
     setAssignedDepartment(sourceLabel.department || "All");
     setLabelTags([]); // Reset tags bij kopiëren van ontwerp om vervuiling te voorkomen
+    setLabelFolder("");
     
     const copiedElements = (sourceLabel.elements || []).map(el => ({
         ...el,
@@ -341,13 +480,14 @@ const AdminLabelDesigner = ({ onBack }) => {
   };
 
   const handleNewDesign = () => {
-    if (hasUnsavedChanges && !window.confirm(t('adminLabelDesigner.overwriteConfirm'))) return;
+    if (!confirmDiscardChanges()) return;
     setLabelName(t('adminLabelDesigner.newLabel'));
     setLabelWidth(LABEL_SIZES.Standard.width);
     setLabelHeight(LABEL_SIZES.Standard.height);
     setSelectedSizeKey("Standard");
     setAssignedDepartment("All");
     setLabelTags([]);
+    setLabelFolder("");
     setElements([]);
     setSelectedElementIds([]);
     setHasUnsavedChanges(false);
@@ -394,7 +534,7 @@ const AdminLabelDesigner = ({ onBack }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedElementIds, elements, labelWidth, labelHeight, selectedSizeKey, assignedDepartment, labelTags]);
+  }, [selectedElementIds, elements, labelWidth, labelHeight, selectedSizeKey, assignedDepartment, labelTags, labelFolder]);
 
   // 3. Designer Acties
   const addElement = (type) => {
@@ -438,6 +578,31 @@ const AdminLabelDesigner = ({ onBack }) => {
     addToHistory();
     setElements(elements.filter((el) => !selectedElementIds.includes(el.id)));
     setSelectedElementIds([]);
+    setHasUnsavedChanges(true);
+  };
+
+  const duplicateSelected = () => {
+    if (selectedElementIds.length === 0) return;
+    addToHistory();
+    
+    const newElements = [];
+    const newSelection = [];
+
+    elements.forEach(el => {
+        if (selectedElementIds.includes(el.id)) {
+            const copy = {
+                ...el,
+                id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                x: (el.x || 0) + 2,
+                y: (el.y || 0) + 2
+            };
+            newElements.push(copy);
+            newSelection.push(copy.id);
+        }
+    });
+
+    setElements(prev => [...prev, ...newElements]);
+    setSelectedElementIds(newSelection);
     setHasUnsavedChanges(true);
   };
 
@@ -577,6 +742,7 @@ const AdminLabelDesigner = ({ onBack }) => {
         elements: sanitizedElements,
         department: assignedDepartment,
         tags: tagsToSave,
+        folder: labelFolder || null,
         lastUpdated: serverTimestamp(),
         updatedBy: "Admin Designer",
       });
@@ -685,15 +851,13 @@ const AdminLabelDesigner = ({ onBack }) => {
     }
   };
 
-  const selectedElement = elements.find((el) => el.id === selectedElementIds[selectedElementIds.length - 1]);
-
   return (
     <div className="flex flex-col h-full w-full bg-slate-100 overflow-hidden text-left animate-in fade-in">
       {/* HEADER */}
       <div className="bg-white border-b border-slate-200 px-8 py-3 flex justify-between items-center shadow-sm z-20 shrink-0 h-20">
         <div className="flex items-center gap-6">
           <button
-            onClick={onBack}
+            onClick={handleBack}
             className="p-3 bg-slate-50 hover:bg-slate-100 rounded-2xl text-slate-400 transition-all flex items-center gap-2 group"
           >
             <X
@@ -867,89 +1031,8 @@ const AdminLabelDesigner = ({ onBack }) => {
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 custom-scrollbar text-left flex flex-col">
-            <div className="mb-4">
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input 
-                  type="text"
-                  placeholder={t('adminLabelDesigner.searchTemplates', 'Zoek templates...')}
-                  value={templateSearch}
-                  onChange={e => setTemplateSearch(e.target.value)}
-                  className="w-full pl-8 pr-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
-                />
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto custom-scrollbar -mr-3 pr-3 space-y-4">
-              {groupedLabels.sortedGroupKeys.map(groupKey => (
-                <div key={groupKey}>
-                  <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-2 sticky top-0 bg-slate-50/80 backdrop-blur-sm py-1">
-                    {groupKey}
-                  </h4>
-                  <div className="space-y-2">
-                    {groupedLabels.groups[groupKey].map((l) => (
-                      <div
-                        key={l.id}
-                        onClick={() => {
-                          if (hasUnsavedChanges && !window.confirm(t('adminLabelDesigner.overwriteConfirm'))) return;
-                          setLabelName(l.name);
-                          setLabelWidth(l.width);
-                          setLabelHeight(l.height);
-                          if (l.sizeKey) setSelectedSizeKey(l.sizeKey);
-                          setAssignedDepartment(l.department || "All");
-                          setLabelTags(l.tags || []);
-                          setElements(l.elements || []);
-                          setSelectedElementIds([]);
-                          setHasUnsavedChanges(false);
-                        }}
-                        className="group p-4 bg-slate-50 hover:bg-white rounded-[20px] cursor-pointer border-2 border-transparent hover:border-blue-500 transition-all relative shadow-sm"
-                      >
-                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); renameLabel(l); }}
-                            className="p-1.5 bg-white text-orange-600 rounded-lg shadow-sm border border-orange-100 hover:bg-orange-50"
-                            title={t('adminLabelDesigner.renameTitle', 'Hernoemen')}
-                          >
-                            <Edit2 size={12} />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); duplicateLabel(l); }}
-                            className="p-1.5 bg-white text-blue-600 rounded-lg shadow-sm border border-blue-100 hover:bg-blue-50"
-                            title={t('adminLabelDesigner.duplicateTitle')}
-                          >
-                            <Copy size={12} />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); deleteLabel(l.id); }}
-                            className="p-1.5 bg-white text-rose-600 rounded-lg shadow-sm border border-rose-100 hover:bg-rose-50"
-                            title={t('adminLabelDesigner.deleteTitle')}
-                          >
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                        <p className="font-black text-[11px] text-slate-800 uppercase italic tracking-tight">
-                          {l.name}
-                        </p>
-                        <p className="text-[9px] font-mono font-bold text-slate-400 mt-1">
-                          {l.width}x{l.height}{t('mm')} • {l.department && l.department !== 'All' ? (departments.find(d => d.id === l.department)?.name || l.department) : t('common.all', 'Alle')}
-                        </p>
-                        {l.tags && l.tags.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-2">
-                            {l.tags.map((tag, idx) => (
-                              <span key={idx} className="text-[8px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 uppercase tracking-tight">{tag}</span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              {groupedLabels.sortedGroupKeys.length === 0 && (
-                <div className="text-center text-slate-400 italic text-xs py-10">
-                  {t('adminLabelDesigner.noTemplatesFound', 'Geen templates gevonden.')}
-                </div>
-              )}
+            <div className="text-[11px] text-slate-500 font-semibold bg-slate-50 border border-slate-200 rounded-2xl p-4">
+              Template-overzicht is verplaatst naar het tabblad Label Templates.
             </div>
           </div>
         </div>
@@ -1056,11 +1139,12 @@ const AdminLabelDesigner = ({ onBack }) => {
                     {el.type === "text" && (() => {
                       const { content } = resolveLabelContent(el, previewData);
                       const hasContent = content !== null && content !== undefined && String(content).trim() !== "";
+                      const previewTextStyle = getPreviewTextStyle(el, content, zoom);
                       return (
                         <div
                           className="leading-tight"
                           style={{
-                            fontSize: `${el.fontSize * zoom}px`,
+                            ...previewTextStyle,
                             fontWeight: el.isBold ? "900" : "normal",
                             fontFamily: el.fontFamily,
                             width: `${el.width * PIXELS_PER_MM * zoom}px`,
@@ -1072,7 +1156,8 @@ const AdminLabelDesigner = ({ onBack }) => {
                             textAlign: el.align || "left",
                             overflow: "hidden",
                             whiteSpace: "pre-wrap",
-                            overflowWrap: "break-word",
+                            overflowWrap: "anywhere",
+                            wordBreak: "normal",
                           }}
                         >
                           {hasContent ? content : t('adminLabelDesigner.noData')}
@@ -1136,16 +1221,51 @@ const AdminLabelDesigner = ({ onBack }) => {
 
         {/* RIGHT SIDEBAR: PROPERTIES */}
         <div className="w-80 bg-white border-l border-slate-200 flex flex-col z-10 shrink-0 shadow-2xl">
-          <div className="p-6 border-b border-slate-50 bg-slate-50/50">
+          <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex items-center justify-between gap-3">
             <h3 className="text-[10px] font-black uppercase text-slate-500 tracking-widest italic flex items-center gap-2">
               <Settings size={14} /> {t('common.inspector')}
             </h3>
+            <button
+              onClick={handleUndo}
+              disabled={history.length === 0}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide border transition-all ${
+                history.length > 0
+                  ? "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                  : "bg-slate-100 text-slate-300 border-slate-100 cursor-not-allowed"
+              }`}
+              title={t('common.undo', 'Ongedaan maken')}
+            >
+              {t('common.undo', 'Undo')}
+            </button>
           </div>
 
           <div className="p-6 overflow-y-auto flex-1 custom-scrollbar text-left">
             {!selectedElement ? (
               <div className="space-y-6 animate-in slide-in-from-right-2">
                 <div className="border-b border-slate-100 pb-4">
+                  <div className="mb-4">
+                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+                      Vaste Map
+                    </h4>
+                    <select
+                      value={labelFolder}
+                      onChange={(e) => {
+                        addToHistory();
+                        setLabelFolder(e.target.value);
+                        setHasUnsavedChanges(true);
+                      }}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 transition-all"
+                    >
+                      <option value="">Geen vaste map</option>
+                      {LABEL_FOLDER_OPTIONS.map(folder => (
+                        <option key={folder} value={folder}>{folder}</option>
+                      ))}
+                    </select>
+                    <p className="text-[9px] text-slate-400 italic leading-relaxed mt-2">
+                      Kies een vaste map voor ordening in Label Manager.
+                    </p>
+                  </div>
+
                   <div className="flex justify-between items-center mb-4">
                     <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">
                       Label Koppelingen (Tags)
@@ -1284,6 +1404,12 @@ const AdminLabelDesigner = ({ onBack }) => {
                         <option value="pq">{t('pq')}</option>
                         <option value="temperature">{t('temperatureLimit')}</option>
                         <option value="date">{t('productionDate')}</option>
+                        <option value="idLine">ID Line</option>
+                        <option value="pressureLine">Pressure Line</option>
+                        <option value="pressureLineEmt">Pressure Line EMT</option>
+                        <option value="connectionLine">Connection Line</option>
+                        <option value="radiusText">Radius Text</option>
+                        <option value="jointCode">Joint Code A2G3</option>
                         {filteredVariables.length > 0 && (
                             <optgroup label={selectedLogicCode ? t('variablesFor', { code: selectedLogicCode }) : t('allDynamicVariables')}>
                                 {filteredVariables.map(v => (
@@ -1440,12 +1566,22 @@ const AdminLabelDesigner = ({ onBack }) => {
                   </div>
                 </div>
 
-                <button
-                  onClick={removeSelected}
-                  className="w-full py-4 mt-8 bg-rose-50 text-rose-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-100 transition-all flex items-center justify-center gap-2 border border-rose-100 active:scale-95"
-                >
-                  <Trash2 size={16} /> {t('removeElement', 'Verwijder Element')}
-                </button>
+                <div className="flex gap-3 mt-8">
+                  <button
+                    onClick={duplicateSelected}
+                    className="flex-1 py-4 bg-blue-50 text-blue-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-100 transition-all flex items-center justify-center gap-2 border border-blue-100 active:scale-95"
+                    title={t('duplicateElement', 'Dupliceer')}
+                  >
+                    <Copy size={16} /> {t('duplicate', 'Dupliceer')}
+                  </button>
+                  <button
+                    onClick={removeSelected}
+                    className="flex-1 py-4 bg-rose-50 text-rose-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-100 transition-all flex items-center justify-center gap-2 border border-rose-100 active:scale-95"
+                    title={t('removeElement', 'Verwijder')}
+                  >
+                    <Trash2 size={16} /> {t('delete', 'Verwijder')}
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1465,8 +1601,8 @@ const AdminLabelDesigner = ({ onBack }) => {
               </button>
             </div>
             
-            <div className="p-4 border-b border-slate-100 bg-white">
-                <div className="relative">
+            <div className="p-4 border-b border-slate-100 bg-white flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input 
                         type="text" 
@@ -1478,6 +1614,18 @@ const AdminLabelDesigner = ({ onBack }) => {
                             }
                         }}
                     />
+                </div>
+                <div className="w-full sm:w-1/3">
+                    <select
+                        value={stationFilter}
+                        onChange={(e) => handleStationFilterChange(e.target.value)}
+                        className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-sm outline-none focus:border-blue-500 transition-all"
+                    >
+                        <option value="">{t('adminLabelDesigner.allStations', 'Alle Stations')}</option>
+                        {allStations.map(s => (
+                            <option key={s} value={s}>{s}</option>
+                        ))}
+                    </select>
                 </div>
             </div>
 

@@ -19,6 +19,7 @@ import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp } fr
 import { db, auth, logActivity } from "../../../config/firebase.js";
 import { PATHS } from "../../../config/dbPaths";
 import { useAdminAuth } from "../../../hooks/useAdminAuth";
+import { formatDateTimeSafe } from "../../../utils/dateUtils";
 import StatusBadge from "../common/StatusBadge.jsx";
 import CancelOrderModal from "./CancelOrderModal";
 
@@ -29,10 +30,7 @@ const getAppId = () => {
 
 // Helper voor datum weergave
 const formatDate = (timestamp) => {
-  if (!timestamp) return "-";
-  // Support voor Firestore Timestamp en JS Date
-  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-  return date.toLocaleString("nl-NL", {
+  return formatDateTimeSafe(timestamp, "nl-NL", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

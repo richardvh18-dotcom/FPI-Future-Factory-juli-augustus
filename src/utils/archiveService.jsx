@@ -24,25 +24,13 @@ export const archiveOrder = async (appId, order, reason) => {
   const batch = writeBatch(db);
   const year = getCurrentYear();
 
-  // 1. Bepaal het type archief
-  let archiveType = "archive";
-
-  // Check of de order status 'rejected' is OF dat de handmatige reden 'rejected' is
-  const isRejected =
-    order.status === "rejected" ||
-    reason === "rejected" ||
-    order.status === "REJECTED";
-
-  if (isRejected) {
-    archiveType = "rejected";
-  }
-
-  // 2. Definieer de paden
+  // 1. Definieer de paden
   // Bron: De huidige actieve lijst
   const sourceRef = doc(db, ...PATHS.PLANNING, order.id);
 
-  // Doel: De berekende jaar-map
-  const targetRef = doc(db, ...getPlanningArchivePath(year, archiveType), order.id);
+  // Doel: /future-factory/production/archive/{year}/planning
+  // Onderscheid archive/rejected zit in het archiveReason veld van het document
+  const targetRef = doc(db, ...getPlanningArchivePath(year), order.id);
 
   // 3. Bereid de data voor het archief voor
   // We voegen meta-data toe over wanneer en waarom het gearchiveerd is

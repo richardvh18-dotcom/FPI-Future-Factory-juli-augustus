@@ -35,6 +35,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
   const [importing, setImporting] = useState(false);
   const [existingIds, setExistingIds] = useState(new Set());
   const [importMode, setImportMode] = useState("new_only");
+  const [importTarget, setImportTarget] = useState("planning");
   const [selectedSheet, setSelectedSheet] = useState("All");
   const [machineFilter, setMachineFilter] = useState("All");
   const fileInputRef = useRef(null);
@@ -44,7 +45,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
     const fetchExisting = async () => {
       if (!isOpen) return;
       try {
-        const snap = await getDocs(collection(db, ...PATHS.PLANNING));
+        const targetPath =
+          importTarget === "temp_labels" ? PATHS.TEMP_PLANNING : PATHS.PLANNING;
+        const snap = await getDocs(collection(db, ...targetPath));
         const ids = new Set(snap.docs.map((d) => d.id));
         setExistingIds(ids);
       } catch (err) {
@@ -52,12 +55,12 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
       }
     };
     fetchExisting();
-  }, [isOpen]);
+  }, [isOpen, importTarget]);
 
   const normalizeMachine = (val) => {
     if (!val) return "-";
     let str = String(val).toUpperCase().trim();
-    
+
     // Auto-correctie voor bekende typo's in importbestanden
     if (str === "BM18") str = "BH18";
 
@@ -183,8 +186,8 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
                   plannedDate: planned,
                   weekNumber: parseInt(row[idxWeek]) || null,
                   itemCode: manufacturedItem,
-                  item: row[idxItemDesc] || "-",
-                  extraCode: row[idxCode] || "-",
+                  item: row[idxItemDesc] || "",
+                  extraCode: row[idxCode] || "",
                   plan: quantity,
                   notes: row[idxPoText] || "",
                   project: row[idxProject] || "",
@@ -252,11 +255,13 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
   }, [fileData, selectedSheet, machineFilter]);
 
   const startImport = async () => {
-    if (filteredData.length === 0 || importing) return;
+    if (fileData.length === 0 || importing) return;
     setImporting(true);
 
     const dataToProcess =
-      importMode === "new_only"
+      importTarget === "temp_labels"
+        ? fileData
+        : importMode === "new_only"
         ? filteredData.filter((item) => !item.isExisting)
         : filteredData;
 
@@ -278,11 +283,14 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
           const dbData = Object.fromEntries(
             Object.entries(item).filter(([key]) => key !== "isExisting")
           );
-          const docRef = doc(db, ...PATHS.PLANNING, item.id);
+          const targetPath =
+            importTarget === "temp_labels" ? PATHS.TEMP_PLANNING : PATHS.PLANNING;
+          const docRef = doc(db, ...targetPath, item.id);
           batch.set(
             docRef,
             {
               ...dbData,
+              importTarget,
               lastUpdated: serverTimestamp(),
               importDate: serverTimestamp(),
             },
@@ -294,7 +302,11 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
         processed += chunk.length;
       }
 
-      await logActivity(auth.currentUser?.uid, "PLANNING_IMPORT", `Planning imported: ${processed} records`);
+      await logActivity(
+        auth.currentUser?.uid,
+        "PLANNING_IMPORT",
+        `Planning imported (${importTarget}): ${processed} records`
+      );
 
       alert(`Import voltooid! ${processed} regels verwerkt.`);
       if (onSuccess) onSuccess();
@@ -415,8 +427,46 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
                       Overschrijf alles <RefreshCw size={14} />
                     </button>
                   </div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mt-4 mb-2 italic">
+                    Bestemming
+                  </label>
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setImportTarget("planning")}
+                      className={`w-full py-2 px-4 rounded-xl text-[10px] font-black uppercase flex items-center justify-between border ${
+                        importTarget === "planning"
+                          ? "bg-blue-600 border-blue-500 text-white"
+                          : "bg-white/5 border-white/10 text-slate-400"
+                      }`}
+                    >
+                      Productie Planning
+                    </button>
+                    <button
+                      onClick={() => setImportTarget("temp_labels")}
+                      className={`w-full py-2 px-4 rounded-xl text-[10px] font-black uppercase flex items-center justify-between border ${
+                        importTarget === "temp_labels"
+                          ? "bg-violet-600 border-violet-500 text-white"
+                          : "bg-white/5 border-white/10 text-slate-400"
+                      }`}
+                    >
+                      Temp Labels (Hele Planning)
+                    </button>
+                  </div>
                 </div>
               </div>
+
+              {importTarget === "temp_labels" && (
+                <div className="bg-violet-50 border border-violet-200 p-4 rounded-2xl">
+                  <p className="text-xs font-black uppercase tracking-widest text-violet-700">
+                    Let op: tijdelijke labels import actief
+                  </p>
+                  <p className="text-xs text-violet-900 font-medium mt-1">
+                    Deze import schrijft de volledige planning naar
+                    <span className="font-black"> /future-factory/temp_labels/orders</span>
+                    voor tijdelijke label printing.
+                  </p>
+                </div>
+              )}
 
               <div className="bg-white border border-slate-200 rounded-[30px] overflow-hidden shadow-sm">
                 <div className="bg-slate-100 px-6 py-3 border-b border-slate-200 flex justify-between items-center font-black uppercase text-[10px] text-slate-500 tracking-widest">
@@ -431,7 +481,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
                           className="bg-transparent outline-none font-bold text-slate-700 cursor-pointer text-[10px] uppercase"
                         >
                           {uniqueSheets.map((sheet) => (
-                            <option key={sheet} value={sheet}>{sheet}</option>
+                            <option key={sheet} value={sheet}>
+                              {sheet}
+                            </option>
                           ))}
                         </select>
                       </div>
@@ -445,7 +497,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
                           className="bg-transparent outline-none font-bold text-slate-700 cursor-pointer text-[10px] uppercase"
                         >
                           {uniqueMachines.map((m) => (
-                            <option key={m} value={m}>{m}</option>
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
                           ))}
                         </select>
                       </div>
@@ -522,9 +576,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
                     Het systeem bepaalt de kleur van de startdatum op basis van
                     de resterende tijd tot levering:
                     <br />•{" "}
-                    <span className="text-slate-900 font-bold">
-                      Zwart:
-                    </span>{" "}
+                    <span className="text-slate-900 font-bold">Zwart:</span>{" "}
                     Productie start ligt nog in de toekomst.
                     <br />•{" "}
                     <span className="text-blue-600 font-bold">Blauw:</span>{" "}
@@ -557,7 +609,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
             </button>
             <button
               onClick={startImport}
-              disabled={filteredData.length === 0 || importing}
+              disabled={fileData.length === 0 || importing}
               className="px-10 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all flex items-center gap-3 disabled:opacity-50"
             >
               {importing ? (
@@ -568,7 +620,11 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess }) => {
               {importing
                 ? "Importeren..."
                 : `Importeer ${
-                    importMode === "new_only" ? newCount : filteredData.length
+                    importTarget === "temp_labels"
+                      ? fileData.length
+                      : importMode === "new_only"
+                      ? newCount
+                      : filteredData.length
                   } Regels`}
             </button>
           </div>

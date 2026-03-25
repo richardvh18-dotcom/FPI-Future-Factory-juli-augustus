@@ -18,6 +18,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import StatusBadge from "../common/StatusBadge";
+import { formatDateTimeSafe } from "../../../utils/dateUtils";
 
 /**
  * DrillDownModal V2.0 - Industrial Performance Edition
@@ -309,15 +310,12 @@ const DrillDownModal = React.memo(({
                                   </p>
                                   {st.time ? (
                                     <p className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg mt-1 inline-block">
-                                      {new Date(st.time).toLocaleString(
-                                        "nl-NL",
-                                        {
-                                          day: "2-digit",
-                                          month: "short",
-                                          hour: "2-digit",
-                                          minute: "2-digit",
-                                        }
-                                      )}
+                                      {formatDateTimeSafe(st.time, "nl-NL", {
+                                        day: "2-digit",
+                                        month: "short",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}
                                     </p>
                                   ) : (
                                     <p className="text-[9px] font-medium text-slate-300 uppercase tracking-tighter mt-1 italic">

@@ -33,6 +33,7 @@ const TRIGGER_OPTIONS = [
   { value: "productType", label: "Product Type" },
   { value: "temperature", label: "Temperatuur Limiet" },
   { value: "pipingClass", label: "Piping Class" },
+  { value: "pressureLineEmt", label: "Pressure Line EMT" },
   { value: "tagNumber", label: "Tag Nummer" },
   { value: "jointCode", label: "Joint Code" },
   { value: "nprs", label: "NPRs (Nominal Pressure Rating)" },

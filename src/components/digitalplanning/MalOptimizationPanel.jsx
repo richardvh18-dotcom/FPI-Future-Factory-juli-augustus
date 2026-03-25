@@ -1,16 +1,11 @@
 import React, { useMemo } from 'react';
 import StatusBadge from './common/StatusBadge';
-import { format, isValid } from 'date-fns';
+import { format } from 'date-fns';
+import { toDateSafe } from '../../utils/dateUtils';
 
 const MalOptimizationPanel = ({ currentOrder, allOrders, onSelectOrder }) => {
   const parseDateSafe = (dateInput) => {
-    if (!dateInput) return null;
-    if (dateInput?.toDate) {
-      const d = dateInput.toDate();
-      return isValid(d) ? d : null;
-    }
-    const d = new Date(dateInput);
-    return isValid(d) ? d : null;
+    return toDateSafe(dateInput);
   };
 
   const getPlanningInfo = (order) => {

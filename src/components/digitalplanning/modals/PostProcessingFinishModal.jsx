@@ -16,6 +16,18 @@ import { REJECTION_REASONS } from "../../../utils/workstationLogic";
 import { useNotifications } from "../../../contexts/NotificationContext";
 import { useTranslation } from "react-i18next";
 
+const REJECTION_REASON_FALLBACKS = {
+  "rejection.notConformDrawing": "Niet conform tekening",
+  "rejection.wrongDiameter": "Verkeerde diameter",
+  "rejection.surfaceDamage": "Oppervlakteschade",
+  "rejection.crack": "Scheur",
+  "rejection.materialShortage": "Materiaaltekort",
+  "rejection.wrongSpec": "Verkeerde specificatie",
+  "rejection.dimensionDeviation": "Maatafwijking",
+  "rejection.qualityInsufficient": "Kwaliteit onvoldoende",
+  "rejection.other": "Overig",
+};
+
 const PostProcessingFinishModal = ({
   product,
   onClose,
@@ -28,6 +40,12 @@ const PostProcessingFinishModal = ({
   const [selectedReasons, setSelectedReasons] = useState([]);
   const [note, setNote] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const getReasonLabel = (reasonKey) => {
+    const translated = t(reasonKey);
+    if (translated && translated !== reasonKey) return translated;
+    return REJECTION_REASON_FALLBACKS[reasonKey] || reasonKey;
+  };
 
   const toggleReason = (reason) => {
     setSelectedReasons((prev) =>
@@ -63,7 +81,7 @@ const PostProcessingFinishModal = ({
         await addDoc(collection(db, ...PATHS.MESSAGES), {
           to: "FITTINGS_TEAM",
           subject: status === "rejected" ? "Definitieve Afkeur Melding" : "Tijdelijke Afkeur Melding",
-          content: `Product ${product?.lotNumber} is ${status === "rejected" ? "afgekeurd" : "tijdelijk afgekeurd"} op station ${currentStation}. Reden: ${selectedReasons.map(r => t(r)).join(", ")}`,
+          content: `Product ${product?.lotNumber} is ${status === "rejected" ? "afgekeurd" : "tijdelijk afgekeurd"} op station ${currentStation}. Reden: ${selectedReasons.map((r) => getReasonLabel(r)).join(", ")}`,
           type: "alert",
           priority: "high",
           read: false,
@@ -113,7 +131,7 @@ const PostProcessingFinishModal = ({
               }`}
             >
               <CheckCircle size={20} className="md:w-6 md:h-6" />
-              <span className="font-black text-xs uppercase">Akkoord</span>
+              <span className="font-black text-xs uppercase">Goed</span>
             </button>
             <button
               onClick={() => setStatus("temp_reject")}
@@ -124,7 +142,7 @@ const PostProcessingFinishModal = ({
               }`}
             >
               <AlertTriangle size={20} className="md:w-6 md:h-6" />
-              <span className="font-black text-xs uppercase">Herstel</span>
+              <span className="font-black text-xs uppercase">Tijdelijke afkeur</span>
             </button>
             <button
               onClick={() => setStatus("rejected")}
@@ -135,7 +153,7 @@ const PostProcessingFinishModal = ({
               }`}
             >
               <XCircle size={20} className="md:w-6 md:h-6" />
-              <span className="font-black text-xs uppercase">Afkeur</span>
+              <span className="font-black text-xs uppercase">Definitieve afkeur</span>
             </button>
           </div>
 
@@ -143,7 +161,7 @@ const PostProcessingFinishModal = ({
             <div className="bg-red-50 p-3 md:p-4 rounded-xl border border-red-100 animate-in slide-in-from-top-2">
               <h4 className="font-bold text-red-900 text-xs uppercase mb-3 flex items-center gap-2">
                 <AlertOctagon size={14} /> Reden van{" "}
-                {status === "temp_reject" ? "Herstel" : "Afkeur"}
+                {status === "temp_reject" ? "Tijdelijke afkeur" : "Definitieve afkeur"}
               </h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {REJECTION_REASONS.map((reason) => (
@@ -167,7 +185,7 @@ const PostProcessingFinishModal = ({
                         <Check size={8} className="text-white" />
                       )}
                     </div>
-                    {t(reason, reason)}
+                    {getReasonLabel(reason)}
                   </div>
                 ))}
               </div>
