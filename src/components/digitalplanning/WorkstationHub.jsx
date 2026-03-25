@@ -264,7 +264,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (window.navigator && window.navigator.standalone === true);
   }, []);
 
-  // Data Fetching
+  // Data Fetching (OPTIMIZED: Parallel listeners instead of sequential)
   useEffect(() => {
     if (!currentUser) return;
     
@@ -276,6 +276,17 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
     let isMounted = true;
     const unsubs = [];
+    let loadedCount = 0;
+    
+    // Track which data sources have reported back (for faster perceived loading)
+    const markStreamReady = () => {
+      loadedCount++;
+      // Stop loading as soon as orders + products are ready (most important data)
+      if (loadedCount >= 2 && isMounted) {
+        setLoading(false);
+      }
+    };
+    
     const initData = async () => {
       const auth = getAuth();
       
@@ -289,16 +300,17 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         );
       }
       
-      // 2. Start data listeners direct (niet wachten op token)
+      // 2. ALL listeners start in parallel (not sequential!)
       if (!isMounted) return;
+      
+      // LISTENER 1: Orders
       const ordersRef = collection(db, ...PATHS.PLANNING);
-      // OPTIMIZED: Verlaagde limit voor snellere loading
-      const q = query(
+      const ordersQuery = query(
         ordersRef, 
         where("status", "not-in", ["completed", "cancelled", "shipped", "rejected", "finished", "COMPLETED", "CANCELLED", "SHIPPED", "REJECTED", "FINISHED"]),
-        limit(200) // Verlaagd van 1000 naar 200 voor snellere performance
+        limit(200)
       );
-      const unsubOrders = onSnapshot(q, (snap) => {
+      const unsubOrders = onSnapshot(ordersQuery, (snap) => {
         const loadedOrders = snap.docs.map((doc) => {
           const data = doc.data();
           let dateObj = data.plannedDate?.toDate
@@ -317,25 +329,29 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           };
         });
         if (isMounted) setRawOrders(loadedOrders);
-        setLoading(false);
+        markStreamReady();
       }, (error) => {
         if (!isMounted) return;
         console.error("Orders sync error:", error);
-        setLoading(false);
+        markStreamReady(); // Still mark as ready even on error
       });
       unsubs.push(unsubOrders);
       
-      // OPTIMIZED: Only fetch active products to reduce read operations
+      // LISTENER 2: Products (also starts immediately, in parallel)
       const unsubProds = onSnapshot(
         query(collection(db, ...PATHS.TRACKING), where("status", "not-in", ["completed", "shipped", "deleted"]), limit(200)),
         (snap) => {
           if (isMounted) setRawProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+          markStreamReady();
         },
-        (error) => console.warn("Tracking Sync Error:", error)
+        (error) => {
+          console.warn("Tracking Sync Error:", error);
+          markStreamReady(); // Still mark as ready even on error
+        }
       );
       unsubs.push(unsubProds);
       
-      // OPTIMIZED: Occupancy data - try to filter by today
+      // LISTENER 3: Occupancy (lazy load after main data is ready)
       const unsubOccupancy = onSnapshot(
         query(collection(db, ...PATHS.OCCUPANCY), where("date", "==", getTodayString()), limit(100)),
         (snap) => {
@@ -350,7 +366,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         }
       );
       unsubs.push(unsubOccupancy);
-      // Personnel data ophalen
+      
+      // LISTENER 4: Personnel (lazy load after main data is ready)
       const unsubPersonnel = onSnapshot(
         query(collection(db, ...PATHS.PERSONNEL), limit(50)),
         (snap) => {

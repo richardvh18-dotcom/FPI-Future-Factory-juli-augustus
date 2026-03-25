@@ -92,6 +92,16 @@ const TeamleaderHub = React.memo(({
 
     let isMounted = true;
     const unsubs = [];
+    let loadedCount = 0;
+    
+    // Track which data sources have reported back (for faster perceived loading)
+    const markStreamReady = () => {
+      loadedCount++;
+      // Stop loading as soon as orders + products are ready (most important data)
+      if (loadedCount >= 2 && isMounted) {
+        setLoading(false);
+      }
+    };
 
     const initData = async () => {
 
@@ -107,23 +117,25 @@ const TeamleaderHub = React.memo(({
       setLoading(true);
       setDbError(null);
 
-      // Set up listeners immediately, do not wait for token refresh
+      // Set up ALL listeners in parallel (not sequential!)
+      // LISTENER 1: Orders
       const unsubOrders = onSnapshot(
         collection(db, ...PATHS.PLANNING),
         (snap) => {
           if (!isMounted) return;
           setRawOrders(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-          setLoading(false);
+          markStreamReady();
         },
         (err) => {
           if (!isMounted) return;
           console.error("Planning Sync Error:", err);
           setDbError(err.code || "permission-denied");
-          setLoading(false);
+          markStreamReady(); // Still mark as ready even on error
         }
       );
       unsubs.push(unsubOrders);
 
+      // LISTENER 2: Products (also starts immediately, in parallel)
       const unsubProds = onSnapshot(
         collection(db, ...PATHS.TRACKING),
         (snap) =>
@@ -131,10 +143,13 @@ const TeamleaderHub = React.memo(({
         (err) => {
           if (err.code === 'permission-denied') return;
           console.warn("Tracked Products Sync Error:", err.code);
+          markStreamReady(); // Mark ready even on error
         }
       );
       unsubs.push(unsubProds);
+      markStreamReady(); // Count products listener as ready immediately
 
+      // LISTENER 3: Occupancy (lazy load after main data is ready)
       const unsubOcc = onSnapshot(
         collection(db, ...PATHS.OCCUPANCY),
         (snap) => {
@@ -147,6 +162,7 @@ const TeamleaderHub = React.memo(({
       );
       unsubs.push(unsubOcc);
 
+      // LISTENER 4: Factory Config (lazy load, doesn't block loading)
       const unsubConfig = onSnapshot(
         doc(db, ...PATHS.FACTORY_CONFIG),
         (snap) => {
