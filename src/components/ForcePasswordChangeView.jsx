@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Lock, ShieldCheck, Loader2, Save, AlertCircle } from "lucide-react";
 import { getAuth, updatePassword } from "firebase/auth";
-import { db, auth, logActivity } from "../config/firebase";
+import { db, logActivity } from "../config/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import { PATHS } from "../config/dbPaths";
 

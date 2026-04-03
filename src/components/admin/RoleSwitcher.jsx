@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
-import { Eye, X, UserCog, Check, Users, Search, ChevronRight, Loader2, LogOut } from 'lucide-react';
+import { UserCog, Check, Users, Search, ChevronRight, Loader2, LogOut } from 'lucide-react';
 import { collection, getDocs, query, limit } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { PATHS } from '../../config/dbPaths';

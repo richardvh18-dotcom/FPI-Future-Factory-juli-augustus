@@ -8,10 +8,8 @@ import {
   Package,
   Activity,
   Download,
-  Calendar,
   Filter,
   BarChart3,
-  PieChart,
   LineChart,
   FileSpreadsheet,
   Loader2,
@@ -22,14 +20,11 @@ import {
   Factory,
   Target,
   Zap,
-  ChevronDown,
-  ChevronRight,
 } from "lucide-react";
-import { collection, query, where, getDocs, orderBy, limit, doc, getDoc } from "firebase/firestore";
+import { collection, query, getDocs, limit, doc, getDoc } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
-import { nl } from "date-fns/locale";
 import { normalizeMachine } from "../../utils/hubHelpers";
 
 /**
@@ -43,8 +38,8 @@ const AdminReportsView = () => {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedReport, setSelectedReport] = useState(null);
   const [dateRange, setDateRange] = useState("week"); // 'today', 'week', 'month', 'custom'
-  const [customStartDate, setCustomStartDate] = useState("");
-  const [customEndDate, setCustomEndDate] = useState("");
+  const [customStartDate] = useState("");
+  const [customEndDate] = useState("");
   const [filters, setFilters] = useState({
     station: "ALL",
     operator: "ALL",
@@ -53,7 +48,6 @@ const AdminReportsView = () => {
   });
   const [loading, setLoading] = useState(false);
   const [reportData, setReportData] = useState(null);
-  const [expandedSections, setExpandedSections] = useState([]);
   const [offeredDepartmentFilter, setOfferedDepartmentFilter] = useState("ALL");
   const [offeredWorkstationFilter, setOfferedWorkstationFilter] = useState("ALL");
   const [offeredKpiFilter, setOfferedKpiFilter] = useState("ALL"); // ALL | COMPLETED | OFFERED | PRODUCED_NOT_OFFERED
@@ -387,13 +381,6 @@ const AdminReportsView = () => {
     },
   ];
 
-  // Toggle section expansion
-  const toggleSection = (sectionId) => {
-    setExpandedSections((prev) =>
-      prev.includes(sectionId) ? prev.filter((s) => s !== sectionId) : [...prev, sectionId]
-    );
-  };
-
   // Helper: Get date range for queries
   const getDateRange = () => {
     const now = new Date();
@@ -684,7 +671,7 @@ const AdminReportsView = () => {
             if (p.status === "completed") acc[orderKey].status = "completed";
             return acc;
           }, {})
-        ).map(([_, data], idx) => ({ id: idx + 1, ...data })),
+        ).map(([, data], idx) => ({ id: idx + 1, ...data })),
       };
     } catch (error) {
       console.error("Error fetching production data:", error);

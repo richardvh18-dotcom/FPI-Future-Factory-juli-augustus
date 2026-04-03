@@ -12,7 +12,6 @@ import {
   ZoomOut,
   RotateCw,
   RotateCcw,
-  BoxSelect,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
   Database,
@@ -30,7 +29,6 @@ import {
   Code,
   FilePlus,
   Search,
-  Edit2,
   Undo,
   Plus,
 } from "lucide-react";
@@ -39,7 +37,6 @@ import {
   setDoc,
   getDocs,
   collection,
-  deleteDoc,
   query,
   limit,
   serverTimestamp,
@@ -59,7 +56,6 @@ import {
 } from "../../utils/labelHelpers";
 import { generatePrintData, downloadZPL } from "../../utils/zplHelper";
 import { getDriver } from "../../utils/printerDrivers";
-import AutoScaledLabelPreview from "../printer/AutoScaledLabelPreview";
 
 const PIXELS_PER_MM = 3.78;
 const CSS_PIXELS_PER_POINT = 96 / 72;
@@ -819,86 +815,6 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
       if (newName && newName.trim()) {
           saveLabel(newName, []); // Reset tags bij 'Opslaan Als' (nieuwe kopie)
       }
-  };
-
-  const renameLabel = async (label) => {
-    const newName = prompt(t('adminLabelDesigner.enterNewName', 'Nieuwe naam voor label:'), label.name);
-    if (!newName || newName.trim() === "" || newName === label.name) return;
-
-    setIsLoading(true);
-    try {
-      const newLabelId = newName.trim().replace(/[^a-zA-Z0-9-_]/g, "_").toLowerCase();
-      const oldLabelId = label.id;
-
-      if (savedLabels.some(l => l.id === newLabelId)) {
-          alert(t('adminLabelDesigner.nameExists', 'Een label met deze naam bestaat al.'));
-          setIsLoading(false);
-          return;
-      }
-
-      const newDocRef = doc(db, ...PATHS.LABEL_TEMPLATES, newLabelId);
-      const oldDocRef = doc(db, ...PATHS.LABEL_TEMPLATES, oldLabelId);
-
-      const labelData = { ...label };
-      delete labelData.id;
-      labelData.name = newName;
-      labelData.lastUpdated = serverTimestamp();
-      labelData.updatedBy = "Admin Designer";
-
-      await setDoc(newDocRef, labelData);
-      await deleteDoc(oldDocRef);
-      
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Label template renamed: ${label.name} -> ${newName}`);
-      
-      if (labelName === label.name) {
-          setLabelName(newName);
-      }
-    } catch (e) {
-      console.error("Rename error:", e);
-      alert(t('adminLabelDesigner.renameError', 'Fout bij hernoemen: ') + e.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const duplicateLabel = async (label) => {
-    const newName = `${label.name}${t('adminLabelDesigner.copySuffix')}`;
-    if (!window.confirm(t('adminLabelDesigner.confirmDuplicate', { name: newName }))) return;
-    
-    setIsLoading(true);
-    try {
-      const labelId = newName.trim().replace(/[^a-zA-Z0-9-_]/g, "_").toLowerCase() + "_" + Date.now();
-      const docRef = doc(db, ...PATHS.LABEL_TEMPLATES, labelId);
-
-      const labelData = { ...label };
-      delete labelData.id;
-      
-      // Tags niet meekopiëren bij dupliceren (elk label eigen tags)
-      labelData.tags = [];
-
-      await setDoc(docRef, {
-        ...labelData,
-        name: newName,
-        lastUpdated: serverTimestamp(),
-        updatedBy: "Admin Designer",
-      });
-    } catch (e) {
-      console.error("Duplicate error:", e);
-      alert(t('adminLabelDesigner.duplicateError') + e.message);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const deleteLabel = async (id) => {
-    if (!window.confirm(t('adminLabelDesigner.confirmDelete'))) return;
-    try {
-      await deleteDoc(doc(db, ...PATHS.LABEL_TEMPLATES, id));
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Label template deleted: ${id}`);
-    } catch (e) {
-      console.error("Delete error:", e);
-      alert(t('adminLabelDesigner.deleteError'));
-    }
   };
 
   return (

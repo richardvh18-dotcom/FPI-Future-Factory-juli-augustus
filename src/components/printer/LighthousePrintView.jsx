@@ -6,8 +6,6 @@ import {
 } from "../../utils/labelHelpers";
 import InternalQrImage from "../../utils/InternalQrImage";
 
-const PIXELS_PER_MM = 3.78; // 96 DPI / 25.4 mm
-
 /**
  * LighthousePrintView
  * Speciale print-view voor de Lighthouse CJ-PRO II (via Windows Driver).

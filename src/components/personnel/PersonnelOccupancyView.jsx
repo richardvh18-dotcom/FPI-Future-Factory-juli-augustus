@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Loader2, Cpu, Layers, Clock,
   ChevronUp, ShieldCheck, X,

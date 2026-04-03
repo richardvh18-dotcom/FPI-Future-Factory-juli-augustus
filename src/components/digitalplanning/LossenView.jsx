@@ -8,6 +8,9 @@ import { Package,
     ClipboardCheck,
     History,
     ArrowRight,
+  ArrowLeft,
+  ChevronDown,
+  ChevronRight,
     ScanBarcode,
     Keyboard } from "lucide-react";
 import ProductReleaseModal from "./modals/ProductReleaseModal";
@@ -36,8 +39,6 @@ const shouldGoToCentralLossen = (item) => {
   const isAB = /\bAB\b/.test(itemStr);
   const isSB = /\bSB\b/.test(itemStr);
   const isElbow = isELB || isCB;
-  const origin = normalizeMachine(item?.originMachine || item?.machine || "");
-  const isBh18Origin = origin === "BH18" || origin === "18";
 
   // Alle AB en SB elbows altijd naar centraal LOSSEN
   if (isElbow && (isAB || isSB)) return true;
@@ -64,7 +65,9 @@ const LossenView = ({ stationId, appId, products = [] }) => {
   const [occupancy, setOccupancy] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [bulkSeriesProducts, setBulkSeriesProducts] = useState([]);
   const [showActionModal, setShowActionModal] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState({});
   const [scanInput, setScanInput] = useState("");
   const [scannerMode, setScannerMode] = useState(true);
   const scanInputRef = useRef(null);
@@ -123,7 +126,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
       );
         
       if (found) {
-        handleItemClick(found); // Direct modal openen voor meting/actie
+        handleItemClick(found);
         setScanInput("");
       } else {
         alert(t('lossen.item_not_found', { code }) || `Item ${code} niet gevonden`);
@@ -347,11 +350,27 @@ const LossenView = ({ stationId, appId, products = [] }) => {
   }, [stationId, user, products]); // Dependency op 'products' toegevoegd
 
   const handleItemClick = (item) => {
+    if (supportsSeriesGrouping && item?.seriesGroupId) {
+      const sameSeries = items.filter(
+        (seriesItem) =>
+          seriesItem.seriesGroupId === item.seriesGroupId &&
+          String(seriesItem.status || "").toUpperCase() !== "REJECTED" &&
+          String(seriesItem.currentStep || "").toUpperCase() !== "REJECTED"
+      );
+      setBulkSeriesProducts(sameSeries.length > 1 ? sameSeries : []);
+    } else {
+      setBulkSeriesProducts([]);
+    }
     setSelectedProduct(item);
+  };
+
+  const handleOpenActionModal = () => {
+    if (!selectedProduct) return;
     setShowActionModal(true);
   };
 
   const handleCloseModal = () => {
+    setBulkSeriesProducts([]);
     setSelectedProduct(null);
     setShowActionModal(false);
   };
@@ -360,6 +379,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
   const isBM01 = currentStationNorm === "BM01";
   const isMazak = currentStationNorm === "MAZAK";
   const isNabewerking = currentStationNorm === "NABEWERKING" || currentStationNorm === "NABW" || currentStationNorm.includes("NABEWERK");
+  const supportsSeriesGrouping = !isBM01 && !isMazak && !isNabewerking;
 
   const viewTitle = useMemo(() => {
     if (isBM01 || isMazak || isNabewerking) return t('bm01.to_offer');
@@ -367,6 +387,62 @@ const LossenView = ({ stationId, appId, products = [] }) => {
     return t('lossen.waiting_receipt');
   }, [isBM01, isMazak, isNabewerking, currentStationNorm, t]);
   const isAdvancedStation = isBM01 || isMazak || isNabewerking;
+
+  const groupedSeries = useMemo(() => {
+    if (!supportsSeriesGrouping) return new Map();
+    const grouped = new Map();
+    items.forEach((item) => {
+      const groupId = item?.seriesGroupId;
+      if (!groupId) return;
+      if (!grouped.has(groupId)) grouped.set(groupId, []);
+      grouped.get(groupId).push(item);
+    });
+    return grouped;
+  }, [items, supportsSeriesGrouping]);
+
+  useEffect(() => {
+    setCollapsedGroups((prev) => {
+      const next = { ...prev };
+      groupedSeries.forEach((group, groupId) => {
+        if (group.length <= 1) return;
+        if (!(groupId in next)) next[groupId] = true;
+      });
+      Object.keys(next).forEach((groupId) => {
+        const group = groupedSeries.get(groupId);
+        if (!group || group.length <= 1) delete next[groupId];
+      });
+      return next;
+    });
+  }, [groupedSeries]);
+
+  const displayRows = useMemo(() => {
+    const rendered = new Set();
+    const rows = [];
+
+    items.forEach((item) => {
+      const groupId = item?.seriesGroupId;
+      const group = groupId ? groupedSeries.get(groupId) || [] : [];
+      const isSeriesGroup = groupId && group.length > 1;
+
+      if (isSeriesGroup && !rendered.has(groupId)) {
+        rows.push({
+          id: `series_header_${groupId}`,
+          isSeriesHeader: true,
+          seriesGroupId: groupId,
+          orderId: group[0]?.orderId || item?.orderId || "-",
+          seriesCount: group.length,
+          seriesUnits: group,
+        });
+        rendered.add(groupId);
+      }
+
+      if (!isSeriesGroup || !collapsedGroups[groupId]) {
+        rows.push(item);
+      }
+    });
+
+    return rows;
+  }, [items, groupedSeries, collapsedGroups]);
 
   // --- NIEUW: Aparte handler voor afronden in Lossen vs. Nabewerking ---
   const handlePostProcessingFinish = async (status, data, productOverride = null) => {
@@ -549,10 +625,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
     );
 
   return (
-    <div
-      className="p-4 pb-32 space-y-3 bg-white h-full overflow-y-auto custom-scrollbar text-left relative"
-      style={{ paddingBottom: "max(8rem, env(safe-area-inset-bottom))" }}
-    >
+    <div className="flex h-full overflow-hidden bg-white">
       
       {/* Pulse animatie stylesheet */}
       <style>{`
@@ -585,8 +658,9 @@ const LossenView = ({ stationId, appId, products = [] }) => {
           <ProductReleaseModal
             isOpen={true}
             product={selectedProduct}
+            bulkProducts={bulkSeriesProducts}
             forceLossenMode={true}
-            onClose={() => setSelectedProduct(null)}
+            onClose={handleCloseModal}
             appId={appId}
             activeOperators={activeOperators}
             autoFocus={false}
@@ -596,6 +670,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
 
         {/* INKOMEND VIEW */}
         <>
+          <div className={`w-full lg:w-5/12 p-4 pb-32 space-y-3 border-r border-slate-100 overflow-y-auto custom-scrollbar ${selectedProduct ? "hidden lg:block" : "block"}`} style={{ paddingBottom: "max(8rem, env(safe-area-inset-bottom))" }}>
           <div className="mb-6 space-y-2">
             <div className="flex justify-between items-end">
                 {/* Scan Indicator Label */}
@@ -647,55 +722,119 @@ const LossenView = ({ stationId, appId, products = [] }) => {
                 {viewTitle} ({items.length})
                 </h3>
               </div>
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                onClick={() => handleItemClick(item)}
-                className={`bg-white border-2 rounded-[35px] p-6 shadow-sm hover:border-emerald-300 transition-all group animate-in slide-in-from-bottom-2 cursor-pointer
-                  ${selectedProduct?.id === item.id ? 'border-purple-400 ring-4 ring-purple-200' : 'border-slate-100'}`}
-                >
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="text-left">
-                      <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">
-                        {t('lossen.lot_number')}
-                      </span>
-                      <span className="font-black text-slate-900 text-lg tracking-tighter italic">
-                        {item.lotNumber}
-                      </span>
-                      <p className="text-xs font-bold text-slate-600 mt-1">
-                        {item.item}
+              {displayRows.map((item) => {
+                if (item.isSeriesHeader) {
+                  const isCollapsed = !!collapsedGroups[item.seriesGroupId];
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => handleItemClick(item.seriesUnits[0])}
+                      className="bg-blue-50 border-2 border-blue-200 rounded-[24px] p-4 cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[9px] font-black text-blue-500 uppercase tracking-widest">Serie</p>
+                          <p className="text-base font-black text-blue-900">Order {item.orderId}</p>
+                          <p className="text-[10px] font-bold text-blue-700 uppercase">{item.seriesCount} stuks</p>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCollapsedGroups((prev) => ({
+                              ...prev,
+                              [item.seriesGroupId]: !prev[item.seriesGroupId],
+                            }));
+                          }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-white border border-blue-200 text-blue-700 text-[10px] font-black uppercase"
+                        >
+                          {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                          {isCollapsed ? "Uitklappen" : "Inklappen"}
+                        </button>
+                      </div>
+                      <p className="mt-2 text-[10px] font-bold text-blue-700/80 uppercase tracking-wide">
+                        Selecteer voor gereedmelden in rechterpaneel
                       </p>
                     </div>
-                    <div className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-[9px] font-black uppercase">
-                      {t('lossen.received')}
+                  );
+                }
+
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => handleItemClick(item)}
+                    className={`bg-white border-2 rounded-[35px] p-6 shadow-sm hover:border-emerald-300 transition-all group animate-in slide-in-from-bottom-2 cursor-pointer
+                      ${selectedProduct?.id === item.id ? 'border-purple-400 ring-4 ring-purple-200' : 'border-slate-100'}`}
+                  >
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="text-left">
+                        <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">
+                          {t('lossen.lot_number')}
+                        </span>
+                        <span className="font-black text-slate-900 text-lg tracking-tighter italic">
+                          {item.lotNumber}
+                        </span>
+                        <p className="text-xs font-bold text-slate-600 mt-1">
+                          {item.item}
+                        </p>
+                      </div>
+                      <div className="px-3 py-1 bg-emerald-100 text-emerald-700 rounded-lg text-[9px] font-black uppercase">
+                        {t('lossen.received')}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                        {t('lossen.manufactured_item')}
+                      </p>
+                      <p className="text-xs font-mono font-bold text-slate-700 truncate">
+                        {item.itemCode}
+                      </p>
+                      {item.lastStation && (
+                        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-200/60 opacity-80">
+                          <History size={10} className="text-blue-500" />
+                          <span className="text-[8px] font-black text-slate-500 uppercase italic">
+                            {isBM01 ? t('lossen.from') + ": " : t('lossen.origin') + ": "}{item.lastStation}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div className="bg-slate-50 rounded-2xl p-4 mb-5 border border-slate-100">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                      {t('lossen.manufactured_item')}
-                    </p>
-                    <p className="text-xs font-mono font-bold text-slate-700 truncate">
-                      {item.itemCode}
-                    </p>
-                    {item.lastStation && (
-                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-200/60 opacity-80">
-                        <History size={10} className="text-blue-500" />
-                        <span className="text-[8px] font-black text-slate-500 uppercase italic">
-                          {isBM01 ? t('lossen.from') + ": " : t('lossen.origin') + ": "}{item.lastStation}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => handleItemClick(item)}
-                    className="w-full py-5 bg-slate-900 text-white rounded-[22px] font-black uppercase text-[10px] tracking-[0.2em] flex items-center justify-center gap-3 hover:bg-emerald-600 transition-all shadow-lg active:scale-95"
-                  >
-                    <ClipboardCheck size={18} /> {t('lossen.process_release')}
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
+          </div>
+
+          <div className={`flex-1 bg-slate-50 p-6 md:p-8 overflow-y-auto custom-scrollbar ${!selectedProduct ? "hidden lg:flex" : "flex"} flex-col`}>
+            {selectedProduct ? (
+              <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-500 text-left w-full">
+                <div className="bg-slate-900 rounded-[35px] p-6 text-white flex justify-between items-center border-4 border-blue-500/20 relative overflow-hidden shadow-xl text-left">
+                  <button onClick={() => setSelectedProduct(null)} className="lg:hidden p-2 text-white/50 mr-2"><ArrowLeft size={20} /></button>
+                  <div className="text-left flex-1">
+                    <span className="text-[8px] font-black text-blue-400 uppercase block mb-1 text-left">Dossier</span>
+                    <h2 className="text-3xl font-black italic leading-none text-left">{selectedProduct.lotNumber}</h2>
+                    <p className="text-xs font-bold text-white/70 mt-2">{selectedProduct.item}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-[40px] p-8 border border-slate-200 shadow-sm space-y-5 text-left">
+                  {bulkSeriesProducts.length > 1 && (
+                    <button onClick={handleOpenActionModal} className="w-full py-4 bg-emerald-600 text-white rounded-[22px] font-black uppercase text-sm shadow-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-3 active:scale-95 group">
+                      <ClipboardCheck size={20} /> Serie gereedmelden ({bulkSeriesProducts.length}x)
+                    </button>
+                  )}
+
+                  <button onClick={handleOpenActionModal} className="w-full py-6 bg-slate-900 text-white rounded-[30px] font-black uppercase text-base shadow-xl hover:bg-emerald-600 transition-all flex items-center justify-center gap-4 active:scale-95 group">
+                    <ClipboardCheck size={28} /> {t('lossen.process_release')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center opacity-30 text-center text-left">
+                <Package size={80} className="mb-6 text-slate-200" />
+                <h4 className="text-2xl font-black uppercase italic text-slate-300 text-left">Selecteer actief lot</h4>
+              </div>
+            )}
+          </div>
       </>
     </div>
   );

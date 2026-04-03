@@ -49,7 +49,6 @@ const wrapTextContent = (value, maxCharsPerLine = 1, maxLines = 1) => {
             if (word.length > safeMaxChars) {
                 if (currentLine) {
                     pushLine(currentLine);
-                    currentLine = "";
                 }
 
                 let remainder = word;
@@ -221,14 +220,10 @@ export const generatePrintData = (template, data, printerDpi = 203, resolveFn = 
         // Ondersteun per-object offsetX/offsetY (in mm, optioneel)
         // Voeg { offsetX: 1, offsetY: 0 } toe aan een element om extra correctie toe te passen
         // Variabelen vervangen
-        let content = el.content;
-        if (resolveFn) {
-             const resolved = resolveFn(el, data);
-             content = resolved.content || "";
-             if (t) content = t(content);
-        } else {
-             content = parseContent(el.content, data);
-        }
+           const resolvedContent = resolveFn
+              ? (resolveFn(el, data)?.content || "")
+              : parseContent(el.content, data);
+           const content = t ? t(resolvedContent) : resolvedContent;
 
         // Positie berekenen
         let baseX = globalXOffset + mmToDots(el.x + (el.offsetX || 0));
@@ -514,7 +509,7 @@ export const checkPrinterStatus = async (ip) => {
         await fetch(`http://${ip}/`, { signal: controller.signal, mode: 'no-cors' });
         clearTimeout(id);
         return { online: true, message: "Ready" };
-    } catch (e) {
+    } catch {
         return { online: false, message: "Printer Unreachable" };
     }
 };

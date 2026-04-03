@@ -76,7 +76,7 @@ const getPreviewTextStyle = (element, content, zoom, rotation = 0) => {
   return { fontSize: fittedFontPx, lineHeight: "1.05" };
 };
 
-const LabelVisualPreview = ({ label, data, zoom = 1, className = "", printerDpi = 203 }) => {
+const LabelVisualPreview = ({ label, data, zoom = 1, className = "" }) => {
   if (!label) return <div className={`w-48 h-32 bg-slate-200 flex items-center justify-center text-xs text-slate-400 italic ${className}`}>Geen template</div>;
 
   return (

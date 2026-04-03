@@ -10,8 +10,6 @@ import {
   Keyboard,
   Activity,
   FileText,
-  Code,
-  Wifi,
   AlertTriangle,
   CheckCircle2,
   Loader2,
@@ -24,8 +22,10 @@ import { PATHS, getArchiveItemsPath } from "../../../config/dbPaths";
 import {
   filterLabelsByProduct,
 } from "../../../utils/labelHelpers";
+import { getFlangeSeriesInfo } from "../../../utils/flangeSeriesHelper";
+import { lookupProductByManufacturedId } from "../../../utils/conversionLogic";
 import { useNotifications } from "../../../contexts/NotificationContext";
-import { generatePrintData, downloadZPL } from "../../../utils/zplHelper";
+import { generatePrintData } from "../../../utils/zplHelper";
 import { getDriver } from "../../../utils/printerDrivers";
 import { queuePrintJob } from "../../../services/printService.js";
 import LabelVisualPreview from "../../printer/LabelVisualPreview";
@@ -70,7 +70,7 @@ const ProductionStartModal = ({
   stationId = "",
   existingProducts = [],
 }) => {
-  const { showSuccess, showError, showInfo } = useNotifications();
+  const { showSuccess, showError } = useNotifications();
   const [mode, setMode] = useState("manual"); // Standaard manueel voor pilot
   const [lotNumber, setLotNumber] = useState("");
   const [stringCount, setStringCount] = useState("1");
@@ -95,14 +95,15 @@ const ProductionStartModal = ({
   const location = useLocation();
   
   const [savedPrinters, setSavedPrinters] = useState([]);
+  const [generalSettings, setGeneralSettings] = useState({ flangeSeriesRules: [] });
+  const [toolingMolds, setToolingMolds] = useState([]);
+  const [relatedItemCodes, setRelatedItemCodes] = useState([]);
   const [printConfig, setPrintConfig] = useState({
     mode: "queue", 
     printerIp: "",
     printerId: ""
   });
 
-  // Specifieke projectcodes die strikte filtering vereisen (mutueel exclusief)
-  const SPECIAL_PROJECT_CODES = ["A1S1", "A2E5", "A2E6"];
   const PRODUCT_TYPES = ["EST", "CST", "EWT", "EMT"]; // Veelvoorkomende types voor filtering
 
   const containerRef = useRef(null);
@@ -111,6 +112,18 @@ const ProductionStartModal = ({
   const [lotError, setLotError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const isManualMode = mode === "manual";
+  const flangeSeriesInfo = useMemo(
+    () =>
+      getFlangeSeriesInfo(
+        order,
+        generalSettings?.flangeSeriesRules,
+        toolingMolds,
+        stationId,
+        relatedItemCodes
+      ),
+    [order, generalSettings?.flangeSeriesRules, toolingMolds, stationId, relatedItemCodes]
+  );
+  const isFlangeOrder = !!flangeSeriesInfo?.isFlange;
 
   const sanitizePositiveIntInput = (value) => {
     const digitsOnly = String(value ?? "").replace(/\D/g, "");
@@ -173,6 +186,85 @@ const ProductionStartModal = ({
       setLabelCount((prev) => normalizePositiveIntInput(prev, parseInt(stringCount, 10) || 1));
     }
   }, [isOpen, stringCount]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsub = onSnapshot(
+      doc(db, ...PATHS.GENERAL_SETTINGS),
+      (snap) => {
+        if (snap.exists()) {
+          setGeneralSettings((prev) => ({ ...prev, ...(snap.data() || {}) }));
+        }
+      },
+      (err) => {
+        console.error("Kon algemene instellingen niet laden:", err);
+      }
+    );
+    return () => unsub();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let active = true;
+    const sourceCode = String(order?.itemCode || order?.item || "").trim();
+    if (!sourceCode) {
+      setRelatedItemCodes([]);
+      return;
+    }
+
+    const loadConversionCodes = async () => {
+      try {
+        const conversion = await lookupProductByManufacturedId(null, sourceCode);
+        if (!active) return;
+        const candidates = Array.from(
+          new Set(
+            [
+              sourceCode,
+              conversion?.manufacturedId,
+              conversion?.targetProductId,
+              conversion?.id,
+            ]
+              .map((value) => String(value || "").trim())
+              .filter(Boolean)
+          )
+        );
+        setRelatedItemCodes(candidates);
+      } catch (error) {
+        console.error("Kon conversiecodes niet laden voor mallenmatch:", error);
+        setRelatedItemCodes([sourceCode]);
+      }
+    };
+
+    loadConversionCodes();
+    return () => {
+      active = false;
+    };
+  }, [isOpen, order?.itemCode, order?.item]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsub = onSnapshot(
+      collection(db, ...PATHS.TOOLING_MOLDS),
+      (snap) => {
+        const rows = snap.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+        setToolingMolds(rows);
+      },
+      (err) => {
+        console.error("Kon gereedschap/mallen niet laden:", err);
+        setToolingMolds([]);
+      }
+    );
+    return () => unsub();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || mode !== "auto") return;
+    if (!isFlangeOrder) return;
+    const cavityCount = Math.max(1, Number(flangeSeriesInfo?.cavityCount || 1));
+    setStringCount(String(cavityCount));
+    setLabelCount("0");
+  }, [isOpen, mode, isFlangeOrder, flangeSeriesInfo?.cavityCount]);
 
   const availableLabels = useMemo(() => {
     if (!allLabels || allLabels.length === 0) return [];
@@ -709,68 +801,6 @@ const ProductionStartModal = ({
     return () => ro.disconnect();
   }, [selectedLabel, isOpen]);
 
-  // Helper voor standaard browser print (PDF)
-  const printViaBrowser = (quantity) => {
-    // Functie uitgeschakeld - alleen Zadig/Queue toegestaan
-    showInfo("Printen via browser is uitgeschakeld. Gebruik USB of Wachtrij.");
-  };
-
-  const handlePrint = async () => {
-    if (!selectedLabel) return;
-    
-    const quantityStr = prompt("Hoeveel labels wilt u printen?", "1");
-    const quantity = parseInt(quantityStr);
-    if (!quantity || isNaN(quantity) || quantity < 1) return;
-    
-    // MODE: CLOUD WACHTRIJ (Nieuw)
-    if (printConfig.mode === "queue") {
-      try {
-        // --- NIEUWE LOGICA: Vind de juiste printer voor dit station ---
-        const targetPrinter = resolveTargetPrinter(savedPrinters, stationId);
-
-        if (!targetPrinter) {
-          showError(`Geen printer geconfigureerd voor station '${stationId}' en er is geen standaard printer ingesteld. Ga naar Admin > Printer Beheer.`);
-          return;
-        }
-
-        const dpi = getNormalizedPrinterDpi(targetPrinter, 203);
-        let printData = await generatePrintData(selectedLabel, previewData, dpi);
-
-        // Verstuur als EEN opdracht
-        await queuePrintJob(
-            targetPrinter.id, 
-            printData, 
-            {
-            description: `Label voor ${order.orderId} (Lot: ${lotNumber}) (x${quantity})`,
-            quantity,
-            orderId: order.orderId,
-            lotNumber: lotNumber,
-            stationId: stationId || "Onbekend",
-            targetPrinterName: targetPrinter.name,
-            width: parseInt(selectedLabel.width),
-            height: parseInt(selectedLabel.height),
-            variables: previewData,
-            templateId: selectedLabel.id
-            }
-        );
-
-        showSuccess(`Opdracht (${quantity} labels) succesvol naar de wachtrij gestuurd voor printer: ${targetPrinter.name}`);
-      } catch (e) {
-        showError("Fout bij versturen naar wachtrij: " + e.message);
-      }
-      return;
-    }
-
-  };
-
-  const handleZPLDownload = async () => {
-    if (!selectedLabel) return;
-    const targetPrinter = resolveTargetPrinter(savedPrinters, stationId);
-    const dpi = getNormalizedPrinterDpi(targetPrinter, 203);
-    const printData = await generatePrintData(selectedLabel, previewData, dpi);
-    downloadZPL(printData, `label_${order.orderId}_${lotNumber}.zpl`);
-  };
-
   const handleManualOrderChange = async (e) => {
     const value = e.target.value.toUpperCase();
     setManualOrderInput(value);
@@ -824,7 +854,7 @@ const ProductionStartModal = ({
 
     scannerLikeLotInputRef.current = false;
 
-    if (!isManualMode && !selectedLabel) {
+    if (!isManualMode && !isFlangeOrder && !selectedLabel) {
       alert("Selecteer eerst een label formaat.");
       return;
     }
@@ -835,12 +865,18 @@ const ProductionStartModal = ({
       let effectiveLotNumber = isManualMode ? manualLotInput.trim() : lotNumber;
       let printData = null;
       let counterClaimed = false;
-      const totalToProduce = isManualMode ? 1 : Math.max(1, parseInt(stringCount, 10) || 1);
-      const labelsToPrint = Math.max(1, parseInt(labelCount, 10) || 1);
+      const totalToProduce = isManualMode
+        ? 1
+        : isFlangeOrder
+        ? Math.max(1, Number(flangeSeriesInfo?.cavityCount || 1))
+        : Math.max(1, parseInt(stringCount, 10) || 1);
+      const labelsToPrint = isFlangeOrder ? 0 : Math.max(1, parseInt(labelCount, 10) || 1);
+      const seriesGroupId = totalToProduce > 1
+        ? `${String(order?.orderId || "ORDER").replace(/[^a-zA-Z0-9]/g, "_")}_${Date.now()}`
+        : null;
 
       if (!isManualMode) {
         targetPrinter = await resolveTargetPrinterAsync();
-        const dpiForPrint = getNormalizedPrinterDpi(targetPrinter, 203);
         effectiveLotNumber = await claimAutoLotRange(totalToProduce);
         counterClaimed = true;
         setLotNumber(effectiveLotNumber);
@@ -859,11 +895,14 @@ const ProductionStartModal = ({
           }
         }
 
-        const printPreviewData = {
-          ...previewData,
-          lotNumber: effectiveLotNumber,
-        };
-        printData = await generatePrintData(selectedLabel, printPreviewData, dpiForPrint);
+        if (!isFlangeOrder && selectedLabel) {
+          const dpiForPrint = getNormalizedPrinterDpi(targetPrinter, 203);
+          const printPreviewData = {
+            ...previewData,
+            lotNumber: effectiveLotNumber,
+          };
+          printData = await generatePrintData(selectedLabel, printPreviewData, dpiForPrint);
+        }
       } else {
         // Manual mode moet ook altijd uniciteit afdwingen voor we starten.
         const manualExists = await checkLotNumberExists(effectiveLotNumber);
@@ -886,10 +925,15 @@ const ProductionStartModal = ({
         operatorInput,
         selectedOperatorName,
         printData,
-        !isManualMode ? selectedLabelId : null
+        !isManualMode ? selectedLabelId : null,
+        {
+          isFlangeSeries: isFlangeOrder,
+          seriesGroupId,
+          skipStartLabel: isFlangeOrder,
+        }
       );
 
-      if (printConfig.mode === "queue" && labelsToPrint > 0 && selectedLabel && printData) {
+      if (!isFlangeOrder && printConfig.mode === "queue" && labelsToPrint > 0 && selectedLabel && printData) {
         try {
           if (targetPrinter) {
             const queueJobId = await queuePrintJob(
@@ -978,6 +1022,7 @@ const ProductionStartModal = ({
   }, [isOpen]);
 
   const selectedOperatorName = assignedOperators.find(op => op.number === operatorInput)?.name;
+  const showPreviewPane = mode !== "manual" && !isFlangeOrder;
 
   if (!isOpen || !order || location.pathname.includes("/login")) return null;
 
@@ -985,7 +1030,7 @@ const ProductionStartModal = ({
     <div className="fixed inset-0 bg-slate-900/90 z-[100] flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in fade-in">
       <div className={`bg-white w-full max-w-6xl h-full md:h-[85vh] rounded-[40px] shadow-2xl flex flex-col md:flex-row overflow-hidden border border-white/10 transition-all duration-300`}>
         {/* LINKS: CONFIGURATIE */}
-        <div className={`w-full md:w-1/3 p-4 border-r border-slate-100 flex flex-col bg-slate-50/50 overflow-y-auto custom-scrollbar`}>
+        <div className={`${showPreviewPane ? "w-full md:w-1/3" : "w-full"} p-4 ${showPreviewPane ? "border-r" : ""} border-slate-100 flex flex-col bg-slate-50/50 overflow-y-auto custom-scrollbar`}>
           <div className="flex justify-between items-start mb-4">
             <div className="text-left">
               <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">
@@ -1122,26 +1167,39 @@ const ProductionStartModal = ({
                       value={stringCount}
                       onChange={(e) => setStringCount(sanitizePositiveIntInput(e.target.value))}
                       onBlur={() => setStringCount((prev) => normalizePositiveIntInput(prev))}
+                      disabled={isFlangeOrder}
                       className="w-full font-black text-slate-800 outline-none text-lg"
                     />
                   </div>
+                  {isFlangeOrder && (
+                    <p className="text-[10px] font-bold text-emerald-700 mt-1 ml-1">
+                      Flens-serie helper actief: {flangeSeriesInfo?.matchedTooling?.name || flangeSeriesInfo?.matchedTooling?.itemCode || flangeSeriesInfo?.matchedRule?.matcher || "standaard"} = {stringCount} per mal
+                    </p>
+                  )}
                 </div>
-                <div className="space-y-1 text-left">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2 block">
-                    Aantal Labels Printen
-                  </label>
-                  <div className="flex items-center gap-3 bg-white p-3 rounded-xl border-2 border-slate-100 focus-within:border-blue-500 transition-all shadow-sm">
-                    <Printer size={18} className="text-blue-500" />
-                    <input
-                      type="number"
-                      min="1"
-                      value={labelCount}
-                      onChange={(e) => setLabelCount(sanitizePositiveIntInput(e.target.value))}
-                      onBlur={() => setLabelCount((prev) => normalizePositiveIntInput(prev))}
-                      className="w-full font-black text-slate-800 outline-none text-lg"
-                    />
+                {!isFlangeOrder && (
+                  <div className="space-y-1 text-left">
+                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2 block">
+                      Aantal Labels Printen
+                    </label>
+                    <div className="flex items-center gap-3 bg-white p-3 rounded-xl border-2 border-slate-100 focus-within:border-blue-500 transition-all shadow-sm">
+                      <Printer size={18} className="text-blue-500" />
+                      <input
+                        type="number"
+                        min="1"
+                        value={labelCount}
+                        onChange={(e) => setLabelCount(sanitizePositiveIntInput(e.target.value))}
+                        onBlur={() => setLabelCount((prev) => normalizePositiveIntInput(prev))}
+                        className="w-full font-black text-slate-800 outline-none text-lg"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
+                {isFlangeOrder && (
+                  <div className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-bold">
+                    Voor flenzen worden bij start geen labels geprint. Labelprint gebeurt later bij Mazak.
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-3 animate-in slide-in-from-top-2 text-left">
@@ -1217,7 +1275,7 @@ const ProductionStartModal = ({
             )}
 
             {/* Label selectie */}
-            {!isManualMode && <div className="pt-3 border-t border-slate-200 text-left">
+            {!isManualMode && !isFlangeOrder && <div className="pt-3 border-t border-slate-200 text-left">
               <label className="text-[9px] font-black text-slate-400 uppercase block mb-1.5 ml-2 flex items-center gap-2">
                 Label Formaat
               </label>
@@ -1279,7 +1337,7 @@ const ProductionStartModal = ({
         </div>
 
         {/* RECHTS: DESIGN PREVIEW & PRINT ACTIE */}
-        {mode !== "manual" && <div
+        {showPreviewPane && <div
           ref={containerRef}
           className="flex-1 bg-slate-900 p-6 flex flex-col items-center justify-between relative overflow-hidden text-left"
         >

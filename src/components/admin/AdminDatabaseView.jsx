@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Database, RefreshCw, Trash2, Layers, Table, SearchCode, Fingerprint, Activity, Terminal, FileText, Loader2, Folder, File, ArrowUp, Bot, Send, X, MessageSquare } from "lucide-react";
+import { Database, RefreshCw, Trash2, Layers, Table, SearchCode, Fingerprint, Activity, Terminal, FileText, Loader2, Folder, File, ArrowUp, Bot, Send, X } from "lucide-react";
 import { db, storage, auth, logActivity } from "../../config/firebase";
 import {
   collection,
@@ -135,7 +135,7 @@ const AdminDatabaseView = () => {
       const systemPrompt = generateDbContext();
       const response = await callGemini(userQ, systemPrompt);
       setAiMessages(prev => [...prev, { role: 'ai', content: response }]);
-    } catch (err) {
+    } catch {
       setAiMessages(prev => [...prev, { role: 'ai', content: "Fout bij verbinden met AI service." }]);
     } finally {
       setAiLoading(false);

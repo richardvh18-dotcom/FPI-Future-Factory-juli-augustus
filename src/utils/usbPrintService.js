@@ -54,7 +54,7 @@ const safeCloseDevice = async (device) => {
     if (device.opened) {
       await device.close();
     }
-  } catch (err) {
+  } catch {
     // Best effort close; ignore close failures.
   }
 };

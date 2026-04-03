@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { useTranslation } from "react-i18next";
 import {
   BookOpen,
   Plus,
-  Edit,
   Trash2,
   Save,
   X,
@@ -21,16 +19,14 @@ import {
   collection,
   query,
   onSnapshot,
-  doc,
   addDoc,
-  updateDoc,
+  doc,
   deleteDoc,
   serverTimestamp,
   orderBy,
   getDocs,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
 import { aiService } from "../../services/aiService";
 
 /**
@@ -38,12 +34,10 @@ import { aiService } from "../../services/aiService";
  * Admin interface voor het maken en beheren van flashcards en het bekijken van resultaten.
  */
 const FlashcardManager = () => {
-  const { t } = useTranslation();
   const [flashcards, setFlashcards] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeView, setActiveView] = useState("cards"); // 'cards' of 'results'
-  const [editingCard, setEditingCard] = useState(null);
   const [newCard, setNewCard] = useState({
     front: "",
     back: "",
@@ -123,24 +117,6 @@ const FlashcardManager = () => {
       alert("Kon kaart niet opslaan.");
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleUpdateCard = async (id, updates) => {
-    try {
-      const cardRef = doc(db, "future-factory", "settings", "flashcards", id);
-      await updateDoc(cardRef, {
-        ...updates,
-        updatedAt: serverTimestamp(),
-      });
-      await logActivity(
-        auth.currentUser?.uid,
-        "FLASHCARD_UPDATE",
-        `Flashcard bijgewerkt: ${id}`
-      );
-      setEditingCard(null);
-    } catch (error) {
-      console.error("Error updating card:", error);
     }
   };
 

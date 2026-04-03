@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Users,
@@ -26,10 +26,7 @@ import {
   Layers,
   Briefcase,
   MapPin,
-  Palette,
   Tag,
-  Plus,
-  MousePointerClick,
 } from "lucide-react";
 import { db, auth, firebaseConfig, logActivity } from "../../config/firebase";
 import { initializeApp, deleteApp, getApps } from "firebase/app";
@@ -44,7 +41,6 @@ import {
   serverTimestamp,
   setDoc,
   writeBatch,
-  getDocs,
 } from "firebase/firestore";
 import { PATHS, isValidPath } from "../../config/dbPaths";
 import { createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
@@ -78,7 +74,7 @@ const AdminUsersView = () => {
 
   // Roles State
   const [roles, setRoles] = useState([]);
-  const [loadingRoles, setLoadingRoles] = useState(true);
+  const [, setLoadingRoles] = useState(true);
   const [isUsingDefaults, setIsUsingDefaults] = useState(false);
   const [newRole, setNewRole] = useState({ id: "", label: "", color: "bg-slate-400" });
 
@@ -220,14 +216,6 @@ const AdminUsersView = () => {
       ]
     },
   };
-
-  const EXTRA_MODULES = [
-    { id: "quality_control", label: t('modules.qc', "Kwaliteitscontrole (QC)"), description: t('modules.qcDesc', "Toegang tot meetwaarden en NCR") },
-    { id: "inventory_management", label: t('modules.inventory', "Voorraadbeheer"), description: t('modules.inventoryDesc', "Beheer van gereedschap en materialen") },
-    { id: "digital_planning", label: t('modules.planning', "Digitale Planning"), description: t('modules.planningDesc', "Toegang tot planning modules") },
-    { id: "ai_assistant", label: t('modules.ai', "AI Assistent"), description: t('modules.aiDesc', "Toegang tot de AI helper") },
-    { id: "maintenance", label: t('modules.maintenance', "Onderhoud"), description: t('modules.maintenanceDesc', "Meldingen en onderhoudsbeheer") },
-  ];
 
   // Admin tool IDs die gemigreerd worden uit het oude modules-systeem
   const LEGACY_ADMIN_TOOL_IDS = ["admin_products", "admin_factory", "admin_settings", "admin_logs"];
