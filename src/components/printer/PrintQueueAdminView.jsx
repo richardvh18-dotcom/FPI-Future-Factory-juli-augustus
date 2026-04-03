@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
 import { db, auth, logActivity } from '../../config/firebase';
@@ -12,11 +12,11 @@ import { nl } from 'date-fns/locale';
 import { 
   Loader2, RefreshCw, Trash2, AlertTriangle, CheckCircle, 
   Printer, Usb, Play, ArrowLeft, Zap, Search, Hash, 
-  RotateCcw, Eye, X, Server, Tag, Plus, ChevronDown
+  RotateCcw, Eye, X, Tag, ChevronDown
 } from 'lucide-react';
 import { generatePrintData, generateLotBatchZPL } from '../../utils/zplHelper';
 import { getDriver } from '../../utils/printerDrivers';
-import { processLabelData, resolveLabelContent, applyLabelLogic, getQRCodeUrl, getBarcodeUrl, filterTempOrderLabelsByProduct } from '../../utils/labelHelpers';
+import { processLabelData, resolveLabelContent, applyLabelLogic, filterTempOrderLabelsByProduct } from '../../utils/labelHelpers';
 import { getISOWeekInfo, getStationMachineCode } from '../../utils/lotLogic';
 import { queuePrintJob } from '../../services/printService';
 import { requestUsbDevice, printRawUsbToDevice, isUsbDirectSupported as usbDirectSupported } from '../../utils/usbPrintService';
@@ -33,7 +33,6 @@ const stationNameFromValue = (stationValue) => {
   return String(stationValue).trim();
 };
 
-const PIXELS_PER_MM = 3.78;
 const PREVIEW_ROLL_WIDTH_MM = 90;
 
 // Local Helper: StatusBadge
@@ -200,7 +199,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     const item = orderData.itemCode || orderData.item || orderData.Item || orderData.Artikel || "";
     const desc = orderData.description || orderData.Description || orderData.Omschrijving || "";
 
-    let zpl = "";
+    let zpl;
 
     if (template) {
       const labelData = processLabelData({
@@ -946,11 +945,6 @@ const PrintQueueAdminView = () => {
     return Number.isFinite(fallback) && fallback > 0 ? fallback : 203;
   }, [activeQueuePrinter]);
 
-  const printerDarkness = useMemo(() => {
-    const parsed = parseInt(activeQueuePrinter?.darkness, 10);
-    return Number.isFinite(parsed) ? parsed : 15;
-  }, [activeQueuePrinter]);
-
   const handleConnectUsb = async () => {
     setError('');
     try {
@@ -964,7 +958,7 @@ const PrintQueueAdminView = () => {
     }
   };
 
-  const handleDirectLotPrintBatch = async (batchData, lotCount) => {
+  const handleDirectLotPrintBatch = async (batchData) => {
     let deviceToUse = usbDevice;
     if (!deviceToUse) {
       deviceToUse = await navigator.usb.requestDevice({ filters: [] });

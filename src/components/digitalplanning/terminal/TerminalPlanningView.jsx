@@ -5,15 +5,11 @@ import {
   ChevronRight,
   Layers,
   FileText,
-  Sparkles,
   ArrowLeft,
   PlayCircle,
   AlertCircle,
-  ArrowUpCircle,
   FileImage,
-  X,
   RefreshCw,
-  Copy,
   Factory,
   Clock,
   Briefcase,
@@ -21,7 +17,6 @@ import {
   History,
   Calendar,
 } from "lucide-react";
-import { findDrawingForProduct } from "../../../utils/findDrawingForProduct";
 import { manualSyncDrawings } from "../../../utils/manualSyncDrawings";
 import { format, differenceInDays, startOfDay, getISOWeek } from "date-fns";
 import { nl } from "date-fns/locale";
@@ -35,19 +30,16 @@ const TerminalPlanningView = ({
   searchTerm,
   onSearchChange,
   onDateChange,
-  referenceDate,
   showAllWeeks,
   onToggleAllWeeks,
   targetWeekNum,
   productionProgressMap = {},
   rejectedCountMap = {},
-  readyForReturnMap = {},
   isBM01,
   onStartProduction,
   selectedOrder,
   onViewDrawing,
   optimizationPanel,
-  currentStation, // BH18, NABEWERKEN, etc.
 }) => {
   const itemRefs = useRef({});
 
@@ -67,12 +59,6 @@ const TerminalPlanningView = ({
     if (daysUntil <= 7) return "text-red-600 font-black"; // 1 week: Rood
     if (daysUntil <= 14) return "text-blue-600 font-black"; // 2 weken: Blauw
     return "text-slate-600 font-bold"; // > 2 weken: Standaard
-  };
-
-  const formatDateLabel = (dateInput, fallback = "--") => {
-    const parsedDate = parseDateSafe(dateInput);
-    if (!parsedDate) return fallback;
-    return format(parsedDate, "dd MMM yyyy", { locale: nl });
   };
 
   const formatDateWithWeek = (dateInput, fallback = "--") => {
@@ -162,7 +148,6 @@ const TerminalPlanningView = ({
     });
   }, [orders]);
 
-  const [drawingLoading, setDrawingLoading] = React.useState(false);
   const [isSyncing, setIsSyncing] = React.useState(false);
   const [syncProgress, setSyncProgress] = React.useState(0);
   const [missingItems, setMissingItems] = React.useState([]);

@@ -433,7 +433,7 @@ const AiChatView = () => {
                   category: 'approved_answer',
                 });
                 showSuccess("✓ Onthouden voor toekomstige vragen.");
-              } catch (err) {
+                } catch {
                 showError("Kon antwoord niet opslaan in geheugen.");
               }
             } : undefined}

@@ -130,8 +130,7 @@ const LoginView = ({ onLogin, externalError, logoUrl, appName }) => {
           } catch (e) { console.error("Error fetching user defaults", e); }
           navigate(destination);
         }, 500);
-      } catch (_err) {
-        // eslint-disable-next-line no-unused-vars
+        } catch {
         setInternalError(t('login.error_auth', 'Login failed'));
         setLoading(false);
       }

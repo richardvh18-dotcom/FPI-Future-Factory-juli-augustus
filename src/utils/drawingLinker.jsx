@@ -1,5 +1,5 @@
 // Service voor het koppelen van tekeningen aan orders
-import { collection, getDocs, query, where, updateDoc, doc, limit } from "firebase/firestore";
+import { collection, getDocs, updateDoc, doc } from "firebase/firestore";
 import { db, auth, logActivity } from "../config/firebase";
 import { PATHS } from "../config/dbPaths";
 import i18n from "../i18n";

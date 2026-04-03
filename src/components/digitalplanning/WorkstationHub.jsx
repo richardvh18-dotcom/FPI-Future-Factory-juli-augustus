@@ -24,6 +24,7 @@ import PostProcessingFinishModal from "./modals/PostProcessingFinishModal";
 import Terminal from "./Terminal";
 import Nabewerken from "./Nabewerken";
 import LossenView from "./LossenView";
+import MazakView from "./MazakView";
 import ProductDetailModal from "../products/ProductDetailModal";
 import ProductionStartModal from "./modals/ProductionStartModal";
 import OperatorLinkModal from "./modals/OperatorLinkModal";
@@ -35,20 +36,12 @@ const getAppId = () => {
   return "fittings-app-v1";
 };
 
-// Helper om diameter uit item omschrijving te halen (het eerste getal is de diameter)
-const getDiameter = (str) => {
-  if (!str) return 0;
-  const match = str.match(/(\d+)/);
-  if (match) return parseInt(match[1], 10);
-  return 0;
-};
-
 // Bepaal lossen route op basis van product type (TB/CB) en diameter
 // TB 25-300mm  → tab lossen (lokaal)
 // TB >= 300mm  → station LOSSEN (centraal)
 // CB 25-350mm  → tab lossen (lokaal)
 // CB >= 350mm  → station LOSSEN (centraal)
-const getLossenRoute = (itemText, originStation = "") => {
+const getLossenRoute = (itemText) => {
   const text = String(itemText || "").toUpperCase();
   const isTB = text.includes("TB");
   const isCB = text.includes("CB");
@@ -1148,13 +1141,19 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     _operatorInput,
     _selectedOperatorName,
     labelZplData,
-    labelTemplateId
+    labelTemplateId,
+    startOptions = {}
   ) => {
     if (!currentUser || !customLotNumber) return;
     try {
       const now = new Date();
       const prefix = customLotNumber.slice(0, -4);
       const startSeq = parseInt(customLotNumber.slice(-4), 10);
+      const seriesGroupId =
+        startOptions?.seriesGroupId ||
+        (Number(stringCount) > 1
+          ? `${String(order?.orderId || "ORDER").replace(/[^a-zA-Z0-9]/g, "_")}_${prefix}${String(startSeq).padStart(4, "0")}`
+          : null);
       let overflowItems = [];
 
       const buildLotSpecificLabelZpl = (targetLotNumber) => {
@@ -1244,6 +1243,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           labelTemplateId: labelTemplateId || null,
           labelLastPrint: labelAudit,
         };
+        if (seriesGroupId) {
+          unitData.seriesGroupId = seriesGroupId;
+          unitData.seriesIndex = i + 1;
+          unitData.seriesSize = Number(stringCount) || 1;
+          unitData.seriesOrderNumber = order.orderId;
+          unitData.isFlangeSeries = !!startOptions?.isFlangeSeries;
+        }
         if (isOverflow) {
           unitData.isOverproduction = true;
           unitData.originalOrderId = order.orderId;
@@ -1589,7 +1595,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     }
   };
 
-  const handleProcessUnit = async (product) => {
+  const handleProcessUnit = async (product, options = {}) => {
     const stationCheck = String(selectedStation).toLowerCase();
 
     // NIEUW: BH31 Reparatie flow
@@ -1635,11 +1641,10 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     }
 
     try {
-      const productRef = doc(
-        db,
-        ...PATHS.TRACKING,
-        product.id || product.lotNumber
-      );
+      const bulkUnits = Array.isArray(options?.bulkUnits)
+        ? options.bulkUnits.filter(Boolean)
+        : [];
+      const targets = bulkUnits.length > 0 ? bulkUnits : [product];
 
       // Haal operators op voor station "LOSSEN" (Centrale losplaats)
       const lossenOperators = occupancy
@@ -1659,40 +1664,49 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         .filter(Boolean);
 
       const flowState = getNextFlowState('FINISH_WINDING');
+      let hasLocalLossenRoute = false;
 
-      const lossenRoute = getLossenRoute(
-        `${product.item || ""} ${product.description || ""} ${product.itemCode || ""}`,
-        selectedStation
-      );
+      for (const target of targets) {
+        const targetId = target?.id || target?.lotNumber;
+        if (!targetId) continue;
 
-      const updates = {
-        currentStep: flowState.currentStep || "Wacht op Lossen",
-        status: flowState.status || "Te Lossen",
-        updatedAt: serverTimestamp(),
-        "timestamps.lossen_start": serverTimestamp(),
-      };
+        const productRef = doc(db, ...PATHS.TRACKING, targetId);
+        const lossenRoute = getLossenRoute(
+          `${target?.item || ""} ${target?.description || ""} ${target?.itemCode || ""}`,
+          selectedStation
+        );
 
-      // Grote moffen gaan naar centraal station LOSSEN, kleine/middelgrote blijven lokaal
-      if (lossenRoute === "STATION") {
-        updates.currentStation = "LOSSEN";
-      } else {
-        // Houd lokale Lossen-tab robuust: zet expliciet station/step/status
-        updates.currentStation = selectedStation;
-        updates.currentStep = "Wacht op Lossen";
-        updates.status = "Te Lossen";
+        const updates = {
+          currentStep: flowState.currentStep || "Wacht op Lossen",
+          status: flowState.status || "Te Lossen",
+          updatedAt: serverTimestamp(),
+          "timestamps.lossen_start": serverTimestamp(),
+        };
+
+        // Grote moffen gaan naar centraal station LOSSEN, kleine/middelgrote blijven lokaal
+        if (lossenRoute === "STATION") {
+          updates.currentStation = "LOSSEN";
+        } else {
+          // Houd lokale Lossen-tab robuust: zet expliciet station/step/status
+          updates.currentStation = selectedStation;
+          updates.currentStep = "Wacht op Lossen";
+          updates.status = "Te Lossen";
+          hasLocalLossenRoute = true;
+        }
+
+        if (lossenOperators.length > 0) {
+          updates[`personnelTracking.LOSSEN`] = lossenOperators;
+        }
+
+        await updateDoc(productRef, updates);
       }
 
-      if (lossenOperators.length > 0) {
-        updates[`personnelTracking.LOSSEN`] = lossenOperators;
-      }
-
-      await updateDoc(productRef, updates);
       await logActivity(
         currentUser?.uid || "system",
         "PRODUCT_TO_LOSSEN",
-        `Doorgestuurd naar lossen: lot ${product.lotNumber || product.id}, route ${lossenRoute}, station ${selectedStation}`
+        `Doorgestuurd naar lossen: ${targets.length} lot(s), station ${selectedStation}`
       );
-      if (lossenRoute === "TAB") {
+      if (hasLocalLossenRoute) {
         setActiveTab("lossen");
       }
     } catch (error) {
@@ -2178,13 +2192,20 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             )}
             {activeTab === "lossen" && (
               <div className="h-full bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                <LossenView
-                  currentUser={currentUser}
-                  products={rawProducts}
-                  currentStation={selectedStation}
-                  stationId={selectedStation}
-                  appId={currentAppId}
-                />
+                {(String(selectedStation || "").toUpperCase().replace(/\s/g, "") === "MAZAK") ? (
+                  <MazakView
+                    products={rawProducts}
+                    stationId={selectedStation}
+                  />
+                ) : (
+                  <LossenView
+                    currentUser={currentUser}
+                    products={rawProducts}
+                    currentStation={selectedStation}
+                    stationId={selectedStation}
+                    appId={currentAppId}
+                  />
+                )}
               </div>
             )}
             {activeTab === "terminal" && (

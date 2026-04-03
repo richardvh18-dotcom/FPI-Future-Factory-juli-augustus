@@ -15,7 +15,7 @@ export const requestUsbPrinter = async () => {
     const device = await navigator.usb.requestDevice({ filters: [] });
     return device;
   } catch (err) {
-    throw new Error(`USB Toegang Geweigerd: ${err.message}`);
+    throw new Error(`USB Toegang Geweigerd: ${err.message}`, { cause: err });
   }
 };
 
@@ -29,14 +29,14 @@ export const printRawUsb = async (device, zplData) => {
 
   if (!device.opened) await device.open();
   if (device.configuration === null) await device.selectConfiguration(1);
-  try { await device.claimInterface(0); } catch (e) { /* Interface vaak al geclaimd, negeren */ }
+  try { await device.claimInterface(0); } catch { /* Interface vaak al geclaimd, negeren */ }
 
   const encoder = new window.TextEncoder();
   const data = encoder.encode(zplData);
 
   // Zoek het 'out' endpoint (waar we data naartoe kunnen sturen)
   const interface0 = device.configuration.interfaces[0];
-  const endpoint = interface0?.alternate?.endpoints.find(e => e.direction === "out");
+  const endpoint = interface0?.alternate?.endpoints.find((endpointInfo) => endpointInfo.direction === "out");
   
   if (!endpoint) throw new Error("Geen schrijf-endpoint gevonden op dit apparaat.");
 

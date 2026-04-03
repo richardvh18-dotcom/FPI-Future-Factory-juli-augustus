@@ -559,7 +559,7 @@ export default function ConversionManager() {
     setSyncResults(null);
     setSyncProgress({ current: 0, total: 0 });
     try {
-      const results = await manualSyncDrawings((current, total, partialResults) => {
+      const results = await manualSyncDrawings((current, total) => {
         setSyncProgress({ current, total });
       });
       setSyncResults(results);

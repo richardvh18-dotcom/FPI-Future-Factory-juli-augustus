@@ -3,12 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { db } from '../../config/firebase';
 import { collection, query, where, getDocs, limit, doc, getDoc, documentId, onSnapshot } from 'firebase/firestore';
 import { PATHS } from '../../config/dbPaths';
-import { Loader2, Printer, Search, Send, X, Tag, CheckCircle, ChevronDown, Usb } from 'lucide-react';
+import { Loader2, Printer, Search, Send, X, Tag, ChevronDown, Usb } from 'lucide-react';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { generatePrintData, generateLotBatchZPL } from '../../utils/zplHelper';
 import { getDriver } from '../../utils/printerDrivers';
 import { getISOWeekInfo, getStationMachineCode } from '../../utils/lotLogic';
-import { queuePrintJob } from '../../services/printService';
 import AutoScaledLabelPreview from './AutoScaledLabelPreview';
 import { useLabelPreview } from '../../hooks/useLabelPreview';
 import { processLabelData, applyLabelLogic, filterTempOrderLabelsByProduct, resolveLabelContent } from '../../utils/labelHelpers';
@@ -683,7 +682,7 @@ const PrintStationView = () => {
   const [printers, setPrinters] = useState([]);
   const [factoryConfig, setFactoryConfig] = useState(null);
 
-  const { selectedLabel, previewData, availableLabels, loadingLabels } = useLabelPreview(productData, selectedLabelId);
+  const { selectedLabel, previewData, availableLabels } = useLabelPreview(productData, selectedLabelId);
 
   // --- USB State & Logic ---
   const [usbDevice, setUsbDevice] = useState(null);
@@ -869,7 +868,7 @@ const PrintStationView = () => {
     const item = getOrderLabelItemCode(orderData);
     const desc = getOrderLabelDescription(orderData);
 
-    let zpl = "";
+    let zpl;
 
     if (template) {
         const labelData = processLabelData({

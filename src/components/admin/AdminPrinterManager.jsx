@@ -12,7 +12,6 @@ import {
   X,
   MapPin,
   Edit,
-  RefreshCw,
   Usb,
   List,
   Server,
@@ -467,7 +466,7 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
               const planDocRef = doc(db, ...PATHS.PLANNING, opt);
               const planDocSnap = await getDoc(planDocRef);
               if (planDocSnap.exists()) foundDocs.set(planDocSnap.id, { id: planDocSnap.id, ...planDocSnap.data() });
-          } catch(_) {
+          } catch {
         // Ignore missing documents
       }
       }
@@ -785,7 +784,6 @@ const AdminPrinterManager = () => {
   const [queueStations, setQueueStations] = useState([]);
   const [queueStationToAdd, setQueueStationToAdd] = useState("");
   const [isSavingQueueStations, setIsSavingQueueStations] = useState(false);
-  const [printerStatuses, setPrinterStatuses] = useState({});
   const [showLotModal, setShowLotModal] = useState(false);
   const [showTempModal, setShowTempModal] = useState(false);
   const [showTestMenu, setShowTestMenu] = useState(null);
@@ -1091,17 +1089,19 @@ const AdminPrinterManager = () => {
 
         if (!allowQueueFallback && (isAccessIssue || isClaimIssue)) {
           throw new Error(
-            "Directe testprint mislukt: USB-interface is bezet of toegang geweigerd. Sluit andere USB-sessies en probeer opnieuw (zonder wachtrij-fallback)."
+            "Directe testprint mislukt: USB-interface is bezet of toegang geweigerd. Sluit andere USB-sessies en probeer opnieuw (zonder wachtrij-fallback).",
+            { cause: err }
           );
         }
 
         if (isAccessIssue) {
           throw new Error(
             "USB toegang geweigerd. Controleer browserrechten en of de printer door een ander systeemproces/driver is bezet. " +
-            "Op Windows kan dit door de systeemdriver komen; op Chromebook vaak door geweigerde USB-permissie of een bezette interface."
+            "Op Windows kan dit door de systeemdriver komen; op Chromebook vaak door geweigerde USB-permissie of een bezette interface.",
+            { cause: err }
           );
         }
-        throw new Error(`USB print mislukt: ${message || 'onbekende fout'}`);
+        throw new Error(`USB print mislukt: ${message || 'onbekende fout'}`, { cause: err });
       }
     }
 
@@ -1277,7 +1277,7 @@ const AdminPrinterManager = () => {
       for (const d of matching) {
         try {
           if (d.opened) await d.close();
-        } catch (_) {
+        } catch {
           // best effort close
         }
       }
