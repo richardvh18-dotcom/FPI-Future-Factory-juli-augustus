@@ -15,6 +15,7 @@ import {
 import StatusBadge from "./common/StatusBadge";
 import { collection, query, getDocs, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
+import { getArchiveItemsPath } from "../../config/dbPaths";
 import { getISOWeek } from "date-fns";
 
 const FixedSizeList = List;
@@ -80,7 +81,7 @@ const PlanningSidebar = ({
             years.map((year) =>
               getDocs(
                 query(
-                  collection(db, "future-factory", "production", "archive", String(year), "items"),
+                  collection(db, ...getArchiveItemsPath(year)),
                   limit(800)
                 )
               )

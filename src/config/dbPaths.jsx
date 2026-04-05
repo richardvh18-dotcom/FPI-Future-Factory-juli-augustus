@@ -117,6 +117,17 @@ export const getArchiveItemsPath = (year) => {
 };
 
 /**
+ * getArchiveRejectedItemsPath - Genereert het pad voor gearchiveerde AFGEKEURDE productie-items
+ * @param {number|string} year - Het jaar van het archief
+ */
+export const getArchiveRejectedItemsPath = (year) => {
+  if (USE_ARTIFACTS_PATHS) {
+    return ["artifacts", ARTIFACT_APP_ID, "public", "data", "archive", String(year), "rejected"];
+  }
+  return [BASE, "production", "archive", String(year), "rejected"];
+};
+
+/**
  * getPlanningArchivePath - Genereert het pad voor gearchiveerde planningsorders
  * Alle orders (archive én rejected) gaan naar hetzelfde pad; reden staat in archiveReason veld.
  * @param {number|string} year - Het jaar van het archief

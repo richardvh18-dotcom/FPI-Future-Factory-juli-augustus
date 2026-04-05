@@ -46,11 +46,34 @@ const getIsoWeekAndYear = (d) => {
 
 // Machine naar FPI code mapping
 const getMachineCode = (station) => {
+  if (!station) return "999";
+  const normalized = String(station).toUpperCase().trim();
+  const baseStation = normalized.startsWith('40') ? normalized.substring(2) : normalized;
+  
   const map = {
+    'BH11': '411',
+    'BH12': '412',
+    'BH15': '415',
+    'BH16': '416',
+    'BH17': '417',
     'BH18': '418',
+    'BH31': '431',
+    'BH05': '405',
+    'BH07': '407',
+    'BH08': '408',
+    'BH09': '409',
+    'BA05': '405',
     'BA07': '417'
   };
-  return map[station] || station.replace(/\D/g,'').padStart(3, '0') || '999';
+  
+  if (map[baseStation]) return map[baseStation];
+
+  const digits = baseStation.replace(/\D/g, "");
+  if (!digits) return "999";
+  
+  if (digits.length === 3) return digits;
+  if (digits.length === 1) return `40${digits}`;
+  return `4${digits.slice(-2).padStart(2, "0")}`;
 };
 
 const getNormalizedPrinterDpi = (printer, fallback = 203) => {
@@ -259,95 +282,17 @@ const ProductionStartModal = ({
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || mode !== "auto") return;
-    if (!isFlangeOrder) return;
+    if (!isOpen || !isFlangeOrder) return;
     const cavityCount = Math.max(1, Number(flangeSeriesInfo?.cavityCount || 1));
-    setStringCount(String(cavityCount));
-    setLabelCount("0");
+    setStringCount((prev) => (String(prev || "") === "1" ? String(cavityCount) : prev));
+    if (mode === "auto") {
+      setLabelCount("0");
+    }
   }, [isOpen, mode, isFlangeOrder, flangeSeriesInfo?.cavityCount]);
 
   const availableLabels = useMemo(() => {
     if (!allLabels || allLabels.length === 0) return [];
-    const isTempLabel = (label) => {
-      const tags = (label.tags || []).map((t) => String(t).toUpperCase().trim());
-      const name = String(label.name || "").toUpperCase();
-      return (
-        tags.includes("TIJDELIJK") ||
-        tags.includes("TEMP") ||
-        name.includes("TIJDELIJK") ||
-        name.includes("TEMP") ||
-        name.includes("ORDER LABEL") ||
-        name.includes("NOOD")
-      );
-    };
-    const labelMatchesType = (label, type) => {
-      const tags = (label.tags || []).map((t) => String(t).toUpperCase().trim());
-      const name = String(label.name || "").toUpperCase();
-      return tags.some((t) => t === type || t.startsWith(`${type}`)) || name.includes(type);
-    };
-    const hasCodeTag = (label, code) => {
-      const tags = (label.tags || []).map((t) => String(t).toUpperCase().trim());
-      const name = String(label.name || "").toUpperCase();
-      return tags.includes(code) || name.includes(code);
-    };
-    const hasAnyProjectCodeTag = (label) => {
-      const tags = (label.tags || []).map((t) => String(t).toUpperCase().trim());
-      const name = String(label.name || "").toUpperCase();
-      if (tags.some((t) => /^A\d[A-Z]\d$/.test(t))) return true;
-      return /\bA\d[A-Z]\d\b/.test(name);
-    };
-
-    // Filter labels op basis van product tags (bijv. alleen Wavistrong labels voor Wavistrong orders)
     let filteredLabels = filterLabelsByProduct(allLabels, order, { excludeTempOrderLabels: true });
-    filteredLabels = filteredLabels.filter((label) => !isTempLabel(label));
-    
-    // Als de helper niks teruggeeft, gebruik alleen niet-tijdelijke labels als veilige fallback
-    if (filteredLabels.length === 0) {
-      filteredLabels = allLabels.filter((label) => !isTempLabel(label));
-    }
-
-    // --- EXTRA FILTERING: Codes & Types ---
-    const rawCode = order.extraCode || order.project || "";
-    const activeCode = rawCode && rawCode !== "-" ? rawCode.toUpperCase().trim() : null;
-    
-    const orderText = `${order.itemCode || ''} ${order.item || ''} ${order.description || ''} ${rawCode}`.toUpperCase();
-    const targetCode = activeCode;
-
-    if (targetCode) {
-        // Scenario 1: Order HEEFT een code -> Toon ALLEEN labels van deze code
-        const strictMatches = filteredLabels.filter((l) => hasCodeTag(l, targetCode));
-        
-        if (strictMatches.length > 0) {
-            filteredLabels = strictMatches;
-        } else {
-            // Geen specifieke labels voor deze code? Verberg dan in ieder geval labels van ANDERE codes
-            filteredLabels = filteredLabels.filter((l) => !hasAnyProjectCodeTag(l));
-        }
-    } else {
-        // Scenario 2: Order heeft GEEN code -> Verberg alle labels met codes
-        filteredLabels = filteredLabels.filter((l) => !hasAnyProjectCodeTag(l));
-    }
-
-    // B. FILTER op Product Type (EST, CST, EWT, EMT) - altijd toepassen
-    const activeType = PRODUCT_TYPES.find((t) => orderText.includes(t));
-    if (activeType) {
-      const strictTypeMatches = filteredLabels.filter((l) => labelMatchesType(l, activeType));
-      if (strictTypeMatches.length > 0) {
-        filteredLabels = strictTypeMatches;
-      } else {
-        filteredLabels = filteredLabels.filter((l) => {
-          const tags = l.tags?.map((t) => String(t).toUpperCase()) || [];
-          const hasConflictingType = PRODUCT_TYPES.some(
-            (t) => t !== activeType && tags.some((tag) => tag === t || tag.startsWith(`${t}`))
-          );
-          if (hasConflictingType) return false;
-          return (
-            tags.some((tag) => tag === activeType || tag.startsWith(`${activeType}`)) ||
-            !tags.some((tag) => PRODUCT_TYPES.some((t) => tag === t || tag.startsWith(`${t}`)))
-          );
-        });
-      }
-    }
     
     // Sortering voor BH18: Grote labels eerst
     if (stationId === 'BH18') {
@@ -379,9 +324,23 @@ const ProductionStartModal = ({
       
       try {
         if (availableLabels.length > 0) {
-          // Voor BH18 willen we standaard het grote label (> 45mm of 'groot'/'standard')
-          // Voor andere stations (zoals Lossen) vaak het kleine label
-          const preferLarge = stationId === 'BH18';
+          // NIEUW: Kies bij voorkeur een flens of code label
+          const preferred = availableLabels.find(t => 
+            t.tags?.includes("FLENZEN") ||
+            t.tags?.includes("FLENS") ||
+            t.tags?.includes("FLANGE") ||
+            t.tags?.includes("CODE")
+          );
+
+          if (preferred) {
+            if (preferred.id !== selectedLabelId) setSelectedLabelId(preferred.id);
+            return;
+          }
+
+          // FL-orders moeten altijd een klein voorbeeldlabel gebruiken.
+          const preferSmall = isFlangeOrder;
+          // Voor niet-FL: BH18 krijgt standaard groot, overige stations klein.
+          const preferLarge = !preferSmall && stationId === 'BH18';
           
           let defaultLabel = preferLarge ? availableLabels.find(
             (l) => (l.height >= 45 && !l.name?.toLowerCase().includes("smal")) || 
@@ -403,7 +362,7 @@ const ProductionStartModal = ({
       }
     };
     setDefaultLabel();
-  }, [isOpen, order, availableLabels, loadingLabels, stationId]);
+  }, [isOpen, order, availableLabels, loadingLabels, stationId, isFlangeOrder, selectedLabelId]);
   
   // 1b. Operators ophalen voor dit station
   useEffect(() => {
@@ -866,7 +825,7 @@ const ProductionStartModal = ({
       let printData = null;
       let counterClaimed = false;
       const totalToProduce = isManualMode
-        ? 1
+        ? Math.max(1, parseInt(stringCount, 10) || 1)
         : isFlangeOrder
         ? Math.max(1, Number(flangeSeriesInfo?.cavityCount || 1))
         : Math.max(1, parseInt(stringCount, 10) || 1);
@@ -909,6 +868,21 @@ const ProductionStartModal = ({
         if (manualExists) {
           setLotError(`Lotnummer ${effectiveLotNumber} bestaat al (actief of archief).`);
           throw new Error(`Lotnummer ${effectiveLotNumber} bestaat al (actief of archief).`);
+        }
+
+        if (totalToProduce > 1) {
+          const prefix = String(effectiveLotNumber || "").slice(0, -4);
+          const startSeq = parseInt(String(effectiveLotNumber || "").slice(-4), 10);
+          if (!prefix || !Number.isFinite(startSeq)) {
+            throw new Error("Voor een string-run moet het handmatige lotnummer eindigen op 4 cijfers (bijv. ...0001).");
+          }
+          for (let i = 1; i < totalToProduce; i++) {
+            const candidateLot = `${prefix}${String(startSeq + i).padStart(4, "0")}`;
+            const exists = await checkLotNumberExists(candidateLot);
+            if (exists) {
+              throw new Error(`Lotnummer ${candidateLot} bestaat al (actief of archief). Kies een ander start-lot.`);
+            }
+          }
         }
       }
 
@@ -1022,7 +996,7 @@ const ProductionStartModal = ({
   }, [isOpen]);
 
   const selectedOperatorName = assignedOperators.find(op => op.number === operatorInput)?.name;
-  const showPreviewPane = mode !== "manual" && !isFlangeOrder;
+  const showPreviewPane = mode !== "manual";
 
   if (!isOpen || !order || location.pathname.includes("/login")) return null;
 
@@ -1167,7 +1141,6 @@ const ProductionStartModal = ({
                       value={stringCount}
                       onChange={(e) => setStringCount(sanitizePositiveIntInput(e.target.value))}
                       onBlur={() => setStringCount((prev) => normalizePositiveIntInput(prev))}
-                      disabled={isFlangeOrder}
                       className="w-full font-black text-slate-800 outline-none text-lg"
                     />
                   </div>
@@ -1203,6 +1176,27 @@ const ProductionStartModal = ({
               </div>
             ) : (
               <div className="space-y-3 animate-in slide-in-from-top-2 text-left">
+                <div className="space-y-1 text-left">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2 block">
+                    Aantal in String
+                  </label>
+                  <div className="flex items-center gap-3 bg-white p-3 rounded-xl border-2 border-slate-100 focus-within:border-blue-500 transition-all shadow-sm">
+                    <Layers size={18} className="text-blue-500" />
+                    <input
+                      type="number"
+                      min="1"
+                      value={stringCount}
+                      onChange={(e) => setStringCount(sanitizePositiveIntInput(e.target.value))}
+                      onBlur={() => setStringCount((prev) => normalizePositiveIntInput(prev))}
+                      className="w-full font-black text-slate-800 outline-none text-lg"
+                    />
+                  </div>
+                  {isFlangeOrder && (
+                    <p className="text-[10px] font-bold text-emerald-700 mt-1 ml-1">
+                      Mal-match actief: {flangeSeriesInfo?.matchedTooling?.name || flangeSeriesInfo?.matchedTooling?.itemCode || flangeSeriesInfo?.matchedRule?.matcher || "standaard"} = advies {flangeSeriesInfo?.cavityCount || 1}
+                    </p>
+                  )}
+                </div>
                 <div className="space-y-1 text-left">
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2 block">
                     Ordernummer (scannen of invullen)

@@ -16,6 +16,7 @@ const LABEL_FOLDER_OPTIONS = [
   "Wavistrong",
   "Fibermar",
   "Code",
+  "Flenzen",
 ];
 
 const AdminLabelManager = ({ onNavigate }) => {
@@ -42,6 +43,7 @@ const AdminLabelManager = ({ onNavigate }) => {
     const hasWavi = upperTags.includes("WAVISTRONG");
     const hasFiber = upperTags.includes("FIBERMAR");
     const hasCode = upperTags.includes("CODE");
+    const hasFlenzen = upperTags.includes("FLENS") || upperTags.includes("FLENZEN");
 
     if (isTemp && hasWavi) return "Tijdelijk Wavistrong";
     if (isTemp && hasFiber) return "Tijdelijk Fibermar";
@@ -49,6 +51,7 @@ const AdminLabelManager = ({ onNavigate }) => {
     if (hasWavi) return "Wavistrong";
     if (hasFiber) return "Fibermar";
     if (hasCode) return "Code";
+    if (hasFlenzen) return "Flenzen";
     return genericFolderLabel;
   };
 

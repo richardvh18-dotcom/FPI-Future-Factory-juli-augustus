@@ -10,7 +10,7 @@ import ProductDossierModal from "./modals/ProductDossierModal";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { doc, updateDoc, serverTimestamp, collection, query, where, getDocs, setDoc, deleteDoc, onSnapshot, arrayUnion, limit } from "firebase/firestore";
 import { db, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getArchiveRejectedItemsPath, getArchiveItemsPath } from "../../config/dbPaths";
 import InternalQrImage from "../../utils/InternalQrImage";
 import PlanningSidebar from "./PlanningSidebar";
 
@@ -146,7 +146,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                     years.map((year) =>
                         getDocs(
                             query(
-                                collection(db, "future-factory", "production", "archive", String(year), "items"),
+                                collection(db, ...getArchiveItemsPath(year)),
                                 where("orderId", "==", entryOrderId),
                                 limit(100)
                             )
@@ -239,7 +239,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                     years.map((year) =>
                         getDocs(
                             query(
-                                collection(db, "future-factory", "production", "archive", String(year), "items"),
+                                collection(db, ...getArchiveItemsPath(year)),
                                 where("orderId", "==", orderId),
                                 limit(150)
                             )
@@ -323,7 +323,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     }
 
     // Luister naar de archief collectie voor de geselecteerde periode
-    const archiveRef = collection(db, "future-factory", "production", "archive", String(year), "items");
+    const archiveRef = collection(db, ...getArchiveItemsPath(year));
     const q = query(
         archiveRef,
         where("timestamps.finished", ">=", start),
@@ -423,7 +423,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
 
           // ARCHIVERING LOGICA
           const year = new Date().getFullYear();
-          const archiveRef = doc(db, "future-factory", "production", "archive", String(year), "items", product.id || product.lotNumber);
+          const archiveRef = doc(db, ...getArchiveItemsPath(year), product.id || product.lotNumber);
           
           // Voeg updates toe aan het product object voor archivering
           const finalData = { 
@@ -467,17 +467,32 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         };
         updates.currentStep = "HOLD_AREA";
       } else if (status === "rejected") {
-        // Voeg history toe aan updates voor updateDoc
-        updates.history = arrayUnion(historyEntry);
-        
-        updates.status = "rejected";
-        updates.currentStep = "REJECTED";
-        updates.currentStation = "AFKEUR";
-        updates.inspection = {
-          status: "Afkeur",
-          reasons: data.reasons,
-          timestamp: new Date().toISOString(),
+        // Voeg history toe voor archief
+        const rejectionData = {
+          ...product,
+          status: "rejected",
+          currentStep: "REJECTED",
+          currentStation: "AFKEUR",
+          inspection: {
+            status: "Afkeur",
+            reasons: data.reasons,
+            timestamp: new Date().toISOString(),
+          },
+          history: [...(product.history || []), historyEntry],
+          updatedAt: new Date(),
+          archivedAt: new Date(),
+          archivedReason: "rejected",
         };
+        
+        // ARCHIVERING LOGICA voor DEFINITIEF AFKEUR
+        const year = new Date().getFullYear();
+        const rejectedArchiveRef = doc(db, ...getArchiveRejectedItemsPath(year), product.id || product.lotNumber);
+        
+        // 1. Sla op in rejected archief
+        await setDoc(rejectedArchiveRef, rejectionData);
+        
+        // 2. Verwijder uit actieve tracking
+        await deleteDoc(productRef);
         
         // Update order teller bij definitieve afkeur
         if (product.orderId && product.orderId !== "NOG_TE_BEPALEN") {
@@ -505,6 +520,17 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                 console.error("Fout bij updaten order teller:", err);
               }
         }
+        
+        await logActivity(
+          user?.uid || "system",
+          "QUALITY_REJECT_FINAL",
+          `BM01 Definitieve afkeur en gearchiveerd: lot ${product.lotNumber || product.id}`
+        );
+        
+        if (selectedProductRef.current && selectedProductRef.current.id === product.id) {
+          handleCloseModal();
+        }
+        return; // Stop hier, product is naar archief verplaatst
       }
 
       await updateDoc(productRef, updates);

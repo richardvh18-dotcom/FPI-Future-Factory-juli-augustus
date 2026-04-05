@@ -18,6 +18,7 @@ import { useAdminAuth } from "../../hooks/useAdminAuth";
 
 const DepartmentStationSelector = React.lazy(() => import("./DepartmentStationSelector"));
 const PlannerHub = React.lazy(() => import("./PlannerHub"));
+const TeamleaderHub = React.lazy(() => import("./TeamleaderHub"));
 
 /**
  * DigitalPlanningHub V5.0 - Stability Edition
@@ -170,6 +171,21 @@ const DigitalPlanningHub = () => {
         }
       >
         <PlannerHub onBack={() => setActiveDept(null)} />
+      </Suspense>
+    );
+  }
+
+  // Toon de Teamleader Hub (Direct Dashboard)
+  if (activeDept === "TEAMLEADER") {
+    return (
+      <Suspense
+        fallback={
+          <div className="h-full flex items-center justify-center">
+            <Loader2 className="animate-spin text-blue-500" />
+          </div>
+        }
+      >
+        <TeamleaderHub onBack={() => setActiveDept(null)} />
       </Suspense>
     );
   }

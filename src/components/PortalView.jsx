@@ -21,10 +21,15 @@ import { useMessages } from "../hooks/useMessages"; // Voor badge count
 
 const PortalView = () => {
   const { t, i18n } = useTranslation();
-  const { user, isAdmin } = useAdminAuth();
+  const { user, isAdmin, role } = useAdminAuth();
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
+
+  const normalizedRole = String(role || "").toLowerCase();
+  const isTeamleader = normalizedRole === "teamleader";
+  const isPlanner = normalizedRole === "planner";
+  const showPlannerDashboardTile = isPlanner || isAdmin;
 
   // Select Language
   const handleLanguageSelect = async (lang) => {
@@ -235,6 +240,68 @@ const PortalView = () => {
               </div>
             </div>
           </button>
+
+          {/* Extra tegel: Teamleader Dashboard */}
+          {isTeamleader && (
+            <button
+              type="button"
+              onClick={() => navigate("/planning", { state: { initialView: "TEAMLEADER" } })}
+              className="group relative bg-white/5 hover:bg-white/10 active:bg-white/15 border-2 border-white/10 hover:border-cyan-500/50 rounded-[30px] md:rounded-[40px] p-6 md:p-8 text-left transition-all duration-300 hover:shadow-2xl hover:shadow-cyan-900/50 md:hover:-translate-y-1 overflow-hidden w-full active:scale-95"
+            >
+              <div className="absolute top-0 right-0 p-6 md:p-8 opacity-10 group-hover:opacity-20 transition-opacity pointer-events-none">
+                <Factory className="text-white w-24 h-24 md:w-32 md:h-32" />
+              </div>
+              <div className="relative z-10 flex flex-col h-full justify-between min-h-[160px] md:min-h-[200px] pointer-events-none">
+                <div className="p-3 md:p-4 bg-cyan-500/20 w-fit rounded-2xl mb-4 group-hover:bg-cyan-500 group-hover:text-white transition-colors text-cyan-400">
+                  <Factory size={24} className="md:w-8 md:h-8" />
+                </div>
+                <div>
+                  <h2 className="text-xl md:text-2xl font-black text-white uppercase italic tracking-tight mb-2">
+                    {t('portal.tiles.teamleader_dashboard.title', 'Teamleader Dashboard')}
+                  </h2>
+                  <p className="text-slate-400 text-xs md:text-sm font-medium leading-relaxed max-w-xs">
+                    {t('portal.tiles.teamleader_dashboard.desc', 'Direct naar teamleader-overzicht en KPI\'s.')}
+                  </p>
+                </div>
+                <div className="mt-4 md:mt-6 flex items-center text-cyan-400 font-bold text-xs uppercase tracking-widest gap-2 group-hover:gap-4 transition-all">
+                  {t('portal.tiles.teamleader_dashboard.action', 'Open Dashboard')} <ArrowRight size={16} />
+                </div>
+              </div>
+            </button>
+          )}
+
+          {/* Extra tegel: Planner Dashboard (ook zichtbaar voor admin) */}
+          {showPlannerDashboardTile && (
+            <button
+              type="button"
+              onClick={() =>
+                navigate("/planning", {
+                  state: { initialView: isPlanner ? "PLANNER" : "TEAMLEADER" },
+                })
+              }
+              className="group relative bg-white/5 hover:bg-white/10 active:bg-white/15 border-2 border-white/10 hover:border-amber-500/50 rounded-[30px] md:rounded-[40px] p-6 md:p-8 text-left transition-all duration-300 hover:shadow-2xl hover:shadow-amber-900/50 md:hover:-translate-y-1 overflow-hidden w-full active:scale-95"
+            >
+              <div className="absolute top-0 right-0 p-6 md:p-8 opacity-10 group-hover:opacity-20 transition-opacity pointer-events-none">
+                <Settings className="text-white w-24 h-24 md:w-32 md:h-32" />
+              </div>
+              <div className="relative z-10 flex flex-col h-full justify-between min-h-[160px] md:min-h-[200px] pointer-events-none">
+                <div className="p-3 md:p-4 bg-amber-500/20 w-fit rounded-2xl mb-4 group-hover:bg-amber-500 group-hover:text-white transition-colors text-amber-400">
+                  <Settings size={24} className="md:w-8 md:h-8" />
+                </div>
+                <div>
+                  <h2 className="text-xl md:text-2xl font-black text-white uppercase italic tracking-tight mb-2">
+                    {t('portal.tiles.planner_dashboard.title', 'Planner Dashboard')}
+                  </h2>
+                  <p className="text-slate-400 text-xs md:text-sm font-medium leading-relaxed max-w-xs">
+                    {t('portal.tiles.planner_dashboard.desc', 'Direct naar centrale planner weergave en capaciteit.')}
+                  </p>
+                </div>
+                <div className="mt-4 md:mt-6 flex items-center text-amber-400 font-bold text-xs uppercase tracking-widest gap-2 group-hover:gap-4 transition-all">
+                  {t('portal.tiles.planner_dashboard.action', 'Open Dashboard')} <ArrowRight size={16} />
+                </div>
+              </div>
+            </button>
+          )}
 
           {/* Tegel 3: Berichten (NIEUW) */}
           <button

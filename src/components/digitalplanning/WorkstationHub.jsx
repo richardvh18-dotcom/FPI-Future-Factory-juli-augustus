@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { LogOut, Loader2, Menu, X, Clock, Calendar, ScanBarcode, UserCheck } from "lucide-react";
 import { db, logActivity } from "../../config/firebase";
-import { PATHS, getArchiveItemsPath } from "../../config/dbPaths";
+import { PATHS, getArchiveItemsPath, getArchiveRejectedItemsPath } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { getAuth } from "firebase/auth";
 import { useNotifications } from "../../contexts/NotificationContext";
@@ -1544,15 +1544,31 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         updates.previousStatus = itemToFinish.status;
         updates.history = arrayUnion(historyEntry);
       } else if (status === "rejected") {
-        updates.status = "rejected";
-        updates.currentStep = "REJECTED";
-        updates.currentStation = "AFKEUR";
-        updates.inspection = {
-          status: "Afkeur",
-          reasons: data.reasons,
-          timestamp: new Date().toISOString(),
+        // ARCHIVERING LOGICA voor DEFINITIEF AFKEUR
+        const rejectionData = {
+          ...itemToFinish,
+          status: "rejected",
+          currentStep: "REJECTED",
+          currentStation: "AFKEUR",
+          inspection: {
+            status: "Afkeur",
+            reasons: data.reasons,
+            timestamp: new Date().toISOString(),
+          },
+          history: [...(itemToFinish.history || []), historyEntry],
+          updatedAt: new Date(),
+          archivedAt: new Date(),
+          archivedReason: "rejected",
         };
-        updates.history = arrayUnion(historyEntry);
+        
+        const year = new Date().getFullYear();
+        const rejectedArchiveRef = doc(db, ...getArchiveRejectedItemsPath(year), itemToFinish.id || itemToFinish.lotNumber);
+        
+        // 1. Sla op in rejected archief
+        await setDoc(rejectedArchiveRef, rejectionData);
+        
+        // 2. Verwijder uit actieve tracking
+        await deleteDoc(productRef);
         
         // Bij definitieve afkeur: update order teller
         if (itemToFinish.orderId && itemToFinish.orderId !== "NOG_TE_BEPALEN") {
@@ -1580,6 +1596,16 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             console.error("Fout bij updaten order teller:", err);
           }
         }
+        
+        await logActivity(
+          currentUser?.uid || "system",
+          "QUALITY_REJECT_FINAL",
+          `Post-processing Definitieve afkeur en gearchiveerd: lot ${itemToFinish?.lotNumber || itemToFinish?.id}`
+        );
+        
+        setFinishModalOpen(false);
+        setItemToFinish(null);
+        return; // Stop hier, product is naar archief verplaatst
       }
       await updateDoc(productRef, updates);
       await logActivity(

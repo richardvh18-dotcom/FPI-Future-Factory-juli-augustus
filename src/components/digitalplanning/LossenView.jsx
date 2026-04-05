@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp, getDocs, setDoc, deleteDoc, arrayUnion, increment } from "firebase/firestore";
 import { db, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getArchiveRejectedItemsPath, getArchiveItemsPath } from "../../config/dbPaths";
 import { Package,
     Loader2,
     ClipboardCheck,
@@ -478,7 +478,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
 
               // ARCHIVERING LOGICA
               const year = new Date().getFullYear();
-              const archiveRef = doc(db, "future-factory", "production", "archive", String(year), "items", product.id || product.lotNumber);
+              const archiveRef = doc(db, ...getArchiveItemsPath(year), product.id || product.lotNumber);
               
               const finalData = { 
                   ...product, 
@@ -567,14 +567,31 @@ const LossenView = ({ stationId, appId, products = [] }) => {
         };
         updates.currentStep = "HOLD_AREA";
       } else if (status === "rejected") {
-        updates.status = "rejected";
-        updates.currentStep = "REJECTED";
-        updates.currentStation = "AFKEUR";
-        updates.inspection = {
-          status: "Afkeur",
-          reasons: data.reasons,
-          timestamp: new Date().toISOString(),
+        // ARCHIVERING LOGICA voor DEFINITIEF AFKEUR
+        const rejectionData = {
+          ...product,
+          status: "rejected",
+          currentStep: "REJECTED",
+          currentStation: "AFKEUR",
+          inspection: {
+            status: "Afkeur",
+            reasons: data.reasons,
+            timestamp: new Date().toISOString(),
+          },
+          history: [...(product.history || []), updates.history[0]],
+          updatedAt: new Date(),
+          archivedAt: new Date(),
+          archivedReason: "rejected",
         };
+        
+        const year = new Date().getFullYear();
+        const rejectedArchiveRef = doc(db, ...getArchiveRejectedItemsPath(year), product.id || product.lotNumber);
+        
+        // 1. Sla op in rejected archief
+        await setDoc(rejectedArchiveRef, rejectionData);
+        
+        // 2. Verwijder uit actieve tracking
+        await deleteDoc(productRef);
         
         if (product.orderId && product.orderId !== "NOG_TE_BEPALEN") {
              try {
@@ -601,6 +618,17 @@ const LossenView = ({ stationId, appId, products = [] }) => {
                 console.error("Fout bij updaten order teller:", err);
               }
         }
+        
+        await logActivity(
+          user?.uid || "system",
+          "QUALITY_REJECT_FINAL",
+          `Lossen Definitieve afkeur en gearchiveerd: lot ${product.lotNumber || product.id}`
+        );
+        
+        if (selectedProductRef.current && selectedProductRef.current.id === product.id) {
+          handleCloseModal();
+        }
+        return; // Stop hier, product is naar archief verplaatst
       }
 
       await updateDoc(productRef, updates);

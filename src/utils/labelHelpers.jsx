@@ -113,7 +113,7 @@ const parseProductType = (text) => {
           ? "COUPLER"
           : upper.includes("BLIND")
             ? "BLIND FLANGE"
-            : upper.includes("FLANGE") || upper.includes("FLENS")
+                : upper.includes("FLANGE") || upper.includes("FLENS") || upper.match(/\bFL/)
               ? "FLANGE"
               : upper.includes("CONC") || upper.includes("REDCON") || upper.includes("RED CON")
                 ? "CONCENTRIC REDUCER"
@@ -246,6 +246,7 @@ export const processLabelData = (data) => {
 
   // 4. Bepaal Afmetingen
   let idLine = parseDimensions(desc, productType, data);
+  const diameterVal = parseInt(data.diameter || data.dn || 0, 10);
 
   // 5. Radius logic
   let radiusText = "";
@@ -256,10 +257,75 @@ export const processLabelData = (data) => {
     radiusText = "R1.0D";
   }
 
+  // --- FLANGE SPECIFIC FIELDS ---
+  let flangeIdLine = "";
+  let flangePressureLine = "";
+  let flangeConnectionLine = "";
+  let flangeDrillingLine = "";
+
+  if (productType === "FLANGE" || desc.toUpperCase().match(/\bFL/)) {
+    // 1. Flange ID Line
+    const fIdMatch = desc.match(/\bFL(?:ENS|ANGE)?\s*(\d+)\b/i) || desc.match(/\b(\d+)\b/);
+    const fId = fIdMatch ? parseInt(fIdMatch[1], 10) : diameterVal;
+    if (fId > 0) {
+      flangeIdLine = `Flange ID: ${fId}mm ${toInches(fId)}`;
+    }
+
+    // 2. Flange Pressure Line
+    const fPressMatch = desc.match(/\b(EST|CST|EMT|EWT|EDF)\s*(\d+(?:\.\d+)?)\b/i);
+    if (fPressMatch) {
+      let t = fPressMatch[1].toUpperCase();
+      if (t === "EDF") t = "EST";
+      const b = fPressMatch[2];
+      flangePressureLine = `${t} ${b} (${barToPsi(b)} PSI)`;
+    } else {
+      const fPnMatch = desc.match(/\b(?:PN|BAR)\s*(\d+)\b/i);
+      if (fPnMatch) {
+        const b = fPnMatch[1];
+        flangePressureLine = `EST ${b} (${barToPsi(b)} PSI)`;
+      } else if (data.specs?.pressure) {
+        const b = data.specs.pressure;
+        flangePressureLine = `EST ${b} (${barToPsi(b)} PSI)`;
+      }
+    }
+
+    // 3. Flange Connection Line
+    const fConnMatch = desc.match(/\bFL-?(CB|TB|FB)\b/i);
+    if (fConnMatch) {
+      flangeConnectionLine = `FL-${fConnMatch[1].toUpperCase()}`;
+    } else if (desc.match(/\b(CB|TB)\b/i)) {
+      flangeConnectionLine = `FL-${desc.match(/\b(CB|TB)\b/i)[1].toUpperCase()}`;
+    }
+
+    // 4. Flange Drilling Line
+    const asMatch = desc.match(/\b(?:ASA|AS|ANSI|ASME)\s*(\d+)\b/i) || desc.match(/\b(\d+)\s*(?:LBS|#)\b/i);
+    if (asMatch) {
+      flangeDrillingLine = `DRILLING ASA${asMatch[1]} LIMITED TORQUE`;
+    } else {
+      const dinMatch = desc.match(/\bDIN\s*(\d+)?\b/i);
+      if (dinMatch) {
+        flangeDrillingLine = `DRILLING DIN${dinMatch[1] ? `${dinMatch[1]}` : ""} LIMITED TORQUE`;
+      } else {
+        const jisMatch = desc.match(/\bJIS\s*(\d+K?)\b/i);
+        if (jisMatch) {
+          flangeDrillingLine = `DRILLING JIS ${jisMatch[1].toUpperCase()} LIMITED TORQUE`;
+        } else {
+          const pnMatch = desc.match(/\b(?:PN|BAR)\s*(\d+(?:\.\d+)?)\b/i);
+          if (pnMatch) {
+            flangeDrillingLine = `DRILLING PN${pnMatch[1]} LIMITED TORQUE`;
+          } else if (data.specs?.pressure || data.pn) {
+            flangeDrillingLine = `DRILLING PN${data.specs?.pressure || data.pn} LIMITED TORQUE`;
+          } else {
+            flangeDrillingLine = `DRILLING LIMITED TORQUE`;
+          }
+        }
+      }
+    }
+  }
+
   // --- PRO FEATURES: Conditionele Logica ---
   
   // 1. Zware Last Waarschuwing (> 300mm)
-  const diameterVal = parseInt(data.diameter || data.dn || 0);
   const isHeavyLoad = diameterVal > 300;
 
   // 2. Export Logica (Engels)
@@ -311,6 +377,12 @@ export const processLabelData = (data) => {
     pressureLineEmt: pressureLineEmt,
     connectionLine: connectionLine,
     radiusText: radiusText,
+
+    flangeIdLine,
+    flangePressureLine,
+    flangeConnectionLine,
+    flangeDrillingLine,
+    extraCode: data.extraCode || data.code || "",
 
     lotNumber: lotNumber,
     jointCode: jointCode, // Toegevoegd voor A2G3 logica
@@ -486,7 +558,7 @@ export const filterLabelsByProduct = (labels, product, options = {}) => {
   
   // 1. Normaliseer product data naar tags (Set voor unieke waarden)
   const productTags = new Set();
-  const desc = String(product.description || product.item || "").toUpperCase();
+  const desc = String(product.itemCode || product.productId || product.description || product.item || "").toUpperCase();
   const type = String(product.productType || product.type || "").toUpperCase();
   
   // Basis tags uit type
@@ -499,6 +571,18 @@ export const filterLabelsByProduct = (labels, product, options = {}) => {
       productTags.add(knownType.split('-')[0]); // Add "TEE" for "EQUAL-TEE"
     }
   });
+
+    // Detecteer Flens varianten voor label filtering
+    if (type === "FLANGE" || desc.match(/\bFL/) || desc.includes("FLENS") || desc.includes("FLANGE")) {
+      productTags.add("FLANGE");
+      productTags.add("FLENZEN");
+      productTags.add("FLENS");
+    }
+
+    // Detecteer "Code" labels (als er een extra code is ingevuld of "CODE" in de omschrijving staat)
+    if ((product.extraCode && product.extraCode !== "-" && product.extraCode !== "") || desc.includes("CODE")) {
+      productTags.add("CODE");
+    }
 
   // Detecteer specifieke productlijnen uit omschrijving/data
   if (desc.includes("WAVISTRONG") || type.includes("WAVISTRONG")) productTags.add("WAVISTRONG");
