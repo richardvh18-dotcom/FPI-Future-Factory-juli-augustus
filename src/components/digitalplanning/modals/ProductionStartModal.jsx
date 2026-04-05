@@ -748,12 +748,19 @@ const ProductionStartModal = ({
     const recalc = () => {
       const availableW = Math.max(120, previewEl.clientWidth - 24);
       const availableH = Math.max(120, previewEl.clientHeight - 24);
-      const labelW = selectedLabel.width * PIXELS_PER_MM;
-      const labelH = selectedLabel.height * PIXELS_PER_MM;
+      const widthMm = Number.parseFloat(String(selectedLabel.width ?? "").replace(",", "."));
+      const heightMm = Number.parseFloat(String(selectedLabel.height ?? "").replace(",", "."));
+      const safeWidthMm = Number.isFinite(widthMm) && widthMm > 0 ? widthMm : 90;
+      const safeHeightMm = Number.isFinite(heightMm) && heightMm > 0 ? heightMm : 55;
+      const labelW = safeWidthMm * PIXELS_PER_MM;
+      const labelH = safeHeightMm * PIXELS_PER_MM;
 
       if (labelW > 0 && labelH > 0) {
-        const nextZoom = Math.min(5, availableW / labelW, availableH / labelH);
-        setPreviewZoom(Math.max(0.45, nextZoom));
+        const fitZoom = Math.min(availableW / labelW, availableH / labelH);
+        const isCompactLabel = safeHeightMm <= 40 || safeWidthMm <= 75;
+        const compactBoost = isCompactLabel ? 1.25 : 1;
+        const nextZoom = Math.min(7, fitZoom * compactBoost);
+        setPreviewZoom(Math.max(0.6, nextZoom));
       }
     };
 
