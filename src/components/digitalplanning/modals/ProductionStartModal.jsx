@@ -326,6 +326,18 @@ const ProductionStartModal = ({
       
       try {
         if (availableLabels.length > 0) {
+          // FL-orders moeten altijd een klein voorbeeldlabel gebruiken.
+          if (isFlangeOrder) {
+            const smallFlangeLabel = availableLabels.find(
+              (l) => l.name?.toLowerCase().includes("smal") || Number(l.height) < 45
+            ) || availableLabels[0];
+
+            if (smallFlangeLabel?.id && smallFlangeLabel.id !== selectedLabelId) {
+              setSelectedLabelId(smallFlangeLabel.id);
+            }
+            return;
+          }
+
           // NIEUW: Kies bij voorkeur een flens of code label
           const preferred = availableLabels.find(t => 
             t.tags?.includes("FLENZEN") ||
@@ -339,10 +351,8 @@ const ProductionStartModal = ({
             return;
           }
 
-          // FL-orders moeten altijd een klein voorbeeldlabel gebruiken.
-          const preferSmall = isFlangeOrder;
           // Voor niet-FL: BH18 krijgt standaard groot, overige stations klein.
-          const preferLarge = !preferSmall && stationId === 'BH18';
+          const preferLarge = stationId === 'BH18';
           
           let defaultLabel = preferLarge ? availableLabels.find(
             (l) => (l.height >= 45 && !l.name?.toLowerCase().includes("smal")) || 
@@ -1490,6 +1500,14 @@ const ProductionStartModal = ({
                   {stringLotPreview.rows.map((lotRow, idx) => (
                     <div key={lotRow} className="flex items-center gap-3 bg-white/95 rounded-xl px-3 py-2 border border-slate-200">
                       <span className="text-[10px] font-black text-slate-500 w-6">{idx + 1}.</span>
+                      <div className="w-8 h-8 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden shrink-0">
+                        <InternalQrImage
+                          value={lotRow}
+                          size={96}
+                          alt="Lot QR"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
                       <span className="text-xs font-black tracking-wider text-slate-900">{lotRow}</span>
                     </div>
                   ))}
