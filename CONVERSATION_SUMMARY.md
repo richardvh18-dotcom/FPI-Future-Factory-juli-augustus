@@ -1,4 +1,74 @@
-# Pilot Handover Summary
+# 📝 FPi Future Factory - Pilot Handover & Development Summary
+
+### Update sessie 36 (Mazak Print Preview Fix)
+
+**Datum:** 5 april 2026 | **Branch:** `pilot-dev`
+
+**Doel:** Print preview in Mazak labels matcht niet met daadwerkelijke print. Preview toonde correct formaat, maar echte print had vervorming (QR codes, verticale tekst, layout).
+
+**Root Cause:** MazakView stuurde alleen product `data` naar print queue ZONDER gegenereerde ZPL code. Dit resulteerde in fallback-rendering die niet overeenkwam met de HTML/canvas preview.
+
+**Wat is er gedaan:**
+- **MazakView.jsx -> Print Job Generatie:**
+  - Importeer `generatePrintData` (zplHelper) en `queuePrintJob` (printService)
+  - In `handlePrintLabels`: Roep `generatePrintData()` aan met dezelfde parameters als preview → genereert echte ZPL
+  - Stuur gegenereerde ZPL via `queuePrintJob()` naar print queue (consistente API)
+  - ZPL wordt nu correct gerenderd door Zebra printer
+
+- **Verificatie:** `npm run build` geslaagd, alle 2788 modules getransformeerd.
+
+**Resultaat:** Preview en daadwerkelijke print gebruiken nu dezelfde rendering engine (ZPL generation) met identieke settings (DPI, template elements, data processing).
+
+**Volgende stap:** Live uittesten op werkvloer om verschil te controleren.
+
+---
+
+### Update sessie 35 (Archivering Afgekeurde Producten)
+
+**Datum:** 5 april 2026 | **Branch:** `pilot-dev`
+
+**Doel:** Afgekeurde producten (Definitieve Afkeur) netjes uit de actieve productielijst (`tracking`) halen en archiveren in een specifieke map per jaar, net als bij gereedgemelde producten.
+
+**Wat is er gedaan:**
+- **Nieuw Archiefpad (`dbPaths.jsx`):** Helper `getArchiveRejectedPath(year)` toegevoegd voor veilige archivering onder `future-factory/production/archived_rejected/{year}`.
+- **Opschonen Actieve Tracking:** In `BM01Hub.jsx`, `LossenView.jsx`, `WorkstationHub.jsx`, `MazakView.jsx` en `ProductReleaseModal.jsx` wordt bij een statuswijziging naar 'Definitieve Afkeur' het product nu rechtstreeks weggeschreven naar het nieuwe archief en fysiek verwijderd uit de actieve `tracking` database. Dit houdt de actieve query's snel.
+- **Validatie:** Zowel de linter als de Vite productie-build (`npm run build`) slagen foutloos na deze wijzigingen.
+
+---
+
+### Update sessie 34 (Mazak Printflow, Flens Labels & Lotnummer Fixes)
+
+**Datum:** 3 april 2026 | **Branch:** `pilot-dev`
+
+**Doel:** MazakView afronden met printfunctionaliteit, flens-labeling verbeteren en BH12 lotnummers corrigeren.
+
+**Wat is er gedaan:**
+
+- **MazakView.jsx (Compleet vernieuwd):**
+    - UI opgesplitst in 3 duidelijke tabs: **Planning**, **Inbox / Printen** en **Gereedmelden**.
+    - **Inbox / Printen:** Producten (voornamelijk flenzen) komen hier als bulk/serie binnen. Voorzien van een grote "Print Labels" knop. 
+    - **Print Modal:** Pop-up toont nu een dynamisch vergrote (tot 250%) preview van het label. Templates met tags `FLENZEN` of `CODE` worden automatisch voorgeselecteerd. Bij printen gaan de opdrachten naar de Firestore `print_queue`.
+    - **Gereedmelden:** Items schuiven hierheen ná het printen. Inclusief optie om individuele labels te **Herprinten**.
+    - **Planning:** Overzicht van inkomende orders. Inclusief "Deze Week" vs "Alle Weken" filter en robuuste zoekbalk.
+
+- **Slimme Flens Labels (`labelHelpers.jsx`):**
+    - Flens herkenning veel robuuster gemaakt (triggert nu op `FL` en pakt ook itemCode mee).
+    - Nieuwe dynamische variabelen toegevoegd voor de Label Designer: `{flangeIdLine}`, `{flangePressureLine}`, `{flangeConnectionLine}`, `{flangeDrillingLine}` en `{extraCode}`.
+    - Systeem vertaalt ruwe beschrijvingen nu automatisch naar volzinnen (bijv. `DRILLING ASA150 LIMITED TORQUE`, ondersteunt ook JIS, DIN, ANSI en PN).
+    - "Flenzen" als vaste categorie/folder toegevoegd in `AdminLabelDesigner` en `AdminLabelManager`.
+
+- **BH12 / Machine Code Fixes:**
+    - De methode `getMachineCode` vertaalde stations zoals `BH12` of `40BH12` foutief naar `012`.
+    - Gecorrigeerd in de gehele app (`ProductionStartModal`, `AdminPrinterManager`, `AdminLotCounters`) zodat dubbelcijferige BH stations nu altijd netjes de '4' prefix krijgen (BH12 ➔ 412).
+
+- **Testomgeving Archivering:**
+    - 4 componenten (`LossenView`, `BM01Hub`, `PlanningSidebar`, `AiPredictionView`) bevatten nog hardcoded verwijzingen naar het `future-factory` productiearchief.
+    - Dit is vervangen door de dynamische `getArchiveItemsPath(year)` helper, zodat testomgevingen (zoals artifacts) netjes hun eigen archief behouden en niet naar live productie wegschrijven.
+
+**Volgende stap:** 
+Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
+
+---
 
 ### Update sessie 32 (Serie-groepering Wikkelen/Lossen + MazakView)
 
@@ -102,7 +172,7 @@
 
 ---
 
-## Pauzestand Voor Hervatten (31 maart 2026)
+### Pauzestand Voor Hervatten (31 maart 2026)
 
 - **Opslagpunt bevestigd op verzoek gebruiker:** "dat kan morgen pas".
 - **Context:** Meerdere fixes zijn doorgevoerd in `LossenView.jsx` om de productlijst correct te filteren.
@@ -113,7 +183,7 @@
 
 ---
 
-## Nieuwe Pilot Doelen & Wensen (April 2026)
+### Nieuwe Pilot Doelen & Wensen (April 2026)
 
 - **BM01 scanner input werkt niet:** Scanner input functioneert niet in BM01. Oplossen zodat producten gescand kunnen worden.
 - **Aangeboden lijst resetten:** Controleren of de aangeboden lijst in BM01 elke dag automatisch op 0 wordt gezet.
@@ -128,7 +198,7 @@
 **Branch:** `FPiFF-may-build`  
 **Doel:** compacte overdracht voor hervatten van pilotwerk richting 30 maart
 
-## Huidige Status
+---
 
 ### Update sessie 29 (Filter-regressie in Lossen)
 - **Gesprek opgeslagen met de notitie:** de "Lossen" view toont momenteel ook producten die al gereed zijn.
@@ -321,7 +391,7 @@ git push -u origin hotfix/voorbeeld-fix
 
 **Gebruiker-bevestiging:** Workflow past perfect bij papieren pilot-planning met lopende orders.
 
-## Pauzestand Voor Hervatten (sessie 23)
+---
 
 ### Open vraag opgeslagen (sessie 24)
 
@@ -388,7 +458,7 @@ git push -u origin hotfix/voorbeeld-fix
     - `Vandaag` knop toegevoegd om snel terug te springen.
 - **Resultaat:** teamleader kan vanuit Teamleader Personeel direct naar uitgebreide Admin Personeel en daar op gekozen datum uren/shiftplanning beheren (ook toekomstige data).
 
-## Pauzestand Voor Hervatten (sessie 22)
+### Pauzestand Voor Hervatten (sessie 22)
 
 - **Opslagpunt hersteld na verbroken chatverbinding:** gebruiker meldde fout bij weekfilter in auditlog: `Scan Onderbroken: Database fout: undefined`.
 - **Opslagpunt expliciet bevestigd voor volgende sessie:** gesprek en fixstatus zijn bewaard in deze samenvatting zodat direct hervat kan worden.
@@ -401,7 +471,7 @@ git push -u origin hotfix/voorbeeld-fix
 - **Verwachte uitkomst:** filter `Per week` in Audit Log opent weer zonder crashmelding en toont bij echte queryfouten een bruikbare melding.
 - **Eerstvolgende check bij hervatten:** Audit Log openen, `Per week` selecteren en controleren op correcte resultaten plus pagination (`Meer laden`) binnen dezelfde filter.
 
-## Pauzestand Voor Hervatten (sessie 21)
+### Pauzestand Voor Hervatten (sessie 21)
 
 - **Opslagpunt bevestigd op verzoek gebruiker:** "ik ga later verder, sla op in conversatie".
 - **Afgerond in deze sessie:** tweede i18n-sweep voor admin modules met resterende hardcoded UI-teksten.
@@ -427,7 +497,7 @@ git push -u origin hotfix/voorbeeld-fix
 1. Vervolg i18n-sweep op resterende admin-hardcoded strings (met name extra prompts/alerts/fallbacks in `AdminLabelDesigner.jsx`).
 2. Daarna opnieuw gerichte file-checks en eventueel kleine key-normalisatie in `nl/en` dictionaries.
 
-## Nieuwe Notitie Voor Vervolg (sessie 20)
+### Nieuwe Notitie Voor Vervolg (sessie 20)
 
 - **Gefixt (code):** valse overproductie na definitieve afkeur is opgelost in `WorkstationHub.jsx`.
     - Start/overflow controle gebruikt nu de station teller (`started_<station>`) als primaire bron.
@@ -451,7 +521,9 @@ git push -u origin hotfix/voorbeeld-fix
     - Voeg de teller toe in orderdetail en/of Workstation planningkaart.
     - Valideer op scenario: 10 gestart -> 1 definitief afkeur bij Nabewerking -> 1 vervangend gestart.
 
-## Kritieke Open Punten
+---
+
+## 🚨 Kritieke Open Punten
 
 ### 1. Planning Import Workflow
 - **Status:** gedeeltelijk gerepareerd, nog niet definitief gevalideerd
@@ -567,7 +639,9 @@ git push -u origin hotfix/voorbeeld-fix
 - [ ] Herhaal dezelfde check in Print Queue met hetzelfde template/data
 - [ ] Als afwijking <= 1mm: markeer als geslaagd; anders offset-finetune plannen
 
-## Afgerond in Recente Sessies
+---
+
+## ✅ Afgerond in Recente Sessies
 
 ### Rechtenstructuur en Toegang
 - Granulaire permissiestructuur toegevoegd via `user.permissions`
@@ -663,7 +737,9 @@ git push -u origin hotfix/voorbeeld-fix
 - Definitieve Afkeur formulier met reden-checklist in ProductDossierModal
 - On Hold/Resume toggle voor orders met visuele feedback in alle relevante views
 
-## Belangrijkste Relevante Bestanden
+---
+
+## 📂 Belangrijkste Relevante Bestanden
 
 ### AI
 - `src/services/aiService.jsx`
@@ -707,7 +783,9 @@ git push -u origin hotfix/voorbeeld-fix
 - `src/components/digitalplanning/EfficiencyDashboard.jsx` (gepland)
 - `EFFICIENCY_TRACKING.md`
 
-## Open Pilot Validatie
+---
+
+## 🧪 Open Pilot Validatie
 
 ### End-to-End Werkvloerflow
 - [ ] BH18 order starten
@@ -740,7 +818,9 @@ git push -u origin hotfix/voorbeeld-fix
 - [ ] filter/sort performance testen
 - [ ] netwerkuitval scenario testen
 
-## Praktische Hervatstappen
+---
+
+## 🔄 Praktische Hervatstappen
 
 ### Als je verder wilt met LN import
 1. Open de importmodal in LN-modus.
@@ -779,15 +859,9 @@ Praktische keuzehulp:
 - Gebruik `zebra-epl2-203` alleen voor EPL2-printers of legacy CUPS/EPL-paden, niet als vervanging van de ZM400 WebUSB ZPL-route.
 - Als snijgedrag op ZM400 niet klopt: eerst driver en DPI bevestigen, daarna pas offsets/darkness tunen.
 
-## Actieplan Vandaag (20 maart 2026)
+---
 
-1. Valideer LN-import met exact userbestand en noteer ontbrekende kolomaliases.
-2. Controleer direct daarna orderzichtbaarheid in Terminal en Workstation voor BH18, Lossen en Nabewerking/BM01.
-3. Voer een live Zebra ZM400 WebUSB printtest uit: 1 orderlabel en 1 lotnummerbatch.
-4. Draai een korte multi-operator check (minimaal 2 gebruikers) om occupancy sync te bevestigen.
-5. Rond af met een compacte bevindingenlog: wat werkt, wat blokkeert, en welke fix als eerstvolgende nodig is.
-
-## Korte Historie
+## 📜 Korte Historie
 
 ### 26 maart 2026 — sessie 18 (Tekeningen Sync & Toegang Vanuit Alle Views)
 
@@ -999,3 +1073,185 @@ Alle views hebben nu een werkende tekening-knop met 3-stap lookup:
 ## Opmerking
 
 Dit document is bewust opgeschoond naar één actuele overdracht. Oudere dubbele sessieblokken en losse server-notities zijn samengevat in plaats van volledig behouden.
+
+
+---
+
+Ik ga afgekeurde producten ook naar archief verplaatsen (aparte map per jaar), net als completed. Dit vereist:
+1. Nieuwe archief-pad voor rejected items
+2. Update van alle station-reject-handlers om archief+delete toe te passen 
+
+Read [](file:///workspaces/FPIFF-30-1/src/config/dbPaths.jsx#109-109), lines 109 to 150
+
+Replacing 15 lines with 26 lines in [](file:///workspaces/FPIFF-30-1/src/config/dbPaths.jsx)
+
+
+```
+
+```
+Nu update ik alle station-handlers om rejected producten naar archief te verplaatsen (met delete uit tracking): 
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/BM01Hub.jsx#1-1), lines 1 to 550
+
+Replacing 43 lines with 69 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/BM01Hub.jsx)
+
+
+```
+
+```
+
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/LossenView.jsx#1-1), lines 1 to 30
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/LossenView.jsx#300-300), lines 300 to 550
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/LossenView.jsx#550-550), lines 550 to 650
+
+Replacing 1 lines with 1 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/LossenView.jsx)
+
+
+```
+
+```
+
+
+Replacing 1 lines with 64 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/LossenView.jsx)
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/LossenView.jsx#560-560), lines 560 to 615
+
+Replacing 45 lines with 73 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/LossenView.jsx)
+
+
+```
+
+```
+
+
+Replacing 1 lines with 1 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/WorkstationHub.jsx)
+
+Searched for text `import.*PATHS` (`**/src/components/digitalplanning/WorkstationHub.jsx`), 1 result
+
+Replacing 1 lines with 1 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/WorkstationHub.jsx)
+
+
+```
+
+```
+
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/WorkstationHub.jsx#1530-1530), lines 1530 to 1600
+
+Replacing 50 lines with 76 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/WorkstationHub.jsx)
+
+
+```
+
+```
+
+
+Searched for text `import.*PATHS` (`**/src/components/digitalplanning/modals/ProductReleaseModal.jsx`), 1 result
+
+Replacing 1 lines with 1 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/modals/ProductReleaseModal.jsx)
+
+
+```
+
+```
+
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/modals/ProductReleaseModal.jsx#280-280), lines 280 to 320
+
+Replacing 41 lines with 62 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/modals/ProductReleaseModal.jsx)
+
+
+```
+
+```
+
+
+Searched for text `import.*PATHS` (`**/src/components/digitalplanning/MazakView.jsx`), 1 result
+
+Replacing 1 lines with 1 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/MazakView.jsx)
+
+
+```
+
+```
+
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/MazakView.jsx#230-230), lines 230 to 290
+
+Replacing 19 lines with 53 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/MazakView.jsx)
+
+
+```
+
+```
+Nu test ik lint en build: 
+
+Ran terminal command:  cd /workspaces/FPIFF-30-1 && npm run lint 2>&1 | tail -100
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/LossenView.jsx#1-1), lines 1 to 10
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/MazakView.jsx#1-1), lines 1 to 5
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/modals/ProductReleaseModal.jsx#1-1), lines 1 to 10
+
+Replacing 1 lines with 1 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/LossenView.jsx)
+
+
+```
+
+```
+
+
+Read [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/MazakView.jsx#1-1), lines 1 to 15
+
+Replacing 12 lines with 14 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/MazakView.jsx)
+
+
+```
+
+```
+
+
+Replacing 1 lines with 1 lines in [](file:///workspaces/FPIFF-30-1/src/components/digitalplanning/modals/ProductReleaseModal.jsx)
+
+
+```
+
+```
+
+
+Ran terminal command:  cd /workspaces/FPIFF-30-1 && npm run lint 2>&1 | tail -50
+
+Ran terminal command:  cd /workspaces/FPIFF-30-1 && npm run build 2>&1 | tail -50
+
+Made changes.
+
+---
+
+### Update sessie 33 (BH12 ProductionStartModal verfijning)
+
+**Datum:** 3 april 2026 | **Branch:** `pilot-dev`
+
+**Doel:** Startflow voor BH12/flens-orders verfijnen in de `ProductionStartModal`.
+
+**Uitgevoerd in `src/components/digitalplanning/modals/ProductionStartModal.jsx`:**
+
+- FL-orders gebruiken standaard een **klein label** als voorbeeld/templatekeuze.
+- Previewpaneel blijft zichtbaar in **auto mode** (ook voor FL), zodat het voorbeeld altijd zichtbaar is.
+- In **manual mode** is `Aantal in String` toegevoegd zodat meerdere lotnummers in serie gestart kunnen worden.
+- Manual string-run gebruikt nu het **eerste ingevoerde lotnummer** als startpunt en telt door.
+- Extra validatie toegevoegd: bij manual string-run worden alle volgende lotnummers gecontroleerd op duplicaten (actief + archief).
+- Voor flens met mal-match wordt het gevonden cavity-aantal als **advies/startwaarde** ingevuld.
+- Daarna verfijnd op verzoek: ook in **auto mode** is het aantal handmatig aanpasbaar (geen lock meer op het aantalveld).
+
+**Resultaat voor BH12:**
+
+- FL-flow is consistenter: klein labelvoorbeeld, zichtbare preview, aantallen nog overschrijfbaar.
+- String-start werkt nu zowel praktisch als veilig (doorlopende lotreeks + uniciteitscontrole).
+
+**Validatie:**
+
+- `npx eslint src/components/digitalplanning/modals/ProductionStartModal.jsx` succesvol (geen output / geen fouten).

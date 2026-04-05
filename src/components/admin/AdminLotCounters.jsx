@@ -5,11 +5,34 @@ import { Loader2, Hash, Calendar, Server } from 'lucide-react';
 
 // Machine naar FPI code mapping (Consistent met ProductionStartModal)
 const getMachineCode = (station) => {
+  if (!station) return "999";
+  const normalized = String(station).toUpperCase().trim();
+  const baseStation = normalized.startsWith('40') ? normalized.substring(2) : normalized;
+  
   const map = {
+    'BH11': '411',
+    'BH12': '412',
+    'BH15': '415',
+    'BH16': '416',
+    'BH17': '417',
     'BH18': '418',
+    'BH31': '431',
+    'BH05': '405',
+    'BH07': '407',
+    'BH08': '408',
+    'BH09': '409',
+    'BA05': '405',
     'BA07': '417'
   };
-  return map[station] || station.replace(/\D/g,'').padStart(3, '0') || '999';
+  
+  if (map[baseStation]) return map[baseStation];
+
+  const digits = baseStation.replace(/\D/g, "");
+  if (!digits) return "999";
+  
+  if (digits.length === 3) return digits;
+  if (digits.length === 1) return `40${digits}`;
+  return `4${digits.slice(-2).padStart(2, "0")}`;
 };
 
 const AdminLotCounters = () => {

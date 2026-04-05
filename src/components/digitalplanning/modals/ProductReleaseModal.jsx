@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, CheckCircle, ArrowRight, AlertTriangle, Ruler, AlertOctagon, FileText } from "lucide-react";
-import { doc, updateDoc, arrayUnion, serverTimestamp, collection, query, where, getDocs, increment } from "firebase/firestore";
+import { doc, updateDoc, arrayUnion, serverTimestamp, collection, query, where, getDocs, increment, setDoc, deleteDoc } from "firebase/firestore";
 import { db, auth, logActivity } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
-import { REJECTION_REASONS } from "../../../utils/workstationLogic";
+import { PATHS, getArchiveRejectedItemsPath } from "../../../config/dbPaths";
+import { REJECTION_REASONS, resolvePostLossenStation } from "../../../utils/workstationLogic";
 
 const PILOT_ALLOW_INCOMPLETE_LOSSEN_MEASUREMENTS = true;
 
@@ -124,7 +124,10 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
   if (product?.isManualMove) {
     nextStepDisplay = "Nabewerking";
   } else if (isLossenStep) {
-    nextStepDisplay = isFlange ? "Mazak" : "Nabewerking";
+    nextStepDisplay = resolvePostLossenStation(
+      `${product?.item || ""} ${product?.itemDescription || ""} ${product?.description || ""}`,
+      product?.originMachine || product?.machine
+    );
   } else if (currentStep === "Nabewerking" || currentStep === "Mazak") {
     nextStepDisplay = "Eindinspectie";
   } else if (currentStep === "Eindinspectie" || currentStep === "Inspectie" || product?.currentStation === "BM01") {
@@ -237,6 +240,16 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
           let updateStation = true;
           let targetStation = nextStep;
 
+          if (isLossenStep) {
+            const routedStep = resolvePostLossenStation(
+              `${target?.item || ""} ${target?.itemDescription || ""} ${target?.description || ""} ${target?.itemCode || ""}`,
+              target?.originMachine || target?.machine || product?.originMachine || product?.machine
+            );
+            nextStep = routedStep;
+            nextStatus = `Wacht op ${routedStep}`;
+            targetStation = routedStep;
+          }
+
           if (nextStepDisplay === "Gereed") {
             nextStep = "Finished";
             nextStatus = "Finished";
@@ -292,21 +305,39 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
             station: target.currentStation || target.machine || "Onbekend",
           });
         } else if (status === "rejected") {
-          updates.status = "Rejected";
-          updates.currentStep = "REJECTED";
-          updates.currentStation = "AFKEUR";
-          updates.inspection = {
-            status: "Afkeur",
-            reasons: [reason],
-            timestamp: new Date().toISOString(),
-          };
-          updates.history = arrayUnion({
+          // ARCHIVERING LOGICA voor DEFINITIEF AFKEUR
+          const historyEntry = {
             action: "Definitieve Afkeur",
             timestamp: new Date(),
             user: activeOperator,
             details: `Reden: ${reason} - ${comment}`,
             station: target.currentStation || target.machine || "Onbekend",
-          });
+          };
+          
+          const rejectionData = {
+            ...target,
+            status: "Rejected",
+            currentStep: "REJECTED",
+            currentStation: "AFKEUR",
+            inspection: {
+              status: "Afkeur",
+              reasons: [reason],
+              timestamp: new Date().toISOString(),
+            },
+            history: [...(target.history || []), historyEntry],
+            updatedAt: new Date(),
+            archivedAt: new Date(),
+            archivedReason: "rejected",
+          };
+          
+          const year = new Date().getFullYear();
+          const rejectedArchiveRef = doc(db, ...getArchiveRejectedItemsPath(year), target.id || target.lotNumber);
+          
+          // 1. Sla op in rejected archief
+          await setDoc(rejectedArchiveRef, rejectionData);
+          
+          // 2. Verwijder uit actieve tracking
+          await deleteDoc(targetRef);
 
           if (target.orderId) {
             const orderRef = doc(db, ...PATHS.PLANNING, target.orderId);
@@ -315,6 +346,9 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
               lastUpdated: serverTimestamp(),
             }).catch((e) => console.error("Kon order niet updaten na afkeur:", e));
           }
+          
+          // Skip updateDoc, direct naar next target
+          continue;
         }
 
         await updateDoc(targetRef, updates);

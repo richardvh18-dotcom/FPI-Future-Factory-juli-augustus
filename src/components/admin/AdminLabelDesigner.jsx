@@ -150,6 +150,7 @@ const LABEL_FOLDER_OPTIONS = [
   "Wavistrong",
   "Fibermar",
   "Code",
+  "Flenzen",
 ];
 
 /**
@@ -339,6 +340,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     const hasWavi = upperTags.includes("WAVISTRONG");
     const hasFiber = upperTags.includes("FIBERMAR");
     const hasCode = upperTags.includes("CODE");
+    const hasFlenzen = upperTags.includes("FLENS") || upperTags.includes("FLENZEN");
 
     if (isTemp && hasWavi) return "Tijdelijk Wavistrong";
     if (isTemp && hasFiber) return "Tijdelijk Fibermar";
@@ -346,6 +348,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     if (hasWavi) return "Wavistrong";
     if (hasFiber) return "Fibermar";
     if (hasCode) return "Code";
+    if (hasFlenzen) return "Flenzen";
     return "";
   };
 
@@ -1382,6 +1385,11 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                         <option value="connectionLine">Connection Line</option>
                         <option value="radiusText">Radius Text</option>
                         <option value="jointCode">Joint Code A2G3</option>
+                        <option value="extraCode">Extra Code</option>
+                        <option value="flangeIdLine">Flange ID Line</option>
+                        <option value="flangePressureLine">Flange Pressure Line</option>
+                        <option value="flangeConnectionLine">Flange Connection Line</option>
+                        <option value="flangeDrillingLine">Flange Drilling Line</option>
                         {filteredVariables.length > 0 && (
                             <optgroup label={selectedLogicCode ? t('variablesFor', { code: selectedLogicCode }) : t('allDynamicVariables')}>
                                 {filteredVariables.map(v => (

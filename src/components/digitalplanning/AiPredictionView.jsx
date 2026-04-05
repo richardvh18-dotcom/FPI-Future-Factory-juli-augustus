@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { PATHS } from '../../config/dbPaths';
+import { PATHS, getArchiveItemsPath } from '../../config/dbPaths';
 import { calculateDuration, formatMinutes } from '../../utils/efficiencyCalculator';
 
 /**
@@ -36,7 +36,7 @@ const AiPredictionView = ({ onClose }) => {
 
     // Haal ook het archief van het huidige jaar op voor een complete analyse
     const currentYear = new Date().getFullYear();
-    const archiveRef = collection(db, "future-factory", "production", "archive", String(currentYear), "items");
+    const archiveRef = collection(db, ...getArchiveItemsPath(currentYear));
     const unsubArchive = onSnapshot(archiveRef, (snap) => {
       setArchivedData(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });

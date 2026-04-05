@@ -196,3 +196,27 @@ export const getStepForStation = (stationName) => {
   // Fallback
   return { status: FLOW_STATUS.IN_PROGRESS, currentStep: "Onbekend" };
 };
+
+/**
+ * Bepaal het doelstation na Lossen.
+ *
+ * BH12-regel:
+ * - item begint met FL -> Mazak
+ * - anders -> Nabewerking
+ *
+ * Overige stations behouden de bestaande flens-regel:
+ * - flens (FL/FLENS/FLANGE) -> Mazak
+ * - anders -> Nabewerking
+ */
+export const resolvePostLossenStation = (itemText, originMachine) => {
+  const item = String(itemText || "").toUpperCase().trim().replace(/\s+/g, " ");
+  const machine = String(originMachine || "").toUpperCase().replace(/\s+/g, "");
+
+  const isBh12Origin = machine.includes("BH12");
+  if (isBh12Origin) {
+    return item.startsWith("FL") ? "Mazak" : "Nabewerking";
+  }
+
+  const isFlange = item.startsWith("FL") || item.includes("FLENS") || /\bFLANGE\b/.test(item);
+  return isFlange ? "Mazak" : "Nabewerking";
+};

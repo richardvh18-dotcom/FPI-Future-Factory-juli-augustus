@@ -20,6 +20,7 @@ import { db, auth, logActivity } from "../../../config/firebase.js";
 import { PATHS } from "../../../config/dbPaths";
 import { useAdminAuth } from "../../../hooks/useAdminAuth";
 import { formatDateTimeSafe } from "../../../utils/dateUtils";
+import { resolvePostLossenStation } from "../../../utils/workstationLogic";
 import StatusBadge from "../common/StatusBadge.jsx";
 import CancelOrderModal from "./CancelOrderModal";
 
@@ -62,16 +63,17 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
 
   // Bepaal de processtappen o.b.v. FL in de naam
   const processSteps = useMemo(() => {
-    const itemStr = (order?.item || "").toUpperCase();
-    
-    // Als het een FL product is (Flens/Flenzen?) -> Mazak route
-    if (itemStr.includes("FL")) {
-        return ["Wikkelen", "Lossen", "Mazak", "Eindinspectie", "Klaar"];
+    const nextStationAfterLossen = resolvePostLossenStation(
+      order?.item || "",
+      order?.originMachine || order?.machine
+    );
+
+    if (nextStationAfterLossen === "Mazak") {
+      return ["Wikkelen", "Lossen", "Mazak", "Eindinspectie", "Klaar"];
     }
-    
-    // Standaard route
+
     return ["Wikkelen", "Lossen", "Nabewerking", "Eindinspectie", "Klaar"];
-  }, [order?.item]);
+  }, [order?.item, order?.originMachine, order?.machine]);
 
   // Bepaal huidige stap voor highlighting
   const currentStepIndex = useMemo(() => {
