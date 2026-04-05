@@ -756,11 +756,10 @@ const ProductionStartModal = ({
       const labelH = safeHeightMm * PIXELS_PER_MM;
 
       if (labelW > 0 && labelH > 0) {
+        // Houd preview altijd binnen het zichtbare vak (geen overflow buiten scherm)
         const fitZoom = Math.min(availableW / labelW, availableH / labelH);
-        const isCompactLabel = safeHeightMm <= 40 || safeWidthMm <= 75;
-        const compactBoost = isCompactLabel ? 1.25 : 1;
-        const nextZoom = Math.min(7, fitZoom * compactBoost);
-        setPreviewZoom(Math.max(0.6, nextZoom));
+        const nextZoom = Math.min(7, fitZoom);
+        setPreviewZoom(Math.max(0.35, nextZoom));
       }
     };
 
@@ -1343,7 +1342,7 @@ const ProductionStartModal = ({
         {/* RECHTS: DESIGN PREVIEW & PRINT ACTIE */}
         {showPreviewPane && <div
           ref={containerRef}
-          className="flex-1 bg-slate-900 p-6 flex flex-col items-center justify-between relative overflow-hidden text-left"
+          className="flex-1 min-w-0 bg-slate-900 p-6 flex flex-col items-center justify-between relative overflow-hidden text-left"
         >
           <div className="absolute top-4 left-4 text-[9px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-2 text-left">
             <Activity size={12} className="text-emerald-500" /> Etiket Preview
