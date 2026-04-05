@@ -742,7 +742,10 @@ const ProductionStartModal = ({
   };
 
   useEffect(() => {
+    if (!isOpen || mode === "manual") return;
+
     const previewEl = previewAreaRef.current || containerRef.current;
+    const containerEl = containerRef.current;
     if (!previewEl || !selectedLabel) return;
 
     const recalc = () => {
@@ -763,11 +766,26 @@ const ProductionStartModal = ({
       }
     };
 
+    // Eerste meting kan te vroeg zijn direct na mode-switch, daarom extra frame.
     recalc();
+    const raf1 = window.requestAnimationFrame(recalc);
+    const raf2 = window.requestAnimationFrame(recalc);
+
     const ro = new ResizeObserver(recalc);
     ro.observe(previewEl);
-    return () => ro.disconnect();
-  }, [selectedLabel, isOpen]);
+    if (containerEl && containerEl !== previewEl) {
+      ro.observe(containerEl);
+    }
+
+    window.addEventListener("resize", recalc);
+
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+      ro.disconnect();
+      window.removeEventListener("resize", recalc);
+    };
+  }, [selectedLabel, selectedLabelId, isOpen, mode]);
 
   const handleManualOrderChange = async (e) => {
     const value = e.target.value.toUpperCase();
