@@ -31,7 +31,7 @@ import ConfirmationModal from "./modals/ConfirmationModal";
 import { FileImage } from "lucide-react";
 import { findDrawingForProduct } from "../../utils/findDrawingForProduct";
 import { format, differenceInDays } from "date-fns";
-import { collection, getDoc, getDocs, query, where, limit } from "firebase/firestore";
+import { collection, getDoc, getDocs, query, where, limit, doc } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getArchiveItemsPath } from "../../config/dbPaths";
 import {

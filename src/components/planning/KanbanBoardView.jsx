@@ -7,9 +7,10 @@ import {
   User,
   Calendar
 } from "lucide-react";
-import { collection, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
+import { updateOrderKanbanStatus } from "../../services/planningSecurityService";
 import { format } from "date-fns";
 import { useNotifications } from '../../contexts/NotificationContext';
 
@@ -97,13 +98,8 @@ const KanbanBoardView = () => {
     }
 
     try {
-      // Update order status in Firestore
-      const orderRef = doc(db, ...PATHS.PLANNING, draggableId);
-      await updateDoc(orderRef, {
-        status: destination.droppableId,
-        statusUpdatedAt: new Date(),
-        statusUpdatedBy: "user" // TODO: Add actual user
-      });
+      // Update order status via callable
+      await updateOrderKanbanStatus({ orderId: draggableId, status: destination.droppableId });
       await logActivity(
         auth.currentUser?.uid,
         "ORDER_STATUS_MOVE",

@@ -59,6 +59,14 @@ const {
   markMazakLabelsPrinted,
   appendQcNote,
   reserveAutoLotNumberRange,
+  addOrderDependency,
+  removeOrderDependency,
+  updateOrderPlannedDate,
+  updateOrderKanbanStatus,
+  markReadyForNextStep,
+  startTrackedProductRepair,
+  reportShopFloorIssue,
+  resolveShopFloorIssue,
 } = require('./src/callables/planningCallables');
 
 const clean = (val) => String(val || '').trim();
@@ -857,6 +865,14 @@ exports.createPlanningOrderManual = createPlanningOrderManual;
 exports.markMazakLabelsPrinted = markMazakLabelsPrinted;
 exports.appendQcNote = appendQcNote;
 exports.reserveAutoLotNumberRange = reserveAutoLotNumberRange;
+exports.addOrderDependency = addOrderDependency;
+exports.removeOrderDependency = removeOrderDependency;
+exports.updateOrderPlannedDate = updateOrderPlannedDate;
+exports.updateOrderKanbanStatus = updateOrderKanbanStatus;
+exports.markReadyForNextStep = markReadyForNextStep;
+exports.startTrackedProductRepair = startTrackedProductRepair;
+exports.reportShopFloorIssue = reportShopFloorIssue;
+exports.resolveShopFloorIssue = resolveShopFloorIssue;
 
 /**
  * Backend AI proxy: voorkomt dat API keys in de frontend staan.

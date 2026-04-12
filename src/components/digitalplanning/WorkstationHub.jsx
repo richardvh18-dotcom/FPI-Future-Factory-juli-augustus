@@ -1,4 +1,4 @@
-import { collection, query, onSnapshot, doc, serverTimestamp, updateDoc, where, addDoc, limit, getDocs, setDoc, arrayUnion, increment } from "firebase/firestore";
+import { collection, query, onSnapshot, doc, serverTimestamp, updateDoc, where, addDoc, limit, getDocs, getDoc, setDoc, arrayUnion, increment } from "firebase/firestore";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";

@@ -2246,6 +2246,142 @@ const reserveAutoLotNumberRangeService = async ({
   };
 };
 
+// ── Extra collectiepaden (niet in planningConstants) ────────────────────────
+const DOWNTIME_COLLECTION = `${BASE}/production/downtime_reports`;
+const DEFECTS_COLLECTION  = `${BASE}/production/defect_reports`;
+const MESSAGES_COLLECTION = `${BASE}/production/messages`;
+
+// ── Nieuwe service functies ──────────────────────────────────────────────────
+
+const addOrderDependencyService = async ({ orderId, dependencyId }) => {
+  const ref = db.collection(PLANNING_COLLECTION).doc(orderId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error('NOT_FOUND_ORDER');
+  await ref.update({ dependencies: admin.firestore.FieldValue.arrayUnion(dependencyId) });
+  return { ok: true };
+};
+
+const removeOrderDependencyService = async ({ orderId, dependencyId }) => {
+  const ref = db.collection(PLANNING_COLLECTION).doc(orderId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error('NOT_FOUND_ORDER');
+  await ref.update({ dependencies: admin.firestore.FieldValue.arrayRemove(dependencyId) });
+  return { ok: true };
+};
+
+const updateOrderPlannedDateService = async ({ orderId, plannedDate }) => {
+  const ref = db.collection(PLANNING_COLLECTION).doc(orderId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error('NOT_FOUND_ORDER');
+  await ref.update({
+    plannedDate: new Date(plannedDate),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { ok: true };
+};
+
+const updateOrderKanbanStatusService = async ({ orderId, status, auth }) => {
+  const ref = db.collection(PLANNING_COLLECTION).doc(orderId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error('NOT_FOUND_ORDER');
+  await ref.update({
+    status,
+    statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    statusUpdatedBy: getActorLabel(auth, null),
+  });
+  return { ok: true };
+};
+
+const markReadyForNextStepService = async ({ productId, auth }) => {
+  const ref = db.collection(TRACKING_COLLECTION).doc(productId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error('NOT_FOUND_PRODUCT');
+  const data = snap.data() || {};
+  const nextState = getStepForStationServer(data.currentStation || '');
+  await ref.update({
+    currentStep: nextState.currentStep || data.currentStep,
+    status: 'ready_for_next_step',
+    readyForNextStepAt: admin.firestore.FieldValue.serverTimestamp(),
+    markedReadyBy: auth?.uid,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { ok: true };
+};
+
+const startTrackedProductRepairService = async ({ productId, repairReason, auth }) => {
+  const ref = db.collection(TRACKING_COLLECTION).doc(productId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error('NOT_FOUND_PRODUCT');
+  await ref.update({
+    status: 'in_repair',
+    repairReason: clampText(repairReason, 500),
+    repairStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+    repairStartedBy: auth?.uid,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { ok: true };
+};
+
+const reportShopFloorIssueService = async ({
+  type, machine, orderId, lotNumber, description, operatorName, auth,
+}) => {
+  if (!['downtime', 'defect'].includes(type)) throw new Error('INVALID_ISSUE_TYPE');
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const commonData = {
+    machine: clampText(machine, 100) || 'Onbekend',
+    createdAt: now,
+    createdBy: auth?.uid,
+    operatorName: clampText(operatorName, 100),
+    orderId: orderId || null,
+  };
+  if (type === 'downtime') {
+    await db.collection(DOWNTIME_COLLECTION).add({
+      ...commonData,
+      reason: clampText(description, 500) || 'Gemeld door operator',
+      status: 'active',
+      type: 'unplanned',
+    });
+  } else {
+    await db.collection(DEFECTS_COLLECTION).add({
+      ...commonData,
+      defectType: 'Operator Melding',
+      description: clampText(description, 500) || 'Defect gemeld via scanner',
+      severity: 'medium',
+      status: 'open',
+      lotNumber: lotNumber || null,
+    });
+  }
+  const issueLabel = type === 'downtime' ? 'stilstand' : 'defect';
+  const titleLabel = type === 'downtime' ? '⚠️ Stilstand Gemeld' : '🚩 Defect Gemeld';
+  await db.collection(MESSAGES_COLLECTION).add({
+    title: titleLabel,
+    message: `${clampText(operatorName, 60) || 'Operator'} meldt ${issueLabel} op ${clampText(machine, 80) || 'onbekend'}: ${clampText(description, 200) || 'Geen toelichting'}`,
+    type: 'alert',
+    priority: 'high',
+    status: 'unread',
+    read: false,
+    createdAt: now,
+    timestamp: now,
+    source: 'ShopFloorMobile',
+    targetGroup: 'TEAMLEADERS',
+  });
+  return { ok: true };
+};
+
+const resolveShopFloorIssueService = async ({ type, issueId, auth }) => {
+  if (!['downtime', 'defect'].includes(type)) throw new Error('INVALID_ISSUE_TYPE');
+  const col = type === 'downtime' ? DOWNTIME_COLLECTION : DEFECTS_COLLECTION;
+  const ref = db.collection(col).doc(issueId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error('NOT_FOUND_ISSUE');
+  await ref.update({
+    status: 'resolved',
+    resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+    resolvedBy: auth?.uid,
+  });
+  return { ok: true };
+};
+
 module.exports = {
   rejectTrackedProductFinalService,
   moveTrackedProductManualService,
@@ -2276,4 +2412,12 @@ module.exports = {
   markMazakLabelsPrintedService,
   appendQcNoteService,
   reserveAutoLotNumberRangeService,
+  addOrderDependencyService,
+  removeOrderDependencyService,
+  updateOrderPlannedDateService,
+  updateOrderKanbanStatusService,
+  markReadyForNextStepService,
+  startTrackedProductRepairService,
+  reportShopFloorIssueService,
+  resolveShopFloorIssueService,
 };
