@@ -3397,3 +3397,51 @@ Made changes.
 **Resultaat:**
 - Medium-priority planning/shopfloor writes lopen nu via backend + callable boundary.
 - Branch staat gesynchroniseerd op GitHub en deploy is live.
+
+---
+
+### Update sessie 93 (Architectuur review vertaald naar uitvoerbaar vervolg)
+
+**Datum:** 12 april 2026 | **Branch:** `pilot-dev`
+
+**Context:**
+- Externe architectuurreview aangeleverd met focus op write-boundary, import-bypass, rules-hardening en type-safety.
+
+**Feitelijke status (gevalideerd op code):**
+
+1. **Kritische bypass nog aanwezig in importflow**
+- `src/components/digitalplanning/modals/PlanningImportModal.jsx` schrijft nog direct client-side met `writeBatch` en `batch.set`.
+- Dit omzeilt de command-laag in Cloud Functions.
+
+2. **Medium-priority planning writes zijn inmiddels wel via callables**
+- Reeds gemigreerd en live (sessie 90-92).
+
+3. **Firestore rules laten nog meerdere client writes toe**
+- Bewust pilot-vriendelijk gehouden.
+- Hierdoor is “writes alleen via backend” nog niet hard technisch afgedwongen.
+
+4. **Overige directe writes buiten medium-scope bestaan nog**
+- O.a. in admin/AI/notification/printer/util-onderdelen.
+
+**Besloten strategie (CQRS-light, gefaseerd):**
+
+1. **Query (read):** frontend blijft direct luisteren met `onSnapshot`.
+2. **Command (write):** productie/planning writes gefaseerd naar callables.
+3. **Rules-hardening:** pas na functionele migratie per domein, om pilot niet te blokkeren.
+
+**Eerstvolgende implementatiestap (hoogste prioriteit):**
+
+1. `PlanningImportModal` migreren naar backend command-callable (bijv. `importPlanningOrders`).
+2. Frontend importmodal alleen payload laten bouwen/valideren en callable aanroepen.
+3. Daarna rules voor import-gerelateerde writes aanscherpen zodat client-write pad dicht kan.
+
+**Concrete checklist voor volgende sessie:**
+
+1. Nieuwe callable + servicefunctie toevoegen voor planning import.
+2. `PlanningImportModal.jsx` refactoren: `writeBatch` verwijderen, vervangen door callable call.
+3. End-to-end test: import met machinefilter (BH12/BH18) blijft correct werken.
+4. Pas daarna Firestore rules voor betreffende collecties strakker zetten.
+5. Deploy functions + rules + commit/push.
+
+**Doel van deze fase:**
+- Grootste architectuurgat (import-bypass) sluiten zonder pilot-flow te breken.
