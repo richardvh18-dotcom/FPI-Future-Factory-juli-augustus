@@ -265,7 +265,6 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
             nextStatus = "Finished";
             updateStation = false;
           } else if (target?.isManualMove) {
-            updates.isManualMove = false;
             nextStep = "Nabewerking";
             targetStation = "Nabewerking";
           } else if (nextStep === "Eindinspectie") {

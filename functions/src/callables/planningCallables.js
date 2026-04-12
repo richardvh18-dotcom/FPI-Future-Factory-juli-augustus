@@ -49,6 +49,14 @@ const {
   markMazakLabelsPrintedService,
   appendQcNoteService,
   reserveAutoLotNumberRangeService,
+  addOrderDependencyService,
+  removeOrderDependencyService,
+  updateOrderPlannedDateService,
+  updateOrderKanbanStatusService,
+  markReadyForNextStepService,
+  startTrackedProductRepairService,
+  reportShopFloorIssueService,
+  resolveShopFloorIssueService,
 } = require('../services/planningTransitionService');
 
 const sanitizeRejectReasons = (rawReasons) => {
@@ -1279,6 +1287,204 @@ const reserveAutoLotNumberRange = functions.https.onCall(async (data, context) =
   }
 });
 
+// ── Nieuwe callables: order dependencies, dates, kanban, shopfloor ───────────
+
+const addOrderDependency = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten voor dependency beheer.');
+  }
+  const orderId      = clean(data?.orderId);
+  const dependencyId = clean(data?.dependencyId);
+  if (!orderId || !dependencyId) {
+    throw new functions.https.HttpsError('invalid-argument', 'orderId en dependencyId zijn verplicht.');
+  }
+  try {
+    return await addOrderDependencyService({ orderId, dependencyId });
+  } catch (error) {
+    if (error?.message === 'NOT_FOUND_ORDER') {
+      throw new functions.https.HttpsError('not-found', 'Order niet gevonden.');
+    }
+    throw error;
+  }
+});
+
+const removeOrderDependency = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten voor dependency beheer.');
+  }
+  const orderId      = clean(data?.orderId);
+  const dependencyId = clean(data?.dependencyId);
+  if (!orderId || !dependencyId) {
+    throw new functions.https.HttpsError('invalid-argument', 'orderId en dependencyId zijn verplicht.');
+  }
+  try {
+    return await removeOrderDependencyService({ orderId, dependencyId });
+  } catch (error) {
+    if (error?.message === 'NOT_FOUND_ORDER') {
+      throw new functions.https.HttpsError('not-found', 'Order niet gevonden.');
+    }
+    throw error;
+  }
+});
+
+const updateOrderPlannedDate = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om geplande datum te wijzigen.');
+  }
+  const orderId    = clean(data?.orderId);
+  const plannedDate = data?.plannedDate;
+  if (!orderId || !plannedDate) {
+    throw new functions.https.HttpsError('invalid-argument', 'orderId en plannedDate zijn verplicht.');
+  }
+  const parsed = new Date(plannedDate);
+  if (isNaN(parsed.getTime())) {
+    throw new functions.https.HttpsError('invalid-argument', 'Ongeldige datum.');
+  }
+  try {
+    return await updateOrderPlannedDateService({ orderId, plannedDate: parsed });
+  } catch (error) {
+    if (error?.message === 'NOT_FOUND_ORDER') {
+      throw new functions.https.HttpsError('not-found', 'Order niet gevonden.');
+    }
+    throw error;
+  }
+});
+
+const updateOrderKanbanStatus = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten voor kanban status wijziging.');
+  }
+  const orderId = clean(data?.orderId);
+  const status  = clean(data?.status);
+  if (!orderId || !status || status.length > 60) {
+    throw new functions.https.HttpsError('invalid-argument', 'orderId en geldige status zijn verplicht.');
+  }
+  try {
+    return await updateOrderKanbanStatusService({ orderId, status, auth: context.auth });
+  } catch (error) {
+    if (error?.message === 'NOT_FOUND_ORDER') {
+      throw new functions.https.HttpsError('not-found', 'Order niet gevonden.');
+    }
+    throw error;
+  }
+});
+
+const markReadyForNextStep = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+  const userRole = await resolveUserRoleForContext(context);
+  if (!MANUAL_MOVE_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten.');
+  }
+  const productId = clean(data?.productId);
+  if (!productId) {
+    throw new functions.https.HttpsError('invalid-argument', 'productId is verplicht.');
+  }
+  try {
+    return await markReadyForNextStepService({ productId, auth: context.auth });
+  } catch (error) {
+    if (error?.message === 'NOT_FOUND_PRODUCT') {
+      throw new functions.https.HttpsError('not-found', 'Product niet gevonden.');
+    }
+    throw error;
+  }
+});
+
+const startTrackedProductRepair = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+  const userRole = await resolveUserRoleForContext(context);
+  if (!MANUAL_MOVE_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om reparatie te starten.');
+  }
+  const productId    = clean(data?.productId);
+  const repairReason = clampText(data?.repairReason, 500);
+  if (!productId) {
+    throw new functions.https.HttpsError('invalid-argument', 'productId is verplicht.');
+  }
+  try {
+    return await startTrackedProductRepairService({ productId, repairReason, auth: context.auth });
+  } catch (error) {
+    if (error?.message === 'NOT_FOUND_PRODUCT') {
+      throw new functions.https.HttpsError('not-found', 'Product niet gevonden.');
+    }
+    throw error;
+  }
+});
+
+const reportShopFloorIssue = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+  const userRole = await resolveUserRoleForContext(context);
+  if (!MANUAL_MOVE_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten voor shop floor melding.');
+  }
+  const type         = clean(data?.type);
+  const machine      = clampText(data?.machine, 100);
+  const orderId      = clean(data?.orderId);
+  const lotNumber    = clean(data?.lotNumber);
+  const description  = clampText(data?.description, 500);
+  const operatorName = clampText(data?.operatorName, 100);
+  if (!['downtime', 'defect'].includes(type)) {
+    throw new functions.https.HttpsError('invalid-argument', 'type moet "downtime" of "defect" zijn.');
+  }
+  try {
+    return await reportShopFloorIssueService({
+      type, machine, orderId, lotNumber, description, operatorName, auth: context.auth,
+    });
+  } catch (error) {
+    if (error?.message === 'INVALID_ISSUE_TYPE') {
+      throw new functions.https.HttpsError('invalid-argument', 'Ongeldig issue type.');
+    }
+    throw error;
+  }
+});
+
+const resolveShopFloorIssue = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+  const userRole = await resolveUserRoleForContext(context);
+  if (!MANUAL_MOVE_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten voor het oplossen van meldingen.');
+  }
+  const type    = clean(data?.type);
+  const issueId = clean(data?.issueId);
+  if (!['downtime', 'defect'].includes(type) || !issueId) {
+    throw new functions.https.HttpsError('invalid-argument', 'type en issueId zijn verplicht.');
+  }
+  try {
+    return await resolveShopFloorIssueService({ type, issueId, auth: context.auth });
+  } catch (error) {
+    if (error?.message === 'NOT_FOUND_ISSUE') {
+      throw new functions.https.HttpsError('not-found', 'Melding niet gevonden.');
+    }
+    if (error?.message === 'INVALID_ISSUE_TYPE') {
+      throw new functions.https.HttpsError('invalid-argument', 'Ongeldig issue type.');
+    }
+    throw error;
+  }
+});
+
 module.exports = {
   rejectTrackedProductFinal,
   tempRejectTrackedProduct,
@@ -1309,4 +1515,12 @@ module.exports = {
   markMazakLabelsPrinted,
   appendQcNote,
   reserveAutoLotNumberRange,
+  addOrderDependency,
+  removeOrderDependency,
+  updateOrderPlannedDate,
+  updateOrderKanbanStatus,
+  markReadyForNextStep,
+  startTrackedProductRepair,
+  reportShopFloorIssue,
+  resolveShopFloorIssue,
 };

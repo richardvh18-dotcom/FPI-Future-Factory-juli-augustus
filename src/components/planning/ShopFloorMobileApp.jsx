@@ -21,15 +21,21 @@ import {
   ArrowRight,
   ArrowRightLeft
 } from "lucide-react";
-import { collection, onSnapshot, doc, updateDoc, serverTimestamp, addDoc } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { db, logActivity } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
+import {
+  moveTrackedProductManual,
+  markReadyForNextStep as markReadyForNextStepCallable,
+  reportShopFloorIssue,
+  resolveShopFloorIssue,
+  startTrackedProductRepair,
+} from "../../services/planningSecurityService";
 import { format } from "date-fns";
 import { nl } from "date-fns/locale";
 import MobileScanner from "../digitalplanning/MobileScanner";
 import ProductMoveModal from "../digitalplanning/ProductMoveModal";
-import { getStepForStation } from "../../utils/workstationLogic";
 import { normalizeMachine } from "../../utils/hubHelpers";
 import StatusBadge from "../digitalplanning/common/StatusBadge";
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -390,17 +396,11 @@ const ShopFloorMobileApp = () => {
   const handleMoveLot = async (lotNumber, newStation) => {
     if (!lotNumber || !newStation) return;
     try {
-      const productRef = doc(db, ...PATHS.TRACKING, lotNumber);
-      
-      const nextState = getStepForStation(newStation);
-
-      await updateDoc(productRef, {
-        currentStation: newStation,
-        currentStep: nextState.currentStep,
-        status: nextState.status || "in_progress",
-        isManualMove: true,
-        updatedAt: serverTimestamp(),
-        note: `Handmatig verplaatst naar ${newStation} door ${user?.email || 'Mobile User'}`
+      await moveTrackedProductManual({
+        productOrLotId: lotNumber,
+        newStation,
+        source: 'ShopFloorMobile',
+        actorLabel: user?.email || 'Mobile User',
       });
 
       await logActivity(
@@ -552,12 +552,7 @@ const ShopFloorMobileApp = () => {
 
   // Resolve downtime
   const resolveDowntime = async (downtimeId) => {
-    await updateDoc(doc(db, ...PATHS.DOWNTIME, downtimeId), {
-      status: "resolved",
-      resolvedAt: serverTimestamp(),
-      resolvedBy: user?.uid
-    });
-
+    await resolveShopFloorIssue({ type: 'downtime', issueId: downtimeId });
     await logActivity(
       user?.uid,
       "DOWNTIME_RESOLVE",
@@ -567,12 +562,7 @@ const ShopFloorMobileApp = () => {
 
   // Resolve defect
   const resolveDefect = async (defectId) => {
-    await updateDoc(doc(db, ...PATHS.DEFECTS, defectId), {
-      status: "resolved",
-      resolvedAt: serverTimestamp(),
-      resolvedBy: user?.uid
-    });
-
+    await resolveShopFloorIssue({ type: 'defect', issueId: defectId });
     await logActivity(
       user?.uid,
       "DEFECT_RESOLVE",
@@ -638,16 +628,7 @@ const ShopFloorMobileApp = () => {
   const markReadyForNextStep = async (product) => {
     if (!product || !product.id) return;
     try {
-      const nextState = getStepForStation(product.currentStation || "");
-      const productRef = doc(db, ...PATHS.TRACKING, product.id);
-      
-      await updateDoc(productRef, {
-        currentStep: nextState.currentStep || product.currentStep,
-        status: "ready_for_next_step",
-        readyForNextStepAt: serverTimestamp(),
-        markedReadyBy: user?.uid,
-        updatedAt: serverTimestamp()
-      });
+      await markReadyForNextStepCallable({ productId: product.id });
 
       await logActivity(
         user?.uid,
@@ -685,67 +666,19 @@ const ShopFloorMobileApp = () => {
     if (!scanResult?.data || !issueType) return;
     
     try {
-      const commonData = {
+      await reportShopFloorIssue({
+        type: issueType,
         machine: scanResult.data.machine || t("planning.shopFloor.unknown", "Onbekend"),
-        createdAt: serverTimestamp(),
-        createdBy: user.uid,
+        orderId: scanResult.data.orderId || scanResult.data.id || null,
+        lotNumber: scanResult.data.lotNumber || null,
+        description: issueDescription || "",
         operatorName: user.displayName || t("planning.shopFloor.operator", "Operator"),
-        orderId: scanResult.data.orderId || scanResult.data.id || null
-      };
-
-      if (issueType === 'downtime') {
-        await addDoc(collection(db, ...PATHS.DOWNTIME), {
-          ...commonData,
-          reason: issueDescription || t("planning.shopFloor.reportedByOperator", "Gemeld door operator"),
-          status: "active",
-          type: "unplanned"
-        });
-
-        await logActivity(
-          user?.uid,
-          "DOWNTIME_CREATE",
-          `Downtime gemeld via scanner op ${commonData.machine} voor order ${commonData.orderId || "onbekend"}`
-        );
-      } else {
-        await addDoc(collection(db, ...PATHS.DEFECTS), {
-          ...commonData,
-          defectType: t("planning.shopFloor.operatorReport", "Operator Melding"),
-          description: issueDescription || t("planning.shopFloor.defectReportedViaScanner", "Defect gemeld via scanner"),
-          severity: "medium",
-          status: "open",
-          lotNumber: scanResult.data.lotNumber || null,
-        });
-
-        await logActivity(
-          user?.uid,
-          "DEFECT_CREATE",
-          `Defect gemeld via scanner op ${commonData.machine} voor lot ${scanResult.data.lotNumber || "onbekend"}`
-        );
-      }
-
-      // Stuur notificatie naar teamleider (Alert)
-      await addDoc(collection(db, ...PATHS.MESSAGES), {
-        title: issueType === 'downtime' ? t("planning.shopFloor.downtimeReportedTitle", "⚠️ Stilstand Gemeld") : t("planning.shopFloor.defectReportedTitle", "🚩 Defect Gemeld"),
-        message: t("planning.shopFloor.issueNotificationMessage", "{{name}} meldt {{issue}} op {{machine}}: {{description}}", {
-          name: user.displayName || t("planning.shopFloor.operator", "Operator"),
-          issue: issueType === 'downtime' ? t("planning.shopFloor.downtime", "stilstand") : t("planning.shopFloor.defect", "defect"),
-          machine: commonData.machine,
-          description: issueDescription || t("planning.shopFloor.noExplanation", "Geen toelichting"),
-        }),
-        type: "alert",
-        priority: "high",
-        status: "unread",
-        read: false,
-        createdAt: serverTimestamp(),
-        timestamp: serverTimestamp(),
-        source: "ShopFloorMobile",
-        targetGroup: "TEAMLEADERS"
       });
 
       await logActivity(
         user?.uid,
         "MESSAGE_SEND",
-        `Teamleader-alert verzonden vanuit mobile app (${issueType}) voor machine ${commonData.machine}`
+        `Teamleader-alert verzonden vanuit mobile app (${issueType}) voor machine ${scanResult.data.machine || 'onbekend'}`
       );
       
       setShowIssueModal(false);
@@ -1829,13 +1762,9 @@ const ShopFloorMobileApp = () => {
           onClose={() => setRepairMode(null)}
           onSubmit={async (repairData) => {
             try {
-              const productRef = doc(db, ...PATHS.TRACKING, repairMode);
-              await updateDoc(productRef, {
-                status: "in_repair",
+              await startTrackedProductRepair({
+                productId: repairMode,
                 repairReason: repairData.reason,
-                repairStartedAt: serverTimestamp(),
-                repairStartedBy: user.uid,
-                updatedAt: serverTimestamp()
               });
               await logActivity(
                 user?.uid,

@@ -9,9 +9,10 @@ import {
   Link,
   TrendingUp
 } from "lucide-react";
-import { collection, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove } from "firebase/firestore";
+import { collection, onSnapshot } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
+import { addOrderDependency, removeOrderDependency } from "../../services/planningSecurityService";
 import { useNotifications } from '../../contexts/NotificationContext';
 
 /**
@@ -143,9 +144,7 @@ const OrderDependenciesView = () => {
       return;
     }
 
-    await updateDoc(doc(db, ...PATHS.PLANNING, selectedOrder.id), {
-      dependencies: arrayUnion(potentialDependency)
-    });
+    await addOrderDependency({ orderId: selectedOrder.id, dependencyId: potentialDependency });
 
     await logActivity(
       auth.currentUser?.uid,
@@ -159,9 +158,7 @@ const OrderDependenciesView = () => {
 
   // Remove dependency
   const removeDependency = async (orderId, depId) => {
-    await updateDoc(doc(db, ...PATHS.PLANNING, orderId), {
-      dependencies: arrayRemove(depId)
-    });
+    await removeOrderDependency({ orderId, dependencyId: depId });
 
     await logActivity(
       auth.currentUser?.uid,
