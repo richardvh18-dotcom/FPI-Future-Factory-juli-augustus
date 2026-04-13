@@ -1,18 +1,19 @@
 import { db, auth, logActivity } from "../config/firebase";
 import {
   collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
   doc,
   getDocs,
   query,
   orderBy,
-  serverTimestamp,
 } from "firebase/firestore";
 import { VERIFICATION_STATUS } from "../data/constants";
 import { PATHS } from "../config/dbPaths";
 import i18n from "../i18n";
+import {
+  saveProductRecord,
+  deleteProductRecord,
+  verifyProductRecord,
+} from "../services/planningSecurityService";
 
 /**
  * Product Helpers V8.0
@@ -29,28 +30,18 @@ export const fetchProducts = async () => {
 };
 
 export const addProduct = async (productData) => {
-  const cleanData = {
-    ...productData,
-    createdAt: serverTimestamp(),
-    lastUpdated: serverTimestamp(),
-  };
-  const docRef = await addDoc(collection(db, ...PATHS.PRODUCTS), cleanData);
+  const result = await saveProductRecord({ productData });
   await logActivity(auth.currentUser?.uid, "PRODUCT_CREATE", `Product created: ${productData.name || "Unknown"}`);
-  return docRef.id;
+  return result?.productId || null;
 };
 
 export const updateProduct = async (productId, productData) => {
-  const productRef = doc(db, ...PATHS.PRODUCTS, productId);
-  await updateDoc(productRef, {
-    ...productData,
-    lastUpdated: serverTimestamp(),
-  });
+  await saveProductRecord({ productId, productData });
   await logActivity(auth.currentUser?.uid, "PRODUCT_UPDATE", `Product updated: ${productId}`);
 };
 
 export const deleteProduct = async (productId) => {
-  const productRef = doc(db, ...PATHS.PRODUCTS, productId);
-  await deleteDoc(productRef);
+  await deleteProductRecord(productId);
   await logActivity(auth.currentUser?.uid, "PRODUCT_DELETE", `Product deleted: ${productId}`);
 };
 
@@ -67,17 +58,17 @@ export const verifyProduct = async (
       message: i18n.t("product.verify_own_change_error", "Vier-ogen principe: Je mag je eigen wijzigingen niet verifiëren."),
     };
   }
-  const productRef = doc(db, ...PATHS.PRODUCTS, productId);
-  await updateDoc(productRef, {
-    verificationStatus: VERIFICATION_STATUS.VERIFIED,
-    verifiedBy: {
-      uid: currentUser.uid,
-      name: currentUser.displayName || currentUser.name,
-      timestamp: serverTimestamp(),
-    },
-    selfVerifiedByAdmin: currentProductData.lastModifiedBy === currentUser?.uid && isAdmin,
-    active: true,
-    lastUpdated: serverTimestamp(),
+  const result = await verifyProductRecord({
+    productId,
+    actorName: currentUser.displayName || currentUser.name,
   });
+
+  if (!result?.ok) {
+    return {
+      success: false,
+      message: result?.message || i18n.t("product.verify_failed", "Verificatie mislukt."),
+    };
+  }
+
   return { success: true };
 };

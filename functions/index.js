@@ -82,6 +82,21 @@ const {
   submitAccountRequest,
   updateUserLanguage,
   executeAutomationRule,
+  saveProductRecord,
+  deleteProductRecord,
+  verifyProductRecord,
+  upsertConversionRecord,
+  deleteConversionRecord,
+  deleteAllConversionRecords,
+  upsertConversionBatch,
+  processInforUpdate,
+  saveAiContextConfig,
+  createAiDocumentRecord,
+  updateAiDocumentRecord,
+  deleteAiDocumentRecord,
+  verifyAiKnowledgeEntry,
+  deleteAiKnowledgeEntry,
+  migrateAiKnowledgeFields,
 } = require('./src/callables/planningCallables');
 
 const clean = (val) => String(val || '').trim();
@@ -903,6 +918,21 @@ exports.clearPasswordChangeFlag = clearPasswordChangeFlag;
 exports.submitAccountRequest = submitAccountRequest;
 exports.updateUserLanguage = updateUserLanguage;
 exports.executeAutomationRule = executeAutomationRule;
+exports.saveProductRecord = saveProductRecord;
+exports.deleteProductRecord = deleteProductRecord;
+exports.verifyProductRecord = verifyProductRecord;
+exports.upsertConversionRecord = upsertConversionRecord;
+exports.deleteConversionRecord = deleteConversionRecord;
+exports.deleteAllConversionRecords = deleteAllConversionRecords;
+exports.upsertConversionBatch = upsertConversionBatch;
+exports.processInforUpdate = processInforUpdate;
+exports.saveAiContextConfig = saveAiContextConfig;
+exports.createAiDocumentRecord = createAiDocumentRecord;
+exports.updateAiDocumentRecord = updateAiDocumentRecord;
+exports.deleteAiDocumentRecord = deleteAiDocumentRecord;
+exports.verifyAiKnowledgeEntry = verifyAiKnowledgeEntry;
+exports.deleteAiKnowledgeEntry = deleteAiKnowledgeEntry;
+exports.migrateAiKnowledgeFields = migrateAiKnowledgeFields;
 
 /**
  * Backend AI proxy: voorkomt dat API keys in de frontend staan.

@@ -1,3 +1,77 @@
+## Update sessie 94 (Prioriteit 2 + Utility/AI write-migraties naar backend-callables)
+
+**Datum:** 13 april 2026 | **Branch:** `pilot-dev`
+
+**Doel:**
+- Openstaande writes uit hotspotscan C verder reduceren:
+    1. Automation execution pad server-side afdwingen
+    2. Utility writes (`productHelpers`, `conversionLogic`, `infor_sync_service`) naar backend verplaatsen
+    3. AI admin/document/training writes via backend-callables laten lopen
+
+**Wat is afgerond in deze sessie:**
+
+### 1) Automation execution gemigreerd ✅
+- Nieuwe backend service: `functions/src/services/automationService.js`
+- Nieuwe callable: `executeAutomationRule`
+- Frontend wrapper toegevoegd in `planningSecurityService.js`
+- `executeRuleWithLogging` in `src/utils/automationEngine.jsx` gedelegeerd naar backend callable
+- Resultaat: debounce, actie-uitvoering en execution logging lopen nu server-side
+
+### 2) Utility blok gemigreerd ✅
+
+**Product catalog utilities**
+- Nieuwe backend service: `functions/src/services/productCatalogService.js`
+- Nieuwe callables:
+    - `saveProductRecord`
+    - `deleteProductRecord`
+    - `verifyProductRecord`
+- `src/utils/productHelpers.jsx` gebruikt nu backend wrappers i.p.v. directe `addDoc/updateDoc/deleteDoc`
+
+**Conversion utilities**
+- Nieuwe backend service: `functions/src/services/conversionCatalogService.js`
+- Nieuwe callables:
+    - `upsertConversionRecord`
+    - `deleteConversionRecord`
+    - `deleteAllConversionRecords`
+    - `upsertConversionBatch`
+- Rewiring uitgevoerd in:
+    - `src/utils/conversionLogic.jsx`
+    - `src/components/admin/ConversionManager.jsx`
+
+**Infor sync utility**
+- Nieuwe backend service: `functions/src/services/inforSyncService.js`
+- Nieuwe callable: `processInforUpdate`
+- `src/utils/infor_sync_service.jsx` gedelegeerd naar callable (signatuur behouden voor bestaande callsites)
+
+### 3) AI admin/document/training writes gemigreerd ✅
+- Nieuwe backend service: `functions/src/services/aiAdminService.js`
+- Nieuwe callables:
+    - `saveAiContextConfig`
+    - `createAiDocumentRecord`
+    - `updateAiDocumentRecord`
+    - `deleteAiDocumentRecord`
+    - `verifyAiKnowledgeEntry`
+    - `deleteAiKnowledgeEntry`
+    - `migrateAiKnowledgeFields`
+- Rewiring uitgevoerd in:
+    - `src/components/ai/AiContextManager.jsx`
+    - `src/components/ai/AiDocumentUploadView.jsx`
+    - `src/components/ai/AiTrainingView.jsx`
+
+**Validatie:**
+- Backend syntax checks: geen fouten
+- Frontend build: succesvol (`npm run build`)
+- `get_errors`: geen fouten op gewijzigde bestanden
+
+**Status einde sessie:**
+- Wijzigingen staan lokaal klaar en zijn nog **niet** gepusht (op verzoek)
+- Laatste set bevat brede migratie over automation + utility + AI beheerpaden
+
+**Openstaand / Volgende stap:**
+1. Functions deployen voor nieuw toegevoegde callables (automation/utility/AI)
+2. Daarna git commit + push van de huidige lokale batch
+3. Eventueel restscan op niet-kritieke AI-chat/flashcard writes
+
 ## Update sessie 93 (Migratie Admin/Account Paden naar Backend Callables)
 
 **Datum:** 13 april 2026 | **Branch:** `pilot-dev`
