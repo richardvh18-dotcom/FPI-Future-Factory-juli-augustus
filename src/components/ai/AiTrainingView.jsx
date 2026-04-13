@@ -18,16 +18,16 @@ import {
   collection,
   query,
   onSnapshot,
-  doc,
-  updateDoc,
-  deleteDoc,
-  serverTimestamp,
   orderBy,
-  getDocs,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import { useNotifications } from '../../contexts/NotificationContext';
+import {
+  verifyAiKnowledgeEntry,
+  deleteAiKnowledgeEntry,
+  migrateAiKnowledgeFields,
+} from "../../services/planningSecurityService";
 
 /**
  * AiTrainingView V6.1 - Root Path Edition
@@ -65,12 +65,9 @@ const AiTrainingView = () => {
   const handleVerify = async (id, correctedText = null) => {
     setSaving(true);
     try {
-      const docRef = doc(db, ...(PATHS?.AI_KNOWLEDGE_BASE || ['future-factory', 'settings', 'ai_knowledge_base']), id);
-      await updateDoc(docRef, {
-        verified: true,
+      await verifyAiKnowledgeEntry({
+        entryId: id,
         correctedAnswer: correctedText || null,
-        verifiedAt: serverTimestamp(),
-        verifiedBy: "Admin",
       });
       setEditingId(null);
       await logActivity(auth.currentUser?.uid, 'AI_VERIFY', `Training verified for ID: ${id}. Correction: ${correctedText ? 'Yes' : 'No'}`);
@@ -86,7 +83,7 @@ const AiTrainingView = () => {
     if (!window.confirm(t('ai.training.delete_confirm')))
       return;
     try {
-      await deleteDoc(doc(db, ...(PATHS?.AI_KNOWLEDGE_BASE || ['future-factory', 'settings', 'ai_knowledge_base']), id));
+      await deleteAiKnowledgeEntry(id);
     } catch (e) {
       console.error(t('ai.training.delete_error'), e);
     }
@@ -96,25 +93,8 @@ const AiTrainingView = () => {
     if (!window.confirm(t('ai.training.migrate_confirm'))) return;
     
     try {
-      const colRef = collection(db, ...(PATHS?.AI_KNOWLEDGE_BASE || ['future-factory', 'settings', 'ai_knowledge_base']));
-      const snap = await getDocs(colRef);
-      let updated = 0;
-      
-      const promises = snap.docs.map(async (d) => {
-        const data = d.data();
-        const updates = {};
-        
-        if (data.userInput && !data.question) updates.question = data.userInput;
-        if (data.question && !data.userInput) updates.userInput = data.question;
-        
-        if (Object.keys(updates).length > 0) {
-          updated++;
-          await updateDoc(doc(db, ...(PATHS?.AI_KNOWLEDGE_BASE || ['future-factory', 'settings', 'ai_knowledge_base']), d.id), updates);
-        }
-      });
-      
-      await Promise.all(promises);
-      notify(t('ai.training.migrate_done', { count: updated }));
+      const result = await migrateAiKnowledgeFields();
+      notify(t('ai.training.migrate_done', { count: result?.updated || 0 }));
     } catch (e) {
       console.error(e);
       notify(t('ai.training.migrate_error', { message: e.message }));

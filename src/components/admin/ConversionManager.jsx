@@ -26,12 +26,15 @@ import {
   parseCSV,
   lookupProductByManufacturedId,
   fetchConversions,
+  uploadConversionBatch,
+  deleteConversion,
 } from "../../utils/conversionLogic";
 import { manualSyncDrawings } from "../../utils/manualSyncDrawings";
-import { doc, setDoc, deleteDoc, serverTimestamp, collection, query, where, limit, getDocs, writeBatch } from "firebase/firestore";
+import { collection, query, where, limit, getDocs } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { deleteAllConversionRecords, upsertConversionRecord } from "../../services/planningSecurityService";
 
 /**
  * ConversionManager V6.0 - Root Integrated
@@ -209,40 +212,8 @@ export default function ConversionManager() {
     setStatus("uploading");
 
     try {
-      // We implementeren de upload lokaal om zeker te zijn dat alle velden (a-n, label) mee gaan.
-      const BATCH_SIZE = 400;
       const total = fileData.length;
-      let processed = 0;
-
-      for (let i = 0; i < total; i += BATCH_SIZE) {
-        const chunk = fileData.slice(i, i + BATCH_SIZE);
-        const batch = writeBatch(db);
-
-        chunk.forEach((item) => {
-          // Zorg dat we een ID hebben
-          const docId = (item.manufacturedId || item["Old Item Code"] || item["Item Code"] || "").toString().trim().toUpperCase();
-          if (!docId) return;
-
-          const docRef = doc(db, ...PATHS.CONVERSION_MATRIX, docId);
-          
-          // Schoon item op voor opslag en voeg metadata toe
-          const storageItem = {
-            ...item,
-            manufacturedId: docId,
-            lastUpdated: serverTimestamp(),
-            updatedBy: auth.currentUser?.email || "Import",
-          };
-          
-          // Verwijder undefined waarden
-          Object.keys(storageItem).forEach(key => storageItem[key] === undefined && delete storageItem[key]);
-
-          batch.set(docRef, storageItem, { merge: true });
-        });
-
-        await batch.commit();
-        processed += chunk.length;
-        setProgress(Math.round((processed / total) * 100));
-      }
+      await uploadConversionBatch(fileData, null, setProgress);
 
       await logActivity(auth.currentUser?.uid, "MATRIX_UPDATE", `Batch import conversion matrix: ${total} records`);
       setStatus("done");
@@ -387,22 +358,12 @@ export default function ConversionManager() {
 
     setUploading(true);
     try {
-      const colRef = collection(db, ...PATHS.CONVERSION_MATRIX);
-      const snapshot = await getDocs(colRef);
-      
-      if (snapshot.size === 0) {
+      const result = await deleteAllConversionRecords();
+
+      if (!result?.deleted) {
         notify("Database is al leeg.");
         setUploading(false);
         return;
-      }
-
-      const batchSize = 400;
-      const total = snapshot.size;
-      
-      for (let i = 0; i < total; i += batchSize) {
-        const batch = writeBatch(db);
-        snapshot.docs.slice(i, i + batchSize).forEach((doc) => batch.delete(doc.ref));
-        await batch.commit();
       }
 
       notify("Alle items zijn verwijderd.");
@@ -422,21 +383,13 @@ export default function ConversionManager() {
     setUploading(true);
 
     try {
-      const docRef = doc(
-        db,
-        ...PATHS.CONVERSION_MATRIX,
-        editingItem.manufacturedId.toUpperCase()
-      );
-      await setDoc(
-        docRef,
-        {
+      await upsertConversionRecord({
+        recordId: editingItem.manufacturedId.toUpperCase(),
+        recordData: {
           ...editingItem,
           manufacturedId: editingItem.manufacturedId.toUpperCase(),
-          lastUpdated: serverTimestamp(),
-          updatedBy: auth.currentUser?.email || "Admin",
         },
-        { merge: true }
-      );
+      });
 
       await logActivity(auth.currentUser?.uid, "MATRIX_UPDATE", `Conversion record updated: ${editingItem.manufacturedId}`);
       setEditingItem(null);
@@ -459,7 +412,7 @@ export default function ConversionManager() {
     });
     if (!confirmed) return;
     try {
-      await deleteDoc(doc(db, ...PATHS.CONVERSION_MATRIX, id));
+      await deleteConversion(null, id);
       await logActivity(auth.currentUser?.uid, "MATRIX_UPDATE", `Conversion record deleted: ${id}`);
       setConversions((prev) => prev.filter((c) => c.id !== id));
     } catch (err) {

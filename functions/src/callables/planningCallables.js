@@ -76,6 +76,27 @@ const {
   updateUserLanguageService,
 } = require('../services/adminService');
 const { executeAutomationRuleService } = require('../services/automationService');
+const {
+  saveProductRecordService,
+  deleteProductRecordService,
+  verifyProductRecordService,
+} = require('../services/productCatalogService');
+const {
+  upsertConversionRecordService,
+  deleteConversionRecordService,
+  deleteAllConversionRecordsService,
+  upsertConversionBatchService,
+} = require('../services/conversionCatalogService');
+const { processInforUpdateService } = require('../services/inforSyncService');
+const {
+  saveAiContextConfigService,
+  createAiDocumentRecordService,
+  updateAiDocumentRecordService,
+  deleteAiDocumentRecordService,
+  verifyAiKnowledgeEntryService,
+  deleteAiKnowledgeEntryService,
+  migrateAiKnowledgeFieldsService,
+} = require('../services/aiAdminService');
 
 const IMPORT_ALLOWED_MODES = new Set(['new_only', 'overwrite', 'smart_update']);
 
@@ -1910,6 +1931,260 @@ const executeAutomationRule = functions.https.onCall(async (data, context) => {
   return executeAutomationRuleService(rule);
 });
 
+const saveProductRecord = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om producten te bewerken.');
+  }
+
+  const productId = clean(data?.productId);
+  const productData = (typeof data?.productData === 'object' && data.productData) || {};
+
+  return saveProductRecordService({
+    productId,
+    productData,
+    actorUid: context.auth.uid,
+  });
+});
+
+const deleteProductRecord = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om producten te verwijderen.');
+  }
+
+  const productId = clean(data?.productId);
+  return deleteProductRecordService({ productId });
+});
+
+const verifyProductRecord = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om producten te verifiëren.');
+  }
+
+  const productId = clean(data?.productId);
+  if (!productId) {
+    throw new functions.https.HttpsError('invalid-argument', 'productId is verplicht.');
+  }
+
+  const actorName = clean(data?.actorName) || clean(context.auth?.token?.name) || clean(context.auth?.token?.email);
+  return verifyProductRecordService({
+    productId,
+    actor: {
+      uid: context.auth.uid,
+      name: actorName,
+      email: clean(context.auth?.token?.email),
+    },
+    isAdmin: userRole === 'admin',
+  });
+});
+
+const upsertConversionRecord = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om conversies te bewerken.');
+  }
+
+  const recordId = clean(data?.recordId);
+  const recordData = (typeof data?.recordData === 'object' && data.recordData) || {};
+  return upsertConversionRecordService({
+    recordId,
+    recordData,
+    actorLabel: clean(context.auth?.token?.email) || context.auth.uid,
+  });
+});
+
+const deleteConversionRecord = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om conversies te verwijderen.');
+  }
+
+  const recordId = clean(data?.recordId);
+  return deleteConversionRecordService({ recordId });
+});
+
+const deleteAllConversionRecords = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (userRole !== 'admin') {
+    throw new functions.https.HttpsError('permission-denied', 'Alleen admins kunnen alle conversies verwijderen.');
+  }
+
+  return deleteAllConversionRecordsService();
+});
+
+const upsertConversionBatch = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om conversies te importeren.');
+  }
+
+  const items = Array.isArray(data?.items) ? data.items : [];
+  const mode = clean(data?.mode || 'merge');
+
+  return upsertConversionBatchService({
+    items,
+    mode,
+    actorLabel: clean(context.auth?.token?.email) || context.auth.uid,
+  });
+});
+
+const processInforUpdate = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om Infor sync uit te voeren.');
+  }
+
+  const csvData = Array.isArray(data?.csvData) ? data.csvData : [];
+  if (!csvData.length) {
+    throw new functions.https.HttpsError('invalid-argument', 'csvData is verplicht.');
+  }
+
+  return processInforUpdateService(csvData);
+});
+
+const saveAiContextConfig = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om AI configuratie te wijzigen.');
+  }
+
+  const systemPrompt = String(data?.systemPrompt || '');
+  return saveAiContextConfigService({
+    systemPrompt,
+    actorEmail: clean(context.auth?.token?.email),
+  });
+});
+
+const createAiDocumentRecord = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om AI documenten te uploaden.');
+  }
+
+  const payload = (typeof data?.payload === 'object' && data.payload) || {};
+  return createAiDocumentRecordService({
+    payload,
+    actorEmail: clean(context.auth?.token?.email),
+  });
+});
+
+const updateAiDocumentRecord = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om AI documenten te wijzigen.');
+  }
+
+  const docId = clean(data?.docId);
+  const patch = (typeof data?.patch === 'object' && data.patch) || {};
+  return updateAiDocumentRecordService({ docId, patch });
+});
+
+const deleteAiDocumentRecord = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om AI documenten te verwijderen.');
+  }
+
+  const docId = clean(data?.docId);
+  return deleteAiDocumentRecordService({ docId });
+});
+
+const verifyAiKnowledgeEntry = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om AI training te valideren.');
+  }
+
+  const entryId = clean(data?.entryId);
+  const correctedAnswer = data?.correctedAnswer || null;
+  return verifyAiKnowledgeEntryService({
+    entryId,
+    correctedAnswer,
+    actorEmail: clean(context.auth?.token?.email),
+  });
+});
+
+const deleteAiKnowledgeEntry = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om AI training entries te verwijderen.');
+  }
+
+  const entryId = clean(data?.entryId);
+  return deleteAiKnowledgeEntryService({ entryId });
+});
+
+const migrateAiKnowledgeFields = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (userRole !== 'admin') {
+    throw new functions.https.HttpsError('permission-denied', 'Alleen admins mogen AI kennis migratie uitvoeren.');
+  }
+
+  return migrateAiKnowledgeFieldsService();
+});
+
 module.exports = {
   rejectTrackedProductFinal,
   tempRejectTrackedProduct,
@@ -1963,4 +2238,19 @@ module.exports = {
   submitAccountRequest,
   updateUserLanguage,
   executeAutomationRule,
+  saveProductRecord,
+  deleteProductRecord,
+  verifyProductRecord,
+  upsertConversionRecord,
+  deleteConversionRecord,
+  deleteAllConversionRecords,
+  upsertConversionBatch,
+  processInforUpdate,
+  saveAiContextConfig,
+  createAiDocumentRecord,
+  updateAiDocumentRecord,
+  deleteAiDocumentRecord,
+  verifyAiKnowledgeEntry,
+  deleteAiKnowledgeEntry,
+  migrateAiKnowledgeFields,
 };

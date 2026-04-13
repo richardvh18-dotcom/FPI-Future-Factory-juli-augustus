@@ -2,20 +2,21 @@ import { db, auth, logActivity } from "../config/firebase";
 import {
   doc,
   getDoc,
-  writeBatch,
   collection,
   query,
   where,
   getDocs,
-  updateDoc,
-  deleteDoc,
   orderBy,
   limit,
   startAfter,
-  setDoc,
 } from "firebase/firestore";
 import { PATHS } from "../config/dbPaths";
 import i18n from "../i18n";
+import {
+  upsertConversionRecord,
+  deleteConversionRecord,
+  upsertConversionBatch,
+} from "../services/planningSecurityService";
 
 /**
  * Conversie Logica V5.0 - Volledig Herstel Functionaliteit
@@ -219,20 +220,23 @@ export const fetchConversions = async (
 
 export const createConversion = async (unusedAppId, data) => {
   const docId = String(data.manufacturedId).trim();
-  const docRef = doc(db, ...PATHS.CONVERSION_MATRIX, docId);
-  await setDoc(docRef, prepareDataForSave(data));
+  await upsertConversionRecord({
+    recordId: docId,
+    recordData: prepareDataForSave(data),
+  });
   await logActivity(auth.currentUser?.uid, "CONVERSION_CREATE", `Conversie aangemaakt: ${docId}`);
 };
 
 export const updateConversion = async (unusedAppId, id, data) => {
-  const docRef = doc(db, ...PATHS.CONVERSION_MATRIX, id);
-  await updateDoc(docRef, prepareDataForSave(data));
+  await upsertConversionRecord({
+    recordId: id,
+    recordData: prepareDataForSave(data),
+  });
   await logActivity(auth.currentUser?.uid, "CONVERSION_UPDATE", `Conversie bijgewerkt: ${id}`);
 };
 
 export const deleteConversion = async (unusedAppId, id) => {
-  const docRef = doc(db, ...PATHS.CONVERSION_MATRIX, id);
-  await deleteDoc(docRef);
+  await deleteConversionRecord(id);
   await logActivity(auth.currentUser?.uid, "CONVERSION_DELETE", `Conversie verwijderd: ${id}`);
 };
 
@@ -242,44 +246,10 @@ export const deleteConversion = async (unusedAppId, id) => {
  * Importeert alle items en overschrijft bestaande records met dezelfde Manufactured ID.
  */
 export const uploadConversionBatch = async (items, unusedAppId, onProgress) => {
-  const batchSize = 400;
   const total = items.length;
-  let processed = 0;
-
-  for (let i = 0; i < total; i += batchSize) {
-    const chunk = items.slice(i, i + batchSize);
-    const batch = writeBatch(db);
-
-    chunk.forEach((item) => {
-      const oldCode = item["Old Item Code"] || item["Item Code"];
-      if (oldCode) {
-        const cleanOldCode = String(oldCode).trim();
-        const docRef = doc(db, ...PATHS.CONVERSION_MATRIX, cleanOldCode);
-
-        batch.set(
-          docRef,
-          prepareDataForSave({
-            manufacturedId: cleanOldCode,
-            targetProductId: item["New Item Code"],
-            type: item["Type"],
-            serie: item["Serie"],
-            dn: item["DN [mm]"] || item["DN"],
-            pn: item["PN [bar]"] || item["PN"],
-            description: item["Type Description"],
-            sheet: item["Sheet"],
-            drilling: item["Drilling"],
-            rev: item["Rev"],
-            ends: item["Ends"],
-          }),
-          { merge: true }
-        );
-      }
-    });
-
-    await batch.commit();
-    processed += chunk.length;
-    if (onProgress) onProgress(Math.round((processed / total) * 100));
-  }
+  if (onProgress) onProgress(10);
+  await upsertConversionBatch({ items, mode: "merge" });
+  if (onProgress) onProgress(100);
 
   await logActivity(
     auth.currentUser?.uid,
@@ -292,40 +262,13 @@ export const uploadConversionBatch = async (items, unusedAppId, onProgress) => {
  * Voegt alleen items toe die nog niet in de database staan.
  */
 export const uploadNewItemsOnly = async (items, unusedAppId, onProgress) => {
-  let added = 0;
-  let skipped = 0;
-  const total = items.length;
+  if (onProgress) onProgress(10);
+  const result = await upsertConversionBatch({ items, mode: "new_only" });
+  if (onProgress) onProgress(100);
 
-  for (let i = 0; i < total; i++) {
-    const item = items[i];
-    const oldCode = String(
-      item["Old Item Code"] || item["Item Code"] || ""
-    ).trim();
+  const added = Number(result?.added || 0);
+  const skipped = Number(result?.skipped || 0);
 
-    if (oldCode) {
-      const docRef = doc(db, ...PATHS.CONVERSION_MATRIX, oldCode);
-      const snap = await getDoc(docRef);
-
-      if (!snap.exists()) {
-        await setDoc(
-          docRef,
-          prepareDataForSave({
-            manufacturedId: oldCode,
-            targetProductId: item["New Item Code"],
-            type: item["Type"],
-            serie: item["Serie"],
-            dn: item["DN [mm]"] || item["DN"],
-            pn: item["PN [bar]"] || item["PN"],
-            description: item["Type Description"],
-          })
-        );
-        added++;
-      } else {
-        skipped++;
-      }
-    }
-    if (onProgress) onProgress(Math.round(((i + 1) / total) * 100));
-  }
   await logActivity(
     auth.currentUser?.uid,
     "CONVERSION_NEWITEMS_UPLOAD",

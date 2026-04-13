@@ -13,20 +13,20 @@ import {
   RefreshCw,
 } from "lucide-react";
 import {
-  addDoc,
   collection,
-  deleteDoc,
-  doc,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp,
-  updateDoc,
 } from "firebase/firestore";
 import { db, auth, storage, logActivity } from "../../config/firebase";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { PATHS } from "../../config/dbPaths";
 import { aiService } from "../../services/aiService";
+import {
+  createAiDocumentRecord,
+  updateAiDocumentRecord,
+  deleteAiDocumentRecord,
+} from "../../services/planningSecurityService";
 import { getDocument, GlobalWorkerOptions } from "pdfjs-dist";
 
 GlobalWorkerOptions.workerSrc = new URL(
@@ -303,11 +303,10 @@ IMPORTANT RULES:
       // Sla ook de volledige tekst op (tot 50000 chars) voor betere context
       const fullTextContent = String(text).slice(0, MAX_CHARS);
       
-      await addDoc(collection(db, ...(PATHS?.AI_DOCUMENTS || ['future-factory', 'settings', 'ai_documents', 'knowledge', 'records'])), {
+      await createAiDocumentRecord({
         fileName: file.name,
         mimeType: file.type,
         size: file.size,
-        uploadedAt: serverTimestamp(),
         uploadedBy: auth.currentUser?.email || "Admin",
         analysis: analysisResult.analysis,
         parsed: analysisResult.parsed,
@@ -349,7 +348,7 @@ IMPORTANT RULES:
     if (!window.confirm(t('ai.upload.confirm_delete', "Document verwijderen uit de AI kennisbank?"))) return;
     try {
       // 1. Verwijder record uit Firestore
-      await deleteDoc(doc(db, ...(PATHS?.AI_DOCUMENTS || ['future-factory', 'settings', 'ai_documents', 'knowledge', 'records']), docItem.id));
+      await deleteAiDocumentRecord(docItem.id);
       
       // 2. Verwijder bestand uit Storage (indien aanwezig)
       if (docItem.fileUrl) {
@@ -378,12 +377,13 @@ IMPORTANT RULES:
     try {
       const analysisResult = await analyzeDocument(docItem.fullText, docItem.fileName);
       
-      const docRef = doc(db, ...(PATHS?.AI_DOCUMENTS || ['future-factory', 'settings', 'ai_documents', 'knowledge', 'records']), docItem.id);
-      
-      await updateDoc(docRef, {
+      await updateAiDocumentRecord({
+        docId: docItem.id,
+        patch: {
         analysis: analysisResult.analysis,
         parsed: analysisResult.parsed,
         tags: analysisResult.analysis?.tags || [],
+        },
       });
 
       const statusMessage = analysisResult.parsed 

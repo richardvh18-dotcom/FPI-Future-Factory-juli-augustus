@@ -52,6 +52,21 @@ const clearPasswordChangeFlagCallable = httpsCallable(functions, "clearPasswordC
 const submitAccountRequestCallable = httpsCallable(functions, "submitAccountRequest");
 const updateUserLanguageCallable = httpsCallable(functions, "updateUserLanguage");
 const executeAutomationRuleCallable = httpsCallable(functions, "executeAutomationRule");
+const saveProductRecordCallable = httpsCallable(functions, "saveProductRecord");
+const deleteProductRecordCallable = httpsCallable(functions, "deleteProductRecord");
+const verifyProductRecordCallable = httpsCallable(functions, "verifyProductRecord");
+const upsertConversionRecordCallable = httpsCallable(functions, "upsertConversionRecord");
+const deleteConversionRecordCallable = httpsCallable(functions, "deleteConversionRecord");
+const deleteAllConversionRecordsCallable = httpsCallable(functions, "deleteAllConversionRecords");
+const upsertConversionBatchCallable = httpsCallable(functions, "upsertConversionBatch");
+const processInforUpdateCallable = httpsCallable(functions, "processInforUpdate");
+const saveAiContextConfigCallable = httpsCallable(functions, "saveAiContextConfig");
+const createAiDocumentRecordCallable = httpsCallable(functions, "createAiDocumentRecord");
+const updateAiDocumentRecordCallable = httpsCallable(functions, "updateAiDocumentRecord");
+const deleteAiDocumentRecordCallable = httpsCallable(functions, "deleteAiDocumentRecord");
+const verifyAiKnowledgeEntryCallable = httpsCallable(functions, "verifyAiKnowledgeEntry");
+const deleteAiKnowledgeEntryCallable = httpsCallable(functions, "deleteAiKnowledgeEntry");
+const migrateAiKnowledgeFieldsCallable = httpsCallable(functions, "migrateAiKnowledgeFields");
 
 export const rejectTrackedProductFinal = async ({
   productId,
@@ -1207,4 +1222,132 @@ export const executeAutomationRule = async (rule) => {
 
   const result = await executeAutomationRuleCallable({ rule });
   return result?.data || { triggered: false, error: "Lege automation response" };
+};
+
+export const saveProductRecord = async ({ productId = "", productData = {} }) => {
+  const payload = {
+    productId: String(productId || "").trim(),
+    productData: (typeof productData === "object" && productData) || {},
+  };
+
+  const result = await saveProductRecordCallable(payload);
+  return result?.data || { ok: false };
+};
+
+export const deleteProductRecord = async (productId) => {
+  const payload = { productId: String(productId || "").trim() };
+  if (!payload.productId) {
+    throw new Error("productId is verplicht.");
+  }
+
+  const result = await deleteProductRecordCallable(payload);
+  return result?.data || { ok: false };
+};
+
+export const verifyProductRecord = async ({ productId = "", actorName = "" }) => {
+  const payload = {
+    productId: String(productId || "").trim(),
+    actorName: String(actorName || "").trim(),
+  };
+  if (!payload.productId) {
+    throw new Error("productId is verplicht.");
+  }
+
+  const result = await verifyProductRecordCallable(payload);
+  return result?.data || { ok: false };
+};
+
+export const upsertConversionRecord = async ({ recordId = "", recordData = {} }) => {
+  const payload = {
+    recordId: String(recordId || "").trim(),
+    recordData: (typeof recordData === "object" && recordData) || {},
+  };
+
+  const result = await upsertConversionRecordCallable(payload);
+  return result?.data || { ok: false };
+};
+
+export const deleteConversionRecord = async (recordId) => {
+  const payload = { recordId: String(recordId || "").trim() };
+  if (!payload.recordId) {
+    throw new Error("recordId is verplicht.");
+  }
+
+  const result = await deleteConversionRecordCallable(payload);
+  return result?.data || { ok: false };
+};
+
+export const deleteAllConversionRecords = async () => {
+  const result = await deleteAllConversionRecordsCallable({});
+  return result?.data || { ok: false, deleted: 0 };
+};
+
+export const upsertConversionBatch = async ({ items = [], mode = "merge" }) => {
+  const payload = {
+    items: Array.isArray(items) ? items : [],
+    mode: String(mode || "merge").trim().toLowerCase(),
+  };
+
+  if (!payload.items.length) {
+    throw new Error("items mag niet leeg zijn.");
+  }
+
+  const result = await upsertConversionBatchCallable(payload);
+  return result?.data || { ok: false };
+};
+
+export const processInforUpdate = async (csvData = []) => {
+  if (!Array.isArray(csvData) || !csvData.length) {
+    throw new Error("csvData is verplicht.");
+  }
+
+  const result = await processInforUpdateCallable({ csvData });
+  return result?.data || {
+    countCreated: 0,
+    countUpdated: 0,
+    countDeleted: 0,
+    countMatched: 0,
+    unmatchedOrders: [],
+  };
+};
+
+export const saveAiContextConfig = async (systemPrompt) => {
+  if (!systemPrompt) {
+    throw new Error("systemPrompt is verplicht.");
+  }
+  const result = await saveAiContextConfigCallable({ systemPrompt: String(systemPrompt) });
+  return result?.data || { ok: false };
+};
+
+export const createAiDocumentRecord = async (payload = {}) => {
+  const result = await createAiDocumentRecordCallable({ payload });
+  return result?.data || { ok: false };
+};
+
+export const updateAiDocumentRecord = async ({ docId = "", patch = {} }) => {
+  const result = await updateAiDocumentRecordCallable({ docId: String(docId || ""), patch });
+  return result?.data || { ok: false };
+};
+
+export const deleteAiDocumentRecord = async (docId) => {
+  const result = await deleteAiDocumentRecordCallable({ docId: String(docId || "") });
+  return result?.data || { ok: false };
+};
+
+export const verifyAiKnowledgeEntry = async ({ entryId = "", correctedAnswer = null }) => {
+  const result = await verifyAiKnowledgeEntryCallable({
+    entryId: String(entryId || ""),
+    correctedAnswer,
+  });
+  return result?.data || { ok: false };
+};
+
+export const deleteAiKnowledgeEntry = async (entryId) => {
+  const result = await deleteAiKnowledgeEntryCallable({ entryId: String(entryId || "") });
+  return result?.data || { ok: false };
+};
+
+export const migrateAiKnowledgeFields = async () => {
+  const result = await migrateAiKnowledgeFieldsCallable({});
+  return result?.data || { ok: false, updated: 0 };
 };
