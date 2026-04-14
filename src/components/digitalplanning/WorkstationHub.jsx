@@ -203,6 +203,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   const [occupancy, setOccupancy] = useState([]);
   const [personnel, setPersonnel] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dataSourceRefreshKey, setDataSourceRefreshKey] = useState(0);
   const [searchFilterOrder] = useState(searchOrder || null);
   const [archivedStats, setArchivedStats] = useState({ done: 0 });
   
@@ -269,6 +270,28 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   useEffect(() => {
     const timer = setInterval(() => setTimeHeartbeat(Date.now()), 30000);
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+
+    const handleModeChange = () => {
+      setLoading(true);
+      setDataSourceRefreshKey((prev) => prev + 1);
+    };
+
+    const handleStorage = (event) => {
+      if (event.key === "adminDataSourceMode") {
+        handleModeChange();
+      }
+    };
+
+    window.addEventListener("admin-data-source-mode-changed", handleModeChange);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("admin-data-source-mode-changed", handleModeChange);
+      window.removeEventListener("storage", handleStorage);
+    };
   }, []);
 
   useEffect(() => {
@@ -437,7 +460,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       isMounted = false;
       unsubs.forEach(u => u());
     };
-  }, [currentUser]);
+  }, [currentUser, dataSourceRefreshKey]);
 
   // Fetch archive stats for BM01 (Today)
   useEffect(() => {
@@ -1315,6 +1338,15 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     startOptions = {}
   ) => {
     if (!currentUser || !customLotNumber) return;
+    const previousTab = activeTab;
+
+    // Snellere UX: direct modal sluiten en naar Wikkelen schakelen,
+    // terwijl de backend startflow op de achtergrond afrondt.
+    setShowStartModal(false);
+    if (!isPostProcessing && !isBM01) {
+      setActiveTab("winding");
+    }
+
     try {
       const seriesGroupId =
         startOptions?.seriesGroupId ||
@@ -1350,11 +1382,6 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         stationOperators,
         source: "WorkstationHub",
       });
-
-      setShowStartModal(false);
-      if (!isPostProcessing && !isBM01) {
-        setActiveTab("winding");
-      }
 
       overflowItems = Array.isArray(startResult?.overflowLots) ? startResult.overflowLots : [];
 
@@ -1397,6 +1424,9 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       );
     } catch (error) {
       console.error(error);
+      if (!isPostProcessing && !isBM01) {
+        setActiveTab(previousTab || "terminal");
+      }
       throw error;
     }
   };
