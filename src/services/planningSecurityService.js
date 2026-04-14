@@ -1,7 +1,14 @@
 import { getFunctions, httpsCallable } from "firebase/functions";
 import app from "../config/firebase";
+import { PATHS } from "../config/dbPaths";
 
 const functions = getFunctions(app);
+
+const getArtifactsAppIdFromPaths = () => {
+  const planningPath = Array.isArray(PATHS?.PLANNING) ? PATHS.PLANNING : [];
+  if (planningPath[0] !== "artifacts") return "";
+  return String(planningPath[1] || "").trim();
+};
 
 const getRuntimeDataSource = () => {
   if (typeof window === "undefined") {
@@ -13,6 +20,8 @@ const getRuntimeDataSource = () => {
       ? String(__app_id || "").trim()
       : "";
   const envAppId = String(window.__app_id || "").trim() || studioAppId;
+  const pathAppId = getArtifactsAppIdFromPaths();
+  const resolvedAppId = envAppId || pathAppId;
   const savedMode = window.localStorage.getItem("adminDataSourceMode") || "current";
 
   // "pilot-read" → force production paths, no artifacts
@@ -22,12 +31,12 @@ const getRuntimeDataSource = () => {
 
   // "preview" → force artifacts with fallback appId
   if (savedMode === "preview") {
-    const appId = envAppId || "fittings-app-v1";
+    const appId = resolvedAppId || "fittings-app-v1";
     return { useArtifactsPaths: true, appId };
   }
 
   // "current" (default) → use __app_id if set (Firebase Studio context)
-  const appId = envAppId;
+  const appId = resolvedAppId;
   return {
     useArtifactsPaths: Boolean(appId),
     appId,
