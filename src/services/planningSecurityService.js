@@ -8,7 +8,11 @@ const getRuntimeDataSource = () => {
     return { useArtifactsPaths: false, appId: "" };
   }
 
-  const envAppId = String(window.__app_id || "").trim();
+  const studioAppId =
+    typeof __app_id !== "undefined"
+      ? String(__app_id || "").trim()
+      : "";
+  const envAppId = String(window.__app_id || "").trim() || studioAppId;
   const savedMode = window.localStorage.getItem("adminDataSourceMode") || "current";
 
   // "pilot-read" → force production paths, no artifacts
