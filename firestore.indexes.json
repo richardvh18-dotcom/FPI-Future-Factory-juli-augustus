@@ -59,12 +59,14 @@
     {
       "collectionGroup": "activity_logs",
       "fieldPath": "expireAt",
-      "ttl": true
+      "ttl": true,
+      "indexes": []
     },
     {
       "collectionGroup": "client_errors",
       "fieldPath": "expireAt",
-      "ttl": true
+      "ttl": true,
+      "indexes": []
     }
   ]
 }
