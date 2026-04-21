@@ -876,6 +876,8 @@ export const deletePrintQueueJob = async ({
 
 export const startProductionLots = async ({
   orderDocId,
+  orderDocPath = "",
+  orderSourcePath = "",
   orderId,
   itemCode,
   item = "",
@@ -891,6 +893,8 @@ export const startProductionLots = async ({
 }) => {
   const payload = {
     orderDocId: String(orderDocId || "").trim(),
+    orderDocPath: String(orderDocPath || "").trim(),
+    orderSourcePath: String(orderSourcePath || "").trim(),
     orderId: String(orderId || "").trim(),
     itemCode: String(itemCode || "").trim(),
     item: String(item || "").trim(),

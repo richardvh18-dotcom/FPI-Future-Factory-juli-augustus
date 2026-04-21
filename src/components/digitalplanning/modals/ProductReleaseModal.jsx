@@ -38,7 +38,7 @@ const getLossenRoute = (itemText, originStation = "") => {
   const isElbow = isELB || isCB;
 
   // Alle AB en SB elbows altijd naar centraal LOSSEN.
-  if (isElbow && (isAB || isSB)) return "STATION";
+  if (isElbow && (isAB || isSB)) return { mode: "STATION", station: "LOSSEN" };
 
   const numberMatches = Array.from(text.matchAll(/\d{2,4}/g)).map((m) => Number(m[0]));
   const candidates = numberMatches.filter((n) => Number.isFinite(n) && n >= 25 && n <= 2000);
@@ -205,13 +205,14 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
     // Execute operations in background
     (async () => {
       try {
-        if (!product || !product.id) throw new Error("Geen geldig product ID");
+        const firstTarget = selectedTargets.find((target) => target?.id || target?.lotNumber);
+        if (!firstTarget) throw new Error("Geen geldig product gevonden om te verwerken.");
 
         // 1. Haal actieve operator op voor dit station
         let activeOperator = "Operator"; 
         try {
           const today = new Date().toISOString().split('T')[0];
-          const stationId = product.currentStation || product.machine;
+          const stationId = firstTarget.currentStation || firstTarget.machine || product?.currentStation || product?.machine;
           
           if (stationId) {
               let q = query(
@@ -244,7 +245,9 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
         for (let idx = 0; idx < selectedTargets.length; idx++) {
           const target = selectedTargets[idx];
           const opId = operationIds[idx];
-          const targetId = target?.id || target?.lotNumber;
+          // Prefereer het volledige Firestore-documentpad zodat de backend path-based lookup
+          // gebruikt en geen collection group index nodig heeft.
+          const targetId = target?.__docPath || target?.sourcePath || target?.id || target?.lotNumber;
           
           if (!targetId) {
             removeOperation(opId);

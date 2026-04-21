@@ -23,7 +23,7 @@ import { useNotifications } from '../../contexts/NotificationContext';
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 
 const QR_CODE_OK_CONFIRMATION = 'FPI-ACTION-APPROVE-OK';
-const LOSSEN_1218_SOURCE_STATIONS = new Set(["BH12", "BH15", "BH17"]);
+const LOSSEN_1218_SOURCE_STATIONS = new Set(["BH12", "BH15", "BH17", "BH18", "12", "15", "17", "18"]);
 const LOSSEN_1218_STATION_NORM = "LOSSEN12/18";
 
 // Helper voor diameter (simpel)
@@ -36,22 +36,13 @@ const getDiameter = (str) => {
 };
 
 const shouldGoToCentralLossen = (item) => {
-  const originNorm = normalizeMachine(item?.originMachine || item?.machine || item?.currentStation || "");
-  if (LOSSEN_1218_SOURCE_STATIONS.has(originNorm)) return true;
-
+  // Routing uitsluitend op basis van diameter:
+  // TB >= 300mm → centraal Lossen; CB/ELB >= 350mm → centraal Lossen; rest → Lossen 12/18
   const itemStr = String(item?.item || "").toUpperCase();
   const d = getDiameter(item?.item || "");
   const isTB = itemStr.includes("TB");
   const isCB = itemStr.includes("CB");
   const isELB = itemStr.includes("ELB");
-  const isAB = /\bAB\b/.test(itemStr);
-  const isSB = /\bSB\b/.test(itemStr);
-  const isElbow = isELB || isCB;
-
-  // Alle AB en SB elbows altijd naar centraal LOSSEN
-  if (isElbow && (isAB || isSB)) return true;
-
-  // BH18 business rule: Elbows met AB-mof gaan altijd naar centraal LOSSEN (oude regel, nu afgevangen door regel hierboven)
 
   // TB >= 300mm naar centraal, < 300mm lokaal
   if (isTB && d >= 300) return true;
@@ -259,6 +250,8 @@ const LossenView = ({ stationId, appId, products = [] }) => {
       const filtered = sourceData.filter((item) => {
         const stepUpper = String(item.currentStep || "").toUpperCase().trim();
         const statusUpper = String(item.status || "").toUpperCase().trim();
+        const stepLower = String(item.currentStep || "").toLowerCase().trim();
+        const statusLower = String(item.status || "").toLowerCase().trim();
         const inspectionStatus = String(item.inspection?.status || "").toUpperCase().trim();
 
           const isDefRejected =
@@ -280,6 +273,12 @@ const LossenView = ({ stationId, appId, products = [] }) => {
           const isLossenCandidate =
             stepUpper.includes("LOSSEN") ||
             statusUpper === "TE LOSSEN" ||
+            statusLower === "te lossen" ||
+            statusLower === "to_unload" ||
+            statusLower === "unloading" ||
+            statusLower === "wacht op lossen" ||
+            stepLower === "wacht op lossen" ||
+            stepLower === "lossen" ||
             itemStationNorm === "LOSSEN" ||
             itemStationNorm === LOSSEN_1218_STATION_NORM;
 
@@ -340,42 +339,114 @@ const LossenView = ({ stationId, appId, products = [] }) => {
           const origin = normalizeMachine(item.originMachine || item.machine || "");
           const originLabel = normalizeMachine(item.stationLabel || "");
           const current = normalizeMachine(item.currentStation || "");
+          const step = normalizeMachine(item.currentStep || "");
+          const status = String(item.status || "").toUpperCase().trim();
+          const last = normalizeMachine(item.lastStation || "");
 
           const lossen1218Origins = ["BH12", "BH15", "BH17", "12", "15", "17"];
+          const lossen1218OperatorTargets = [...lossen1218Origins, "BH18", "18"];
           const lossenOrigins = ["BH18", "18", "BH31", "BH16", "BH11", "31", "16", "11"];
           const isLossen1218Station = currentStationNorm === LOSSEN_1218_STATION_NORM;
 
-          let targetMachines = isLossen1218Station ? lossen1218Origins : [...lossenOrigins, ...lossen1218Origins];
+          let targetMachines = isLossen1218Station ? lossen1218OperatorTargets : [...lossenOrigins, ...lossen1218Origins];
           let useStrictFilter = false;
+
+          // Hard split: oorsprong 12/15/17 hoort altijd bij LOSSEN 12/18,
+          // ook als legacy data currentStation op LOSSEN zet.
+          const isLossen1218Origin =
+            lossen1218Origins.includes(origin) ||
+            lossen1218Origins.includes(originLabel);
+
+          // Hard split 2: BH18-items die NIET naar centraal moeten horen exclusief bij LOSSEN 12/18.
+          const isBh18Like = ["BH18", "18"].includes(origin) || ["BH18", "18"].includes(originLabel) || ["BH18", "18"].includes(current);
+          const isBh18For1218 = isBh18Like && !shouldGoToCentralLossen(item);
+
+          // Downstream guard: items die Lossen al verlaten hebben nooit opnieuw tonen op centraal Lossen.
+          const movedPastLossen =
+            !isLossen1218Station &&
+            last === "LOSSEN" &&
+            current &&
+            current !== "LOSSEN" &&
+            current !== LOSSEN_1218_STATION_NORM;
+          const isDownstreamNow =
+            !isLossen1218Station &&
+            (
+              current.includes("NABEWERK") ||
+              step.includes("NABEWERK") ||
+              status.includes("NABEWERK") ||
+              current.includes("BM01") ||
+              step.includes("INSPECTIE") ||
+              status.includes("INSPECTIE")
+            );
+          const isCentralHardBlocked =
+            !isLossen1218Station &&
+            (
+              // BH12/15/17 met kleine diameter → Lossen 12/18, grote diameter mag naar centraal
+              (isLossen1218Origin && !shouldGoToCentralLossen(item)) ||
+              isBh18For1218 ||
+              movedPastLossen ||
+              isDownstreamNow ||
+              status.includes("WACHT OP NABEWERKING")
+            );
+          if (isCentralHardBlocked) {
+            return false;
+          }
 
           // Filter op toegewezen stations van de gebruiker (indien specifiek ingesteld)
           if (user && user.allowedStations && user.allowedStations.length > 0) {
              const userTargets = user.allowedStations
                 .map(s => normalizeMachine(s))
-                .filter(s => s !== "LOSSEN" && s !== "TEAMLEADER");
+                .filter(s => s && s !== "TEAMLEADER");
+
+             // Meta-stations zoals LOSSEN12/18 moeten worden uitgevouwen naar bronmachines.
+             const expandedUserTargets = Array.from(
+               new Set(
+                 userTargets.flatMap((target) => {
+                   const compact = target.replace(/[^A-Z0-9]/g, "");
+                   if (target === LOSSEN_1218_STATION_NORM || compact === "LOSSEN1218") {
+                     return lossen1218OperatorTargets;
+                   }
+                   if (target === "LOSSEN" || compact === "LOSSEN") {
+                     return [...lossenOrigins, ...lossen1218Origins];
+                   }
+                   return [target];
+                 })
+               )
+             );
              
-             if (userTargets.length > 0) {
-                 targetMachines = userTargets;
+             if (expandedUserTargets.length > 0) {
+                 targetMachines = expandedUserTargets;
                  useStrictFilter = true;
              }
           }
 
            if (targetMachines.includes(origin) || targetMachines.includes(originLabel) || targetMachines.includes(current)) {
              if (lossen1218Origins.includes(origin) || lossen1218Origins.includes(originLabel) || lossen1218Origins.includes(current)) {
-               isOurStation = isLossen1218Station;
-             } else if (["BH18", "18"].includes(origin) || ["BH18", "18"].includes(originLabel) || ["BH18", "18"].includes(current)) {
+               // BH12/15/17: grote diameter → centraal Lossen, kleine diameter → Lossen 12/18
                if (shouldGoToCentralLossen(item)) {
                  isOurStation = !isLossen1218Station;
                } else {
-                 isOurStation = false;
+                 isOurStation = isLossen1218Station;
+               }
+             } else if (["BH18", "18"].includes(origin) || ["BH18", "18"].includes(originLabel) || ["BH18", "18"].includes(current)) {
+               // BH18: grote diameter → centraal Lossen, kleine diameter → Lossen 12/18
+               if (shouldGoToCentralLossen(item)) {
+                 isOurStation = !isLossen1218Station;
+               } else {
+                 isOurStation = isLossen1218Station;
                }
              } else {
                  isOurStation = !isLossen1218Station;
              }
            } else if (!useStrictFilter && (lossen1218Origins.includes(origin) || lossen1218Origins.includes(originLabel) || lossen1218Origins.includes(current))) {
-             isOurStation = isLossen1218Station;
+             // Fallback BH12/15/17: diameter bepaalt routing
+             if (shouldGoToCentralLossen(item)) {
+               isOurStation = !isLossen1218Station;
+             } else {
+               isOurStation = isLossen1218Station;
+             }
            } else if (!useStrictFilter && isLossen1218Station && (["BH18", "18"].includes(origin) || ["BH18", "18"].includes(originLabel) || ["BH18", "18"].includes(current))) {
-             // BH18-producten die NIET naar centraal lossen gaan, tonen op LOSSEN12/18
+             // Fallback BH18: kleine diameter → Lossen 12/18
              if (!shouldGoToCentralLossen(item)) {
                isOurStation = true;
              }
@@ -386,13 +457,100 @@ const LossenView = ({ stationId, appId, products = [] }) => {
         return isOurStation;
       });
 
-      const sorted = filtered.sort((a, b) => {
+      const fallbackFiltered = currentStationNorm === LOSSEN_1218_STATION_NORM && filtered.length === 0
+        ? sourceData.filter((item) => {
+            const stepUpper = String(item.currentStep || "").toUpperCase().trim();
+            const statusUpper = String(item.status || "").toUpperCase().trim();
+            const statusLower = String(item.status || "").toLowerCase().trim();
+            const inspectionStatus = String(item.inspection?.status || "").toUpperCase().trim();
+            const currentNorm = normalizeMachine(item.currentStation || "");
+            const lastNorm = normalizeMachine(item.lastStation || "");
+
+            const isRejected =
+              inspectionStatus === "AFKEUR" ||
+              statusUpper === "REJECTED" ||
+              statusUpper === "AFKEUR" ||
+              stepUpper === "REJECTED";
+            if (isRejected) return false;
+
+            const isClosed = ["COMPLETED", "FINISHED", "GEREED", "SHIPPED", "DELETED"].includes(statusUpper);
+            if (isClosed) return false;
+
+            const isDownstreamNow =
+              currentNorm.includes("BM01") ||
+              currentNorm.includes("NABEWERK") ||
+              currentNorm.includes("MAZAK") ||
+              stepUpper.includes("INSPECTIE") ||
+              stepUpper.includes("NABEWERK") ||
+              stepUpper.includes("MAZAK") ||
+              statusUpper.includes("INSPECTIE") ||
+              statusUpper.includes("NABEWERK") ||
+              statusUpper.includes("MAZAK");
+            if (isDownstreamNow) return false;
+
+            const alreadyLeftLossen =
+              lastNorm.includes("LOSSEN") &&
+              currentNorm &&
+              currentNorm !== "LOSSEN" &&
+              currentNorm !== LOSSEN_1218_STATION_NORM;
+            if (alreadyLeftLossen) return false;
+
+            const originNorm = normalizeMachine(item.originMachine || item.machine || item.currentStation || "");
+            const sourceMatches = ["BH12", "BH15", "BH17", "BH18", "12", "15", "17", "18"].includes(originNorm);
+            const lossenMatches =
+              stepUpper.includes("LOSSEN") ||
+              statusUpper.includes("LOSSEN") ||
+              statusLower === "to_unload" ||
+              statusLower === "unloading" ||
+              currentNorm === "LOSSEN" ||
+              currentNorm === LOSSEN_1218_STATION_NORM;
+
+            // Grote diameters van BH18 horen in centraal Lossen, niet in Lossen 12/18
+            if (sourceMatches && lossenMatches && shouldGoToCentralLossen(item)) return false;
+
+            return sourceMatches && lossenMatches;
+          })
+        : filtered;
+
+      const sorted = fallbackFiltered.sort((a, b) => {
         const tA = a.updatedAt?.seconds || a.createdAt?.seconds || 0;
         const tB = b.updatedAt?.seconds || b.createdAt?.seconds || 0;
         return tB - tA;
       });
 
-      setItems(sorted);
+      const finalItems = currentStationNorm === "LOSSEN"
+        ? sorted.filter((item) => {
+            const origin = normalizeMachine(item.originMachine || item.machine || "");
+            const stationLabel = normalizeMachine(item.stationLabel || "");
+            const current = normalizeMachine(item.currentStation || "");
+            const step = normalizeMachine(item.currentStep || "");
+            const status = String(item.status || "").toUpperCase().trim();
+            const last = normalizeMachine(item.lastStation || "");
+
+            const is1218Origin = ["BH12", "BH15", "BH17", "12", "15", "17"].includes(origin) || ["BH12", "BH15", "BH17", "12", "15", "17"].includes(stationLabel);
+            if (is1218Origin) return false;
+
+            const isBh18For1218 = (origin === "BH18" || origin === "18" || stationLabel === "BH18" || stationLabel === "18" || current === "BH18" || current === "18") && !shouldGoToCentralLossen(item);
+            if (isBh18For1218) return false;
+
+            const isDownstream =
+              current.includes("NABEWERK") ||
+              step.includes("NABEWERK") ||
+              status.includes("NABEWERK") ||
+              current.includes("BM01") ||
+              step.includes("INSPECTIE") ||
+              status.includes("INSPECTIE") ||
+              status.includes("WACHT OP NABEWERKING");
+            if (isDownstream) return false;
+
+            const alreadyLeftLossen = last === "LOSSEN" && current && current !== "LOSSEN" && current !== LOSSEN_1218_STATION_NORM;
+            if (alreadyLeftLossen) return false;
+
+            return true;
+          })
+        : sorted;
+
+      setItems(finalItems);
       setLoading(false);
     };
 
@@ -616,7 +774,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
     );
 
   return (
-    <div className="flex h-full overflow-hidden bg-white">
+    <div className="flex flex-col h-full overflow-hidden bg-white">
       
       {/* Pulse animatie stylesheet */}
       <style>{`
@@ -651,8 +809,8 @@ const LossenView = ({ stationId, appId, products = [] }) => {
 
         {/* INKOMEND VIEW */}
         <>
-          <div className="w-full p-3 pb-32 space-y-2 overflow-y-auto custom-scrollbar" style={{ paddingBottom: "max(8rem, env(safe-area-inset-bottom))" }}>
-          <div className="mb-4 space-y-2">
+          {/* Scan sectie — vast bovenaan, scrolt niet mee */}
+          <div className="flex-shrink-0 p-3 pb-2 space-y-2">
             <div className="flex justify-between items-end">
                 {/* Scan Indicator Label */}
                 <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg border border-blue-100 w-fit">
@@ -688,6 +846,8 @@ const LossenView = ({ stationId, appId, products = [] }) => {
             </div>
           </div>
 
+          {/* Planningslijst — scrollbaar */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar px-3 space-y-2" style={{ paddingBottom: "max(8rem, env(safe-area-inset-bottom))" }}>
           {items.length === 0 ? (
             <div className="p-12 text-center bg-slate-50 rounded-[40px] border-2 border-dashed border-slate-200 opacity-40">
               <Package size={48} className="mx-auto mb-4 text-slate-300" />

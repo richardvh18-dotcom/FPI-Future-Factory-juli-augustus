@@ -1352,7 +1352,8 @@ exports.migrateAiKnowledgeFields = migrateAiKnowledgeFields;
  * Backend AI proxy: voorkomt dat API keys in de frontend staan.
  * Alleen toegankelijk voor ingelogde gebruikers, met basis rate limiting.
  */
-exports.aiProxyGenerate = functions.https.onCall(async (data, context) => {
+const googleAiApiKeySecret = functions.params.defineSecret('GOOGLE_AI_API_KEY');
+exports.aiProxyGenerate = functions.runWith({ secrets: ['GOOGLE_AI_API_KEY'] }).https.onCall(async (data, context) => {
   if (!context.auth?.uid) {
     throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist voor AI requests.');
   }

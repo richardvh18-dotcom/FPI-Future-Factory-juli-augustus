@@ -306,8 +306,35 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   const myOrders = useMemo(() => {
     if (isBM01) return allOrders;
     if (isLossen1218Station) {
-      const sourceMachines = new Set(["BH12", "BH15", "BH17", "BH18"]);
-      return allOrders.filter(o => sourceMachines.has((normalizeMachine(o.machine) || "").toUpperCase().trim()));
+      const sourceMachines = new Set(["BH12", "BH15", "BH17", "BH18", "12", "15", "17", "18"]);
+      const isLossenOrder = (order) => {
+        const values = [
+          order?.machine,
+          order?.originalMachine,
+          order?.sourceStation,
+          order?.returnStation,
+          order?.station,
+          order?.workstation,
+          order?.machineId,
+          order?.wc,
+        ];
+
+        const normalized = values
+          .map((value) => (normalizeMachine(value) || "").toUpperCase().trim())
+          .filter(Boolean);
+
+        const path = String(order?.__docPath || order?.sourcePath || "").toUpperCase();
+        if (path.includes("BH12") || path.includes("40BH12")) normalized.push("BH12");
+        if (path.includes("BH15") || path.includes("40BH15")) normalized.push("BH15");
+        if (path.includes("BH17") || path.includes("40BH17")) normalized.push("BH17");
+        if (path.includes("BH18") || path.includes("40BH18")) normalized.push("BH18");
+
+        return normalized.some((candidate) => sourceMachines.has(candidate));
+      };
+
+      const filteredLossenOrders = allOrders.filter(isLossenOrder);
+      // Fail-safe: voorkom leeg scherm door ontbrekende machinebron-velden in legacy docs.
+      return filteredLossenOrders.length > 0 ? filteredLossenOrders : allOrders;
     }
     const result = allOrders.filter(o => {
       const machineNorm = (normalizeMachine(o.machine) || "").toUpperCase().trim();
@@ -485,13 +512,29 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       // FIX: Gebruik 'plan' als fallback voor 'quantity', anders is quantity 0 en wordt de order verborgen (0 >= 0)
       const quantity = o.quantity || o.plan || 0;
       const startedAtStation = Number(o.startedAtStation || 0);
-      
-      // Verberg order zodra alle geplande stuks voor dit station gestart zijn.
-      // Als later een definitieve afkeur de started-teller verlaagt, komt de order automatisch terug.
+      const orderId = String(o.orderId || "").trim();
+      const madeCount = madeCountMap[orderId] || 0;
+
+      // LOSSEN 12/18 UITZONDERING: order blijft in de lijst zolang er nog actieve tracked
+      // producten zijn voor deze order. Verdwijnt pas als alles volledig afgerond is.
+      if (isLossen1218Station) {
+        const hasActiveTracked = (productionProgressMap[orderId] || 0) > 0;
+        if (!hasActiveTracked && isInactivePlanningStatus(o.status)) return false;
+        if (!hasActiveTracked && quantity > 0 && madeCount >= quantity) return false;
+        // Verberg Lossen 12/18 orders die absoluut inactief zijn (cancelled, deleted)
+        const statusLower = String(o.status || "").toLowerCase();
+        if (["cancelled", "deleted", "shipped"].includes(statusLower)) return false;
+        return true;
+      }
+
+      // Reguliere stations: verberg order zodra alle lots gestart zijn (wikkelen/bewerken klaar).
+      // Controle via madeCountMap (unieke lots in tracking + archief) als primaire bron.
+      if (!isBM01 && quantity > 0 && madeCount >= quantity) return false;
+
+      // Legacy fallback via startedAtStation counter op het orderdocument.
       if (!isBM01 && quantity > 0 && startedAtStation >= quantity) return false;
 
-      // Fallback: ook volledig geproduceerde orders uit actieve lijst houden.
-      // MAAR: Alleen als ze NIET meer in_progress zijn!
+      // Volledig geproduceerd en niet meer actief
       if (quantity > 0 && o.produced >= quantity && !["in_progress", "in production", "in productie"].includes(String(o.status || "").toLowerCase())) return false;
 
       if (isInactivePlanningStatus(o.status)) return false;
@@ -753,6 +796,11 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   // Handlers
   const handleTabChange = (tab) => {
     setActiveTab(tab);
+    // Zoekfilter wissen bij switch naar wikkelen of gereed
+    // zodat de wikkellijst niet leeg lijkt door een planning-zoekterm
+    if (tab === "wikkelen" || tab === "gereed" || tab === "lossen") {
+      setSidebarSearch("");
+    }
   };
 
   const handleOpenReleaseModal = (product, bulkProducts = []) => {
@@ -839,6 +887,8 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
 
       const startResult = await startProductionLots({
         orderDocId: order.id,
+        orderDocPath: order?.__docPath || "",
+        orderSourcePath: order?.sourcePath || "",
         orderId: cleanOrderId,
         itemCode: cleanItemCode,
         item: order.item || "",
@@ -1016,7 +1066,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
                     {lossenFilteredOrders.length} {t("digitalplanning.terminal.orders", "orders")}
                   </span>
                 </div>
-                <div className="flex-1 overflow-hidden">
+                <div className="flex-1 overflow-hidden flex lg:flex-row">
                   <TerminalPlanningView
                     orders={lossenFilteredOrders}
                     selectedOrderId={selectedOrderId}

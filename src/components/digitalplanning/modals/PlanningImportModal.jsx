@@ -90,7 +90,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
   useEffect(() => {
     if (!isOpen) return;
     setImportMode("smart_update");
-    setPasteMode(false);
+    setPasteMode(true);
     setSelectedMachines([]);
     setMachineGroupFilter(isFittingsScoped ? "fittings" : "all");
     setImportProgressPct(0);
@@ -874,7 +874,11 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       rows = rows.filter((d) => isExistingOrder(d));
     }
 
-    if (importMode === "smart_update") {
+    // In paste mode: alleen nieuwe orders tonen (geen bestaande updaten)
+    if (pasteMode) {
+      rows = rows.filter((d) => !isExistingOrder(d));
+      rows.sort((a, b) => String(a.orderId || a.id).localeCompare(String(b.orderId || b.id)));
+    } else if (importMode === "smart_update") {
       rows = rows.filter((d) => {
         const meta = orderChangeMeta.get(d.id);
         return meta ? (!meta.isExisting || meta.hasSmartChange) : false;
@@ -891,11 +895,14 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     }
 
     return rows;
-  }, [validOrders, machineGroupFilter, statusFilter, existingIds, selectedMachines, importMode, orderChangeMeta, isFittingsScoped]);
+  }, [validOrders, machineGroupFilter, statusFilter, existingIds, selectedMachines, importMode, orderChangeMeta, isFittingsScoped, pasteMode]);
 
   const importCandidates = useMemo(() => {
     let rows;
-    if (importMode === "smart_update") {
+    // In paste mode: strict new-only — geen overschrijven, geen updates van bestaande orders
+    if (pasteMode) {
+      rows = validOrders.filter((d) => !isExistingOrder(d));
+    } else if (importMode === "smart_update") {
       rows = validOrders.filter((d) => !isExistingOrder(d) || orderChangeMeta.get(d.id)?.hasSmartChange);
     } else {
       rows = validOrders.filter((d) =>
@@ -908,15 +915,15 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       rows = rows.filter((d) => isFittingsMachine(d.machine));
     }
     return rows;
-  }, [validOrders, importMode, existingIds, selectedMachines, orderChangeMeta, isFittingsScoped]);
+  }, [validOrders, importMode, existingIds, selectedMachines, orderChangeMeta, isFittingsScoped, pasteMode]);
 
   useEffect(() => {
-    if (importMode === "smart_update") {
+    if (pasteMode || importMode === "smart_update") {
       setSelectedOrderIds(new Set(importCandidates.map((d) => d.id)));
       return;
     }
     setSelectedOrderIds(new Set(validOrders.map((d) => d.id)));
-  }, [validOrders, importMode, importCandidates]);
+  }, [validOrders, importMode, importCandidates, pasteMode]);
 
   const importableCount = useMemo(
     () => importCandidates.length,

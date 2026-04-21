@@ -1498,6 +1498,8 @@ const startProductionLots = functions.https.onCall(async (data, context) => {
   }
 
   const orderDocId = clean(data?.orderDocId);
+  const orderDocPath = clean(data?.orderDocPath);
+  const orderSourcePath = clean(data?.orderSourcePath);
   const orderId = clean(data?.orderId);
   const itemCode = clean(data?.itemCode);
   const item = clampText(data?.item, 180);
@@ -1518,11 +1520,13 @@ const startProductionLots = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'totalToProduce moet tussen 1 en 200 liggen.');
   }
 
-  auditService.logCallable(context, 'START_PRODUCTION_LOTS', { orderDocId, orderId, stationId, lotStart, totalToProduce }, { category: 'PRODUCTION', severity: 'INFO' });
+  auditService.logCallable(context, 'START_PRODUCTION_LOTS', { orderDocId, orderDocPath, orderSourcePath, orderId, stationId, lotStart, totalToProduce }, { category: 'PRODUCTION', severity: 'INFO' });
 
   try {
     return await startProductionLotsService({
       orderDocId,
+      orderDocPath,
+      orderSourcePath,
       orderId,
       itemCode,
       item,

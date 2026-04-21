@@ -377,12 +377,12 @@ const TerminalPlanningView = ({
               {(order.extraCode && order.extraCode !== "-") || typeBadge ? (
                 <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                   {order.extraCode && order.extraCode !== "-" && (
-                    <span className="inline-block px-2 py-0.5 bg-amber-100 text-amber-700 border border-amber-200 rounded text-[9px] font-black uppercase tracking-wide">
+                    <span className="inline-block px-2.5 py-1 bg-amber-100 text-amber-700 border border-amber-200 rounded-lg text-[11px] font-black uppercase tracking-wide">
                       {order.extraCode}
                     </span>
                   )}
                   {typeBadge && (
-                    <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${typeBadge.className}`}>
+                    <span className={`inline-block px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wide ${typeBadge.className}`}>
                       {typeBadge.label}
                     </span>
                   )}
@@ -757,7 +757,38 @@ const TerminalPlanningView = ({
               );
             })()}
 
-            {/* Action Area - direct onder de banner */}
+            {/* Lotnummers — direct zichtbaar in Lossen 12/18 (geen startknop) */}
+            {!onStartProduction && (
+              <div className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <Layers size={14} /> Lotnummers ({selectedOrderLots.length})
+                  </h4>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase">
+                    actief {activeSelectedOrderLots.length} | archief {archivedSelectedOrderLots.length}
+                  </span>
+                </div>
+                {selectedOrderLots.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">Geen lotnummers gevonden voor deze order.</p>
+                ) : (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {selectedOrderLots.map((lot) => (
+                        <div
+                          key={lot}
+                          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-700 tracking-wide"
+                        >
+                          {lot}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Action Area - tonen als er een startfunctie is (niet in Lossen 12/18) */}
+            {onStartProduction && (
             <div className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-sm">
               <div className="flex flex-col gap-4">
                 {selectedOrder.status === 'on_hold' ? (
@@ -797,6 +828,7 @@ const TerminalPlanningView = ({
                 </div>
               </div>
             </div>
+            )}
 
             {/* Info Card */}
             <div className="bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-sm space-y-8">
@@ -847,6 +879,8 @@ const TerminalPlanningView = ({
 
               {optimizationPanel}
 
+              {/* Lotnummers — alleen tonen als er een startknop is (niet in Lossen 12/18 want staat al bovenaan) */}
+              {onStartProduction && (
               <section className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -874,6 +908,7 @@ const TerminalPlanningView = ({
                   </div>
                 )}
               </section>
+              )}
             </div>
           </div>
         ) : (

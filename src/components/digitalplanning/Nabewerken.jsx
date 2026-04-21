@@ -3,6 +3,9 @@ import PostProcessingFinishModal from "./modals/PostProcessingFinishModal";
 import { useTranslation } from "react-i18next";
 import { Package } from "lucide-react";
 import { getDeliveryPlanningState, resolveDeliveryDate, toDateSafe } from "../../utils/dateUtils";
+import { completeTrackedProduct, rejectTrackedProductFinal, tempRejectTrackedProduct } from "../../services/planningSecurityService";
+import { auth, logActivity } from "../../config/firebase";
+import { useNotifications } from "../../contexts/NotificationContext";
 
 /**
  * Nabewerken Component
@@ -10,6 +13,7 @@ import { getDeliveryPlanningState, resolveDeliveryDate, toDateSafe } from "../..
  */
 const Nabewerken = ({ products = [], orders = [] }) => {
   const { t } = useTranslation();
+  const { showError } = useNotifications();
 
   const getDeliveryDate = (product) => {
     if (!product || typeof product !== "object") return null;
@@ -220,7 +224,52 @@ const Nabewerken = ({ products = [], orders = [] }) => {
         <PostProcessingFinishModal
           product={selectedProduct}
           onClose={() => { setShowModal(false); setSelectedProduct(null); setTimeout(() => scanInputRef.current?.focus(), 50); }}
-          onConfirm={() => { setShowModal(false); setSelectedProduct(null); setTimeout(() => scanInputRef.current?.focus(), 50); }}
+          onConfirm={async (status, data) => {
+            const product = selectedProduct;
+            const productId = product.id || product.lotNumber;
+            const station = product.currentStation || "Nabewerking";
+            try {
+              if (status === "completed") {
+                await completeTrackedProduct({
+                  productId,
+                  finishType: "forward",
+                  fromStation: station,
+                  note: data.note || "",
+                  actorLabel: auth.currentUser?.email || "Operator",
+                  source: "Nabewerken",
+                });
+                await logActivity(auth.currentUser?.uid || "system", "POST_PROCESS_COMPLETE", `Nabewerken gereedgemeld: lot ${product.lotNumber || productId}`);
+              } else if (status === "rejected") {
+                await rejectTrackedProductFinal({
+                  productId,
+                  reasons: data.reasons || [],
+                  note: data.note || "",
+                  source: "Nabewerken",
+                  actorLabel: auth.currentUser?.email || "Operator",
+                });
+                await logActivity(auth.currentUser?.uid || "system", "QUALITY_REJECT_FINAL", `Nabewerken definitieve afkeur: lot ${product.lotNumber || productId}`);
+              } else {
+                await tempRejectTrackedProduct({
+                  productId,
+                  reasons: data.reasons || [],
+                  note: data.note || "",
+                  station,
+                  actorLabel: auth.currentUser?.email || "Operator",
+                  previousStep: product.currentStep || "",
+                  previousStatus: product.status || "",
+                  source: "Nabewerken",
+                });
+                await logActivity(auth.currentUser?.uid || "system", "QUALITY_TEMP_REJECT", `Nabewerken tijdelijke afkeur: lot ${product.lotNumber || productId}`);
+              }
+            } catch (err) {
+              console.error("Fout bij afronden Nabewerken:", err);
+              showError(err.message || "Kon wijziging niet opslaan", "Fout");
+            } finally {
+              setShowModal(false);
+              setSelectedProduct(null);
+              setTimeout(() => scanInputRef.current?.focus(), 50);
+            }
+          }}
           currentStation={selectedProduct.currentStation || "Nabewerking"}
         />
       )}

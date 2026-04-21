@@ -91,10 +91,10 @@ export const subscribeTrackedProducts = ({
     collection(db, ...PATHS.TRACKING),
     (snap) => {
       rootDocs = snap.docs.map((docSnap) => ({
+        ...docSnap.data(),
         id: docSnap.id,
         __docPath: docSnap.ref.path,
         sourcePath: docSnap.ref.path,
-        ...docSnap.data(),
       }));
       emit();
     },
@@ -109,10 +109,10 @@ export const subscribeTrackedProducts = ({
         scopedBuckets.set(
           key,
           snap.docs.map((docSnap) => ({
+            ...docSnap.data(),
             id: docSnap.id,
             __docPath: docSnap.ref.path,
             sourcePath: docSnap.ref.path,
-            ...docSnap.data(),
           }))
         );
         emit();
