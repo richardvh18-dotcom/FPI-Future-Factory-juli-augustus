@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "npm run build && node scripts/update-firestore-version.js",
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "framework": "vite",

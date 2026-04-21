@@ -197,15 +197,21 @@ const assertLotsAreUniqueInActiveTracking = async ({ ctx, lotNumbers }) => {
       throw new Error('LOT_NUMBER_EXISTS');
     }
 
-    const scopedSnap = await db
-      .collectionGroup('items')
-      .where('lotNumber', '==', lot)
-      .limit(20)
-      .get();
+    try {
+      const scopedSnap = await db
+        .collectionGroup('items')
+        .where('lotNumber', '==', lot)
+        .limit(20)
+        .get();
 
-    const scopedExists = scopedSnap.docs.some((docSnap) => String(docSnap.ref?.path || '').startsWith(`${trackingPath}/`));
-    if (scopedExists) {
-      throw new Error('LOT_NUMBER_EXISTS');
+      const scopedExists = scopedSnap.docs.some((docSnap) => String(docSnap.ref?.path || '').startsWith(`${trackingPath}/`));
+      if (scopedExists) {
+        throw new Error('LOT_NUMBER_EXISTS');
+      }
+    } catch (scopedErr) {
+      if (scopedErr?.message === 'LOT_NUMBER_EXISTS') throw scopedErr;
+      // Index nog niet klaar of niet beschikbaar: sla scoped check over (root check hierboven was al ok).
+      console.warn('Scoped lot-check overgeslagen wegens index-fout:', scopedErr?.message || String(scopedErr));
     }
   }
 };
@@ -255,6 +261,14 @@ const sanitizeMeasurements = (rawMeasurements) => {
     });
 
   return entries.length > 0 ? Object.fromEntries(entries) : null;
+};
+
+const toTimestampStepKey = (stepLabel = '') => {
+  const normalized = clean(stepLabel)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return normalized || 'unknown';
 };
 
 const toServerTimestampIfRequested = (value) => {
@@ -1893,11 +1907,11 @@ const advanceTrackedProductService = async ({
   }
 
   if (safePreviousStep) {
-    updatePayload[`timestamps.${safePreviousStep.toLowerCase()}_end`] = admin.firestore.FieldValue.serverTimestamp();
+    updatePayload[`timestamps.${toTimestampStepKey(safePreviousStep)}_end`] = admin.firestore.FieldValue.serverTimestamp();
   }
 
   if (safeNextStep) {
-    updatePayload[`timestamps.${safeNextStep.toLowerCase()}_start`] = admin.firestore.FieldValue.serverTimestamp();
+    updatePayload[`timestamps.${toTimestampStepKey(safeNextStep)}_start`] = admin.firestore.FieldValue.serverTimestamp();
   }
 
   if (clearManualMove) {
@@ -2674,6 +2688,8 @@ const loanPersonnelService = async ({
 
 const startProductionLotsService = async ({
   orderDocId,
+  orderDocPath,
+  orderSourcePath,
   orderId,
   itemCode,
   item,
@@ -2690,15 +2706,22 @@ const startProductionLotsService = async ({
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
   const safeOrderDocId = clean(orderDocId);
+  const safeOrderDocPath = clean(orderDocPath);
+  const safeOrderSourcePath = clean(orderSourcePath);
   const safeOrderId = clean(orderId);
   const safeItemCode = clean(itemCode);
   const safeLotStart = clean(lotStart).toUpperCase();
   const safeStationId = clean(stationId);
   const safeStationLabel = clean(stationLabel);
   const qty = Math.max(1, parseInt(String(totalToProduce || 1), 10) || 1);
-  const planningOrderDoc = safeOrderDocId
-    ? await getPlanningOrderDocById(safeOrderDocId, ctx._rds)
+  const planningLookupValue = safeOrderDocPath || safeOrderSourcePath || safeOrderDocId;
+  let planningOrderDoc = planningLookupValue
+    ? await getPlanningOrderDocById(planningLookupValue, ctx._rds)
     : null;
+
+  if (!planningOrderDoc && safeOrderDocId && planningLookupValue !== safeOrderDocId) {
+    planningOrderDoc = await getPlanningOrderDocById(safeOrderDocId, ctx._rds);
+  }
 
   if (!safeOrderDocId || !safeOrderId || !safeItemCode || !safeLotStart || !safeStationId) {
     throw new Error('INVALID_START_PRODUCTION_LOTS_PAYLOAD');
@@ -2810,9 +2833,11 @@ const startProductionLotsService = async ({
   }
 
   const startedCounterField = getStartedCounterFieldServer(safeStationId);
-  const planningRef = planningOrderDoc?.ref || (safeOrderDocId
-    ? db.doc(`${ctx.planningPath}/${safeOrderDocId}`)
-    : null);
+  const planningRef = planningOrderDoc?.ref || (safeOrderDocPath
+    ? db.doc(safeOrderDocPath)
+    : (safeOrderSourcePath
+      ? db.doc(safeOrderSourcePath)
+      : (safeOrderDocId ? db.doc(`${ctx.planningPath}/${safeOrderDocId}`) : null)));
   const scopedPlanningRef = safeOrderDocId
     ? getScopedPlanningDocRef({
       ctx,
@@ -2831,8 +2856,12 @@ const startProductionLotsService = async ({
     if (startedCounterField) {
       planningUpdates[startedCounterField] = admin.firestore.FieldValue.increment(qty);
     }
+    batch.set(planningRef, planningUpdates, { merge: true });
     if (scopedPlanningRef) {
-      batch.set(scopedPlanningRef, planningUpdates, { merge: true });
+      const sameTarget = String(scopedPlanningRef.path || '') === String(planningRef.path || '');
+      if (!sameTarget) {
+        batch.set(scopedPlanningRef, planningUpdates, { merge: true });
+      }
     }
   }
 

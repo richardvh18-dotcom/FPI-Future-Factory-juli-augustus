@@ -246,6 +246,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   ].includes((selectedStation || "").toLowerCase());
 
   const isBM01 = (selectedStation || "").toUpperCase().replace(/\s/g, "") === "BM01" || (selectedStation || "").toUpperCase().includes("BM01");
+  const isLossen1218Station = (String(normalizeMachine(selectedStation) || "").toUpperCase().replace(/\s/g, "") === "LOSSEN12/18");
   const requiresShiftCheckin = !["admin", "teamleader", "planner"].includes(String(currentUser?.role || "").toLowerCase());
   const currentShiftKey = useMemo(() => getCurrentShiftKey(new Date(timeHeartbeat)), [timeHeartbeat]);
 
@@ -390,26 +391,38 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       const mergeOrders = () => {
         if (!isMounted) return;
         const merged = new Map();
+
+        const getMergeKey = (order) => {
+          const pathKey = String(order?.__docPath || order?.sourcePath || "").trim();
+          if (pathKey) return pathKey;
+
+          const orderKey = String(order?.orderId || order?.id || "").trim();
+          const machineKey = String(normalizeMachine(order?.machine || "") || "").trim();
+          if (!orderKey) return "";
+          return machineKey ? `${orderKey}::${machineKey}` : orderKey;
+        };
+
         rootOrders.forEach((o) => {
-          const key = String(o.orderId || o.id || "").trim();
+          const key = getMergeKey(o);
           if (key) merged.set(key, o);
         });
         // Scoped docs overschrijven root docs
         scopedOrders.forEach((o) => {
-          const key = String(o.orderId || o.id || "").trim();
+          const key = getMergeKey(o);
           if (key) merged.set(key, o);
         });
         setRawOrders(Array.from(merged.values()));
       };
 
       const ordersRef = collection(db, ...PATHS.PLANNING);
-      const ordersQuery = query(
-        ordersRef,
-        where("status", "not-in", ["completed", "cancelled", "shipped", "rejected", "finished", "COMPLETED", "CANCELLED", "SHIPPED", "REJECTED", "FINISHED"]),
-        limit(200)
-      );
+      const ordersQuery = query(ordersRef, limit(400));
       const unsubOrders = onSnapshot(ordersQuery, (snap) => {
-        rootOrders = snap.docs.map(mapOrderDoc);
+        rootOrders = snap.docs
+          .map(mapOrderDoc)
+          .filter((o) => {
+            const s = String(o?.status || "").toLowerCase().trim();
+            return !["completed", "cancelled", "shipped", "rejected", "finished"].includes(s);
+          });
         mergeOrders();
         markStreamReady();
       }, (error) => {
@@ -1052,6 +1065,34 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       return rawOrders;
 
     const currentStationNorm = normalizeMachine(selectedStation);
+    const currentStationClean = String(currentStationNorm || "").toUpperCase().replace(/\s/g, "");
+    const isLossen1218Station = currentStationClean === "LOSSEN12/18";
+    const lossen1218OrderMachines = new Set(["BH12", "BH15", "BH17", "BH18", "12", "15", "17", "18"]);
+
+    const getLossen1218Candidates = (order) => {
+      const values = [
+        order?.machine,
+        order?.originalMachine,
+        order?.sourceStation,
+        order?.returnStation,
+        order?.station,
+        order?.workstation,
+        order?.machineId,
+        order?.wc,
+      ];
+
+      const normalized = values
+        .map((value) => String(normalizeMachine(value || "") || "").toUpperCase().trim())
+        .filter(Boolean);
+
+      const path = String(order?.__docPath || order?.sourcePath || "").toUpperCase();
+      if (path.includes("BH12") || path.includes("40BH12")) normalized.push("BH12");
+      if (path.includes("BH15") || path.includes("40BH15")) normalized.push("BH15");
+      if (path.includes("BH17") || path.includes("40BH17")) normalized.push("BH17");
+      if (path.includes("BH18") || path.includes("40BH18")) normalized.push("BH18");
+
+      return normalized;
+    };
     const isFittingsStation = FITTING_MACHINES
       .map((s) => normalizeMachine(s))
       .includes(currentStationNorm);
@@ -1115,7 +1156,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       if (isFinishedForMachine) orderStats[p.orderId].finished++;
     });
 
-    return rawOrders
+    const baseStationOrders = rawOrders
       .filter((o) => {
         if (isInactivePlanningStatus(o.status)) return false;
 
@@ -1144,6 +1185,10 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         }
 
           const orderMachineNorm = normalizeMachine(o.machine);
+          const lossenCandidates = isLossen1218Station ? getLossen1218Candidates(o) : [];
+          if (isLossen1218Station && lossenCandidates.some((candidate) => lossen1218OrderMachines.has(candidate))) {
+            return true;
+          }
           const orderIdForActivity = String(o.orderId || "").trim();
           const startedAtStation = Number(stationField ? o?.[stationField] || 0 : 0);
           const planAtStation = Number(o.plan || o.quantity || 0);
@@ -1175,6 +1220,32 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           a.dateObj - b.dateObj ||
           String(a.orderId).localeCompare(String(b.orderId))
       );
+
+    // Fail-safe voor LOSSEN 12/18:
+    // sommige legacy/planning-import records hebben geen eenduidig machineveld.
+    // Toon in dat geval minimaal alle actieve orders i.p.v. een leeg scherm.
+    if (isLossen1218Station && baseStationOrders.length === 0) {
+      return rawOrders
+        .filter((o) => !isInactivePlanningStatus(o.status))
+        .map((o) => {
+          const stats = orderStats[o.orderId] || { started: 0, finished: 0 };
+          const startedAtStation = o[stationField] || 0;
+          const remainingAtStation = Math.max(0, Number(o.plan || 0) - startedAtStation);
+          return {
+            ...o,
+            liveToDo: remainingAtStation,
+            liveFinish: stats.finished,
+            startedAtStation,
+          };
+        })
+        .sort(
+          (a, b) =>
+            a.dateObj - b.dateObj ||
+            String(a.orderId).localeCompare(String(b.orderId))
+        );
+    }
+
+    return baseStationOrders;
   }, [rawOrders, rawProducts, selectedStation, stationActivityByOrder]);
 
   const stationStats = useMemo(() => {
@@ -1753,22 +1824,12 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   // NIEUW: Handler voor annuleren productie (Prullenbak)
   const handleCancelProduction = async (productId) => {
     if (!productId) return;
-    
-    // Zoek het product voor details (lotnummer, orderId)
-    const product = rawProducts.find(p => p.id === productId);
-    if (!product) return;
 
-    const cancelConfirmed = await showConfirm({
-      title: t("digitalplanning.workstation.cancel_title", "Productie annuleren"),
-      message: t("digitalplanning.workstation.confirm_cancel", { lot: product.lotNumber, defaultValue: `Weet je zeker dat je lot ${product.lotNumber} wilt annuleren?` }),
-      confirmText: t("common.delete", "Verwijderen"),
-      cancelText: t("common.cancel", "Annuleren"),
-      tone: "danger",
-    });
-    if (!cancelConfirmed) return;
+    // Optioneel product opzoeken voor details (lotnummer), maar niet vereist
+    const product = rawProducts.find(p => p.id === productId);
+    const cancelProductRef = String(product?.__docPath || productId || "").trim();
 
     try {
-      const cancelProductRef = String(product.__docPath || productId || "").trim();
       await cancelTrackedProduction({
         productId: cancelProductRef,
         selectedStation,
@@ -1779,7 +1840,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       await logActivity(
         currentUser?.uid,
         "PRODUCTION_CANCEL",
-        `Production cancelled for lot ${product.lotNumber} on ${selectedStation}`
+        `Production cancelled for lot ${product?.lotNumber || productId} on ${selectedStation}`
       );
       showSuccess(t("digitalplanning.workstation.cancel_success", "Productie geannuleerd"));
     } catch (err) {
@@ -2145,7 +2206,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
                     currentUser={currentUser}
                     initialStation={selectedStation}
                     products={rawProducts}
-                    orders={stationOrders}
+                    orders={isLossen1218Station ? rawOrders : stationOrders}
                     onBack={() => setActiveTab("planning")}
                     onCancelProduction={handleCancelProduction}
                   />

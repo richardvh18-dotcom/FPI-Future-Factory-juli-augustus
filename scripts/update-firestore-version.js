@@ -1,23 +1,35 @@
 // scripts/update-firestore-version.js
-// Script om Firestore versie-document bij te werken na build/deploy
-const { initializeApp, applicationDefault } = require('firebase-admin/app');
+// Schrijft de build-versie naar Firestore zodat alle browsers automatisch herladen.
+// Pad = future-factory/settings/general_configs/main (zelfde als PATHS.GENERAL_SETTINGS).
+//
+// Vereiste omgevingsvariabele in Vercel:
+//   FIREBASE_SERVICE_ACCOUNT_JSON  →  inhoud van het Firebase service account JSON-bestand.
+//
+const { initializeApp, cert, applicationDefault } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 
 const version = process.env.VITE_APP_VERSION || new Date().toISOString();
 
-// Firebase Admin initialisatie (service account vereist)
-initializeApp({
-  credential: applicationDefault(),
-});
+// Gebruik service account JSON uit env (Vercel), of applicationDefault (lokaal / CI).
+const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+if (serviceAccountJson) {
+  initializeApp({ credential: cert(JSON.parse(serviceAccountJson)) });
+} else {
+  initializeApp({ credential: applicationDefault() });
+}
 
 const db = getFirestore();
 
+// Zelfde pad als PATHS.GENERAL_SETTINGS in src/config/dbPaths.jsx:
+// ["future-factory", "settings", "general_configs", "main"]
+const VERSION_DOC = 'future-factory/settings/general_configs/main';
+
 async function updateVersion() {
-  await db.doc('app/version').set({ version }, { merge: true });
-  console.log('Firestore versie geüpdatet naar:', version);
+  await db.doc(VERSION_DOC).set({ version }, { merge: true });
+  console.log(`✅ Firestore versie bijgewerkt: ${version}`);
 }
 
 updateVersion().catch((err) => {
-  console.error('Fout bij updaten Firestore versie:', err);
+  console.error('❌ Fout bij updaten Firestore versie:', err);
   process.exit(1);
 });

@@ -96,7 +96,9 @@ const ALLOWED_ORDER_PRIORITIES = new Set([
 const OCCUPANCY_ALLOWED_ROLES = new Set([
   'admin',
   'teamleader',
+  'operator',
   'planner',
+  'engineer',
   'management',
 ]);
 

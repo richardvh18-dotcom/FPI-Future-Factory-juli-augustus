@@ -21,7 +21,7 @@ import {
 import { collection, collectionGroup, query, onSnapshot, doc, where, getDocs, getDoc, limit, increment } from "firebase/firestore";
 import { db, logActivity } from "../../config/firebase";
 import { getISOWeek, format, subDays, startOfISOWeek, endOfISOWeek, addWeeks } from "date-fns";
-import { PATHS, getArchiveItemsPath } from "../../config/dbPaths";
+import { PATHS, getArchiveItemsPath, getArchiveRejectedItemsPath } from "../../config/dbPaths";
 import * as XLSX from "xlsx";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 
@@ -93,6 +93,7 @@ const TeamleaderHub = React.memo(({
   const [bezetting, setBezetting] = useState([]);
   const [archivedProducts, setArchivedProducts] = useState([]);
   const [archivedHistoryProducts, setArchivedHistoryProducts] = useState([]);
+  const [archivedRejectedProducts, setArchivedRejectedProducts] = useState([]);
   const [factoryConfig, setFactoryConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState(null);
@@ -340,6 +341,21 @@ const TeamleaderHub = React.memo(({
           (err) => console.warn("Archive Sync Error (KPI History):", historyYear, err.code)
         );
         unsubs.push(unsubArchiveYear);
+
+        // Laad ook afgekeurde archief-items (apart pad: archive/{year}/rejected)
+        const unsubRejectedYear = onSnapshot(
+          collection(db, ...getArchiveRejectedItemsPath(historyYear)),
+          (snap) => {
+            if (!isMounted) return;
+            const items = snap.docs.map((d) => ({ id: d.id, _archiveYear: historyYear, ...d.data() }));
+            setArchivedRejectedProducts((prev) => {
+              const filtered = prev.filter((p) => p._archiveYear !== historyYear);
+              return [...filtered, ...items];
+            });
+          },
+          (err) => console.warn("Archive Rejected Sync Error:", historyYear, err.code)
+        );
+        unsubs.push(unsubRejectedYear);
       });
 
       // Token refresh in background (optional, for edge cases)
@@ -1222,28 +1238,47 @@ const TeamleaderHub = React.memo(({
         return activeFinished.length + archivedFinished.length;
       })(),
 
-      rejectedCount: rawProducts.filter((p) => {
-        if (!validOrderIds.has(getOrderIdFromTrackedRecord(p))) return false;
-        
-        if (effectiveAllowedNorms.length > 0) {
+
+      rejectedCount: (
+        rawProducts.filter((p) => {
+          if (!isRejectedProduct(p)) return false;
+          if (effectiveAllowedNorms.length > 0) {
             const m1 = normalizeMachine(p.machine || "");
             const m2 = normalizeMachine(p.originMachine || "");
             const m3 = normalizeMachine(p.currentStation || "");
             if (!effectiveAllowedNorms.includes(m1) && !effectiveAllowedNorms.includes(m2) && !effectiveAllowedNorms.includes(m3)) return false;
-        }
-
-        if (!isRejectedProduct(p)) return false;
-
-        const rejectedAt =
-          p?.inspection?.timestamp ||
-          p?.timestamps?.rejected ||
-          p?.updatedAt ||
-          p?.lastUpdated ||
-          p?.createdAt ||
-          null;
-
-        return isEventInCurrentWeek(rejectedAt);
-      }).length,
+          }
+          const rejectedAt =
+            p?.inspection?.timestamp ||
+            p?.timestamps?.rejected ||
+            p?.updatedAt ||
+            p?.lastUpdated ||
+            p?.createdAt ||
+            null;
+          return isEventInCurrentWeek(rejectedAt);
+        }).length
+        +
+        archivedRejectedProducts.filter((p) => {
+          const status = String(p?.status || "").toLowerCase();
+          const step = String(p?.currentStep || "").toLowerCase();
+          if (!["rejected", "afkeur"].includes(status) && step !== "rejected") return false;
+          if (effectiveAllowedNorms.length > 0) {
+            const m1 = normalizeMachine(p.machine || "");
+            const m2 = normalizeMachine(p.originMachine || "");
+            const m3 = normalizeMachine(p.currentStation || "");
+            if (!effectiveAllowedNorms.includes(m1) && !effectiveAllowedNorms.includes(m2) && !effectiveAllowedNorms.includes(m3)) return false;
+          }
+          const rejectedAt =
+            p?.inspection?.timestamp ||
+            p?.timestamps?.rejected ||
+            p?.archivedAt ||
+            p?.updatedAt ||
+            p?.lastUpdated ||
+            p?.createdAt ||
+            null;
+          return isEventInCurrentWeek(rejectedAt);
+        }).length
+      ),
 
       priorityCount: dataStore.filter((o) => isPriorityOrder(o)).length,
 
@@ -1367,11 +1402,17 @@ const TeamleaderHub = React.memo(({
       data = [...activeList, ...archivedList];
     }
     
+
     else if (activeKpi === "afkeur") {
-      data = rawProducts.filter((p) => {
-        if (!validOrderIds.has(getOrderIdFromTrackedRecord(p))) return false;
-         return isRejectedProduct(p);
+      // Actieve rejected items (in tracked_products, nog niet gearchiveerd)
+      const activeRejected = rawProducts.filter((p) => isRejectedProduct(p));
+      // Gearchiveerde rejected items uit het dedicated rejected-archief pad
+      const archivedRejected = archivedRejectedProducts.filter((p) => {
+        const status = String(p?.status || "").toLowerCase();
+        const step = String(p?.currentStep || "").toLowerCase();
+        return ["rejected", "afkeur"].includes(status) || step === "rejected";
       });
+      data = [...activeRejected, ...archivedRejected];
     }
     
     else if (["tijdelijke_afkeur", "temp_rejected", "tijdelijke afkeur", "tijdelijk_afkeur"].includes(activeKpi)) {
@@ -1430,6 +1471,7 @@ const TeamleaderHub = React.memo(({
           : [
               item?.inspection?.timestamp,
               item?.timestamps?.rejected,
+              item?.archivedAt, // <-- fallback voor oude archief-afkeur
               item?.updatedAt,
               item?.lastUpdated,
               item?.createdAt,
@@ -1462,7 +1504,7 @@ const TeamleaderHub = React.memo(({
     }
 
     return normalizedData;
-  }, [activeKpi, dataStore, rawProducts, archivedHistoryProducts, bezetting, kpiWeekOffset]);
+  }, [activeKpi, dataStore, rawProducts, archivedHistoryProducts, archivedRejectedProducts, bezetting, kpiWeekOffset]);
 
   const handleKpiClick = (kpiId, label) => {
     setModalTitle(label);

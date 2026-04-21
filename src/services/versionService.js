@@ -1,6 +1,7 @@
 // src/services/versionService.js
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../config/firebase";
+import { PATHS } from "../config/dbPaths";
 
 /**
  * Luistert realtime naar de app-versie in Firestore.
@@ -8,13 +9,23 @@ import { db } from "../config/firebase";
  * @returns {function} Unsubscribe functie
  */
 export function listenToAppVersion(onChange) {
-  const versionDoc = doc(db, "app", "version");
-  return onSnapshot(versionDoc, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.data();
-      if (data && data.version) {
-        onChange(data.version);
-      }
+  const versionDoc = doc(db, ...PATHS.GENERAL_SETTINGS);
+  return onSnapshot(
+    versionDoc,
+    (snapshot) => {
+      if (!snapshot.exists()) return;
+      const data = snapshot.data() || {};
+      const version =
+        data.version ||
+        data.appVersion ||
+        data.frontendVersion ||
+        data.clientVersion ||
+        null;
+      if (version) onChange(version);
+    },
+    (error) => {
+      // Niet kritisch: app moet blijven werken als versie-doc niet leesbaar is.
+      console.warn("Version listener unavailable:", error?.code || error?.message || error);
     }
-  });
+  );
 }

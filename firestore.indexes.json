@@ -65,6 +65,22 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "items",
+      "fieldPath": "id",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION" }
+      ]
+    },
+    {
+      "collectionGroup": "items",
+      "fieldPath": "lotNumber",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION" }
+      ]
+    },
+    {
       "collectionGroup": "activity_logs",
       "fieldPath": "expireAt",
       "ttl": true,

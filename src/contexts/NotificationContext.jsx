@@ -319,7 +319,10 @@ export const NotificationProvider = ({ children }) => {
 
   // Listen to new messages
   useEffect(() => {
-    if (!user?.email) return;
+    if (!user?.email || user?.role === 'guest') {
+      setUnreadCount(0);
+      return;
+    }
 
     const messagesRef = collection(db, ...PATHS.MESSAGES);
     const q = query(
@@ -327,40 +330,47 @@ export const NotificationProvider = ({ children }) => {
       where('to', 'in', [user.email.toLowerCase(), 'admin'])
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      // Count unread messages
-      const unread = snapshot.docs.filter(doc => !doc.data().read).length;
-      setUnreadCount(unread);
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        // Count unread messages
+        const unread = snapshot.docs.filter(doc => !doc.data().read).length;
+        setUnreadCount(unread);
 
-      // Show toast for new messages
-      snapshot.docChanges().forEach(change => {
-        if (change.type === 'added') {
-          const data = change.doc.data();
-          const isNew = data.timestamp?.toDate 
-            ? (Date.now() - data.timestamp.toDate().getTime()) < 5000 
-            : true;
-          
-          // Don't show notification for messages sent by current user
-          if (isNew && data.senderId !== user.uid) {
-            showToast({
-              title: data.subject || 'Nieuw bericht',
-              message: data.body || data.message || '',
-              type: 'info',
-              duration: 5000,
-            });
-
-            // Browser notification
-            if (hasPermission && document.hidden) {
-              new Notification(data.subject || 'Nieuw bericht', {
-                body: data.body || data.message || '',
-                icon: '/manifest.json',
-                tag: change.doc.id,
+        // Show toast for new messages
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const data = change.doc.data();
+            const isNew = data.timestamp?.toDate 
+              ? (Date.now() - data.timestamp.toDate().getTime()) < 5000 
+              : true;
+            
+            // Don't show notification for messages sent by current user
+            if (isNew && data.senderId !== user.uid) {
+              showToast({
+                title: data.subject || 'Nieuw bericht',
+                message: data.body || data.message || '',
+                type: 'info',
+                duration: 5000,
               });
+
+              // Browser notification
+              if (hasPermission && document.hidden) {
+                new Notification(data.subject || 'Nieuw bericht', {
+                  body: data.body || data.message || '',
+                  icon: '/manifest.json',
+                  tag: change.doc.id,
+                });
+              }
             }
           }
-        }
-      });
-    });
+        });
+      },
+      (err) => {
+        console.warn('Notification messages listener blocked:', err?.code || err?.message || err);
+        setUnreadCount(0);
+      }
+    );
 
     return () => unsubscribe();
   }, [user, hasPermission, showToast]);
