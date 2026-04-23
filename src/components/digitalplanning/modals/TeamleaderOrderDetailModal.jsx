@@ -170,14 +170,15 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
   }, [order]);
 
   const handleSetPriority = async (level) => {
-    if (!order.id) return;
+    const orderDocId = order.__docPath || order.id;
+    if (!orderDocId) return;
     // Toggle logic: als huidige priority gelijk is aan gekozen level, zet uit (false)
     const currentPrio = order.priority === true ? "high" : order.priority;
     const newPriority = currentPrio === level ? false : level;
 
     try {
       await updatePlanningOrderPriority({
-        orderDocId: order.id,
+        orderDocId,
         priority: newPriority,
         source: "TeamleaderOrderDetailModal",
         actorLabel: auth.currentUser?.email,
@@ -188,9 +189,10 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
   };
 
   const handleCancelOrder = async (reason) => {
+    const orderDocId = order.__docPath || order.id;
     try {
       await cancelPlanningOrder({
-        orderDocId: order.id,
+        orderDocId,
         reason,
         source: "TeamleaderOrderDetailModal",
         actorLabel: auth.currentUser?.email,

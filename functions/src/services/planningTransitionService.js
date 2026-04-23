@@ -175,6 +175,37 @@ const getSafeStartedField = (stationName = '') => {
   const safeKey = String(stationName || '').replace(/[^a-zA-Z0-9]/g, '_');
   return safeKey ? `started_${safeKey}` : '';
 };
+const resolvePlanningOrderLocator = async ({
+  ctx,
+  orderDocId,
+  orderDocPath,
+  orderSourcePath,
+  orderId,
+}) => {
+  const lookupCandidates = Array.from(new Set([
+    clean(orderDocPath),
+    clean(orderSourcePath),
+    clean(orderDocId),
+    clean(orderId),
+  ].filter(Boolean)));
+
+  let orderDoc = null;
+  for (const candidate of lookupCandidates) {
+    orderDoc = await getPlanningOrderDocById(candidate, ctx._rds);
+    if (orderDoc) break;
+  }
+
+  const orderData = orderDoc?.data() || {};
+  const resolvedOrderDocId = clean(orderDoc?.id || orderDocId);
+  const resolvedOrderId = clean(orderId || orderData.orderId || orderData.orderNumber);
+
+  return {
+    orderDoc,
+    orderData,
+    resolvedOrderDocId,
+    resolvedOrderId,
+  };
+};
 
 const isOrderNumberAsLot = ({ lotNumber, orderId }) => {
   const safeLot = clean(lotNumber).toUpperCase();
@@ -593,7 +624,7 @@ const bulkImportPlanningOrdersService = async ({
       const qcMinutes = qcHours * 60;
       const standardMinutes = productionMinutes + postProcessingMinutes;
       const actualMinutes = (Number(item.totalActualHours) || 0) * 60;
-      const qty = Number(item.quantity) || Number(item.toDoQty) || 1;
+      const qty = Number(item.plan) || Number(item.toDoQty) || Number(item.quantity) || 1;
 
       batch.set(
         db.collection(ctx.efficiencyPath).doc(docId),
@@ -861,7 +892,7 @@ const moveTrackedProductManualService = async ({
 
 const archivePlanningOrderService = async ({ orderDocId, requestedReason, source, auth, userRole, allowWithActiveProducts = false, dbCtx = null }) => {
   const ctx = dbCtx || resolveDbContext(null);
-  const orderDoc = await getPlanningOrderDocById(orderDocId, ctx._rds);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
   if (!orderDoc) {
     throw new Error('NOT_FOUND_ORDER');
   }
@@ -1184,7 +1215,7 @@ const updatePlanningOrderPriorityService = async ({
   dbCtx = null,
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
-  const orderDoc = await getPlanningOrderDocById(orderDocId, ctx._rds);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
   if (!orderDoc) {
     throw new Error('NOT_FOUND_ORDER');
   }
@@ -1261,7 +1292,7 @@ const movePlanningOrderService = async ({
   dbCtx = null,
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
-  const orderDoc = await getPlanningOrderDocById(orderDocId, ctx._rds);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
   if (!orderDoc) {
     throw new Error('NOT_FOUND_ORDER');
   }
@@ -1337,7 +1368,7 @@ const movePlanningOrderService = async ({
 const retrievePlanningOrderService = async ({ orderDocId, auth, actorLabel, source, dbCtx = null,
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
-  const orderDoc = await getPlanningOrderDocById(orderDocId, ctx._rds);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
   if (!orderDoc) {
     throw new Error('NOT_FOUND_ORDER');
   }
@@ -1368,7 +1399,7 @@ const retrievePlanningOrderService = async ({ orderDocId, auth, actorLabel, sour
 const togglePlanningOrderHoldService = async ({ orderDocId, auth, actorLabel, source, dbCtx = null,
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
-  const orderDoc = await getPlanningOrderDocById(orderDocId, ctx._rds);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
   if (!orderDoc) {
     throw new Error('NOT_FOUND_ORDER');
   }
@@ -1412,7 +1443,7 @@ const updatePlanningOrderDetailsService = async ({
   dbCtx = null,
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
-  const orderDoc = await getPlanningOrderDocById(orderDocId, ctx._rds);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
   if (!orderDoc) {
     throw new Error('NOT_FOUND_ORDER');
   }
@@ -1450,7 +1481,7 @@ const patchPlanningOrderMetadataService = async ({
   dbCtx = null,
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
-  const orderDoc = await getPlanningOrderDocById(orderDocId, ctx._rds);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
   if (!orderDoc) {
     throw new Error('NOT_FOUND_ORDER');
   }
@@ -2147,7 +2178,7 @@ const startWorkstationProductionRunService = async ({
   dbCtx = null,
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
-  const orderDoc = await getPlanningOrderDocById(orderDocId, ctx._rds);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
   if (!orderDoc) {
     throw new Error('NOT_FOUND_ORDER');
   }
@@ -2465,7 +2496,7 @@ const cancelPlanningOrderService = async ({
   dbCtx = null,
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
-  const orderDoc = await getPlanningOrderDocById(orderDocId, ctx._rds);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
   if (!orderDoc) {
     throw new Error('NOT_FOUND_ORDER');
   }
@@ -2714,25 +2745,31 @@ const startProductionLotsService = async ({
   const safeStationId = clean(stationId);
   const safeStationLabel = clean(stationLabel);
   const qty = Math.max(1, parseInt(String(totalToProduce || 1), 10) || 1);
-  const planningLookupValue = safeOrderDocPath || safeOrderSourcePath || safeOrderDocId;
-  let planningOrderDoc = planningLookupValue
-    ? await getPlanningOrderDocById(planningLookupValue, ctx._rds)
-    : null;
+  const {
+    orderDoc: planningOrderDoc,
+    orderData: planningOrderData,
+    resolvedOrderDocId,
+    resolvedOrderId,
+  } = await resolvePlanningOrderLocator({
+    ctx,
+    orderDocId: safeOrderDocId,
+    orderDocPath: safeOrderDocPath,
+    orderSourcePath: safeOrderSourcePath,
+    orderId: safeOrderId,
+  });
 
-  if (!planningOrderDoc && safeOrderDocId && planningLookupValue !== safeOrderDocId) {
-    planningOrderDoc = await getPlanningOrderDocById(safeOrderDocId, ctx._rds);
-  }
-
-  if (!safeOrderDocId || !safeOrderId || !safeItemCode || !safeLotStart || !safeStationId) {
+  if (!safeItemCode || !safeLotStart || !safeStationId) {
     throw new Error('INVALID_START_PRODUCTION_LOTS_PAYLOAD');
   }
   if (!planningOrderDoc) {
     throw new Error('NOT_FOUND_ORDER');
   }
 
-  const planningOrderData = planningOrderDoc?.data() || {};
+  if (!resolvedOrderDocId || !resolvedOrderId) {
+    throw new Error('INVALID_START_PRODUCTION_LOTS_PAYLOAD');
+  }
 
-  if (isOrderNumberAsLot({ lotNumber: safeLotStart, orderId: safeOrderId })) {
+  if (isOrderNumberAsLot({ lotNumber: safeLotStart, orderId: resolvedOrderId })) {
     throw new Error('LOT_MATCHES_ORDER_ID');
   }
 
@@ -2775,12 +2812,12 @@ const startProductionLotsService = async ({
 
   for (let i = 0; i < qty; i += 1) {
     const currentLot = requestedLots[i];
-    const docId = `${safeOrderId}_${safeItemCode}_${currentLot}`.replace(/[^a-zA-Z0-9]/g, '_');
+    const docId = `${resolvedOrderId}_${safeItemCode}_${currentLot}`.replace(/[^a-zA-Z0-9]/g, '_');
     const lotSpecificLabelZpl = buildLotSpecificLabelZpl(currentLot);
 
     const trackedPayload = {
       id: docId,
-      orderId: safeOrderId,
+      orderId: resolvedOrderId,
       lotNumber: currentLot,
       itemCode: safeItemCode,
       machine: safeStationId,
@@ -2837,13 +2874,13 @@ const startProductionLotsService = async ({
     ? db.doc(safeOrderDocPath)
     : (safeOrderSourcePath
       ? db.doc(safeOrderSourcePath)
-      : (safeOrderDocId ? db.doc(`${ctx.planningPath}/${safeOrderDocId}`) : null)));
-  const scopedPlanningRef = safeOrderDocId
+      : (resolvedOrderDocId ? db.doc(`${ctx.planningPath}/${resolvedOrderDocId}`) : null)));
+  const scopedPlanningRef = resolvedOrderDocId
     ? getScopedPlanningDocRef({
       ctx,
       department: scopedDepartment,
       machine: scopedPlanningMachine,
-      docId: safeOrderDocId,
+      docId: resolvedOrderDocId,
     })
     : null;
   if (planningRef) {
@@ -2944,7 +2981,7 @@ const linkPlanningOrderProductService = async ({
   dbCtx = null,
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
-  const orderDoc = await getPlanningOrderDocById(orderDocId, ctx._rds);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
   if (!orderDoc) {
     throw new Error('NOT_FOUND_ORDER');
   }
@@ -2979,24 +3016,35 @@ const createPlanningOrderManualService = async ({
     throw new Error('INVALID_MANUAL_ORDER_PAYLOAD');
   }
 
-  const existingSnap = await db
-    .collection(ctx.planningPath)
-    .where('orderId', '==', safeOrderId)
-    .limit(1)
-    .get();
-  if (!existingSnap.empty) {
+  const existingOrder = await getPlanningOrderDocByOrderId(safeOrderId, ctx._rds);
+  if (existingOrder) {
     throw new Error('ORDER_ALREADY_EXISTS');
   }
 
   const now = new Date();
   const { week, year } = getISOWeekInfoServer(now);
-  const newDocRef = db.collection(ctx.planningPath).doc();
+  const scopedMachine = resolveScopedMachine(safeMachine);
+  const scopedDepartment = resolveScopedDepartment(DEFAULT_SCOPED_DEPARTMENT);
+  const safeDocId = toFirestoreSegment(`${safeOrderId}_${safeItem}`, safeOrderId);
+  const newDocRef = getScopedPlanningDocRef({
+    ctx,
+    department: scopedDepartment,
+    machine: scopedMachine,
+    docId: safeDocId,
+  });
 
   await newDocRef.set({
+    _scopeType: 'planning_order',
     orderId: safeOrderId,
     item: safeItem,
-    machine: safeMachine,
+    itemDescription: safeItem,
+    machine: scopedMachine,
+    machineId: scopedMachine,
+    department: scopedDepartment,
+    departmentId: scopedDepartment,
     plan: safePlan,
+    quantity: safePlan,
+    toDoQty: safePlan,
     status: 'planned',
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     lastUpdated: admin.firestore.FieldValue.serverTimestamp(),

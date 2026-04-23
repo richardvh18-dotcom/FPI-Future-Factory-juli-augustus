@@ -35,6 +35,7 @@ import LossenView from "./LossenView";
 import Nabewerken from "./Nabewerken";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { normalizeMachine, getStartedCounterField } from "../../utils/hubHelpers";
+import { getOrderFinishedUnits } from "../../utils/planningProgress";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 import TerminalPlanningView from "./terminal/TerminalPlanningView";
 import TerminalProductionView from "./terminal/TerminalProductionView";
@@ -499,45 +500,46 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         ...o,
         // Lot-first: unieke lots uit tracked+archief zijn de primaire bron.
         // Legacy velden blijven als fallback om ondertelling te voorkomen.
-        produced: Math.max(
-          Number(madeCountMap[String(o.orderId || "").trim()]) || 0,
-          Number(o.produced) || 0,
-          Number(o.finishValue) || 0,
-          Number(o.wrapped) || 0
-        ),
+        produced: getOrderFinishedUnits(o, {
+          trackedFinishedCount: Number(madeCountMap[String(o.orderId || "").trim()]) || 0,
+        }),
         startedAtStation: Number(o[stationCounterField] || 0)
     }));
 
     const base = enrichedOrders.filter((o) => {
-      // FIX: Gebruik 'plan' als fallback voor 'quantity', anders is quantity 0 en wordt de order verborgen (0 >= 0)
-      const quantity = o.quantity || o.plan || 0;
+      // Gebruik het HOOGSTE van plan en quantity: als plan opgehoogd is (bijv. 10→17),
+      // moet het nieuwe plan leidend zijn, niet de originele quantity.
+      const quantity = Math.max(Number(o.plan || 0), Number(o.quantity || 0));
       const startedAtStation = Number(o.startedAtStation || 0);
+      const producedAtOrder = Number(o.produced || 0);
       const orderId = String(o.orderId || "").trim();
       const madeCount = madeCountMap[orderId] || 0;
+      const hasActiveTracked = (productionProgressMap[orderId] || 0) > 0;
+      const remainingAtOrder = Math.max(0, quantity - producedAtOrder);
+      const isFullyProduced = quantity > 0 && producedAtOrder >= quantity;
+      const stationWorkCompleted = quantity > 0 && (startedAtStation >= quantity || madeCount >= quantity);
 
       // LOSSEN 12/18 UITZONDERING: order blijft in de lijst zolang er nog actieve tracked
       // producten zijn voor deze order. Verdwijnt pas als alles volledig afgerond is.
       if (isLossen1218Station) {
-        const hasActiveTracked = (productionProgressMap[orderId] || 0) > 0;
         if (!hasActiveTracked && isInactivePlanningStatus(o.status)) return false;
-        if (!hasActiveTracked && quantity > 0 && madeCount >= quantity) return false;
+        if (!hasActiveTracked && isFullyProduced) return false;
         // Verberg Lossen 12/18 orders die absoluut inactief zijn (cancelled, deleted)
         const statusLower = String(o.status || "").toLowerCase();
         if (["cancelled", "deleted", "shipped"].includes(statusLower)) return false;
         return true;
       }
 
-      // Reguliere stations: verberg order zodra alle lots gestart zijn (wikkelen/bewerken klaar).
-      // Controle via madeCountMap (unieke lots in tracking + archief) als primaire bron.
-      if (!isBM01 && quantity > 0 && madeCount >= quantity) return false;
-
-      // Legacy fallback via startedAtStation counter op het orderdocument.
-      if (!isBM01 && quantity > 0 && startedAtStation >= quantity) return false;
+      // Reguliere stations: verberg pas wanneer orderniveau echt geen resterende stuks meer heeft.
+      // Actieve downstream lots mogen een order met open to-do niet wegdrukken.
+      if (!isBM01 && stationWorkCompleted && remainingAtOrder <= 0) return false;
 
       // Volledig geproduceerd en niet meer actief
-      if (quantity > 0 && o.produced >= quantity && !["in_progress", "in production", "in productie"].includes(String(o.status || "").toLowerCase())) return false;
+      if (isFullyProduced && !["in_progress", "in production", "in productie"].includes(String(o.status || "").toLowerCase()) && !hasActiveTracked) return false;
 
-      if (isInactivePlanningStatus(o.status)) return false;
+      // Als een order opnieuw opengezet is via plan-verhoging (bijv. 10 -> 17),
+      // moet deze zichtbaar blijven zolang er orderniveau resthoeveelheid is.
+      if (isInactivePlanningStatus(o.status) && remainingAtOrder <= 0) return false;
       
       // FIX: BH31 (Reparatie) orders verdwijnen uit planning zodra ze in behandeling zijn
       // Tenzij er specifiek naar gezocht wordt

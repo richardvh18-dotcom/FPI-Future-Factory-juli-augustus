@@ -28,6 +28,7 @@ import {
 } from "date-fns";
 import { nl } from "date-fns/locale";
 import { getDeliveryPlanningState, resolveDeliveryDate, toDateSafe } from "../../utils/dateUtils";
+import { getOrderFinishedUnits } from "../../utils/planningProgress";
 
 /**
  * GanttChartView - Timeline visualization for order planning
@@ -134,7 +135,7 @@ const GanttChartView = (props = {}) => {
     const unsubRootOrders = onSnapshot(
       collection(db, ...readPaths.PLANNING),
       (snapshot) => {
-        rootOrders = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        rootOrders = snapshot.docs.map((docSnap) => ({ id: docSnap.id, __docPath: docSnap.ref.path, ...docSnap.data() }));
         mergeOrders();
       },
       () => {
@@ -155,7 +156,7 @@ const GanttChartView = (props = {}) => {
               path.includes("/orders/")
             );
           })
-          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+          .map((docSnap) => ({ id: docSnap.id, __docPath: docSnap.ref.path, ...docSnap.data() }));
         mergeOrders();
       },
       () => {
@@ -304,16 +305,7 @@ const GanttChartView = (props = {}) => {
   };
 
   const getProducedUnits = (order, trackedFinishedCountByOrder) => {
-    const orderId = getOrderIdentity(order);
-    const trackedFinished = getNumeric(trackedFinishedCountByOrder.get(orderId));
-    const fromOrder = Math.max(
-      getNumeric(order?.produced),
-      getNumeric(order?.finishedCount),
-      getNumeric(order?.finishValue),
-      getNumeric(order?.wrapped),
-      getNumeric(order?.completed)
-    );
-    return Math.max(fromOrder, trackedFinished);
+    return getOrderFinishedUnits(order, { trackedFinishedCountByOrder });
   };
 
   const hasOrderStartedForPrediction = (order, trackedFinishedCountByOrder) => {
@@ -326,14 +318,7 @@ const GanttChartView = (props = {}) => {
       status.includes("start");
 
     const hasActualStart = Boolean(parseDate(order?.actualStart));
-    const produced = Math.max(
-      getNumeric(order?.produced),
-      getNumeric(order?.finishedCount),
-      getNumeric(order?.finishValue),
-      getNumeric(order?.wrapped),
-      getNumeric(order?.completed),
-      getNumeric(trackedFinishedCountByOrder.get(getOrderIdentity(order)))
-    );
+    const produced = getOrderFinishedUnits(order, { trackedFinishedCountByOrder });
 
     const hasStartedCounter = Object.entries(order || {}).some(([key, value]) => {
       if (!String(key || "").startsWith("started_")) return false;

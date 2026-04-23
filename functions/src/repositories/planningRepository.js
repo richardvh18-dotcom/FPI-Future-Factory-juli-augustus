@@ -1,4 +1,5 @@
 const { db } = require('../config/firebase');
+const admin = require('firebase-admin');
 const {
   BASE,
   TRACKING_COLLECTION,
@@ -148,6 +149,21 @@ const getPlanningOrderDocById = async (orderDocId) => {
   const primaryRef = db.collection(planningCollection).doc(lookupId);
   const primarySnap = await primaryRef.get();
   if (primarySnap.exists) return primarySnap;
+
+  // Zoek scoped planning-orders direct op document-id (laatste segment),
+  // zodat orderDocId waarden zoals N200..._ITEMCODE ook resolven.
+  try {
+    const scopedByDocIdSnap = await db
+      .collectionGroup('orders')
+      .where(admin.firestore.FieldPath.documentId(), '==', lookupId)
+      .limit(5)
+      .get();
+
+    const scopedByDocIdDoc = scopedByDocIdSnap.docs.find((doc) => isUnderPath(doc.ref, planningCollection));
+    if (scopedByDocIdDoc) return scopedByDocIdDoc;
+  } catch (error) {
+    console.warn('[planningRepository] scoped planning docId-lookup overgeslagen:', error?.message || String(error));
+  }
 
   // collectionGroup documentId() vereist volledig pad bij collection group queries;
   // gebruik orderId-veld lookup als fallback voor scoped planning-orders.

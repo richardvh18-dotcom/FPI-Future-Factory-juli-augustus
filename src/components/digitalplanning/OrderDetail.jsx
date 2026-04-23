@@ -34,6 +34,7 @@ import { format, differenceInDays } from "date-fns";
 import { collection, getDoc, getDocs, query, where, limit, doc } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { trackedLotExistsActive } from "../../utils/trackedProducts";
+import { countFinishedTrackedLots, getOrderFinishedUnits } from "../../utils/planningProgress";
 import { PATHS, getArchiveItemsPath } from "../../config/dbPaths";
 import {
   updatePlanningOrderPriority,
@@ -147,10 +148,12 @@ const OrderDetail = React.memo(({
 
   const handleMoveOrder = async (targetType, targetId) => {
     if (!order) return;
+    const orderDocId = order.__docPath || order.id;
+    if (!orderDocId) { showError('Order ID niet gevonden'); return; }
     
     try {
       await movePlanningOrder({
-        orderDocId: order.id,
+        orderDocId,
         targetType,
         targetId,
         currentDepartment: currentDepartment || order.department || "fittings",
@@ -169,6 +172,7 @@ const OrderDetail = React.memo(({
 
   const handleRetrieveOrder = async () => {
     if (!order) return;
+    const orderDocId = order.__docPath || order.id;
     const retrieveConfirmed = await showConfirm({
       title: t("digitalplanning.order_detail.retrieve_title", "Order terughalen"),
       message: t("digitalplanning.order_detail.confirm_retrieve", `Weet je zeker dat je deze order wilt terughalen van ${order.delegatedTo || 'andere afdeling'}?`),
@@ -180,7 +184,7 @@ const OrderDetail = React.memo(({
 
     try {
       await retrievePlanningOrder({
-        orderDocId: order.id,
+        orderDocId,
         source: "OrderDetail",
         actorLabel: user?.email || auth.currentUser?.email,
       });
@@ -193,9 +197,10 @@ const OrderDetail = React.memo(({
   };
 
   const handleCancelOrder = async (reason) => {
+    const orderDocId = order.__docPath || order.id;
     try {
       await cancelPlanningOrder({
-        orderDocId: order.id,
+        orderDocId,
         reason,
         source: "OrderDetail",
         actorLabel: user?.email || auth.currentUser?.email,
@@ -217,12 +222,13 @@ const OrderDetail = React.memo(({
   };
 
   const handleSetPriority = async (level) => {
-    if (!order.id) return;
+    const orderDocId = order.__docPath || order.id;
+    if (!orderDocId) return;
     const currentPrio = order.priority === true ? "high" : order.priority;
     const newPriority = currentPrio === level ? false : level;
     try {
       await updatePlanningOrderPriority({
-        orderDocId: order.id,
+        orderDocId,
         priority: newPriority,
         source: "OrderDetail",
         actorLabel: user?.email || auth.currentUser?.email,
@@ -235,10 +241,11 @@ const OrderDetail = React.memo(({
 
   const handleToggleHold = async () => {
     setHoldLoading(true);
+    const orderDocId = order.__docPath || order.id;
     try {
       const isOnHold = order.status === 'on_hold';
       await togglePlanningOrderHold({
-        orderDocId: order.id,
+        orderDocId,
         source: "OrderDetail",
         actorLabel: user?.email || auth.currentUser?.email,
       });
@@ -295,8 +302,10 @@ const OrderDetail = React.memo(({
     liveStartedAmount,
     linkedStartedAmount
   );
+  const trackedProducedAmount = countFinishedTrackedLots(orderProducts);
+  const producedAmount = getOrderFinishedUnits(order, { trackedFinishedCount: trackedProducedAmount });
   const effectivePlanForTodo = canEditOrderPlan && nextPlan !== null ? Number(nextPlan) : visibleOrderPlan;
-  const todoAmount = Math.max(0, Number((Number(effectivePlanForTodo || 0) - startedAmount).toFixed(2)));
+  const todoAmount = Math.max(0, Number((Number(effectivePlanForTodo || 0) - producedAmount).toFixed(2)));
   const normalizedPriority =
     order?.priority === true
       ? "high"
@@ -321,8 +330,9 @@ const OrderDetail = React.memo(({
 
     try {
       setIsSavingNote(true);
+      const orderDocId = order.__docPath || order.id;
       await updatePlanningOrderDetails({
-        orderDocId: order.id,
+        orderDocId,
         notes: trimmedNote,
         plan: hasPlanChanged ? nextPlan : null,
         source: "OrderDetail",
@@ -502,6 +512,10 @@ const OrderDetail = React.memo(({
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.started_amount", "Start Aantal")}</span>
           <span className="font-bold text-slate-700">{startedAmount}</span>
+        </div>
+        <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.produced_amount", "Gereed")}</span>
+          <span className="font-bold text-emerald-700">{producedAmount}</span>
         </div>
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.todo_amount", "To do")}</span>

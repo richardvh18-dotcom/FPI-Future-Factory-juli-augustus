@@ -256,10 +256,12 @@ const TerminalPlanningView = ({
   };
 
   const getOrderTotalPlan = (order) => {
-    const quantity = Number(order?.quantity);
     const plan = Number(order?.plan);
-    if (Number.isFinite(quantity) && quantity > 0) return quantity;
+    const toDoQty = Number(order?.toDoQty);
+    const quantity = Number(order?.quantity);
     if (Number.isFinite(plan) && plan > 0) return plan;
+    if (Number.isFinite(toDoQty) && toDoQty > 0) return toDoQty;
+    if (Number.isFinite(quantity) && quantity > 0) return quantity;
     return 1;
   };
 
@@ -433,7 +435,7 @@ const TerminalPlanningView = ({
     });
 
     return items;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [sortedOrders, showAllWeeks, selectedOrderId, productionProgressMap, rejectedCountMap]);
 
   // Scroll selected item into view

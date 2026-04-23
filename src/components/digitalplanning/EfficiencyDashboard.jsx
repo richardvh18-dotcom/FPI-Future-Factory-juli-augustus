@@ -392,7 +392,7 @@ const EfficiencyDashboard = () => {
       // Efficiency Formule: (Verdiende Tijd / Werkelijke Tijd) * 100
       // We gebruiken 'Earned Value' (Geproduceerd * Norm) zodat de score ook klopt
       // voor orders die halverwege instromen (ramp-up fase).
-      const stdQty = Number(std.quantity || planningOrder?.quantity || planningOrder?.plan || 0);
+      const stdQty = Number(std.plan || planningOrder?.plan || std.quantity || planningOrder?.quantity || 0);
       const normPerUnit = Number(std.minutesPerUnit || 0) > 0
         ? Number(std.minutesPerUnit || 0)
         : (stdQty > 0 ? targetTotal / stdQty : 0);

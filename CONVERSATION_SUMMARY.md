@@ -15,6 +15,36 @@
 
 ---
 
+## Smoke-test checklist (deploy + regressie startflow)
+
+**Doel:** na deploy in 5-10 minuten bevestigen dat de order-start keten niet opnieuw breekt.
+
+### 1) Deploy check
+
+- [ ] Functions deploy succesvol afgerond zonder fouten.
+- [ ] Frontend deploy/build succesvol afgerond.
+- [ ] In productie laden Workstation/Terminal zonder console `500` op start.
+
+### 2) Regressietests kernflow
+
+- [ ] **Start order** op BH15/BM15 met normale order: lots aangemaakt, status naar `in_progress`, geen callable 500.
+- [ ] **Start order via alternatieve locator** (order uit scoped pad): start werkt ook wanneer payload niet alleen op één id-vorm leunt.
+- [ ] **Cancel gestart lot**: lot wordt gecanceld zonder inconsistentie in orderstatus/counters.
+- [ ] **Move + retrieve order**: order verplaatst en teruggehaald zonder `NOT_FOUND_ORDER` door docId/path mismatch.
+- [ ] **Hold toggle + details update**: on_hold aan/uit en notes/plan update werken op dezelfde order zonder lookup-fout.
+
+### 3) Datakwaliteit/KPI sanity
+
+- [ ] Geen nieuwe vervuiling door niet-order docs in planning-overzichten/KPI.
+- [ ] `plan` blijft leidend t.o.v. legacy `quantity` in kaarttellingen/to-do.
+
+### 4) Logcontrole (snelle triage)
+
+- [ ] Geen nieuwe `internal` callable fouten op `startProductionLots`.
+- [ ] Eventuele foutmelding is specifiek (bijv. ongeldige locator) i.p.v. generiek.
+
+---
+
 ## Update sessie 104 (BH18 startProductionLots fix + Firebase/Vercel productie-deploy)
 
 **Datum:** 20 april 2026 | **Branch:** `FF-2-4-26`

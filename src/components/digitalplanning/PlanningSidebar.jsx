@@ -18,6 +18,7 @@ import { collection, query, getDocs, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { getArchiveItemsPath } from "../../config/dbPaths";
 import { getISOWeek } from "date-fns";
+import { getOrderFinishedUnits, getOrderIdentity, getTrackedRecordOrderId } from "../../utils/planningProgress";
 
 const FixedSizeList = List;
 
@@ -82,13 +83,7 @@ const PlanningSidebar = ({
   };
 
   const getOrderIdFromRecord = (record) => {
-    const directOrderId = String(record?.orderId || "").trim();
-    if (directOrderId) return directOrderId;
-
-    const rawId = String(record?.id || "").trim();
-    if (!rawId) return "";
-
-    return rawId.replace(/_\d{6,}$/, "");
+    return getTrackedRecordOrderId(record);
   };
 
   const getTrackedStatus = (product) => String(product?.status || "").trim().toLowerCase();
@@ -949,7 +944,6 @@ const PlanningSidebar = ({
     return `${dateStr}  W${week}`;
   };
 
-  const getOrderIdentity = (order) => String(order?.orderId || order?.id || "").trim();
   const getNumeric = (value) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -1075,15 +1069,7 @@ const PlanningSidebar = ({
       sorted.forEach((order) => {
         const orderId = getOrderIdentity(order);
         const planned = Math.max(0, getNumeric(order?.plan || order?.plannedQuantity || order?.quantity || order?.qty));
-        const orderFinished = Math.max(
-          getNumeric(order?.produced),
-          getNumeric(order?.finishedCount),
-          getNumeric(order?.finishValue),
-          getNumeric(order?.wrapped),
-          getNumeric(order?.completed)
-        );
-        const trackedFinished = getNumeric(trackedFinishedByOrder.get(orderId));
-        const produced = Math.max(orderFinished, trackedFinished);
+        const produced = getOrderFinishedUnits(order, { trackedFinishedCountByOrder: trackedFinishedByOrder });
         const remaining = Math.max(0, planned - produced);
 
         const requiredDays = queueAhead + remaining > 0

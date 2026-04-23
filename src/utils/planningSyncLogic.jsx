@@ -99,8 +99,9 @@ export const syncMissingDrawings = async (appId, onProgress) => {
             updateData.description = conversion.description;
 
           if (Object.keys(updateData).length > 0) {
+            const orderDocId = order.__docPath || order.id;
             await patchPlanningOrderMetadata({
-              orderDocId: order.id,
+              orderDocId,
               patch: updateData,
               source: "planningSyncLogic",
             });
