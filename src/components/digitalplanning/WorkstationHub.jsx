@@ -431,14 +431,25 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
       const mapOrderDoc = (docSnap) => {
         const data = docSnap.data();
+        const explicitScopeType = String(data?._scopeType || "").trim();
+        const resolvedOrderId = String(data?.orderId || data?.orderNumber || "").trim();
+
+        // Bescherm KPI's tegen vervuilde/structurele documenten in digital_planning.
+        if (explicitScopeType && explicitScopeType !== "planning_order") return null;
+        if (!resolvedOrderId) return null;
+
         let dateObj = data.plannedDate?.toDate ? data.plannedDate.toDate() : new Date();
         let { week, year } = getISOWeekInfo(dateObj);
+        const sourceDataId = String(data?.id || "").trim();
         return {
-          id: docSnap.id,
           ...data,
+          // id moet altijd de echte Firestore document-id blijven voor callables (save/move/cancel).
+          id: docSnap.id,
+          docId: docSnap.id,
+          sourceDataId: sourceDataId || null,
           __docPath: docSnap.ref.path,
           sourcePath: data?.sourcePath || docSnap.ref.path,
-          orderId: data.orderId || data.orderNumber || docSnap.id,
+          orderId: resolvedOrderId,
           item: data.item || data.productCode || t("digitalplanning.workstation.unknown_item"),
           plan: data.plan || data.quantity || 0,
           dateObj,
@@ -478,6 +489,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       const unsubOrders = onSnapshot(ordersQuery, (snap) => {
         rootOrders = snap.docs
           .map(mapOrderDoc)
+          .filter(Boolean)
           .filter((o) => {
             const s = String(o?.status || "").toLowerCase().trim();
             return !["completed", "cancelled", "shipped", "rejected", "finished"].includes(s);
@@ -505,6 +517,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
               );
             })
             .map(mapOrderDoc)
+            .filter(Boolean)
             .filter((o) => {
               const s = String(o.status || "").toLowerCase();
               return !["completed", "cancelled", "shipped", "rejected", "finished"].includes(s);
@@ -854,7 +867,19 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   }, [selectedStation, timeHeartbeat, showInfo]);
 
   const handleOperatorShiftCheckin = async (badgeOverride) => {
-    const rawBadge = String(badgeOverride || operatorBadgeInput || "").trim();
+    const resolveBadgeInput = (input) => {
+      if (typeof input === "string" || typeof input === "number") return String(input).trim();
+      if (input && typeof input === "object") {
+        // React/DOM events, NFC payloads of object-structuren kunnen hier terechtkomen.
+        const eventValue = input?.target?.value ?? input?.currentTarget?.value;
+        if (eventValue !== undefined && eventValue !== null) return String(eventValue).trim();
+        const objectBadge = input?.employeeNumber ?? input?.badge ?? input?.uid;
+        if (objectBadge !== undefined && objectBadge !== null) return String(objectBadge).trim();
+      }
+      return "";
+    };
+
+    const rawBadge = resolveBadgeInput(badgeOverride) || String(operatorBadgeInput || "").trim();
     if (!rawBadge) {
       showWarning("Scan of vul eerst een personeelsnummer in.", "Personeel");
       return;
@@ -865,20 +890,52 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     setIsCheckingInOperator(true);
     try {
       const normalizedBadge = rawBadge.toUpperCase();
+      const numericBadge = rawBadge.replace(/\D/g, "");
+      const normalizedNumericBadge = numericBadge.replace(/^0+/, "");
+      const sameBadgeValue = (value) => {
+        const candidate = String(value || "").trim();
+        if (!candidate) return false;
+        if (candidate.toUpperCase() === normalizedBadge) return true;
+        const candidateDigits = candidate.replace(/\D/g, "");
+        if (!candidateDigits) return false;
+        return candidateDigits.replace(/^0+/, "") === normalizedNumericBadge;
+      };
 
       let person = personnel.find((p) => {
-        const id = String(p.id || "").toUpperCase();
-        const empNo = String(p.employeeNumber || "").toUpperCase();
-        return id === normalizedBadge || empNo === normalizedBadge;
+        const id = String(p.id || "").trim();
+        const empNo = String(p.employeeNumber || "").trim();
+        return sameBadgeValue(id) || sameBadgeValue(empNo);
       });
 
       if (!person) {
-        const byEmployeeSnap = await getDocs(
-          query(collection(db, ...PATHS.PERSONNEL), where("employeeNumber", "==", rawBadge), limit(1))
-        );
-        if (!byEmployeeSnap.empty) {
-          const d = byEmployeeSnap.docs[0];
-          person = { id: d.id, ...d.data() };
+        const employeeCandidates = Array.from(new Set([
+          rawBadge,
+          normalizedBadge,
+          numericBadge,
+          normalizedNumericBadge,
+        ].filter(Boolean)));
+
+        for (const candidate of employeeCandidates) {
+          const byEmployeeSnap = await getDocs(
+            query(collection(db, ...PATHS.PERSONNEL), where("employeeNumber", "==", candidate), limit(1))
+          );
+          if (!byEmployeeSnap.empty) {
+            const d = byEmployeeSnap.docs[0];
+            person = { id: d.id, ...d.data() };
+            break;
+          }
+
+          const numericCandidate = Number(candidate);
+          if (Number.isFinite(numericCandidate) && candidate !== String(numericCandidate)) {
+            const byEmployeeNumericSnap = await getDocs(
+              query(collection(db, ...PATHS.PERSONNEL), where("employeeNumber", "==", numericCandidate), limit(1))
+            );
+            if (!byEmployeeNumericSnap.empty) {
+              const d = byEmployeeNumericSnap.docs[0];
+              person = { id: d.id, ...d.data() };
+              break;
+            }
+          }
         }
       }
 
@@ -898,9 +955,21 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       }
 
       if (!person) {
-        const personDoc = await getDoc(doc(db, ...PATHS.PERSONNEL, rawBadge));
-        if (personDoc.exists()) {
-          person = { id: personDoc.id, ...personDoc.data() };
+        const docIdCandidates = Array.from(new Set([
+          rawBadge,
+          normalizedBadge,
+          `P_${rawBadge}`,
+          `P_${normalizedBadge}`,
+          numericBadge ? `P_${numericBadge}` : "",
+          normalizedNumericBadge ? `P_${normalizedNumericBadge}` : "",
+        ].filter(Boolean)));
+
+        for (const docIdCandidate of docIdCandidates) {
+          const personDoc = await getDoc(doc(db, ...PATHS.PERSONNEL, docIdCandidate));
+          if (personDoc.exists()) {
+            person = { id: personDoc.id, ...personDoc.data() };
+            break;
+          }
         }
       }
 
@@ -911,7 +980,50 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
       const now = new Date();
       const todayStr = getTodayString();
-      const operatorNumber = String(person.employeeNumber || person.id || rawBadge);
+      const extractDigits = (value) => String(value || "").replace(/\D/g, "").replace(/^0+/, "");
+      const personIdDigits = extractDigits(person.id);
+      const badgeDigits = extractDigits(rawBadge);
+      const operatorNumber = String(
+        person.employeeNumber ||
+        personIdDigits ||
+        badgeDigits ||
+        person.id ||
+        rawBadge
+      );
+
+      const resolveOperatorName = (personRecord, fallbackNumber) => {
+        const directName =
+          personRecord?.name ||
+          personRecord?.displayName ||
+          personRecord?.fullName ||
+          personRecord?.operatorName ||
+          [personRecord?.firstName, personRecord?.lastName].filter(Boolean).join(" ") ||
+          [personRecord?.voornaam, personRecord?.achternaam].filter(Boolean).join(" ");
+
+        if (String(directName || "").trim()) return String(directName).trim();
+
+        const enriched = personnel.find((p) => {
+          const id = String(p.id || "").trim();
+          const empNo = String(p.employeeNumber || "").trim();
+          if (sameBadgeValue(id) || sameBadgeValue(empNo)) return true;
+          const pDigits = extractDigits(p.employeeNumber || p.id);
+          const opDigits = extractDigits(fallbackNumber);
+          return Boolean(pDigits && opDigits && pDigits === opDigits);
+        });
+
+        const enrichedName =
+          enriched?.name ||
+          enriched?.displayName ||
+          enriched?.fullName ||
+          enriched?.operatorName ||
+          [enriched?.firstName, enriched?.lastName].filter(Boolean).join(" ") ||
+          [enriched?.voornaam, enriched?.achternaam].filter(Boolean).join(" ");
+
+        if (String(enrichedName || "").trim()) return String(enrichedName).trim();
+        return `Operator ${fallbackNumber}`;
+      };
+
+      const resolvedOperatorName = resolveOperatorName(person, operatorNumber);
 
       const occSnap = await getDocs(
         query(collection(db, ...PATHS.OCCUPANCY), where("date", "==", todayStr), limit(300))
@@ -964,7 +1076,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         departmentId: person.departmentId || "fittings",
         machineId: selectedStation,
         operatorNumber,
-        operatorName: person.name || `Operator ${operatorNumber}`,
+        operatorName: resolvedOperatorName,
         date: todayStr,
         hoursWorked: 0,
         isPloeg: false,
@@ -1013,15 +1125,15 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
       setCheckedInOperator({
         number: operatorNumber,
-        name: person.name || `Operator ${operatorNumber}`,
+        name: resolvedOperatorName,
         machineId: selectedStation,
       });
       setOperatorBadgeInput("");
 
       if (activeEntries.length > 0) {
-        showSuccess(`${person.name || operatorNumber} overgezet naar ${selectedStation}.`);
+        showSuccess(`${resolvedOperatorName} overgezet naar ${selectedStation}.`);
       } else {
-        showSuccess(`${person.name || operatorNumber} aangemeld op ${selectedStation}.`);
+        showSuccess(`${resolvedOperatorName} aangemeld op ${selectedStation}.`);
       }
 
       // Auto-login bij LOSSEN 12/18 voor BH12/BH15/BH17/BH18
@@ -1051,7 +1163,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
               departmentId: person.departmentId || "fittings",
               machineId: LOSSEN_1218_STATION_NAME,
               operatorNumber,
-              operatorName: person.name || `Operator ${operatorNumber}`,
+              operatorName: resolvedOperatorName,
               date: todayStr,
               hoursWorked: 0,
               isPloeg: false,
@@ -2470,7 +2582,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             />
 
             <button
-              onClick={handleOperatorShiftCheckin}
+              onClick={() => handleOperatorShiftCheckin()}
               disabled={isCheckingInOperator}
               className="w-full mt-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest disabled:opacity-60"
             >

@@ -55,7 +55,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     const unsubRootOrders = onSnapshot(
       collection(db, ...readPaths.PLANNING),
       (snapshot) => {
-        rootOrders = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        rootOrders = snapshot.docs.map((docSnap) => ({ id: docSnap.id, __docPath: docSnap.ref.path, ...docSnap.data() }));
         mergeOrders();
       },
       () => {
@@ -76,7 +76,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
               path.includes("/orders/")
             );
           })
-          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+          .map((docSnap) => ({ id: docSnap.id, __docPath: docSnap.ref.path, ...docSnap.data() }));
         mergeOrders();
       },
       () => {

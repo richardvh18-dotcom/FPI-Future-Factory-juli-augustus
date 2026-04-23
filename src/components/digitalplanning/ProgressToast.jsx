@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader, CheckCircle, AlertCircle } from 'lucide-react';
+import { Loader, CheckCircle } from 'lucide-react';
 import { useProgressOperations } from '../../contexts/ProgressOperationContext';
 
 export const ProgressToast = () => {
@@ -8,34 +8,50 @@ export const ProgressToast = () => {
   if (operationCount === 0) return null;
 
   const operations = getOperations();
+  const isAnyBusy = operations.some(
+    (op) => !op.status.includes("Klaar") && !op.status.includes("Fout")
+  );
 
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] max-w-sm">
+    <div className="fixed bottom-4 right-4 z-[9999] max-w-sm w-72">
       <div className="bg-slate-900 text-white rounded-xl shadow-2xl p-4 border border-slate-700 backdrop-blur-sm">
         <div className="flex items-start gap-3">
-          <Loader size={20} className="animate-spin text-blue-400 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <div className="font-black text-sm mb-2">Verwerken ({operationCount} actief)...</div>
-            <div className="space-y-1 text-xs max-h-32 overflow-y-auto">
-              {operations.map((op) => (
-                <div key={op.id} className="flex items-center gap-2">
-                  <span
-                    className={
-                      op.status.includes("Klaar")
-                        ? "text-emerald-400"
-                        : op.status.includes("Fout")
-                          ? "text-rose-400"
-                          : "text-slate-300"
-                    }
-                  >
-                    {op.status.includes("Klaar") ? "✓" : op.status.includes("Fout") ? "✗" : "◌"}
-                  </span>
-                  <span className="text-slate-300">{op.lotNumber}</span>
-                  {op.status !== "Bezig..." && op.status !== "Klaar ✓" && (
-                    <span className="text-xs text-slate-400 ml-auto">{op.status}</span>
-                  )}
-                </div>
-              ))}
+          {isAnyBusy
+            ? <Loader size={20} className="animate-spin text-blue-400 flex-shrink-0 mt-0.5" />
+            : <CheckCircle size={20} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+          }
+          <div className="flex-1 min-w-0">
+            <div className="font-black text-sm mb-2">
+              {isAnyBusy ? `Verwerken (${operationCount} actief)...` : "Verwerkt"}
+            </div>
+            <div className="space-y-2 text-xs max-h-40 overflow-y-auto">
+              {operations.map((op) => {
+                const isDone = op.status.includes("Klaar");
+                const isError = op.status.includes("Fout");
+                const isBusy = !isDone && !isError;
+                return (
+                  <div key={op.id}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={isDone ? "text-emerald-400" : isError ? "text-rose-400" : "text-slate-300"}>
+                        {isDone ? "✓" : isError ? "✗" : "◌"}
+                      </span>
+                      <span className="text-slate-200 truncate font-medium">{op.lotNumber}</span>
+                      <span className="text-slate-400 ml-auto whitespace-nowrap">{op.status}</span>
+                    </div>
+                    {isBusy && (
+                      <div className="w-full h-1 bg-slate-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-400 rounded-full animate-progress-indeterminate" />
+                      </div>
+                    )}
+                    {isDone && (
+                      <div className="w-full h-1 bg-emerald-500 rounded-full" />
+                    )}
+                    {isError && (
+                      <div className="w-full h-1 bg-rose-500 rounded-full" />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

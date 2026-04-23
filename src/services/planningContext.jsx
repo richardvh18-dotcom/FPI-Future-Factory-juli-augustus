@@ -41,7 +41,7 @@ export const getRawPlanningData = async (limitCount = 50) => {
       const week = data.week || data.productionWeek || '?';
       const status = data.status || i18n.t("common.unknown", "Onbekend");
       // Toegevoegd: 'plan' veld uit de logs
-      const rawQty = data.quantity || data.amount || data.units || data.total || data.target || data.qty || data.planned || data.plan || 0;
+      const rawQty = data.plan || data.planned || data.quantity || data.amount || data.units || data.total || data.target || data.qty || 0;
       const quantity = Number(rawQty) || 0;
 
       return {

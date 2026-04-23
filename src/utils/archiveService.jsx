@@ -14,7 +14,8 @@ const archivePlanningOrderCallable = httpsCallable(functions, "archivePlanningOr
  * @param {string} reason - Reden van archiveren ('completed', 'rejected', 'manual')
  */
 export const archiveOrder = async (order, reason) => {
-  if (!order || !order.id) {
+  const orderDocId = order?.__docPath || order?.id;
+  if (!order || !orderDocId) {
     console.error(i18n.t("archive.missing_data", "Kan niet archiveren: Gegevens ontbreken"));
     return false;
   }
@@ -22,7 +23,7 @@ export const archiveOrder = async (order, reason) => {
   // 5. Uitvoeren
   try {
     const res = await archivePlanningOrderCallable({
-      orderDocId: order.id,
+      orderDocId,
       reason: reason || order.status || "manual",
       source: "archiveService",
     });

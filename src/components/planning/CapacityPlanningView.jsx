@@ -237,6 +237,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
       (snapshot) => {
         planningBucketsRef.current.root = snapshot.docs.map((docEntry) => ({
           id: docEntry.id,
+          __docPath: docEntry.ref.path,
           ...docEntry.data(),
         }));
         mergePlanningBuckets();
@@ -262,7 +263,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
               path.includes("/orders/")
             );
           })
-          .map((docEntry) => ({ id: docEntry.id, ...docEntry.data() }));
+          .map((docEntry) => ({ id: docEntry.id, __docPath: docEntry.ref.path, ...docEntry.data() }));
         mergePlanningBuckets();
         setLoading(false);
       },
@@ -518,7 +519,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     let missingStandardsList = [];
 
     periodOrders.forEach(order => {
-      const planCount = parseInt(order.quantity || order.plan || 0);
+      const planCount = parseInt(order.plan || order.quantity || 0);
       totalPlannedUnits += planCount;
       const importedPlannedHours = parseFloat(order.plannedHours || 0) || 0;
       const splitHours = getSplitHours(order);
@@ -661,7 +662,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         const key = Object.keys(efficiencyData).find(k => k.toLowerCase() === order.orderId.toLowerCase());
         if (key) importedInfo = efficiencyData[key];
       }
-      const planCount = parseInt(order.quantity || order.plan || 0);
+      const planCount = parseInt(order.plan || order.quantity || 0);
       const importedPlannedHours = parseFloat(order.plannedHours || 0) || 0;
 
       if (importedInfo) {

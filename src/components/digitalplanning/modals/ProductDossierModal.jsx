@@ -132,8 +132,9 @@ const ProductDossierModal = ({
   };
 
   const handleSetPriority = async (level) => {
-    if (!parentOrder.id) return;
-    // Toggle logic: als huidige priority gelijk is aan gekozen level, zet uit (false)
+    const parentOrderDocId = parentOrder.__docPath || parentOrder.id;
+    if (!parentOrderDocId) return;
+    // Toggle logic: als huidge priority gelijk is aan gekozen level, zet uit (false)
     const currentPrio =
       parentOrder.priority === true
         ? "high"
@@ -142,7 +143,7 @@ const ProductDossierModal = ({
 
     try {
       await updatePlanningOrderPriority({
-        orderDocId: parentOrder.id,
+        orderDocId: parentOrderDocId,
         priority: newPriority,
         productDocId: product.id || "",
         source: "ProductDossierModal",

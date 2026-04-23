@@ -24,6 +24,7 @@ import { getISOWeek, format, subDays, startOfISOWeek, endOfISOWeek, addWeeks } f
 import { PATHS, getArchiveItemsPath, getArchiveRejectedItemsPath } from "../../config/dbPaths";
 import * as XLSX from "xlsx";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
+import { getOrderFinishedUnits, getTrackedRecordOrderId } from "../../utils/planningProgress";
 
 // Helpers & Modals
   import { normalizeMachine, PIPE_MACHINES, FITTING_MACHINES, getStartedCounterField } from "../../utils/hubHelpers";
@@ -67,13 +68,7 @@ const TeamleaderHub = React.memo(({
   const currentYear = new Date().getFullYear();
 
   const getOrderIdFromTrackedRecord = (record) => {
-    const directOrderId = String(record?.orderId || "").trim();
-    if (directOrderId) return directOrderId;
-
-    const rawId = String(record?.id || "").trim();
-    if (!rawId) return "";
-
-    return rawId.replace(/_\d{6,}$/, "");
+    return getTrackedRecordOrderId(record);
   };
 
   const getLotFromTrackedRecord = (record) => {
@@ -174,19 +169,43 @@ const TeamleaderHub = React.memo(({
       let rootOrders = [];
       let scopedOrders = [];
 
+      const mapOrderDoc = (docSnap) => {
+        const data = docSnap.data() || {};
+        const sourceDataId = String(data?.id || "").trim();
+        return {
+          ...data,
+          // Houd id altijd gelijk aan Firestore doc-id voor callables (orderDocId).
+          id: docSnap.id,
+          docId: docSnap.id,
+          sourceDataId: sourceDataId || null,
+          __docPath: docSnap.ref.path,
+          sourcePath: data?.sourcePath || docSnap.ref.path,
+          orderId: data.orderId || data.orderNumber || docSnap.id,
+        };
+      };
+
       const mergeOrders = () => {
         if (!isMounted) return;
         const merged = new Map();
 
+        const getMergeKey = (order) => {
+          const pathKey = String(order?.__docPath || order?.sourcePath || "").trim();
+          if (pathKey) return pathKey;
+          const orderKey = String(order?.orderId || order?.id || "").trim();
+          if (!orderKey) return "";
+          const machineKey = String(normalizeMachine(order?.machine || "") || "").trim();
+          return machineKey ? `${orderKey}::${machineKey}` : orderKey;
+        };
+
         rootOrders.forEach((order) => {
-          const key = String(order.id || order.orderId || "").trim();
+          const key = getMergeKey(order);
           if (!key) return;
           merged.set(key, order);
         });
 
         // Scoped docs take precedence for the same order key.
         scopedOrders.forEach((order) => {
-          const key = String(order.id || order.orderId || "").trim();
+          const key = getMergeKey(order);
           if (!key) return;
           merged.set(key, order);
         });
@@ -198,7 +217,7 @@ const TeamleaderHub = React.memo(({
         collection(db, ...PATHS.PLANNING),
         (snap) => {
           rootOrders = snap.docs
-            .map((d) => ({ id: d.id, ...d.data() }))
+            .map(mapOrderDoc)
             .filter((entry) => {
               const hasOrderIdentity = !!String(entry?.orderId || entry?.id || "").trim();
               return hasOrderIdentity;
@@ -227,7 +246,7 @@ const TeamleaderHub = React.memo(({
                 path.includes("/orders/")
               );
             })
-            .map((d) => ({ id: d.id, ...d.data() }))
+            .map(mapOrderDoc)
             .filter((entry) => {
               const hasOrderIdentity = !!String(entry?.orderId || entry?.id || "").trim();
               return hasOrderIdentity;
@@ -602,6 +621,12 @@ const TeamleaderHub = React.memo(({
   const isInactiveTrackedProduct = (product) => {
     return isArchivedRejectedProduct(product) || isFinishedProduct(product) || isRejectedProduct(product);
   };
+  const getFinishedQtyForOrder = (order) => {
+    return getOrderFinishedUnits(order, {
+      trackedRecords: [...rawProducts, ...archivedHistoryProducts],
+      getOrderIdFromRecord: getOrderIdFromTrackedRecord,
+    });
+  };
 
   const legacyRejectedOrders = useMemo(() => {
     const currentWeekStart = startOfISOWeek(new Date());
@@ -622,7 +647,7 @@ const TeamleaderHub = React.memo(({
       const archiveReason = String(order?.archiveReason || order?.archivedReason || "").toLowerCase().trim();
       const rejectedCount = Number(order?.rejectedCount || 0);
       const planCount = Number(order?.plan ?? order?.quantity ?? 0);
-      const finishedCount = Number(order?.produced ?? order?.finishValue ?? order?.wrapped ?? 0);
+      const finishedCount = getFinishedQtyForOrder(order);
       const orderDate = (() => {
         const value = order?.plannedDate || order?.date || order?.deliveryDate || null;
         if (!value) return null;
@@ -794,8 +819,9 @@ const TeamleaderHub = React.memo(({
 
     setAssigningOverproduction(true);
     try {
+      const targetOrderDocId = targetOrder.__docPath || targetOrder.id;
       await assignOverproduction({
-        targetOrderDocId: targetOrder.id,
+        targetOrderDocId,
         targetOrderId: targetOrder.orderId,
         productIds: selectedOverproductionGroup.products.map((product) => product.id),
         routeStation: route.station,
@@ -1537,13 +1563,14 @@ const TeamleaderHub = React.memo(({
     const headers = ["Order", "Item", "Item Code", "Machine", "Plan", "Gereed", "Status", "Datum", "Afdeling"];
     const rows = dataStore.map(o => {
       const dateStr = o.dateObj ? format(o.dateObj, "yyyy-MM-dd") : "";
+      const finishedQty = getFinishedQtyForOrder(o);
       return [
         o.orderId || "",
         `"${(o.item || "").replace(/"/g, '""')}"`,
         o.itemCode || "",
         o.machine || "",
         o.plan || 0,
-        o.produced ?? o.finishValue ?? 0,
+        finishedQty,
         o.status || "",
         dateStr,
         o.department || ""
@@ -1632,7 +1659,7 @@ const TeamleaderHub = React.memo(({
             const date = getOrderDate(o);
             const week = o.weekNumber || (date ? getISOWeek(date) : "");
             const plan = parseInt(o.plan || o.quantity || 0, 10) || 0;
-            const wrapped = parseInt(o.produced ?? o.finishValue ?? o.wrapped ?? 0, 10) || 0;
+            const wrapped = getFinishedQtyForOrder(o);
             const toDo = Math.max(plan - wrapped, 0);
             const machineCode = formatMachineForPlanner(o.machine || machine);
             const dateValue = date ? format(date, "M/d/yyyy") : "";

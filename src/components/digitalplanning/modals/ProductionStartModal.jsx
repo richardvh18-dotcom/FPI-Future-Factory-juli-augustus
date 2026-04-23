@@ -16,7 +16,7 @@ import {
   Loader2,
   Database
 } from "lucide-react";
-import { collection, getDocs, query, where, onSnapshot, doc, limit } from "firebase/firestore";
+import { collection, collectionGroup, getDocs, query, where, onSnapshot, doc, getDoc, setDoc, deleteDoc, serverTimestamp, runTransaction, limit } from "firebase/firestore";
 
 import { db, auth, logActivity } from "../../../config/firebase"; 
 import { PATHS, getArchiveItemsPath } from "../../../config/dbPaths";
@@ -26,11 +26,11 @@ import {
 import { getFlangeSeriesInfo } from "../../../utils/flangeSeriesHelper";
 import { lookupProductByManufacturedId } from "../../../utils/conversionLogic";
 import { useNotifications } from "../../../contexts/NotificationContext";
+import { useProgressOperations } from "../../../contexts/ProgressOperationContext";
 import { generatePrintData, generateLotBatchZPL } from "../../../utils/zplHelper";
 import { getDriver } from "../../../utils/printerDrivers";
-import { trackedLotExistsActive } from "../../../utils/trackedProducts";
-import { reserveAutoLotNumberRange, queuePrintJob } from "../../../services/planningSecurityService";
-import AutoScaledLabelPreview from "../../printer/AutoScaledLabelPreview";
+import { queuePrintJob } from "../../../services/printService.js";
+import LabelVisualPreview from "../../printer/LabelVisualPreview";
 import { useLabelPreview } from "../../../hooks/useLabelPreview";
 import InternalQrImage from "../../../utils/InternalQrImage";
 
@@ -38,11 +38,11 @@ import InternalQrImage from "../../../utils/InternalQrImage";
  * DPI-aware PIXELS_PER_MM for print preview parity
  * Must match zplHelper.js printer DPI conversions
  */
-const getPixelsPerMm = (printerDpi = 300) => {
-  return (printerDpi || 300) / 25.4;
+const getPixelsPerMm = (printerDpi = 203) => {
+  return (printerDpi || 203) / 25.4;
 };
 
-const DEFAULT_PRINTER_DPI = 300;
+const DEFAULT_PRINTER_DPI = 203;
 const LOT_ARCHIVE_LOOKBACK_YEARS = 6;
 
 // Functie om ISO week en bijbehorend ISO jaar te berekenen
@@ -87,7 +87,7 @@ const getMachineCode = (station) => {
   return `4${digits.slice(-2).padStart(2, "0")}`;
 };
 
-const getNormalizedPrinterDpi = (printer, fallback = 300) => {
+const getNormalizedPrinterDpi = (printer, fallback = 203) => {
   const parsed = Number.parseInt(printer?.dpi, 10);
   if (Number.isFinite(parsed) && parsed > 0) return parsed;
   const resolved = getDriver(printer);
@@ -101,12 +101,12 @@ const ProductionStartModal = ({
   isOpen,
   onClose,
   onStart,
-  onStartInitiated,
   stationId = "",
   existingProducts = [],
 }) => {
   const { t } = useTranslation();
   const { showSuccess, showError , notify} = useNotifications();
+  const { addOperation, updateOperation, removeOperation } = useProgressOperations();
   const [mode, setMode] = useState("manual"); // Standaard manueel voor pilot
   const [lotNumber, setLotNumber] = useState("");
   const [stringCount, setStringCount] = useState("1");
@@ -127,6 +127,7 @@ const ProductionStartModal = ({
   const [orderError, setOrderError] = useState("");
 
   const [selectedLabelId, setSelectedLabelId] = useState("");
+  const [previewZoom, setPreviewZoom] = useState(1);
   const location = useLocation();
   
   const [savedPrinters, setSavedPrinters] = useState([]);
@@ -140,8 +141,9 @@ const ProductionStartModal = ({
   });
 
   const containerRef = useRef(null);
+  const previewAreaRef = useRef(null);
 
-  const [isPreparingAutoLotPreview, setIsPreparingAutoLotPreview] = useState(false);
+  const [isCheckingLot, setIsCheckingLot] = useState(false);
   const [lotError, setLotError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const isManualMode = mode === "manual";
@@ -230,19 +232,6 @@ const ProductionStartModal = ({
   }), [order, isManualMode, manualOrderInput, manualLotInput, lotNumber]);
 
   const { selectedLabel, previewData, availableLabels: allLabels, loadingLabels } = useLabelPreview(productForPreview, selectedLabelId);
-
-  const previewTargetPrinter = useMemo(() => {
-    const explicit = printConfig?.printerId
-      ? savedPrinters.find((p) => p.id === printConfig.printerId)
-      : null;
-    if (explicit) return explicit;
-    return resolveTargetPrinter(savedPrinters, stationId);
-  }, [savedPrinters, stationId, printConfig?.printerId]);
-
-  const previewPrinterDpi = useMemo(
-    () => getNormalizedPrinterDpi(previewTargetPrinter, DEFAULT_PRINTER_DPI),
-    [previewTargetPrinter]
-  );
 
   useEffect(() => {
     if (isOpen) {
@@ -487,9 +476,26 @@ const ProductionStartModal = ({
       });
       if (localExists) return true;
 
-      // 2) Actieve tracking check (bron van waarheid voor lopende productie)
-      const activeExists = await trackedLotExistsActive({ db, lotNumber: normalizedLot });
-      if (activeExists) return true;
+      // 2) Actieve tracking check (root pad)
+      const trackingRef = collection(db, ...PATHS.TRACKING);
+      const trackingByLotSnap = await getDocs(query(trackingRef, where("lotNumber", "==", normalizedLot), limit(1)));
+      if (!trackingByLotSnap.empty) return true;
+
+      // 2b) Actieve tracking check (scoped items pad)
+      try {
+        const trackingPathPrefix = `${(PATHS.TRACKING || []).join("/")}/`;
+        const scopedItemsSnap = await getDocs(
+          query(collectionGroup(db, "items"), where("lotNumber", "==", normalizedLot), limit(10))
+        );
+        const scopedExists = scopedItemsSnap.docs.some((docSnap) => {
+          const path = String(docSnap.ref?.path || "");
+          return path.startsWith(trackingPathPrefix);
+        });
+        if (scopedExists) return true;
+      } catch (scopedErr) {
+        // Niet blokkeren op index/permissie issues; overige checks blijven actief.
+        console.debug("Scoped lot-check overgeslagen:", scopedErr?.message || scopedErr);
+      }
 
       // 3) Legacy active production check (orders met activeLot)
       const actPaths = PATHS?.ACTIVE_PRODUCTION || ["future-factory", "production", "active"];
@@ -514,14 +520,201 @@ const ProductionStartModal = ({
     }
   };
 
+  const getHighestSequenceForBaseLot = async (baseLotStr, stationId, weekSuffix) => {
+    let maxSeq = 0;
+    
+    const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const counterDocId = `${safeStationId}_${weekSuffix}`;
+    const counterRef = doc(db, "future-factory", "production", "counters", counterDocId);
+
+    try {
+        const counterSnap = await getDoc(counterRef);
+        if (counterSnap.exists()) {
+            return counterSnap.data().lastSequence || 0;
+        }
+    } catch (e) {
+        console.error("Fout bij lezen counter:", e);
+    }
+
+    const extractSeq = (lot) => {
+        if (!lot || !lot.startsWith(baseLotStr)) return 0;
+        const seqStr = lot.substring(baseLotStr.length).replace(/[^0-9]/g, '');
+        const seq = parseInt(seqStr, 10);
+        return isNaN(seq) ? 0 : seq;
+    };
+
+    existingProducts?.forEach(p => {
+        const seq = extractSeq(p.lotNumber || p.activeLot);
+        if (seq > maxSeq) maxSeq = seq;
+    });
+
+    try {
+        const activePath = PATHS?.ACTIVE_PRODUCTION || ['future-factory', 'production', 'active'];
+        const activeRef = collection(db, ...activePath);
+        const activeSnap = await getDocs(activeRef);
+        activeSnap.forEach(doc => {
+            const data = doc.data();
+            const seq = extractSeq(data.lotNumber || data.activeLot);
+            if (seq > maxSeq) maxSeq = seq;
+        });
+
+        const archiveRef = collection(db, ...getArchiveItemsPath(new Date().getFullYear()));
+        const q = query(
+            archiveRef, 
+            where("lotNumber", ">=", baseLotStr),
+            where("lotNumber", "<=", baseLotStr + '\uf8ff')
+        );
+        const archiveSnap = await getDocs(q);
+        archiveSnap.forEach(doc => {
+            const seq = extractSeq(doc.data().lotNumber);
+            if (seq > maxSeq) maxSeq = seq;
+        });
+
+        // Neem ook scoped tracking-items mee, omdat lotnummers daar primair worden opgeslagen.
+        try {
+          const trackingPathPrefix = `${(PATHS.TRACKING || []).join("/")}/`;
+          const scopedTrackingQuery = query(
+            collectionGroup(db, "items"),
+            where("lotNumber", ">=", baseLotStr),
+            where("lotNumber", "<=", `${baseLotStr}\uf8ff`)
+          );
+          const scopedTrackingSnap = await getDocs(scopedTrackingQuery);
+          scopedTrackingSnap.forEach((docSnap) => {
+            const path = String(docSnap.ref?.path || "");
+            if (!path.startsWith(trackingPathPrefix)) return;
+            const seq = extractSeq(docSnap.data()?.lotNumber);
+            if (seq > maxSeq) maxSeq = seq;
+          });
+        } catch (scopedErr) {
+          console.debug("Scoped sequence lookup overgeslagen:", scopedErr?.message || scopedErr);
+        }
+
+    } catch (error) {
+        console.error("Fout bij ophalen max sequence:", error);
+    }
+
+    try {
+        await setDoc(counterRef, { lastSequence: maxSeq, updatedAt: serverTimestamp() }, { merge: true });
+    } catch (e) { console.error("Kon counter niet initialiseren", e); }
+
+    return maxSeq;
+  };
+
+  const consumeRecycledSequence = async (baseLot, station, weekSuffix) => {
+    const safeStationId = (station || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const counterDocId = `${safeStationId}_${weekSuffix}`;
+    const counterRef = doc(db, "future-factory", "production", "counters", counterDocId);
+    const counterSnap = await getDoc(counterRef);
+    if (!counterSnap.exists()) return null;
+
+    const data = counterSnap.data() || {};
+    const recycled = Array.isArray(data.recycledSequences)
+      ? data.recycledSequences
+          .map((n) => Number(n))
+          .filter((n) => Number.isFinite(n) && n > 0)
+          .sort((a, b) => a - b)
+      : [];
+
+    for (const seq of recycled) {
+      const candidate = `${baseLot}${String(seq).padStart(4, '0')}`;
+      const exists = await checkLotNumberExists(candidate);
+      if (!exists) {
+        const nextRecycled = recycled.filter((n) => n !== seq);
+        await setDoc(counterRef, { recycledSequences: nextRecycled, updatedAt: serverTimestamp() }, { merge: true });
+        return candidate;
+      }
+    }
+
+    return null;
+  };
+
   const claimAutoLotRange = async (count = 1) => {
     const quantity = Math.max(1, parseInt(String(count || 1), 10) || 1);
-    const result = await reserveAutoLotNumberRange({
-      stationId,
-      count: quantity,
-      reserve: true,
+    const d = new Date();
+    const iso = getIsoWeekAndYear(d);
+
+    const bedrijf = "40";
+    const jaar = iso.year.slice(-2);
+    const week = iso.week;
+    const machine = getMachineCode(stationId);
+    const land = "40";
+
+    const baseLot = `${bedrijf}${jaar}${week}${machine}${land}`;
+    const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const counterDocId = `${safeStationId}_${jaar}${week}`;
+    const counterRef = doc(db, "future-factory", "production", "counters", counterDocId);
+
+    return runTransaction(db, async (tx) => {
+      const counterSnap = await tx.get(counterRef);
+      const counterData = counterSnap.exists() ? (counterSnap.data() || {}) : {};
+
+      const lastSequence = Number.isFinite(Number(counterData.lastSequence))
+        ? Number(counterData.lastSequence)
+        : 0;
+
+      const recycled = Array.isArray(counterData.recycledSequences)
+        ? Array.from(new Set(counterData.recycledSequences
+            .map((n) => Number(n))
+            .filter((n) => Number.isFinite(n) && n > 0)))
+            .sort((a, b) => a - b)
+        : [];
+
+      const maxAttempts = 250;
+      let attempts = 0;
+      let recycledIndex = 0;
+      let sequenceToTry = recycled.length > 0 && quantity === 1 ? recycled[0] : (lastSequence + 1);
+
+      while (attempts < maxAttempts) {
+        attempts += 1;
+        const usingRecycled = quantity === 1 && recycledIndex < recycled.length && sequenceToTry === recycled[recycledIndex];
+        let hasCollision = false;
+
+        if (sequenceToTry <= 0 || sequenceToTry + quantity - 1 > 9999) {
+          hasCollision = true;
+        }
+
+        if (!hasCollision) {
+          for (let i = 0; i < quantity; i++) {
+            const seq = sequenceToTry + i;
+            const candidateLot = `${baseLot}${String(seq).padStart(4, "0")}`;
+            const candidateRef = doc(db, ...PATHS.TRACKING, candidateLot);
+            const candidateSnap = await tx.get(candidateRef);
+            if (candidateSnap.exists()) {
+              hasCollision = true;
+              break;
+            }
+          }
+        }
+
+        if (!hasCollision) {
+          const nextRecycled = usingRecycled
+            ? recycled.filter((n) => n !== sequenceToTry)
+            : recycled;
+          const newLast = Math.max(lastSequence, sequenceToTry + quantity - 1);
+
+          tx.set(counterRef, {
+            lastSequence: newLast,
+            recycledSequences: nextRecycled,
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+
+          return `${baseLot}${String(sequenceToTry).padStart(4, "0")}`;
+        }
+
+        if (usingRecycled) {
+          recycledIndex += 1;
+          if (recycledIndex < recycled.length) {
+            sequenceToTry = recycled[recycledIndex];
+          } else {
+            sequenceToTry = Math.max(lastSequence + 1, sequenceToTry + 1);
+          }
+        } else {
+          sequenceToTry += 1;
+        }
+      }
+
+      throw new Error("Geen uniek lotnummer beschikbaar voor deze machine/week.");
     });
-    return String(result?.lotStart || "").trim();
   };
 
   useEffect(() => {
@@ -529,17 +722,40 @@ const ProductionStartModal = ({
 
     const generateRobustLotNumber = async () => {
       if (!isOpen || !order || mode !== "auto") return;
-      setIsPreparingAutoLotPreview(true);
+      setIsCheckingLot(true);
 
       try {
-        const preview = await reserveAutoLotNumberRange({
-          stationId,
-          count: 1,
-          reserve: false,
-        });
-        const newLotNumber = String(preview?.lotStart || "").trim();
-        if (!newLotNumber) {
-          throw new Error("Geen voorstel voor lotnummer ontvangen.");
+        const d = new Date();
+        const iso = getIsoWeekAndYear(d);
+        
+        const bedrijf = "40";
+        const jaar = iso.year.slice(-2);
+        const week = iso.week;
+        const machine = getMachineCode(stationId);
+        const land = "40";
+
+        const baseLot = `${bedrijf}${jaar}${week}${machine}${land}`;
+        const weekSuffix = `${jaar}${week}`;
+
+        const recycledLot = await consumeRecycledSequence(baseLot, stationId, weekSuffix);
+        if (recycledLot) {
+          if (isMounted) {
+            setLotNumber(recycledLot);
+            setLotError("");
+          }
+          return;
+        }
+
+        const highestSeq = await getHighestSequenceForBaseLot(baseLot, stationId, weekSuffix);
+        
+        let counter = highestSeq + 1;
+        
+        let newLotNumber = `${baseLot}${String(counter).padStart(4, '0')}`;
+
+        while (await checkLotNumberExists(newLotNumber)) {
+            counter++;
+            newLotNumber = `${baseLot}${String(counter).padStart(4, '0')}`;
+            if (counter > 9999) break; 
         }
 
         if (isMounted) {
@@ -550,7 +766,7 @@ const ProductionStartModal = ({
         console.error("Error setting lot number", error);
         if (isMounted) setLotError("Waarschuwing: Kan uniciteit niet garanderen.");
       } finally {
-        if (isMounted) setIsPreparingAutoLotPreview(false);
+        if (isMounted) setIsCheckingLot(false);
       }
     };
 
@@ -564,6 +780,86 @@ const ProductionStartModal = ({
 
     return () => { isMounted = false; };
   }, [isOpen, order, mode, stationId]);
+
+  const updateCounterOnStart = async (usedLotNumber, count) => {
+      if (!usedLotNumber || mode !== "auto") return;
+      try {
+          const d = new Date();
+          const iso = getIsoWeekAndYear(d);
+          const year = iso.year.slice(-2);
+          const week = iso.week;
+          
+          const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          const counterDocId = `${safeStationId}_${year}${week}`;
+          const counterRef = doc(db, "future-factory", "production", "counters", counterDocId);
+          
+          const currentSeq = parseInt(usedLotNumber.slice(-5), 10);
+          const newMax = currentSeq + (count - 1);
+          const counterSnap = await getDoc(counterRef);
+          const counterData = counterSnap.exists() ? (counterSnap.data() || {}) : {};
+          const recycled = Array.isArray(counterData.recycledSequences)
+            ? counterData.recycledSequences.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+            : [];
+          const nextRecycled = recycled.filter((n) => n !== currentSeq);
+
+          await setDoc(counterRef, { lastSequence: newMax, recycledSequences: nextRecycled, updatedAt: serverTimestamp() }, { merge: true });
+
+          const twoWeeksAgo = new Date();
+          twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+          const isoOld = getIsoWeekAndYear(twoWeeksAgo);
+          const oldDocId = `${safeStationId}_${isoOld.year.slice(-2)}${isoOld.week}`;
+          
+          await deleteDoc(doc(db, "future-factory", "production", "counters", oldDocId)).catch(() => {});
+
+      } catch (e) { console.error("Kon counter niet updaten:", e); }
+  };
+
+  useEffect(() => {
+    if (!isOpen || mode === "manual") return;
+
+    const previewEl = previewAreaRef.current || containerRef.current;
+    const containerEl = containerRef.current;
+    if (!previewEl || !selectedLabel) return;
+
+    const recalc = () => {
+      const pixelsPerMm = getPixelsPerMm(DEFAULT_PRINTER_DPI);
+      const availableW = Math.max(120, previewEl.clientWidth - 24);
+      const availableH = Math.max(120, previewEl.clientHeight - 24);
+      const widthMm = Number.parseFloat(String(selectedLabel.width ?? "").replace(",", "."));
+      const heightMm = Number.parseFloat(String(selectedLabel.height ?? "").replace(",", "."));
+      const safeWidthMm = Number.isFinite(widthMm) && widthMm > 0 ? widthMm : 90;
+      const safeHeightMm = Number.isFinite(heightMm) && heightMm > 0 ? heightMm : 55;
+      const labelW = safeWidthMm * pixelsPerMm;
+      const labelH = safeHeightMm * pixelsPerMm;
+
+      if (labelW > 0 && labelH > 0) {
+        // Houd preview altijd binnen het zichtbare vak (geen overflow buiten scherm)
+        const fitZoom = Math.min(availableW / labelW, availableH / labelH);
+        const nextZoom = Math.min(7, fitZoom);
+        setPreviewZoom(Math.max(0.35, nextZoom));
+      }
+    };
+
+    // Eerste meting kan te vroeg zijn direct na mode-switch, daarom extra frame.
+    recalc();
+    const raf1 = window.requestAnimationFrame(recalc);
+    const raf2 = window.requestAnimationFrame(recalc);
+
+    const ro = new ResizeObserver(recalc);
+    ro.observe(previewEl);
+    if (containerEl && containerEl !== previewEl) {
+      ro.observe(containerEl);
+    }
+
+    window.addEventListener("resize", recalc);
+
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+      ro.disconnect();
+      window.removeEventListener("resize", recalc);
+    };
+  }, [selectedLabel, selectedLabelId, isOpen, mode]);
 
   const handleManualOrderChange = async (e) => {
     const value = e.target.value.toUpperCase();
@@ -608,8 +904,8 @@ const ProductionStartModal = ({
     lastLotInputAtRef.current = now;
   };
 
-  const canStartManual = isManualMode && orderValidated && !!manualLotInput.trim() && !orderError && !lotError;
-  const canStartAuto = !isManualMode && !isStarting;
+  const canStartManual = isManualMode && orderValidated && !!manualLotInput.trim() && !orderError && !lotError && !isCheckingLot;
+  const canStartAuto = !isManualMode && !!lotNumber && !isCheckingLot && !lotError;
 
   const handleStartProduction = async () => {
     if (isStarting) return;
@@ -624,14 +920,14 @@ const ProductionStartModal = ({
     }
 
     setIsStarting(true);
-    if (typeof onStartInitiated === "function") {
-      onStartInitiated();
-    }
+    const startOpId = `start_${Date.now()}`;
+    addOperation(startOpId, order?.orderId || "order");
     try {
       let targetPrinter = null;
       let effectiveLotNumber = isManualMode ? manualLotInput.trim() : lotNumber;
       let printData = null;
       let lotBatchPrintData = null;
+      let counterClaimed = false;
       const totalToProduce = isManualMode
         ? Math.max(1, parseInt(stringCount, 10) || 1)
         : isFlangeOrder
@@ -648,10 +944,25 @@ const ProductionStartModal = ({
       if (!isManualMode) {
         targetPrinter = await resolveTargetPrinterAsync();
         effectiveLotNumber = await claimAutoLotRange(totalToProduce);
+        counterClaimed = true;
         setLotNumber(effectiveLotNumber);
 
+        // Failsafe: ook na counter-claim expliciet controleren op bestaand lot (tracking + archief).
+        const autoStartSeq = parseInt(String(effectiveLotNumber || "").slice(-4), 10);
+        if (!Number.isFinite(autoStartSeq)) {
+          throw new Error(t("productionStartModal.errors.cannotValidateLotRange"));
+        }
+
+        for (let i = 0; i < totalToProduce; i++) {
+          const candidateLot = `${String(effectiveLotNumber).slice(0, -4)}${String(autoStartSeq + i).padStart(4, "0")}`;
+          const exists = await checkLotNumberExists(candidateLot);
+          if (exists) {
+            throw new Error(t("productionStartModal.errors.lotAlreadyExistsRetry", { lot: candidateLot }));
+          }
+        }
+
         if (!isFlangeOrder && selectedLabel) {
-          const dpiForPrint = getNormalizedPrinterDpi(targetPrinter, DEFAULT_PRINTER_DPI);
+          const dpiForPrint = getNormalizedPrinterDpi(targetPrinter, 203);
           const printPreviewData = {
             ...previewData,
             lotNumber: effectiveLotNumber,
@@ -660,15 +971,6 @@ const ProductionStartModal = ({
         }
       } else {
         // Manual mode moet ook altijd uniciteit afdwingen voor we starten.
-        const manualOrderNumber = String((manualOrderInput || order?.orderId || "")).trim().toUpperCase();
-        if (manualOrderNumber && String(effectiveLotNumber || "").trim().toUpperCase() === manualOrderNumber) {
-          const lotOrderError = t("productionStartModal.errors.lotCannotEqualOrder", {
-            order: manualOrderNumber,
-          });
-          setLotError(lotOrderError);
-          throw new Error(lotOrderError);
-        }
-
         const manualExists = await checkLotNumberExists(effectiveLotNumber);
         if (manualExists) {
           setLotError(t("productionStartModal.errors.lotAlreadyExists", { lot: effectiveLotNumber }));
@@ -707,7 +1009,7 @@ const ProductionStartModal = ({
           if (!targetPrinter) {
             targetPrinter = await resolveTargetPrinterAsync();
           }
-          const lotBatchDpi = getNormalizedPrinterDpi(targetPrinter, DEFAULT_PRINTER_DPI);
+          const lotBatchDpi = getNormalizedPrinterDpi(targetPrinter, 203);
           const lotBatchDarkness = Number.parseInt(targetPrinter?.darkness, 10);
           lotBatchPrintData = generateLotBatchZPL({
             lots: lotBatchLots,
@@ -718,8 +1020,12 @@ const ProductionStartModal = ({
         }
       }
 
+      if (!counterClaimed) {
+        await updateCounterOnStart(effectiveLotNumber, totalToProduce);
+      }
       await logActivity(auth.currentUser?.uid, "ORDER_RELEASE", `Order started: ${order.orderId}, Lot: ${effectiveLotNumber}`);
 
+      updateOperation(startOpId, "Bezig met starten...");
       await onStart(
         order,
         effectiveLotNumber,
@@ -735,6 +1041,8 @@ const ProductionStartModal = ({
           skipStartLabel: isFlangeOrder,
         }
       );
+      updateOperation(startOpId, "Klaar ✓");
+      setTimeout(() => removeOperation(startOpId), 3500);
 
       if (!isFlangeOrder && printConfig.mode === "queue" && labelsToPrint > 0 && selectedLabel && printData) {
         try {
@@ -798,6 +1106,8 @@ const ProductionStartModal = ({
       }
     } catch (e) {
       console.error(e);
+      updateOperation(startOpId, "Fout");
+      setTimeout(() => removeOperation(startOpId), 4000);
       showError(e.message || t("productionStartModal.errors.startFailed"));
     } finally {
       setIsStarting(false);
@@ -1010,7 +1320,7 @@ const ProductionStartModal = ({
                     <div className={`text-2xl font-mono font-black ${lotError ? 'text-red-400' : 'text-white'} italic tracking-tighter`}>
                       {lotNumber || t("productionStartModal.labels.loading")}
                     </div>
-                    {isPreparingAutoLotPreview && <Loader2 className="animate-spin text-white/50" size={16} />}
+                    {isCheckingLot && <Loader2 className="animate-spin text-white/50" size={16} />}
                   </div>
                   {lotError && <p className="text-red-400 text-xs mt-2 font-bold">{lotError}</p>}
                 </div>
@@ -1143,7 +1453,7 @@ const ProductionStartModal = ({
                       required
                     />
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                      {isPreparingAutoLotPreview ? (
+                      {isCheckingLot ? (
                         <Loader2 className="animate-spin text-blue-500" size={20} />
                       ) : lotError ? (
                         <AlertTriangle className="text-red-500" size={20} />
@@ -1215,7 +1525,7 @@ const ProductionStartModal = ({
                   : "bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
               }`}
             >
-              {isStarting ? <Loader2 className="animate-spin" size={20} /> : <PlayCircle size={20} />} 
+              {isCheckingLot || isStarting ? <Loader2 className="animate-spin" size={20} /> : <PlayCircle size={20} />} 
               {isStarting ? t("productionStartModal.labels.starting") : (selectedOperatorName ? t("productionStartModal.labels.startWithOperator", { operator: operatorInput }) : t("productionStartModal.labels.startOrder"))}
             </button>
           </div>
@@ -1230,18 +1540,18 @@ const ProductionStartModal = ({
             <Activity size={12} className="text-emerald-500" /> {t("productionStartModal.labels.labelPreview", "Etiket preview")}
           </div>
 
-          <div className="flex-1 flex items-center justify-center w-full min-h-0 py-4">
+          <div ref={previewAreaRef} className="flex-1 flex items-center justify-center w-full min-h-0 py-4">
             {mode === "manual" && (!manualLotInput || !manualOrderInput) ? (
               <div className="text-slate-700 p-20 border-2 border-dashed border-slate-800 rounded-[50px] text-xs uppercase font-black tracking-widest italic">
                 {t("productionStartModal.labels.fillOrderAndLot")}
               </div>
             ) : (
               selectedLabel ? (
-                <AutoScaledLabelPreview
+                <LabelVisualPreview
                   label={selectedLabel}
                   data={previewData}
-                  printerDpi={previewPrinterDpi}
-                  className="w-full h-full shadow-[0_0_100px_rgba(0,0,0,0.8)] relative transition-all duration-500 origin-center border-2 border-white/10"
+                  zoom={previewZoom}
+                  className="shadow-[0_0_100px_rgba(0,0,0,0.8)] relative transition-all duration-500 origin-center border-2 border-white/10"
                 />
               ) : (
                 <div className="text-slate-700 p-20 border-2 border-dashed border-slate-800 rounded-[50px] animate-pulse text-xs uppercase font-black tracking-widest italic">

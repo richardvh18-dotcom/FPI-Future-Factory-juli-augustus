@@ -1512,8 +1512,9 @@ const startProductionLots = functions.https.onCall(async (data, context) => {
   const labelTemplateId = clean(data?.labelTemplateId);
   const seriesGroupId = clean(data?.seriesGroupId);
   const isFlangeSeries = Boolean(data?.isFlangeSeries);
-  if (!orderDocId || !orderId || !itemCode || !lotStart || !stationId) {
-    throw new functions.https.HttpsError('invalid-argument', 'orderDocId, orderId, itemCode, lotStart en stationId zijn verplicht.');
+  const hasOrderLocator = Boolean(orderDocId || orderDocPath || orderSourcePath || orderId);
+  if (!hasOrderLocator || !itemCode || !lotStart || !stationId) {
+    throw new functions.https.HttpsError('invalid-argument', 'order locator (orderDocId/orderDocPath/orderSourcePath/orderId), itemCode, lotStart en stationId zijn verplicht.');
   }
 
   if (!Number.isFinite(totalToProduce) || totalToProduce < 1 || totalToProduce > 200) {
@@ -1553,6 +1554,16 @@ const startProductionLots = functions.https.onCall(async (data, context) => {
     }
     if (error?.message === 'LOT_MATCHES_ORDER_ID') {
       throw new functions.https.HttpsError('invalid-argument', 'Lotnummer mag niet gelijk zijn aan ordernummer.');
+    }
+
+    const rawMessage = String(error?.message || '').toLowerCase();
+    if (
+      rawMessage.includes('document path') ||
+      rawMessage.includes('document id') ||
+      rawMessage.includes('resource path') ||
+      rawMessage.includes('even number of segments')
+    ) {
+      throw new functions.https.HttpsError('invalid-argument', 'Ongeldig order documentpad of order-id bij productie-start.');
     }
 
     if (error instanceof functions.https.HttpsError) {

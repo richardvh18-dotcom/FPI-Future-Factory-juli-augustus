@@ -10,7 +10,9 @@ const db = admin.firestore();
 
 const BASE = 'future-factory';
 const PLANNING_COLLECTION = `${BASE}/production/digital_planning`;
+const TRACKING_COLLECTION = `${BASE}/production/tracked_products`;
 const PLANNING_EVENTS_COLLECTION = `${BASE}/production/events`;
+const PLANNING_EVENTS_ARCHIVE_COLLECTION = `${BASE}/production/events_archive`;
 const EFFICIENCY_COLLECTION = `${BASE}/production/efficiency_hours`;
 const IMPORT_RUNS_COLLECTION = `${BASE}/integrations/import_runs`;
 const AI_RATE_LIMIT_COLLECTION = `${BASE}/security/ai_rate_limits`;
@@ -378,6 +380,171 @@ const createOrderLifecycleEvent = async ({ orderId, eventType, source, payload, 
   });
 };
 
+const isUnderPath = (docRef, prefix) => {
+  const docPath = String(docRef?.path || '');
+  const safePrefix = String(prefix || '').replace(/\/+$/, '');
+  return Boolean(docPath && safePrefix && docPath.startsWith(`${safePrefix}/`));
+};
+
+const getStartedCounterFieldByMachine = (machineValue = '') => {
+  const machine = normalizeMachineForFilter(machineValue);
+  if (machine === 'BH18') return 'started_BH18';
+  if (machine === 'BH17') return 'started_BH17';
+  if (machine === 'BH15') return 'started_BH15';
+  if (machine === 'BH12') return 'started_BH12';
+  if (machine === 'BM01') return 'started_BM01';
+  if (machine.includes('NABEWERK')) return 'started_NAB';
+  if (machine.includes('LOSSEN')) return 'started_LOSSEN';
+  if (machine.includes('MAZAK')) return 'started_MAZAK';
+  return 'started';
+};
+
+const getPlanningOrderDocByOrderId = async (orderId) => {
+  const safeOrderId = clean(orderId);
+  if (!safeOrderId) return null;
+
+  const primarySnap = await db
+    .collection(PLANNING_COLLECTION)
+    .where('orderId', '==', safeOrderId)
+    .limit(1)
+    .get();
+
+  if (!primarySnap.empty) return primarySnap.docs[0];
+
+  const scopedSnap = await db
+    .collectionGroup('orders')
+    .where('orderId', '==', safeOrderId)
+    .limit(5)
+    .get();
+
+  return scopedSnap.docs.find((doc) => isUnderPath(doc.ref, PLANNING_COLLECTION)) || null;
+};
+
+const countActiveLotsForOrder = async (orderId) => {
+  const safeOrderId = clean(orderId);
+  if (!safeOrderId) return 0;
+
+  const lots = new Set();
+  const addDocLot = (docData = {}, fallbackId = '') => {
+    const lot = clean(docData.lotNumber || docData.activeLot || fallbackId);
+    if (lot) lots.add(lot);
+  };
+
+  const rootSnap = await db
+    .collection(TRACKING_COLLECTION)
+    .where('orderId', '==', safeOrderId)
+    .get();
+  rootSnap.docs.forEach((doc) => addDocLot(doc.data(), doc.id));
+
+  const scopedSnap = await db
+    .collectionGroup('items')
+    .where('orderId', '==', safeOrderId)
+    .get();
+  scopedSnap.docs
+    .filter((doc) => isUnderPath(doc.ref, TRACKING_COLLECTION))
+    .forEach((doc) => addDocLot(doc.data(), doc.id));
+
+  return lots.size;
+};
+
+const upsertOrderSafetyState = async ({ orderId, before = null, after = null, source = 'system', department = null, machine = null }) => {
+  const safeOrderId = clean(orderId);
+  if (!safeOrderId || safeOrderId === 'NOG_TE_BEPALEN') return;
+
+  const orderDoc = await getPlanningOrderDocByOrderId(safeOrderId);
+  const orderData = orderDoc?.data() || after || before || {};
+
+  const scopedDepartment = resolveScopedDepartment(
+    orderData.departmentId,
+    orderData.department,
+    department,
+    after?.departmentId,
+    before?.departmentId
+  );
+  const scopedMachine = resolveScopedMachine(
+    orderData.machine,
+    orderData.machineId,
+    orderData.workCenter,
+    orderData.wc,
+    machine,
+    after?.machine,
+    before?.machine
+  );
+
+  const startedField = getStartedCounterFieldByMachine(orderData.machine || orderData.machineId || scopedMachine);
+  const basePlan = toNumber(orderData.quantity ?? orderData.plan ?? orderData.toDoQty);
+  const currentPlan = toNumber(orderData.plan ?? orderData.quantity ?? orderData.toDoQty);
+  const rejectedCount = Math.max(0, toNumber(orderData.rejectedCount));
+  const produced = Math.max(0, toNumber(orderData.produced ?? orderData.finishValue ?? orderData.wrapped));
+  const startedAtMachine = Math.max(0, toNumber(orderData[startedField]));
+  const activeLots = await countActiveLotsForOrder(safeOrderId);
+
+  const targetWithSafety = Math.max(0, currentPlan + rejectedCount);
+  const remainingForStation = Math.max(0, currentPlan - startedAtMachine);
+  const remainingForFinal = Math.max(0, targetWithSafety - produced);
+
+  const safetyRef = db
+    .collection(PLANNING_EVENTS_COLLECTION)
+    .doc(scopedDepartment)
+    .collection('machines')
+    .doc(scopedMachine)
+    .collection('items')
+    .doc(`SAFETY_${toSafeDocId(safeOrderId)}`);
+
+  const safetyPayload = {
+    recordType: 'ORDER_SAFETY_STATE',
+    orderId: safeOrderId,
+    departmentId: scopedDepartment,
+    machineId: scopedMachine,
+    source: source || 'system',
+    status: clean(orderData.status || orderData.orderStatus),
+    planBase: basePlan,
+    planCurrent: currentPlan,
+    planDelta: currentPlan - basePlan,
+    rejectedCount,
+    compensationExtraRequired: rejectedCount,
+    targetWithSafety,
+    produced,
+    startedCounterField: startedField,
+    startedAtMachine,
+    activeLots,
+    remainingForStation,
+    remainingForFinal,
+    stationReady: remainingForStation === 0 && currentPlan > 0,
+    finalReady: remainingForFinal === 0 && targetWithSafety > 0,
+    lastOrderDocPath: orderDoc?.ref?.path || null,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  await safetyRef.set(safetyPayload, { merge: true });
+
+  // Zodra een order echt volledig klaar is (incl. compensatie na afkeur) en er geen actieve lots meer zijn,
+  // verplaats de safety state naar een eigen archiefmap.
+  const isFinalArchived = remainingForFinal === 0 && targetWithSafety > 0 && activeLots === 0;
+  if (isFinalArchived) {
+    const archiveYear = String(new Date().getFullYear());
+    const safetyArchiveRef = db
+      .collection(PLANNING_EVENTS_ARCHIVE_COLLECTION)
+      .doc(archiveYear)
+      .collection('departments')
+      .doc(scopedDepartment)
+      .collection('machines')
+      .doc(scopedMachine)
+      .collection('items')
+      .doc(`SAFETY_${toSafeDocId(safeOrderId)}`);
+
+    await safetyArchiveRef.set({
+      ...safetyPayload,
+      archivedAt: admin.firestore.FieldValue.serverTimestamp(),
+      archiveYear,
+      archiveReason: 'order_final_ready',
+      archivedFrom: safetyRef.path,
+    }, { merge: true });
+
+    await safetyRef.delete();
+  }
+};
+
 const handlePlanningOrderWrite = async ({ before, after, orderId }) => {
   const delta = diffContribution(getPlanningContribution(before), getPlanningContribution(after));
 
@@ -399,6 +566,11 @@ const handlePlanningOrderWrite = async ({ before, after, orderId }) => {
         plan: toNumber(after.plan ?? after.quantity ?? after.toDoQty),
       },
     });
+    try {
+      await upsertOrderSafetyState({ orderId, before, after, source: 'planning_trigger' });
+    } catch (error) {
+      console.warn('[safety_state] update na ORDER_CREATED mislukt:', error?.message || String(error));
+    }
     return null;
   }
 
@@ -425,6 +597,20 @@ const handlePlanningOrderWrite = async ({ before, after, orderId }) => {
           notesChanged: notesBefore !== notesAfter,
         },
       });
+    }
+
+    try {
+      await upsertOrderSafetyState({ orderId, before, after, source: 'planning_trigger' });
+    } catch (error) {
+      console.warn('[safety_state] update na ORDER_UPDATED mislukt:', error?.message || String(error));
+    }
+  }
+
+  if (before && !after) {
+    try {
+      await upsertOrderSafetyState({ orderId, before, after, source: 'planning_deleted' });
+    } catch (error) {
+      console.warn('[safety_state] update na ORDER_DELETE mislukt:', error?.message || String(error));
     }
   }
 
@@ -670,7 +856,15 @@ const processRawLNDump = (rawRows) => {
     drawing: findColumnIndex(headers, ['drawing number', 'tekening']),
     notes: findColumnIndex(headers, ['production order text', 'po text', 'po-text', 'po note', 'opmerking']),
     special: findColumnIndex(headers, ['special instructions', 'special instruction', 'extra code', 'extra-code']),
-    todo: findColumnIndex(headers, ['to do qty']),
+    todo: findColumnIndex(headers, [
+      'to do qty',
+      'to do quantity',
+      'todo qty',
+      'te produceren',
+      'te produceren qty',
+      'nog te produceren',
+      'to produce qty',
+    ]),
     creation: findColumnIndex(headers, ['order creation date']),
   };
 
@@ -789,6 +983,9 @@ const importOrdersToFirestore = async (orders, sourceMeta = {}, options = {}) =>
       ? { overwrite: options }
       : (options || {});
   const overwrite = Boolean(normalizedOptions.overwrite);
+  const updateExisting = normalizedOptions.updateExisting === undefined
+    ? overwrite
+    : Boolean(normalizedOptions.updateExisting);
   const allowedMachines = parseMachineSelectionInput(normalizedOptions.allowedMachines);
 
   if (!orders.length) {
@@ -801,7 +998,7 @@ const importOrdersToFirestore = async (orders, sourceMeta = {}, options = {}) =>
   const skippedByMachine = orders.length - machineFiltered.length;
 
   let existingIds = new Set();
-  if (!overwrite) {
+  if (!overwrite && !updateExisting) {
     const [planningRootSnap, planningScopedSnap] = await Promise.all([
       db.collection(PLANNING_COLLECTION).get(),
       db.collectionGroup('orders').get(),
@@ -815,7 +1012,9 @@ const importOrdersToFirestore = async (orders, sourceMeta = {}, options = {}) =>
     ]);
   }
 
-  const toImport = overwrite ? machineFiltered : machineFiltered.filter((o) => !existingIds.has(o.id));
+  const toImport = (overwrite || updateExisting)
+    ? machineFiltered
+    : machineFiltered.filter((o) => !existingIds.has(o.id));
   const skippedExisting = machineFiltered.length - toImport.length;
   const skipped = skippedByMachine + skippedExisting;
 
@@ -868,7 +1067,7 @@ const importOrdersToFirestore = async (orders, sourceMeta = {}, options = {}) =>
       const qcMinutes = qcHours * 60;
       const standardMinutes = productionMinutes + postProcessingMinutes;
       const actualMinutes = (item.totalActualHours || 0) * 60;
-      const qty = item.quantity || item.toDoQty || 1;
+      const qty = Number(item.plan) || Number(item.toDoQty) || Number(item.quantity) || 1;
 
       const efficiencyPayload = {
         orderId: item.id,
@@ -1016,6 +1215,7 @@ exports.importPlanningFromWebhook = functions.https.onRequest(async (req, res) =
 
     const result = await importOrdersToFirestore(orders, sourceMeta, {
       overwrite,
+      updateExisting: true,
       allowedMachines,
     });
 
@@ -1102,6 +1302,7 @@ exports.importPlanningFromStorage = functions.storage.object().onFinalize(async 
 
     const result = await importOrdersToFirestore(orders, sourceMeta, {
       overwrite: false,
+      updateExisting: true,
       allowedMachines,
     });
 
@@ -1179,52 +1380,79 @@ exports.aggregatePlanningStatsScoped = functions.firestore
     return handlePlanningOrderWrite({ before, after, orderId });
   });
 
+const handleTrackedWrite = async ({ before, after, productId = '' }) => {
+  const delta = diffContribution(getTrackedContribution(before), getTrackedContribution(after));
+
+  if (Object.keys(delta).length > 0) {
+    await applyStatsDelta(delta);
+  }
+
+  const orderId = clean(after?.orderId || before?.orderId);
+  if (orderId) {
+    try {
+      await upsertOrderSafetyState({
+        orderId,
+        before,
+        after,
+        source: 'tracked_trigger',
+        department: after?.departmentId || after?.department || before?.departmentId || before?.department,
+        machine: after?.machine || after?.machineId || after?.currentStation || before?.machine || before?.machineId || before?.currentStation,
+      });
+    } catch (error) {
+      console.warn('[safety_state] update na TRACKED_WRITE mislukt:', error?.message || String(error));
+    }
+  }
+
+  if (orderId && after) {
+    const status = clean(after.status);
+    const step = clean(after.currentStep);
+    const prevStatus = clean(before?.status);
+    const prevStep = clean(before?.currentStep);
+
+    if (status !== prevStatus || step !== prevStep) {
+      await createOrderLifecycleEvent({
+        orderId,
+        department: after.departmentId || after.department || before?.departmentId || before?.department,
+        machine:
+          after.machine ||
+          after.machineId ||
+          after.station ||
+          after.currentStation ||
+          before?.machine ||
+          before?.machineId ||
+          before?.station ||
+          before?.currentStation,
+        eventType: 'TRACKED_PRODUCT_STEP_CHANGED',
+        source: 'tracked_trigger',
+        payload: {
+          productId: clean(productId || after?.id || before?.id),
+          statusBefore: prevStatus,
+          statusAfter: status,
+          stepBefore: prevStep,
+          stepAfter: step,
+          lotNumber: clean(after.lotNumber || before?.lotNumber),
+        },
+      });
+    }
+  }
+
+  return null;
+};
+
 exports.aggregateTrackedStats = functions.firestore
   .document('future-factory/production/tracked_products/{productId}')
-  .onWrite(async (change) => {
+  .onWrite(async (change, context) => {
     const before = change.before.exists ? change.before.data() : null;
     const after = change.after.exists ? change.after.data() : null;
-    const delta = diffContribution(getTrackedContribution(before), getTrackedContribution(after));
+    return handleTrackedWrite({ before, after, productId: context.params?.productId });
+  });
 
-    if (Object.keys(delta).length > 0) {
-      await applyStatsDelta(delta);
-    }
-
-    const orderId = clean(after?.orderId || before?.orderId);
-    if (orderId && after) {
-      const status = clean(after.status);
-      const step = clean(after.currentStep);
-      const prevStatus = clean(before?.status);
-      const prevStep = clean(before?.currentStep);
-
-      if (status !== prevStatus || step !== prevStep) {
-        await createOrderLifecycleEvent({
-          orderId,
-          department: after.departmentId || after.department || before?.departmentId || before?.department,
-          machine:
-            after.machine ||
-            after.machineId ||
-            after.station ||
-            after.currentStation ||
-            before?.machine ||
-            before?.machineId ||
-            before?.station ||
-            before?.currentStation,
-          eventType: 'TRACKED_PRODUCT_STEP_CHANGED',
-          source: 'tracked_trigger',
-          payload: {
-            productId: clean(change.after.id),
-            statusBefore: prevStatus,
-            statusAfter: status,
-            stepBefore: prevStep,
-            stepAfter: step,
-            lotNumber: clean(after.lotNumber),
-          },
-        });
-      }
-    }
-
-    return null;
+exports.aggregateTrackedStatsScoped = functions.firestore
+  .document('future-factory/production/tracked_products/{department}/machines/{machine}/items/{productId}')
+  .onWrite(async (change, context) => {
+    const before = change.before.exists ? change.before.data() : null;
+    const after = change.after.exists ? change.after.data() : null;
+    return handleTrackedWrite({ before, after, productId: context.params?.productId });
   });
 
 /**
