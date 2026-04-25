@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Grid } from "react-window";
-import { Search, UserCircle, Edit3, Trash2, Plus, ChevronDown, ChevronUp, Layers, Filter, RotateCcw, ArrowRight } from "lucide-react";
+import { Search, UserCircle, Edit3, Trash2, Plus, ChevronDown, ChevronUp, Layers, Filter, RotateCcw, ArrowRight, Nfc } from "lucide-react";
 import { getISOWeek } from "date-fns";
 
 const PersonnelListView = React.memo(({
@@ -9,6 +9,7 @@ const PersonnelListView = React.memo(({
   onEdit,
   onDelete,
   onAdd,
+  linkedTagEmployeeKeys = new Set(),
   expandedDepts: propExpandedDepts,
   onToggleDept
 }) => {
@@ -68,17 +69,25 @@ const PersonnelListView = React.memo(({
   const renderCard = React.useCallback((p) => {
     const displayShiftId = getEffectiveShift(p);
     const displayLabel = resolveShiftLabel(displayShiftId, p.departmentId);
+    const rawEmployeeNumber = String(p.employeeNumber || "").trim();
+    const employeeNumberDigits = rawEmployeeNumber.replace(/\D/g, "").replace(/^0+/, "");
+    const employeeKey = rawEmployeeNumber.toUpperCase();
+    const hasLinkedTag =
+      (employeeKey && linkedTagEmployeeKeys.has(employeeKey)) ||
+      (employeeNumberDigits && linkedTagEmployeeKeys.has(employeeNumberDigits));
+
     return (
     <div
       key={p.id}
-      className="bg-white p-6 rounded-[40px] border-2 border-slate-100 hover:border-blue-400 transition-all group shadow-sm flex flex-col relative overflow-hidden text-left h-full"
+      className="bg-white p-4 sm:p-6 rounded-[24px] sm:rounded-[40px] border-2 border-slate-100 hover:border-blue-400 transition-all group shadow-sm flex flex-col relative overflow-hidden text-left h-full"
+      onClick={() => onEdit && onEdit(p)}
     >
       <div className="absolute top-0 right-0 p-6 opacity-5 rotate-12 pointer-events-none">
         <UserCircle size={100} />
       </div>
       
-      <div className="flex items-center gap-4 mb-6 relative z-10">
-        <div className="p-3 bg-slate-900 text-white rounded-2xl shadow-lg shrink-0">
+      <div className="flex items-center gap-3 sm:gap-4 mb-5 sm:mb-6 relative z-10">
+        <div className="p-2.5 sm:p-3 bg-slate-900 text-white rounded-2xl shadow-lg shrink-0">
           <UserCircle size={24} />
         </div>
         <div className="text-left overflow-hidden min-w-0">
@@ -108,18 +117,27 @@ const PersonnelListView = React.memo(({
               <ArrowRight size={10} /> Uitgeleend
             </div>
           )}
+          <div className={`text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg w-fit border mt-1 flex items-center gap-1 ${hasLinkedTag ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-500 border-slate-200"}`}>
+            <Nfc size={10} /> {hasLinkedTag ? "Tag gekoppeld" : "Geen tag gekoppeld"}
+          </div>
       </div>
 
-      <div className="pt-4 border-t border-slate-50 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-all mt-auto relative z-10">
+      <div className="pt-4 border-t border-slate-50 flex items-center justify-between opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all mt-auto relative z-10">
         <button
-          onClick={() => onEdit && onEdit(p)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit && onEdit(p);
+          }}
           className="p-3 text-slate-400 hover:text-blue-600 bg-slate-50 hover:bg-blue-50 rounded-xl transition-all"
           title="Bewerken"
         >
           <Edit3 size={18} />
         </button>
         <button
-          onClick={() => onDelete && onDelete(p.id)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete && onDelete(p.id);
+          }}
           className="p-3 text-slate-300 hover:text-rose-500 bg-slate-50 hover:bg-rose-50 rounded-xl transition-all"
           title="Verwijderen"
         >
@@ -127,12 +145,12 @@ const PersonnelListView = React.memo(({
         </button>
       </div>
     </div>
-  )}, [onEdit, onDelete, currentWeek, departments]);
+  )}, [onEdit, onDelete, currentWeek, departments, linkedTagEmployeeKeys]);
 
   return (
     <div className="space-y-6 animate-in fade-in">
       {/* HEADER & SEARCH */}
-      <div className="bg-white p-4 rounded-[35px] border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+      <div className="bg-white p-4 rounded-[28px] sm:rounded-[35px] border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="relative flex-1 w-full group">
           <Search
             className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors"
@@ -187,11 +205,11 @@ const PersonnelListView = React.memo(({
 
             return (
               <div key={dept.id} className="space-y-2">
-                <div className="w-full flex items-center justify-between border-b-2 border-slate-200 pb-3 ml-2 p-2 rounded-xl">
+                <div className="w-full flex items-center justify-between border-b-2 border-slate-200 pb-3 p-2 rounded-xl gap-2">
                     <button onClick={() => toggleDept(dept.id)} className="flex items-center gap-3 text-left flex-1 hover:bg-slate-100/50 p-2 rounded-xl transition-all">
                         <div className="p-2 bg-slate-800 text-white rounded-xl shadow-md"><Layers size={16} /></div>
-                        <h3 className="text-lg font-black text-slate-800 uppercase italic tracking-tight">{dept.name}</h3>
-                        <span className={`text-xs font-bold px-2 py-1 rounded-lg ${deptPersonnel.length < threshold ? "text-rose-600 bg-rose-100" : "text-slate-400 bg-slate-100"}`} title={`Minimaal vereist: ${threshold}`}>Totaal: {deptPersonnel.length}</span>
+                        <h3 className="text-base sm:text-lg font-black text-slate-800 uppercase italic tracking-tight truncate">{dept.name}</h3>
+                        <span className={`text-[10px] sm:text-xs font-bold px-2 py-1 rounded-lg whitespace-nowrap ${deptPersonnel.length < threshold ? "text-rose-600 bg-rose-100" : "text-slate-400 bg-slate-100"}`} title={`Minimaal vereist: ${threshold}`}>Totaal: {deptPersonnel.length}</span>
                     </button>
                     <button onClick={() => toggleDept(dept.id)} className="p-2">
                       {expandedDepts[dept.id] ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
@@ -199,7 +217,7 @@ const PersonnelListView = React.memo(({
                 </div>
 
                 {expandedDepts[dept.id] && (
-                  <div className="pl-4 space-y-4">
+                  <div className="pl-1 sm:pl-4 space-y-4">
                     {/* Filter Buttons */}
                     <div className="flex flex-wrap gap-2 mb-2">
                       <button
@@ -219,7 +237,7 @@ const PersonnelListView = React.memo(({
                       ))}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 pb-4">
                       {displayedPersonnel.length > 0 ? (
                         displayedPersonnel.map(p => renderCard(p))
                       ) : (
@@ -241,22 +259,24 @@ const PersonnelListView = React.memo(({
             </p>
           </div>
         ) : (
-          <Grid
-            columnCount={4}
-            rowCount={Math.ceil(filteredPersonnel.length / 4)}
-            columnWidth={320}
-            rowHeight={260}
-            width={1320}
-            height={800}
-            className="mx-auto"
-          >
-            {({ columnIndex, rowIndex, style }) => {
-              const idx = rowIndex * 4 + columnIndex;
-              if (idx >= filteredPersonnel.length) return null;
-              const p = filteredPersonnel[idx];
-              return <div style={style}>{renderCard(p)}</div>;
-            }}
-          </Grid>
+          <div className="overflow-x-auto">
+            <Grid
+              columnCount={4}
+              rowCount={Math.ceil(filteredPersonnel.length / 4)}
+              columnWidth={320}
+              rowHeight={260}
+              width={1320}
+              height={800}
+              className="mx-auto"
+            >
+              {({ columnIndex, rowIndex, style }) => {
+                const idx = rowIndex * 4 + columnIndex;
+                if (idx >= filteredPersonnel.length) return null;
+                const p = filteredPersonnel[idx];
+                return <div style={style}>{renderCard(p)}</div>;
+              }}
+            </Grid>
+          </div>
         )
       }
     </div>

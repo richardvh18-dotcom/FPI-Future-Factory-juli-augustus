@@ -1,3 +1,137 @@
+## Update sessie 116 (Nabewerking KPI sync & filters)
+
+**Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoeken in deze sessie:**
+- "in teamleader hub in de KPi hebben een aantal oders de status Nabewerking. maar als ik in workstation Nabewerken ga kijken is de lijst nabewerken een ander getal"
+- "in de KPI staan er 14 en in Workstation Nabewerken tel ik er 16"
+
+**Uitgevoerd in deze sessie:**
+- **TeamleaderHub filter gelijkgetrokken:** Spaties worden nu robuust weggefilterd (`replace(/\s/g, "")`) bij de status/station checks, en er wordt gecheckt op de varianten `NABEWERKING`, `NABEWERKEN` en `NABW`. Dit trekt de Teamleader KPI exact gelijk met het Workstation.
+- **Nabewerken.jsx opgeschoond:** Een foutieve "vandaag aangemaakt"-uitzondering (`isToday`) is verwijderd. Hierdoor verschijnen orders die zojuist op de wikkelmachines (zoals BH18 of BH12) zijn gestart niet meer onterecht in de actieve lijst van Nabewerken.
+- **WorkstationHub KPI gefixeerd:** De berekening van de KPI-tellers (Nog te doen / Gereed) bovenaan het Workstation scherm voor Nabewerken gebruikt nu eveneens deze strikte spatie- en variant-filters.
+
+**Aangepaste bestanden:**
+- `src/components/digitalplanning/TeamleaderHub.jsx`
+- `src/components/digitalplanning/Nabewerken.jsx`
+- `src/components/digitalplanning/WorkstationHub.jsx`
+
+**Status:**
+- De KPI in Teamleader, de KPI in Workstation, en de actuele lijst in Workstation Nabewerken lopen nu 100% synchroon (allemaal op 14 in het geschetste scenario). Twee "zwevende" vandaag-items zijn succesvol eruit gefilterd.
+
+## Update sessie 115 (Terminal/Workstation KPI correcties: Plan & Gereed)
+
+**Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoeken in deze sessie:**
+- "in wokrstation in terminal vieuw staan in de orderkaartjes nu de uren, die mogen daar weg. wat wel in terminal view mag is of een order nieuw geimporteerd is"
+- "kun je in de orderkaartjes de PO text net zo laten glowen of blinken als de In productie buttons"
+- "kun je de BH18 knop uit de orderkaartjes laten verdwijnen"
+- "de orderkaartjes mogen ook iets smaller er zit best veel witruimte"
+- "worden nog te doen en gereed elke week gereset"
+- "en de KPI plan.. klopt dat want in de KPI van teamleader staat een ander getal"
+
+**Uitgevoerd in deze sessie:**
+- **UI Terminalkaartjes geoptimaliseerd:**
+    - Geplande uren weergave verborgen op de werkvloer (Terminal view).
+    - "Nieuw" ribbon (lintje) toegevoegd aan de rechterbovenhoek voor orders die in de afgelopen 2 dagen zijn geïmporteerd of aangemaakt.
+    - `PO Text` pulseert nu (Tailwind `animate-pulse` en amber-glow) zodat belangrijke notities beter opvallen.
+    - Machinelabel (zoals 'BH18') verwijderd uit de Terminal orderkaartjes omdat het hele scherm al per machine gefilterd is.
+    - Kaartjes compacter gemaakt (minimumhoogte 152px -> 100px, padding verkleind), zodat er meer orders tegelijk op het scherm passen zonder te scrollen.
+- **Workstation KPI "Gereed" week-reset doorgevoerd:**
+    - `Gereed` teller in `WorkstationHub` reset nu wekelijks voor de wikkelmachines. 
+    - Dit is gedaan door dynamisch te checken welke items (zowel uit actieve tracking als uit de archief collecties van de huidige week) een 'finished' timestamp binnen de huidige ISO-week hebben.
+    - Ook de BM01 "Gereed" teller (die per ongeluk dagelijks resette) is gecorrigeerd naar wekelijks.
+- **Workstation KPI "Plan" en "Nog te doen" gelijkgetrokken met Teamleader:**
+    - "Plan" op de Terminal toonde voorheen de originele, totale plangrootte. Dit veroorzaakte verschillen met de actuele werkvoorraad bij de Teamleader.
+    - "Plan" is nu herberekend als **live werkvoorraad** (`resterende wachtrij + nu actief in productie`), of neemt netjes de expliciete importwaarde `toDoQty` over als die in LN is meegegeven.
+    - "Nog te doen" toont exact het resterende deel dat nog in de wachtrij ligt.
+
+**Aangepaste bestanden:**
+- `src/components/digitalplanning/terminal/TerminalPlanningView.jsx`
+- `src/components/digitalplanning/WorkstationHub.jsx`
+
+**Status:**
+- Terminal UI is compacter, overzichtelijker en toont effectiever "Nieuwe" orders en waarschuwingen. KPI's lopen weer synchroon met Teamleader.
+
+## Update sessie 114 (Slimme Sync urenflow gefixt + import gedrag verduidelijkt)
+
+**Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoeken in deze sessie:**
+- "worden in de import voor orders nu ook de uren voor nabewerken en eindinspectie meegenomen"
+- "waarom zie ik na import dezelfde orders opnieuw als Sync"
+- "als ik alleen uren doe wil ik alle BH-gefilterde orders zien"
+- "slimme sync + alleen uren laat niets zien"
+- "als ik alleen uren + overschrijf alles doe, wat wordt dan overschreven"
+
+**Uitgevoerd in deze sessie:**
+- Backend urenclassificatie verbeterd voor import:
+    - `functions/src/services/planningTransitionService.js` uitgebreid met DB-gedreven refOp-config lookup (`future-factory/settings/reference_operations`).
+    - Fallback-classificatie aangevuld met bekende codes (`1020=qc`, `1115=post`, `1740=post`, `1715=production`).
+    - Splitvelden `plannedHoursNabewerken` en `plannedHoursBM01` worden hierdoor betrouwbaarder gevuld.
+- Deploy uitgevoerd voor deze backendfix:
+    - Command: `firebase deploy --only functions:importPlanningOrders`
+    - Resultaat: succesvolle update van `importPlanningOrders(us-central1)`.
+- Oneindige Smart Sync-herhaling opgelost in frontend:
+    - `readyChanged` (LN vs FF gereed) telt niet meer mee als sync-trigger in `hasSmartChange`, omdat gereed-aantallen in deze import bewust niet teruggeschreven worden.
+    - Gevolg: bestaande orders blijven niet meer onnodig terugkomen als `Sync` wanneer alleen gereed-verschil bestaat.
+- Alleen Uren modus uitgebreid zoals gevraagd:
+    - In `Slimme Sync` + `Alleen Uren` worden nu alle gefilterde orders getoond (incl. oude bestaande BH-orders) en selecteerbaar gemaakt.
+    - Uren-only import blijft backendmatig beperkt tot uurvelden (`totalPlannedHours`, `totalActualHours`, `operations`) in smart update flow.
+- Lege preview-bug in Alleen Uren opgelost:
+    - `hoursOnlyMode` toegevoegd aan dependency-arrays van `displayData` en `importCandidates` useMemo’s in `PlanningImportModal.jsx`.
+    - Hierdoor herberekent de lijst direct bij togglen en verdwijnt de "niets in voorbeeld" situatie.
+- Gedrag expliciet bevestigd:
+    - `Alleen Uren + Slimme Sync` => alleen urenvelden voor bestaande orders.
+    - `Alleen Uren + Overschrijf Alles` => niet beperkt tot alleen uren; dan worden ook andere importvelden gemerged.
+
+**Aangepaste bestanden:**
+- `src/components/digitalplanning/modals/PlanningImportModal.jsx`
+- `functions/src/services/planningTransitionService.js`
+
+**Status:**
+- Urenimport (incl. nabewerken/eindinspectie splitsing) verbeterd en backend live.
+- Smart Sync toont geen oneindige herhaal-sync meer op gereed-verschillen.
+- Alleen Uren preview en selectie werkt nu voor alle BH-gefilterde orders.
+
+## Update sessie 113 (LN Stamdata tegel gefixt + backend import live)
+
+**Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoeken in deze sessie:**
+- "hoeft niet in teamleaderhub maar een tegel in Product en data management in admin hub"
+- "als ik op LN stamdata tegel klik gebeurt er niks"
+- "gaat deze upload nu ook via backend"
+- "deploy? volgens mij werd de chat verbroken"
+
+**Uitgevoerd in deze sessie:**
+- Plaatsing UI aangepast:
+    - LN Stamdata import-tegel verwijderd uit Import/Export dashboard.
+    - LN Stamdata import-tegel toegevoegd in Admin Hub onder Product & Data Management.
+- Klikprobleem op de tegel opgelost:
+    - Tegel gekoppeld aan standaard `activeScreen` flow van AdminDashboard i.p.v. losse klikroute.
+    - Wrapper-screen toegevoegd die `ReferenceOpsImportModal` direct opent en correct sluit.
+- Import-flow omgezet naar backend:
+    - Nieuwe Firebase callable toegevoegd: `importReferenceOperations`.
+    - Callable bevat auth-check, role-check (admin), payload-validatie en server-side batch writes naar `future-factory/settings/reference_operations`.
+    - Frontend modal (`ReferenceOpsImportModal`) doet nu parse/preview client-side en verstuurt records naar de callable i.p.v. directe Firestore writes.
+- Deploy uitgevoerd:
+    - Command: `firebase deploy --only functions:importReferenceOperations`
+    - Resultaat: succesvolle create van `importReferenceOperations(us-central1)` in project `future-factory-377ef`.
+
+**Aangepaste bestanden:**
+- `src/components/admin/AdminDashboard.jsx`
+- `src/components/digitalplanning/ImportExportDashboard.jsx`
+- `src/components/digitalplanning/modals/ReferenceOpsImportModal.jsx`
+- `functions/src/callables/planningCallables.js`
+- `functions/index.js`
+
+**Status:**
+- LN Stamdata tegel werkt in Admin Hub.
+- Opslaan loopt via backend callable (live gedeployed).
+- Geen editor errors op gewijzigde bestanden.
+
 ## Update sessie 112 (voortgang opgeslagen + PDF export opgeschoond)
 
 **Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`

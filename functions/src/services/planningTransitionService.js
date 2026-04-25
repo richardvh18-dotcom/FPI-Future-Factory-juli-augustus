@@ -503,9 +503,39 @@ const classifyByWcServer = (wc = '') => {
   return null;
 };
 
-const classifyReferenceOperationServer = (refOp, wc) => {
+const loadReferenceOperationsConfigServer = async () => {
+  try {
+    const snap = await db.collection(`${BASE}/settings/reference_operations`).get();
+    const config = {};
+    snap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const code = clean(data?.code || docSnap.id);
+      const type = clean(data?.type).toLowerCase();
+      if (!code || !type) return;
+      if (type === 'production' || type === 'post' || type === 'qc') {
+        config[code] = type;
+      }
+    });
+    return config;
+  } catch (error) {
+    console.warn('Reference operations config kon niet geladen worden, fallback actief:', error?.message || String(error));
+    return {};
+  }
+};
+
+const classifyReferenceOperationServer = (refOp, wc, refOpsConfig = null) => {
+  const normalizedRefOp = clean(refOp);
+
+  if (refOpsConfig && normalizedRefOp && refOpsConfig[normalizedRefOp]) {
+    return refOpsConfig[normalizedRefOp];
+  }
+
   const wcBucket = classifyByWcServer(wc);
   if (wcBucket) return wcBucket;
+
+  const knownTypes = { '1020': 'qc', '1715': 'production', '1740': 'post', '1115': 'post' };
+  if (knownTypes[normalizedRefOp]) return knownTypes[normalizedRefOp];
+
   const digits = Number.parseInt(String(refOp || '').replace(/\D/g, ''), 10);
   if (Number.isNaN(digits)) return 'production';
   const opCode = digits % 100;
@@ -514,7 +544,7 @@ const classifyReferenceOperationServer = (refOp, wc) => {
   return 'production';
 };
 
-const getSplitPlannedHoursServer = (operations, fallbackTotalHours) => {
+const getSplitPlannedHoursServer = (operations, fallbackTotalHours, refOpsConfig = null) => {
   const split = { productionHours: 0, postHours: 0, qcHours: 0 };
   const entries = Object.entries(operations || {});
 
@@ -525,7 +555,7 @@ const getSplitPlannedHoursServer = (operations, fallbackTotalHours) => {
 
   entries.forEach(([refOp, values]) => {
     const planned = Number(values?.planned || 0);
-    const bucket = classifyReferenceOperationServer(refOp, values?.wc);
+    const bucket = classifyReferenceOperationServer(refOp, values?.wc, refOpsConfig);
     if (bucket === 'qc') split.qcHours += planned;
     else if (bucket === 'post') split.postHours += planned;
     else split.productionHours += planned;
@@ -538,14 +568,14 @@ const getSplitPlannedHoursServer = (operations, fallbackTotalHours) => {
   return split;
 };
 
-const buildReferenceOperationSummaryServer = (operations = {}) => {
+const buildReferenceOperationSummaryServer = (operations = {}, refOpsConfig = null) => {
   const byCode = {};
 
   Object.entries(operations || {}).forEach(([refOp, values]) => {
     const planned = Number(values?.planned || 0);
     const actual = Number(values?.actual || 0);
     const wc = normalizeMachineForPlanningServer(values?.wc || '');
-    const bucket = classifyReferenceOperationServer(refOp, wc);
+    const bucket = classifyReferenceOperationServer(refOp, wc, refOpsConfig);
 
     byCode[refOp] = {
       plannedHours: planned,
@@ -572,6 +602,7 @@ const bulkImportPlanningOrdersService = async ({
   let createdCount = 0;
   let updatedCount = 0;
   let processedCount = 0;
+  const referenceOpsConfig = await loadReferenceOperationsConfigServer();
 
   const CHUNK = 350;
   for (let i = 0; i < safeOrders.length; i += CHUNK) {
@@ -595,8 +626,12 @@ const bulkImportPlanningOrdersService = async ({
 
       const normalizedItem = clean(dbData.item || dbData.itemDescription || '');
       const normalizedItemDescription = clean(dbData.itemDescription || dbData.item || '');
-      const { productionHours, postHours, qcHours } = getSplitPlannedHoursServer(item.operations, item.totalPlannedHours || 0);
-      const operationByCode = buildReferenceOperationSummaryServer(item.operations);
+      const { productionHours, postHours, qcHours } = getSplitPlannedHoursServer(
+        item.operations,
+        item.totalPlannedHours || 0,
+        referenceOpsConfig,
+      );
+      const operationByCode = buildReferenceOperationSummaryServer(item.operations, referenceOpsConfig);
       const deliveryInspectionSync = buildDeliveryInspectionSyncFields(dbData);
 
       const isExistingOrder = Boolean(item.isExistingOrder);

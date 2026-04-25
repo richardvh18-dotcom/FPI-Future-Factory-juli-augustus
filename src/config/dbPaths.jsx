@@ -63,6 +63,9 @@ export const PATHS = {
   AI_MEMORY: [BASE, "settings", "ai_memory"],
   AI_CONVERSATIONS: [BASE, "settings", "ai_conversations"],
 
+  // --- LN REFERENTIE OPERATIES (stamdata uit ERP) ---
+  REFERENCE_OPERATIONS: [BASE, "settings", "reference_operations"],
+
   // --- AUTOMATION & NOTIFICATIES ---
   AUTOMATION_RULES: [BASE, "automation", "rules"],
   AUTOMATION_EXECUTIONS: [BASE, "automation", "executions"],

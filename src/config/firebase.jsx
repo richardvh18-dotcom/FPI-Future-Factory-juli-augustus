@@ -59,6 +59,11 @@ export const appId = firebaseConfig.projectId;
  */
 export const logActivity = async (userId, action, details) => {
   try {
+    const now = new Date();
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth() + 1;
+    const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
+
     // Gebruik de centrale definitie uit dbPaths.js
     const logsRef = collection(db, ...PATHS.ACTIVITY_LOGS);
     await addDoc(logsRef, {
@@ -66,6 +71,9 @@ export const logActivity = async (userId, action, details) => {
       userEmail: auth.currentUser?.email || "Systeem",
       action,
       details,
+      year,
+      month,
+      yearMonth,
       timestamp: serverTimestamp(),
     });
   } catch (e) {

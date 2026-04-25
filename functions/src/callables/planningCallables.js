@@ -103,6 +103,8 @@ const {
 } = require('../services/aiAdminService');
 
 const IMPORT_ALLOWED_MODES = new Set(['new_only', 'overwrite', 'smart_update']);
+const REFERENCE_OPS_ALLOWED_ROLES = new Set(['admin']);
+const REFERENCE_OPS_ALLOWED_TYPES = new Set(['production', 'post', 'qc']);
 
 const extractRds = () => null;
 
@@ -2175,6 +2177,105 @@ const importPlanningOrders = functions.https.onCall(async (data, context) => {
   });
 });
 
+const importReferenceOperations = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throwUnauthenticated(context, 'IMPORT_REFERENCE_OPERATIONS');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!REFERENCE_OPS_ALLOWED_ROLES.has(userRole)) {
+    throwPermissionDenied(context, 'IMPORT_REFERENCE_OPERATIONS', userRole, 'Alleen admins mogen LN stamdata importeren.');
+  }
+
+  const rawRecords = Array.isArray(data?.records) ? data.records : [];
+  if (!rawRecords.length) {
+    throw new functions.https.HttpsError('invalid-argument', 'records is verplicht en mag niet leeg zijn.');
+  }
+  if (rawRecords.length > 5000) {
+    throw new functions.https.HttpsError('invalid-argument', 'Maximaal 5000 records per import.');
+  }
+
+  const sanitizedRecords = [];
+  const seenCodes = new Set();
+  for (const entry of rawRecords) {
+    const code = clean(entry?.code);
+    if (!code || !/^\d{3,10}$/.test(code)) {
+      throw new functions.https.HttpsError('invalid-argument', `Ongeldige refOp code: ${String(entry?.code || '')}`);
+    }
+
+    if (seenCodes.has(code)) continue;
+    seenCodes.add(code);
+
+    const description = clampText(clean(entry?.description), 200) || code;
+    const type = clean(entry?.type).toLowerCase();
+    if (!REFERENCE_OPS_ALLOWED_TYPES.has(type)) {
+      throw new functions.https.HttpsError('invalid-argument', `Ongeldig type voor ${code}. Verwacht production, post of qc.`);
+    }
+
+    const site = clean(entry?.site) || '101';
+    if (!(site === '101' || site === '101.0')) {
+      throw new functions.https.HttpsError('invalid-argument', `Alleen site 101 is toegestaan. Fout bij ${code}.`);
+    }
+
+    const descriptions = Array.isArray(entry?.descriptions)
+      ? Array.from(new Set(entry.descriptions.map((value) => clampText(clean(value), 200)).filter(Boolean))).slice(0, 100)
+      : [];
+    const workCenters = Array.isArray(entry?.workCenters)
+      ? Array.from(new Set(entry.workCenters.map((value) => clampText(clean(value), 80)).filter(Boolean))).slice(0, 100)
+      : [];
+
+    sanitizedRecords.push({
+      code,
+      description,
+      descriptions,
+      type,
+      site: '101',
+      workCenters,
+      updatedAt: new Date().toISOString(),
+      updatedBy: context.auth.uid,
+    });
+  }
+
+  const refOpsCol = admin.firestore().collection('future-factory/settings/reference_operations');
+  const existingSnap = await refOpsCol.get();
+  const existingCodes = new Set(existingSnap.docs.map((doc) => doc.id));
+
+  const BATCH_SIZE = 450;
+  let written = 0;
+  let skipped = 0;
+
+  for (let i = 0; i < sanitizedRecords.length; i += BATCH_SIZE) {
+    const batch = admin.firestore().batch();
+    const chunk = sanitizedRecords.slice(i, i + BATCH_SIZE);
+    chunk.forEach((record) => {
+      const docRef = refOpsCol.doc(record.code);
+      batch.set(docRef, record, { merge: false });
+      if (existingCodes.has(record.code)) skipped += 1;
+      else written += 1;
+    });
+    await batch.commit();
+  }
+
+  auditService.logCallable(
+    context,
+    'IMPORT_REFERENCE_OPERATIONS',
+    {
+      total: sanitizedRecords.length,
+      written,
+      overwritten: skipped,
+      site: '101',
+    },
+    { category: 'ADMIN', severity: 'WARNING' },
+  );
+
+  return {
+    ok: true,
+    written: sanitizedRecords.length,
+    inserted: written,
+    overwritten: skipped,
+  };
+});
+
 const queuePrintJob = functions.https.onCall(async (data, context) => {
   if (!context.auth?.uid) {
     throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
@@ -2648,6 +2749,21 @@ const migrateLegacyActivityLogs = functions.https.onCall(async (data, context) =
       const targetId = `legacy_${docSnap.id}`;
       const existingTarget = await targetRef.doc(targetId).get();
 
+      const now = new Date();
+      const legacyDate = (() => {
+        const value = oldData.timestamp;
+        if (!value) return now;
+        if (typeof value.toDate === 'function') {
+          const parsed = value.toDate();
+          return parsed instanceof Date && !Number.isNaN(parsed.getTime()) ? parsed : now;
+        }
+        const parsed = new Date(value);
+        return Number.isNaN(parsed.getTime()) ? now : parsed;
+      })();
+      const year = legacyDate.getUTCFullYear();
+      const month = legacyDate.getUTCMonth() + 1;
+      const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
+
       const detailsMessage = typeof oldData.details === 'string'
         ? oldData.details
         : clampText(JSON.stringify(oldData.details || {}), 4000);
@@ -2659,6 +2775,9 @@ const migrateLegacyActivityLogs = functions.https.onCall(async (data, context) =
         action: clean(oldData.action) || 'LEGACY_ACTIVITY_LOG',
         category: 'SYSTEM',
         severity: String(oldData.status || '').toUpperCase() === 'FAILED' ? 'WARNING' : 'INFO',
+        year,
+        month,
+        yearMonth,
         details: {
           legacy: true,
           legacyPath: 'future-factory/logs/activity_logs',
@@ -2784,6 +2903,7 @@ module.exports = {
   reportShopFloorIssue,
   resolveShopFloorIssue,
   importPlanningOrders,
+  importReferenceOperations,
   queuePrintJob,
   updateUserProfile,
   clearPasswordChangeFlag,

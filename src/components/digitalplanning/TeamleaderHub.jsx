@@ -1212,15 +1212,15 @@ const TeamleaderHub = React.memo(({
           planned = 0;
           
           const checkActive = (p) => {
-             const pStation = (p.currentStation || "").toUpperCase();
-             const pStep = (p.currentStep || "").toUpperCase();
+             const pStation = (p.currentStation || "").toUpperCase().replace(/\s/g, "");
+             const pStep = (p.currentStep || "").toUpperCase().replace(/\s/g, "");
              const pStatus = (p.status || "").toUpperCase();
              
              const isActiveItem = !isInactiveTrackedProduct(p);
              if (!isActiveItem) return false;
 
              if (isBM01) return pStation.includes("BM01") || pStep.includes("INSPECTIE") || pStep === "BM01";
-             if (isNabewerking) return pStation.includes("NABEWERK") || pStep.includes("NABEWERK");
+             if (isNabewerking) return pStation === "NABEWERKING" || pStation === "NABEWERKEN" || pStation === "NABW" || pStation.includes("NABEWERK") || pStep === "NABEWERKING" || pStep === "NABEWERKEN" || pStep === "NABW" || pStep.includes("NABEWERK");
              if (isMazak) return pStation.includes("MAZAK") || pStep.includes("MAZAK");
              if (isLossen) return pStation.includes("LOSSEN") || pStep.includes("LOSSEN");
              
@@ -1234,9 +1234,9 @@ const TeamleaderHub = React.memo(({
              const isFinishedItem = ['COMPLETED', 'FINISHED', 'GEREED'].includes(pStatus) || pStep === 'FINISHED';
              if (!isFinishedItem) return false;
 
-             const lastStation = (p.lastStation || "").toUpperCase();
+             const lastStation = (p.lastStation || "").toUpperCase().replace(/\s/g, "");
              if (isBM01) return lastStation.includes("BM01");
-             if (isNabewerking) return lastStation.includes("NABEWERK");
+             if (isNabewerking) return lastStation === "NABEWERKING" || lastStation === "NABEWERKEN" || lastStation === "NABW" || lastStation.includes("NABEWERK");
              if (isMazak) return lastStation.includes("MAZAK");
              if (isLossen) return lastStation.includes("LOSSEN");
              return false;

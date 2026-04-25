@@ -42,22 +42,15 @@ const Nabewerken = ({ products = [], orders = [] }) => {
 
   // Filter producten voor Nabewerking
     const nabewerkingProducts = useMemo(() => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
       // Filter en sorteer op leverdatum
       const filtered = products.filter((p) => {
+        const pStatus = String(p.status || "").toLowerCase();
+        if (["completed", "finished", "gereed", "rejected", "afkeur", "archived_rejected"].includes(pStatus)) return false;
         if (p.currentStep === "Finished" || p.currentStep === "REJECTED") return false;
+
         const pCleanUpper = (p.currentStation || "").toUpperCase().replace(/\s/g, "");
         const sCleanUpper = (p.currentStep || "").toUpperCase().replace(/\s/g, "");
-        // Check createdAt (Firestore Timestamp or ISO string)
-        const createdAtDate = toDateSafe(p.createdAt);
-        let isToday = false;
-        if (createdAtDate) {
-          const created = new Date(createdAtDate);
-          created.setHours(0, 0, 0, 0);
-          isToday = created.getTime() === today.getTime();
-        }
+
         return (
           pCleanUpper === "NABEWERKING" ||
           pCleanUpper === "NABEWERKEN" ||
@@ -66,8 +59,7 @@ const Nabewerken = ({ products = [], orders = [] }) => {
           sCleanUpper === "NABEWERKING" ||
           sCleanUpper === "NABEWERKEN" ||
           sCleanUpper === "NABW" ||
-          sCleanUpper.includes("NABEWERK") ||
-          isToday
+          sCleanUpper.includes("NABEWERK")
         );
       }).sort((a, b) => {
         // Sorteer op leverdatum: eerst wat eerder af moet

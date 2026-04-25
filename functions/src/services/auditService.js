@@ -46,6 +46,11 @@ async function logAction(userId, action, details = {}, options = {}) {
     userEmail = null,
   } = options;
 
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1;
+  const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
+
   await admin.firestore()
     .collection('future-factory')
     .doc('audit')
@@ -58,6 +63,9 @@ async function logAction(userId, action, details = {}, options = {}) {
       category,
       severity,
       details,
+      year,
+      month,
+      yearMonth,
     });
 }
 

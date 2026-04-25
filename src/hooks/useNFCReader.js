@@ -25,6 +25,70 @@ export const NFC_STATUS = {
 
 const isNFCSupported = () => typeof window !== "undefined" && "NDEFReader" in window;
 
+const toHex = (bufferLike) => {
+  if (!bufferLike) return "";
+  const bytes = new Uint8Array(bufferLike);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+};
+
+const getTextDecoder = () => window.TextDecoder;
+
+const decodeNDEFTextRecord = (record) => {
+  // NDEF text record layout: [status byte][language code][text bytes]
+  // status bit 7: 0 = UTF-8, 1 = UTF-16
+  // status bits 5..0: language code length
+  const bytes = new Uint8Array(record.data || []);
+  if (bytes.length === 0) return "";
+
+  const status = bytes[0];
+  const languageLength = status & 0x3f;
+  const isUtf16 = (status & 0x80) !== 0;
+  const start = 1 + languageLength;
+  if (start >= bytes.length) return "";
+
+  const decoder = new (getTextDecoder())(isUtf16 ? "utf-16" : "utf-8");
+  return decoder.decode(bytes.slice(start)).trim();
+};
+
+const extractTagValue = (event) => {
+  const serial = String(event?.serialNumber || "").trim();
+
+  // serialNumber fallback helps with tags that are detected but do not expose usable text payload.
+  let fallbackValue = serial;
+  const records = event?.message?.records || [];
+
+  for (const record of records) {
+    if (record.recordType === "text") {
+      const textValue = decodeNDEFTextRecord(record);
+      if (textValue) return textValue;
+    }
+
+    if (record.recordType === "url") {
+      const decoder = new (getTextDecoder())();
+      const raw = decoder.decode(record.data || new ArrayBuffer(0)).trim();
+      if (raw) {
+        const parts = raw.split("/");
+        return (parts[parts.length - 1] || raw).trim();
+      }
+    }
+
+    if (record.recordType === "mime") {
+      const decoder = new (getTextDecoder())();
+      const raw = decoder.decode(record.data || new ArrayBuffer(0)).trim();
+      if (raw) return raw;
+    }
+
+    if (!fallbackValue && record.data) {
+      fallbackValue = toHex(record.data);
+    }
+  }
+
+  return fallbackValue;
+};
+
 /**
  * @param {function} onRead - Callback met de gelezen waarde (personeelsnummer string)
  */
@@ -75,24 +139,8 @@ export function useNFCReader(onRead) {
 
       await reader.scan({ signal: abortController.signal });
 
-      reader.addEventListener("reading", ({ message }) => {
-        let value = "";
-        for (const record of message.records) {
-          if (record.recordType === "text") {
-            const decoder = new TextDecoder(record.encoding || "utf-8");
-            value = decoder.decode(record.data).trim();
-            break;
-          }
-          // Probeer ook url-records (sommige encoders schrijven als URL)
-          if (record.recordType === "url") {
-            const decoder = new TextDecoder();
-            const raw = decoder.decode(record.data).trim();
-            // Haal laatste pad-segment op als personeelsnummer
-            const parts = raw.split("/");
-            value = parts[parts.length - 1] || raw;
-            break;
-          }
-        }
+      reader.addEventListener("reading", (event) => {
+        const value = extractTagValue(event);
         if (!value) return;
         setStatus(NFC_STATUS.SUCCESS);
         abortController.abort();

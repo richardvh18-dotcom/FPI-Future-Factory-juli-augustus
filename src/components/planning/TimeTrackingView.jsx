@@ -34,6 +34,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
   const [departments, setDepartments] = useState(["ALLES"]);
   const [factoryConfig, setFactoryConfig] = useState({ departments: [] });
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
+  const [refOpsConfig, setRefOpsConfig] = useState({}); // { "1020": { type: "qc", ... }, ... }
 
   useEffect(() => {
     if (!readPaths) return;
@@ -106,6 +107,19 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
         });
         setEfficiencyData(data);
       }
+    );
+
+    // Laad LN Reference Operations stamdata voor DB-gestuurde uren-classificatie
+    const unsubRefOps = onSnapshot(
+      collection(db, ...readPaths.REFERENCE_OPERATIONS),
+      (snapshot) => {
+        const map = {};
+        snapshot.docs.forEach((docSnap) => {
+          map[docSnap.id] = docSnap.data();
+        });
+        setRefOpsConfig(map);
+      },
+      () => {} // niet-kritiek, valt terug op hardcoded classificatie
     );
 
     // Load tracking logs for actuals calculation
@@ -184,6 +198,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       unsubScopedOrders();
       unsubOccupancy();
       unsubEfficiency();
+      unsubRefOps();
       unsubRootTracking();
       unsubScopedTracking();
       unsubArchiveTracking();
@@ -242,9 +257,18 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
   };
 
   const classifyReferenceOperation = (refOp, wc) => {
+    // 1. Database-gestuurde lookup
+    if (refOpsConfig && refOp) {
+      const entry = refOpsConfig[String(refOp).trim()];
+      if (entry?.type) return entry.type;
+    }
+    // 2. WC-fallback
     const wcBucket = classifyByWc(wc);
     if (wcBucket) return wcBucket;
-
+    // 3. Bekende hardcoded codes
+    const knownTypes = { "1020": "qc", "1715": "production", "1740": "post", "1115": "post" };
+    if (knownTypes[String(refOp).trim()]) return knownTypes[String(refOp).trim()];
+    // 4. Modulo-heuristiek als laatste fallback
     const digits = parseInt(String(refOp || "").replace(/\D/g, ""), 10);
     if (Number.isNaN(digits)) return "production";
     const opCode = digits % 100;
