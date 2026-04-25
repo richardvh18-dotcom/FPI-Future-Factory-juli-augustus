@@ -1,3 +1,27 @@
+## Update sessie 112 (voortgang opgeslagen + PDF export opgeschoond)
+
+**Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoek:**
+- "sla voortgang op"
+- "ook in CONVERSATION_SUMMARY.md"
+
+**Uitgevoerd in deze sessie:**
+- PDF-export in admin logweergave opgeschoond voor audit-leesbaarheid:
+    - landscape A4 i.p.v. portrait;
+    - minder/duidelijkere kolommen;
+    - vaste kolombreedtes;
+    - lange teksten gecompacteerd met afkapping om overvolle rijen te voorkomen.
+- Alle lokale wijzigingen opgeslagen in een checkpoint-commit:
+    - Commit: `4c04bd1`
+    - Message: `WIP: save progress on audit, migration, and planning UI updates`
+    - Omvang: 30 files changed, 2031 insertions, 283 deletions.
+- Werkmapstatus na commit gecontroleerd:
+    - `git status --short` gaf geen output (schone working tree).
+
+**Status:**
+- Voortgang staat zowel in Git als in dit gespreksoverzicht vastgelegd.
+
 ## Update sessie 111 (opgeslagen: preview push + import observatie)
 
 **Datum:** 24 april 2026 | **Branch:** `FPiFF-18-12-build`
