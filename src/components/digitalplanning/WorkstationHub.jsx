@@ -28,7 +28,7 @@ import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { getAuth } from "firebase/auth";
 import { useNotifications } from "../../contexts/NotificationContext";
 
-import { getISOWeek } from "date-fns";
+import { getISOWeek, startOfISOWeek } from "date-fns";
 import {
   WORKSTATIONS,
   getISOWeekInfo,
@@ -242,7 +242,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   const [loading, setLoading] = useState(true);
   const [dataSourceRefreshKey, setDataSourceRefreshKey] = useState(0);
   const [searchFilterOrder] = useState(searchOrder || null);
-  const [archivedStats, setArchivedStats] = useState({ done: 0 });
+  const [archivedStats, setArchivedStats] = useState({ done: 0, items: [] });
   
   // Huidige datum/tijd voor display
   const currentDate = new Date();
@@ -269,6 +269,21 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   const [timeHeartbeat, setTimeHeartbeat] = useState(Date.now());
   const lastShiftRef = useRef(getCurrentShiftKey(new Date()));
 
+  const logWorkstationActivity = async (action, details, options = {}) => {
+    const baseDetails = String(details || "");
+    const resolvedPersonnelNumber = String(
+      options?.personnelNumber || checkedInOperator?.number || ""
+    ).trim();
+
+    const hasPersonnelNumberAlready = /personeelsnummer\s*:/i.test(baseDetails);
+    const enrichedDetails =
+      resolvedPersonnelNumber && !hasPersonnelNumberAlready
+        ? `${baseDetails} | Personeelsnummer: ${resolvedPersonnelNumber}`
+        : baseDetails;
+
+    await logActivity(currentUser?.uid || "system", action, enrichedDetails);
+  };
+
   // NFC scanner (Web NFC API — Android Chrome 89+)
   // handleOperatorShiftCheckinRef wordt hieronder ingesteld na de functiedefinitie
   const nfcPendingBadgeRef = useRef(null);
@@ -285,6 +300,20 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       }
     }, 150);
   });
+
+  // Start NFC automatisch zodra de operator-aanmeldmodal opent.
+  useEffect(() => {
+    if (!showOperatorCheckinModal || !nfc.isSupported) return;
+    if (nfc.status !== NFC_STATUS.IDLE) return;
+
+    nfc.startScan();
+
+    return () => {
+      if (nfc.status === NFC_STATUS.SCANNING) {
+        nfc.stopScan();
+      }
+    };
+  }, [showOperatorCheckinModal, nfc]);
 
   // Uren-correctie modal (teamleader)
   const [showHourCorrectionModal, setShowHourCorrectionModal] = useState(false);
@@ -581,25 +610,24 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     };
   }, [currentUser, dataSourceRefreshKey]);
 
-  // Fetch archive stats for BM01 (Today)
+  // Fetch archive stats (Huidige week)
   useEffect(() => {
-      if (!isBM01) return;
-      
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const year = today.getFullYear();
+      const now = new Date();
+      const startOfWeek = startOfISOWeek(now);
+      const year = now.getFullYear();
       
       const q = query(
           collection(db, ...getArchiveItemsPath(year)),
-          where("timestamps.finished", ">=", today)
+          where("timestamps.finished", ">=", startOfWeek)
       );
       
       const unsub = onSnapshot(q, (snap) => {
-          setArchivedStats({ done: snap.size });
+          const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          setArchivedStats({ done: snap.size, items });
       }, (error) => console.warn("Archive Sync Error:", error));
       
       return () => unsub();
-  }, [isBM01]);
+  }, []);
 
   // Reminder Logic
   useEffect(() => {
@@ -890,12 +918,15 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     setIsCheckingInOperator(true);
     try {
       const normalizedBadge = rawBadge.toUpperCase();
+      const normalizedAlphaNumericBadge = rawBadge.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
       const numericBadge = rawBadge.replace(/\D/g, "");
       const normalizedNumericBadge = numericBadge.replace(/^0+/, "");
       const sameBadgeValue = (value) => {
         const candidate = String(value || "").trim();
         if (!candidate) return false;
         if (candidate.toUpperCase() === normalizedBadge) return true;
+        const candidateAlphaNumeric = candidate.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+        if (candidateAlphaNumeric && candidateAlphaNumeric === normalizedAlphaNumericBadge) return true;
         const candidateDigits = candidate.replace(/\D/g, "");
         if (!candidateDigits) return false;
         return candidateDigits.replace(/^0+/, "") === normalizedNumericBadge;
@@ -941,15 +972,25 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
       // Probeer als NFC tag UID (gekoppeld via admin registratie)
       if (!person) {
-        const tagMapSnap = await getDoc(doc(db, ...PATHS.NFC_TAG_MAPPINGS, rawBadge));
-        if (tagMapSnap.exists()) {
-          const mapping = tagMapSnap.data();
-          const empNum = mapping.employeeNumber;
-          const personSnap = await getDocs(
-            query(collection(db, ...PATHS.PERSONNEL), where("employeeNumber", "==", empNum), limit(1))
-          );
-          if (!personSnap.empty) {
-            person = { id: personSnap.docs[0].id, ...personSnap.docs[0].data() };
+        const mappingDocCandidates = Array.from(new Set([
+          rawBadge,
+          normalizedBadge,
+          normalizedAlphaNumericBadge,
+          rawBadge.replace(/\s+/g, "").toUpperCase(),
+        ].filter(Boolean)));
+
+        for (const mappingDocId of mappingDocCandidates) {
+          const tagMapSnap = await getDoc(doc(db, ...PATHS.NFC_TAG_MAPPINGS, mappingDocId));
+          if (tagMapSnap.exists()) {
+            const mapping = tagMapSnap.data();
+            const empNum = mapping.employeeNumber;
+            const personSnap = await getDocs(
+              query(collection(db, ...PATHS.PERSONNEL), where("employeeNumber", "==", empNum), limit(1))
+            );
+            if (!personSnap.empty) {
+              person = { id: personSnap.docs[0].id, ...personSnap.docs[0].data() };
+              break;
+            }
           }
         }
       }
@@ -1037,6 +1078,30 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           return sameOperator && isActive;
         });
 
+      const currentMachineNormalized = String(normalizeMachine(selectedStation) || selectedStation || "").toUpperCase();
+      const otherActiveStations = Array.from(new Set(
+        activeEntries
+          .map((entry) => String(entry.machineId || "").trim())
+          .filter(Boolean)
+          .filter((machineId) => String(normalizeMachine(machineId) || machineId).toUpperCase() !== currentMachineNormalized)
+      ));
+
+      const confirmMessage = otherActiveStations.length > 0
+        ? `${resolvedOperatorName} inloggen op ${selectedStation}?\n\nDeze medewerker is nu nog ingelogd op: ${otherActiveStations.join(", ")}\nBij doorgaan wordt daar automatisch uitgelogd.`
+        : `${resolvedOperatorName} inloggen op ${selectedStation}?`;
+
+      const confirmedCheckin = await showConfirm({
+        title: "Operator inloggen",
+        message: confirmMessage,
+        confirmText: "Inloggen",
+        cancelText: "Annuleren",
+        tone: "default",
+      });
+
+      if (!confirmedCheckin) {
+        return;
+      }
+
       if (activeEntries.length > 0) {
         await saveOccupancyAssignments({
           records: activeEntries.map((entry) => {
@@ -1104,10 +1169,10 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         actorLabel: currentUser?.email || "Operator",
       });
 
-      await logActivity(
-        currentUser?.uid || "system",
+      await logWorkstationActivity(
         "OPERATOR_CHECKIN",
-        `Operator check-in: ${operatorNumber} op ${selectedStation}; eerdere actieve inschrijvingen gesloten: ${activeEntries.length}`
+        `Operator check-in: ${operatorNumber} op ${selectedStation}; eerdere actieve inschrijvingen gesloten: ${activeEntries.length}`,
+        { personnelNumber: operatorNumber }
       );
 
       if (person.id) {
@@ -1131,7 +1196,11 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       setOperatorBadgeInput("");
 
       if (activeEntries.length > 0) {
-        showSuccess(`${resolvedOperatorName} overgezet naar ${selectedStation}.`);
+        if (otherActiveStations.length > 0) {
+          showSuccess(`${resolvedOperatorName} ingelogd op ${selectedStation}. Automatisch uitgelogd op: ${otherActiveStations.join(", ")}.`);
+        } else {
+          showSuccess(`${resolvedOperatorName} overgezet naar ${selectedStation}.`);
+        }
       } else {
         showSuccess(`${resolvedOperatorName} aangemeld op ${selectedStation}.`);
       }
@@ -1196,6 +1265,11 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     }
   };
 
+  // Houd de check-in handler-ref actueel zodat NFC direct kan aanmelden.
+  useEffect(() => {
+    handleOperatorShiftCheckinRef.current = handleOperatorShiftCheckin;
+  }, [handleOperatorShiftCheckin]);
+
   // Uren-correctie opslaan (teamleider)
   const handleSaveHourCorrection = async () => {
     if (!hourCorrectionEntry) return;
@@ -1220,8 +1294,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         source: "WorkstationHub.hourCorrection",
         actorLabel: currentUser?.email || "Teamleider",
       });
-      await logActivity(
-        currentUser?.uid || "system",
+      await logWorkstationActivity(
         "HOURS_CORRECTED",
         `Uren gecorrigeerd: ${hourCorrectionEntry.operatorName} op ${hourCorrectionEntry.machineId} → ${newHours}u (was ${hourCorrectionEntry.hoursWorked}u). Reden: ${correctionReason || "–"}`
       );
@@ -1547,7 +1620,9 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             return pStep === "Lossen" || pStationNorm === "LOSSEN";
           }
           if (isNabewerkingStation) {
-            return pStationNorm === "NABEWERKING" || pStationNorm === "NABEWERKEN" || String(pStationNorm || "").includes("NABEWERK");
+            const pCleanUpper = (p.currentStation || "").toUpperCase().replace(/\s/g, "");
+            const sCleanUpper = (p.currentStep || "").toUpperCase().replace(/\s/g, "");
+            return pCleanUpper === "NABEWERKING" || pCleanUpper === "NABEWERKEN" || pCleanUpper === "NABW" || pCleanUpper.includes("NABEWERK") || sCleanUpper === "NABEWERKING" || sCleanUpper === "NABEWERKEN" || sCleanUpper === "NABW" || sCleanUpper.includes("NABEWERK");
           }
           if (isMazakStation) {
             return pStationNorm === "MAZAK";
@@ -1565,7 +1640,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             return pLastStationNorm === "LOSSEN" || (pStationNorm === "LOSSEN" && isFinished);
           }
           if (isNabewerkingStation) {
-            return pLastStationNorm === "NABEWERKING" || pLastStationNorm === "NABEWERKEN" || String(pLastStationNorm || "").includes("NABEWERK") || ((pStationNorm === "NABEWERKING" || pStationNorm === "NABEWERKEN" || String(pStationNorm || "").includes("NABEWERK")) && isFinished);
+            const pLastCleanUpper = (p.lastStation || "").toUpperCase().replace(/\s/g, "");
+            return pLastCleanUpper === "NABEWERKING" || pLastCleanUpper === "NABEWERKEN" || pLastCleanUpper === "NABW" || pLastCleanUpper.includes("NABEWERK") || ((pStationNorm === "NABEWERKING" || pStationNorm === "NABEWERKEN" || pStationNorm === "NABW" || pStationNorm.includes("NABEWERK")) && isFinished);
           }
           if (isMazakStation) {
             return pLastStationNorm === "MAZAK" || (pStationNorm === "MAZAK" && isFinished);
@@ -1577,23 +1653,64 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     }
 
     let plan = 0;
-    let done = 0;
+    let todo = 0;
+    const stationField = getStartedCounterField(selectedStation);
     
     stationOrders.forEach(o => {
-      const orderPlan = Number(o.plan || 0);
-      plan += orderPlan;
-      
-      // FIX: Als order status 'completed' is, tel als volledig gereed (ook als tracking data weg is)
-      const status = (o.status || "").toLowerCase();
-      if (['completed', 'shipped', 'ready_to_ship', 'gereed', 'finished'].includes(status)) {
-        done += orderPlan;
+      const explicitTodo = Number(o.toDoQty);
+      let remainingQueue = 0;
+      if (Number.isFinite(explicitTodo)) {
+        remainingQueue = Math.max(explicitTodo, 0);
       } else {
-        done += Number(o.liveFinish || 0);
+        const orderPlan = Number(o.plan || o.quantity || 0);
+        const startedAtStation = Number(stationField ? o?.[stationField] || 0 : 0);
+        remainingQueue = Math.max(0, orderPlan - startedAtStation);
       }
+      
+      todo += remainingQueue;
+      
+      const orderIdForActivity = String(o.orderId || "").trim();
+      const activityMeta = stationActivityByOrder.get(orderIdForActivity);
+      const activeFlowQty = activityMeta?.active || 0;
+      
+      plan += (remainingQueue + activeFlowQty);
     });
 
-    return { plan, done, todo: Math.max(0, plan - done) };
-  }, [stationOrders, rawProducts, selectedStation, archivedStats]);
+    // Wekelijkse 'Gereed' teller voor wikkelmachines
+    let doneThisWeek = 0;
+    const startOfWeekDate = startOfISOWeek(new Date());
+
+    rawProducts.forEach(p => {
+       const pMachineNorm = normalizeMachine(p.originMachine || p.machine || "");
+       if (pMachineNorm !== currentStationNorm) return;
+       if (p.status === "rejected" || p.currentStep === "REJECTED") return;
+       
+       const stepUpper = (p.currentStep || "").toUpperCase();
+       const isFinishedForMachine = stepUpper !== "WIKKELEN" && stepUpper !== "HOLD_AREA";
+       
+       if (isFinishedForMachine || p.status === "completed") {
+           const eventDate = p.timestamps?.lossen_start || p.timestamps?.wikkelen_end || p.updatedAt || p.createdAt;
+           const d = toDateSafe(eventDate);
+           if (d && d >= startOfWeekDate) {
+               doneThisWeek++;
+           }
+       }
+    });
+
+    (archivedStats.items || []).forEach(p => {
+       const pMachineNorm = normalizeMachine(p.originMachine || p.machine || "");
+       if (pMachineNorm !== currentStationNorm) return;
+       if (p.status === "rejected" || p.currentStep === "REJECTED") return;
+       
+       const eventDate = p.timestamps?.lossen_start || p.timestamps?.wikkelen_end || p.timestamps?.finished || p.archivedAt;
+       const d = toDateSafe(eventDate);
+       if (d && d >= startOfWeekDate) {
+           doneThisWeek++;
+       }
+    });
+
+    return { plan, done: doneThisWeek, todo };
+  }, [stationOrders, rawProducts, selectedStation, archivedStats, stationActivityByOrder]);
 
   const activeUnitsHere = useMemo(() => {
     if (!selectedStation) return [];
@@ -1767,8 +1884,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         );
       }
 
-      await logActivity(
-        currentUser?.uid || "system",
+      await logWorkstationActivity(
         "ORDER_RELEASE",
         `Workstation start: order ${order.orderId}, station ${selectedStation}, lot start ${customLotNumber}, count ${stringCount}, overflow ${overflowItems.length}`
       );
@@ -1797,8 +1913,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         actorLabel: currentUser?.email || "Operator",
       });
 
-      await logActivity(
-        currentUser?.uid || "system",
+      await logWorkstationActivity(
         "LOT_MANUAL_MOVE",
         `${isRepairMove ? "Workstation reparatie" : "Workstation move"}: lot ${lotNumber} -> ${newStation}${repairInstruction ? ` | instructie: ${repairInstruction}` : ""}`
       );
@@ -1819,8 +1934,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         actorLabel: currentUser?.email || "Operator",
         source: "WorkstationHub",
       });
-      await logActivity(
-        currentUser?.uid || "system",
+      await logWorkstationActivity(
         isPaused ? "PRODUCTION_RESUME" : "PRODUCTION_PAUSE",
         `Workstation ${isPaused ? "resume" : "pause"}: lot ${product.lotNumber || product.id} op ${selectedStation}`
       );
@@ -1840,8 +1954,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         productId: product.id,
         productImage: product.imageUrl || "",
       });
-      await logActivity(
-        currentUser?.uid || "system",
+      await logWorkstationActivity(
         "ORDER_LINK_PRODUCT",
         `Order gelinkt: planning ${docId} -> product ${product?.id}`
       );
@@ -1897,8 +2010,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         previousStatus: itemToFinish.status,
         source: "WorkstationHub",
       });
-      await logActivity(
-        currentUser?.uid || "system",
+      await logWorkstationActivity(
         "QUALITY_TEMP_REJECT",
         `Post-processing: lot ${itemToFinish?.lotNumber || itemToFinish?.id}, station ${selectedStation}, status temp_reject`
       );
@@ -1993,8 +2105,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         source: "WorkstationHub",
       });
 
-      await logActivity(
-        currentUser?.uid || "system",
+      await logWorkstationActivity(
         "PRODUCT_TO_LOSSEN",
         `Doorgestuurd naar lossen: ${targets.length} lot(s), station ${selectedStation}`
       );
@@ -2019,8 +2130,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           actorLabel: currentUser?.email || "Operator",
           source: "WorkstationHub",
         });
-          await logActivity(
-            currentUser?.uid || "system",
+          await logWorkstationActivity(
             "QUALITY_REPAIR_COMPLETE",
             `Reparatie afgerond: lot ${itemToRepair?.lotNumber || itemToRepair?.id}, BH31 -> BM01`
           );
@@ -2081,8 +2191,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         actorLabel: currentUser?.email,
       });
 
-      await logActivity(
-        currentUser?.uid,
+      await logWorkstationActivity(
         "PRODUCTION_CANCEL",
         `Production cancelled for lot ${product?.lotNumber || productId} on ${selectedStation}`
       );
@@ -2142,7 +2251,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
                 <LogOut className="w-3 h-3 sm:w-4 sm:h-4" />
                 <span className="hidden sm:inline">{t("digitalplanning.workstation.back")}</span>
               </button>
-              <span className="text-lg sm:text-xl font-black text-gray-900 italic tracking-tight truncate max-w-[150px] sm:max-w-none">
+              <span className="text-base sm:text-xl font-black text-gray-900 italic tracking-tight truncate max-w-[170px] sm:max-w-none">
                 {WORKSTATIONS.find((w) => w.id === selectedStation)?.name ||
                   selectedStation}
               </span>
@@ -2341,6 +2450,46 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* Mobiele quick info + operator actie */}
+          <div className="lg:hidden pb-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2 px-2 py-2 bg-slate-50 rounded-lg border border-slate-200">
+              <div className="min-w-0">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{t("common.week")} {currentWeekInfo.week}</p>
+                <p className="text-[11px] font-bold text-slate-700 truncate">
+                  {currentDate.toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" })}
+                  {" • "}
+                  {currentDate.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOperatorCheckinModal(true);
+                  setOperatorBadgeInput("");
+                  setIsMobileMenuOpen(false);
+                }}
+                className="shrink-0 px-3 py-2 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest"
+              >
+                Inloggen
+              </button>
+            </div>
+
+            <div className="px-2 py-2 bg-white rounded-lg border border-slate-200">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{t("digitalplanning.workstation.scheduled_occupancy", "Bezetting")}</p>
+              {stationOccupancy.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {stationOccupancy.slice(0, 3).map((occ, idx) => (
+                    <span key={`${occ.operatorNumber || idx}_${idx}`} className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase border ${getShiftColor(occ.shift)}`}>
+                      {occ.operatorName}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] font-bold text-slate-500 italic">{t("digitalplanning.workstation.no_operator")}</p>
+              )}
             </div>
           </div>
         </div>

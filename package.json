@@ -60,6 +60,8 @@
     "prepare": "husky install",
     "prevalidate": "node scripts/cleanup-duplicates.js",
     "repair:lossen": "node scripts/repair-lossen-routing.cjs",
+    "migrate:legacy-logs": "node scripts/migrate-legacy-activity-logs-via-cli-auth.cjs",
+    "migrate:legacy-logs:apply": "node scripts/migrate-legacy-activity-logs-via-cli-auth.cjs --apply",
     "import:planning:auto": "node scripts/auto-planning-import.cjs --watch --dir ./imports/planning",
     "import:planning:once": "node scripts/auto-planning-import.cjs --dir ./imports/planning",
     "validate": "npm run lint && npm run type-check && npm run build",

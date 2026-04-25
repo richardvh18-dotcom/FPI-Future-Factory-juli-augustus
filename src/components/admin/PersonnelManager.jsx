@@ -65,6 +65,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
   const [occupancy, setOccupancy] = useState([]);
   const [structure, setStructure] = useState({ departments: [] });
   const [users, setUsers] = useState([]);
+  const [nfcMappings, setNfcMappings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("assignment");
   const [viewDate, setViewDate] = useState(new Date());
@@ -128,6 +129,34 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     return personnel.some(p => p.employeeNumber === personForm.employeeNumber && p.id !== editingId);
   }, [personForm.employeeNumber, personnel, editingId]);
 
+  const linkedTagEmployeeKeys = useMemo(() => {
+    const normalize = (value) => String(value || "").trim().toUpperCase();
+    const digits = (value) => String(value || "").replace(/\D/g, "").replace(/^0+/, "");
+    const keys = new Set();
+
+    nfcMappings.forEach((mapping) => {
+      const normalized = normalize(mapping.employeeNumber);
+      const numeric = digits(mapping.employeeNumber);
+      if (normalized) keys.add(normalized);
+      if (numeric) keys.add(numeric);
+    });
+
+    return keys;
+  }, [nfcMappings]);
+
+  const currentPersonNfcMappings = useMemo(() => {
+    if (!editingId) return [];
+    const normalized = String(personForm.employeeNumber || "").trim().toUpperCase();
+    const numeric = String(personForm.employeeNumber || "").replace(/\D/g, "").replace(/^0+/, "");
+
+    return nfcMappings.filter((mapping) => {
+      const mapEmployee = String(mapping.employeeNumber || "").trim().toUpperCase();
+      const mapNumeric = String(mapping.employeeNumber || "").replace(/\D/g, "").replace(/^0+/, "");
+      if (normalized && mapEmployee === normalized) return true;
+      return Boolean(numeric && mapNumeric && numeric === mapNumeric);
+    });
+  }, [editingId, personForm.employeeNumber, nfcMappings]);
+
   // 1. DATA SYNC MET DE ROOT
   useEffect(() => {
     if (!isValidPath("PERSONNEL") || !isValidPath("OCCUPANCY")) return;
@@ -165,11 +194,18 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
         setUsers(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })))
     );
 
+    const unsubNfcMappings = onSnapshot(
+      collection(db, ...PATHS.NFC_TAG_MAPPINGS),
+      (snap) =>
+        setNfcMappings(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })))
+    );
+
     return () => {
       unsubPersonnel();
       unsubOccupancy();
       unsubStructure();
       unsubUsers();
+      unsubNfcMappings();
     };
   }, []);
 
@@ -480,6 +516,30 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     setIsPersonModalOpen(true);
   };
 
+  const handleRemovePersonNfcTag = async (mappingId, tagId) => {
+    const confirmed = await showConfirm({
+      title: "NFC-tag verwijderen",
+      message: `Koppeling ${tagId || mappingId} verwijderen?`,
+      confirmText: "Verwijderen",
+      cancelText: "Annuleren",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+
+    try {
+      await deleteDoc(doc(db, ...PATHS.NFC_TAG_MAPPINGS, mappingId));
+      await logActivity(
+        auth.currentUser?.uid,
+        "NFC_TAG_UNLINK",
+        `NFC tag ontkoppeld van ${personForm.name || personForm.employeeNumber}: ${tagId || mappingId}`
+      );
+      setStatus({ type: "success", msg: "NFC-tag verwijderd" });
+      setTimeout(() => setStatus(null), 2500);
+    } catch (err) {
+      notify(t("common.error", { message: err.message }));
+    }
+  };
+
   const loanDept = structure.departments?.find(d => d.id === personForm.loan?.departmentId);
   const loanShifts = loanDept?.shifts || [];
 
@@ -497,7 +557,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     <div className="h-full flex flex-col bg-slate-50 overflow-hidden text-left animate-in fade-in">
       {/* HEADER & NAV */}
       <div className="p-4 bg-white border-b border-slate-200 flex flex-col gap-4 shrink-0 z-20 shadow-sm">
-        <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-slate-900 text-white rounded-[18px] shadow-xl">
               <Users size={22} />
@@ -517,11 +577,12 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex bg-slate-100 p-1 rounded-xl">
+          <div className="w-full lg:w-auto overflow-x-auto no-scrollbar pb-1">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-max">
+            <div className="flex bg-slate-100 p-1 rounded-xl shrink-0">
               <button
                 onClick={() => setTimeMode("DAY")}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
                   timeMode === "DAY"
                     ? "bg-white text-blue-600 shadow-sm"
                     : "text-slate-400"
@@ -531,7 +592,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
               </button>
               <button
                 onClick={() => setTimeMode("WEEK")}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
                   timeMode === "WEEK"
                     ? "bg-white text-emerald-600 shadow-sm"
                     : "text-slate-400"
@@ -540,10 +601,10 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
                 <TrendingUp size={12} /> {t('common.week', "Week")}
               </button>
             </div>
-            <div className="flex bg-slate-100 p-1 rounded-xl">
+            <div className="flex bg-slate-100 p-1 rounded-xl shrink-0">
               <button
                 onClick={() => setActiveTab("assignment")}
-                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                className={`px-3 sm:px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
                   activeTab === "assignment"
                     ? "bg-white text-slate-900 shadow-sm"
                     : "text-slate-400"
@@ -553,7 +614,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
               </button>
               <button
                 onClick={() => setActiveTab("loan")}
-                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                className={`px-3 sm:px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
                   activeTab === "loan"
                     ? "bg-white text-indigo-900 shadow-sm"
                     : "text-slate-400"
@@ -563,7 +624,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
               </button>
               <button
                 onClick={() => setActiveTab("personnel")}
-                className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
+                className={`px-3 sm:px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${
                   activeTab === "personnel"
                     ? "bg-white text-slate-900 shadow-sm"
                     : "text-slate-400"
@@ -602,7 +663,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
                 setModalTab("profile");
                 setIsPersonModalOpen(true);
               }}
-              className="bg-blue-600 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2"
+              className="bg-blue-600 text-white px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2 shrink-0"
             >
               <Plus size={16} /> {t('common.new', "Nieuw")}
             </button>
@@ -610,29 +671,30 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
             {/* NFC tag registratie knop */}
             <button
               onClick={() => setShowNFCModal(true)}
-              className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:from-emerald-600 hover:to-teal-600 transition-all active:scale-95 flex items-center gap-2"
+              className="bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-4 sm:px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:from-emerald-600 hover:to-teal-600 transition-all active:scale-95 flex items-center gap-2 shrink-0"
               title="Druppels koppelen aan personeelsleden"
             >
               <Nfc size={16} /> NFC-tags
             </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-col md:flex-row items-center gap-4 border-t border-slate-50 pt-3">
-          <div className="flex items-center gap-3 bg-slate-900 text-white p-1.5 rounded-[20px] shadow-2xl">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 md:gap-4 border-t border-slate-50 pt-3">
+          <div className="w-full md:w-auto flex items-center justify-between md:justify-start gap-3 bg-slate-900 text-white p-1.5 rounded-[20px] shadow-2xl">
             <button
               onClick={() => setViewDate((prev) => subDays(prev, 1))}
               className="p-2.5 hover:bg-white/10 rounded-xl transition-all"
             >
               <ChevronLeft size={20} />
             </button>
-            <div className="flex flex-col items-center px-6 min-w-[200px]">
+            <div className="flex flex-col items-center px-2 sm:px-6 min-w-0 md:min-w-[200px]">
               <span className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">
                 {isToday(viewDate)
                   ? t('common.today', "Vandaag")
                   : format(viewDate, "eeee", { locale: nl })}
               </span>
-              <span className="text-base font-black uppercase italic tracking-tight">
+              <span className="text-sm sm:text-base font-black uppercase italic tracking-tight text-center">
                 {format(viewDate, "dd MMMM yyyy", { locale: nl })}
               </span>
             </div>
@@ -644,7 +706,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
             </button>
           </div>
 
-          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
+          <div className="w-full md:w-auto flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
             <CalendarDays size={14} className="text-slate-500" />
             <input
               type="date"
@@ -655,7 +717,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
                   setViewDate(parsed);
                 }
               }}
-              className="bg-transparent text-xs font-black text-slate-700 outline-none"
+              className="bg-transparent text-xs font-black text-slate-700 outline-none w-full"
             />
             <button
               onClick={() => setViewDate(new Date())}
@@ -668,7 +730,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
           <button
             onClick={handleCopyYesterday}
             disabled={isCopying}
-            className={`px-6 py-3 border-2 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-sm ${
+            className={`w-full md:w-auto px-6 py-3 border-2 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-sm ${
               viewDate.getDay() === 1
                 ? "bg-orange-50 border-orange-200 text-orange-600 hover:border-orange-400 hover:text-orange-700"
                 : "bg-white border-slate-100 text-slate-400 hover:border-blue-500 hover:text-blue-600"
@@ -683,13 +745,13 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
           </button>
 
           {status && (
-            <div className="bg-emerald-50 text-emerald-600 px-6 py-3 rounded-2xl border border-emerald-100 text-[10px] font-black uppercase animate-in zoom-in">
+            <div className="w-full md:w-auto bg-emerald-50 text-emerald-600 px-4 md:px-6 py-3 rounded-2xl border border-emerald-100 text-[10px] font-black uppercase animate-in zoom-in text-center">
               {status.msg}
             </div>
           )}
 
           {activeTab === "assignment" && (
-            <div className="flex-1 flex items-center gap-4 overflow-x-auto no-scrollbar py-2 justify-end">
+            <div className="w-full md:flex-1 flex items-center gap-4 overflow-x-auto no-scrollbar py-2 md:justify-end">
               <div className="bg-slate-900 px-6 py-4 rounded-3xl flex items-center gap-6 border border-white/5 shadow-xl shrink-0">
                 {/* Totaal Volume */}
                 <div className="text-left">
@@ -733,7 +795,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-slate-50/50">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-8 custom-scrollbar bg-slate-50/50">
         <div className={`${activeTab === "assignment" ? "w-full" : "max-w-7xl mx-auto"} pb-40`}>
           {/* TAB 1: BEZETTING PER STATION */}
           {activeTab === "assignment" && (
@@ -754,6 +816,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
             <PersonnelListView
               personnel={personnel}
               departments={structure.departments || []}
+              linkedTagEmployeeKeys={linkedTagEmployeeKeys}
               expandedDepts={listExpandedSections}
               onToggleDept={(id) => setListExpandedSections(prev => ({...prev, [id]: !prev[id]}))}
               onEdit={openEditPerson}
@@ -781,8 +844,8 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
       {/* MODAL: PERSOON TOEVOEGEN/BEWERKEN */}
       {isPersonModalOpen && (
         <div className="fixed inset-0 z-[1000] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in overflow-y-auto">
-          <div className="bg-white w-full max-w-xl rounded-[45px] shadow-2xl flex flex-col border border-white/10 animate-in zoom-in-95 my-8 max-h-[calc(100vh-4rem)]">
-            <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50 shrink-0">
+          <div className="bg-white w-full max-w-xl rounded-[28px] sm:rounded-[45px] shadow-2xl flex flex-col border border-white/10 animate-in zoom-in-95 my-8 max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-4rem)]">
+            <div className="p-4 sm:p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50 shrink-0">
               <div className="flex items-center gap-4">
                 <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-lg">
                   <UserPlus size={24} />
@@ -806,7 +869,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-2 px-6 pt-2">
+            <div className="flex gap-2 px-4 sm:px-6 pt-2">
               <button
                 type="button"
                 onClick={() => setModalTab("profile")}
@@ -825,11 +888,11 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
 
             <form
               onSubmit={handleSavePerson}
-              className="p-6 space-y-6 text-left overflow-y-auto"
+              className="p-4 sm:p-6 space-y-5 sm:space-y-6 text-left overflow-y-auto"
             >
               {modalTab === "profile" && (
                 <>
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 <div className="space-y-1.5 text-left">
                   <label className="text-[10px] font-black text-slate-400 uppercase ml-2 block">
                     {t('personnel.employeeName', "Naam Medewerker")}
@@ -914,13 +977,60 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
                 </select>
               </div>
 
+              {editingId && (
+                <div className="space-y-3 p-4 rounded-2xl border-2 border-emerald-100 bg-emerald-50/60">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Nfc size={16} className="text-emerald-700" />
+                      <span className="text-[11px] font-black text-emerald-800 uppercase tracking-widest">
+                        NFC-tags
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPersonModalOpen(false);
+                        setShowNFCModal(true);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all"
+                    >
+                      Tag wijzigen
+                    </button>
+                  </div>
+
+                  {currentPersonNfcMappings.length === 0 ? (
+                    <p className="text-xs font-bold text-emerald-700/80">
+                      Geen gekoppelde NFC-tag gevonden.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {currentPersonNfcMappings.map((mapping) => (
+                        <div key={mapping.id} className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-emerald-200">
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tag</p>
+                            <p className="text-xs font-mono font-bold text-slate-800 truncate">{mapping.tagId || mapping.id}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePersonNfcTag(mapping.id, mapping.tagId)}
+                            className="px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 text-[10px] font-black uppercase tracking-widest transition-all"
+                          >
+                            Verwijderen
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="pt-6 border-t border-slate-50 space-y-6">
                 {/* Rotatie Type Keuze */}
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-400 uppercase ml-2 block">
                     {t('personnel.shiftType', "Ploegen Type")}
                   </label>
-                  <div className="flex gap-3">
+                  <div className="flex flex-col sm:flex-row gap-3">
                     <button
                       type="button"
                       onClick={() => setPersonForm({ 
@@ -1178,11 +1288,12 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
         isOpen={showNFCModal} 
         onClose={() => setShowNFCModal(false)}
         personnel={personnel}
+        preselectedEmployeeNumber={personForm.employeeNumber || ""}
       />
 
       {/* FOOTER INFO */}
-      <div className="p-4 bg-slate-950 border-t border-white/5 flex justify-between items-center text-[10px] font-black text-slate-600 uppercase tracking-[0.4em] px-10 shrink-0">
-        <div className="flex items-center gap-6">
+      <div className="p-4 bg-slate-950 border-t border-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-[9px] sm:text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] sm:tracking-[0.4em] px-4 sm:px-10 shrink-0">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-6">
           <span className="flex items-center gap-2 text-emerald-500/50">
             <ShieldCheck size={14} /> {t('personnel.forensicNode', "Forensic Audit Node")}
           </span>

@@ -76,6 +76,16 @@ const ShopFloorMobileApp = React.lazy(() => import("../planning/ShopFloorMobileA
 const ScenarioPlanningView = React.lazy(() => import("../planning/ScenarioPlanningView"));
 // Reports & Analytics
 const AdminReportsView = React.lazy(() => import("./AdminReportsView"));
+// LN Stamdata import
+const ReferenceOpsImportModal = React.lazy(() => import("../digitalplanning/modals/ReferenceOpsImportModal"));
+
+const AdminRefOpsImportScreen = ({ onNavigate }) => (
+  <ReferenceOpsImportModal
+    isOpen={true}
+    onClose={() => onNavigate?.(null)}
+    onSuccess={() => onNavigate?.(null)}
+  />
+);
 
 /**
  * AdminDashboard V5.7 - Reference Hub Integration
@@ -281,6 +291,15 @@ const AdminDashboard = () => {
           color: "bg-sky-50 border-sky-100",
           roles: ["admin", "engineer"],
           component: AdminToolingMoldsView,
+        },
+        {
+          id: "ref_ops_import",
+          title: "LN Stamdata Import",
+          desc: "Importeer Reference Operations (refOp-codes) vanuit LN naar de database voor database-gestuurde uren-classificaties.",
+          icon: <Database size={24} className="text-violet-600" />,
+          color: "bg-violet-50 border-violet-100",
+          roles: ["admin", "engineer"],
+          component: AdminRefOpsImportScreen,
         },
       ]
     },

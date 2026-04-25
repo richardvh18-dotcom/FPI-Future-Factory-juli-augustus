@@ -83,6 +83,7 @@ const {
   reportShopFloorIssue,
   resolveShopFloorIssue,
   importPlanningOrders,
+  importReferenceOperations,
   queuePrintJob,
   updateUserProfile,
   clearPasswordChangeFlag,
@@ -1555,6 +1556,7 @@ exports.startTrackedProductRepair = startTrackedProductRepair;
 exports.reportShopFloorIssue = reportShopFloorIssue;
 exports.resolveShopFloorIssue = resolveShopFloorIssue;
 exports.importPlanningOrders = importPlanningOrders;
+exports.importReferenceOperations = importReferenceOperations;
 exports.queuePrintJob = queuePrintJob;
 exports.updateUserProfile = updateUserProfile;
 exports.clearPasswordChangeFlag = clearPasswordChangeFlag;

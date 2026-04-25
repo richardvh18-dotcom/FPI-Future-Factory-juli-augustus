@@ -299,6 +299,13 @@ const TerminalPlanningView = ({
                 ? "border-amber-400 bg-amber-50/40 hover:border-amber-500"
                 : typeTintClass;
 
+      const isNewOrder = (() => {
+        const orderDate = parseDateSafe(order.createdAt || order.importDate);
+        if (!orderDate) return false;
+        const diff = differenceInDays(new Date(), orderDate);
+        return diff >= 0 && diff <= 2;
+      })();
+
       // Weekdivider injecteren (alleen in alles-modus)
       if (showAllWeeks) {
         const d = parseDateSafe(order.plannedDeliveryDate || order.deliveryDate || order.plannedDate);
@@ -334,12 +341,17 @@ const TerminalPlanningView = ({
           key={order.id}
           ref={(el) => (itemRefs.current[order.id] = el)}
           onClick={() => onSelectOrder(order.id)}
-          className={`min-h-[152px] p-5 rounded-[2rem] border-2 transition-all flex items-center justify-between relative overflow-hidden cursor-pointer ${
+          className={`min-h-[100px] px-4 py-3 rounded-3xl border-2 transition-all flex items-center justify-between relative overflow-hidden cursor-pointer ${
             selectedOrderId === order.id
               ? "bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-100 translate-x-1"
               : priorityCardClass
           }`}
         >
+          {isNewOrder && (
+            <div className="absolute top-0 right-0 px-4 py-1 bg-blue-500 text-white text-[9px] font-black uppercase tracking-widest rounded-bl-2xl shadow-sm z-10">
+              {t("digitalplanning.terminal.new_order", "Nieuw")}
+            </div>
+          )}
           <div className="flex items-center gap-4 flex-1 overflow-hidden">
             {/* WIK/Drawing Button */}
             <div
@@ -349,21 +361,18 @@ const TerminalPlanningView = ({
                   onViewDrawing(order.drawing);
                 }
               }}
-              className={`p-3 rounded-2xl shrink-0 transition-all ${
+              className={`p-2.5 rounded-2xl shrink-0 transition-all ${
                 drawingLinked
                   ? "bg-blue-100 text-blue-600 cursor-pointer hover:bg-blue-200 active:scale-95"
                   : "bg-slate-50 text-slate-300"
               }`}
               title={drawingLinked ? t("digitalplanning.order_detail.view_drawing", "Bekijk tekening/productkaart") : ""}
             >
-              <FileImage size={24} />
+              <FileImage size={22} />
             </div>
 
             <div className="flex-1 overflow-hidden">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] font-black bg-slate-900 text-white px-2 py-0.5 rounded uppercase tracking-tighter">
-                  {order.machine}
-                </span>
                 <span className="text-sm font-black text-slate-900">
                   {order.orderId}
                 </span>
@@ -396,8 +405,8 @@ const TerminalPlanningView = ({
                 </p>
               )}
               {(order.poText || order.notes) && (
-                <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 px-2 py-1">
-                  <p className="text-[9px] font-black uppercase tracking-wide text-amber-700">PO Text</p>
+                <div className="mt-1.5 rounded-lg border border-amber-400 bg-amber-100 px-2 py-0.5 animate-pulse shadow-md shadow-amber-300/50">
+                  <p className="text-[9px] font-black uppercase tracking-wide text-amber-800">PO Text</p>
                   <p className="truncate text-[10px] font-bold text-amber-900">
                     {order.poText || order.notes}
                   </p>
@@ -407,13 +416,8 @@ const TerminalPlanningView = ({
           </div>
 
           {/* Status & Timing Info */}
-          <div className="flex flex-col items-end gap-2 text-right shrink-0 ml-4">
+          <div className="flex flex-col items-end gap-1.5 text-right shrink-0 ml-4">
             <div className="flex items-center gap-2">
-              {order.plannedHoursBH > 0 && (
-                <span className="flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-1 rounded-lg text-[10px] font-black">
-                  <Clock size={10} /> {Number(order.plannedHoursBH).toFixed(1)}h
-                </span>
-              )}
               <StatusBadge status={order.status} />
             </div>
             <div className="flex flex-col items-end">
@@ -668,9 +672,6 @@ const TerminalPlanningView = ({
                     {selectedOrder.itemCode || "-"}
                   </p>
                   <div className="flex items-center gap-3 flex-wrap">
-                    <span className="bg-blue-600 px-3 py-1 rounded-xl text-[10px] font-black uppercase">
-                      {selectedOrder.machine}
-                    </span>
                     {getPriorityBadgeStyles(selectedOrder) && (
                       <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide ${getPriorityBadgeStyles(selectedOrder).className}`}>
                         {getPriorityBadgeStyles(selectedOrder).label}

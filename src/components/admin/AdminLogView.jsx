@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { getFunctions, httpsCallable } from "firebase/functions";
 import {
   History,
   Search,
@@ -32,15 +31,13 @@ import {
   updateDoc,
   startAfter,
 } from "firebase/firestore";
-import app, { db, auth, logActivity } from "../../config/firebase";
+import { db, auth, logActivity } from "../../config/firebase";
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, parse, isValid } from "date-fns";
 import { nl } from "date-fns/locale";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { useNotifications } from "../../contexts/NotificationContext";
 
 const WEEK_INPUT_FORMAT = "RRRR-'W'II";
-const functions = getFunctions(app);
-const migrateLegacyActivityLogsCallable = httpsCallable(functions, "migrateLegacyActivityLogs");
 
 const toDateValue = (value) => {
   if (!value) return new Date();
@@ -61,6 +58,58 @@ const stringifyValue = (value) => {
   }
 };
 
+const toReadableId = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const parts = raw.split("/").filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : raw;
+};
+
+const toReadableFieldValue = (value) => {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return stringifyValue(value);
+};
+
+const formatObjectDetails = (details) => {
+  const detailObj = details && typeof details === "object" ? details : null;
+  if (!detailObj) return "";
+
+  const lines = [];
+  const usedKeys = new Set();
+
+  const addLine = (label, key, transform = toReadableFieldValue) => {
+    if (detailObj[key] === undefined || detailObj[key] === null) return;
+    const rendered = transform(detailObj[key]);
+    if (!rendered) return;
+    usedKeys.add(key);
+    lines.push(`${label}: ${rendered}`);
+  };
+
+  addLine("Product", "productId", toReadableId);
+  addLine("Order", "orderId", toReadableId);
+  addLine("Machine", "machine");
+  addLine("Werkstation", "stationId");
+  addLine("Volgende stap", "nextStep");
+  addLine("Volgende status", "nextStatus");
+  addLine("Actie", "action");
+  addLine("Gebruiker", "userEmail");
+
+  const remaining = Object.entries(detailObj)
+    .filter(([key]) => !usedKeys.has(key))
+    .map(([key, value]) => {
+      const rendered = toReadableFieldValue(value);
+      return rendered ? `${key}: ${rendered}` : "";
+    })
+    .filter(Boolean);
+
+  if (lines.length === 0 && remaining.length === 0) return "";
+  if (remaining.length === 0) return lines.join(" | ");
+  if (lines.length === 0) return remaining.join(" | ");
+  return `${lines.join(" | ")} | ${remaining.join(" | ")}`;
+};
+
 const getLogDetailsText = (log) => {
   const details = log?.details;
   if (typeof details === "string") return details;
@@ -68,6 +117,8 @@ const getLogDetailsText = (log) => {
     if (typeof details.message === "string" && details.message.trim()) {
       return details.message;
     }
+    const formatted = formatObjectDetails(details);
+    if (formatted) return formatted;
     return stringifyValue(details);
   }
   return "";
@@ -114,13 +165,12 @@ const AdminLogView = () => {
   const [lastVisibleDoc, setLastVisibleDoc] = useState(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [isMigratingLegacy, setIsMigratingLegacy] = useState(false);
-  const [migrationSummary, setMigrationSummary] = useState(null);
   const [isClearing, setIsClearing] = useState(false);
   const [error, setError] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
   const [expandedId, setExpandedId] = useState(null);
+  const [useYearMonthPrefilter, setUseYearMonthPrefilter] = useState(true);
   const PAGE_SIZE = 50;
 
   // ISO COMPLIANCE SWITCH
@@ -187,7 +237,23 @@ const AdminLogView = () => {
     return null;
   };
 
-  const buildQuery = (cursor = null) => {
+  const getYearMonthKeysForRange = (range) => {
+    if (!range?.start || !range?.end) return [];
+
+    const keys = [];
+    const cursor = new Date(Date.UTC(range.start.getUTCFullYear(), range.start.getUTCMonth(), 1));
+    const endMonth = new Date(Date.UTC(range.end.getUTCFullYear(), range.end.getUTCMonth(), 1));
+
+    while (cursor <= endMonth) {
+      keys.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}`);
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+
+    return keys.slice(0, 10);
+  };
+
+  const buildQuery = (cursor = null, options = {}) => {
+    const includeYearMonth = options?.includeYearMonth !== false;
     const colRef = collection(db, ...LOG_PATH);
     const constraints = [];
 
@@ -197,6 +263,15 @@ const AdminLogView = () => {
 
     const range = getPeriodRange();
     if (range) {
+      if (includeYearMonth) {
+        const yearMonthKeys = getYearMonthKeysForRange(range);
+        if (yearMonthKeys.length === 1) {
+          constraints.push(where("yearMonth", "==", yearMonthKeys[0]));
+        } else if (yearMonthKeys.length > 1) {
+          constraints.push(where("yearMonth", "in", yearMonthKeys));
+        }
+      }
+
       constraints.push(where("timestamp", ">=", range.start));
       constraints.push(where("timestamp", "<=", range.end));
     }
@@ -213,12 +288,22 @@ const AdminLogView = () => {
     setError(null);
     setExpandedId(null);
     try {
-      const snapshot = await getDocs(buildQuery());
+      const range = getPeriodRange();
+      let snapshot = await getDocs(buildQuery(null, { includeYearMonth: true }));
+      let usedYearMonthFilter = true;
+
+      // Compatibiliteit: oudere logs missen yearMonth en zouden anders niet zichtbaar zijn.
+      if (range && snapshot.empty) {
+        snapshot = await getDocs(buildQuery(null, { includeYearMonth: false }));
+        usedYearMonthFilter = false;
+      }
+
       const logData = snapshot.docs.map((logDoc) => ({
         id: logDoc.id,
         ...logDoc.data(),
         timestamp: toDateValue(logDoc.data().timestamp),
       }));
+      setUseYearMonthPrefilter(usedYearMonthFilter);
       setLogs(logData);
       setLastVisibleDoc(snapshot.docs.length ? snapshot.docs[snapshot.docs.length - 1] : null);
       setHasMore(snapshot.docs.length === PAGE_SIZE);
@@ -239,7 +324,9 @@ const AdminLogView = () => {
     if (!hasMore || !lastVisibleDoc || loadingMore) return;
     setLoadingMore(true);
     try {
-      const snapshot = await getDocs(buildQuery(lastVisibleDoc));
+      const snapshot = await getDocs(
+        buildQuery(lastVisibleDoc, { includeYearMonth: useYearMonthPrefilter })
+      );
       const moreLogs = snapshot.docs.map((logDoc) => ({
         id: logDoc.id,
         ...logDoc.data(),
@@ -272,45 +359,6 @@ const AdminLogView = () => {
       detailsRaw.includes(q)
     );
   });
-
-  const handleMigrateLegacyLogs = async () => {
-    const confirmed = await showConfirm({
-      title: t("adminLogView.migrateLegacyTitle", "Legacy logs migreren"),
-      message: t(
-        "adminLogView.migrateLegacyConfirm",
-        "Deze actie kopieert oude activity_logs naar de nieuwe audit-log collectie. Doorgaan?"
-      ),
-      confirmText: t("common.continue", "Doorgaan"),
-      cancelText: t("common.cancel", "Annuleren"),
-      tone: "warning",
-    });
-    if (!confirmed) return;
-
-    setIsMigratingLegacy(true);
-    try {
-      const response = await migrateLegacyActivityLogsCallable({
-        dryRun: false,
-        limit: 1000,
-        maxScan: 10000,
-        pageSize: 250,
-        deleteSource: false,
-        markSourceMigrated: true,
-      });
-      setMigrationSummary(response?.data || null);
-      notify(
-        t(
-          "adminLogView.migrateLegacyDone",
-          `Migratie klaar. Gemigreerd: ${response?.data?.migrated || 0}, gescand: ${response?.data?.scanned || 0}`
-        )
-      );
-      await fetchInitialLogs();
-    } catch (err) {
-      console.error("Legacy migratie mislukt:", err);
-      notify(t("adminLogView.migrateLegacyError", "Migratie van legacy logs is mislukt."));
-    } finally {
-      setIsMigratingLegacy(false);
-    }
-  };
 
   const handleExportCSV = () => {
     if (filteredLogs.length === 0) return;
@@ -567,18 +615,6 @@ const AdminLogView = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleMigrateLegacyLogs}
-            disabled={isMigratingLegacy}
-            className="px-4 py-3 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl font-black text-[9px] uppercase tracking-widest hover:bg-amber-100 transition-all disabled:opacity-50"
-            title={t("adminLogView.migrateLegacyTitle", "Legacy logs migreren")}
-          >
-            {isMigratingLegacy ? (
-              <span className="inline-flex items-center gap-2"><Loader2 size={12} className="animate-spin" />MIGRATIE...</span>
-            ) : (
-              t("adminLogView.migrateLegacyCta", "Migreer legacy logs")
-            )}
-          </button>
           {!READ_ONLY_MODE && (
             <>
               <button
@@ -648,12 +684,6 @@ const AdminLogView = () => {
               );
             })()}
           </div>
-        </div>
-      )}
-
-      {migrationSummary && (
-        <div className="mx-8 mt-4 bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-xs font-bold text-emerald-800">
-          {t("adminLogView.migrationSummary", "Migratie samenvatting")}: {t("adminLogView.scanned", "gescand")}: {migrationSummary.scanned || 0}, {t("adminLogView.migrated", "gemigreerd")}: {migrationSummary.migrated || 0}, {t("adminLogView.skipped", "overgeslagen")}: {migrationSummary.skipped || 0}.
         </div>
       )}
 

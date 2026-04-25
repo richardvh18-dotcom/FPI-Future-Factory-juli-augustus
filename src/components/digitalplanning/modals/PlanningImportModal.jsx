@@ -519,9 +519,19 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return null; // geen WC-match, val terug op refOp-code
   };
 
-  const classifyReferenceOperation = (refOp, wc) => {
+  const classifyReferenceOperation = (refOp, wc, refOpsConfig = null) => {
+    // 1. Database-driven lookup (indien aanwezig via Firestore import)
+    if (refOpsConfig && refOp) {
+      const entry = refOpsConfig[String(refOp).trim()];
+      if (entry?.type) return entry.type;
+    }
+    // 2. WC-fallback
     const wcBucket = classifyByWc(wc);
     if (wcBucket) return wcBucket;
+    // 3. Hardcoded bekende codes
+    const knownTypes = { "1020": "qc", "1715": "production", "1740": "post", "1115": "post" };
+    if (knownTypes[String(refOp).trim()]) return knownTypes[String(refOp).trim()];
+    // 4. Modulo-heuristiek als laatste fallback
     const digits = parseInt(String(refOp || "").replace(/\D/g, ""), 10);
     if (isNaN(digits)) return "production";
     const opCode = digits % 100;
@@ -567,6 +577,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       delivered: findCol(["quantity delivered", "hoeveelheid geleverd", "geleverd", "delivered qty"]),
       ready: findCol(["quantity ready", "hoeveelheid gereed", "gewikkeld", "produced", "gemaakt"]),
       operation: findCol(["operation", "bewerking"]),
+      origBewerking: findCol(["oorspronkelijke bewerking", "original operation", "orig operation", "orig. bewerking"]),
       plannedHours: findCol(["production time", "labor hours", "productietijd", "manuren"]),
       totalEstimatedHours: findCol(["total production estimated time [hrs]", "total production estimated time hrs", "estimated production time [hrs]", "estimated production time hrs"]),
       actualHours: findCol(["spent production time", "bestede tijd"]),
@@ -680,11 +691,21 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       order.totalActualHours += aTime;
 
       if (refOp) {
-        order.operations[refOp] = {
-          planned: (order.operations[refOp]?.planned || 0) + pTime,
-          actual: (order.operations[refOp]?.actual || 0) + aTime,
-          wc: order.operations[refOp]?.wc || normalizeMachine(row[idx.machine] || "")
-        };
+        // Derived bewerking detection: when Bewerking ≠ Oorspronkelijke bewerking the row is a
+        // derived operation that carries the actual Productietijd. Original rows often have 0h when
+        // a derived row exists. We prefer the derived row over the original for the same refOp.
+        const bewNum = idx.operation !== -1 ? parseNum(row[idx.operation]) : 0;
+        const origBewNum = idx.origBewerking !== -1 ? parseNum(row[idx.origBewerking]) : bewNum;
+        const isDerived = bewNum > 0 && origBewNum > 0 && Math.abs(bewNum - origBewNum) > 0.001;
+
+        if (!order._opRows) order._opRows = {};
+        if (!order._opRows[refOp]) order._opRows[refOp] = { derived: [], original: [] };
+        const rowEntry = { pTime, aTime, wc: normalizeMachine(row[idx.machine] || "") };
+        if (isDerived) {
+          order._opRows[refOp].derived.push(rowEntry);
+        } else {
+          order._opRows[refOp].original.push(rowEntry);
+        }
       }
     });
 
@@ -700,6 +721,25 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       const primaryMachine = rankedMachines[0]?.machineCode || order.machine;
       const rest = { ...order };
       delete rest.machineTotals;
+      delete rest._opRows;
+
+      // Convert _opRows to final operations map with derived-bewerking selection:
+      // if a derived row exists for a refOp (Bewerking ≠ OorspronkelijkeBewerking) use its
+      // Productietijd; otherwise sum the original rows.
+      const correctedOperations = {};
+      let correctedTotalHours = 0;
+      Object.entries(order._opRows || {}).forEach(([refOp, { derived, original }]) => {
+        const rows = derived.length > 0 ? derived : original;
+        const planned = rows.reduce((sum, r) => sum + r.pTime, 0);
+        const actual = rows.reduce((sum, r) => sum + r.aTime, 0);
+        const wc = rows[0]?.wc || "";
+        correctedOperations[refOp] = { planned, actual, wc };
+        correctedTotalHours += planned;
+      });
+      rest.operations = correctedOperations;
+      if (correctedTotalHours > 0) {
+        rest.totalPlannedHours = correctedTotalHours;
+      }
 
       if ((Number(rest.totalPlannedHours) || 0) <= 0 && (Number(rest.totalEstimatedHoursFromLn) || 0) > 0) {
         rest.totalPlannedHours = Number(rest.totalEstimatedHoursFromLn) || 0;
@@ -1085,7 +1125,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         oldPlannedHours,
         newPlannedHours,
         hasManualPlanOverride,
-        hasSmartChange: quantityChanged || readyChanged || notesChanged || hoursChanged,
+        // Ready LN vs FF is informatief; deze import schrijft produced/gereed niet terug.
+        // Als we readyChanged als trigger gebruiken, blijven orders oneindig als "Sync" terugkomen.
+        hasSmartChange: quantityChanged || notesChanged || hoursChanged,
       });
     });
     return byId;
@@ -1130,24 +1172,29 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       rows = rows.filter((d) => !isExistingOrder(d));
       rows.sort((a, b) => String(a.orderId || a.id).localeCompare(String(b.orderId || b.id)));
     } else if (importMode === "smart_update") {
-      rows = rows.filter((d) => {
-        if (isSmartSyncExcludedOrder(d)) return false;
-        const meta = orderChangeMeta.get(d.id);
-        return meta ? (!meta.isExisting || meta.hasSmartChange) : false;
-      });
+      if (!hoursOnlyMode) {
+        rows = rows.filter((d) => {
+          if (isSmartSyncExcludedOrder(d)) return false;
+          const meta = orderChangeMeta.get(d.id);
+          return meta ? (!meta.isExisting || meta.hasSmartChange) : false;
+        });
 
-      rows.sort((a, b) => {
-        const aMeta = orderChangeMeta.get(a.id);
-        const bMeta = orderChangeMeta.get(b.id);
-        const aEligible = aMeta ? (!aMeta.isExisting || aMeta.hasSmartChange) : false;
-        const bEligible = bMeta ? (!bMeta.isExisting || bMeta.hasSmartChange) : false;
-        if (Number(bEligible) !== Number(aEligible)) return Number(bEligible) - Number(aEligible);
-        return String(a.orderId || a.id).localeCompare(String(b.orderId || b.id));
-      });
+        rows.sort((a, b) => {
+          const aMeta = orderChangeMeta.get(a.id);
+          const bMeta = orderChangeMeta.get(b.id);
+          const aEligible = aMeta ? (!aMeta.isExisting || aMeta.hasSmartChange) : false;
+          const bEligible = bMeta ? (!bMeta.isExisting || bMeta.hasSmartChange) : false;
+          if (Number(bEligible) !== Number(aEligible)) return Number(bEligible) - Number(aEligible);
+          return String(a.orderId || a.id).localeCompare(String(b.orderId || b.id));
+        });
+      } else {
+        // In uren-only modus tonen we alle gefilterde orders zodat ook oude orders uren kunnen krijgen.
+        rows.sort((a, b) => String(a.orderId || a.id).localeCompare(String(b.orderId || b.id)));
+      }
     }
 
     return rows;
-  }, [validOrders, machineGroupFilter, statusFilter, readySyncFilter, existingIds, selectedMachines, importMode, orderChangeMeta, isFittingsScoped, pasteMode]);
+  }, [validOrders, machineGroupFilter, statusFilter, readySyncFilter, existingIds, selectedMachines, importMode, orderChangeMeta, isFittingsScoped, pasteMode, hoursOnlyMode]);
 
   const importCandidates = useMemo(() => {
     let rows;
@@ -1156,6 +1203,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       rows = validOrders.filter((d) => !isExistingOrder(d));
     } else if (importMode === "smart_update") {
       rows = validOrders.filter((d) => {
+        if (hoursOnlyMode) return true;
         if (isSmartSyncExcludedOrder(d)) return false;
         return !isExistingOrder(d) || orderChangeMeta.get(d.id)?.hasSmartChange;
       });
@@ -1170,7 +1218,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       rows = rows.filter((d) => isFittingsMachine(d.machine));
     }
     return rows;
-  }, [validOrders, importMode, existingIds, selectedMachines, orderChangeMeta, isFittingsScoped, pasteMode, SMART_SYNC_EXCLUDED_ORDER_IDS]);
+  }, [validOrders, importMode, existingIds, selectedMachines, orderChangeMeta, isFittingsScoped, pasteMode, SMART_SYNC_EXCLUDED_ORDER_IDS, hoursOnlyMode]);
 
   useEffect(() => {
     if (pasteMode || importMode === "smart_update") {
@@ -1483,6 +1531,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
                         const readyEqual = changeMeta?.isExisting && readyDelta === 0;
                         const isSmartUnchangedExisting =
                           importMode === "smart_update" &&
+                          !hoursOnlyMode &&
                           isExisting &&
                           !changeMeta?.hasSmartChange;
                         const deliveryMeta = getDeliveryMeta(order);
@@ -1589,6 +1638,8 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
                                 />
                                 {isExisting ? (
                                   importMode === "smart_update" && changeMeta?.hasSmartChange
+                                    ? <span className="text-emerald-600 font-black uppercase text-[10px]">{t("digitalplanning.planning_import.sync_label", "Sync")}</span>
+                                    : importMode === "smart_update" && hoursOnlyMode
                                     ? <span className="text-emerald-600 font-black uppercase text-[10px]">{t("digitalplanning.planning_import.sync_label", "Sync")}</span>
                                     : importMode === "smart_update"
                                     ? <span className="text-slate-400 font-black uppercase text-[10px]">-</span>

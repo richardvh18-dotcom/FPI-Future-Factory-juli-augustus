@@ -18,20 +18,37 @@ import { useTranslation } from "react-i18next";
  * Het systeem probeert eerst de mapping te checken; zo niet, fallback naar handmatig NDEF.
  */
 
-const NFCTagRegistrationModal = ({ isOpen, onClose, personnel = [] }) => {
+const NFCTagRegistrationModal = ({ isOpen, onClose, personnel = [], preselectedEmployeeNumber = "" }) => {
   const { t } = useTranslation();
   const { notify, showSuccess, showError, showWarning } = useNotifications();
+
+  const normalizeTagId = (value) =>
+    String(value || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
+
+  const normalizeEmployeeNumber = (value) =>
+    String(value || "")
+      .trim()
+      .replace(/\s+/g, "")
+      .toUpperCase();
 
   // State
   const [scannedTagId, setScannedTagId] = useState("");
   const [selectedEmployeeNumber, setSelectedEmployeeNumber] = useState("");
+  const [manualEmployeeNumber, setManualEmployeeNumber] = useState("");
   const [mappings, setMappings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   // NFC scan callback — registreer tag wanneer gelezen
   const nfc = useNFCReader((tagId) => {
-    const cleaned = String(tagId).trim().toUpperCase();
+    const cleaned = normalizeTagId(tagId);
+    if (!cleaned) {
+      showWarning("Lege of ongeldige tagwaarde ontvangen");
+      return;
+    }
     setScannedTagId(cleaned);
     showSuccess(`Tag gelezen: ${cleaned.slice(0, 8)}...`);
   });
@@ -41,6 +58,14 @@ const NFCTagRegistrationModal = ({ isOpen, onClose, personnel = [] }) => {
     if (!isOpen) return;
     loadMappings();
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const preset = normalizeEmployeeNumber(preselectedEmployeeNumber);
+    if (!preset) return;
+    setSelectedEmployeeNumber(preset);
+    setManualEmployeeNumber("");
+  }, [isOpen, preselectedEmployeeNumber]);
 
   const loadMappings = async () => {
     setLoading(true);
@@ -55,42 +80,74 @@ const NFCTagRegistrationModal = ({ isOpen, onClose, personnel = [] }) => {
     }
   };
 
+  const handleScanClick = () => {
+    if (nfc.status === NFC_STATUS.SCANNING) {
+      nfc.stopScan();
+      return;
+    }
+    if (!nfc.isSupported) {
+      showWarning("Web NFC werkt alleen in Chrome op Android (https). Gebruik anders handmatige UID invoer.");
+      return;
+    }
+    nfc.startScan();
+  };
+
   // Opslaan
   const handleSaveMapping = async () => {
     if (!scannedTagId) {
       showWarning("Scan eerst een tag");
       return;
     }
-    if (!selectedEmployeeNumber) {
+    const resolvedEmployeeNumber = normalizeEmployeeNumber(
+      selectedEmployeeNumber || manualEmployeeNumber
+    );
+    if (!resolvedEmployeeNumber) {
       showWarning("Selecteer een personeelslid");
       return;
     }
 
+    const normalizedTagId = normalizeTagId(scannedTagId);
+    if (!normalizedTagId) {
+      showWarning("Tag ID is ongeldig");
+      return;
+    }
+
     // Controleer duplicaten
-    if (mappings.some((m) => m.tagId === scannedTagId)) {
+    if (mappings.some((m) => normalizeTagId(m.tagId) === normalizedTagId)) {
       showWarning("Deze tag is al gekoppeld");
       return;
     }
 
     setSaving(true);
     try {
-      const docId = scannedTagId; // Gebruik UID als document ID
-      const employee = personnel.find(
-        (p) => p.employeeNumber === selectedEmployeeNumber
-      );
+      const docId = normalizedTagId; // Gebruik genormaliseerde UID als document ID
+      const employee = personnel.find((p) => {
+        const candidate = normalizeEmployeeNumber(p.employeeNumber);
+        if (candidate && candidate === resolvedEmployeeNumber) return true;
+        const candidateDigits = String(p.employeeNumber || "").replace(/\D/g, "").replace(/^0+/, "");
+        const resolvedDigits = resolvedEmployeeNumber.replace(/\D/g, "").replace(/^0+/, "");
+        return Boolean(candidateDigits && resolvedDigits && candidateDigits === resolvedDigits);
+      });
+
+      if (!employee) {
+        showWarning(`Personeelsnummer ${resolvedEmployeeNumber} niet gevonden`);
+        setSaving(false);
+        return;
+      }
 
       await setDoc(doc(db, ...PATHS.NFC_TAG_MAPPINGS, docId), {
-        tagId: scannedTagId,
-        employeeNumber: selectedEmployeeNumber,
+        tagId: normalizedTagId,
+        employeeNumber: String(employee.employeeNumber || resolvedEmployeeNumber),
         employeeName: employee?.name || "Onbekend",
         department: employee?.departmentId || null,
         registeredAt: serverTimestamp(),
         registeredBy: "admin", // Later: huidge user email
       });
 
-      showSuccess(`${employee?.name || selectedEmployeeNumber} gekoppeld aan tag`);
+      showSuccess(`${employee?.name || resolvedEmployeeNumber} gekoppeld aan tag`);
       setScannedTagId("");
       setSelectedEmployeeNumber("");
+      setManualEmployeeNumber("");
       await loadMappings();
     } catch (err) {
       console.error("Error saving mapping:", err);
@@ -152,8 +209,7 @@ const NFCTagRegistrationModal = ({ isOpen, onClose, personnel = [] }) => {
             {/* NFC Scan knop */}
             <div>
               <button
-                onClick={nfc.status === NFC_STATUS.SCANNING ? nfc.stopScan : nfc.startScan}
-                disabled={!nfc.isSupported}
+                onClick={handleScanClick}
                 className={`w-full py-4 rounded-xl font-black uppercase text-sm flex items-center justify-center gap-2 transition-all ${
                   nfc.status === NFC_STATUS.SCANNING
                     ? "bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse"
@@ -190,7 +246,7 @@ const NFCTagRegistrationModal = ({ isOpen, onClose, personnel = [] }) => {
               <input
                 type="text"
                 value={scannedTagId}
-                onChange={(e) => setScannedTagId(e.target.value.toUpperCase())}
+                onChange={(e) => setScannedTagId(normalizeTagId(e.target.value))}
                 placeholder="Bijv. F1D4A2B9..."
                 className="w-full p-3 rounded-xl border-2 border-blue-200 font-mono text-sm text-blue-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
               />
@@ -206,7 +262,10 @@ const NFCTagRegistrationModal = ({ isOpen, onClose, personnel = [] }) => {
               </label>
               <select
                 value={selectedEmployeeNumber}
-                onChange={(e) => setSelectedEmployeeNumber(e.target.value)}
+                onChange={(e) => {
+                  setSelectedEmployeeNumber(e.target.value);
+                  if (e.target.value) setManualEmployeeNumber("");
+                }}
                 className="w-full p-3 rounded-xl border-2 border-blue-200 font-bold text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
               >
                 <option value="">— Selecteer personeelslid —</option>
@@ -216,12 +275,27 @@ const NFCTagRegistrationModal = ({ isOpen, onClose, personnel = [] }) => {
                   </option>
                 ))}
               </select>
+              <div className="mt-2">
+                <label className="text-[10px] font-black text-blue-700 uppercase tracking-widest block mb-2">
+                  Of handmatig personeelsnummer
+                </label>
+                <input
+                  type="text"
+                  value={manualEmployeeNumber}
+                  onChange={(e) => {
+                    setManualEmployeeNumber(e.target.value);
+                    if (e.target.value.trim()) setSelectedEmployeeNumber("");
+                  }}
+                  placeholder="Bijv. 12345"
+                  className="w-full p-3 rounded-xl border-2 border-blue-200 font-bold text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
             </div>
 
             {/* Opslaan knop */}
             <button
               onClick={handleSaveMapping}
-              disabled={!scannedTagId || !selectedEmployeeNumber || saving}
+              disabled={!scannedTagId || !(selectedEmployeeNumber || manualEmployeeNumber) || saving}
               className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest disabled:opacity-60 flex items-center justify-center gap-2"
             >
               <Plus size={16} />
