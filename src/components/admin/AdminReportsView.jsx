@@ -27,6 +27,7 @@ import { getArchiveItemsPath, PATHS } from "../../config/dbPaths";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import { normalizeMachine } from "../../utils/hubHelpers";
 import { useNotifications } from '../../contexts/NotificationContext';
+import { fetchScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
 
 /**
  * AdminReportsView - Centrale Rapportage Module
@@ -1075,8 +1076,8 @@ const AdminReportsView = () => {
     const { startDate, endDate } = getDateRange();
 
     try {
-      const [hoursSnap, occSnap] = await Promise.all([
-        getDocs(query(collection(readDb, ...readPaths.EFFICIENCY_HOURS), limit(3000))),
+      const [hoursRecords, occSnap] = await Promise.all([
+        fetchScopedEfficiencyHours({ db: readDb, mode: "active", maxDocs: 3000 }),
         getDocs(query(collection(readDb, ...readPaths.OCCUPANCY), limit(3000))),
       ]);
 
@@ -1086,7 +1087,6 @@ const AdminReportsView = () => {
         return parsed;
       };
 
-      const hoursRecords = hoursSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
       const occRecords = occSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       const combined = [

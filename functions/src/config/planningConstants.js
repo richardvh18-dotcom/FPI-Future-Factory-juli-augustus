@@ -2,6 +2,7 @@ const BASE = 'future-factory';
 
 const TRACKING_COLLECTION = `${BASE}/production/tracked_products`;
 const PLANNING_COLLECTION = `${BASE}/production/digital_planning`;
+const PRODUCTION_EVENTS_COLLECTION = `${BASE}/production/events`;
 const PLANNING_COLLECTION_LEGACY = `${BASE}/production/data/digital_planning/orders`;
 const USER_ACCOUNTS_COLLECTION = `${BASE}/Users/Accounts`;
 
@@ -128,9 +129,15 @@ const OVERPRODUCTION_ALLOWED_ROLES = new Set([
   'management',
 ]);
 
+const ARCHIVE_RESTORE_ALLOWED_ROLES = new Set([
+  'admin',
+  'teamleader',
+]);
+
 module.exports = {
   BASE,
   TRACKING_COLLECTION,
+  PRODUCTION_EVENTS_COLLECTION,
   PLANNING_COLLECTION,
   PLANNING_COLLECTION_LEGACY,
   USER_ACCOUNTS_COLLECTION,
@@ -150,4 +157,5 @@ module.exports = {
   START_PRODUCTION_ALLOWED_ROLES,
   TRANSITION_ALLOWED_ROLES,
   OVERPRODUCTION_ALLOWED_ROLES,
+  ARCHIVE_RESTORE_ALLOWED_ROLES,
 };

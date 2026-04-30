@@ -125,11 +125,12 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }) => {
 
   // Als Teamleader is geselecteerd, toon TeamleaderHub
   if (showTeamleader) {
+    const safeDepartment = String(department || "all");
     return (
       <TeamleaderHub 
         onBack={() => setShowTeamleader(false)} 
-        fixedScope={department.toLowerCase()}
-        departmentName={department}
+        fixedScope={safeDepartment.toLowerCase()}
+        departmentName={safeDepartment}
       />
     );
   }

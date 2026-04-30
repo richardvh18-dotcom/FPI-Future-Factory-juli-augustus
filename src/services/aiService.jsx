@@ -12,10 +12,11 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import app, { auth, db, logActivity } from '../config/firebase';
 import { PATHS } from '../config/dbPaths';
 import i18n from '../i18n';
+import { fetchScopedEfficiencyHours } from '../utils/efficiencyScopedReader';
 
 class AIService {
   constructor() {
-    this.availableModel = 'gemini-1.5-flash';
+    this.availableModel = 'gemini-2.5-flash';
     this.functions = getFunctions(app);
     this.aiProxyGenerate = httpsCallable(this.functions, 'aiProxyGenerate');
     
@@ -316,7 +317,7 @@ class AIService {
    */
   async getProductionTimes(limitCount = 20) {
     const results = [];
-    for (const pathKey of ['TIME_LOGS', 'EFFICIENCY_HOURS']) {
+    for (const pathKey of ['TIME_LOGS']) {
       try {
         const col = collection(db, ...PATHS[pathKey]);
         let snapshot;
@@ -332,6 +333,16 @@ class AIService {
         console.warn(`⚠️ Kon tijden niet ophalen uit ${pathKey}:`, error.message);
       }
     }
+
+    try {
+      const efficiencyRows = await fetchScopedEfficiencyHours({ db, mode: 'active', maxDocs: limitCount });
+      const docs = efficiencyRows.map((row) => ({ ...row, source: 'EFFICIENCY_HOURS' }));
+      results.push(...docs);
+      console.log(`⏱️ Times from EFFICIENCY_HOURS(scoped): ${docs.length} items`);
+    } catch (error) {
+      console.warn('⚠️ Kon scoped efficiency tijden niet ophalen:', error.message);
+    }
+
     return results;
   }
 
@@ -430,12 +441,11 @@ class AIService {
     const behindOrders = [];
     const activeOrders = [];
     try {
-      const effSnap = await getDocs(query(collection(db, ...PATHS.EFFICIENCY_HOURS), limit(100)));
+      const efficiencyRows = await fetchScopedEfficiencyHours({ db, mode: 'active', maxDocs: 100 });
       const trackingSnap = await getDocs(query(collection(db, ...PATHS.TRACKING), limit(500)));
       const trackingData = trackingSnap.docs.map(d => d.data());
 
-      effSnap.docs.forEach(d => {
-        const std = d.data();
+      efficiencyRows.forEach(std => {
         if (!std.orderId) return;
 
         const relatedLogs = trackingData.filter(t =>

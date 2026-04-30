@@ -27,7 +27,61 @@ const inferDepartmentFromMachine = (value) => {
   return "";
 };
 
+const easterSunday = (year) => {
+  // Meeus/Jones/Butcher algorithm
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+};
+
+const addDays = (date, days) => {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+};
+
+const dateKey = (date) => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+const dutchHolidayKeys = (year) => {
+  const easter = easterSunday(year);
+  const kingDay = new Date(year, 3, 27); // 27 april, behalve zondag -> 26 april
+  if (kingDay.getDay() === 0) kingDay.setDate(26);
+
+  const holidays = [
+    new Date(year, 0, 1), // Nieuwjaarsdag
+    kingDay, // Koningsdag
+    new Date(year, 4, 5), // Bevrijdingsdag
+    addDays(easter, 1), // 2e Paasdag
+    addDays(easter, 39), // Hemelvaart
+    addDays(easter, 50), // 2e Pinksterdag
+    new Date(year, 11, 25), // 1e Kerstdag
+    new Date(year, 11, 26), // 2e Kerstdag
+  ];
+
+  return new Set(holidays.map(dateKey));
+};
+
 const resolveScheduleKey = (context = {}) => {
+  const phase = normalizeDepartment(context.phase || context.step || context.currentStep);
+  if (includesAny(phase, ["nabewer", "post"])) return "spools";
+
   const explicit = normalizeDepartment(context.department);
   if (explicit.includes("fitting")) return "fittings";
   if (includesAny(explicit, ["pipe", "pijp"])) return "pipes";
@@ -62,6 +116,8 @@ export const calculateWorkingMinutes = (startValue, endValue, context = {}) => {
   }
 
   let totalMinutes = 0;
+  let currentHolidayYear = NaN;
+  let holidaySet = new Set();
   let cursor = new Date(start);
   cursor.setHours(0, 0, 0, 0);
 
@@ -70,8 +126,14 @@ export const calculateWorkingMinutes = (startValue, endValue, context = {}) => {
     const dayEnd = new Date(dayStart);
     dayEnd.setDate(dayEnd.getDate() + 1);
 
+    if (dayStart.getFullYear() !== currentHolidayYear) {
+      currentHolidayYear = dayStart.getFullYear();
+      holidaySet = dutchHolidayKeys(currentHolidayYear);
+    }
+
     const dayOfWeek = dayStart.getDay();
-    if (schedule.weekdays.includes(dayOfWeek)) {
+    const isHoliday = holidaySet.has(dateKey(dayStart));
+    if (schedule.weekdays.includes(dayOfWeek) && !isHoliday) {
       schedule.windows.forEach(([startMinute, endMinute]) => {
         const windowStart = new Date(dayStart.getTime() + startMinute * 60000);
         const windowEnd = new Date(dayStart.getTime() + Math.min(endMinute, MINUTES_PER_DAY) * 60000);

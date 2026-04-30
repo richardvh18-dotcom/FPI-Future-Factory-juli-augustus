@@ -34,8 +34,8 @@ const ProductMoveModal = ({ product, onClose, onMove, allowedStations = [], curr
   };
 
   return (
-    <div className="fixed inset-0 z-[500] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-      <div className="bg-white rounded-[30px] shadow-2xl w-full max-w-2xl p-8 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-[500] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+      <div className="bg-white rounded-[24px] sm:rounded-[30px] shadow-2xl w-full max-w-2xl p-5 sm:p-8 max-h-[90vh] overflow-y-auto custom-scrollbar">
         <div className="flex justify-between items-center mb-6">
           <div>
             <h3 className="text-2xl font-black text-slate-800 uppercase italic">

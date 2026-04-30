@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   X,
@@ -21,6 +21,7 @@ import {
   Star,
   Zap,
   Edit3,
+  Printer,
 } from "lucide-react";
 import ProductMoveModal from "./ProductMoveModal";
 import ProductJourneyModal from "./modals/ProductJourneyModal";
@@ -43,7 +44,9 @@ import {
   retrievePlanningOrder,
   togglePlanningOrderHold,
   updatePlanningOrderDetails,
+  archivePlanningOrder,
   editTrackedProductLotNumber,
+  reassignTrackedProductOrder,
 } from "../../services/planningSecurityService";
 import { useNotifications } from "../../contexts/NotificationContext";
 import StatusBadge from "./common/StatusBadge";
@@ -82,9 +85,16 @@ const OrderDetail = React.memo(({
   const [lotEditReason, setLotEditReason] = useState("");
   const [lotEditError, setLotEditError] = useState("");
   const [isSavingLotEdit, setIsSavingLotEdit] = useState(false);
+  const [orderEditTarget, setOrderEditTarget] = useState(null);
+  const [orderEditNewValue, setOrderEditNewValue] = useState("");
+  const [orderEditReason, setOrderEditReason] = useState("");
+  const [orderEditError, setOrderEditError] = useState("");
+  const [isSavingOrderEdit, setIsSavingOrderEdit] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [planDraft, setPlanDraft] = useState("");
+  const [startedDraft, setStartedDraft] = useState("");
   const [isSavingNote, setIsSavingNote] = useState(false);
+  const autoArchiveAttemptedRef = useRef(new Set());
 
   const orderProducts = useMemo(() => {
     if (!order) return [];
@@ -130,6 +140,10 @@ const OrderDetail = React.memo(({
   useEffect(() => {
     setPlanDraft(String(visibleOrderPlan || ""));
   }, [order?.id, order?.plan]);
+
+  useEffect(() => {
+    setStartedDraft("");
+  }, [order?.id]);
 
   if (!order) return null;
 
@@ -268,12 +282,159 @@ const OrderDetail = React.memo(({
     showSuccess("Ordernummer gekopieerd");
   };
 
+  const formatDateTimeForExport = (value) => {
+    if (!value) return "-";
+    const dateValue = value?.toDate ? value.toDate() : new Date(value);
+    if (Number.isNaN(dateValue.getTime())) return "-";
+    return format(dateValue, "yyyy-MM-dd HH:mm");
+  };
+
+  const loadLogoDataUrl = async () => {
+    try {
+      const svgResponse = await fetch("/logo192.svg", { cache: "no-store" });
+      if (!svgResponse.ok) return null;
+
+      const svgText = await svgResponse.text();
+      const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
+      const blobUrl = URL.createObjectURL(svgBlob);
+
+      const img = new window.Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = blobUrl;
+      });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = 192;
+      canvas.height = 192;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        URL.revokeObjectURL(blobUrl);
+        return null;
+      }
+
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(blobUrl);
+      return canvas.toDataURL("image/png");
+    } catch (error) {
+      console.warn("Kon logo niet laden voor PDF:", error);
+      return null;
+    }
+  };
+
+  const handleExportOrderOverviewPdf = async () => {
+    if (!order) return;
+
+    try {
+      const [{ jsPDF }, autoTableModule] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+      ]);
+      const autoTable = autoTableModule.default || autoTableModule;
+      const logoDataUrl = await loadLogoDataUrl();
+
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      const margin = 12;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const headerTop = 10;
+      const headerBottom = 44;
+      const footerY = pageHeight - 6;
+      const safeOrderId = String(order.orderId || order.id || "order").trim().replace(/[^a-zA-Z0-9_-]/g, "_");
+      const totalLots = orderProducts.length;
+      const activeLots = orderProducts.filter((p) => {
+        const status = String(p?.status || "").toLowerCase();
+        const step = String(p?.currentStep || "").toLowerCase();
+        return !["completed", "rejected", "afkeur"].includes(status) && !["finished", "rejected"].includes(step);
+      }).length;
+      const generatedAt = format(new Date(), "yyyy-MM-dd HH:mm");
+      const generatedBy = String(user?.email || auth.currentUser?.email || "onbekend").trim();
+
+      const drawHeaderFooter = (pageNumber) => {
+        doc.setDrawColor(226, 232, 240);
+        doc.line(margin, headerBottom, pageWidth - margin, headerBottom);
+        doc.line(margin, pageHeight - 10, pageWidth - margin, pageHeight - 10);
+
+        if (logoDataUrl) {
+          doc.addImage(logoDataUrl, "PNG", margin, headerTop, 10, 10);
+        } else {
+          doc.setFillColor(15, 23, 42);
+          doc.roundedRect(margin, headerTop, 10, 10, 1.5, 1.5, "F");
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(7);
+          doc.text("FPi", margin + 5, headerTop + 6.8, { align: "center" });
+          doc.setTextColor(15, 23, 42);
+        }
+
+        doc.setFontSize(14);
+        doc.text("Orderoverzicht Teamleader", margin + 14, 16);
+        doc.setFontSize(9);
+        doc.text(`Order: ${order.orderId || "-"}`, margin + 14, 21);
+        doc.text(`Product: ${order.item || "-"}`, margin + 14, 26);
+        doc.text(`Machine: ${order.machine || "-"}`, margin + 14, 31);
+        doc.text(`Plan: ${visibleOrderPlan} | Gereed: ${producedAmount} | In behandeling: ${inProcessAmount} | To do: ${todoAmount}`, margin + 14, 36);
+        doc.text(`Lotnummers: ${totalLots} totaal (${activeLots} actief)`, margin + 14, 41);
+
+        doc.setFontSize(8);
+        doc.text(`Export: ${generatedAt}`, pageWidth - margin, 21, { align: "right" });
+        doc.text(`Gebruiker: ${generatedBy}`, pageWidth - margin, 26, { align: "right" });
+        doc.text(`Pagina ${pageNumber}`, pageWidth - margin, footerY, { align: "right" });
+      };
+
+      drawHeaderFooter(1);
+
+      autoTable(doc, {
+        startY: headerBottom + 3,
+        margin: { left: margin, right: margin },
+        tableWidth: doc.internal.pageSize.getWidth() - margin * 2,
+        styles: { fontSize: 8, cellPadding: 1.6, overflow: "linebreak" },
+        headStyles: { fillColor: [15, 23, 42], textColor: 255 },
+        head: [["Lotnummer", "Order", "Product", "Item code", "Status", "Station", "Laatst bijgewerkt"]],
+        body: orderProducts
+          .slice()
+          .sort((a, b) => String(a?.lotNumber || a?.id || "").localeCompare(String(b?.lotNumber || b?.id || ""), "nl"))
+          .map((p) => [
+            String(p?.lotNumber || p?.activeLot || p?.id || "-").trim() || "-",
+            String(p?.orderId || order.orderId || "-").trim() || "-",
+            String(p?.item || order.item || "-").trim() || "-",
+            String(p?.itemCode || "-").trim() || "-",
+            String(p?.status || p?.currentStep || "-").trim() || "-",
+            String(p?.currentStation || p?.lastStation || "-").trim() || "-",
+            formatDateTimeForExport(p?.updatedAt || p?.inspection?.timestamp || p?.createdAt),
+          ]),
+        columnStyles: {
+          0: { cellWidth: 40 },
+          1: { cellWidth: 26 },
+          2: { cellWidth: 82 },
+          3: { cellWidth: 46, overflow: "ellipsize" },
+          4: { cellWidth: 24 },
+          5: { cellWidth: 24 },
+          6: { cellWidth: 31 },
+        },
+        didDrawPage: (data) => {
+          drawHeaderFooter(data.pageNumber);
+        },
+      });
+
+      doc.save(`teamleader_orderoverzicht_${safeOrderId}.pdf`);
+      showSuccess("PDF-overzicht met lotnummers is geëxporteerd");
+    } catch (err) {
+      console.error("Fout bij PDF export orderoverzicht:", err);
+      showError("PDF export mislukt: " + (err?.message || "Onbekende fout"));
+    }
+  };
+
   const normalizedPlanDraft = String(planDraft || "").trim().replace(/[^0-9]/g, "");
   const parsedPlanDraft = parseInt(normalizedPlanDraft, 10);
   const nextPlan = Number.isNaN(parsedPlanDraft) ? null : parsedPlanDraft;
   const hasNoteChanged = String(noteDraft || "").trim() !== visibleOrderNote;
   const hasPlanChanged = canEditOrderPlan && nextPlan !== null && nextPlan !== visibleOrderPlan;
-  const hasPendingChanges = hasNoteChanged || hasPlanChanged;
+  const normalizedStartedDraft = String(startedDraft || "").trim().replace(/[^0-9]/g, "");
+  const parsedStartedDraft = parseInt(normalizedStartedDraft, 10);
+  const nextStarted = Number.isNaN(parsedStartedDraft) ? null : parsedStartedDraft;
+  const hasStartedChanged = canEditOrderPlan && nextStarted !== null;
+  const hasPendingChanges = hasNoteChanged || hasPlanChanged || hasStartedChanged;
   const startedCounterField = getStartedCounterField(order?.machine || "");
   const stationStartedAmount = Number(startedCounterField ? order?.[startedCounterField] : 0) || 0;
   const summedStartedAmount = Object.entries(order || {}).reduce((sum, [key, value]) => {
@@ -304,8 +465,15 @@ const OrderDetail = React.memo(({
   );
   const trackedProducedAmount = countFinishedTrackedLots(orderProducts);
   const producedAmount = getOrderFinishedUnits(order, { trackedFinishedCount: trackedProducedAmount });
+  const rawInProcessFromCounters = Number((startedAmount - producedAmount).toFixed(2));
+  const inProcessFromCounters = Number.isFinite(rawInProcessFromCounters) ? rawInProcessFromCounters : 0;
+  const inProcessAmount = Math.max(0, Math.max(Number(liveStartedAmount) || 0, inProcessFromCounters));
   const effectivePlanForTodo = canEditOrderPlan && nextPlan !== null ? Number(nextPlan) : visibleOrderPlan;
   const todoAmount = Math.max(0, Number((Number(effectivePlanForTodo || 0) - producedAmount).toFixed(2)));
+  const planAmount = Math.max(0, Number(visibleOrderPlan || 0));
+  const shouldShowCompletedStatus = planAmount > 0 && producedAmount >= planAmount && inProcessAmount === 0;
+  const displayStatus = shouldShowCompletedStatus ? "Gereed" : order.status;
+  const orderDocIdForArchive = String(order?.__docPath || order?.id || "").trim();
   const normalizedPriority =
     order?.priority === true
       ? "high"
@@ -318,6 +486,31 @@ const OrderDetail = React.memo(({
         : (normalizedPriority === "high" || order?.isMoved)
           ? { label: "Prio", className: "bg-amber-100 text-amber-700" }
           : null;
+
+  useEffect(() => {
+    if (!shouldShowCompletedStatus) return;
+    if (!orderDocIdForArchive) return;
+
+    if (autoArchiveAttemptedRef.current.has(orderDocIdForArchive)) return;
+    autoArchiveAttemptedRef.current.add(orderDocIdForArchive);
+
+    archivePlanningOrder({
+      orderDocId: orderDocIdForArchive,
+      reason: "completed",
+      source: "auto_from_order_detail_completion",
+      actorLabel: user?.email || auth.currentUser?.email || "Teamleader",
+    }).catch((err) => {
+      const msg = String(err?.message || "").toLowerCase();
+      const ignorable =
+        msg.includes("permission") ||
+        msg.includes("active_products_remain") ||
+        msg.includes("failed-precondition") ||
+        msg.includes("not-found");
+      if (!ignorable) {
+        console.warn("Auto-archiveren order mislukt:", err);
+      }
+    });
+  }, [shouldShowCompletedStatus, orderDocIdForArchive, user?.email]);
 
   const handleSaveOrderChanges = async () => {
     if (!order?.id || isSavingNote || !hasPendingChanges) return;
@@ -335,6 +528,7 @@ const OrderDetail = React.memo(({
         orderDocId,
         notes: trimmedNote,
         plan: hasPlanChanged ? nextPlan : null,
+        started: hasStartedChanged ? nextStarted : null,
         source: "OrderDetail",
         actorLabel: user?.email || auth.currentUser?.email,
       });
@@ -380,6 +574,83 @@ const OrderDetail = React.memo(({
     setLotEditNewValue("");
     setLotEditReason("");
     setLotEditError("");
+  };
+
+  const resolveTrackedProductIdentifier = (product) => {
+    if (!product) return "";
+    const isArchivedProduct = Boolean(product?.archived || product?._archived || product?.archivedAt);
+    return String(
+      isArchivedProduct
+        ? product?.archiveDocId || product?.lotNumber || product?.id || ""
+        : product?.sourcePath || product?.__docPath || product?.id || product?.lotNumber || ""
+    ).trim();
+  };
+
+  const handleOpenOrderEdit = (product) => {
+    const productIdentifier = resolveTrackedProductIdentifier(product);
+    if (!canEditLotNumber || !productIdentifier) return;
+    setOrderEditTarget(product);
+    setOrderEditNewValue(String(product?.orderId || order?.orderId || "").trim().toUpperCase());
+    setOrderEditReason("");
+    setOrderEditError("");
+  };
+
+  const handleCloseOrderEdit = () => {
+    if (isSavingOrderEdit) return;
+    setOrderEditTarget(null);
+    setOrderEditNewValue("");
+    setOrderEditReason("");
+    setOrderEditError("");
+  };
+
+  const handleSaveOrderEdit = async () => {
+    const productIdentifier = resolveTrackedProductIdentifier(orderEditTarget);
+    if (!productIdentifier || isSavingOrderEdit) return;
+
+    const oldOrderId = String(orderEditTarget?.orderId || order?.orderId || "").trim().toUpperCase();
+    const newOrderId = String(orderEditNewValue || "").trim().toUpperCase();
+    const reason = String(orderEditReason || "").trim();
+    const lotNumber = String(orderEditTarget?.lotNumber || orderEditTarget?.archiveDocId || orderEditTarget?.id || "").trim();
+
+    if (!newOrderId) {
+      setOrderEditError("Ordernummer mag niet leeg zijn.");
+      return;
+    }
+    if (!reason) {
+      setOrderEditError("Reden is verplicht bij ordernummerwijziging.");
+      return;
+    }
+    if (newOrderId === oldOrderId) {
+      setOrderEditError("Nieuw ordernummer is gelijk aan het huidige ordernummer.");
+      return;
+    }
+
+    try {
+      setIsSavingOrderEdit(true);
+      setOrderEditError("");
+
+      await reassignTrackedProductOrder({
+        productId: productIdentifier,
+        newOrderId,
+        reason,
+        source: "OrderDetail",
+        actorLabel: user?.email || auth.currentUser?.email || "Teamleader",
+      });
+
+      await logActivity(
+        user?.uid || auth.currentUser?.uid || "system",
+        "TRACKED_PRODUCT_ORDER_REASSIGNED",
+        `Product ordernummer gewijzigd in Volledige Lijst: ${lotNumber || "onbekend lot"} | ${oldOrderId} -> ${newOrderId} | Reden: ${reason}`
+      );
+
+      handleCloseOrderEdit();
+      showSuccess(`Ordernummer gewijzigd: ${oldOrderId} -> ${newOrderId}`);
+    } catch (err) {
+      console.error("Fout bij wijzigen ordernummer:", err);
+      setOrderEditError("Wijzigen ordernummer mislukt: " + err.message);
+    } finally {
+      setIsSavingOrderEdit(false);
+    }
   };
 
   const handleSaveLotEdit = async () => {
@@ -456,6 +727,15 @@ const OrderDetail = React.memo(({
             >
               <Copy size={16} />
             </button>
+            <button
+              type="button"
+              onClick={handleExportOrderOverviewPdf}
+              disabled={orderProducts.length === 0}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+              title="Exporteer orderoverzicht met lotnummers (PDF)"
+            >
+              <Printer size={14} /> PDF export
+            </button>
             {order.extraCode && order.extraCode !== "-" && (
               <span className="px-2 py-0.5 bg-amber-400 text-amber-900 border border-amber-500 rounded-lg text-[10px] font-black uppercase tracking-wide">
                 {order.extraCode}
@@ -511,7 +791,20 @@ const OrderDetail = React.memo(({
         </div>
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.started_amount", "Start Aantal")}</span>
-          <span className="font-bold text-slate-700">{startedAmount}</span>
+          {canEditOrderPlan ? (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={startedDraft !== "" ? startedDraft : startedAmount}
+                onChange={(e) => setStartedDraft(String(e.target.value || "").replace(/[^0-9]/g, ""))}
+                className="w-24 px-2 py-1 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
+              />
+            </div>
+          ) : (
+            <span className="font-bold text-slate-700">{startedAmount}</span>
+          )}
         </div>
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.produced_amount", "Gereed")}</span>
@@ -521,9 +814,21 @@ const OrderDetail = React.memo(({
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.todo_amount", "To do")}</span>
           <span className="font-black text-blue-700">{todoAmount}</span>
         </div>
+        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200">
+          <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest block mb-1">In behandeling</span>
+          <span className="font-black text-amber-900">{inProcessAmount}</span>
+        </div>
+        <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+          <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest block mb-1">Excel import</span>
+          <span className="font-bold text-blue-900 text-xs">{formatExcelDate(order.createdAt || order.importedAt || order.date)}</span>
+        </div>
+        <div className="p-4 bg-purple-50 rounded-2xl border border-purple-100">
+          <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest block mb-1">Gewijzigd</span>
+          <span className="font-bold text-purple-900 text-xs">{formatExcelDate(order.updatedAt || order.syncedAt || order.createdAt || order.date)}</span>
+        </div>
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.status")}</span>
-          <StatusBadge status={order.status} />
+          <StatusBadge status={displayStatus} />
         </div>
         <button
           onClick={async () => {
@@ -623,7 +928,7 @@ const OrderDetail = React.memo(({
         
         <div className="space-y-3">
           {orderProducts.map((p) => {
-            const isArchived = !!(p.archivedAt || p.currentStation === 'GEREED' || (p.currentStep === 'Finished' && p.status === 'completed'));
+            const isArchived = !!(p.archived || p._archived || p.archivedAt || p.currentStation === 'GEREED' || (p.currentStep === 'Finished' && p.status === 'completed'));
             const inspectionDate = p.inspection?.timestamp ? (p.inspection.timestamp.toDate ? p.inspection.timestamp.toDate() : new Date(p.inspection.timestamp)) : null;
             const daysInReject = inspectionDate ? differenceInDays(new Date(), inspectionDate) : 0;
             const isLongReject = daysInReject > 2;
@@ -749,6 +1054,10 @@ const OrderDetail = React.memo(({
                         tone: "warning",
                       });
                       if (!moveConfirmed) return;
+                      if (isArchived) {
+                        setViewingDossier({ ...p, archived: true, _archived: true });
+                        return;
+                      }
                       onMoveLot(p.lotNumber, "BH31");
                     }}
                     className={`p-2 rounded-xl transition-all ${isLongReject ? "text-red-600 hover:text-red-800 hover:bg-red-50" : "text-orange-500 hover:text-orange-700 hover:bg-orange-50"}`}
@@ -767,6 +1076,18 @@ const OrderDetail = React.memo(({
                     title={t("digitalplanning.order_detail.move_station")}
                   >
                     <ArrowRightLeft size={16} />
+                  </button>
+                )}
+                {isManager && canEditLotNumber && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenOrderEdit(p);
+                    }}
+                    className="p-2 text-slate-300 hover:text-cyan-600 hover:bg-cyan-50 rounded-xl transition-all"
+                    title="Ordernummer aanpassen"
+                  >
+                    <Building2 size={16} />
                   </button>
                 )}
                 {isManager && canEditLotNumber && !isArchived && (
@@ -946,18 +1267,20 @@ const OrderDetail = React.memo(({
       )}
 
       {productToMove && (
-        <ProductMoveModal
-          product={productToMove}
-          onClose={() => setProductToMove(null)}
-          onMove={onMoveLot}
-          currentDepartment={currentDepartment}
-          allowedStations={allowedStations}
-        />
+        <div className="fixed z-[9999]">
+          <ProductMoveModal
+            product={productToMove}
+            onClose={() => setProductToMove(null)}
+            onMove={onMoveLot}
+            currentDepartment={currentDepartment}
+            allowedStations={allowedStations}
+          />
+        </div>
       )}
 
       {showOrderMoveModal && (
-        <div className="fixed inset-0 z-[500] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-[30px] shadow-2xl w-full max-w-2xl p-8 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[500] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-[24px] sm:rounded-[30px] shadow-2xl w-full max-w-2xl p-5 sm:p-8 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-2xl font-black text-slate-800 uppercase italic">
@@ -1035,8 +1358,8 @@ const OrderDetail = React.memo(({
       />
 
       {lotEditTarget && (
-        <div className="fixed inset-0 z-[550] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-[30px] shadow-2xl w-full max-w-lg p-8">
+        <div className="fixed inset-0 z-[550] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-[24px] sm:rounded-[30px] shadow-2xl w-full max-w-lg p-5 sm:p-8 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-2xl font-black text-slate-800 uppercase italic">Lotnummer aanpassen</h3>
@@ -1105,6 +1428,83 @@ const OrderDetail = React.memo(({
                 disabled={isSavingLotEdit}
               >
                 {isSavingLotEdit ? "Opslaan..." : "Opslaan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {orderEditTarget && (
+        <div className="fixed inset-0 z-[550] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-[24px] sm:rounded-[30px] shadow-2xl w-full max-w-lg p-5 sm:p-8 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-2xl font-black text-slate-800 uppercase italic">Ordernummer aanpassen</h3>
+                <p className="text-sm text-slate-500 font-bold mt-1">
+                  Huidig: {String(orderEditTarget.orderId || order.orderId || "-")}
+                </p>
+              </div>
+              <button
+                onClick={handleCloseOrderEdit}
+                className="p-2 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                disabled={isSavingOrderEdit}
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Nieuw ordernummer</label>
+                <input
+                  type="text"
+                  value={orderEditNewValue}
+                  onChange={(e) => {
+                    setOrderEditNewValue(String(e.target.value || "").toUpperCase());
+                    if (orderEditError) setOrderEditError("");
+                  }}
+                  className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-cyan-500"
+                  placeholder="Bijv. N2501234"
+                  autoFocus
+                  disabled={isSavingOrderEdit}
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Reden (verplicht)</label>
+                <textarea
+                  value={orderEditReason}
+                  onChange={(e) => {
+                    setOrderEditReason(e.target.value);
+                    if (orderEditError) setOrderEditError("");
+                  }}
+                  className="w-full min-h-[90px] p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-medium text-slate-700 outline-none focus:border-cyan-500"
+                  placeholder="Bijv. product is op verkeerd ordernummer geboekt"
+                  disabled={isSavingOrderEdit}
+                />
+              </div>
+
+              {orderEditError && (
+                <div className="px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-sm font-bold">
+                  {orderEditError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 pt-6">
+              <button
+                onClick={handleCloseOrderEdit}
+                className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold uppercase text-xs hover:bg-slate-200 disabled:opacity-50"
+                disabled={isSavingOrderEdit}
+              >
+                Annuleren
+              </button>
+              <button
+                onClick={handleSaveOrderEdit}
+                className="flex-1 py-3 bg-cyan-600 text-white rounded-xl font-bold uppercase text-xs hover:bg-cyan-700 disabled:opacity-50"
+                disabled={isSavingOrderEdit}
+              >
+                {isSavingOrderEdit ? "Opslaan..." : "Opslaan"}
               </button>
             </div>
           </div>

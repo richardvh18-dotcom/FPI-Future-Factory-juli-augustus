@@ -122,6 +122,17 @@ const StatusBadge = React.memo(({ status, showIcon = true }) => {
       };
     }
     if (
+      cleanStatus === "mazak" ||
+      cleanStatus === "wacht op mazak" ||
+      cleanStatus === "te mazak"
+    ) {
+      return {
+        label: t('status.mazak', 'Mazak'),
+        style: "bg-indigo-100 text-indigo-800 border-indigo-300",
+        icon: <ArrowRight size={12} />,
+      };
+    }
+    if (
       cleanStatus === "post_processing" ||
       cleanStatus === "nabewerking" ||
       cleanStatus === "te nabewerken" ||

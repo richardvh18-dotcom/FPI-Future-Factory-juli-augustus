@@ -38,6 +38,7 @@ import TimeTrackingView from "./TimeTrackingView";
 import WorkloadHeatmapView from "./WorkloadHeatmapView";
 import { normalizeMachine } from "../../utils/hubHelpers";
 import { getDeliveryPlanningState, resolveDeliveryDate, toDateSafe } from "../../utils/dateUtils";
+import { subscribeScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
 
 /**
  * CapacityPlanningView
@@ -348,16 +349,23 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
   useEffect(() => {
     if (!readPaths || !readPaths.EFFICIENCY_HOURS) return;
 
-    const unsubEfficiency = onSnapshot(
-      collection(readDb, ...readPaths.EFFICIENCY_HOURS),
-      (snapshot) => {
+    const unsubEfficiency = subscribeScopedEfficiencyHours({
+      db: readDb,
+      mode: "active",
+      onData: (rows) => {
         const data = {};
-        snapshot.docs.forEach((doc) => {
-          data[doc.id] = doc.data();
+        rows.forEach((row) => {
+          const key = String(row.orderId || row.id || "").trim();
+          if (!key) return;
+          data[key] = row;
         });
         setEfficiencyData(data);
-      }
-    );
+      },
+      onError: (error) => {
+        console.warn("Scoped efficiency listener failed:", error);
+        setEfficiencyData({});
+      },
+    });
     return () => unsubEfficiency();
   }, [readDb, readPaths]);
 

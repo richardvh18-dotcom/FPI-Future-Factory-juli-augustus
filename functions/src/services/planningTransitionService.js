@@ -143,6 +143,203 @@ const getScopedEfficiencyDocRef = ({ ctx, department, machine, docId }) => {
   return db.doc(`${ctx.efficiencyPath}/${dep}/machines/${mc}/items/${safeDocId}`);
 };
 
+// ---------------------------------------------------------------------------
+// Production Control Events — controle lijn voor tracked_products
+// ---------------------------------------------------------------------------
+// Doel: elke substantiële mutatie op een lot (uitgifte, statusovergang,
+//       afkeuring, gereedmelding) legt een onweerlegbaar stempel neer in
+//       production/events.  Die stempel kan onafhankelijk van tracked_products
+//       worden nageteld en vergeleken.  Bij discrepanties wordt een
+//       CONTROL_DISCREPANCY event aangemaakt zodat een teamleider dit kan
+//       inzien en corrigeren.
+// ---------------------------------------------------------------------------
+
+const getScopedEventsCollectionRef = ({ ctx, department, machine }) => {
+  const dep = resolveScopedDepartment(department);
+  const mc = resolveScopedMachine(machine);
+  return db.collection(`${ctx.eventsPath}/${dep}/machines/${mc}/items`);
+};
+
+/**
+ * Schrijft een controle-event naar production/events.
+ * Gooit NOOIT een fout naar de caller — een logging-fout mag nooit de
+ * productieflow blokkeren.  Fouten worden alleen geconsole-warned.
+ *
+ * @param {object} ctx   - resolveDbContext() resultaat
+ * @param {string} eventType - bijv. 'LOT_ISSUED' | 'LOT_TRANSITIONED' | 'LOT_COMPLETED' | 'LOT_REJECTED'
+ * @param {object} payload - evenement-specifieke velden
+ */
+const writeProductionControlEvent = async (ctx, eventType, payload = {}) => {
+  try {
+    const {
+      department,
+      machine,
+      orderId,
+      lotNumber,
+      operator = 'system',
+      extra = {},
+    } = payload;
+
+    if (!orderId || !machine) return;
+
+    const colRef = getScopedEventsCollectionRef({ ctx, department, machine });
+    const digits = String(lotNumber || '').replace(/\D/g, '');
+    const lotMachineCode = digits.length === 15 ? digits.slice(6, 9) : null;
+
+    await colRef.add({
+      eventType: String(eventType || 'UNKNOWN').toUpperCase(),
+      orderId: clean(orderId),
+      lotNumber: clean(lotNumber) || null,
+      lotMachineCode,
+      machine: clean(machine),
+      department: resolveScopedDepartment(department),
+      operator: clean(operator) || 'system',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...extra,
+    });
+  } catch (err) {
+    console.warn('[writeProductionControlEvent] schrijffout (niet-fataal):', eventType, err?.message);
+  }
+};
+
+/**
+ * Vergelijkt de control events met tracked_products en de planning-teller
+ * voor één orderId+machine combinatie.
+ *
+ * Geeft terug:
+ *   { ok, orderId, machine, eventLots, trackedLots, planningCounter, discrepancies }
+ *
+ * discrepancies is een array van { type, description } objecten.
+ * Als ok === true zijn alle tellingen consistent.
+ */
+const reconcileOrderControlState = async ({ ctx, orderId, machine }) => {
+  const safeOrderId = clean(orderId);
+  const safeMachine = clean(machine);
+  if (!safeOrderId || !safeMachine) {
+    return { ok: false, error: 'MISSING_PARAMS' };
+  }
+
+  const dep = resolveScopedDepartment(null, null);
+  const mc = resolveScopedMachine(safeMachine, safeMachine);
+
+  // 1. Haal alle LOT_ISSUED events op voor dit order+machine.
+  const eventsSnap = await db
+    .collection(`${ctx.eventsPath}/${dep}/machines/${mc}/items`)
+    .where('orderId', '==', safeOrderId)
+    .where('eventType', '==', 'LOT_ISSUED')
+    .limit(1000)
+    .get();
+
+  const eventLots = eventsSnap.docs
+    .map((d) => clean(d.data().lotNumber))
+    .filter(Boolean);
+  const uniqueEventLots = [...new Set(eventLots)];
+
+  // 2. Haal actieve tracked products op voor dit order+machine.
+  const trackingSnap = await db
+    .collection(ctx.trackingPath)
+    .where('orderId', '==', safeOrderId)
+    .where('originMachine', '==', safeMachine)
+    .limit(1000)
+    .get();
+
+  const trackedLots = trackingSnap.docs
+    .map((d) => clean(d.data().lotNumber || d.id))
+    .filter(Boolean);
+  const uniqueTrackedLots = [...new Set(trackedLots)];
+
+  // 3. Haal planning-teller op.
+  const orderDoc = await getPlanningOrderDocByOrderId(safeOrderId, ctx._rds);
+  const stationField = getStartedCounterFieldServer(safeMachine);
+  const planningCounter = orderDoc
+    ? Number(orderDoc.data()?.[stationField] || 0)
+    : null;
+
+  // 4. Vergelijk.
+  const discrepancies = [];
+
+  // Lots in events maar niet in tracking (mogelijke ghost-lots).
+  const missingFromTracking = uniqueEventLots.filter((l) => !uniqueTrackedLots.includes(l));
+  if (missingFromTracking.length > 0) {
+    discrepancies.push({
+      type: 'GHOST_LOT',
+      description: `Lots in events maar NIET in tracked_products: ${missingFromTracking.join(', ')}`,
+      lots: missingFromTracking,
+    });
+  }
+
+  // Lots in tracking maar niet in events (ongedocumenteerde start).
+  const missingFromEvents = uniqueTrackedLots.filter((l) => !uniqueEventLots.includes(l));
+  if (missingFromEvents.length > 0) {
+    discrepancies.push({
+      type: 'UNDOCUMENTED_LOT',
+      description: `Lots in tracked_products maar NIET in events: ${missingFromEvents.join(', ')}`,
+      lots: missingFromEvents,
+    });
+  }
+
+  // Planner-teller afwijking.
+  if (planningCounter !== null && planningCounter !== uniqueEventLots.length) {
+    discrepancies.push({
+      type: 'COUNTER_MISMATCH',
+      description: `Planning-teller ${stationField}=${planningCounter} maar events telt ${uniqueEventLots.length} unieke lots`,
+      planningCounter,
+      eventCount: uniqueEventLots.length,
+    });
+  }
+
+  // Machine-code validatie op lot-nummers uit events.
+  const stationNorm = normalizeMachineForCounter(safeMachine);
+  const stationDigits = stationNorm.replace(/\D/g, '').slice(0, 3);
+  if (stationDigits.length === 3) {
+    const wrongMachineLots = uniqueEventLots.filter((l) => {
+      const digits = l.replace(/\D/g, '');
+      return digits.length === 15 && digits.slice(6, 9) !== stationDigits;
+    });
+    if (wrongMachineLots.length > 0) {
+      discrepancies.push({
+        type: 'WRONG_MACHINE_CODE',
+        description: `Lots met verkeerde machinecode (verwacht ${stationDigits}): ${wrongMachineLots.join(', ')}`,
+        lots: wrongMachineLots,
+      });
+    }
+  }
+
+  const ok = discrepancies.length === 0;
+
+  // Persisteer discrepanties als CONTROL_DISCREPANCY event zodat ze achteraf inzichtelijk zijn.
+  if (!ok) {
+    try {
+      const colRef = getScopedEventsCollectionRef({ ctx, department: null, machine: safeMachine });
+      await colRef.add({
+        eventType: 'CONTROL_DISCREPANCY',
+        orderId: safeOrderId,
+        machine: safeMachine,
+        department: dep,
+        checkedAt: admin.firestore.FieldValue.serverTimestamp(),
+        discrepancies,
+        summary: `${discrepancies.length} discrepantie(s) gevonden`,
+      });
+    } catch (err) {
+      console.warn('[reconcileOrderControlState] discrepancy-logging mislukt:', err?.message);
+    }
+  }
+
+  return {
+    ok,
+    orderId: safeOrderId,
+    machine: safeMachine,
+    eventLots: uniqueEventLots,
+    trackedLots: uniqueTrackedLots,
+    planningCounter,
+    discrepancies,
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Einde Production Control Events helpers
+// ---------------------------------------------------------------------------
+
 const getISOWeekInfoServer = (date) => {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = d.getUTCDay() || 7;
@@ -197,6 +394,185 @@ const getPriorityLabel = (priorityValue) => {
 const getSafeStartedField = (stationName = '') => {
   const safeKey = String(stationName || '').replace(/[^a-zA-Z0-9]/g, '_');
   return safeKey ? `started_${safeKey}` : '';
+};
+
+const getArchiveSearchYears = () => {
+  const currentYear = new Date().getFullYear();
+  const years = [];
+  for (let y = currentYear + 1; y >= Math.max(2020, currentYear - 8); y -= 1) {
+    years.push(y);
+  }
+  return years;
+};
+
+const findArchivedTrackedProductDocByIdOrLot = async ({ ctx, productId }) => {
+  const safeProductId = clean(productId);
+  if (!safeProductId) return null;
+
+  const years = getArchiveSearchYears();
+
+  for (const year of years) {
+    const archiveCollection = db.collection(ctx.archiveItemsPath(year));
+
+    const byDocId = await archiveCollection.doc(safeProductId).get();
+    if (byDocId.exists) {
+      return { doc: byDocId, year };
+    }
+
+    const byLot = await archiveCollection
+      .where('lotNumber', '==', safeProductId)
+      .limit(1)
+      .get();
+    if (!byLot.empty) {
+      return { doc: byLot.docs[0], year };
+    }
+  }
+
+  return null;
+};
+
+const restoreArchivedTrackedProductService = async ({
+  productId,
+  targetRoute,
+  note,
+  actorLabel,
+  source,
+  auth,
+  userRole,
+  dbCtx = null,
+}) => {
+  const ctx = dbCtx || resolveDbContext(null);
+  const safeProductId = clean(productId);
+  if (!safeProductId) {
+    throw new Error('INVALID_PRODUCT_ID');
+  }
+
+  const safeRoute = clean(targetRoute).toUpperCase();
+  const allowedRoutes = new Set(['BH31', 'NABEWERKING', 'BM01']);
+  if (!allowedRoutes.has(safeRoute)) {
+    throw new Error('INVALID_RESTORE_ROUTE');
+  }
+
+  const activeDoc = await getTrackedProductDocByIdOrLot(safeProductId, ctx._rds);
+  if (activeDoc) {
+    throw new Error('ALREADY_ACTIVE_IN_TRACKING');
+  }
+
+  const archivedLookup = await findArchivedTrackedProductDocByIdOrLot({
+    ctx,
+    productId: safeProductId,
+  });
+  if (!archivedLookup?.doc?.exists) {
+    throw new Error('NOT_FOUND_ARCHIVED_PRODUCT');
+  }
+
+  const archivedDoc = archivedLookup.doc;
+  const archivedData = archivedDoc.data() || {};
+  const lotNumber = clean(archivedData.lotNumber) || archivedDoc.id;
+  const userLabel = getActorLabel(auth, actorLabel);
+  const nowIso = new Date().toISOString();
+
+  const routeMap = {
+    BH31: { station: 'BH31', currentStep: 'Reparatie', status: 'Tijdelijke afkeur' },
+    NABEWERKING: { station: 'Nabewerking', currentStep: 'Nabewerking', status: 'Te Nabewerken' },
+    BM01: { station: 'BM01', currentStep: 'Eindinspectie', status: 'Te Keuren' },
+  };
+  const route = routeMap[safeRoute];
+
+  const restoredData = {
+    ...archivedData,
+    lotNumber,
+    currentStation: route.station,
+    lastStation: clean(archivedData.currentStation) || clean(archivedData.lastStation) || route.station,
+    currentStep: route.currentStep,
+    status: route.status,
+    archivedAt: admin.firestore.FieldValue.delete(),
+    completedBy: admin.firestore.FieldValue.delete(),
+    completedByRole: admin.firestore.FieldValue.delete(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    restoredFromArchiveAt: admin.firestore.FieldValue.serverTimestamp(),
+    restoredFromArchiveBy: userLabel,
+    restoredFromArchiveRoute: safeRoute,
+    repairActive: safeRoute === 'BH31',
+    inspection: safeRoute === 'BH31'
+      ? {
+          status: 'Tijdelijke afkeur',
+          reasons: ['Herstel na gereedmelding uit archief'],
+          timestamp: nowIso,
+        }
+      : admin.firestore.FieldValue.delete(),
+    note: [clampText(archivedData.note, 1200), note ? `Heropend: ${clampText(note, 600)}` : 'Heropend vanuit archief voor herstel']
+      .filter(Boolean)
+      .join('\n'),
+    history: admin.firestore.FieldValue.arrayUnion({
+      action: 'Heropend uit archief',
+      timestamp: nowIso,
+      user: userLabel,
+      station: route.station,
+      details: `Teruggezet naar ${route.currentStep} (${route.status})${note ? ` - ${clampText(note, 400)}` : ''}`,
+      source: source || null,
+    }),
+  };
+
+  const stepKey = toTimestampStepKey(route.currentStep);
+  if (stepKey) {
+    restoredData[`timestamps.${stepKey}_start`] = admin.firestore.FieldValue.serverTimestamp();
+  }
+  if (safeRoute === 'BH31') {
+    restoredData['timestamps.repair_start'] = admin.firestore.FieldValue.serverTimestamp();
+    restoredData['timestamps.repair_end'] = null;
+  }
+  if (safeRoute === 'BM01') {
+    restoredData['timestamps.bm01_start'] = admin.firestore.FieldValue.serverTimestamp();
+  }
+
+  const scopedDepartment = resolveScopedDepartment(
+    archivedData.department,
+    archivedData.departmentName,
+    archivedData.deptName,
+    archivedData.departmentId,
+    'Fittings',
+  );
+  const scopedMachine = resolveScopedMachine(route.station, archivedData.machine, archivedData.originMachine);
+
+  const batch = db.batch();
+  const rootTrackedRef = db.collection(ctx.trackingPath).doc(lotNumber);
+  batch.set(rootTrackedRef, restoredData, { merge: true });
+
+  const scopedTrackedRef = getScopedTrackingDocRef({
+    ctx,
+    department: scopedDepartment,
+    machine: scopedMachine,
+    docId: lotNumber,
+  });
+  if (scopedTrackedRef) {
+    batch.set(scopedTrackedRef, restoredData, { merge: true });
+  }
+
+  batch.delete(archivedDoc.ref);
+  await batch.commit();
+
+  await writeActivityLog({
+    auth,
+    action: 'QUALITY_RESTORE_FROM_ARCHIVE',
+    details: `Lot ${lotNumber} heropend uit archief en gerouteerd naar ${route.station}`,
+    source: source || null,
+    actorLabel: userLabel,
+    actorRole: userRole,
+    productId: lotNumber,
+    orderId: clean(archivedData.orderId) || null,
+    routeStation: route.station,
+  });
+
+  return {
+    ok: true,
+    productId: lotNumber,
+    lotNumber,
+    currentStation: route.station,
+    currentStep: route.currentStep,
+    status: route.status,
+    restoredFromArchiveYear: archivedLookup.year,
+  };
 };
 const resolvePlanningOrderLocator = async ({
   ctx,
@@ -268,6 +644,59 @@ const assertLotsAreUniqueInActiveTracking = async ({ ctx, lotNumbers }) => {
       console.warn('Scoped lot-check overgeslagen wegens index-fout:', scopedErr?.message || String(scopedErr));
     }
   }
+};
+
+const isTrackedProductActiveForOrder = (trackedData = {}) => {
+  const status = clean(trackedData?.status).toLowerCase();
+  const step = clean(trackedData?.currentStep).toLowerCase();
+  const station = clean(trackedData?.currentStation).toLowerCase();
+
+  const isClosed =
+    ['completed', 'finished', 'gereed', 'rejected', 'afkeur', 'archived_rejected'].includes(status) ||
+    ['finished', 'rejected'].includes(step) ||
+    station === 'gereed' ||
+    Boolean(trackedData?.archivedAt);
+
+  return !isClosed;
+};
+
+const countActiveTrackedProductsForOrder = async ({ ctx, orderId }) => {
+  const safeOrderId = clean(orderId);
+  if (!safeOrderId || safeOrderId === 'NOG_TE_BEPALEN') return 0;
+
+  const rootSnap = await db.collection(ctx.trackingPath)
+    .where('orderId', '==', safeOrderId)
+    .limit(600)
+    .get();
+
+  let activeCount = rootSnap.docs.reduce((sum, docSnap) => {
+    const data = docSnap.data() || {};
+    return sum + (isTrackedProductActiveForOrder(data) ? 1 : 0);
+  }, 0);
+
+  // Neem scoped tracking mee (collectionGroup items onder /tracked_products/*/machines/*/items)
+  // zodat archiveren ook klopt wanneer lots niet in root maar scoped staan.
+  try {
+    const trackingPath = String(ctx?.trackingPath || '').replace(/\/+$/, '');
+    const scopedSnap = await db.collectionGroup('items')
+      .where('orderId', '==', safeOrderId)
+      .limit(1200)
+      .get();
+
+    const scopedActive = scopedSnap.docs.reduce((sum, docSnap) => {
+      const path = String(docSnap.ref?.path || '');
+      if (!path.startsWith(`${trackingPath}/`)) return sum;
+      const data = docSnap.data() || {};
+      return sum + (isTrackedProductActiveForOrder(data) ? 1 : 0);
+    }, 0);
+
+    activeCount += scopedActive;
+  } catch (scopedErr) {
+    // Niet blokkeren als collectionGroup index tijdelijk ontbreekt.
+    console.warn('Scoped active-order check overgeslagen wegens index-fout:', scopedErr?.message || String(scopedErr));
+  }
+
+  return activeCount;
 };
 
 const getMachineCodeForLotServer = (stationName = '') => {
@@ -873,11 +1302,23 @@ const rejectTrackedProductFinalService = async ({
 
   await batch.commit();
 
+  // Schrijf LOT_REJECTED control event.
+  await writeProductionControlEvent(ctx, 'LOT_REJECTED', {
+    department: productData.department || null,
+    machine: clean(productData.originMachine) || clean(productData.currentStation) || 'Onbekend',
+    orderId,
+    lotNumber: clean(productData.lotNumber) || trackedDoc.id,
+    operator: userLabel,
+    extra: { reasons, station: stationLabel },
+  });
+
   return {
     ok: true,
     productId: trackedDoc.id,
     archivedYear: year,
     orderUpdated,
+    before: productData,
+    after: rejectionData,
   };
 };
 
@@ -937,6 +1378,16 @@ const moveTrackedProductManualService = async ({
 
   await trackedDoc.ref.set(updatePayload, { merge: true });
 
+  // Schrijf LOT_TRANSITIONED control event.
+  await writeProductionControlEvent(ctx, 'LOT_TRANSITIONED', {
+    department: trackedData.department || null,
+    machine: clean(trackedData.originMachine) || clean(trackedData.currentStation) || newStation,
+    orderId: clean(trackedData.orderId),
+    lotNumber: clean(trackedData.lotNumber) || trackedDoc.id,
+    operator: userLabel,
+    extra: { fromStation: clean(trackedData.currentStation) || 'Onbekend', toStation: newStation, isRepairMove: Boolean(isRepairMove) },
+  });
+
   const orderId = clean(trackedData.orderId);
   if (orderId && orderId !== 'NOG_TE_BEPALEN') {
     const planningOrderDoc = await getPlanningOrderDocByOrderId(orderId, ctx._rds);
@@ -980,11 +1431,11 @@ const archivePlanningOrderService = async ({ orderDocId, requestedReason, source
   if (!allowWithActiveProducts && source !== 'auto_on_last_product') {
     const orderIdForCheck = clean(orderData.orderId) || '';
     if (orderIdForCheck && orderIdForCheck !== 'NOG_TE_BEPALEN') {
-      const activeSnap = await db.collection(ctx.trackingPath)
-        .where('orderId', '==', orderIdForCheck)
-        .limit(1)
-        .get();
-      if (!activeSnap.empty) {
+      const activeCount = await countActiveTrackedProductsForOrder({
+        ctx,
+        orderId: orderIdForCheck,
+      });
+      if (activeCount > 0) {
         throw new Error('ACTIVE_PRODUCTS_REMAIN');
       }
     }
@@ -1100,15 +1551,25 @@ const completeTrackedProductService = async ({
     const { incremented: producedIncremented, orderDoc: producedOrderDoc, orderComplete } = await incrementProducedOnOrder(batch);
     await batch.commit();
 
+    // Schrijf LOT_COMPLETED control event.
+    await writeProductionControlEvent(ctx, 'LOT_COMPLETED', {
+      department: productData.department || null,
+      machine: clean(productData.originMachine) || station,
+      orderId,
+      lotNumber: clean(productData.lotNumber) || trackedDoc.id,
+      operator: userLabel,
+      extra: { finishType: 'archive', station },
+    });
+
     // Auto-archiveer de planning order wanneer het laatste product goedgekeurd is bij Eindinspectie.
     // Voorwaarden: produced >= plan én geen actieve tracked products meer voor deze order.
     let orderAutoArchived = false;
     if (producedIncremented && orderComplete && producedOrderDoc) {
-      const remainingSnap = await db.collection(ctx.trackingPath)
-        .where('orderId', '==', orderId)
-        .limit(1)
-        .get();
-      if (remainingSnap.empty) {
+      const activeRemainingCount = await countActiveTrackedProductsForOrder({
+        ctx,
+        orderId,
+      });
+      if (activeRemainingCount === 0) {
         try {
           await archivePlanningOrderService({
             orderDocId: producedOrderDoc.id,
@@ -1512,6 +1973,7 @@ const updatePlanningOrderDetailsService = async ({
   orderDocId,
   notes,
   plan,
+  started,
   actorLabel,
   source,
   auth,
@@ -1533,6 +1995,15 @@ const updatePlanningOrderDetailsService = async ({
     updates.plan = plan;
   }
 
+  if (Number.isFinite(started) && started >= 0) {
+    const orderData = orderDoc.data() || {};
+    const machine = clean(orderData.machine || orderData.machineId || '');
+    const stationField = getStartedCounterFieldServer(machine);
+    if (stationField) {
+      updates[stationField] = started;
+    }
+  }
+
   await orderDoc.ref.set(updates, { merge: true });
 
   const orderData = orderDoc.data() || {};
@@ -1544,6 +2015,8 @@ const updatePlanningOrderDetailsService = async ({
     plan: Number.isFinite(plan) ? plan : Number(orderData.plan || 0),
     actorLabel: getActorLabel(auth, actorLabel),
     source: source || null,
+    before: orderData,
+    after: { ...orderData, ...updates },
   };
 };
 
@@ -1742,6 +2215,173 @@ const savePersonnelRecordService = async ({
   return { ok: true, personId: ref.id };
 };
 
+const isClosedPlanningStatusServer = (status) => {
+  const normalized = clean(status).toLowerCase();
+  return ['completed', 'cancelled', 'rejected', 'shipped', 'finished', 'deleted'].includes(normalized);
+};
+
+const toPlanningSortMillis = (value) => {
+  if (value && typeof value.toDate === 'function') {
+    const date = value.toDate();
+    const time = date instanceof Date ? date.getTime() : Number.NaN;
+    return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER;
+  }
+
+  const date = new Date(value);
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER;
+};
+
+const toOrderDeliveryMillisServer = (orderData = {}) => {
+  const candidates = [
+    orderData?.deliveryDate,
+    orderData?.plannedDeliveryDate,
+    orderData?.plannedDate,
+    orderData?.orderCreationDate,
+  ];
+
+  for (const value of candidates) {
+    if (!value) continue;
+
+    if (typeof value.toDate === 'function') {
+      const date = value.toDate();
+      const millis = date instanceof Date ? date.getTime() : Number.NaN;
+      if (Number.isFinite(millis)) return millis;
+      continue;
+    }
+
+    const date = new Date(value);
+    const millis = date.getTime();
+    if (Number.isFinite(millis)) return millis;
+  }
+
+  return null;
+};
+
+const getPlanningOrderRemainingForStationServer = (orderData, stationId) => {
+  const stationField = getStartedCounterFieldServer(stationId);
+  const plannedAmount = Number(orderData?.plan || orderData?.quantity || 0);
+  const startedAmount = Number(orderData?.[stationField] || 0);
+
+  if (!stationField || !Number.isFinite(plannedAmount) || plannedAmount <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, plannedAmount - startedAmount);
+};
+
+const resolveAutoOverproductionRouteStationServer = ({ targetOrderData, sourceItem, originMachine }) => {
+  const itemText = `${clean(targetOrderData?.item)} ${clean(sourceItem)}`.toUpperCase().replace(/\s+/g, ' ').trim();
+  const machineNorm = normalizeMachineForPlanningServer(targetOrderData?.machine || originMachine);
+
+  if (itemText.startsWith('FL')) {
+    return 'Mazak';
+  }
+
+  if (machineNorm.includes('PIPE') || itemText.includes('PIPE') || itemText.includes('BUIS')) {
+    return '';
+  }
+
+  return 'Nabewerking';
+};
+
+const findAutoAssignableOverproductionTargetOrder = async ({
+  ctx,
+  currentOrderDoc,
+  currentOrderData,
+  originStation,
+}) => {
+  const currentOrderId = clean(currentOrderData?.orderId);
+  const currentItemCode = clean(currentOrderData?.itemCode);
+  const currentMachineNorm = normalizeMachineForPlanningServer(currentOrderData?.machine || originStation);
+  if (!currentItemCode) return null;
+
+  const candidateDocs = new Map();
+  const [rootSnap, scopedSnap] = await Promise.all([
+    db.collection(ctx.planningPath).where('itemCode', '==', currentItemCode).limit(80).get(),
+    db.collectionGroup('orders').where('itemCode', '==', currentItemCode).limit(80).get(),
+  ]);
+
+  rootSnap.docs.forEach((docSnap) => {
+    candidateDocs.set(docSnap.ref.path, docSnap);
+  });
+  scopedSnap.docs.forEach((docSnap) => {
+    if (String(docSnap.ref.path || '').startsWith(`${ctx.planningPath}/`)) {
+      candidateDocs.set(docSnap.ref.path, docSnap);
+    }
+  });
+
+  const currentSortMillis = toPlanningSortMillis(
+    currentOrderData?.plannedDate || currentOrderData?.deliveryDate || currentOrderData?.orderCreationDate
+  );
+  const currentDeliveryMillis = toOrderDeliveryMillisServer(currentOrderData);
+  const currentSortOrderId = currentOrderId || String(currentOrderDoc?.id || '');
+
+  const candidates = Array.from(candidateDocs.values())
+    .filter((docSnap) => String(docSnap.ref.path || '') !== String(currentOrderDoc?.ref?.path || ''))
+    .map((docSnap) => ({ docSnap, data: docSnap.data() || {} }))
+    .filter(({ data }) => {
+      const candidateOrderId = clean(data.orderId);
+      const candidateMachineNorm = normalizeMachineForPlanningServer(data.machine || originStation);
+      const sameItemCode = clean(data.itemCode) === currentItemCode;
+
+      if (!candidateOrderId || candidateOrderId === currentOrderId) return false;
+      if (isClosedPlanningStatusServer(data.status)) return false;
+      if (candidateMachineNorm !== currentMachineNorm) return false;
+      if (!sameItemCode) return false;
+      if (getPlanningOrderRemainingForStationServer(data, originStation) <= 0) return false;
+
+      return true;
+    })
+    .sort((left, right) => {
+      const leftDelivery = toOrderDeliveryMillisServer(left.data);
+      const rightDelivery = toOrderDeliveryMillisServer(right.data);
+      const leftMillis = leftDelivery ?? Number.MAX_SAFE_INTEGER;
+      const rightMillis = rightDelivery ?? Number.MAX_SAFE_INTEGER;
+      if (leftMillis !== rightMillis) return leftMillis - rightMillis;
+      return String(left.data?.orderId || left.docSnap.id).localeCompare(String(right.data?.orderId || right.docSnap.id));
+    });
+
+  const nextCandidate = candidates.find(({ data, docSnap }) => {
+    const candidateDelivery = toOrderDeliveryMillisServer(data);
+    const candidateMillis = candidateDelivery ?? Number.MAX_SAFE_INTEGER;
+    const candidateOrderId = clean(data?.orderId) || String(docSnap.id || '');
+
+    if (currentDeliveryMillis !== null) {
+      if (candidateDelivery === null) return false;
+      if (candidateDelivery !== currentDeliveryMillis) {
+        return candidateDelivery > currentDeliveryMillis;
+      }
+      return candidateOrderId.localeCompare(currentSortOrderId) > 0;
+    }
+
+    if (candidateMillis !== currentSortMillis) {
+      return candidateMillis > currentSortMillis;
+    }
+    return candidateOrderId.localeCompare(currentSortOrderId) > 0;
+  });
+
+  if (!nextCandidate) {
+    return null;
+  }
+
+  const routeStation = resolveAutoOverproductionRouteStationServer({
+    targetOrderData: nextCandidate.data,
+    sourceItem: clean(currentOrderData?.item),
+    originMachine: originStation,
+  });
+
+  if (!routeStation) {
+    return null;
+  }
+
+  return {
+    targetOrderDoc: nextCandidate.docSnap,
+    targetOrderData: nextCandidate.data,
+    routeStation,
+  };
+};
+
 const assignOverproductionService = async ({
   targetOrderDocId,
   targetOrderId,
@@ -1776,8 +2416,8 @@ const assignOverproductionService = async ({
   const targetOrderData = targetOrderDoc.data() || {};
   const productSnapshots = await Promise.all(
     productIdList.map(async (productId) => {
-      const snap = await db.collection(ctx.trackingPath).doc(productId).get();
-      return snap.exists ? snap : null;
+      const snap = await getTrackedProductDocByIdOrLot(productId, ctx._rds);
+      return snap?.exists ? snap : null;
     })
   );
   const existingProducts = productSnapshots.filter(Boolean);
@@ -1789,12 +2429,29 @@ const assignOverproductionService = async ({
   const nowIso = new Date().toISOString();
   const batch = db.batch();
 
-  existingProducts.forEach((productSnap) => {
+  const sortedProducts = [...existingProducts].sort((a, b) => {
+    const aLot = clean(a?.data?.()?.lotNumber) || clean(a?.id);
+    const bLot = clean(b?.data?.()?.lotNumber) || clean(b?.id);
+    return aLot.localeCompare(bLot);
+  });
+
+  const overproductionSeriesGroupId = [
+    'OVERPROD',
+    safeTargetOrderId.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 60),
+    safeRouteStation.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30),
+    nowIso.replace(/[^0-9]/g, '').slice(0, 14),
+  ].filter(Boolean).join('_');
+
+  sortedProducts.forEach((productSnap, idx) => {
     batch.set(productSnap.ref, {
       orderId: safeTargetOrderId,
       currentStation: safeRouteStation,
       currentStep: routeState.currentStep || 'Nabewerking',
       status: routeState.status || 'Te Nabewerken',
+      seriesGroupId: overproductionSeriesGroupId,
+      seriesOrderNumber: safeTargetOrderId,
+      seriesSize: sortedProducts.length,
+      seriesIndex: idx + 1,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       overproductionResolvedAt: admin.firestore.FieldValue.serverTimestamp(),
       overproductionResolvedBy: userLabel,
@@ -2038,6 +2695,8 @@ const advanceTrackedProductService = async ({
     currentStep: safeNextStep,
     status: safeNextStatus,
     currentStation: safeNextStation || clean(trackedData.currentStation) || null,
+    before: trackedData,
+    after: { ...trackedData, ...updatePayload },
   };
 };
 
@@ -2250,6 +2909,7 @@ const startWorkstationProductionRunService = async ({
   stationOperators,
   source,
   auth,
+  userRole,
   dbCtx = null,
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
@@ -2420,12 +3080,70 @@ const startWorkstationProductionRunService = async ({
 
   await batch.commit();
 
+  // Schrijf LOT_ISSUED control events voor elk aangemaakt lot.
+  await Promise.all(
+    createdLots.map((lotNum, i) =>
+      writeProductionControlEvent(ctx, 'LOT_ISSUED', {
+        department: scopedDepartment,
+        machine: safeStationId,
+        orderId,
+        lotNumber: lotNum,
+        operator: userLabel,
+        extra: {
+          isOverflow: overflowLots.includes(lotNum),
+          runningTotal: currentStartedCount + i + 1,
+          plannedAmount,
+          seriesGroupId: safeSeriesGroupId || null,
+        },
+      })
+    )
+  );
+
+  let pendingOverflowLots = [...overflowLots];
+  let autoAssignedOverflow = null;
+
+  if (overflowLots.length > 0) {
+    try {
+      const autoTarget = await findAutoAssignableOverproductionTargetOrder({
+        ctx,
+        currentOrderDoc: orderDoc,
+        currentOrderData: orderData,
+        originStation: safeStationId,
+      });
+
+      if (autoTarget?.targetOrderDoc && autoTarget?.routeStation) {
+        const assignResult = await assignOverproductionService({
+          targetOrderDocId: autoTarget.targetOrderDoc.ref.path,
+          targetOrderId: clean(autoTarget.targetOrderData?.orderId) || autoTarget.targetOrderDoc.id,
+          productIds: overflowLots,
+          routeStation: autoTarget.routeStation,
+          sourceOrderId: orderId,
+          originMachine: safeStationId,
+          actorLabel: userLabel,
+          source: source || 'WorkstationHubAutoAssign',
+          auth,
+          userRole,
+          dbCtx: ctx,
+        });
+
+        pendingOverflowLots = [];
+        autoAssignedOverflow = {
+          ...assignResult,
+          lotNumbers: [...overflowLots],
+        };
+      }
+    } catch (error) {
+      console.warn('[startWorkstationProductionRunService] auto-assign overflow skipped:', error?.message || String(error));
+    }
+  }
+
   return {
     ok: true,
     orderDocId: orderDoc.id,
     orderId,
     createdLots,
-    overflowLots,
+    overflowLots: pendingOverflowLots,
+    autoAssignedOverflow,
     plannedAmount,
     currentStartedCount,
     stationField,
@@ -3051,6 +3769,155 @@ const editTrackedProductLotNumberService = async ({
     },
     after: {
       lotNumber: safeNewLotNumber,
+    },
+  };
+};
+
+const reassignTrackedProductOrderService = async ({
+  productId,
+  newOrderId,
+  reason,
+  actorLabel,
+  source,
+  auth,
+  dbCtx = null,
+}) => {
+  const ctx = dbCtx || resolveDbContext(null);
+  const safeProductId = clean(productId);
+  const safeNewOrderId = clean(newOrderId).toUpperCase();
+  const safeReason = clampText(reason, 300);
+
+  if (!safeProductId || !safeNewOrderId || !safeReason) {
+    throw new Error('INVALID_ORDER_REASSIGN_PAYLOAD');
+  }
+
+  const targetOrderDoc = await getPlanningOrderDocByOrderId(safeNewOrderId, ctx._rds);
+  if (!targetOrderDoc) {
+    throw new Error('NOT_FOUND_TARGET_ORDER');
+  }
+
+  let productDoc = await getTrackedProductDocByIdOrLot(safeProductId, ctx._rds);
+  let archivedLookup = null;
+  let isArchivedProduct = false;
+
+  if (!productDoc) {
+    archivedLookup = await findArchivedTrackedProductDocByIdOrLot({ ctx, productId: safeProductId });
+    productDoc = archivedLookup?.doc || null;
+    isArchivedProduct = Boolean(productDoc?.exists);
+  }
+
+  if (!productDoc?.exists) {
+    throw new Error('NOT_FOUND_PRODUCT');
+  }
+
+  const productData = productDoc.data() || {};
+  const currentOrderId = clean(productData.orderId).toUpperCase();
+  if (!currentOrderId) {
+    throw new Error('MISSING_SOURCE_ORDER');
+  }
+  if (currentOrderId === safeNewOrderId) {
+    throw new Error('ORDER_ID_UNCHANGED');
+  }
+
+  const sourceOrderDoc = await getPlanningOrderDocByOrderId(currentOrderId, ctx._rds);
+  const targetOrderData = targetOrderDoc.data() || {};
+  const sourceOrderData = sourceOrderDoc?.data() || {};
+  const userLabel = getActorLabel(auth, actorLabel);
+  const nowIso = new Date().toISOString();
+  const historyEntry = {
+    action: 'Ordernummer gewijzigd',
+    timestamp: nowIso,
+    station: clean(productData.currentStation) || clean(productData.lastStation) || 'PLANNING',
+    user: userLabel,
+    details: `${currentOrderId} -> ${safeNewOrderId} | Reden: ${safeReason}`,
+    source: source || null,
+  };
+
+  const batch = db.batch();
+  batch.set(productDoc.ref, {
+    orderId: safeNewOrderId,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    history: admin.firestore.FieldValue.arrayUnion(historyEntry),
+  }, { merge: true });
+
+  if (isArchivedProduct) {
+    const sourceProduced = Math.max(0, Number(sourceOrderData.produced || 0));
+    const targetProduced = Math.max(0, Number(targetOrderData.produced || 0));
+    const sourcePlan = Math.max(0, Number(sourceOrderData.plan || sourceOrderData.quantity || 0));
+    const targetPlan = Math.max(0, Number(targetOrderData.plan || targetOrderData.quantity || 0));
+    const nextSourceProduced = Math.max(0, sourceProduced - 1);
+    const nextTargetProduced = targetProduced + 1;
+
+    if (sourceOrderDoc) {
+      const sourceUpdates = {
+        produced: nextSourceProduced,
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      if (sourcePlan > 0 && nextSourceProduced < sourcePlan && clean(sourceOrderData.status).toLowerCase() === 'completed') {
+        sourceUpdates.status = 'planned';
+      }
+      batch.set(sourceOrderDoc.ref, sourceUpdates, { merge: true });
+    }
+
+    const targetUpdates = {
+      produced: nextTargetProduced,
+      lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (targetPlan > 0 && nextTargetProduced >= targetPlan) {
+      targetUpdates.status = 'completed';
+    }
+    batch.set(targetOrderDoc.ref, targetUpdates, { merge: true });
+  } else {
+    const stationField = getStartedCounterFieldServer(
+      clean(productData.originMachine) || clean(productData.machine) || clean(productData.currentStation)
+    );
+
+    if (stationField) {
+      if (sourceOrderDoc) {
+        const currentStarted = Math.max(0, Number(sourceOrderData[stationField] || 0));
+        batch.set(sourceOrderDoc.ref, {
+          [stationField]: Math.max(0, currentStarted - 1),
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+
+      const targetStarted = Math.max(0, Number(targetOrderData[stationField] || 0));
+      batch.set(targetOrderDoc.ref, {
+        [stationField]: targetStarted + 1,
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    } else {
+      batch.set(targetOrderDoc.ref, {
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+  }
+
+  await batch.commit();
+
+  await writeActivityLog({
+    auth,
+    action: 'TRACKED_PRODUCT_ORDER_REASSIGN',
+    details: `Product ${clean(productData.lotNumber) || productDoc.id} order gewijzigd: ${currentOrderId} -> ${safeNewOrderId}`,
+    source: source || null,
+    actorLabel: userLabel,
+    orderId: safeNewOrderId,
+    productId: clean(productData.lotNumber) || productDoc.id,
+  });
+
+  return {
+    ok: true,
+    productId: productDoc.id,
+    lotNumber: clean(productData.lotNumber) || productDoc.id,
+    oldOrderId: currentOrderId,
+    orderId: safeNewOrderId,
+    isArchivedProduct,
+    restoredArchiveYear: archivedLookup?.year || null,
+    before: {
+      orderId: currentOrderId,
+    },
+    after: {
+      orderId: safeNewOrderId,
     },
   };
 };
@@ -3896,6 +4763,7 @@ module.exports = {
   tempRejectTrackedProductService,
   advanceTrackedProductService,
   completeTrackedProductRepairService,
+  restoreArchivedTrackedProductService,
   routeTrackedProductsToLossenService,
   toggleTrackedProductPauseService,
   markTrackedProductReminderService,
@@ -3906,6 +4774,7 @@ module.exports = {
   loanPersonnelService,
   startProductionLotsService,
   editTrackedProductLotNumberService,
+  reassignTrackedProductOrderService,
   linkPlanningOrderProductService,
   createPlanningOrderManualService,
   markMazakLabelsPrintedService,
@@ -3927,4 +4796,5 @@ module.exports = {
   reportShopFloorIssueService,
   resolveShopFloorIssueService,
   bulkImportPlanningOrdersService,
+  reconcileOrderControlState,
 };

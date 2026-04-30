@@ -300,10 +300,11 @@ const TerminalPlanningView = ({
                 : typeTintClass;
 
       const isNewOrder = (() => {
-        const orderDate = parseDateSafe(order.createdAt || order.importDate);
-        if (!orderDate) return false;
-        const diff = differenceInDays(new Date(), orderDate);
-        return diff >= 0 && diff <= 2;
+        const fortyEightHoursAgo = Date.now() - 48 * 60 * 60 * 1000;
+        const val = order.createdAt || order.importDate;
+        if (!val) return false;
+        const ms = typeof val?.toMillis === 'function' ? val.toMillis() : new Date(val).getTime();
+        return Number.isFinite(ms) && ms > fortyEightHoursAgo;
       })();
 
       // Weekdivider injecteren (alleen in alles-modus)

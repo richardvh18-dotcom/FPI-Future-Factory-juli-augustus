@@ -45,6 +45,11 @@ const PersonnelListView = React.memo(({
     return !term || name.includes(term) || number.includes(term);
   });
 
+  const knownDepartmentIds = new Set(departments.map((dept) => dept.id));
+  const unmatchedPersonnel = filteredPersonnel.filter(
+    (person) => !knownDepartmentIds.has(person.departmentId)
+  );
+
   const isGrouped = departments.length > 0;
 
   const getEffectiveShift = (p) => {
@@ -66,9 +71,27 @@ const PersonnelListView = React.memo(({
     return shift ? shift.label : shiftId;
   };
 
+  const resolveDepartmentMeta = (deptId) => {
+    const dept = departments.find((entry) => entry.id === deptId);
+    if (dept) {
+      return {
+        label: dept.name,
+        detail: dept.id,
+        isUnmatched: false,
+      };
+    }
+
+    return {
+      label: deptId ? "Ongekoppelde afdeling" : "Geen afdeling",
+      detail: deptId || "Niet ingesteld",
+      isUnmatched: true,
+    };
+  };
+
   const renderCard = React.useCallback((p) => {
     const displayShiftId = getEffectiveShift(p);
     const displayLabel = resolveShiftLabel(displayShiftId, p.departmentId);
+    const departmentMeta = resolveDepartmentMeta(p.departmentId);
     const rawEmployeeNumber = String(p.employeeNumber || "").trim();
     const employeeNumberDigits = rawEmployeeNumber.replace(/\D/g, "").replace(/^0+/, "");
     const employeeKey = rawEmployeeNumber.toUpperCase();
@@ -101,11 +124,23 @@ const PersonnelListView = React.memo(({
       </div>
 
       <div className="space-y-2 mb-4 flex-1">
-          {p.departmentId && p.departmentId !== "dept_1769963034569" && (
-            <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50 px-2 py-1 rounded-lg w-fit border border-slate-100">
-              {p.departmentId}
+          <div className={`px-2 py-1 rounded-lg border w-fit ${departmentMeta.isUnmatched ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-slate-50 border-slate-100 text-slate-500"}`}>
+            <div className="text-[9px] font-bold uppercase tracking-wider">{departmentMeta.label}</div>
+            <div className="text-[8px] font-semibold tracking-wide normal-case opacity-80">{departmentMeta.detail}</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <div className="text-[9px] font-bold uppercase tracking-wider bg-slate-50 px-2 py-1 rounded-lg border border-slate-100 text-slate-500">
+              Record: {p.id}
             </div>
-          )}
+            <div className={`text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg border ${p.isActive === false ? "bg-rose-50 text-rose-600 border-rose-100" : "bg-emerald-50 text-emerald-700 border-emerald-100"}`}>
+              {p.isActive === false ? "Inactief" : "Actief"}
+            </div>
+            {p.currentMachineId && (
+              <div className="text-[9px] font-bold uppercase tracking-wider bg-blue-50 px-2 py-1 rounded-lg border border-blue-100 text-blue-700">
+                Machine: {p.currentMachineId}
+              </div>
+            )}
+          </div>
           {displayShiftId && (
               <div className={`text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg w-fit border flex items-center gap-1 ${p.rotationSchedule?.enabled ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-400 border-slate-100'}`}>
                   {p.rotationSchedule?.enabled && <RotateCcw size={10} />}
@@ -249,6 +284,29 @@ const PersonnelListView = React.memo(({
               </div>
             );
           })}
+
+          {unmatchedPersonnel.length > 0 && (
+            <div className="space-y-2">
+              <div className="w-full flex items-center justify-between border-b-2 border-amber-200 pb-3 p-2 rounded-xl gap-2 bg-amber-50/60">
+                <div className="flex items-center gap-3 text-left flex-1 p-2">
+                  <div className="p-2 bg-amber-500 text-white rounded-xl shadow-md"><Layers size={16} /></div>
+                  <div className="min-w-0">
+                    <h3 className="text-base sm:text-lg font-black text-amber-900 uppercase italic tracking-tight truncate">Ongekoppelde afdelingen</h3>
+                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mt-1">Personeel met een oude of onbekende afdeling-ID</p>
+                  </div>
+                </div>
+                <span className="text-[10px] sm:text-xs font-bold px-2 py-1 rounded-lg whitespace-nowrap text-amber-800 bg-amber-100">
+                  Totaal: {unmatchedPersonnel.length}
+                </span>
+              </div>
+
+              <div className="pl-1 sm:pl-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 pb-4">
+                  {unmatchedPersonnel.map(p => renderCard(p))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ) :
         filteredPersonnel.length === 0 ? (

@@ -17,6 +17,7 @@ const {
   START_PRODUCTION_ALLOWED_ROLES,
   TRANSITION_ALLOWED_ROLES,
   OVERPRODUCTION_ALLOWED_ROLES,
+  ARCHIVE_RESTORE_ALLOWED_ROLES,
 } = require('../config/planningConstants');
 const { clean, clampText } = require('../utils/text');
 const { resolveUserRoleForContext } = require('../auth/resolveUserRole');
@@ -48,6 +49,7 @@ const {
   loanPersonnelService,
   startProductionLotsService,
   editTrackedProductLotNumberService,
+  reassignTrackedProductOrderService,
   linkPlanningOrderProductService,
   createPlanningOrderManualService,
   markMazakLabelsPrintedService,
@@ -66,9 +68,11 @@ const {
   deletePrintQueueJobService,
   markReadyForNextStepService,
   startTrackedProductRepairService,
+  restoreArchivedTrackedProductService,
   reportShopFloorIssueService,
   resolveShopFloorIssueService,
   bulkImportPlanningOrdersService,
+  reconcileOrderControlState,
 } = require('../services/planningTransitionService');
 
 const { queuePrintJobService } = require('../services/printingService');
@@ -161,10 +165,8 @@ const rejectTrackedProductFinal = functions.https.onCall(async (data, context) =
   const source = clampText(data?.source, 80);
   const actorLabel = clampText(data?.actorLabel, 120);
 
-  auditService.logCallable(context, 'REJECT_PRODUCT_FINAL', { productId }, { category: 'QUALITY', severity: 'CRITICAL' });
-
   try {
-    return await rejectTrackedProductFinalService({
+    const result = await rejectTrackedProductFinalService({
       productId,
       reasons,
       note,
@@ -174,6 +176,14 @@ const rejectTrackedProductFinal = functions.https.onCall(async (data, context) =
       userRole,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'REJECT_PRODUCT_FINAL', 
+      { productId, before: result.before || null, after: result.after || null }, 
+      { category: 'QUALITY', severity: 'CRITICAL' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_PRODUCT') {
       throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
@@ -208,10 +218,8 @@ const tempRejectTrackedProduct = functions.https.onCall(async (data, context) =>
   const previousStatus = clampText(data?.previousStatus, 120);
   const source = clampText(data?.source, 80);
 
-  auditService.logCallable(context, 'TEMP_REJECT_PRODUCT', { productId }, { category: 'QUALITY', severity: 'WARNING' });
-
   try {
-    return await tempRejectTrackedProductService({
+    const result = await tempRejectTrackedProductService({
       productId,
       reasons,
       note,
@@ -224,6 +232,14 @@ const tempRejectTrackedProduct = functions.https.onCall(async (data, context) =>
       userRole,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'TEMP_REJECT_PRODUCT', 
+      { productId, before: result?.before || null, after: result?.after || null }, 
+      { category: 'QUALITY', severity: 'WARNING' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_PRODUCT') {
       throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
@@ -273,10 +289,8 @@ const advanceTrackedProduct = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'productId, nextStep en nextStatus zijn verplicht.');
   }
 
-  auditService.logCallable(context, 'ADVANCE_PRODUCT', { productId, nextStep, nextStatus }, { category: 'PRODUCTION', severity: 'INFO' });
-
   try {
-    return await advanceTrackedProductService({
+    const result = await advanceTrackedProductService({
       productId,
       nextStation,
       nextStep,
@@ -293,6 +307,14 @@ const advanceTrackedProduct = functions.https.onCall(async (data, context) => {
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'ADVANCE_PRODUCT', 
+      { productId, nextStep, nextStatus, before: result.before || null, after: result.after || null }, 
+      { category: 'PRODUCTION', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_PRODUCT') {
       throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
@@ -325,10 +347,8 @@ const completeTrackedProductRepair = functions.https.onCall(async (data, context
     throw new functions.https.HttpsError('invalid-argument', 'productId is verplicht.');
   }
 
-  auditService.logCallable(context, 'COMPLETE_REPAIR', { productId }, { category: 'QUALITY', severity: 'INFO' });
-
   try {
-    return await completeTrackedProductRepairService({
+    const result = await completeTrackedProductRepairService({
       productId,
       station,
       actions,
@@ -339,6 +359,14 @@ const completeTrackedProductRepair = functions.https.onCall(async (data, context
       userRole,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'COMPLETE_REPAIR', 
+      { productId, before: result?.before || null, after: result?.after || null }, 
+      { category: 'QUALITY', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_PRODUCT') {
       throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
@@ -372,10 +400,8 @@ const routeTrackedProductsToLossen = functions.https.onCall(async (data, context
     throw new functions.https.HttpsError('invalid-argument', 'productIds is verplicht.');
   }
 
-  auditService.logCallable(context, 'ROUTE_TO_LOSSEN', { productCount: productIds.length, originStation }, { category: 'PRODUCTION', severity: 'INFO' });
-
   try {
-    return await routeTrackedProductsToLossenService({
+    const result = await routeTrackedProductsToLossenService({
       productIds,
       originStation,
       centralStation,
@@ -385,6 +411,14 @@ const routeTrackedProductsToLossen = functions.https.onCall(async (data, context
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'ROUTE_TO_LOSSEN', 
+      { productCount: productIds.length, originStation, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PRODUCTION', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NO_PRODUCTS_TO_ROUTE') {
       throw new functions.https.HttpsError('invalid-argument', 'Geen producten om te routeren.');
@@ -424,10 +458,8 @@ const startWorkstationProductionRun = functions.https.onCall(async (data, contex
     throw new functions.https.HttpsError('invalid-argument', 'orderDocId, lotStart, stationId en geldige stringCount zijn verplicht.');
   }
 
-  auditService.logCallable(context, 'START_PRODUCTION_RUN', { orderDocId, stationId, lotStart, stringCount }, { category: 'PRODUCTION', severity: 'INFO' });
-
   try {
-    return await startWorkstationProductionRunService({
+    const result = await startWorkstationProductionRunService({
       orderDocId,
       lotStart,
       stringCount,
@@ -440,8 +472,17 @@ const startWorkstationProductionRun = functions.https.onCall(async (data, contex
       stationOperators,
       source,
       auth: context.auth,
+      userRole,
       dbCtx: resolveDbContext(),
     });
+    
+    auditService.logCallable(
+      context, 
+      'START_PRODUCTION_RUN', 
+      { orderDocId, stationId, lotStart, stringCount, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PRODUCTION', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
@@ -484,10 +525,8 @@ const toggleTrackedProductPause = functions.https.onCall(async (data, context) =
     throw new functions.https.HttpsError('invalid-argument', 'productId is verplicht.');
   }
 
-  auditService.logCallable(context, 'TOGGLE_PRODUCT_PAUSE', { productId }, { category: 'PRODUCTION', severity: 'INFO' });
-
   try {
-    return await toggleTrackedProductPauseService({
+    const result = await toggleTrackedProductPauseService({
       productId,
       note,
       actorLabel,
@@ -496,6 +535,14 @@ const toggleTrackedProductPause = functions.https.onCall(async (data, context) =
       userRole,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'TOGGLE_PRODUCT_PAUSE', 
+      { productId, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PRODUCTION', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_PRODUCT') {
       throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
@@ -523,10 +570,8 @@ const markTrackedProductReminder = functions.https.onCall(async (data, context) 
     throw new functions.https.HttpsError('invalid-argument', 'productId is verplicht.');
   }
 
-  auditService.logCallable(context, 'MARK_PRODUCT_REMINDER', { productId, reminderSent }, { category: 'PRODUCTION', severity: 'INFO' });
-
   try {
-    return await markTrackedProductReminderService({
+    const result = await markTrackedProductReminderService({
       productId,
       reminderSent,
       actorLabel,
@@ -534,6 +579,14 @@ const markTrackedProductReminder = functions.https.onCall(async (data, context) 
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'MARK_PRODUCT_REMINDER', 
+      { productId, reminderSent, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PRODUCTION', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_PRODUCT') {
       throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
@@ -567,10 +620,8 @@ const moveTrackedProductManual = functions.https.onCall(async (data, context) =>
     throw new functions.https.HttpsError('invalid-argument', 'Ongeldig doelstation.');
   }
 
-  auditService.logCallable(context, 'MOVE_PRODUCT_MANUAL', { productOrLotId, newStation }, { category: 'PRODUCTION', severity: 'WARNING' });
-
   try {
-    return await moveTrackedProductManualService({
+    const result = await moveTrackedProductManualService({
       productOrLotId,
       newStation,
       source,
@@ -580,6 +631,14 @@ const moveTrackedProductManual = functions.https.onCall(async (data, context) =>
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'MOVE_PRODUCT_MANUAL', 
+      { productOrLotId, newStation, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PRODUCTION', severity: 'WARNING' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_TRACKED') {
       throw new functions.https.HttpsError('not-found', `Geen tracking item gevonden voor ${productOrLotId}.`);
@@ -606,10 +665,8 @@ const archiveRejectedTrackedProduct = functions.https.onCall(async (data, contex
     throw new functions.https.HttpsError('invalid-argument', 'Ongeldig productId.');
   }
 
-  auditService.logCallable(context, 'ARCHIVE_REJECTED_PRODUCT', { productId }, { category: 'QUALITY', severity: 'WARNING' });
-
   try {
-    return await archiveRejectedTrackedProductService({
+    const result = await archiveRejectedTrackedProductService({
       productId,
       source,
       actorLabel,
@@ -617,6 +674,14 @@ const archiveRejectedTrackedProduct = functions.https.onCall(async (data, contex
       userRole,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'ARCHIVE_REJECTED_PRODUCT', 
+      { productId, before: result?.before || null, after: result?.after || null }, 
+      { category: 'QUALITY', severity: 'WARNING' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_PRODUCT') {
       throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
@@ -647,10 +712,8 @@ const archivePlanningOrder = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'Niet-toegestane archive reason.');
   }
 
-  auditService.logCallable(context, 'ARCHIVE_ORDER', { orderDocId, reason: requestedReason }, { category: 'PLANNING', severity: 'INFO' });
-
   try {
-    return await archivePlanningOrderService({
+    const result = await archivePlanningOrderService({
       orderDocId,
       requestedReason,
       source,
@@ -660,6 +723,14 @@ const archivePlanningOrder = functions.https.onCall(async (data, context) => {
       allowWithActiveProducts: requestedReason === 'manual' || requestedReason === 'rejected',
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'ARCHIVE_ORDER', 
+      { orderDocId, reason: requestedReason, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PLANNING', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
@@ -699,10 +770,8 @@ const completeTrackedProduct = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'Niet-toegestaan finishType. Gebruik "archive" of "forward".');
   }
 
-  auditService.logCallable(context, 'COMPLETE_PRODUCT', { productId, finishType }, { category: 'QUALITY', severity: 'INFO' });
-
   try {
-    return await completeTrackedProductService({
+    const result = await completeTrackedProductService({
       productId,
       finishType,
       fromStation,
@@ -712,6 +781,14 @@ const completeTrackedProduct = functions.https.onCall(async (data, context) => {
       userRole,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'COMPLETE_PRODUCT', 
+      { productId, finishType, before: result?.before || null, after: result?.after || null }, 
+      { category: 'QUALITY', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_PRODUCT') {
       throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
@@ -742,10 +819,8 @@ const cancelTrackedProduction = functions.https.onCall(async (data, context) => 
     throw new functions.https.HttpsError('invalid-argument', 'Ongeldig productId.');
   }
 
-  auditService.logCallable(context, 'CANCEL_PRODUCTION', { productId, selectedStation }, { category: 'PRODUCTION', severity: 'WARNING' });
-
   try {
-    return await cancelTrackedProductionService({
+    const result = await cancelTrackedProductionService({
       productId,
       selectedStation,
       source,
@@ -754,6 +829,14 @@ const cancelTrackedProduction = functions.https.onCall(async (data, context) => 
       userRole,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'CANCEL_PRODUCTION', 
+      { productId, selectedStation, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PRODUCTION', severity: 'WARNING' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_PRODUCT') {
       throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
@@ -790,10 +873,8 @@ const updatePlanningOrderPriority = functions.https.onCall(async (data, context)
     throw new functions.https.HttpsError('invalid-argument', 'Priority moet "high", "urgent", "immediate" of false zijn.');
   }
 
-  auditService.logCallable(context, 'UPDATE_ORDER_PRIORITY', { orderDocId, priority: normalizedPriority }, { category: 'PLANNING', severity: 'INFO' });
-
   try {
-    return await updatePlanningOrderPriorityService({
+    const result = await updatePlanningOrderPriorityService({
       orderDocId,
       priority: normalizedPriority,
       productDocId,
@@ -802,6 +883,14 @@ const updatePlanningOrderPriority = functions.https.onCall(async (data, context)
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'UPDATE_ORDER_PRIORITY', 
+      { orderDocId, priority: normalizedPriority, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PLANNING', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
@@ -831,10 +920,8 @@ const movePlanningOrder = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'orderDocId, targetType en targetId zijn verplicht.');
   }
 
-  auditService.logCallable(context, 'MOVE_ORDER', { orderDocId, targetType, targetId }, { category: 'PLANNING', severity: 'INFO' });
-
   try {
-    return await movePlanningOrderService({
+    const result = await movePlanningOrderService({
       orderDocId,
       targetType,
       targetId,
@@ -844,6 +931,14 @@ const movePlanningOrder = functions.https.onCall(async (data, context) => {
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'MOVE_ORDER', 
+      { orderDocId, targetType, targetId, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PLANNING', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
@@ -873,16 +968,22 @@ const retrievePlanningOrder = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'orderDocId is verplicht.');
   }
 
-  auditService.logCallable(context, 'RETRIEVE_ORDER', { orderDocId }, { category: 'PLANNING', severity: 'INFO' });
-
   try {
-    return await retrievePlanningOrderService({
+    const result = await retrievePlanningOrderService({
       orderDocId,
       source,
       actorLabel,
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'RETRIEVE_ORDER', 
+      { orderDocId, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PLANNING', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
@@ -909,16 +1010,22 @@ const togglePlanningOrderHold = functions.https.onCall(async (data, context) => 
     throw new functions.https.HttpsError('invalid-argument', 'orderDocId is verplicht.');
   }
 
-  auditService.logCallable(context, 'TOGGLE_ORDER_HOLD', { orderDocId }, { category: 'PLANNING', severity: 'INFO' });
-
   try {
-    return await togglePlanningOrderHoldService({
+    const result = await togglePlanningOrderHoldService({
       orderDocId,
       source,
       actorLabel,
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'TOGGLE_ORDER_HOLD', 
+      { orderDocId, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PLANNING', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
@@ -940,9 +1047,11 @@ const updatePlanningOrderDetails = functions.https.onCall(async (data, context) 
   const orderDocId = clean(data?.orderDocId);
   const notes = clampText(data?.notes, 2000);
   const rawPlan = data?.plan;
+  const rawStarted = data?.started;
   const source = clampText(data?.source, 80);
   const actorLabel = clampText(data?.actorLabel, 120);
   const plan = rawPlan === null || rawPlan === undefined || rawPlan === '' ? null : Number(rawPlan);
+  const started = rawStarted === null || rawStarted === undefined || rawStarted === '' ? null : Number(rawStarted);
 
   if (!orderDocId) {
     throw new functions.https.HttpsError('invalid-argument', 'orderDocId is verplicht.');
@@ -952,18 +1061,29 @@ const updatePlanningOrderDetails = functions.https.onCall(async (data, context) 
     throw new functions.https.HttpsError('invalid-argument', 'plan moet een geldig getal van 0 of hoger zijn.');
   }
 
-  auditService.logCallable(context, 'UPDATE_ORDER_DETAILS', { orderDocId }, { category: 'PLANNING', severity: 'INFO' });
+  if (started !== null && (!Number.isFinite(started) || started < 0 || started > 1000000)) {
+    throw new functions.https.HttpsError('invalid-argument', 'started moet een geldig getal van 0 of hoger zijn.');
+  }
 
   try {
-    return await updatePlanningOrderDetailsService({
+    const result = await updatePlanningOrderDetailsService({
       orderDocId,
       notes,
       plan,
+      started,
       source,
       actorLabel,
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'UPDATE_ORDER_DETAILS', 
+      { orderDocId, before: result.before || null, after: result.after || null }, 
+      { category: 'PLANNING', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
@@ -991,10 +1111,8 @@ const patchPlanningOrderMetadata = functions.https.onCall(async (data, context) 
     throw new functions.https.HttpsError('invalid-argument', 'orderDocId en patch zijn verplicht.');
   }
 
-  auditService.logCallable(context, 'PATCH_ORDER_METADATA', { orderDocId }, { category: 'PLANNING', severity: 'INFO' });
-
   try {
-    return await patchPlanningOrderMetadataService({
+    const result = await patchPlanningOrderMetadataService({
       orderDocId,
       patch,
       source,
@@ -1002,6 +1120,14 @@ const patchPlanningOrderMetadata = functions.https.onCall(async (data, context) 
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'PATCH_ORDER_METADATA', 
+      { orderDocId, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PLANNING', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
@@ -1038,10 +1164,8 @@ const assignOverproduction = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'targetOrderDocId, targetOrderId, routeStation en productIds zijn verplicht.');
   }
 
-  auditService.logCallable(context, 'ASSIGN_OVERPRODUCTION', { targetOrderDocId, productCount: productIds.length }, { category: 'PRODUCTION', severity: 'WARNING' });
-
   try {
-    return await assignOverproductionService({
+    const result = await assignOverproductionService({
       targetOrderDocId,
       targetOrderId,
       productIds,
@@ -1054,6 +1178,14 @@ const assignOverproduction = functions.https.onCall(async (data, context) => {
       userRole,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'ASSIGN_OVERPRODUCTION', 
+      { targetOrderDocId, productCount: productIds.length, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PRODUCTION', severity: 'WARNING' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_TARGET_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Doelorder niet gevonden.');
@@ -1087,10 +1219,8 @@ const cancelPlanningOrder = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'Ongeldig orderDocId.');
   }
 
-  auditService.logCallable(context, 'CANCEL_ORDER', { orderDocId }, { category: 'PLANNING', severity: 'WARNING' });
-
   try {
-    return await cancelPlanningOrderService({
+    const result = await cancelPlanningOrderService({
       orderDocId,
       reason,
       source,
@@ -1098,6 +1228,14 @@ const cancelPlanningOrder = functions.https.onCall(async (data, context) => {
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'CANCEL_ORDER', 
+      { orderDocId, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PLANNING', severity: 'WARNING' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
@@ -1536,10 +1674,8 @@ const startProductionLots = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('invalid-argument', 'totalToProduce moet tussen 1 en 200 liggen.');
   }
 
-  auditService.logCallable(context, 'START_PRODUCTION_LOTS', { orderDocId, orderDocPath, orderSourcePath, orderId, stationId, lotStart, totalToProduce }, { category: 'PRODUCTION', severity: 'INFO' });
-
   try {
-    return await startProductionLotsService({
+    const result = await startProductionLotsService({
       orderDocId,
       orderDocPath,
       orderSourcePath,
@@ -1557,6 +1693,14 @@ const startProductionLots = functions.https.onCall(async (data, context) => {
       isFlangeSeries,
       dbCtx: resolveDbContext(),
     });
+    
+    auditService.logCallable(
+      context, 
+      'START_PRODUCTION_LOTS', 
+      { orderDocId, orderDocPath, orderSourcePath, orderId, stationId, lotStart, totalToProduce, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PRODUCTION', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
@@ -1655,6 +1799,68 @@ const editTrackedProductLotNumber = functions.https.onCall(async (data, context)
   }
 });
 
+const reassignTrackedProductOrder = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throwUnauthenticated(context, 'REASSIGN_TRACKED_PRODUCT_ORDER');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throwPermissionDenied(context, 'REASSIGN_TRACKED_PRODUCT_ORDER', userRole, 'Geen rechten om product-ordernummer te wijzigen.');
+  }
+
+  const productId = clean(data?.productId);
+  const newOrderId = clean(data?.newOrderId);
+  const reason = clampText(data?.reason, 300);
+  const actorLabel = clampText(data?.actorLabel, 120);
+  const source = clampText(data?.source, 80);
+
+  if (!productId || !newOrderId || !reason) {
+    throw new functions.https.HttpsError('invalid-argument', 'productId, newOrderId en reason zijn verplicht.');
+  }
+
+  try {
+    const result = await reassignTrackedProductOrderService({
+      productId,
+      newOrderId,
+      reason,
+      actorLabel,
+      source,
+      auth: context.auth,
+      dbCtx: resolveDbContext(extractRds(data)),
+    });
+
+    auditService.logCallable(
+      context,
+      'REASSIGN_TRACKED_PRODUCT_ORDER',
+      {
+        productId,
+        before: result.before || null,
+        after: result.after || null,
+        reason,
+      },
+      { category: 'PLANNING', severity: 'WARNING' },
+    );
+
+    return result;
+  } catch (error) {
+    if (error?.message === 'NOT_FOUND_PRODUCT') {
+      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking of archief.');
+    }
+    if (error?.message === 'NOT_FOUND_TARGET_ORDER') {
+      throw new functions.https.HttpsError('not-found', 'Doelordernummer niet gevonden.');
+    }
+    if (
+      error?.message === 'INVALID_ORDER_REASSIGN_PAYLOAD' ||
+      error?.message === 'ORDER_ID_UNCHANGED' ||
+      error?.message === 'MISSING_SOURCE_ORDER'
+    ) {
+      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige ordernummerwijziging payload.');
+    }
+    throw error;
+  }
+});
+
 const linkPlanningOrderProduct = functions.https.onCall(async (data, context) => {
   if (!context.auth?.uid) {
     throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
@@ -1673,15 +1879,21 @@ const linkPlanningOrderProduct = functions.https.onCall(async (data, context) =>
     throw new functions.https.HttpsError('invalid-argument', 'orderDocId en productId zijn verplicht.');
   }
 
-  auditService.logCallable(context, 'LINK_ORDER_PRODUCT', { orderDocId, productId }, { category: 'PLANNING', severity: 'INFO' });
-
   try {
-    return await linkPlanningOrderProductService({
+    const result = await linkPlanningOrderProductService({
       orderDocId,
       productId,
       productImage,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'LINK_ORDER_PRODUCT', 
+      { orderDocId, productId, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PLANNING', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'NOT_FOUND_ORDER') {
       throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
@@ -1709,16 +1921,22 @@ const createPlanningOrderManual = functions.https.onCall(async (data, context) =
     throw new functions.https.HttpsError('invalid-argument', 'orderId, item, machine en geldige plan zijn verplicht.');
   }
 
-  auditService.logCallable(context, 'CREATE_ORDER_MANUAL', { orderId, machine }, { category: 'PLANNING', severity: 'INFO' });
-
   try {
-    return await createPlanningOrderManualService({
+    const result = await createPlanningOrderManualService({
       orderId,
       item,
       machine,
       plan,
       dbCtx: resolveDbContext(extractRds(data)),
     });
+    
+    auditService.logCallable(
+      context, 
+      'CREATE_ORDER_MANUAL', 
+      { orderId, machine, before: result?.before || null, after: result?.after || null }, 
+      { category: 'PLANNING', severity: 'INFO' }
+    );
+    return result;
   } catch (error) {
     if (error?.message === 'ORDER_ALREADY_EXISTS') {
       throw new functions.https.HttpsError('already-exists', 'Order bestaat al in planning.');
@@ -2070,6 +2288,64 @@ const startTrackedProductRepair = functions.https.onCall(async (data, context) =
   } catch (error) {
     if (error?.message === 'NOT_FOUND_PRODUCT') {
       throw new functions.https.HttpsError('not-found', 'Product niet gevonden.');
+    }
+    throw error;
+  }
+});
+
+const restoreArchivedTrackedProduct = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ARCHIVE_RESTORE_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Alleen teamleader/admin mag gearchiveerde producten herstellen.');
+  }
+
+  const productId = clean(data?.productId);
+  const targetRoute = clean(data?.targetRoute).toUpperCase();
+  const note = clampText(data?.note, 600);
+  const sourceContext = clean(data?.sourceContext).toUpperCase();
+
+  if (!productId) {
+    throw new functions.https.HttpsError('invalid-argument', 'productId is verplicht.');
+  }
+  if (!['BH31', 'NABEWERKING', 'BM01'].includes(targetRoute)) {
+    throw new functions.https.HttpsError('invalid-argument', 'targetRoute moet BH31, NABEWERKING of BM01 zijn.');
+  }
+  if (sourceContext !== 'TEAMLEADER_FULL_LIST') {
+    throw new functions.https.HttpsError('permission-denied', 'Deze actie kan alleen vanuit Teamleader Volledige Lijst.');
+  }
+
+  auditService.logCallable(
+    context,
+    'RESTORE_ARCHIVED_TRACKED_PRODUCT',
+    { productId, targetRoute, sourceContext },
+    { category: 'QUALITY', severity: 'WARNING' },
+  );
+
+  try {
+    return await restoreArchivedTrackedProductService({
+      productId,
+      targetRoute,
+      note,
+      auth: context.auth,
+      userRole,
+      dbCtx: resolveDbContext(extractRds(data)),
+    });
+  } catch (error) {
+    if (error?.message === 'INVALID_PRODUCT_ID') {
+      throw new functions.https.HttpsError('invalid-argument', 'productId is ongeldig.');
+    }
+    if (error?.message === 'INVALID_RESTORE_ROUTE') {
+      throw new functions.https.HttpsError('invalid-argument', 'targetRoute is ongeldig.');
+    }
+    if (error?.message === 'NOT_FOUND_ARCHIVED_PRODUCT') {
+      throw new functions.https.HttpsError('not-found', 'Gearchiveerd product niet gevonden.');
+    }
+    if (error?.message === 'ALREADY_ACTIVE_IN_TRACKING') {
+      throw new functions.https.HttpsError('already-exists', 'Product is al actief in tracking.');
     }
     throw error;
   }
@@ -2855,6 +3131,30 @@ const migrateLegacyActivityLogs = functions.https.onCall(async (data, context) =
   };
 });
 
+/**
+ * Reconcileert de control events in production/events met tracked_products
+ * en de planning-teller voor een order+machine combinatie.
+ *
+ * Input: { orderId: string, machine: string }
+ * Output: { ok, orderId, machine, eventLots, trackedLots, planningCounter, discrepancies }
+ */
+const reconcileOrderControl = onCall(async (data, context) => {
+  const auth = context?.auth;
+  if (!auth?.uid) throw new Error('UNAUTHENTICATED');
+
+  const { resolveDbContext } = require('../repositories/planningRepository');
+  const ctx = resolveDbContext();
+
+  const orderId = String(data?.orderId || '').trim();
+  const machine = String(data?.machine || '').trim();
+
+  if (!orderId || !machine) {
+    throw new Error('INVALID_PARAMS');
+  }
+
+  return reconcileOrderControlState({ ctx, orderId, machine });
+});
+
 module.exports = {
   rejectTrackedProductFinal,
   tempRejectTrackedProduct,
@@ -2889,6 +3189,7 @@ module.exports = {
   deletePrintQueueJob,
   startProductionLots,
   editTrackedProductLotNumber,
+  reassignTrackedProductOrder,
   linkPlanningOrderProduct,
   createPlanningOrderManual,
   markMazakLabelsPrinted,
@@ -2900,6 +3201,7 @@ module.exports = {
   updateOrderKanbanStatus,
   markReadyForNextStep,
   startTrackedProductRepair,
+  restoreArchivedTrackedProduct,
   reportShopFloorIssue,
   resolveShopFloorIssue,
   importPlanningOrders,
@@ -2926,4 +3228,5 @@ module.exports = {
   deleteAiKnowledgeEntry,
   migrateAiKnowledgeFields,
   migrateLegacyActivityLogs,
+  reconcileOrderControl,
 };

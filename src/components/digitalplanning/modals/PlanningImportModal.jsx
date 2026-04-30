@@ -37,6 +37,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
   const [statusFilter, setStatusFilter] = useState("all");
   const [readySyncFilter, setReadySyncFilter] = useState("all");
   const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
+  const [toDoOverrides, setToDoOverrides] = useState({});
   const [pasteMode, setPasteMode] = useState(false);
   const [importProgressPct, setImportProgressPct] = useState(0);
   const [importProgressLabel, setImportProgressLabel] = useState("");
@@ -61,6 +62,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         "N20024769",
         "N20024772",
         "N20024774",
+        "N20024781",
         "N20024828",
       ]),
     []
@@ -211,6 +213,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     setImportMode("smart_update");
     setPasteMode(false);
     setSelectedMachines(["BH18"]);
+    setToDoOverrides({});
     setMachineGroupFilter(isFittingsScoped ? "fittings" : "all");
     setImportProgressPct(0);
     setImportProgressLabel("");
@@ -804,6 +807,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         data = processTabularPlanningRows(rawRows);
       }
       setFileData(data);
+      setToDoOverrides({});
     } catch {
       addLog(t("digitalplanning.planning_import.logs.sheet_read_failed", "Fout bij inlezen tabblad."), "error");
     } finally {
@@ -952,6 +956,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
       setRawWorkbook(null);
       setFileData(parsedData);
+      setToDoOverrides({});
       addLog(
         t("digitalplanning.planning_import.logs.paste_rows_loaded", {
           count: parsedData.length,
@@ -969,13 +974,38 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
   const validOrders = useMemo(() => fileData.filter((d) => d.isValidForImport), [fileData]);
 
+  const getComparableToDoQty = (order) => {
+    const raw =
+      order?.toDoQty ??
+      order?.plan ??
+      order?.quantity ??
+      0;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const effectiveValidOrders = useMemo(() => {
+    return validOrders.map((order) => {
+      const overrideRaw = toDoOverrides[order.id];
+      if (overrideRaw === undefined || overrideRaw === null || String(overrideRaw).trim() === "") {
+        return order;
+      }
+
+      const parsed = Math.max(0, parseNum(overrideRaw));
+      return {
+        ...order,
+        toDoQty: parsed,
+      };
+    });
+  }, [validOrders, toDoOverrides]);
+
   const availableMachines = useMemo(() => {
-    let machines = Array.from(new Set(validOrders.map((d) => normalizeMachineCodeForFilter(d.machine)).filter(Boolean))).sort();
+    let machines = Array.from(new Set(effectiveValidOrders.map((d) => normalizeMachineCodeForFilter(d.machine)).filter(Boolean))).sort();
     if (isFittingsScoped) {
       machines = machines.filter((machine) => isFittingsMachine(machine));
     }
     return machines;
-  }, [validOrders, isFittingsScoped]);
+  }, [effectiveValidOrders, isFittingsScoped]);
 
   useEffect(() => {
     setSelectedMachines((prev) => {
@@ -1066,17 +1096,20 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
   const orderChangeMeta = useMemo(() => {
     const byId = new Map();
-    validOrders.forEach((order) => {
+    effectiveValidOrders.forEach((order) => {
       const existing = getExistingOrder(order);
       if (!existing) {
         byId.set(order.id, {
           isExisting: false,
           quantityChanged: false,
+          todoChanged: false,
           readyChanged: false,
           notesChanged: false,
           hoursChanged: false,
           oldQuantity: null,
           newQuantity: getComparableQty(order),
+          oldToDoQty: null,
+          newToDoQty: getComparableToDoQty(order),
           oldReadyQty: null,
           newReadyQty: getComparableReadyQty(order),
           oldNotes: "",
@@ -1097,11 +1130,14 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
       const oldQuantity = hasManualPlanOverride ? existingPlanRaw : getComparableQty(existing);
       const newQuantity = getComparableQty(order);
+      const oldToDoQty = getComparableToDoQty(existing);
+      const newToDoQty = getComparableToDoQty(order);
       const oldReadyQty = getComparableReadyQty(existing);
       const newReadyQty = getComparableReadyQty(order);
       const oldNotes = normalizePoText(existing?.notes);
       const newNotes = normalizePoText(order?.notes);
       const quantityChanged = hasManualPlanOverride ? false : oldQuantity !== newQuantity;
+      const todoChanged = oldToDoQty !== newToDoQty;
       const readyChanged = oldReadyQty !== newReadyQty;
       const notesChanged = oldNotes !== newNotes;
       const oldPlannedHours = getComparablePlannedHours(existing);
@@ -1113,11 +1149,14 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       byId.set(order.id, {
         isExisting: true,
         quantityChanged,
+        todoChanged,
         readyChanged,
         notesChanged,
         hoursChanged,
         oldQuantity,
         newQuantity,
+        oldToDoQty,
+        newToDoQty,
         oldReadyQty,
         newReadyQty,
         oldNotes,
@@ -1127,14 +1166,14 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         hasManualPlanOverride,
         // Ready LN vs FF is informatief; deze import schrijft produced/gereed niet terug.
         // Als we readyChanged als trigger gebruiken, blijven orders oneindig als "Sync" terugkomen.
-        hasSmartChange: quantityChanged || notesChanged || hoursChanged,
+        hasSmartChange: quantityChanged || todoChanged || notesChanged || hoursChanged,
       });
     });
     return byId;
-  }, [validOrders, existingOrderMap]);
+  }, [effectiveValidOrders, existingOrderMap, toDoOverrides]);
 
   const displayData = useMemo(() => {
-    let rows = [...validOrders];
+    let rows = [...effectiveValidOrders];
 
     if (isFittingsScoped) {
       rows = rows.filter((d) => isFittingsMachine(d.machine));
@@ -1194,21 +1233,21 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     }
 
     return rows;
-  }, [validOrders, machineGroupFilter, statusFilter, readySyncFilter, existingIds, selectedMachines, importMode, orderChangeMeta, isFittingsScoped, pasteMode, hoursOnlyMode]);
+  }, [effectiveValidOrders, machineGroupFilter, statusFilter, readySyncFilter, existingIds, selectedMachines, importMode, orderChangeMeta, isFittingsScoped, pasteMode, hoursOnlyMode]);
 
   const importCandidates = useMemo(() => {
     let rows;
     // In paste mode: strict new-only — geen overschrijven, geen updates van bestaande orders
     if (pasteMode) {
-      rows = validOrders.filter((d) => !isExistingOrder(d));
+      rows = effectiveValidOrders.filter((d) => !isExistingOrder(d));
     } else if (importMode === "smart_update") {
-      rows = validOrders.filter((d) => {
+      rows = effectiveValidOrders.filter((d) => {
         if (hoursOnlyMode) return true;
         if (isSmartSyncExcludedOrder(d)) return false;
         return !isExistingOrder(d) || orderChangeMeta.get(d.id)?.hasSmartChange;
       });
     } else {
-      rows = validOrders.filter((d) =>
+      rows = effectiveValidOrders.filter((d) =>
         importMode === "overwrite" ||
         !isExistingOrder(d)
       );
@@ -1218,15 +1257,15 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       rows = rows.filter((d) => isFittingsMachine(d.machine));
     }
     return rows;
-  }, [validOrders, importMode, existingIds, selectedMachines, orderChangeMeta, isFittingsScoped, pasteMode, SMART_SYNC_EXCLUDED_ORDER_IDS, hoursOnlyMode]);
+  }, [effectiveValidOrders, importMode, existingIds, selectedMachines, orderChangeMeta, isFittingsScoped, pasteMode, SMART_SYNC_EXCLUDED_ORDER_IDS, hoursOnlyMode]);
 
   useEffect(() => {
     if (pasteMode || importMode === "smart_update") {
       setSelectedOrderIds(new Set(importCandidates.map((d) => d.id)));
       return;
     }
-    setSelectedOrderIds(new Set(validOrders.map((d) => d.id)));
-  }, [validOrders, importMode, importCandidates, pasteMode]);
+    setSelectedOrderIds(new Set(effectiveValidOrders.map((d) => d.id)));
+  }, [effectiveValidOrders, importMode, importCandidates, pasteMode]);
 
   const importableCount = useMemo(
     () => importCandidates.length,
@@ -1512,6 +1551,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
                         <th className="px-3 py-3 sticky top-0 bg-slate-50 text-center">{t("digitalplanning.planning_import.table_delivery_date", "Leverdatum")}</th>
                         <th className="px-2 py-3 sticky top-0 bg-slate-50 text-center">{t("digitalplanning.planning_import.table_status", "Status")}</th>
                         <th className="px-2 py-3 sticky top-0 bg-slate-50 text-center">{t("digitalplanning.planning_import.table_quantity", "Orderhoeveelheid")}</th>
+                        <th className="px-2 py-3 sticky top-0 bg-slate-50 text-center">{t("digitalplanning.planning_import.table_todo_qty", "Te maken")}</th>
                         <th className="px-2 py-3 sticky top-0 bg-slate-50 text-center">{t("digitalplanning.planning_import.table_ready_qty", "Hoeveelheid gereed (LN/FF)")}</th>
                         <th className="px-2 py-3 sticky top-0 bg-slate-50 text-center w-[100px]">{t("digitalplanning.planning_import.table_extra_code", "ExtraCode")}</th>
                         <th className="px-2 py-3 sticky top-0 bg-slate-50">{t("digitalplanning.planning_import.table_po_text", "PO Text")}</th>
@@ -1572,6 +1612,23 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
                               ) : (
                                 <span className="text-[11px] font-black text-slate-700">{Number(order.quantity || 0)}</span>
                               )}
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={toDoOverrides[order.id] ?? Number(order.toDoQty ?? order.plan ?? order.quantity ?? 0)}
+                                onChange={(e) => {
+                                  const nextVal = e.target.value;
+                                  setToDoOverrides((prev) => ({
+                                    ...prev,
+                                    [order.id]: nextVal,
+                                  }));
+                                }}
+                                className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-center text-[11px] font-black text-slate-700 outline-none focus:border-blue-500"
+                                title={t("digitalplanning.planning_import.todo_edit_title", "Pas te maken aantal aan voor import")}
+                              />
                             </td>
                             <td className="px-2 py-1.5 text-center whitespace-nowrap">
                               {changeMeta?.isExisting ? (

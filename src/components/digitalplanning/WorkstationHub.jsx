@@ -124,6 +124,20 @@ const isInactivePlanningStatus = (status) => {
   return ["completed", "cancelled", "shipped", "rejected", "finished", "deleted"].includes(normalized);
 };
 
+const toFiniteNumber = (value) => {
+  const direct = Number(value);
+  if (Number.isFinite(direct)) return direct;
+
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+  const normalized = raw.replace(",", ".");
+  const match = normalized.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return 0;
+
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 /**
  * Dienst configuratie.
  * checkoutMinute = minuut van de dag waarop de dienst eindigt (voor auto-uitlog).
@@ -1333,6 +1347,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     const stationClean = String(stationNorm || "").toUpperCase().replace(/\s/g, "");
     const isNabewerkingStation = stationClean === "NABEWERKING" || stationClean === "NABEWERKEN" || stationClean.includes("NABEWERK");
     const isBm01Station = stationClean === "BM01" || stationClean.includes("BM01");
+    const isWikkelToLossenSourceStation = ["BH12", "BH15", "BH17", "BH18"].includes(stationClean);
 
     const matchesStation = (value) => {
       const norm = normalizeMachine(value || "");
@@ -1361,10 +1376,12 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
       const statusUpper = String(product?.status || "").toUpperCase();
       const stepUpper = String(product?.currentStep || "").toUpperCase();
+      const isWaitingForLossen = stepUpper.includes("WACHT OP LOSSEN");
       const isClosed =
         ["COMPLETED", "FINISHED", "GEREED", "REJECTED", "AFKEUR"].includes(statusUpper) ||
         stepUpper === "FINISHED" ||
-        stepUpper === "REJECTED";
+        stepUpper === "REJECTED" ||
+        (isWikkelToLossenSourceStation && isWaitingForLossen);
 
       const entry = map.get(orderId) || { active: 0, total: 0 };
       entry.total += 1;
@@ -1384,6 +1401,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     const currentStationNorm = normalizeMachine(selectedStation);
     const currentStationClean = String(currentStationNorm || "").toUpperCase().replace(/\s/g, "");
     const isLossen1218Station = currentStationClean === "LOSSEN12/18";
+    const isWikkelToLossenSourceStation = ["BH12", "BH15", "BH17", "BH18"].includes(currentStationClean);
     const lossen1218OrderMachines = new Set(["BH12", "BH15", "BH17", "BH18", "12", "15", "17", "18"]);
 
     const getLossen1218Candidates = (order) => {
@@ -1473,6 +1491,28 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       if (isFinishedForMachine) orderStats[p.orderId].finished++;
     });
 
+    const waitingForLossenOnlyByOrder = new Map();
+    rawProducts.forEach((p) => {
+      const orderId = String(p?.orderId || "").trim();
+      if (!orderId) return;
+
+      const stationNorm = normalizeMachine(p?.currentStation || "");
+      if (stationNorm !== currentStationNorm) return;
+
+      const statusUpper = String(p?.status || "").toUpperCase();
+      const stepUpper = String(p?.currentStep || "").toUpperCase();
+      const isActive =
+        !["COMPLETED", "FINISHED", "GEREED", "REJECTED", "AFKEUR"].includes(statusUpper) &&
+        stepUpper !== "FINISHED" &&
+        stepUpper !== "REJECTED";
+      if (!isActive) return;
+
+      const entry = waitingForLossenOnlyByOrder.get(orderId) || { totalActive: 0, waitingForLossen: 0 };
+      entry.totalActive += 1;
+      if (stepUpper.includes("WACHT OP LOSSEN")) entry.waitingForLossen += 1;
+      waitingForLossenOnlyByOrder.set(orderId, entry);
+    });
+
     const baseStationOrders = rawOrders
       .filter((o) => {
         if (isInactivePlanningStatus(o.status)) return false;
@@ -1507,11 +1547,44 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             return true;
           }
           const orderIdForActivity = String(o.orderId || "").trim();
-          const startedAtStation = Number(stationField ? o?.[stationField] || 0 : 0);
-          const planAtStation = Number(o.plan || o.quantity || 0);
+          const startedAtStation = toFiniteNumber(stationField ? o?.[stationField] || 0 : 0);
+          const planAtStation = Math.max(toFiniteNumber(o.plan), toFiniteNumber(o.quantity));
           const hasRemainingPlan = startedAtStation > 0 && planAtStation > startedAtStation;
           const activityMeta = stationActivityByOrder.get(orderIdForActivity);
-          const hasStationActivity = (activityMeta?.active || 0) > 0 || (activityMeta?.total || 0) > 0;
+          const hasStationActivity = (activityMeta?.active || 0) > 0;
+
+          // Wikkelstations BH12/15/17/18: orders die alleen nog op
+          // "Wacht op Lossen" staan en geen resterende queue meer hebben,
+          // horen niet meer in de werkplanning van het bronstation.
+          if (isWikkelToLossenSourceStation) {
+            const waitingOnlyMeta = waitingForLossenOnlyByOrder.get(orderIdForActivity);
+            if (
+              waitingOnlyMeta &&
+              waitingOnlyMeta.totalActive > 0 &&
+              waitingOnlyMeta.waitingForLossen === waitingOnlyMeta.totalActive
+            ) {
+              return false;
+            }
+
+            const waitingForLossenCount = rawProducts.filter((p) => {
+              if (String(p?.orderId || "").trim() !== orderIdForActivity) return false;
+              const stationNorm = normalizeMachine(p?.currentStation || "");
+              if (stationNorm !== currentStationNorm) return false;
+              const stepUpper = String(p?.currentStep || "").toUpperCase();
+              return stepUpper.includes("WACHT OP LOSSEN");
+            }).length;
+
+            const rawToDo = o.toDoQty;
+            const hasExplicitToDo = !(rawToDo === null || rawToDo === undefined || String(rawToDo).trim() === "");
+            const explicitTodo = hasExplicitToDo ? toFiniteNumber(rawToDo) : null;
+            const remainingQueue = hasExplicitToDo
+              ? Math.max(0, explicitTodo)
+              : Math.max(0, planAtStation - startedAtStation);
+
+            if (waitingForLossenCount > 0 && !hasStationActivity && remainingQueue <= 0) {
+              return false;
+            }
+          }
 
         return (
           o.machine === selectedStation ||
@@ -1657,15 +1730,10 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     const stationField = getStartedCounterField(selectedStation);
     
     stationOrders.forEach(o => {
-      const explicitTodo = Number(o.toDoQty);
-      let remainingQueue = 0;
-      if (Number.isFinite(explicitTodo)) {
-        remainingQueue = Math.max(explicitTodo, 0);
-      } else {
-        const orderPlan = Number(o.plan || o.quantity || 0);
-        const startedAtStation = Number(stationField ? o?.[stationField] || 0 : 0);
-        remainingQueue = Math.max(0, orderPlan - startedAtStation);
-      }
+      // Altijd dynamisch berekenen: plan - started_<machine>.
+      const orderPlan = Number(o.plan || o.quantity || 0);
+      const startedAtStation = Number(stationField ? o?.[stationField] || 0 : 0);
+      const remainingQueue = Math.max(0, orderPlan - startedAtStation);
       
       todo += remainingQueue;
       
@@ -1851,6 +1919,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       });
 
       overflowItems = Array.isArray(startResult?.overflowLots) ? startResult.overflowLots : [];
+      const autoAssignedOverflow = startResult?.autoAssignedOverflow || null;
+
+      if (autoAssignedOverflow?.linkedCount > 0 && autoAssignedOverflow?.targetOrderId) {
+        showSuccess(
+          `${autoAssignedOverflow.linkedCount} extra stuk(s) automatisch gekoppeld aan order ${autoAssignedOverflow.targetOrderId}${autoAssignedOverflow.routeStation ? ` en doorgestuurd naar ${autoAssignedOverflow.routeStation}` : ""}.`
+        );
+      }
 
       if (overflowItems.length > 0) {
         await createProductionMessages({
@@ -2612,61 +2687,71 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
       {/* MODALS */}
       {showStartModal && selectedOrder && (
-        <ProductionStartModal
-          order={selectedOrder}
-          isOpen={showStartModal}
-          onClose={() => setShowStartModal(false)}
-          onStartInitiated={() => {
-            setShowStartModal(false);
-            if (!isPostProcessing && !isBM01) {
-              setActiveTab("winding");
-            }
-          }}
-          onStart={handleStartProduction}
-          stationId={selectedStation}
-          existingProducts={rawProducts}
-          onOpenProductInfo={handleOpenProductInfo}
-        />
+        <div className="fixed z-[9999]">
+          <ProductionStartModal
+            order={selectedOrder}
+            isOpen={showStartModal}
+            onClose={() => setShowStartModal(false)}
+            onStartInitiated={() => {
+              setShowStartModal(false);
+              if (!isPostProcessing && !isBM01) {
+                setActiveTab("winding");
+              }
+            }}
+            onStart={handleStartProduction}
+            stationId={selectedStation}
+            existingProducts={rawProducts}
+            onOpenProductInfo={handleOpenProductInfo}
+          />
+        </div>
       )}
       {linkedProductData && (
-        <ProductDetailModal
-          product={linkedProductData}
-          onClose={() => setLinkedProductData(null)}
-          userRole={currentUser?.role || "operator"}
-        />
+        <div className="fixed z-[9999]">
+          <ProductDetailModal
+            product={linkedProductData}
+            onClose={() => setLinkedProductData(null)}
+            userRole={currentUser?.role || "operator"}
+          />
+        </div>
       )}
       {showLinkModal && orderToLink && (
-        <OperatorLinkModal
-          order={orderToLink}
-          onClose={() => {
-            setShowLinkModal(false);
-            setOrderToLink(null);
-          }}
-          onLinkProduct={handleLinkProduct}
-        />
+        <div className="fixed z-[9999]">
+          <OperatorLinkModal
+            order={orderToLink}
+            onClose={() => {
+              setShowLinkModal(false);
+              setOrderToLink(null);
+            }}
+            onLinkProduct={handleLinkProduct}
+          />
+        </div>
       )}
       {finishModalOpen && itemToFinish && (
-        <PostProcessingFinishModal
-          product={itemToFinish}
-          onClose={() => {
-            setFinishModalOpen(false);
-            setItemToFinish(null);
-          }}
-          onConfirm={handlePostProcessingFinish}
-          currentStation={selectedStation}
-        />
+        <div className="fixed z-[9999]">
+          <PostProcessingFinishModal
+            product={itemToFinish}
+            onClose={() => {
+              setFinishModalOpen(false);
+              setItemToFinish(null);
+            }}
+            onConfirm={handlePostProcessingFinish}
+            currentStation={selectedStation}
+          />
+        </div>
       )}
       {showRepairModal && itemToRepair && (
-        <RepairModal
-            product={itemToRepair}
-            onClose={() => { setShowRepairModal(false); setItemToRepair(null); }}
-            onConfirm={handleRepairComplete}
-        />
+        <div className="fixed z-[9999]">
+          <RepairModal
+              product={itemToRepair}
+              onClose={() => { setShowRepairModal(false); setItemToRepair(null); }}
+              onConfirm={handleRepairComplete}
+          />
+        </div>
       )}
 
       {showOperatorCheckinModal && (
-        <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-2xl p-6">
+        <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-md bg-white rounded-[24px] border border-slate-200 shadow-2xl p-5 sm:p-6 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-3">
                 <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
@@ -2808,8 +2893,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
       {/* Uren-correctie modal (teamleider) */}
       {showHourCorrectionModal && hourCorrectionEntry && (
-        <div className="fixed inset-0 z-[130] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 shadow-2xl p-6">
+        <div className="fixed inset-0 z-[130] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+          <div className="w-full max-w-sm bg-white rounded-[24px] border border-slate-200 shadow-2xl p-5 sm:p-6 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto custom-scrollbar">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-amber-50 text-amber-600"><Pencil size={18} /></div>

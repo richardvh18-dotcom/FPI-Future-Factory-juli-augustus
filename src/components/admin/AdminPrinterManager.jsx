@@ -395,9 +395,10 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
     const loadInitialList = async () => {
       setLoadingInitialList(true);
       try {
-        const [tempSnap, planSnap] = await Promise.all([
+        const [tempSnap, planSnap, trackSnap] = await Promise.all([
           getDocs(query(collection(db, ...PATHS.TEMP_PLANNING), limit(120))),
           getDocs(query(collection(db, ...PATHS.PLANNING), limit(120))),
+          getDocs(query(collection(db, ...PATHS.TRACKING), limit(120))),
         ]);
 
         if (!isMounted) return;
@@ -417,6 +418,8 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
 
         pushRows(tempSnap);
         pushRows(planSnap);
+        pushRows(trackSnap);
+        console.log("📋 InitialList loaded:", rows.length, "items (temp:", tempSnap.docs.length, "plan:", planSnap.docs.length, "track:", trackSnap.docs.length, ")");
 
         const dedup = [];
         const seen = new Set();
@@ -429,7 +432,7 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
         dedup.sort((a, b) => String(a.orderDisplay).localeCompare(String(b.orderDisplay), undefined, { numeric: true }));
         setInitialList(dedup);
       } catch (err) {
-        console.error("Fout bij laden order labels lijst:", err);
+        console.error("❌ Fout bij laden order labels lijst:", err);
       } finally {
         if (isMounted) setLoadingInitialList(false);
       }
@@ -460,18 +463,23 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
       if (digitsMatch) {
           const digits = digitsMatch[0];
           if (digits.length >= 3) {
-              searchOptions.push(`N${digits}`);
-              searchOptions.push(`N20${digits}`);
-              searchOptions.push(`N200${digits}`);
-              searchOptions.push(`N21${digits}`);
-              searchOptions.push(`N210${digits}`);
-              searchOptions.push(`P${digits}`);
+              // Check if searchStr already starts with a prefix, if not add variations
+              if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
+                  searchOptions.push(`N${digits}`);
+                  searchOptions.push(`N20${digits}`);
+                  searchOptions.push(`N200${digits}`);
+                  searchOptions.push(`N21${digits}`);
+                  searchOptions.push(`N210${digits}`);
+                  searchOptions.push(`P${digits}`);
+              }
           }
       }
 
       const uniqueOptions = Array.from(new Set(searchOptions)).slice(0, 15);
+      console.log("🔍 Search options:", uniqueOptions);
       const colRef = collection(db, ...PATHS.TEMP_PLANNING);
       const planRef = collection(db, ...PATHS.PLANNING);
+      const trackRef = collection(db, ...PATHS.TRACKING);
       let foundDocs = new Map();
       const addDocs = (snap) => {
         if (snap && snap.docs) {
@@ -488,6 +496,10 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
               const planDocRef = doc(db, ...PATHS.PLANNING, opt);
               const planDocSnap = await getDoc(planDocRef);
               if (planDocSnap.exists()) foundDocs.set(planDocSnap.id, { id: planDocSnap.id, ...planDocSnap.data() });
+              
+              const trackDocRef = doc(db, ...PATHS.TRACKING, opt);
+              const trackDocSnap = await getDoc(trackDocRef);
+              if (trackDocSnap.exists()) foundDocs.set(trackDocSnap.id, { id: trackDocSnap.id, ...trackDocSnap.data() });
           } catch {
         // Ignore missing documents
       }
@@ -498,41 +510,79 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
         getDocs(query(colRef, where("Order", "in", uniqueOptions))),
         getDocs(query(colRef, where("Productieorder", "in", uniqueOptions))),
         getDocs(query(colRef, where("order", "in", uniqueOptions))),
-        getDocs(query(planRef, where("orderId", "in", uniqueOptions))),
         getDocs(query(colRef, where("itemCode", "in", uniqueOptions))),
         getDocs(query(colRef, where("Item", "in", uniqueOptions))),
         getDocs(query(colRef, where("Artikel", "in", uniqueOptions))),
+        getDocs(query(planRef, where("orderId", "in", uniqueOptions))),
+        getDocs(query(planRef, where("orderNumber", "in", uniqueOptions))),
+        getDocs(query(planRef, where("Order", "in", uniqueOptions))),
+        getDocs(query(planRef, where("Productieorder", "in", uniqueOptions))),
+        getDocs(query(planRef, where("order", "in", uniqueOptions))),
+        getDocs(query(planRef, where("originalOrderId", "in", uniqueOptions))),
         getDocs(query(planRef, where("itemCode", "in", uniqueOptions))),
+        getDocs(query(planRef, where("productCode", "in", uniqueOptions))),
+        getDocs(query(planRef, where("articleCode", "in", uniqueOptions))),
         getDocs(query(planRef, where("Item", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Artikel", "in", uniqueOptions)))
+        getDocs(query(planRef, where("Artikel", "in", uniqueOptions))),
+        getDocs(query(planRef, where("itemDescription", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("orderId", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("orderNumber", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("Order", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("order", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("originalOrderId", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("itemCode", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("item", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("itemDescription", "in", uniqueOptions)))
       ];
       const exactSnaps = await Promise.all(exactQueries.map(p => p.catch(() => null)));
       exactSnaps.forEach(addDocs);
+      console.log("📦 After exact queries, found:", foundDocs.size);
 
       if (foundDocs.size < 5 && searchStr.length >= 3) {
         const startOptions = [searchStr];
         if (digitsMatch && digitsMatch[0].length >= 3) {
-            startOptions.push(`N200${digitsMatch[0]}`);
-            startOptions.push(`N20${digitsMatch[0]}`);
-            startOptions.push(`N210${digitsMatch[0]}`);
-            startOptions.push(`N21${digitsMatch[0]}`);
+            // Only add prefix variations if searchStr doesn't already start with a prefix
+            if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
+                startOptions.push(`N200${digitsMatch[0]}`);
+                startOptions.push(`N20${digitsMatch[0]}`);
+                startOptions.push(`N210${digitsMatch[0]}`);
+                startOptions.push(`N21${digitsMatch[0]}`);
+            }
         }
         
         const startsWithQueries = [];
         Array.from(new Set(startOptions)).forEach(opt => {
             startsWithQueries.push(getDocs(query(colRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(colRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(colRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(colRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(colRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(colRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(colRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(colRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(planRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(planRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("Productieorder", ">=", opt), where("Productieorder", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(planRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(planRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
         });
 
         const startSnaps = await Promise.all(startsWithQueries.map(p => p.catch(() => null)));
         startSnaps.forEach(addDocs);
+        console.log("📦 After range queries, found:", foundDocs.size);
       }
 
       const queryText = normalizeText(orderStr);
@@ -541,14 +591,18 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
         const productText = normalizeText(item.item || item.itemCode || item.Item || item.Artikel || item.description || item.Description || item.Omschrijving);
         return orderText.includes(queryText) || productText.includes(queryText);
       });
+      console.log("🔎 Client-side matches:", clientMatches.length);
 
       const merged = new Map();
       Array.from(foundDocs.values()).forEach((item) => merged.set(item.id, item));
       clientMatches.forEach((item) => merged.set(item.id, item));
 
-      setResults(Array.from(merged.values()));
+      const finalResults = Array.from(merged.values());
+      console.log("✅ Final results:", finalResults.length);
+      setResults(finalResults);
     } catch (e) {
-      console.error("Zoekfout temp labels:", e);
+      console.error("❌ Zoekfout temp labels:", e);
+      console.error("Search string was:", orderStr);
     } finally {
       setLoading(false);
     }

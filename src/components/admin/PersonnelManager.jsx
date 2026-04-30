@@ -129,6 +129,13 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     return personnel.some(p => p.employeeNumber === personForm.employeeNumber && p.id !== editingId);
   }, [personForm.employeeNumber, personnel, editingId]);
 
+  const duplicatePerson = useMemo(() => {
+    if (!personForm.employeeNumber) return null;
+    return personnel.find(
+      (person) => person.employeeNumber === personForm.employeeNumber && person.id !== editingId
+    ) || null;
+  }, [personForm.employeeNumber, personnel, editingId]);
+
   const linkedTagEmployeeKeys = useMemo(() => {
     const normalize = (value) => String(value || "").trim().toUpperCase();
     const digits = (value) => String(value || "").replace(/\D/g, "").replace(/^0+/, "");
@@ -215,6 +222,12 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     return dept && dept.shifts && dept.shifts.length > 0
       ? dept.shifts
       : [{ id: "DAG", label: t('personnel.dayShift', "Dagdienst"), start: "07:15", end: "16:00" }];
+  };
+
+  const getDepartmentLabel = (deptId) => {
+    if (!deptId) return "Geen afdeling";
+    const dept = (structure.departments || []).find((entry) => entry.id === deptId);
+    return dept ? `${dept.name} (${dept.id})` : `Ongekoppelde afdeling (${deptId})`;
   };
 
   const getShiftHours = (person, deptId, forDate = viewDate) => {
@@ -452,8 +465,8 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
   const handleSavePerson = async (e) => {
     e.preventDefault();
 
-    if (isDuplicateNumber) {
-      notify(t('personnel.duplicateNumber', { number: personForm.employeeNumber }));
+    if (duplicatePerson) {
+      notify(`Personeelsnummer ${personForm.employeeNumber} is al in gebruik door ${duplicatePerson.name || "onbekend"} (${duplicatePerson.id}).`);
       return;
     }
 
@@ -928,10 +941,18 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
                       })
                     }
                   />
-                  {isDuplicateNumber && (
-                    <p className="text-[10px] font-bold text-rose-500 ml-2 mt-1 flex items-center gap-1">
-                      <AlertCircle size={12} /> {t('personnel.numberInUse', "Dit nummer is al in gebruik!")}
-                    </p>
+                  {duplicatePerson && (
+                    <div className="ml-2 mt-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-rose-700">
+                      <p className="text-[10px] font-bold flex items-center gap-1">
+                        <AlertCircle size={12} /> {t('personnel.numberInUse', "Dit nummer is al in gebruik!")}
+                      </p>
+                      <p className="text-[10px] font-semibold mt-1">
+                        Bestaand record: {duplicatePerson.name || "Onbekend"} ({duplicatePerson.id})
+                      </p>
+                      <p className="text-[10px] font-medium opacity-80 mt-1">
+                        Afdeling: {getDepartmentLabel(duplicatePerson.departmentId)}
+                      </p>
+                    </div>
                   )}
                 </div>
               </div>

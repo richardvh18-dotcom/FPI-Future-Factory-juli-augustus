@@ -5,7 +5,9 @@ import {
   ChevronLeft, 
   ChevronRight,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Lock,
+  Unlock
 } from "lucide-react";
 import { collection, collectionGroup, onSnapshot, doc } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
@@ -29,6 +31,8 @@ import {
 import { nl } from "date-fns/locale";
 import { getDeliveryPlanningState, resolveDeliveryDate, toDateSafe } from "../../utils/dateUtils";
 import { getOrderFinishedUnits } from "../../utils/planningProgress";
+import { subscribeScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
+import { normalizeMachine } from "../../utils/hubHelpers";
 
 /**
  * GanttChartView - Timeline visualization for order planning
@@ -50,12 +54,16 @@ const GanttChartView = (props = {}) => {
   const [viewMode, setViewMode] = useState("preset"); // preset | all
   const [dayWidth, setDayWidth] = useState(80);
   const [selectedDepartment, setSelectedDepartment] = useState("ALLES");
+  const [selectedMachine, setSelectedMachine] = useState("ALLES");
+  const [selectedStatus, setSelectedStatus] = useState("all");
   const [orderSearchTerm, setOrderSearchTerm] = useState("");
+  const [dragUnlocked, setDragUnlocked] = useState(false);
   const [factoryConfig, setFactoryConfig] = useState(null);
   const [departments, setDepartments] = useState(["ALLES"]);
   const [collapsedMachines, setCollapsedMachines] = useState(new Set());
   const [expandedLaneMode, setExpandedLaneMode] = useState(false);
   const [selectedOrderBarId, setSelectedOrderBarId] = useState(null);
+  const [selectedOrderPopup, setSelectedOrderPopup] = useState(null);
   const timelineScrollRef = useRef(null);
   const isAutoExtendingRef = useRef(false);
   const pendingPrependOffsetRef = useRef(0);
@@ -64,6 +72,7 @@ const GanttChartView = (props = {}) => {
   const headerPanCooldownUntilRef = useRef(0);
   const edgeExtendLockRef = useRef({ left: false, right: false });
   const [timelineViewportWidth, setTimelineViewportWidth] = useState(1200);
+  const initializedViewRef = useRef(false);
 
   const useProvidedOrders = Array.isArray(planningOrders);
   const useProvidedTrackedProducts = Array.isArray(trackedProducts);
@@ -234,51 +243,59 @@ const GanttChartView = (props = {}) => {
   useEffect(() => {
     if (!readPaths) return;
 
-    const unsubEfficiency = onSnapshot(
-      collection(db, ...readPaths.EFFICIENCY_HOURS),
-      (snapshot) => {
+    const unsubEfficiency = subscribeScopedEfficiencyHours({
+      db,
+      mode: "active",
+      onData: (rows) => {
         const data = {};
-        snapshot.docs.forEach((doc) => {
-          data[doc.id] = doc.data();
+        rows.forEach((row) => {
+          const key = String(row.orderId || row.id || "").trim();
+          if (!key) return;
+          data[key] = row;
         });
         setEfficiencyData(data);
-      }
-    );
+      },
+      onError: (error) => {
+        console.warn("Scoped efficiency listener failed:", error);
+        setEfficiencyData({});
+      },
+    });
     return () => unsubEfficiency();
   }, [readPaths]);
 
   const machines = useMemo(() => {
-    const uniqueMachines = [...new Set(orders.map((o) => o.machine).filter(Boolean))];
+    const uniqueMachines = [...new Set(orders.map((o) => normalizeMachine(o.machine)).filter(Boolean))];
     return uniqueMachines.sort();
   }, [orders]);
 
   // Filter machines based on selected department
   const visibleMachines = useMemo(() => {
-    if (selectedDepartment === "ALLES" || !factoryConfig) {
-      return machines;
+    let filtered = machines;
+
+    if (selectedDepartment !== "ALLES" && factoryConfig) {
+      const dept = factoryConfig.departments.find(d => d.name === selectedDepartment);
+      if (!dept) return [];
+    
+      const deptStationNames = (dept.stations || []).map(s => normalizeMachine(s.name));
+      filtered = machines.filter(m => deptStationNames.includes(normalizeMachine(m)));
     }
-    
-    const dept = factoryConfig.departments.find(d => d.name === selectedDepartment);
-    if (!dept) return [];
-    
-    // Normalisatie helper voor flexibele matching (bijv. "40BH11", "BH11" of "BH 11")
-    const normalize = (s) =>
-      String(s || "")
-        .toUpperCase()
-        .replace(/\s/g, "")
-        .replace(/^40/, "");
-    
-    const deptStationNames = (dept.stations || []).map(s => normalize(s.name));
-    // Filter machines that are in the selected department
-    return machines.filter(m => deptStationNames.includes(normalize(m)));
-  }, [machines, selectedDepartment, factoryConfig]);
+
+    if (selectedMachine !== "ALLES") {
+      filtered = filtered.filter((m) => normalizeMachine(m) === normalizeMachine(selectedMachine));
+    }
+
+    return filtered;
+  }, [machines, selectedDepartment, selectedMachine, factoryConfig]);
+
+  useEffect(() => {
+    if (selectedMachine === "ALLES") return;
+    if (!machines.includes(normalizeMachine(selectedMachine))) {
+      setSelectedMachine("ALLES");
+    }
+  }, [machines, selectedMachine]);
 
   const normalizeMachineKey = (value) =>
-    String(value || "")
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, "")
-      .replace(/^40/, "");
+    normalizeMachine(value);
 
   const getOrderIdentity = (order) =>
     String(order?.orderId || order?.id || "").trim();
@@ -286,10 +303,21 @@ const GanttChartView = (props = {}) => {
   const getOrderBarIdentity = (order) => {
     const idPart = String(order?.id || "").trim();
     const orderPart = String(order?.orderId || "").trim();
-    const machinePart = String(order?.machine || "").trim();
-    const plannedPart = parseDate(order?.plannedDate)?.toISOString?.() || "";
-    const actualPart = parseDate(order?.actualStart)?.toISOString?.() || "";
-    return [idPart, orderPart, machinePart, plannedPart, actualPart].join("|");
+    const machinePart = normalizeMachine(order?.machine || "");
+    return [idPart, orderPart, machinePart].join("|");
+  };
+
+  const getPopupPosition = (clientX, clientY) => {
+    const popupWidth = 320;
+    const popupHeight = 260;
+    const margin = 16;
+    const maxLeft = Math.max(margin, window.innerWidth - popupWidth - margin);
+    const maxTop = Math.max(margin, window.innerHeight - popupHeight - margin);
+
+    return {
+      left: Math.min(maxLeft, clientX + 16),
+      top: Math.min(maxTop, clientY + 16),
+    };
   };
 
   const getNumeric = (value) => {
@@ -360,6 +388,68 @@ const GanttChartView = (props = {}) => {
 
     return byOrder;
   }, [tracking]);
+
+  const getCompletedTrackedItemsForOrder = (order) => {
+    const orderId = getOrderIdentity(order);
+    if (!orderId) return [];
+
+    return tracking.filter((product) => {
+      const trackedOrderId = String(product?.orderId || "").trim();
+      if (trackedOrderId !== orderId) return false;
+
+      const status = String(product?.status || "").toLowerCase();
+      const step = String(product?.currentStep || "").toLowerCase();
+      return (
+        status.includes("finish") ||
+        status.includes("gereed") ||
+        status.includes("completed") ||
+        step.includes("finish")
+      );
+    });
+  };
+
+  const getOrderProductionProfile = (order) => {
+    const completedItems = getCompletedTrackedItemsForOrder(order);
+    if (completedItems.length === 0) return null;
+
+    const dayMap = new Map();
+
+    completedItems.forEach((item) => {
+      const eventDate =
+        parseDate(item?.timestamps?.finished) ||
+        parseDate(item?.completedAt) ||
+        parseDate(item?.archivedAt) ||
+        parseDate(item?.updatedAt) ||
+        parseDate(item?.createdAt);
+      if (!eventDate) return;
+
+      const day = startOfDay(eventDate);
+      const key = format(day, "yyyy-MM-dd");
+      dayMap.set(key, {
+        day,
+        count: (dayMap.get(key)?.count || 0) + 1,
+      });
+    });
+
+    const sortedDays = Array.from(dayMap.values()).sort((a, b) => a.day.getTime() - b.day.getTime());
+    if (sortedDays.length === 0) return null;
+
+    const firstDay = sortedDays[0].day;
+    const lastDay = sortedDays[sortedDays.length - 1].day;
+    const spanDays = Math.max(1, differenceInCalendarDays(lastDay, firstDay) + 1);
+    const totalProduced = sortedDays.reduce((sum, entry) => sum + entry.count, 0);
+    const activeDays = sortedDays.length;
+
+    return {
+      totalProduced,
+      firstDay,
+      lastDay,
+      activeDays,
+      spanDays,
+      avgPerCalendarDay: totalProduced / spanDays,
+      avgPerActiveDay: totalProduced / activeDays,
+    };
+  };
 
   const machineThroughputPerDay = useMemo(() => {
     const now = new Date();
@@ -438,15 +528,25 @@ const GanttChartView = (props = {}) => {
         }
 
         const orderId = getOrderIdentity(order);
+        const orderProfile = getOrderProductionProfile(order);
         const planned = getPlannedUnits(order);
         const produced = getProducedUnits(order, trackedFinishedByOrder);
         const remaining = Math.max(0, planned - produced);
-        const totalUnitsForQueue = queueAheadUnits + remaining;
+        const effectiveUnitsPerDay = Math.max(
+          0.25,
+          orderProfile?.totalProduced >= 2
+            ? (orderProfile?.avgPerCalendarDay || unitsPerDay)
+            : unitsPerDay
+        );
+        const predictionStartDay = orderProfile?.lastDay && orderProfile.lastDay > today
+          ? orderProfile.lastDay
+          : today;
+        const totalUnitsForQueue = (orderProfile ? 0 : queueAheadUnits) + remaining;
 
         const requiredDays = totalUnitsForQueue > 0
-          ? Math.ceil(totalUnitsForQueue / Math.max(0.5, unitsPerDay))
+          ? Math.ceil(totalUnitsForQueue / effectiveUnitsPerDay)
           : 0;
-        const predictedReadyDay = addDays(today, Math.max(0, requiredDays - 1));
+        const predictedReadyDay = addDays(predictionStartDay, Math.max(0, requiredDays - 1));
         const deliveryDay = getDeliveryDay(order);
         const slipDays = deliveryDay
           ? differenceInCalendarDays(predictedReadyDay, deliveryDay)
@@ -465,16 +565,19 @@ const GanttChartView = (props = {}) => {
           predictedReadyDay,
           scheduleStatus,
           slipDays,
-          unitsPerDay,
+          unitsPerDay: effectiveUnitsPerDay,
           remainingUnits: remaining,
+          predictedBy: orderProfile?.totalProduced >= 2 ? "order_history" : "machine_history",
         });
 
-        queueAheadUnits += remaining;
+        if (!orderProfile) {
+          queueAheadUnits += remaining;
+        }
       });
     });
 
     return predictions;
-  }, [orders, machineThroughputPerDay, trackedFinishedByOrder]);
+  }, [orders, machineThroughputPerDay, trackedFinishedByOrder, tracking]);
 
   // Bereken werkelijke doorlooptijd o.b.v. tracked producten
   function getActualOrderDuration(order, trackedItems) {
@@ -573,7 +676,7 @@ const GanttChartView = (props = {}) => {
       endDay: safeEndDay,
       totalHours,
       isEfficiencyBased,
-      leadWeeks: Math.max(0, differenceInCalendarWeeks(safeEndDay, startDay, { weekStartsOn: 1 })),
+      leadWeeks: Math.max(1, differenceInCalendarWeeks(safeEndDay, startDay, { weekStartsOn: 1 }) + 1),
       actualDuration,
     };
   }
@@ -626,6 +729,29 @@ const GanttChartView = (props = {}) => {
     });
   }, [visibleMachines]);
 
+  useEffect(() => {
+    if (!selectedOrderBarId) return;
+    const stillExists = orders.some((order) => getOrderBarIdentity(order) === selectedOrderBarId);
+    if (!stillExists) {
+      setSelectedOrderBarId(null);
+      setSelectedOrderPopup(null);
+    }
+  }, [orders, selectedOrderBarId]);
+
+  useEffect(() => {
+    if (!visibleMachines.length) return;
+    setCollapsedMachines(new Set(visibleMachines));
+  }, [selectedDepartment, selectedMachine]);
+
+  useEffect(() => {
+    if (initializedViewRef.current) return;
+    initializedViewRef.current = true;
+    const today = new Date();
+    setViewMode("all");
+    setViewStart(startOfDay(today));
+    pendingScrollToDayRef.current = today;
+  }, []);
+
   // Calculate timeline days
   const timelineDays = useMemo(() => {
     return eachDayOfInterval({
@@ -671,12 +797,24 @@ const GanttChartView = (props = {}) => {
     const term = String(orderSearchTerm || "").trim().toLowerCase();
 
     return orders.filter(order => {
+      const machineMatch = normalizeMachine(order.machine) === normalizeMachine(machine);
+      const hasTimeBounds = Boolean(getOrderTimeBounds(order));
+      const normalizedStatus = String(order?.status || "").toLowerCase();
+      const isDone =
+        normalizedStatus.includes("gereed") ||
+        normalizedStatus.includes("finish") ||
+        normalizedStatus.includes("complete") ||
+        normalizedStatus.includes("shipped");
+
       if (
-        order.machine !== machine ||
-        !(order.plannedDate || ((order.status === 'in_progress' || order.status === 'in_production') && order.actualStart))
+        !machineMatch ||
+        !hasTimeBounds
       ) {
         return false;
       }
+
+      if (selectedStatus === "active" && isDone) return false;
+      if (selectedStatus === "done" && !isDone) return false;
 
       if (!term) return true;
 
@@ -731,7 +869,7 @@ const GanttChartView = (props = {}) => {
 
   // Handle Drag Start
   const handleDragStart = (e, order) => {
-    if (useProvidedOrders) return;
+    if (useProvidedOrders || !dragUnlocked) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -910,7 +1048,7 @@ const GanttChartView = (props = {}) => {
     
     let leftPx = daysFromViewStart * effectiveDayWidth;
     let zIndex = 10;
-    let cursor = 'grab';
+    let cursor = dragUnlocked ? 'grab' : 'default';
     let boxShadow = '';
 
     if (isDraggingThis) {
@@ -964,12 +1102,65 @@ const GanttChartView = (props = {}) => {
   const goToNextWeek = () => setViewStart(prev => addDays(prev, 7));
   const goToPreviousMonth = () => setViewStart(prev => subMonths(prev, 1));
   const goToNextMonth = () => setViewStart(prev => addMonths(prev, 1));
+  const applyPresetViewFromToday = (days) => {
+    const today = startOfDay(new Date());
+    setViewMode("preset");
+    setViewRange(days);
+    setViewStart(today);
+    pendingScrollToDayRef.current = today;
+  };
+
+  const applyAllViewFromToday = () => {
+    const today = startOfDay(new Date());
+    setViewMode("all");
+    pendingScrollToDayRef.current = today;
+  };
+
   const goToToday = () => {
     const today = new Date();
-    setViewMode("preset");
-    setViewRange(30);
-    setViewStart(startOfMonth(today));
+    setViewMode("all");
+    setViewStart(startOfDay(today));
     pendingScrollToDayRef.current = today;
+  };
+
+  const dayInputValue = format(viewStart, "yyyy-MM-dd");
+  const monthInputValue = format(viewStart, "yyyy-MM");
+  const weekInputValue = `${format(startOfWeek(viewStart, { weekStartsOn: 1 }), "yyyy")}-W${String(differenceInCalendarWeeks(startOfWeek(viewStart, { weekStartsOn: 1 }), startOfWeek(new Date(format(viewStart, 'yyyy'), 0, 4), { weekStartsOn: 1 }), { weekStartsOn: 1 }) + 1).padStart(2, "0")}`;
+
+  const handleDayJump = (value) => {
+    if (!value) return;
+    const next = startOfDay(new Date(`${value}T00:00:00`));
+    if (!Number.isNaN(next.getTime())) {
+      setViewMode("preset");
+      setViewRange(7);
+      setViewStart(next);
+    }
+  };
+
+  const handleMonthJump = (value) => {
+    if (!value) return;
+    const [year, month] = value.split("-").map(Number);
+    const next = startOfMonth(new Date(year, month - 1, 1));
+    if (!Number.isNaN(next.getTime())) {
+      setViewMode("preset");
+      setViewRange(30);
+      setViewStart(next);
+    }
+  };
+
+  const handleWeekJump = (value) => {
+    const match = String(value || "").match(/^(\d{4})-W(\d{2})$/);
+    if (!match) return;
+    const year = Number(match[1]);
+    const week = Number(match[2]);
+    const jan4 = new Date(year, 0, 4);
+    const firstIsoWeek = startOfWeek(jan4, { weekStartsOn: 1 });
+    const next = addDays(firstIsoWeek, (week - 1) * 7);
+    if (!Number.isNaN(next.getTime())) {
+      setViewMode("preset");
+      setViewRange(14);
+      setViewStart(next);
+    }
   };
 
   if (loading) {
@@ -1008,6 +1199,27 @@ const GanttChartView = (props = {}) => {
               ))}
             </select>
 
+            <select
+              value={selectedMachine}
+              onChange={(e) => setSelectedMachine(e.target.value)}
+              className="px-2.5 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="ALLES">Alle machines</option>
+              {machines.map((machine) => (
+                <option key={machine} value={machine}>{machine}</option>
+              ))}
+            </select>
+
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="px-2.5 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">Alle status</option>
+              <option value="active">In behandeling</option>
+              <option value="done">Gereed</option>
+            </select>
+
             {/* Search */}
             <div className="relative">
               <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1023,10 +1235,7 @@ const GanttChartView = (props = {}) => {
             {/* View Range */}
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => {
-                  setViewMode("preset");
-                  setViewRange(7);
-                }}
+                onClick={() => applyPresetViewFromToday(7)}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
                   viewMode === "preset" && viewRange === 7
                     ? "bg-blue-500 text-white"
@@ -1036,10 +1245,7 @@ const GanttChartView = (props = {}) => {
                 {t("planning.gantt.rangeWeek")}
               </button>
               <button
-                onClick={() => {
-                  setViewMode("preset");
-                  setViewRange(14);
-                }}
+                onClick={() => applyPresetViewFromToday(14)}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
                   viewMode === "preset" && viewRange === 14
                     ? "bg-blue-500 text-white"
@@ -1049,10 +1255,7 @@ const GanttChartView = (props = {}) => {
                 {t("planning.gantt.rangeTwoWeeks")}
               </button>
               <button
-                onClick={() => {
-                  setViewMode("preset");
-                  setViewRange(30);
-                }}
+                onClick={() => applyPresetViewFromToday(30)}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
                   viewMode === "preset" && viewRange === 30
                     ? "bg-blue-500 text-white"
@@ -1062,7 +1265,7 @@ const GanttChartView = (props = {}) => {
                 {t("planning.gantt.rangeMonth")}
               </button>
               <button
-                onClick={() => setViewMode("all")}
+                onClick={applyAllViewFromToday}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
                   viewMode === "all"
                     ? "bg-indigo-600 text-white"
@@ -1127,8 +1330,42 @@ const GanttChartView = (props = {}) => {
               </button>
             </div>
 
+            <button
+              onClick={() => setDragUnlocked((prev) => !prev)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors ${
+                dragUnlocked
+                  ? "bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200"
+                  : "bg-emerald-100 text-emerald-800 border border-emerald-200 hover:bg-emerald-200"
+              }`}
+              title={dragUnlocked ? "Verslepen uitschakelen" : "Verslepen inschakelen"}
+            >
+              {dragUnlocked ? <Unlock size={14} /> : <Lock size={14} />}
+              {dragUnlocked ? "Unlock" : "Lock"}
+            </button>
+
             {/* Navigation */}
             <div className="flex items-center gap-1.5">
+              <input
+                type="date"
+                value={dayInputValue}
+                onChange={(e) => handleDayJump(e.target.value)}
+                className="px-2 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-bold text-slate-700"
+                title="Spring naar dag"
+              />
+              <input
+                type="week"
+                value={weekInputValue}
+                onChange={(e) => handleWeekJump(e.target.value)}
+                className="px-2 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-bold text-slate-700"
+                title="Spring naar week"
+              />
+              <input
+                type="month"
+                value={monthInputValue}
+                onChange={(e) => handleMonthJump(e.target.value)}
+                className="px-2 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-bold text-slate-700"
+                title="Spring naar maand"
+              />
               <button
                 onClick={goToPreviousMonth}
                 className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[11px] font-bold transition-colors"
@@ -1174,7 +1411,7 @@ const GanttChartView = (props = {}) => {
       <div className="bg-white rounded-2xl shadow-sm border-2 border-slate-200 overflow-hidden">
         <div
           ref={timelineScrollRef}
-          className="overflow-y-auto overflow-x-hidden max-h-[600px] select-none"
+          className="overflow-y-auto overflow-x-auto max-h-[600px] select-none"
           onScroll={handleTimelineScroll}
         >
           <div style={{ minWidth: `${192 + timelineWidth}px` }}>
@@ -1318,14 +1555,10 @@ const GanttChartView = (props = {}) => {
                           .filter(Boolean)
                           .join(" - ");
 
-                        // Bereken actuele balk-breedte als beschikbaar
-                        let actualWidthPx = widthPx;
                         let actualBarColor = getOrderColor(order);
                         const bounds = getOrderTimeBounds(order);
                         
                         if (bounds?.actualDuration && bounds.actualDuration.actualEndDay) {
-                          const actualEndPixels = (dayIndexMap.get(format(bounds.actualDuration.actualEndDay, 'yyyy-MM-dd')) || 0) * effectiveDayWidth;
-                          actualWidthPx = Math.max(effectiveDayWidth, actualEndPixels - leftPx);
                           // Markeer orders die klaar zijn met groene overlay
                           if (bounds.actualDuration.totalProduced >= order.plan) {
                             actualBarColor = "bg-emerald-600";
@@ -1338,11 +1571,19 @@ const GanttChartView = (props = {}) => {
                             onMouseDown={(e) => {
                               handleDragStart(e, order);
                             }}
-                            onClick={() =>
-                              setSelectedOrderBarId((prev) =>
-                                prev === stableOrderSelectionId ? null : stableOrderSelectionId
-                              )
-                            }
+                            onClick={(e) => {
+                              const nextId = selectedOrderBarId === stableOrderSelectionId ? null : stableOrderSelectionId;
+                              setSelectedOrderBarId(nextId);
+                              setSelectedOrderPopup(
+                                nextId
+                                  ? {
+                                      id: stableOrderSelectionId,
+                                      order,
+                                      position: getPopupPosition(e.clientX, e.clientY),
+                                    }
+                                  : null
+                              );
+                            }}
                             className={`gantt-order-bar-wrapper absolute group`}
                             style={{ ...cssStyle, width: 'auto' }}
                           >
@@ -1355,7 +1596,7 @@ const GanttChartView = (props = {}) => {
                                     ? "ring-2 ring-emerald-300"
                                     : ""
                               } ${isSelectedBar ? "ring-2 ring-blue-300" : ""}`}
-                              style={{ ...cssStyle, width: `${widthPx}px` }}
+                              style={{ ...cssStyle, width: `${widthPx}px`, cursor: dragUnlocked ? cssStyle.cursor : 'pointer' }}
                             >
                               <div className="text-white text-xs font-bold truncate">
                                 {orderWithProductLabel}
@@ -1374,61 +1615,19 @@ const GanttChartView = (props = {}) => {
                             </div>
 
                             {/* Actuele duur overlay (groen streepje) */}
-                            {bounds?.actualDuration && (
+                            {bounds?.actualDuration && isSelectedBar && (
                               <div
-                                className="absolute bg-emerald-500 opacity-70 rounded-b-lg"
+                                className="absolute bg-emerald-500 opacity-80 rounded-b-lg"
                                 style={{
                                   left: 0,
                                   top: '100%',
-                                  width: `${actualWidthPx}px`,
+                                  width: `${widthPx}px`,
                                   height: '3px',
                                   marginTop: '-1px',
                                 }}
                                 title={`Werkelijk: ${bounds.actualDuration.actualDays} dagen, ${bounds.actualDuration.totalProduced} stuks`}
                               />
                             )}
-
-                            {/* Tooltip on hover */}
-                            <div className={`${isSelectedBar ? "block" : "hidden"} absolute top-full left-0 mt-2 bg-slate-900 text-white p-3 rounded-lg shadow-xl z-[90] whitespace-nowrap text-xs`}>
-                              <div className="font-bold mb-1">{order.orderId || order.item}</div>
-                              <div>{t("planning.gantt.tooltipItem")}: {order.itemCode || "-"}</div>
-                              <div>{t("planning.gantt.tooltipProduct", "Product")}: {order.itemDescription || order.item || "-"}</div>
-                              <div>{t("planning.gantt.tooltipQuantity")}: {order.plan} {t("planning.gantt.pieces")}</div>
-                              <div>{t("planning.gantt.tooltipProduced", "Gemaakt")}: {getProducedUnits(order, trackedFinishedByOrder)} / {order.plan} {t("planning.gantt.pieces")}</div>
-                              <div>
-                                {t("planning.gantt.tooltipTime")}: {Math.round(_totalHours * 10) / 10}u
-                                {_isEfficiencyBased && <span className="text-emerald-300 ml-1 font-bold">(LN)</span>}
-                              </div>
-                              <div>{t("planning.gantt.tooltipMachine")}: {order.machine}</div>
-                              {_startDate && <div>{t("planning.gantt.tooltipFrom")}: {format(_startDate, 'dd-MM-yyyy')}</div>}
-                              {_endDate && <div>{t("planning.gantt.tooltipTo")}: {format(_endDate, 'dd-MM-yyyy')}</div>}
-                              <div>{t("planning.gantt.tooltipLeadTime")}: {_leadWeeks} {t("planning.gantt.weeks")}</div>
-                              {bounds?.actualDuration && (
-                                <div className="border-t border-emerald-400 pt-2 mt-2">
-                                  <div className="font-bold text-emerald-400">Werkelijke duur:</div>
-                                  <div>{bounds.actualDuration.actualDays} dagen ({Math.round(bounds.actualDuration.actualDays / 7 * 10) / 10} wk)</div>
-                                  <div>{bounds.actualDuration.totalProduced} stuks, ~{Math.round(bounds.actualDuration.avgPerDay * 10) / 10}/dag</div>
-                                </div>
-                              )}
-                              {prediction && (
-                                <div>
-                                  {t("planning.gantt.tooltipPredictedReady", "Voorspelde gereeddatum")}: {prediction.predictedReadyDay ? format(prediction.predictedReadyDay, "dd-MM-yyyy") : "--"}
-                                </div>
-                              )}
-                              {prediction?.scheduleStatus !== "unknown" && (
-                                <div>
-                                  {t("planning.gantt.tooltipSchedule", "Planningstatus")}: {scheduleLabel}
-                                  {Number.isFinite(prediction?.slipDays)
-                                    ? ` (${prediction.slipDays > 0 ? "+" : ""}${prediction.slipDays}d)`
-                                    : ""}
-                                </div>
-                              )}
-                              {prediction && (
-                                <div>
-                                  {t("planning.gantt.tooltipThroughput", "Tempo")}: {Math.round((prediction?.unitsPerDay || 0) * 10) / 10} {t("planning.gantt.pieces")}/dag
-                                </div>
-                              )}
-                            </div>
                           </div>
                         );
                         });
@@ -1441,6 +1640,84 @@ const GanttChartView = (props = {}) => {
           </div>
         </div>
       </div>
+
+      {selectedOrderPopup?.order && (() => {
+        const order = selectedOrderPopup.order;
+        const stableOrderSelectionId = getOrderBarIdentity(order);
+        const prediction = orderPredictionMap.get(getOrderIdentity(order));
+        const bounds = getOrderTimeBounds(order);
+        const scheduleLabel =
+          prediction?.scheduleStatus === "behind"
+            ? t("planning.gantt.scheduleBehind", "Achter op schema")
+            : prediction?.scheduleStatus === "ahead"
+              ? t("planning.gantt.scheduleAhead", "Voor op schema")
+              : prediction?.scheduleStatus === "on_time"
+                ? t("planning.gantt.scheduleOnTime", "Op schema")
+                : t("planning.gantt.scheduleUnknown", "Onbekend");
+
+        if (selectedOrderBarId !== stableOrderSelectionId) return null;
+
+        return (
+          <div
+            className="fixed z-[140] w-[320px] rounded-xl bg-slate-900 text-white p-3 shadow-2xl text-xs"
+            style={{
+              left: `${selectedOrderPopup.position.left}px`,
+              top: `${selectedOrderPopup.position.top}px`,
+            }}
+          >
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div className="font-bold">{order.orderId || order.item}</div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedOrderBarId(null);
+                  setSelectedOrderPopup(null);
+                }}
+                className="text-slate-300 hover:text-white font-bold"
+              >
+                x
+              </button>
+            </div>
+            <div>{t("planning.gantt.tooltipItem")}: {order.itemCode || "-"}</div>
+            <div>{t("planning.gantt.tooltipProduct", "Product")}: {order.itemDescription || order.item || "-"}</div>
+            <div>{t("planning.gantt.tooltipQuantity")}: {order.plan} {t("planning.gantt.pieces")}</div>
+            <div>{t("planning.gantt.tooltipProduced", "Gemaakt")}: {getProducedUnits(order, trackedFinishedByOrder)} / {order.plan} {t("planning.gantt.pieces")}</div>
+            <div>{t("planning.gantt.tooltipMachine")}: {order.machine}</div>
+            {bounds && (
+              <>
+                <div>{t("planning.gantt.tooltipTime")}: {Math.round((bounds.totalHours || 0) * 10) / 10}u{bounds.isEfficiencyBased && <span className="text-emerald-300 ml-1 font-bold">(LN)</span>}</div>
+                {bounds.startDay && <div>{t("planning.gantt.tooltipFrom")}: {format(bounds.startDay, 'dd-MM-yyyy')}</div>}
+                {bounds.endDay && <div>{t("planning.gantt.tooltipTo")}: {format(bounds.endDay, 'dd-MM-yyyy')}</div>}
+                <div>{t("planning.gantt.tooltipLeadTime")}: {bounds.leadWeeks} {t("planning.gantt.weeks")}</div>
+              </>
+            )}
+            {bounds?.actualDuration && (
+              <div className="border-t border-emerald-400 pt-2 mt-2">
+                <div className="font-bold text-emerald-400">Werkelijke duur:</div>
+                <div>{bounds.actualDuration.actualDays} dagen ({Math.round(bounds.actualDuration.actualDays / 7 * 10) / 10} wk)</div>
+                <div>{bounds.actualDuration.totalProduced} stuks, ~{Math.round(bounds.actualDuration.avgPerDay * 10) / 10}/dag</div>
+              </div>
+            )}
+            {prediction && (
+              <div className="border-t border-slate-700 pt-2 mt-2 space-y-1">
+                <div>{t("planning.gantt.tooltipPredictedReady", "Voorspelde gereeddatum")}: {prediction.predictedReadyDay ? format(prediction.predictedReadyDay, "dd-MM-yyyy") : "--"}</div>
+                <div>
+                  {t("planning.gantt.tooltipPredictionSource", "Voorspelling op basis van")}: {prediction.predictedBy === "order_history"
+                    ? t("planning.gantt.predictionSourceOrderHistory", "orderhistorie")
+                    : t("planning.gantt.predictionSourceMachineHistory", "machinehistorie")}
+                </div>
+                <div>
+                  {t("planning.gantt.tooltipSchedule", "Planningstatus")}: {scheduleLabel}
+                  {Number.isFinite(prediction?.slipDays)
+                    ? ` (${prediction.slipDays > 0 ? "+" : ""}${prediction.slipDays}d)`
+                    : ""}
+                </div>
+                <div>{t("planning.gantt.tooltipThroughput", "Tempo")}: {Math.round((prediction?.unitsPerDay || 0) * 10) / 10} {t("planning.gantt.pieces")}/dag</div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Legend */}
       <div className="mt-6 bg-white rounded-2xl p-4 shadow-sm border-2 border-slate-200">

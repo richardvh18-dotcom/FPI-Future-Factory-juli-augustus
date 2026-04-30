@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { db } from '../../config/firebase';
 import { getArchiveItemsPath, PATHS } from '../../config/dbPaths';
 import { calculateDuration, formatMinutes } from '../../utils/efficiencyCalculator';
+import { subscribeScopedEfficiencyHours } from '../../utils/efficiencyScopedReader';
 
 /**
  * AiPredictionView
@@ -231,8 +232,14 @@ const AiPredictionView = ({ onClose }) => {
       })
     );
 
-    const unsubStandards = onSnapshot(collection(db, ...readPaths.EFFICIENCY_HOURS), (snap) => {
-      setStandards(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsubStandards = subscribeScopedEfficiencyHours({
+      db,
+      mode: 'active',
+      onData: (rows) => setStandards(rows),
+      onError: (error) => {
+        console.warn('Scoped efficiency listener failed:', error);
+        setStandards([]);
+      },
     });
 
     setLoading(false);

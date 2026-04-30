@@ -12,22 +12,26 @@ import {
 } from 'lucide-react';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { PATHS, getEfficiencyArchivePath, getPlanningArchivePath } from '../../config/dbPaths';
+import { PATHS, getPlanningArchivePath } from '../../config/dbPaths';
 import { format as formatDate, getISOWeek, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths } from 'date-fns';
 import { calculateDuration, formatMinutes, getEfficiencyColor } from '../../utils/efficiencyCalculator';
 import { calculateWorkingMinutes } from '../../utils/workingTimeUtils';
 import AiPredictionView from './AiPredictionView';
 import { getDeliveryPlanningState, resolveDeliveryDate } from '../../utils/dateUtils';
+import { subscribeScopedEfficiencyHours } from '../../utils/efficiencyScopedReader';
+import { normalizeMachine } from '../../utils/hubHelpers';
 
 const EfficiencyDashboard = () => {
   const { t } = useTranslation();
   const readPaths = PATHS;
-  const [standards, setStandards] = useState([]);
+  const [scopedStandards, setScopedStandards] = useState([]);
+  const [rootStandards, setRootStandards] = useState([]);
   const [tracking, setTracking] = useState([]);
   const [planningOrders, setPlanningOrders] = useState([]);
   const [, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all'); // 'active', 'all'
   const [departmentFilter, setDepartmentFilter] = useState('ALL'); // Nieuw: Afdeling filter
+  const [machineFilter, setMachineFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState('active'); // 'active' | 'archive'
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -120,7 +124,7 @@ const EfficiencyDashboard = () => {
   };
 
   const inferDepartmentFromMachine = (machine) => {
-    const m = String(machine || '').trim().toUpperCase();
+    const m = normalizeMachine(machine || '');
     if (m.startsWith('BH')) return 'Fittings';
     if (m.startsWith('BA')) return 'Pipes';
     if (m.startsWith('BM')) return 'Spools';
@@ -241,6 +245,26 @@ const EfficiencyDashboard = () => {
 
   const jumpToToday = () => setSelectedDate(new Date());
 
+  // Scoped docs zijn de nieuwe bron, maar root docs blijven fallback zolang migraties lopen.
+  const standards = useMemo(() => {
+    const merged = new Map();
+
+    rootStandards.forEach((row, idx) => {
+      const key = String(row.orderId || row.id || `root-${idx}`).trim();
+      if (!key) return;
+      merged.set(key, row);
+    });
+
+    scopedStandards.forEach((row, idx) => {
+      const key = String(row.orderId || row.id || `scoped-${idx}`).trim();
+      if (!key) return;
+      // Scoped record krijgt voorrang op root record.
+      merged.set(key, row);
+    });
+
+    return Array.from(merged.values());
+  }, [scopedStandards, rootStandards]);
+
   const matchesDepartmentFilter = (row) => {
     if (departmentFilter === 'ALL') return true;
 
@@ -260,25 +284,95 @@ const EfficiencyDashboard = () => {
     );
   };
 
+  const matchesMachineFilter = (row) => {
+    if (machineFilter === 'ALL') return true;
+
+    const filter = normalizeText(machineFilter);
+    const machine = normalizeText(
+      normalizeMachine(row.machine || row.originMachine || row.currentStation || row.lastStation)
+    );
+    if (!machine) return false;
+
+    return machine === filter || machine.includes(filter) || filter.includes(machine);
+  };
+
+  const machineOptions = useMemo(() => {
+    const options = new Set();
+
+    planningOrders.forEach((order) => {
+      const machine = normalizeMachine(order.machine || '');
+      if (!machine) return;
+
+      const dept = normalizeText(order.department || inferDepartmentFromMachine(machine) || resolveDepartmentNameFromId(order.departmentId));
+      const filter = normalizeText(departmentFilter);
+      if (departmentFilter !== 'ALL' && !(dept === filter || dept.includes(filter) || filter.includes(dept))) return;
+      options.add(machine);
+    });
+
+    tracking.forEach((log) => {
+      const machine = normalizeMachine(log.originMachine || log.machine || log.currentStation || log.lastStation || '');
+      if (!machine) return;
+
+      const dept = normalizeText(log.department || inferDepartmentFromMachine(machine) || resolveDepartmentNameFromId(log.departmentId || log.deptId));
+      const filter = normalizeText(departmentFilter);
+      if (departmentFilter !== 'ALL' && !(dept === filter || dept.includes(filter) || filter.includes(dept))) return;
+      options.add(machine);
+    });
+
+    scopedStandards.forEach((std) => {
+      const machine = normalizeMachine(std.machine || std.currentStation || std.machineId || '');
+      if (!machine) return;
+
+      const dept = normalizeText(std.department || std.departmentName || inferDepartmentFromMachine(machine) || resolveDepartmentNameFromId(std.departmentId));
+      const filter = normalizeText(departmentFilter);
+      if (departmentFilter !== 'ALL' && !(dept === filter || dept.includes(filter) || filter.includes(dept))) return;
+      options.add(machine);
+    });
+
+    return Array.from(options).sort((a, b) => a.localeCompare(b, 'nl'));
+  }, [departmentFilter, planningOrders, tracking, scopedStandards]);
+
+  useEffect(() => {
+    if (machineFilter === 'ALL') return;
+    if (!machineOptions.includes(machineFilter)) {
+      setMachineFilter('ALL');
+    }
+  }, [machineFilter, machineOptions]);
+
   useEffect(() => {
     setLoading(true);
 
     if (!readPaths || !readPaths.EFFICIENCY_HOURS || !readPaths.TRACKING) {
+      setScopedStandards([]);
+      setRootStandards([]);
       setLoading(false);
       return;
     }
 
-    // 1. Haal de standaarden op (Targets uit Infor LN import)
-    // Wissel tussen actuele collectie en archief op basis van viewMode
-    const collectionPath = viewMode === 'active' 
-      ? readPaths.EFFICIENCY_HOURS
-      : getEfficiencyArchivePath(selectedYear);
-
-    const standardsRef = collection(db, ...collectionPath);
-    const unsubStandards = onSnapshot(standardsRef, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setStandards(data);
+    // 1. Haal de standaarden op uit scoped efficiency paths.
+    const unsubStandards = subscribeScopedEfficiencyHours({
+      db,
+      mode: viewMode === 'active' ? 'active' : 'archive',
+      year: selectedYear,
+      onData: (rows) => setScopedStandards(rows),
+      onError: (error) => {
+        console.warn('Scoped efficiency listener failed:', error);
+        setScopedStandards([]);
+      },
     });
+
+    // Fallback voor legacy/root efficiency docs
+    const unsubRootStandards = onSnapshot(
+      collection(db, ...readPaths.EFFICIENCY_HOURS),
+      (snapshot) => {
+        const rows = snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+        setRootStandards(rows);
+      },
+      (error) => {
+        console.warn('Root efficiency listener failed:', error);
+        setRootStandards([]);
+      }
+    );
 
     // 2. Haal de werkelijke tracking data op (Actuals van de vloer)
     // We gebruiken de tracking collectie waar operators hun start/stop tijden loggen
@@ -309,6 +403,7 @@ const EfficiencyDashboard = () => {
 
     return () => {
       unsubStandards();
+      unsubRootStandards();
       unsubTracking();
       unsubPlanning();
       unsubFactory();
@@ -464,7 +559,7 @@ const EfficiencyDashboard = () => {
       const inSelectedPeriod =
         viewMode === 'archive'
           ? true
-          : eventDates.some((d) => isWithinInterval(d, periodRange));
+          : (eventDates.length === 0 || eventDates.some((d) => isWithinInterval(d, periodRange)));
 
       return {
         ...std,
@@ -571,7 +666,7 @@ const EfficiencyDashboard = () => {
       const inSelectedPeriod =
         viewMode === 'archive'
           ? true
-          : eventDates.some((d) => isWithinInterval(d, periodRange));
+          : (eventDates.length === 0 || eventDates.some((d) => isWithinInterval(d, periodRange)));
 
       return {
         id: orderId,
@@ -612,6 +707,7 @@ const EfficiencyDashboard = () => {
     }
 
     processed = processed.filter((i) => matchesDepartmentFilter(i));
+    processed = processed.filter((i) => matchesMachineFilter(i));
 
     if (searchTerm) {
       const lower = searchTerm.toLowerCase();
@@ -644,7 +740,7 @@ const EfficiencyDashboard = () => {
         totalActual
       }
     };
-  }, [standards, tracking, planningOrders, filterStatus, searchTerm, viewMode, departmentFilter, factoryConfig, selectedDate, periodMode]);
+  }, [standards, tracking, planningOrders, filterStatus, searchTerm, viewMode, departmentFilter, machineFilter, factoryConfig, selectedDate, periodMode]);
 
   if (showAiAnalysis) {
     return <AiPredictionView onClose={() => setShowAiAnalysis(false)} />;
@@ -707,6 +803,17 @@ const EfficiencyDashboard = () => {
           <option value="FITTINGS">Fittings</option>
           <option value="PIPES">Pipes</option>
           <option value="SPOOLS">Spools</option>
+        </select>
+
+        <select
+          value={machineFilter}
+          onChange={(e) => setMachineFilter(e.target.value)}
+          className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl focus:ring-blue-500 focus:border-blue-500 block p-2.5 font-bold outline-none"
+        >
+          <option value="ALL">Alle Machines</option>
+          {machineOptions.map((machine) => (
+            <option key={machine} value={machine}>{machine}</option>
+          ))}
         </select>
 
         <div className="flex items-center gap-2 w-full md:w-auto">

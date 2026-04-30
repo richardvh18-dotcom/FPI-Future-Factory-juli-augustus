@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, CheckCircle, ArrowRight, AlertTriangle, Ruler, AlertOctagon, FileText } from "lucide-react";
-import { collection, query, where, getDocs } from "firebase/firestore";
+import { collection, collectionGroup, query, where, getDocs } from "firebase/firestore";
 import { db, auth, logActivity } from "../../../config/firebase";
 import { PATHS } from "../../../config/dbPaths";
 import { REJECTION_REASONS, resolvePostLossenStation } from "../../../utils/workstationLogic";
@@ -22,6 +22,76 @@ const REJECTION_REASON_FALLBACKS = {
 
 const LOSSEN_1218_SOURCE_STATIONS = new Set(["BH12", "BH15", "BH17"]);
 const LOSSEN_1218_STATION_NAME = "LOSSEN 12/18";
+const LOSSEN_1218_ORIGIN_STATIONS = new Set(["BH12", "BH15", "BH17", "BH18"]);
+const MOLD_CHANGE_THRESHOLD_DAYS = 21;
+
+const normalizeStationToken = (value = "") => String(value || "").toUpperCase().replace(/\s+/g, "").trim();
+
+const isLossen1218Station = (value = "") => {
+  const token = normalizeStationToken(value);
+  return token === "LOSSEN12/18" || token === "LOSSEN1218";
+};
+
+const isClosedTrackingState = (entry = {}) => {
+  const statusUpper = String(entry?.status || "").toUpperCase();
+  const stepUpper = String(entry?.currentStep || "").toUpperCase();
+  return (
+    statusUpper.includes("REJECT") ||
+    statusUpper.includes("ARCHIVE") ||
+    statusUpper.includes("SHIPP") ||
+    statusUpper === "FINISHED" ||
+    stepUpper.includes("REJECT") ||
+    stepUpper.includes("FINISH")
+  );
+};
+
+const isStillInLossen1218Flow = (entry = {}) => {
+  if (isClosedTrackingState(entry)) return false;
+
+  const currentStation = normalizeStationToken(entry?.currentStation || "");
+  const originStation = normalizeStationToken(entry?.originMachine || entry?.machine || "");
+  const stepUpper = String(entry?.currentStep || "").toUpperCase();
+  const statusUpper = String(entry?.status || "").toUpperCase();
+
+  if (isLossen1218Station(currentStation)) return true;
+  if (LOSSEN_1218_ORIGIN_STATIONS.has(currentStation)) return true;
+  if (LOSSEN_1218_ORIGIN_STATIONS.has(originStation) && (stepUpper.includes("WIKKEL") || stepUpper.includes("LOSSEN") || statusUpper.includes("LOSSEN"))) {
+    return true;
+  }
+
+  return false;
+};
+
+const isClosedPlanningStatus = (status = "") => {
+  const normalized = String(status || "").trim().toLowerCase();
+  return ["completed", "cancelled", "rejected", "shipped", "finished", "deleted", "archived"].includes(normalized);
+};
+
+const toDateMillis = (value) => {
+  if (!value) return null;
+  if (typeof value?.toDate === "function") {
+    const d = value.toDate();
+    const ms = d instanceof Date ? d.getTime() : Number.NaN;
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const d = new Date(value);
+  const ms = d.getTime();
+  return Number.isFinite(ms) ? ms : null;
+};
+
+const getOrderDateMillis = (data = {}) => {
+  const candidates = [
+    data?.deliveryDate,
+    data?.plannedDeliveryDate,
+    data?.plannedDate,
+    data?.orderCreationDate,
+  ];
+  for (const value of candidates) {
+    const millis = toDateMillis(value);
+    if (millis !== null) return millis;
+  }
+  return null;
+};
 
 const getLossenRoute = (itemText, originStation = "") => {
   const originNorm = String(originStation || "").toUpperCase().replace(/\s/g, "");
@@ -57,6 +127,123 @@ const getLossenRoute = (itemText, originStation = "") => {
  * UPDATE: Uitgebreide functionaliteit voor Lossen (metingen, afkeur opties).
  */
 const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, autoApproveTrigger = 0, forceLossenMode = false }) => {
+  const maybeShowLossen1218MoldNotice = async (processedTargets = []) => {
+    if (!Array.isArray(processedTargets) || processedTargets.length === 0) return;
+
+    const relevantTargets = processedTargets.filter((entry) => {
+      const currentStation = entry?.currentStation || entry?.machine || "";
+      const originStation = entry?.originMachine || entry?.machine || "";
+      return isLossen1218Station(currentStation) || LOSSEN_1218_ORIGIN_STATIONS.has(normalizeStationToken(originStation));
+    });
+
+    if (relevantTargets.length === 0) return;
+
+    const orderMap = new Map();
+    relevantTargets.forEach((entry) => {
+      const orderId = String(entry?.orderId || "").trim();
+      const itemCode = String(entry?.itemCode || "").trim();
+      if (!orderId || !itemCode || orderId.toUpperCase() === "NOG_TE_BEPALEN") return;
+      if (!orderMap.has(orderId)) {
+        orderMap.set(orderId, {
+          orderId,
+          itemCode,
+          machine: String(entry?.originMachine || entry?.machine || "").trim(),
+        });
+      }
+    });
+
+    if (orderMap.size === 0) return;
+
+    const thresholdMs = MOLD_CHANGE_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
+    const notices = [];
+
+    for (const meta of orderMap.values()) {
+      const { orderId, itemCode, machine } = meta;
+
+      const trackedSnap = await getDocs(query(collection(db, ...PATHS.TRACKING), where("orderId", "==", orderId)));
+      const hasRemainingInLossenFlow = trackedSnap.docs.some((docSnap) => {
+        const data = docSnap.data() || {};
+        return isStillInLossen1218Flow(data);
+      });
+
+      if (hasRemainingInLossenFlow) {
+        continue;
+      }
+
+      const planningMatches = new Map();
+      const [rootPlanningSnap, scopedPlanningSnap] = await Promise.all([
+        getDocs(query(collection(db, ...PATHS.PLANNING), where("itemCode", "==", itemCode))),
+        getDocs(query(collectionGroup(db, "orders"), where("itemCode", "==", itemCode))),
+      ]);
+
+      rootPlanningSnap.docs.forEach((docSnap) => {
+        planningMatches.set(docSnap.ref.path, docSnap);
+      });
+      scopedPlanningSnap.docs.forEach((docSnap) => {
+        if (String(docSnap.ref.path || "").startsWith("future-factory/production/digital_planning/")) {
+          planningMatches.set(docSnap.ref.path, docSnap);
+        }
+      });
+
+      let currentOrderDate = null;
+      const candidates = Array.from(planningMatches.values())
+        .map((docSnap) => ({ docSnap, data: docSnap.data() || {} }))
+        .filter(({ data }) => {
+          const candidateOrderId = String(data?.orderId || "").trim();
+          if (!candidateOrderId) return false;
+          if (candidateOrderId === orderId) {
+            currentOrderDate = getOrderDateMillis(data);
+            return false;
+          }
+          if (isClosedPlanningStatus(data?.status)) return false;
+          if (String(data?.itemCode || "").trim() !== itemCode) return false;
+
+          const candidateMachine = normalizeStationToken(data?.machine || machine || "");
+          if (machine && candidateMachine && candidateMachine !== normalizeStationToken(machine)) return false;
+
+          return true;
+        });
+
+      const baselineDate = currentOrderDate ?? Date.now();
+      let minDeltaMs = Number.POSITIVE_INFINITY;
+
+      candidates.forEach(({ data }) => {
+        const millis = getOrderDateMillis(data);
+        if (!Number.isFinite(millis)) return;
+        const delta = millis - baselineDate;
+        if (delta > 0 && delta < minDeltaMs) minDeltaMs = delta;
+      });
+
+      const hasNoFutureOrders = !Number.isFinite(minDeltaMs);
+      const nextOrderIsFarAway = Number.isFinite(minDeltaMs) && minDeltaMs >= thresholdMs;
+
+      if (hasNoFutureOrders || nextOrderIsFarAway) {
+        notices.push({
+          orderId,
+          itemCode,
+          nextOrderGapDays: Number.isFinite(minDeltaMs) ? Math.round(minDeltaMs / (24 * 60 * 60 * 1000)) : null,
+        });
+      }
+    }
+
+    if (notices.length === 0) return;
+
+    const summary = notices
+      .map((entry) => {
+        if (Number.isFinite(entry.nextOrderGapDays)) {
+          return `Order ${entry.orderId} (${entry.itemCode}) - volgende order pas over ~${entry.nextOrderGapDays} dagen.`;
+        }
+        return `Order ${entry.orderId} (${entry.itemCode}) - geen vervolgorder gevonden.`;
+      })
+      .join("\n");
+
+    const popupMessage = `Lossen 12/18: dit lijken de laatste stuks van deze order(s).\nDe mal kan mogelijk afgebroken of omgebouwd worden.\n\n${summary}`;
+
+    notify(popupMessage);
+    if (typeof window !== "undefined" && typeof window.alert === "function") {
+      window.alert(popupMessage);
+    }
+  };
   const { t } = useTranslation();
   const { notify } = useNotifications();
   const { addOperation, updateOperation, removeOperation } = useProgressOperations();
@@ -293,7 +480,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
                 targetStation = lossenRoute.mode === "STATION" ? (lossenRoute.station || "LOSSEN") : originStation;
               } else if (nextStep === "Mazak") {
                 targetStation = "Mazak";
-                nextStatus = "Te Nabewerken";
+                nextStatus = "Wacht op Mazak";
               }
 
               await advanceTrackedProduct({
@@ -347,6 +534,10 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
           status === "approved" ? "PRODUCT_RELEASE" : status === "temp_reject" ? "QUALITY_TEMP_REJECT" : "QUALITY_REJECT_FINAL",
           `Release modal: ${selectedTargets.length} lot(s), station ${product?.currentStation || product?.machine || "onbekend"}, status ${status}`
         );
+
+        if (status === "approved" && isLossenStep) {
+          await maybeShowLossen1218MoldNotice(selectedTargets);
+        }
 
         // Clear pending after 2 seconds
         setTimeout(() => {
