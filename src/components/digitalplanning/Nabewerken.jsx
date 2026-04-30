@@ -2,10 +2,12 @@ import React, { useMemo, useRef, useState, useEffect } from "react";
 import PostProcessingFinishModal from "./modals/PostProcessingFinishModal";
 import { useTranslation } from "react-i18next";
 import { Package } from "lucide-react";
-import { getDeliveryPlanningState, resolveDeliveryDate, toDateSafe } from "../../utils/dateUtils";
+import { getDeliveryPlanningState, resolveDeliveryDate } from "../../utils/dateUtils";
 import { completeTrackedProduct, rejectTrackedProductFinal, tempRejectTrackedProduct } from "../../services/planningSecurityService";
 import { auth, logActivity } from "../../config/firebase";
 import { useNotifications } from "../../contexts/NotificationContext";
+
+const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
 
 /**
  * Nabewerken Component
@@ -13,7 +15,7 @@ import { useNotifications } from "../../contexts/NotificationContext";
  */
 const Nabewerken = ({ products = [], orders = [] }) => {
   const { t } = useTranslation();
-  const { showError } = useNotifications();
+  const { showError, showSuccess } = useNotifications();
 
   const getDeliveryDate = (product) => {
     if (!product || typeof product !== "object") return null;
@@ -76,25 +78,120 @@ const Nabewerken = ({ products = [], orders = [] }) => {
   const [showModal, setShowModal] = useState(false);
   const scanInputRef = useRef(null);
 
+  const focusScanInput = () => {
+    const input = scanInputRef.current;
+    if (!input) return;
+    input.focus({ preventScroll: true });
+  };
+
+  const scheduleScanFocus = () => {
+    if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => {
+        focusScanInput();
+        setTimeout(focusScanInput, 0);
+      });
+      return;
+    }
+    setTimeout(focusScanInput, 0);
+  };
+
   // Focus scanveld bij laden
   useEffect(() => {
-    scanInputRef.current?.focus();
+    scheduleScanFocus();
   }, []);
 
   // Focus scanveld bij click buiten input
   useEffect(() => {
     const handleClick = (e) => {
-      if (e.target.closest?.('input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-scan-ignore]')) return;
-      if (!showModal) scanInputRef.current?.focus();
+      const target = e?.target;
+      if (!target) return;
+      if (target.closest?.('input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-scan-ignore]')) return;
+      if (!showModal) scheduleScanFocus();
+    };
+    const handleWindowFocus = () => {
+      if (!showModal) scheduleScanFocus();
     };
     document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
+    window.addEventListener('focus', handleWindowFocus);
+    return () => {
+      document.removeEventListener('click', handleClick);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
   }, [showModal]);
 
-  const handleScan = (e) => {
+  const handlePostProcessingFinish = async (product, status, data = {}) => {
+    const productId = product.id || product.lotNumber;
+    const station = product.currentStation || "Nabewerking";
+
+    if (status === "completed") {
+      await completeTrackedProduct({
+        productId,
+        finishType: "forward",
+        fromStation: station,
+        note: data.note || "",
+        actorLabel: auth.currentUser?.email || "Operator",
+        source: "Nabewerken",
+      });
+      await logActivity(auth.currentUser?.uid || "system", "POST_PROCESS_COMPLETE", `Nabewerken gereedgemeld: lot ${product.lotNumber || productId}`);
+      showSuccess(
+        t("nabewerking.sent_to_end_inspection", "Product {{lot}} is naar Eindinspectie gestuurd.", { lot: product.lotNumber || productId }),
+        t("nabewerking.completed", "Gereed")
+      );
+      return;
+    }
+
+    if (status === "rejected") {
+      await rejectTrackedProductFinal({
+        productId,
+        reasons: data.reasons || [],
+        note: data.note || "",
+        source: "Nabewerken",
+        actorLabel: auth.currentUser?.email || "Operator",
+      });
+      await logActivity(auth.currentUser?.uid || "system", "QUALITY_REJECT_FINAL", `Nabewerken definitieve afkeur: lot ${product.lotNumber || productId}`);
+      return;
+    }
+
+    await tempRejectTrackedProduct({
+      productId,
+      reasons: data.reasons || [],
+      note: data.note || "",
+      station,
+      actorLabel: auth.currentUser?.email || "Operator",
+      previousStep: product.currentStep || "",
+      previousStatus: product.status || "",
+      source: "Nabewerken",
+    });
+    await logActivity(auth.currentUser?.uid || "system", "QUALITY_TEMP_REJECT", `Nabewerken tijdelijke afkeur: lot ${product.lotNumber || productId}`);
+  };
+
+  const handleScan = async (e) => {
     if (e.key === 'Enter') {
       const code = scanInput.trim().toUpperCase();
       if (!code) return;
+
+      if (code === QR_CODE_OK_CONFIRMATION) {
+        const productToProcess = selectedProduct;
+        if (!productToProcess) {
+          setScanInput("");
+          showError(t("nabewerking.scan_lot_first", "Scan of selecteer eerst een lotnummer."), "Nabewerken");
+          scheduleScanFocus();
+          return;
+        }
+        try {
+          await handlePostProcessingFinish(productToProcess, "completed", { note: "Goedgekeurd via QR Scan" });
+        } catch (err) {
+          console.error("Fout bij OK-QR afronden Nabewerken:", err);
+          showError(err.message || "Kon OK QR actie niet verwerken", "Fout");
+        } finally {
+          setShowModal(false);
+          setSelectedProduct(null);
+          setScanInput("");
+          scheduleScanFocus();
+        }
+        return;
+      }
+
       const found = nabewerkingProducts.find(p => (p.lotNumber || '').toUpperCase() === code);
       if (found) {
         setSelectedProduct(found);
@@ -104,15 +201,13 @@ const Nabewerken = ({ products = [], orders = [] }) => {
         setScanInput("");
         setSelectedProduct(null);
       }
-      setTimeout(() => {
-        scanInputRef.current?.focus();
-      }, 50);
+      scheduleScanFocus();
     }
   };
 
   return (
     <div className="w-full h-full flex flex-col bg-white">
-      <div className="flex-1 p-3 pb-32 space-y-2 overflow-y-auto custom-scrollbar" style={{ paddingBottom: "max(8rem, env(safe-area-inset-bottom))" }}>
+      <div className="flex-1 p-3 space-y-2 overflow-y-auto custom-scrollbar" style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}>
         <div className="mb-3 space-y-2">
           <div className="flex justify-between items-end">
             <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 rounded-lg border border-blue-100 w-fit">
@@ -126,8 +221,14 @@ const Nabewerken = ({ products = [], orders = [] }) => {
             <input
               ref={scanInputRef}
               type="text"
+              autoFocus
               value={scanInput}
               onChange={e => setScanInput(e.target.value)}
+              inputMode="none"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
               onKeyDown={handleScan}
               placeholder={t("digitalplanning.terminal.scan_lot_or_order", "Scan lotnummer...")}
               className="w-full pl-4 pr-4 py-4 border-2 border-blue-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-300 rounded-2xl font-bold text-lg shadow-sm outline-none placeholder:text-slate-300"
@@ -214,56 +315,22 @@ const Nabewerken = ({ products = [], orders = [] }) => {
       </div>
       {showModal && selectedProduct && (
         <PostProcessingFinishModal
-          product={selectedProduct}
-          onClose={() => { setShowModal(false); setSelectedProduct(null); setTimeout(() => scanInputRef.current?.focus(), 50); }}
-          onConfirm={async (status, data) => {
-            const product = selectedProduct;
-            const productId = product.id || product.lotNumber;
-            const station = product.currentStation || "Nabewerking";
-            try {
-              if (status === "completed") {
-                await completeTrackedProduct({
-                  productId,
-                  finishType: "forward",
-                  fromStation: station,
-                  note: data.note || "",
-                  actorLabel: auth.currentUser?.email || "Operator",
-                  source: "Nabewerken",
-                });
-                await logActivity(auth.currentUser?.uid || "system", "POST_PROCESS_COMPLETE", `Nabewerken gereedgemeld: lot ${product.lotNumber || productId}`);
-              } else if (status === "rejected") {
-                await rejectTrackedProductFinal({
-                  productId,
-                  reasons: data.reasons || [],
-                  note: data.note || "",
-                  source: "Nabewerken",
-                  actorLabel: auth.currentUser?.email || "Operator",
-                });
-                await logActivity(auth.currentUser?.uid || "system", "QUALITY_REJECT_FINAL", `Nabewerken definitieve afkeur: lot ${product.lotNumber || productId}`);
-              } else {
-                await tempRejectTrackedProduct({
-                  productId,
-                  reasons: data.reasons || [],
-                  note: data.note || "",
-                  station,
-                  actorLabel: auth.currentUser?.email || "Operator",
-                  previousStep: product.currentStep || "",
-                  previousStatus: product.status || "",
-                  source: "Nabewerken",
-                });
-                await logActivity(auth.currentUser?.uid || "system", "QUALITY_TEMP_REJECT", `Nabewerken tijdelijke afkeur: lot ${product.lotNumber || productId}`);
+            product={selectedProduct}
+            onClose={() => { setShowModal(false); setSelectedProduct(null); scheduleScanFocus(); }}
+            onConfirm={async (status, data) => {
+              try {
+                await handlePostProcessingFinish(selectedProduct, status, data);
+              } catch (err) {
+                console.error("Fout bij afronden Nabewerken:", err);
+                showError(err.message || "Kon wijziging niet opslaan", "Fout");
+              } finally {
+                setShowModal(false);
+                setSelectedProduct(null);
+                scheduleScanFocus();
               }
-            } catch (err) {
-              console.error("Fout bij afronden Nabewerken:", err);
-              showError(err.message || "Kon wijziging niet opslaan", "Fout");
-            } finally {
-              setShowModal(false);
-              setSelectedProduct(null);
-              setTimeout(() => scanInputRef.current?.focus(), 50);
-            }
-          }}
-          currentStation={selectedProduct.currentStation || "Nabewerking"}
-        />
+            }}
+            currentStation={selectedProduct.currentStation || "Nabewerking"}
+          />
       )}
     </div>
   );

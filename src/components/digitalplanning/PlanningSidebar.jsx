@@ -17,10 +17,45 @@ import StatusBadge from "./common/StatusBadge";
 import { collection, query, getDocs, limit } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { getArchiveItemsPath } from "../../config/dbPaths";
-import { getISOWeek } from "date-fns";
+import { endOfISOWeek, format, getISOWeek, isSameDay, isWithinInterval, startOfISOWeek } from "date-fns";
 import { getOrderFinishedUnits, getOrderIdentity, getTrackedRecordOrderId } from "../../utils/planningProgress";
 
 const FixedSizeList = List;
+
+const formatDateInputValue = (date) => format(date, "yyyy-MM-dd");
+
+const parseDateInputValue = (value) => {
+  const parsed = new Date(`${String(value || "").trim()}T00:00:00`);
+  return Number.isFinite(parsed.getTime()) ? parsed : new Date();
+};
+
+const toEntryDate = (entry) => {
+  const candidates = [
+    entry?.completedAt,
+    entry?.timestamps?.finished,
+    entry?.rejectDate,
+    entry?.archivedAt,
+    entry?.updatedAt,
+    entry?.createdAt,
+  ];
+
+  for (const value of candidates) {
+    if (!value) continue;
+    if (typeof value?.toDate === "function") {
+      const converted = value.toDate();
+      if (Number.isFinite(converted?.getTime?.())) return converted;
+    }
+
+    if (value instanceof Date && Number.isFinite(value.getTime())) {
+      return value;
+    }
+
+    const parsed = new Date(value);
+    if (Number.isFinite(parsed.getTime())) return parsed;
+  }
+
+  return null;
+};
 
 // Lokale AutoSizer implementatie om import problemen te voorkomen
 const AutoSizer = ({ children }) => {
@@ -54,22 +89,43 @@ const PlanningSidebar = ({
   onSelect,
   trackedProducts = [],
   archivedProducts = [],
+  archivedHistoryProducts = [],
   enableRejectionScopes = false,
 }) => {
   const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedMachine, setSelectedMachine] = useState("ALL");
   const [sortMode, setSortMode] = useState("week_backlog");
-  const [dataScope, setDataScope] = useState("all");
+  const [dataScope, setDataScope] = useState("active");
   const [rejectPeriod, setRejectPeriod] = useState("this_week");
+  const [completedRangeMode, setCompletedRangeMode] = useState("day");
+  const [completedDateValue, setCompletedDateValue] = useState(formatDateInputValue(new Date()));
   const [archivedOrders, setArchivedOrders] = useState([]);
   const [loadingArchive, setLoadingArchive] = useState(false);
 
   const currentWeek = getISOWeek(new Date());
   const currentYear = new Date().getFullYear();
+  const selectedCompletedDate = useMemo(() => parseDateInputValue(completedDateValue), [completedDateValue]);
+
+  // Auto-enable history when searching for lot numbers
+  useEffect(() => {
+    const term = (searchTerm || "").toLowerCase().trim();
+    // Check if search term looks like a lot number (6+ digits or contains only numbers)
+    const isLotNumberSearch = /\d{6,}/.test(term) || (/^\d+$/.test(term) && term.length > 5);
+    
+    if (isLotNumberSearch && dataScope === "active") {
+      // Switch to "all" (active + history) when searching for lot numbers
+      setDataScope("all");
+    } else if (!isLotNumberSearch && dataScope === "all") {
+      // If search term is cleared or changed to non-lot search, keep current scope
+      // Only switch back if it's truly a manual action (not automatic)
+      // Keep it in "all" for now to avoid constant toggling
+    }
+  }, [searchTerm]);
 
   const isHistoryScope = dataScope === "history" || dataScope === "all";
   const isRejectScope = dataScope === "temp_reject" || dataScope === "definitive_reject";
+  const isCompletedScope = dataScope === "completed_inspection";
 
   const getLotFromRecord = (record) => {
     const directLot = String(record?.lotNumber || record?.activeLot || "").trim();
@@ -321,8 +377,66 @@ const PlanningSidebar = ({
     return Array.from(byOrder.values());
   }, [trackedProducts]);
 
+  const completedInspectionEntries = useMemo(() => {
+    const combinedProducts = [...trackedProducts, ...archivedProducts, ...archivedHistoryProducts];
+    const uniqueEntries = new Map();
+
+    combinedProducts.forEach((product) => {
+      const completedAt = toEntryDate(product);
+      if (!completedAt) return;
+
+      const lastStation = normalizeStationFilter(product?.lastStation || "");
+      const status = String(product?.status || "").trim().toLowerCase();
+      const step = String(product?.currentStep || "").trim().toUpperCase();
+      const isInspectionCompleted =
+        lastStation === "BM01" &&
+        (status === "completed" || step === "FINISHED" || normalizeStationFilter(product?.currentStation || "") === "GEREED");
+
+      if (!isInspectionCompleted) return;
+
+      const inRange = completedRangeMode === "day"
+        ? isSameDay(completedAt, selectedCompletedDate)
+        : isWithinInterval(completedAt, {
+            start: startOfISOWeek(selectedCompletedDate),
+            end: endOfISOWeek(selectedCompletedDate),
+          });
+
+      if (!inRange) return;
+
+      const orderId = getOrderIdFromRecord(product);
+      const lotNumber = getLotFromRecord(product) || String(product?.id || "").trim();
+      const dedupeKey = `${orderId}__${lotNumber}__${completedAt.getTime()}`;
+      if (uniqueEntries.has(dedupeKey)) return;
+
+      uniqueEntries.set(dedupeKey, {
+        ...product,
+        id: dedupeKey,
+        orderId,
+        lotNumber,
+        lotNumbersText: lotNumber,
+        item: product?.item || product?.itemDescription || product?.itemCode || "Onbekend product",
+        itemDescription: product?.itemDescription || product?.item || "",
+        itemCode: product?.itemCode || "",
+        machine: product?.originMachine || product?.machine || product?.lastStation || "Onbekend",
+        originMachine: product?.originMachine || product?.machine || "",
+        lastStation: product?.lastStation || "BM01",
+        currentStation: product?.currentStation || "GEREED",
+        status: "Gereed gemeld",
+        completedAt,
+        completedDateMs: completedAt.getTime(),
+        weekNumber: getISOWeek(completedAt),
+        weekYear: completedAt.getFullYear(),
+        isCompletedInspectionEntry: true,
+      });
+    });
+
+    return Array.from(uniqueEntries.values()).sort((a, b) => (b.completedDateMs || 0) - (a.completedDateMs || 0));
+  }, [trackedProducts, archivedProducts, archivedHistoryProducts, completedRangeMode, selectedCompletedDate]);
+
   // Bepaal de bron data: Actief, History of beide
   const sourceData = useMemo(() => {
+    if (dataScope === "completed_inspection") return completedInspectionEntries;
+
     if (dataScope === "temp_reject" || dataScope === "definitive_reject") {
       return trackedProducts
         .filter((p) => {
@@ -405,23 +519,22 @@ const PlanningSidebar = ({
       byOrder.set(key, mergeOrderEntries(byOrder.get(key), o));
     });
     return Array.from(byOrder.values());
-  }, [dataScope, orders, archivedOrders, trackingDerivedOrders, trackedProducts, currentWeek, currentYear]);
+  }, [dataScope, orders, archivedOrders, trackingDerivedOrders, trackedProducts, currentWeek, currentYear, completedInspectionEntries]);
 
-  // Helper om te bepalen of een order nieuw is (< 24 uur)
+  // Helper om te bepalen of een order nieuw is (< 48 uur na aanmaak/import)
   const isOrderNew = (order) => {
-    if (!order.createdAt) return false;
-    const createdAt = order.createdAt.toMillis
-      ? order.createdAt.toMillis()
-      : new Date(order.createdAt).getTime();
-    const twentyFourHoursAgo = Date.now() - 24 * 60 * 60 * 1000;
-    return createdAt > twentyFourHoursAgo;
+    const fortyEightHoursAgo = Date.now() - 48 * 60 * 60 * 1000;
+    const val = order.createdAt || order.importDate;
+    if (!val) return false;
+    const ms = typeof val?.toMillis === 'function' ? val.toMillis() : new Date(val).getTime();
+    return Number.isFinite(ms) && ms > fortyEightHoursAgo;
   };
 
   const orderStationMap = useMemo(() => {
     const byOrder = new Map();
 
     // Include both active and archived products
-    const allProducts = [...trackedProducts, ...archivedProducts];
+    const allProducts = [...trackedProducts, ...archivedProducts, ...archivedHistoryProducts];
 
     allProducts.forEach((product) => {
       const orderKey = getOrderIdFromRecord(product);
@@ -445,12 +558,12 @@ const PlanningSidebar = ({
     });
 
     return byOrder;
-  }, [trackedProducts, archivedProducts]);
+  }, [trackedProducts, archivedProducts, archivedHistoryProducts]);
 
   // Lot-nummers per orderId ophalen vanuit trackedProducts en archivedProducts
   const orderLotMap = useMemo(() => {
     const byOrder = new Map();
-    const allProducts = [...trackedProducts, ...archivedProducts];
+    const allProducts = [...trackedProducts, ...archivedProducts, ...archivedHistoryProducts];
     allProducts.forEach((product) => {
       const orderKey = getOrderIdFromRecord(product);
       if (!orderKey) return;
@@ -461,7 +574,7 @@ const PlanningSidebar = ({
       byOrder.set(orderKey, set);
     });
     return byOrder;
-  }, [trackedProducts, archivedProducts]);
+  }, [trackedProducts, archivedProducts, archivedHistoryProducts]);
 
   // Unieke machines ophalen voor filter
   const machines = useMemo(() => {
@@ -509,6 +622,7 @@ const PlanningSidebar = ({
     { value: "active", label: "Actief" },
     { value: "history", label: "History" },
     { value: "all", label: "Actief + History" },
+    { value: "completed_inspection", label: "Gereedlijst Eindinspectie" },
     ...(enableRejectionScopes
       ? [
           { value: "temp_reject", label: "Tijdelijke Afkeur" },
@@ -516,6 +630,79 @@ const PlanningSidebar = ({
         ]
       : []),
   ];
+
+  // ── Helpers voor gereed-berekening (moeten vóór filteredOrders staan) ──────
+  const getNumeric = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const normalizeOrderKey = (value) => String(value || "").trim().toUpperCase();
+
+  const trackedFinishedByOrder = useMemo(() => {
+    const lotsByOrder = new Map();
+    const allTrackedRecords = [...trackedProducts, ...archivedProducts, ...archivedHistoryProducts];
+
+    allTrackedRecords.forEach((product) => {
+      const orderId = normalizeOrderKey(getOrderIdFromRecord(product));
+      if (!orderId) return;
+
+      const status = String(product?.status || "").toLowerCase();
+      const step = String(product?.currentStep || "").toLowerCase();
+      const isFinished =
+        status.includes("finish") ||
+        status.includes("gereed") ||
+        status.includes("completed") ||
+        step.includes("finish");
+      if (!isFinished) return;
+
+      const lotNumber = String(getLotFromRecord(product) || product?.id || "").trim();
+      if (!lotNumber) return;
+
+      const existingLots = lotsByOrder.get(orderId) || new Set();
+      existingLots.add(lotNumber);
+      lotsByOrder.set(orderId, existingLots);
+    });
+
+    const countMap = new Map();
+    lotsByOrder.forEach((lotSet, orderId) => {
+      countMap.set(orderId, lotSet.size);
+    });
+
+    return countMap;
+  }, [trackedProducts, archivedProducts, archivedHistoryProducts]);
+
+  const activeTrackedByOrder = useMemo(() => {
+    const countMap = new Map();
+
+    trackedProducts.forEach((product) => {
+      const orderId = normalizeOrderKey(getOrderIdFromRecord(product));
+      if (!orderId) return;
+
+      const status = String(product?.status || "").toLowerCase();
+      const step = String(product?.currentStep || "").toLowerCase();
+      const isFinished =
+        status.includes("finish") ||
+        status.includes("gereed") ||
+        status.includes("completed") ||
+        step.includes("finish") ||
+        step.includes("reject") ||
+        status.includes("reject");
+
+      if (isFinished) return;
+      countMap.set(orderId, (countMap.get(orderId) || 0) + 1);
+    });
+
+    return countMap;
+  }, [trackedProducts]);
+
+  const getFinishedUnitsForOrder = (order) => {
+    const baseFinished = getOrderFinishedUnits(order);
+    const orderKey = normalizeOrderKey(getOrderIdentity(order));
+    const trackedFinished = getNumeric(trackedFinishedByOrder.get(orderKey));
+    return Math.max(baseFinished, trackedFinished);
+  };
+  // ─────────────────────────────────────────────────────────────────────────
 
   const filteredOrders = useMemo(() => {
     const getPriorityLevel = (order) => {
@@ -543,6 +730,8 @@ const PlanningSidebar = ({
 
     const getOrderDateMs = (order) => {
       const candidates = [
+        order?.completedAt,
+        order?.timestamps?.finished,
         order?.plannedDate,
         order?.deliveryDate,
         order?.dueDate,
@@ -589,8 +778,20 @@ const PlanningSidebar = ({
     }
 
     // 2. Status Filter (actieve lijst: alleen Open/Lopend)
+    // Orders met effectief-Gereed status (produced >= plan && geen actieve lots) worden
+    // ook uitgefilterd, ook al staat de DB-status nog op 'planned'/'in_progress'.
     if (dataScope === "active") {
-      result = result.filter((o) => isOpenOrRunningStatus(o?.status));
+      result = result.filter((o) => {
+        if (!isOpenOrRunningStatus(o?.status)) return false;
+        // Extra check: als produced >= plan én geen actieve tracking meer → effectief Gereed → weggooien
+        const plannedAmt = Math.max(0, getNumeric(o?.plan || o?.plannedQuantity || o?.quantity || o?.qty));
+        if (plannedAmt > 0) {
+          const finishedAmt = getFinishedUnitsForOrder(o);
+          const activeAmt = getNumeric(activeTrackedByOrder.get(normalizeOrderKey(getOrderIdentity(o))));
+          if (finishedAmt >= plannedAmt && activeAmt === 0) return false;
+        }
+        return true;
+      });
     }
 
     if (isRejectScope) {
@@ -636,6 +837,9 @@ const PlanningSidebar = ({
         order?.item,
         order?.itemDescription,
         order?.itemCode,
+        order?.originMachine,
+        order?.lastStation,
+        order?.currentStation,
         order?.productId,
         order?.project,
         order?.projectDesc,
@@ -655,10 +859,11 @@ const PlanningSidebar = ({
         order?.week,
         order?.weekNumber,
         order?.plan,
+        order?.completedAt ? format(toEntryDate(order) || new Date(), "yyyy-MM-dd") : "",
         isOrderNew(order) ? "nieuw" : "",
         isOrderNew(order) ? "new" : "",
-        isOrderNew(order) ? "last24h" : "",
-        isOrderNew(order) ? "laatste24u" : "",
+        isOrderNew(order) ? "last48h" : "",
+        isOrderNew(order) ? "laatste48u" : "",
       ]
         .filter((v) => v !== null && v !== undefined)
         .map((v) => String(v).toLowerCase());
@@ -700,6 +905,13 @@ const PlanningSidebar = ({
 
     // 4. Sorteren (standaard): Huidige/Toekomstige weken eerst, daarna Backlog (Oude weken)
     return result.sort((a, b) => {
+      if (isCompletedScope) {
+        const dateA = getOrderDateMs(a);
+        const dateB = getOrderDateMs(b);
+        if (dateA !== dateB) return dateB - dateA;
+        return (a.orderId || "").localeCompare(b.orderId || "");
+      }
+
       const priorityRankA = getPriorityRank(a);
       const priorityRankB = getPriorityRank(b);
       if (priorityRankA !== priorityRankB) return priorityRankB - priorityRankA;
@@ -751,7 +963,130 @@ const PlanningSidebar = ({
       // Fallback: Order ID
       return (a.orderId || "").localeCompare(b.orderId || "");
     });
-  }, [sourceData, searchTerm, selectedMachine, dataScope, currentWeek, currentYear, sortMode, rejectPeriod, isRejectScope, orderStationMap, archivedOrders, orderLotMap]);
+  }, [sourceData, searchTerm, selectedMachine, dataScope, currentWeek, currentYear, sortMode, rejectPeriod, isRejectScope, isCompletedScope, orderStationMap, archivedOrders, orderLotMap, trackedFinishedByOrder, activeTrackedByOrder]);
+
+  const completedExportRows = useMemo(() => {
+    if (!isCompletedScope) return [];
+
+    return filteredOrders.map((entry) => {
+      const completedAt = toEntryDate(entry) || entry?.completedAt || new Date();
+      return {
+        readyDate: format(completedAt, "yyyy-MM-dd"),
+        readyTime: format(completedAt, "HH:mm"),
+        orderId: entry?.orderId || "",
+        lotNumber: entry?.lotNumber || entry?.lotNumbersText || "",
+        item: entry?.item || entry?.itemDescription || "",
+        itemCode: entry?.itemCode || "",
+        originStation: getStationLabel(entry?.originMachine || entry?.machine || ""),
+        inspectionStation: getStationLabel(entry?.lastStation || "BM01"),
+        status: entry?.status || "Gereed gemeld",
+      };
+    });
+  }, [filteredOrders, isCompletedScope]);
+
+  const completedPeriodLabel = useMemo(() => {
+    if (completedRangeMode === "day") return format(selectedCompletedDate, "yyyy-MM-dd");
+    return `week_${String(getISOWeek(selectedCompletedDate)).padStart(2, "0")}_${selectedCompletedDate.getFullYear()}`;
+  }, [completedRangeMode, selectedCompletedDate]);
+
+  const handleExportCompletedExcel = async () => {
+    if (!completedExportRows.length) return;
+
+    const XLSX = await import("xlsx");
+    const headerRow = [
+      "Gereed datum",
+      "Tijd",
+      "Order",
+      "Lot",
+      "Product",
+      "Item code",
+      "Bron station",
+      "Eindinspectie",
+      "Status",
+    ];
+    const aoa = [
+      headerRow,
+      ...completedExportRows.map((row) => [
+        row.readyDate,
+        row.readyTime,
+        row.orderId,
+        row.lotNumber,
+        row.item,
+        row.itemCode,
+        row.originStation,
+        row.inspectionStation,
+        row.status,
+      ]),
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+    worksheet["!cols"] = [
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 32 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 16 },
+    ];
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Gereedlijst");
+    XLSX.writeFile(workbook, `teamleader_gereedlijst_${completedRangeMode}_${completedPeriodLabel}.xlsx`);
+  };
+
+  const handleExportCompletedPdf = async () => {
+    if (!completedExportRows.length) return;
+
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const selectedOption = machines.find((option) => option.value === selectedMachine);
+    const filterLabel = selectedOption?.label || selectedMachine;
+
+    doc.setFontSize(14);
+    doc.text("Eindinspectie Gereedlijst", 14, 14);
+    doc.setFontSize(9);
+    doc.text(`Periode: ${completedPeriodLabel}`, 14, 20);
+    doc.text(`Filter: ${filterLabel}`, 75, 20);
+    doc.text(`Totaal: ${completedExportRows.length}`, 145, 20);
+
+    autoTable(doc, {
+      startY: 25,
+      styles: { fontSize: 8, cellPadding: 1.5, overflow: "linebreak" },
+      headStyles: { fillColor: [15, 23, 42], textColor: 255 },
+      head: [["Gereed datum", "Tijd", "Order", "Lot", "Product", "Item code", "Bron station", "Eindinspectie", "Status"]],
+      body: completedExportRows.map((row) => [
+        row.readyDate,
+        row.readyTime,
+        row.orderId,
+        row.lotNumber,
+        row.item,
+        row.itemCode,
+        row.originStation,
+        row.inspectionStation,
+        row.status,
+      ]),
+      columnStyles: {
+        0: { cellWidth: 20 },
+        1: { cellWidth: 14 },
+        2: { cellWidth: 22 },
+        3: { cellWidth: 24 },
+        4: { cellWidth: 58 },
+        5: { cellWidth: 24 },
+        6: { cellWidth: 26 },
+        7: { cellWidth: 22 },
+        8: { cellWidth: 20 },
+      },
+    });
+
+    doc.save(`teamleader_gereedlijst_${completedRangeMode}_${completedPeriodLabel}.pdf`);
+  };
 
   const handleExportCurrentList = () => {
     if (!filteredOrders.length) return;
@@ -944,29 +1279,6 @@ const PlanningSidebar = ({
     return `${dateStr}  W${week}`;
   };
 
-  const getNumeric = (value) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  };
-
-  const trackedFinishedByOrder = useMemo(() => {
-    const map = new Map();
-    trackedProducts.forEach((product) => {
-      const orderId = getOrderIdFromRecord(product);
-      if (!orderId) return;
-      const status = String(product?.status || "").toLowerCase();
-      const step = String(product?.currentStep || "").toLowerCase();
-      const isFinished =
-        status.includes("finish") ||
-        status.includes("gereed") ||
-        status.includes("completed") ||
-        step.includes("finish");
-      if (!isFinished) return;
-      map.set(orderId, (map.get(orderId) || 0) + 1);
-    });
-    return map;
-  }, [trackedProducts]);
-
   const machineThroughputPerDay = useMemo(() => {
     const now = new Date();
     const windowStart = new Date(now);
@@ -1069,7 +1381,7 @@ const PlanningSidebar = ({
       sorted.forEach((order) => {
         const orderId = getOrderIdentity(order);
         const planned = Math.max(0, getNumeric(order?.plan || order?.plannedQuantity || order?.quantity || order?.qty));
-        const produced = getOrderFinishedUnits(order, { trackedFinishedCountByOrder: trackedFinishedByOrder });
+        const produced = getFinishedUnitsForOrder(order);
         const remaining = Math.max(0, planned - produced);
 
         const requiredDays = queueAhead + remaining > 0
@@ -1150,7 +1462,12 @@ const PlanningSidebar = ({
       selectedOrderId === order.id || selectedOrderId === order.orderId;
     const isNew = isOrderNew(order);
     const isDelegated = !!order.delegatedTo;
-    const isDelegatedStatus = order.status === 'delegated' || order.status === 'DELEGATED';
+    const plannedAmount = Math.max(0, getNumeric(order?.plan || order?.plannedQuantity || order?.quantity || order?.qty));
+    const finishedAmount = getFinishedUnitsForOrder(order);
+    const activeTrackedCount = getNumeric(activeTrackedByOrder.get(normalizeOrderKey(getOrderIdentity(order))));
+    const shouldForceCompletedStatus = plannedAmount > 0 && finishedAmount >= plannedAmount && activeTrackedCount === 0;
+    const effectiveStatus = shouldForceCompletedStatus ? "Gereed" : order.status;
+    const isDelegatedStatus = !shouldForceCompletedStatus && (order.status === 'delegated' || order.status === 'DELEGATED');
     const isCancelled = order.status === 'cancelled';
     const isOnHold = order.status === 'on_hold';
     const rawPriority = order?.priority;
@@ -1274,7 +1591,7 @@ const PlanningSidebar = ({
                 Delegated
               </span>
             ) : (
-              <StatusBadge status={order.status} />
+              <StatusBadge status={effectiveStatus} />
             )}
           </div>
 
@@ -1288,7 +1605,7 @@ const PlanningSidebar = ({
           <div className="mb-2 rounded-lg border border-blue-100 bg-blue-50 px-2 py-1">
             <p className="text-[9px] font-black uppercase tracking-wide text-blue-600">Totaal Gereed</p>
             <p className="text-[11px] font-black text-blue-900">
-              {getOrderFinishedUnits(order, { trackedFinishedCountByOrder: trackedFinishedByOrder })} / {Math.max(0, getNumeric(order?.plan || order?.plannedQuantity || order?.quantity || order?.qty))}
+              {getFinishedUnitsForOrder(order)} / {Math.max(0, getNumeric(order?.plan || order?.plannedQuantity || order?.quantity || order?.qty))}
             </p>
           </div>
 
@@ -1411,6 +1728,15 @@ const PlanningSidebar = ({
                   <option value="this_year">Dit jaar</option>
                   <option value="all">Alles</option>
                 </select>
+              ) : isCompletedScope ? (
+                <select
+                  value={completedRangeMode}
+                  onChange={(e) => setCompletedRangeMode(e.target.value)}
+                  className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500"
+                >
+                  <option value="day">Per dag</option>
+                  <option value="week">Per week</option>
+                </select>
               ) : (
                 <select
                   value={sortMode}
@@ -1436,23 +1762,34 @@ const PlanningSidebar = ({
                 ))}
               </select>
             </div>
+            {isCompletedScope && (
+              <div className="relative flex-1">
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                <input
+                  type="date"
+                  value={completedDateValue}
+                  onChange={(e) => setCompletedDateValue(e.target.value)}
+                  className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500"
+                />
+              </div>
+            )}
             <button
               type="button"
-              onClick={handleExportCurrentPdf}
+              onClick={isCompletedScope ? handleExportCompletedPdf : handleExportCurrentPdf}
               disabled={filteredOrders.length === 0}
               className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-              title="Exporteer huidige lijst als PDF"
+              title={isCompletedScope ? "Exporteer gereedlijst als PDF" : "Exporteer huidige lijst als PDF"}
             >
               <Printer size={14} /> PDF
             </button>
             <button
               type="button"
-              onClick={handleExportCurrentList}
+              onClick={isCompletedScope ? handleExportCompletedExcel : handleExportCurrentList}
               disabled={filteredOrders.length === 0}
               className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-              title="Exporteer huidige lijst"
+              title={isCompletedScope ? "Exporteer gereedlijst als Excel" : "Exporteer huidige lijst"}
             >
-              <Download size={14} /> Export
+              <Download size={14} /> {isCompletedScope ? "Excel" : "Export"}
             </button>
           </div>
         </div>
@@ -1513,6 +1850,15 @@ const PlanningSidebar = ({
                   <option value="this_year">Dit jaar</option>
                   <option value="all">Alles</option>
                 </select>
+              ) : isCompletedScope ? (
+                <select
+                  value={completedRangeMode}
+                  onChange={(e) => setCompletedRangeMode(e.target.value)}
+                  className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  <option value="day">Per dag</option>
+                  <option value="week">Per week</option>
+                </select>
               ) : (
                 <select
                   value={sortMode}
@@ -1538,23 +1884,34 @@ const PlanningSidebar = ({
                 ))}
               </select>
             </div>
+            {isCompletedScope && (
+              <div className="relative flex-1">
+                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                <input
+                  type="date"
+                  value={completedDateValue}
+                  onChange={(e) => setCompletedDateValue(e.target.value)}
+                  className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
+                />
+              </div>
+            )}
             <button
               type="button"
-              onClick={handleExportCurrentPdf}
+              onClick={isCompletedScope ? handleExportCompletedPdf : handleExportCurrentPdf}
               disabled={filteredOrders.length === 0}
               className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-              title="Exporteer huidige lijst als PDF"
+              title={isCompletedScope ? "Exporteer gereedlijst als PDF" : "Exporteer huidige lijst als PDF"}
             >
               <Printer size={14} /> PDF
             </button>
             <button
               type="button"
-              onClick={handleExportCurrentList}
+              onClick={isCompletedScope ? handleExportCompletedExcel : handleExportCurrentList}
               disabled={filteredOrders.length === 0}
               className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-              title="Exporteer huidige lijst"
+              title={isCompletedScope ? "Exporteer gereedlijst als Excel" : "Exporteer huidige lijst"}
             >
-              <Download size={14} /> Export
+              <Download size={14} /> {isCompletedScope ? "Excel" : "Export"}
             </button>
         </div>
       </div>

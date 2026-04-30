@@ -227,6 +227,7 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }) => {
                 )}
               </div>
               {!machine.isAlgemeen && (
+                <>
                 <div
                   className={`grid ${
                     machine.isDownstream ? "grid-cols-2" : "grid-cols-3"
@@ -259,6 +260,17 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }) => {
                     </span>
                   </div>
                 </div>
+                <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-50">
+                  <div>
+                    <span className="text-[7px] font-black text-slate-400 uppercase block">Plan Uren</span>
+                    <span className="text-[10px] font-bold text-slate-600">{machine.plannedHours?.toFixed(1) || "0.0"}u</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[7px] font-black text-indigo-400 uppercase block">Gew. Uren (Week)</span>
+                    <span className="text-[10px] font-bold text-indigo-600">{machine.workedHoursThisWeek?.toFixed(1) || "0.0"}u</span>
+                  </div>
+                </div>
+                </>
               )}
             </div>
           ))}

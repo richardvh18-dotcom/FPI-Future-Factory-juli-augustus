@@ -1,12 +1,487 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FileSpreadsheet, Download, Upload, Database, FileText, ArrowRight, Plus } from "lucide-react";
+import { FileSpreadsheet, Download, Upload, Database, FileText, ArrowRight, Plus, Calendar, Printer, X } from "lucide-react";
+import { endOfISOWeek, format, getISOWeek, isSameDay, isWithinInterval, startOfISOWeek } from "date-fns";
 import PlanningImportModal from "./modals/PlanningImportModal";
 
-const ImportExportDashboard = ({ currentDepartment, onCreateOrder }) => {
+const toEntryDate = (entry) => {
+  const candidates = [
+    entry?.timestamps?.finished,
+    entry?.archivedAt,
+    entry?.updatedAt,
+    entry?.createdAt,
+  ];
+
+  for (const value of candidates) {
+    if (!value) continue;
+    if (typeof value?.toDate === "function") {
+      const converted = value.toDate();
+      if (Number.isFinite(converted?.getTime?.())) return converted;
+    }
+
+    const parsed = new Date(value);
+    if (Number.isFinite(parsed.getTime())) return parsed;
+  }
+
+  return null;
+};
+
+const toWikkelenCompletionDate = (entry) => {
+  const candidates = [
+    entry?.timestamps?.wikkelen_end,
+    entry?.timestamps?.lossen_start,
+    entry?.timestamps?.finished,
+    entry?.archivedAt,
+    entry?.updatedAt,
+    entry?.createdAt,
+  ];
+
+  for (const value of candidates) {
+    if (!value) continue;
+    if (typeof value?.toDate === "function") {
+      const converted = value.toDate();
+      if (Number.isFinite(converted?.getTime?.())) return converted;
+    }
+
+    const parsed = new Date(value);
+    if (Number.isFinite(parsed.getTime())) return parsed;
+  }
+
+  return null;
+};
+
+const normalizeStation = (value = "") => String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+
+const toLnReferenceCode = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const digits = raw.replace(/\D/g, "");
+  return digits || raw;
+};
+
+const selectPrimaryLnReferenceOperation = (order) => {
+  if (!order || typeof order !== "object") return "";
+
+  const referenceMap = order.referenceOperationTimes || {};
+  const mapCandidates = Object.entries(referenceMap)
+    .map(([refOp, meta]) => {
+      const code = toLnReferenceCode(refOp);
+      if (!code) return null;
+      const bucket = String(meta?.bucket || "").toLowerCase();
+      const plannedHours = Number(meta?.plannedHours || 0);
+      const bucketPriority = bucket === "production" ? 0 : bucket === "post" ? 1 : bucket === "qc" ? 2 : 3;
+      return {
+        code,
+        bucketPriority,
+        plannedHours: Number.isFinite(plannedHours) ? plannedHours : 0,
+      };
+    })
+    .filter(Boolean);
+
+  if (mapCandidates.length > 0) {
+    mapCandidates.sort((a, b) => {
+      if (a.bucketPriority !== b.bucketPriority) return a.bucketPriority - b.bucketPriority;
+      if (a.plannedHours !== b.plannedHours) return b.plannedHours - a.plannedHours;
+      return a.code.localeCompare(b.code);
+    });
+    return mapCandidates[0].code;
+  }
+
+  const operationCodes = Object.keys(order.operations || {})
+    .map((value) => toLnReferenceCode(value))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+
+  return operationCodes[0] || "";
+};
+
+const formatDateInputValue = (date) => format(date, "yyyy-MM-dd");
+
+const formatWeekInputValue = (date) => `${date.getFullYear()}-W${String(getISOWeek(date)).padStart(2, "0")}`;
+
+const parseDateInputValue = (value) => {
+  const parsed = new Date(`${String(value || "").trim()}T00:00:00`);
+  return Number.isFinite(parsed.getTime()) ? parsed : new Date();
+};
+
+const parseWeekInputValue = (value) => {
+  const match = String(value || "").trim().match(/^(\d{4})-W(\d{2})$/i);
+  if (!match) return new Date();
+
+  const year = Number(match[1]);
+  const week = Number(match[2]);
+  if (!Number.isFinite(year) || !Number.isFinite(week)) return new Date();
+
+  const jan4 = new Date(year, 0, 4);
+  const jan4Day = jan4.getDay() || 7;
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - jan4Day + 1 + (week - 1) * 7);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+};
+
+const buildFullWidthColumnStyles = (doc, ratios = [], horizontalMargin = 10) => {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const availableWidth = pageWidth - horizontalMargin * 2;
+  const totalRatio = ratios.reduce((sum, value) => sum + value, 0) || 1;
+
+  return ratios.reduce((styles, ratio, index) => {
+    styles[index] = {
+      cellWidth: Number(((availableWidth * ratio) / totalRatio).toFixed(2)),
+    };
+    return styles;
+  }, {});
+};
+
+const ImportExportDashboard = ({
+  currentDepartment,
+  onCreateOrder,
+  trackedProducts = [],
+  archivedHistoryProducts = [],
+  effectiveAllowedNorms = [],
+  planningOrders = [],
+}) => {
   const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState("import"); // 'import', 'export'
   const [showLegacyModal, setShowLegacyModal] = useState(false);
+  const [showCompletedExportModal, setShowCompletedExportModal] = useState(false);
+  const [showLnReadyExportModal, setShowLnReadyExportModal] = useState(false);
+  const [completedRangeMode, setCompletedRangeMode] = useState("day");
+  const [completedDateValue, setCompletedDateValue] = useState(formatDateInputValue(new Date()));
+  const [completedWeekValue, setCompletedWeekValue] = useState(formatWeekInputValue(new Date()));
+
+  const selectedCompletedDate = useMemo(() => {
+    if (completedRangeMode === "week") return parseWeekInputValue(completedWeekValue);
+    return parseDateInputValue(completedDateValue);
+  }, [completedDateValue, completedWeekValue, completedRangeMode]);
+
+  const completedInspectionRows = useMemo(() => {
+    const combinedProducts = [...trackedProducts, ...archivedHistoryProducts];
+    const uniqueEntries = new Map();
+
+    combinedProducts.forEach((product) => {
+      const completedAt = toEntryDate(product);
+      if (!completedAt) return;
+
+      const originStation = normalizeStation(product?.originMachine || product?.machine || "");
+      const currentStation = normalizeStation(product?.currentStation || "");
+      const lastStation = normalizeStation(product?.lastStation || "");
+      const inAllowedScope =
+        effectiveAllowedNorms.length === 0 ||
+        [originStation, currentStation, lastStation].some((station) => station && effectiveAllowedNorms.includes(station));
+
+      if (!inAllowedScope) return;
+
+      const status = String(product?.status || "").trim().toLowerCase();
+      const step = String(product?.currentStep || "").trim().toUpperCase();
+      const isInspectionCompleted =
+        lastStation === "BM01" &&
+        (status === "completed" || step === "FINISHED" || currentStation === "GEREED");
+
+      if (!isInspectionCompleted) return;
+
+      const inRange = completedRangeMode === "day"
+        ? isSameDay(completedAt, selectedCompletedDate)
+        : isWithinInterval(completedAt, {
+            start: startOfISOWeek(selectedCompletedDate),
+            end: endOfISOWeek(selectedCompletedDate),
+          });
+
+      if (!inRange) return;
+
+      const orderId = String(product?.orderId || "").trim();
+      const lotNumber = String(product?.lotNumber || product?.activeLot || product?.id || "").trim();
+      const dedupeKey = `${orderId}__${lotNumber}`;
+      if (uniqueEntries.has(dedupeKey)) return;
+
+      uniqueEntries.set(dedupeKey, {
+        id: dedupeKey,
+        readyDate: format(completedAt, "yyyy-MM-dd"),
+        readyTime: format(completedAt, "HH:mm"),
+        orderId,
+        lotNumber,
+        item: product?.item || product?.itemDescription || "",
+        itemCode: product?.itemCode || "",
+        originStation: product?.originMachine || product?.machine || "",
+        inspectionStation: product?.lastStation || "BM01",
+        status: "Gereed gemeld",
+      });
+    });
+
+    return Array.from(uniqueEntries.values()).sort((a, b) => {
+      const aKey = `${a.readyDate} ${a.readyTime}`;
+      const bKey = `${b.readyDate} ${b.readyTime}`;
+      return aKey < bKey ? 1 : -1;
+    });
+  }, [trackedProducts, archivedHistoryProducts, effectiveAllowedNorms, completedRangeMode, selectedCompletedDate]);
+
+  const completedPeriodLabel = useMemo(() => {
+    if (completedRangeMode === "day") return format(selectedCompletedDate, "yyyy-MM-dd");
+    return `week_${String(getISOWeek(selectedCompletedDate)).padStart(2, "0")}_${selectedCompletedDate.getFullYear()}`;
+  }, [completedRangeMode, selectedCompletedDate]);
+
+  const planningOrdersByOrderId = useMemo(() => {
+    const map = new Map();
+    planningOrders.forEach((order) => {
+      const key = String(order?.orderId || order?.id || "").trim();
+      if (!key || map.has(key)) return;
+      map.set(key, order);
+    });
+    return map;
+  }, [planningOrders]);
+
+  const lnReadyQrRows = useMemo(() => {
+    const combinedProducts = [...trackedProducts, ...archivedHistoryProducts];
+    const groupedRows = new Map();
+
+    combinedProducts.forEach((product) => {
+      const originStation = normalizeStation(product?.originMachine || product?.machine || "");
+      if (!originStation.startsWith("BH")) return;
+
+      const inAllowedScope =
+        effectiveAllowedNorms.length === 0 ||
+        effectiveAllowedNorms.includes(originStation);
+      if (!inAllowedScope) return;
+
+      const status = String(product?.status || "").trim().toLowerCase();
+      const step = String(product?.currentStep || "").trim().toUpperCase();
+      if (status === "rejected" || step === "REJECTED") return;
+
+      // Only include items where the wikkelen step was actually completed/released
+      // Include if: explicit wikkelen/lossen timestamp, archived (finished), or product is in/past lossen step
+      const wikkelenDone =
+        product?.timestamps?.wikkelen_end ||
+        product?.timestamps?.lossen_start ||
+        product?.timestamps?.finished ||
+        status === "te lossen" ||
+        step === "WACHT OP LOSSEN" ||
+        step === "FINISHED";
+      if (!wikkelenDone) return;
+
+      const completionDate = toWikkelenCompletionDate(product);
+      if (!completionDate) return;
+
+      const inRange = completedRangeMode === "day"
+        ? isSameDay(completionDate, selectedCompletedDate)
+        : isWithinInterval(completionDate, {
+            start: startOfISOWeek(selectedCompletedDate),
+            end: endOfISOWeek(selectedCompletedDate),
+          });
+      if (!inRange) return;
+
+      const orderId = String(product?.orderId || "").trim();
+      if (!orderId) return;
+
+      const order = planningOrdersByOrderId.get(orderId);
+      const refOpsText = selectPrimaryLnReferenceOperation(order) || "20";
+      const rowKey = `${originStation}__${orderId}`;
+      const current = groupedRows.get(rowKey) || {
+        id: rowKey,
+        station: originStation,
+        orderId,
+        refOpsText,
+        count: 0,
+      };
+
+      current.count += 1;
+      current.refOpsText = current.refOpsText === "20" ? refOpsText : current.refOpsText;
+      groupedRows.set(rowKey, current);
+    });
+
+    const periodToken = completedRangeMode === "day"
+      ? format(selectedCompletedDate, "yyyy-MM-dd")
+      : completedPeriodLabel;
+
+    return Array.from(groupedRows.values())
+      .sort((a, b) => {
+        if (a.station !== b.station) return a.station.localeCompare(b.station);
+        return a.orderId.localeCompare(b.orderId);
+      })
+      .map((row) => ({
+        ...row,
+        orderQr: `ORDER:${row.orderId}`,
+        refQr: `REFOPS:${row.refOpsText}`,
+        countQr: `COUNT:${row.count}|PERIOD:${periodToken}|STATION:${row.station}`,
+      }));
+  }, [trackedProducts, archivedHistoryProducts, effectiveAllowedNorms, completedRangeMode, selectedCompletedDate, completedPeriodLabel, planningOrdersByOrderId]);
+
+  const handleExportCompletedExcel = async () => {
+    if (!completedInspectionRows.length) return;
+
+    const XLSX = await import("xlsx");
+    const headerRow = [
+      "Gereed datum",
+      "Tijd",
+      "Order",
+      "Lot",
+      "Product",
+      "Item code",
+      "Bron station",
+      "Eindinspectie",
+      "Status",
+    ];
+    const aoa = [
+      headerRow,
+      ...completedInspectionRows.map((row) => [
+        row.readyDate,
+        row.readyTime,
+        row.orderId,
+        row.lotNumber,
+        row.item,
+        row.itemCode,
+        row.originStation,
+        row.inspectionStation,
+        row.status,
+      ]),
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(aoa);
+    worksheet["!cols"] = [
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 32 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 16 },
+      { wch: 16 },
+    ];
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Gereedlijst");
+    XLSX.writeFile(workbook, `teamleader_gereedlijst_${completedRangeMode}_${completedPeriodLabel}.xlsx`);
+  };
+
+  const handleExportCompletedPdf = async () => {
+    if (!completedInspectionRows.length) return;
+
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const horizontalMargin = 10;
+    const completedColumnStyles = buildFullWidthColumnStyles(
+      doc,
+      [0.09, 0.06, 0.09, 0.1, 0.31, 0.1, 0.11, 0.08, 0.06],
+      horizontalMargin
+    );
+    doc.setFontSize(14);
+    doc.text("Eindinspectie Gereedlijst", 14, 14);
+    doc.setFontSize(9);
+    doc.text(`Periode: ${completedPeriodLabel}`, 14, 20);
+    doc.text(`Afdeling: ${currentDepartment || "all"}`, 75, 20);
+    doc.text(`Totaal: ${completedInspectionRows.length}`, 145, 20);
+
+    autoTable(doc, {
+      startY: 25,
+      margin: { left: horizontalMargin, right: horizontalMargin },
+      tableWidth: doc.internal.pageSize.getWidth() - horizontalMargin * 2,
+      styles: { fontSize: 8, cellPadding: 1.5, overflow: "linebreak" },
+      headStyles: { fillColor: [15, 23, 42], textColor: 255 },
+      head: [["Gereed datum", "Tijd", "Order", "Lot", "Product", "Item code", "Bron station", "Eindinspectie", "Status"]],
+      body: completedInspectionRows.map((row) => [
+        row.readyDate,
+        row.readyTime,
+        row.orderId,
+        row.lotNumber,
+        row.item,
+        row.itemCode,
+        row.originStation,
+        row.inspectionStation,
+        row.status,
+      ]),
+      columnStyles: completedColumnStyles,
+    });
+
+    doc.save(`teamleader_gereedlijst_${completedRangeMode}_${completedPeriodLabel}.pdf`);
+  };
+
+  const handleExportLnReadyPdf = async () => {
+    if (!lnReadyQrRows.length) return;
+
+    const [{ jsPDF }, qrModule] = await Promise.all([
+      import("jspdf"),
+      import("qrcode"),
+    ]);
+    const QRCode = qrModule?.default || qrModule;
+
+    const doc = new jsPDF("p", "mm", "a4");
+    doc.setFontSize(14);
+    doc.text("Gereed voor LN", 14, 14);
+    doc.setFontSize(9);
+    doc.text(`Periode: ${completedPeriodLabel}`, 14, 20);
+    doc.text(`Afdeling: ${currentDepartment || "all"}`, 75, 20);
+    doc.text(`Totaal: ${lnReadyQrRows.length}`, 145, 20);
+
+    let y = 28;
+    let activeStation = "";
+    const qrSize = 22;
+    const blockHeight = 44;
+    const qrOrderX = 68;
+    const qrRefX = 110;
+    const qrCountX = 152;
+
+    for (const row of lnReadyQrRows) {
+      if (activeStation !== row.station) {
+        if (y + 10 > 285) {
+          doc.addPage();
+          y = 14;
+        }
+        activeStation = row.station;
+        doc.setFontSize(11);
+        doc.setFont(undefined, "bold");
+        doc.text(`Station ${activeStation}`, 12, y);
+        y += 6;
+      }
+
+      if (y + blockHeight > 285) {
+        doc.addPage();
+        y = 14;
+        doc.setFontSize(11);
+        doc.setFont(undefined, "bold");
+        doc.text(`Station ${activeStation}`, 12, y);
+        y += 6;
+      }
+
+      const [orderDataUrl, refDataUrl, countDataUrl] = await Promise.all([
+        QRCode.toDataURL(row.orderQr, { width: 220, margin: 1 }),
+        QRCode.toDataURL(row.refQr, { width: 220, margin: 1 }),
+        QRCode.toDataURL(row.countQr, { width: 220, margin: 1 }),
+      ]);
+
+      doc.setDrawColor(225, 230, 238);
+      doc.roundedRect(10, y - 2, 190, blockHeight - 2, 2, 2);
+
+      doc.setFontSize(10);
+      doc.setFont(undefined, "bold");
+      doc.text(`Order ${row.orderId}`, 12, y + 3);
+      doc.setFont(undefined, "normal");
+      doc.text(`RefOps: ${row.refOpsText}`, 12, y + 8);
+      doc.text(`Aantal: ${row.count}`, 12, y + 13);
+
+      doc.addImage(orderDataUrl, "PNG", qrOrderX, y, qrSize, qrSize);
+      doc.addImage(refDataUrl, "PNG", qrRefX, y, qrSize, qrSize);
+      doc.addImage(countDataUrl, "PNG", qrCountX, y, qrSize, qrSize);
+
+      doc.setFontSize(7);
+      doc.text("ORDER", qrOrderX + qrSize / 2, y + qrSize + 3, { align: "center" });
+      doc.text("REF OPS", qrRefX + qrSize / 2, y + qrSize + 3, { align: "center" });
+      doc.text("AANTAL", qrCountX + qrSize / 2, y + qrSize + 3, { align: "center" });
+
+      doc.setFontSize(8);
+      doc.text(String(row.orderId || "-"), qrOrderX + qrSize / 2, y + qrSize + 7, { align: "center" });
+      doc.text(String(row.refOpsText || "-"), qrRefX + qrSize / 2, y + qrSize + 7, { align: "center" });
+      doc.text(String(row.count || 0), qrCountX + qrSize / 2, y + qrSize + 7, { align: "center" });
+
+      y += blockHeight;
+    }
+
+    doc.save(`teamleader_ln_gereed_${completedRangeMode}_${completedPeriodLabel}.pdf`);
+  };
 
   return (
     <div className="flex flex-col h-full bg-slate-50 animate-in fade-in">
@@ -104,13 +579,30 @@ const ImportExportDashboard = ({ currentDepartment, onCreateOrder }) => {
                      <p className="text-[10px] text-slate-500 font-medium">Lijst van alle nog niet gestarte orders binnen jouw afdeling</p>
                    </button>
 
-                   <button className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 hover:border-emerald-300 hover:bg-emerald-50 transition-all text-left group">
+                   <button
+                     type="button"
+                     onClick={() => setShowLnReadyExportModal(true)}
+                     className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 hover:border-emerald-300 hover:bg-emerald-50 transition-all text-left group"
+                   >
                      <div className="flex justify-between items-start mb-4">
                        <FileSpreadsheet size={24} className="text-slate-400 group-hover:text-emerald-500 transition-colors" />
                        <ArrowRight size={20} className="text-slate-300 group-hover:text-emerald-500 transform group-hover:translate-x-1 transition-all" />
                      </div>
                      <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Gereed voor LN</h4>
                      <p className="text-[10px] text-slate-500 font-medium">Export van gereedgemelde producten om terug te boeken in ERP</p>
+                   </button>
+
+                   <button
+                     type="button"
+                     onClick={() => setShowCompletedExportModal(true)}
+                     className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 hover:border-emerald-300 hover:bg-emerald-50 transition-all text-left group"
+                   >
+                     <div className="flex justify-between items-start mb-4">
+                       <FileSpreadsheet size={24} className="text-slate-400 group-hover:text-emerald-500 transition-colors" />
+                       <ArrowRight size={20} className="text-slate-300 group-hover:text-emerald-500 transform group-hover:translate-x-1 transition-all" />
+                     </div>
+                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Eindinspectie Gereedlijst</h4>
+                     <p className="text-[10px] text-slate-500 font-medium">Open popup voor dag- of weekexport naar PDF of Excel met kolommen en headers</p>
                    </button>
                  </div>
               </div>
@@ -125,6 +617,200 @@ const ImportExportDashboard = ({ currentDepartment, onCreateOrder }) => {
           onClose={() => setShowLegacyModal(false)}
           currentDepartment={currentDepartment}
         />
+      )}
+
+      {showCompletedExportModal && (
+        <div className="fixed inset-0 z-[120] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white w-full max-w-6xl rounded-[24px] sm:rounded-[32px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]">
+            <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-slate-100 bg-emerald-50/70 flex items-start justify-between gap-4 shrink-0">
+              <div>
+                <h3 className="text-2xl font-black text-slate-900 italic">Eindinspectie Gereedlijst</h3>
+                <p className="text-sm font-bold text-slate-500 mt-1">Export van wat bij Eindinspectie gereed is gemeld, gefilterd op dag of week.</p>
+              </div>
+              <button
+                onClick={() => setShowCompletedExportModal(false)}
+                className="p-2 rounded-full bg-white border border-slate-200 text-slate-500 hover:bg-slate-50"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 sm:p-8 space-y-5 sm:space-y-6 overflow-y-auto custom-scrollbar">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <select
+                    value={completedRangeMode}
+                    onChange={(e) => setCompletedRangeMode(e.target.value)}
+                    className="w-full pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-emerald-500"
+                  >
+                    <option value="day">Per dag</option>
+                    <option value="week">Per week</option>
+                  </select>
+                </div>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  {completedRangeMode === "day" ? (
+                    <input
+                      type="date"
+                      value={completedDateValue}
+                      onChange={(e) => setCompletedDateValue(e.target.value)}
+                      className="w-full pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-emerald-500"
+                    />
+                  ) : (
+                    <input
+                      type="week"
+                      value={completedWeekValue}
+                      onChange={(e) => setCompletedWeekValue(e.target.value)}
+                      className="w-full pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-emerald-500"
+                    />
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportCompletedPdf}
+                  disabled={completedInspectionRows.length === 0}
+                  className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Printer size={14} /> PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportCompletedExcel}
+                  disabled={completedInspectionRows.length === 0}
+                  className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-emerald-700 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <Download size={14} /> Excel
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 text-xs font-black uppercase tracking-widest text-slate-400">
+                <span>Periode: {completedPeriodLabel}</span>
+                <span>{completedInspectionRows.length} regels</span>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="grid grid-cols-[9rem_6rem_8rem_8rem_minmax(0,1fr)_8rem] gap-3 bg-slate-100 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <span>Datum</span>
+                  <span>Tijd</span>
+                  <span>Order</span>
+                  <span>Lot</span>
+                  <span>Product</span>
+                  <span>Code</span>
+                </div>
+                <div className="max-h-[22rem] overflow-y-auto custom-scrollbar divide-y divide-slate-100">
+                  {completedInspectionRows.length === 0 ? (
+                    <div className="px-4 py-10 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
+                      Geen gereedmeldingen gevonden voor deze selectie.
+                    </div>
+                  ) : (
+                    completedInspectionRows.map((row) => (
+                      <div key={row.id} className="grid grid-cols-[9rem_6rem_8rem_8rem_minmax(0,1fr)_8rem] gap-3 px-4 py-3 text-xs text-slate-700 items-start">
+                        <span className="font-bold">{row.readyDate || "-"}</span>
+                        <span>{row.readyTime || "-"}</span>
+                        <span className="font-bold">{row.orderId || "-"}</span>
+                        <span>{row.lotNumber || "-"}</span>
+                        <span className="font-medium truncate">{row.item || "-"}</span>
+                        <span>{row.itemCode || "-"}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLnReadyExportModal && (
+        <div className="fixed inset-0 z-[120] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white w-full max-w-6xl rounded-[24px] sm:rounded-[32px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]">
+            <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-slate-100 bg-emerald-50/70 flex items-start justify-between gap-4 shrink-0">
+              <div>
+                <h3 className="text-2xl font-black text-slate-900 italic">Gereed voor LN</h3>
+                <p className="text-sm font-bold text-slate-500 mt-1">Export van gereedgemelde producten om terug te boeken in ERP.</p>
+              </div>
+              <button
+                onClick={() => setShowLnReadyExportModal(false)}
+                className="p-2 rounded-full bg-white border border-slate-200 text-slate-500 hover:bg-slate-50"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-5 sm:p-8 space-y-5 sm:space-y-6 overflow-y-auto custom-scrollbar">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <select
+                    value={completedRangeMode}
+                    onChange={(e) => setCompletedRangeMode(e.target.value)}
+                    className="w-full pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-emerald-500"
+                  >
+                    <option value="day">Per dag</option>
+                    <option value="week">Per week</option>
+                  </select>
+                </div>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  {completedRangeMode === "day" ? (
+                    <input
+                      type="date"
+                      value={completedDateValue}
+                      onChange={(e) => setCompletedDateValue(e.target.value)}
+                      className="w-full pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-emerald-500"
+                    />
+                  ) : (
+                    <input
+                      type="week"
+                      value={completedWeekValue}
+                      onChange={(e) => setCompletedWeekValue(e.target.value)}
+                      className="w-full pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-emerald-500"
+                    />
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportLnReadyPdf}
+                  disabled={lnReadyQrRows.length === 0}
+                  className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2 md:col-span-2"
+                >
+                  <Printer size={14} /> QR PDF
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 text-xs font-black uppercase tracking-widest text-slate-400">
+                <span>Periode: {completedPeriodLabel}</span>
+                <span>{lnReadyQrRows.length} orderregels</span>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                <div className="grid grid-cols-[8rem_10rem_10rem_8rem] gap-3 bg-slate-100 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                  <span>Station</span>
+                  <span>Order</span>
+                  <span>Ref ops</span>
+                  <span>Aantal</span>
+                </div>
+                <div className="max-h-[22rem] overflow-y-auto custom-scrollbar divide-y divide-slate-100">
+                  {lnReadyQrRows.length === 0 ? (
+                    <div className="px-4 py-10 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
+                      Geen LN QR-exportregels gevonden voor deze selectie.
+                    </div>
+                  ) : (
+                    lnReadyQrRows.map((row) => (
+                      <div key={row.id} className="grid grid-cols-[8rem_10rem_10rem_8rem] gap-3 px-4 py-3 text-xs text-slate-700 items-start">
+                        <span className="font-bold">{row.station || "-"}</span>
+                        <span className="font-bold">{row.orderId || "-"}</span>
+                        <span>{row.refOpsText || "20"}</span>
+                        <span>{row.count || 0}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

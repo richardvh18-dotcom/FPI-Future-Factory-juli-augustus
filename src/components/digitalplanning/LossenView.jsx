@@ -68,6 +68,20 @@ const isTruthyRoutingFlag = (value) => {
   return ["true", "1", "yes", "ja", "nabewerking", "te nabewerken", "post_processing", "post processing"].includes(normalized);
 };
 
+const isSeriesEligibleItem = (item) => {
+  const statusUpper = String(item?.status || "").toUpperCase();
+  const stepUpper = String(item?.currentStep || "").toUpperCase();
+  return statusUpper !== "REJECTED" && stepUpper !== "REJECTED";
+};
+
+const getLotSeriesPrefix = (lotNumber) => {
+  const raw = String(lotNumber || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^(.*?)(\d{3})$/);
+  if (!match) return "";
+  return match[1];
+};
+
 const hasNabewerkingFlag = (item) => {
   if (!item || typeof item !== "object") return false;
 
@@ -612,17 +626,39 @@ const LossenView = ({ stationId, appId, products = [] }) => {
   }, [stationId, user, products]); // Dependency op 'products' toegevoegd
 
   const handleItemClick = (item) => {
+    let sameSeries = [];
+
     if (supportsSeriesGrouping && item?.seriesGroupId) {
-      const sameSeries = items.filter(
+      sameSeries = items.filter(
         (seriesItem) =>
-          seriesItem.seriesGroupId === item.seriesGroupId &&
-          String(seriesItem.status || "").toUpperCase() !== "REJECTED" &&
-          String(seriesItem.currentStep || "").toUpperCase() !== "REJECTED"
+          seriesItem.seriesGroupId === item.seriesGroupId && isSeriesEligibleItem(seriesItem)
       );
-      setBulkSeriesProducts(sameSeries.length > 1 ? sameSeries : []);
-    } else {
-      setBulkSeriesProducts([]);
     }
+
+    // Fallback: oudere/legacy items zonder seriesGroupId koppelen op lot-prefix + order/item.
+    if (supportsSeriesGrouping && sameSeries.length <= 1) {
+      const lotPrefix = getLotSeriesPrefix(item?.lotNumber);
+      const orderKey = String(item?.orderId || "").trim().toUpperCase();
+      const itemCodeKey = String(item?.itemCode || "").trim().toUpperCase();
+
+      if (lotPrefix) {
+        sameSeries = items.filter((seriesItem) => {
+          if (!isSeriesEligibleItem(seriesItem)) return false;
+          const candidatePrefix = getLotSeriesPrefix(seriesItem?.lotNumber);
+          if (!candidatePrefix || candidatePrefix !== lotPrefix) return false;
+
+          const candidateOrder = String(seriesItem?.orderId || "").trim().toUpperCase();
+          if (orderKey && candidateOrder && candidateOrder !== orderKey) return false;
+
+          const candidateItemCode = String(seriesItem?.itemCode || "").trim().toUpperCase();
+          if (itemCodeKey && candidateItemCode && candidateItemCode !== itemCodeKey) return false;
+
+          return true;
+        });
+      }
+    }
+
+    setBulkSeriesProducts(sameSeries.length > 1 ? sameSeries : []);
     setSelectedProduct(item);
     // Direct het modal openen in plaats van het detail panel te tonen
     setShowActionModal(true);
@@ -641,6 +677,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
   };
 
   const currentStationNorm = useMemo(() => normalizeMachine(stationId), [stationId]);
+  const isLossen1218 = currentStationNorm === LOSSEN_1218_STATION_NORM;
   const isBM01 = currentStationNorm === "BM01";
   const isMazak = currentStationNorm === "MAZAK";
   const isNabewerking = currentStationNorm === "NABEWERKING" || currentStationNorm === "NABW" || currentStationNorm.includes("NABEWERK");
@@ -670,7 +707,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
       const next = { ...prev };
       groupedSeries.forEach((group, groupId) => {
         if (group.length <= 1) return;
-        if (!(groupId in next)) next[groupId] = true;
+        if (!(groupId in next)) next[groupId] = !isLossen1218;
       });
       Object.keys(next).forEach((groupId) => {
         const group = groupedSeries.get(groupId);
@@ -678,7 +715,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
       });
       return next;
     });
-  }, [groupedSeries]);
+  }, [groupedSeries, isLossen1218]);
 
   const displayRows = useMemo(() => {
     const rendered = new Set();
@@ -817,16 +854,18 @@ const LossenView = ({ stationId, appId, products = [] }) => {
       `}</style>
 
       {showActionModal && selectedProduct && (
-        <ProductReleaseModal
-          isOpen={true}
-          product={selectedProduct}
-          bulkProducts={bulkSeriesProducts}
-          forceLossenMode={true}
-          onClose={handleCloseModal}
-          appId={appId}
-          activeOperators={activeOperators}
-          autoFocus={false}
-        />
+        <div className="fixed z-[9999]">
+          <ProductReleaseModal
+            isOpen={true}
+            product={selectedProduct}
+            bulkProducts={bulkSeriesProducts}
+            forceLossenMode={true}
+            onClose={handleCloseModal}
+            appId={appId}
+            activeOperators={activeOperators}
+            autoFocus={false}
+          />
+        </div>
       )}
 
         {/* INKOMEND VIEW */}

@@ -55,6 +55,8 @@ const PrintQueueAdminView = () => {
       return Number.isFinite(parsed.getTime()) ? parsed.getTime() : 0;
     };
 
+    const printQueuePathFragment = `/${PATHS.PRINT_QUEUE.join('/')}/`;
+
     const mergeJobs = () => {
       const byId = new Map();
       rootJobs.forEach((job) => {
@@ -79,12 +81,12 @@ const PrintQueueAdminView = () => {
       mergeJobs();
     });
 
-    const scopedQ = query(
-      collectionGroup(db, 'items'),
-      where('_scopeType', '==', 'print_queue')
-    );
+    const scopedQ = collectionGroup(db, 'items');
     const unsubscribeScoped = onSnapshot(scopedQ, (snapshot) => {
-      scopedJobs = snapshot.docs.map(normalizeJob).filter(Boolean);
+      scopedJobs = snapshot.docs
+        .filter((docSnap) => String(docSnap.ref?.path || '').includes(printQueuePathFragment))
+        .map(normalizeJob)
+        .filter((job) => job && String(job._scopeType || 'print_queue').trim() === 'print_queue');
       mergeJobs();
     }, () => {
       scopedJobs = [];

@@ -24,8 +24,7 @@ const ALLOWED_IMPORT_EXTENSIONS = ['.xlsx', '.xlsm', '.xls'];
 const AI_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const AI_RATE_LIMIT_MAX_REQUESTS = 20;
 const AI_ALLOWED_MODELS = new Set([
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
+  'gemini-2.5-flash',
   'gemini-2.0-flash',
 ]);
 const AI_MAX_MESSAGES = 80;
@@ -69,6 +68,7 @@ const {
   deletePrintQueueJob,
   startProductionLots,
   editTrackedProductLotNumber,
+  reassignTrackedProductOrder,
   linkPlanningOrderProduct,
   createPlanningOrderManual,
   markMazakLabelsPrinted,
@@ -80,6 +80,7 @@ const {
   updateOrderKanbanStatus,
   markReadyForNextStep,
   startTrackedProductRepair,
+  restoreArchivedTrackedProduct,
   reportShopFloorIssue,
   resolveShopFloorIssue,
   importPlanningOrders,
@@ -106,10 +107,27 @@ const {
   deleteAiKnowledgeEntry,
   migrateAiKnowledgeFields,
   migrateLegacyActivityLogs,
+  reconcileOrderControl,
 } = require('./src/callables/planningCallables');
 const auditService = require('./src/services/auditService');
+const {
+  aiReactiveWatchdogTrackedScoped,
+  aiReactiveWatchdogTrackedLegacy,
+  aiNightlyBottleneckPlanner,
+  aiImportConsolidator,
+} = require('./src/services/aiInvisibleWorkerService');
 
 const clean = (val) => String(val || '').trim();
+
+const getLegacyRuntimeConfig = () => {
+  try {
+    const raw = clean(process.env.CLOUD_RUNTIME_CONFIG);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch (_error) {
+    return {};
+  }
+};
 
 const parseNum = (val) => {
   if (val === null || val === undefined || val === '') return 0;
@@ -182,7 +200,8 @@ const parseMachineSelectionInput = (value) => {
 };
 
 const getConfiguredAllowedMachines = () => {
-  const configValue = functions.config()?.integration?.allowed_machines;
+  const runtimeConfig = getLegacyRuntimeConfig();
+  const configValue = runtimeConfig?.integration?.allowed_machines;
   const envValue = process.env.IMPORT_ALLOWED_MACHINES;
   return parseMachineSelectionInput(configValue || envValue);
 };
@@ -198,8 +217,8 @@ const toSafeDocId = (value) =>
     .slice(0, 500);
 
 const resolveGoogleAiApiKey = () =>
-  functions.config()?.googleai?.key ||
-  functions.config()?.ai?.key ||
+  getLegacyRuntimeConfig()?.googleai?.key ||
+  getLegacyRuntimeConfig()?.ai?.key ||
   process.env.GOOGLE_AI_API_KEY ||
   process.env.GEMINI_API_KEY ||
   '';
@@ -1145,10 +1164,11 @@ exports.importPlanningFromWebhook = functions.https.onRequest(async (req, res) =
   }
 
   try {
+    const runtimeConfig = getLegacyRuntimeConfig();
     const configToken =
-      functions.config()?.power_automate?.import_token ||
-      functions.config()?.integration?.import_token ||
-      functions.config()?.zapier?.import_token;
+      runtimeConfig?.power_automate?.import_token ||
+      runtimeConfig?.integration?.import_token ||
+      runtimeConfig?.zapier?.import_token;
     const envToken =
       process.env.POWER_AUTOMATE_IMPORT_TOKEN ||
       process.env.INTEGRATION_IMPORT_TOKEN ||
@@ -1542,6 +1562,7 @@ exports.requeuePrintQueueJob = requeuePrintQueueJob;
 exports.deletePrintQueueJob = deletePrintQueueJob;
 exports.startProductionLots = startProductionLots;
 exports.editTrackedProductLotNumber = editTrackedProductLotNumber;
+exports.reassignTrackedProductOrder = reassignTrackedProductOrder;
 exports.linkPlanningOrderProduct = linkPlanningOrderProduct;
 exports.createPlanningOrderManual = createPlanningOrderManual;
 exports.markMazakLabelsPrinted = markMazakLabelsPrinted;
@@ -1553,6 +1574,7 @@ exports.updateOrderPlannedDate = updateOrderPlannedDate;
 exports.updateOrderKanbanStatus = updateOrderKanbanStatus;
 exports.markReadyForNextStep = markReadyForNextStep;
 exports.startTrackedProductRepair = startTrackedProductRepair;
+exports.restoreArchivedTrackedProduct = restoreArchivedTrackedProduct;
 exports.reportShopFloorIssue = reportShopFloorIssue;
 exports.resolveShopFloorIssue = resolveShopFloorIssue;
 exports.importPlanningOrders = importPlanningOrders;
@@ -1579,6 +1601,11 @@ exports.verifyAiKnowledgeEntry = verifyAiKnowledgeEntry;
 exports.deleteAiKnowledgeEntry = deleteAiKnowledgeEntry;
 exports.migrateAiKnowledgeFields = migrateAiKnowledgeFields;
 exports.migrateLegacyActivityLogs = migrateLegacyActivityLogs;
+exports.reconcileOrderControl = reconcileOrderControl;
+exports.aiReactiveWatchdogTrackedScoped = aiReactiveWatchdogTrackedScoped;
+exports.aiReactiveWatchdogTrackedLegacy = aiReactiveWatchdogTrackedLegacy;
+exports.aiNightlyBottleneckPlanner = aiNightlyBottleneckPlanner;
+exports.aiImportConsolidator = aiImportConsolidator;
 
 /**
  * Backend AI proxy: voorkomt dat API keys in de frontend staan.
@@ -1598,7 +1625,7 @@ exports.aiProxyGenerate = functions.runWith({ secrets: ['GOOGLE_AI_API_KEY'] }).
   const rawMessages = Array.isArray(data?.messages) ? data.messages : [];
   const systemPrompt = String(data?.systemPrompt || '').trim();
   const requestedModel = String(data?.modelName || '').trim();
-  const modelName = requestedModel || 'gemini-1.5-flash';
+  const modelName = requestedModel || 'gemini-2.5-flash';
 
   if (!AI_ALLOWED_MODELS.has(modelName)) {
     throw new functions.https.HttpsError('invalid-argument', 'Niet-toegestaan AI model.');

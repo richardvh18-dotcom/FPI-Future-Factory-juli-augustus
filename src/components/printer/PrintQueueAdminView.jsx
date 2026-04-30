@@ -281,9 +281,11 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     const loadInitialList = async () => {
       setLoadingInitialList(true);
       try {
-        const [tempSnap, planSnap] = await Promise.all([
+        const [tempSnap, planSnap, trackSnap, scopedOrdersSnap] = await Promise.all([
           getDocs(query(collection(db, ...PATHS.TEMP_PLANNING), limit(120))),
           getDocs(query(collection(db, ...PATHS.PLANNING), limit(120))),
+          getDocs(query(collection(db, ...PATHS.TRACKING), limit(120))),
+          getDocs(query(collectionGroup(db, 'orders'), limit(120))),
         ]);
 
         if (!isMounted) return;
@@ -295,6 +297,8 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
 
         pushRows(tempSnap);
         pushRows(planSnap);
+        pushRows(trackSnap);
+        pushRows(scopedOrdersSnap);
 
         const dedup = [];
         const seen = new Set();
@@ -358,18 +362,21 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       if (digitsMatch) {
           const digits = digitsMatch[0];
           if (digits.length >= 3) {
+            if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
               searchOptions.push(`N${digits}`);
               searchOptions.push(`N20${digits}`);
               searchOptions.push(`N200${digits}`);
               searchOptions.push(`N21${digits}`);
               searchOptions.push(`N210${digits}`);
               searchOptions.push(`P${digits}`);
+            }
           }
       }
 
       const uniqueOptions = Array.from(new Set(searchOptions)).slice(0, 15);
       const colRef = collection(db, ...PATHS.TEMP_PLANNING);
       const planRef = collection(db, ...PATHS.PLANNING);
+        const trackRef = collection(db, ...PATHS.TRACKING);
       
       let foundDocs = new Map();
       const addDocs = (snap) => {
@@ -377,6 +384,28 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
           snap.docs.forEach(d => foundDocs.set(d.id, { id: d.id, ...d.data() }));
         }
       };
+
+      // 0. Scoped machine orders zoeken (collectionGroup voor alle 'orders' onder alle machines)
+      try {
+        const scopedQueries = [
+          getDocs(query(collectionGroup(db, 'orders'), where('id', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('orderId', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('orderNumber', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('Order', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('order', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('originalOrderId', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('itemCode', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('productCode', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('articleCode', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('Item', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('Artikel', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('itemDescription', 'in', uniqueOptions))),
+        ];
+        const scopedSnaps = await Promise.all(scopedQueries.map(p => p.catch(() => null)));
+        scopedSnaps.forEach(addDocs);
+      } catch (err) {
+        console.warn('Fout bij zoeken in scoped orders:', err);
+      }
 
       // 1. Direct op Document ID proberen
       for (const opt of uniqueOptions) {
@@ -391,6 +420,11 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
               if (planDocSnap.exists()) {
                   foundDocs.set(planDocSnap.id, { id: planDocSnap.id, ...planDocSnap.data() });
               }
+              const trackDocRef = doc(db, ...PATHS.TRACKING, opt);
+              const trackDocSnap = await getDoc(trackDocRef);
+              if (trackDocSnap.exists()) {
+                  foundDocs.set(trackDocSnap.id, { id: trackDocSnap.id, ...trackDocSnap.data() });
+              }
               } catch {
                 continue;
               }
@@ -399,19 +433,38 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       // 2. Parallelle exacte zoekopdrachten
       const exactQueries = [
         getDocs(query(colRef, where("orderId", "in", uniqueOptions))),
+        getDocs(query(colRef, where("orderNumber", "in", uniqueOptions))),
         getDocs(query(colRef, where("Order", "in", uniqueOptions))),
         getDocs(query(colRef, where("Productieorder", "in", uniqueOptions))),
         getDocs(query(colRef, where("order", "in", uniqueOptions))),
+        getDocs(query(colRef, where("originalOrderId", "in", uniqueOptions))),
         getDocs(query(colRef, where("itemCode", "in", uniqueOptions))),
+        getDocs(query(colRef, where("productCode", "in", uniqueOptions))),
+        getDocs(query(colRef, where("articleCode", "in", uniqueOptions))),
         getDocs(query(colRef, where("Item", "in", uniqueOptions))),
         getDocs(query(colRef, where("Artikel", "in", uniqueOptions))),
+        getDocs(query(colRef, where("itemDescription", "in", uniqueOptions))),
         getDocs(query(planRef, where("orderId", "in", uniqueOptions))),
+        getDocs(query(planRef, where("orderNumber", "in", uniqueOptions))),
         getDocs(query(planRef, where("Order", "in", uniqueOptions))),
         getDocs(query(planRef, where("Productieorder", "in", uniqueOptions))),
         getDocs(query(planRef, where("order", "in", uniqueOptions))),
+        getDocs(query(planRef, where("originalOrderId", "in", uniqueOptions))),
         getDocs(query(planRef, where("itemCode", "in", uniqueOptions))),
+        getDocs(query(planRef, where("productCode", "in", uniqueOptions))),
+        getDocs(query(planRef, where("articleCode", "in", uniqueOptions))),
         getDocs(query(planRef, where("Item", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Artikel", "in", uniqueOptions)))
+        getDocs(query(planRef, where("Artikel", "in", uniqueOptions))),
+        getDocs(query(planRef, where("itemDescription", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("orderId", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("orderNumber", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("Order", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("order", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("originalOrderId", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("itemCode", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("item", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("itemDescription", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("productCode", "in", uniqueOptions)))
       ];
       const exactSnaps = await Promise.all(exactQueries.map(p => p.catch(() => null)));
       exactSnaps.forEach(addDocs);
@@ -420,26 +473,44 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       if (foundDocs.size < 5 && searchStr.length >= 3) {
         const startOptions = [searchStr];
         if (digitsMatch && digitsMatch[0].length >= 3) {
-            startOptions.push(`N200${digitsMatch[0]}`);
-            startOptions.push(`N20${digitsMatch[0]}`);
-            startOptions.push(`N210${digitsMatch[0]}`);
-            startOptions.push(`N21${digitsMatch[0]}`);
+            if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
+                startOptions.push(`N200${digitsMatch[0]}`);
+                startOptions.push(`N20${digitsMatch[0]}`);
+                startOptions.push(`N210${digitsMatch[0]}`);
+                startOptions.push(`N21${digitsMatch[0]}`);
+            }
         }
         
         const startsWithQueries = [];
         Array.from(new Set(startOptions)).forEach(opt => {
             startsWithQueries.push(getDocs(query(colRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(colRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(colRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(colRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(colRef, where("Productieorder", ">=", opt), where("Productieorder", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(colRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(colRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(colRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(colRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(colRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(planRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(planRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("Productieorder", ">=", opt), where("Productieorder", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("Productieorder", ">=", opt), where("Productieorder", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(planRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
+            startsWithQueries.push(getDocs(query(trackRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
         });
 
         const startSnaps = await Promise.all(startsWithQueries.map(p => p.catch(() => null)));
@@ -448,8 +519,27 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       
       const queryText = normalizeText(orderStr);
       const clientMatches = initialList.filter((item) => {
-        const orderText = normalizeText(item.orderId || item.Order || item.Productieorder || item.order || item.id);
-        const productText = normalizeText(item.item || item.itemCode || item.Item || item.Artikel || item.description || item.Description || item.Omschrijving);
+        const orderText = normalizeText([
+          item.orderId,
+          item.orderNumber,
+          item.Order,
+          item.Productieorder,
+          item.order,
+          item.originalOrderId,
+          item.id,
+        ].filter(Boolean).join(' '));
+        const productText = normalizeText([
+          item.item,
+          item.itemDescription,
+          item.itemCode,
+          item.productCode,
+          item.articleCode,
+          item.Item,
+          item.Artikel,
+          item.description,
+          item.Description,
+          item.Omschrijving,
+        ].filter(Boolean).join(' '));
         return orderText.includes(queryText) || productText.includes(queryText);
       });
 
@@ -839,6 +929,8 @@ const PrintQueueAdminView = () => {
       return Number.isFinite(parsed.getTime()) ? parsed.getTime() : 0;
     };
 
+    const printQueuePathFragment = `/${PATHS.PRINT_QUEUE.join('/')}/`;
+
     const mergeJobs = () => {
       const byId = new Map();
       rootJobs.forEach((job) => {
@@ -863,12 +955,12 @@ const PrintQueueAdminView = () => {
       mergeJobs();
     });
 
-    const scopedQ = query(
-      collectionGroup(db, 'items'),
-      where('_scopeType', '==', 'print_queue')
-    );
+    const scopedQ = collectionGroup(db, 'items');
     const unsubscribeScoped = onSnapshot(scopedQ, (snapshot) => {
-      scopedJobs = snapshot.docs.map(normalizeJob).filter(Boolean);
+      scopedJobs = snapshot.docs
+        .filter((docSnap) => String(docSnap.ref?.path || '').includes(printQueuePathFragment))
+        .map(normalizeJob)
+        .filter((job) => job && String(job._scopeType || 'print_queue').trim() === 'print_queue');
       mergeJobs();
     }, (err) => {
       console.error('Error fetching scoped print jobs:', err);

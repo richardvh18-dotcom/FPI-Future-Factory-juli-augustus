@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { FileText, Layers, Calendar, ClipboardCheck, History, Package, ChevronLeft, ChevronRight, CheckCircle2, Printer, X, Download, ScanBarcode, Keyboard, AlertTriangle } from "lucide-react";
+import { FileText, Layers, Calendar, ClipboardCheck, History, Package, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, Printer, X, Download, ScanBarcode, Keyboard, AlertTriangle } from "lucide-react";
 import { format, isValid, isSameDay, subDays, addDays, startOfISOWeek, endOfISOWeek, isWithinInterval } from "date-fns";
 import { nl } from "date-fns/locale";
 import QRCode from "qrcode";
@@ -46,6 +46,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
   const [archivedProducts, setArchivedProducts] = useState([]);
   const [viewMode, setViewMode] = useState("day"); // 'day' or 'week'
     const [deliveryMismatchFilter, setDeliveryMismatchFilter] = useState("all"); // all | over | under
+        const [showDeliveryMismatch, setShowDeliveryMismatch] = useState(false);
   
   const [scanInput, setScanInput] = useState("");
   const [scannerMode, setScannerMode] = useState(true);
@@ -793,14 +794,22 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
 
             <div className="mx-3 mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 text-rose-700">
+                    <button
+                        type="button"
+                        onClick={() => setShowDeliveryMismatch((prev) => !prev)}
+                        className="flex items-center gap-2 text-rose-700 hover:text-rose-800 transition-colors"
+                        aria-expanded={showDeliveryMismatch}
+                    >
                         <AlertTriangle size={16} />
                         <p className="text-[11px] font-black uppercase tracking-widest">LN geleverd vs FF mismatch</p>
-                    </div>
+                        <ChevronDown size={16} className={`transition-transform ${showDeliveryMismatch ? "rotate-180" : "rotate-0"}`} />
+                    </button>
                     <span className="px-2 py-1 rounded-lg bg-white border border-rose-200 text-rose-700 text-[10px] font-black uppercase tracking-wider">
                         {deliveryInspectionMismatches.length} orders
                     </span>
                 </div>
+                {showDeliveryMismatch && (
+                <>
                 <div className="mt-2 flex flex-wrap gap-2">
                     <button
                         type="button"
@@ -842,6 +851,8 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                         </div>
                     ))}
                 </div>
+                </>
+                )}
             </div>
 
       <style>{`
@@ -1132,23 +1143,27 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
       </div>
 
       {showFinishModal && selectedProduct && (
-        <PostProcessingFinishModal
-            product={selectedProduct}
-            onClose={handleCloseModal}
-            onConfirm={handlePostProcessingFinish}
-            currentStation="BM01"
-        />
+        <div className="fixed z-[9999]">
+          <PostProcessingFinishModal
+              product={selectedProduct}
+              onClose={handleCloseModal}
+              onConfirm={handlePostProcessingFinish}
+              currentStation="BM01"
+          />
+        </div>
       )}
 
       {viewingDossier && (
-        <ProductDossierModal
-            isOpen={true}
-            product={viewingDossier}
-            onClose={() => setViewingDossier(null)}
-            onAddNote={handleAddQcNote}
-            orders={orders}
-            onMoveLot={onMoveLot}
-        />
+        <div className="fixed z-[9999]">
+          <ProductDossierModal
+              isOpen={true}
+              product={viewingDossier}
+              onClose={() => setViewingDossier(null)}
+              onAddNote={handleAddQcNote}
+              orders={orders}
+              onMoveLot={onMoveLot}
+          />
+        </div>
       )}
 
       {/* PRINT / SCAN MODAL */}

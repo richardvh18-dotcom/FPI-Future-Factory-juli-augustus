@@ -13,6 +13,7 @@ import {
   ClipboardCheck,
   History,
   ArrowLeft,
+  ArrowRight,
   ScanBarcode,
   Keyboard,
   Printer,
@@ -39,6 +40,20 @@ import { useNotifications } from '../../contexts/NotificationContext';
 const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
 const DEFAULT_MAZAK_DPI = 300;
 
+const isSeriesEligibleItem = (item) => {
+  const statusUpper = String(item?.status || "").toUpperCase();
+  const stepUpper = String(item?.currentStep || "").toUpperCase();
+  return statusUpper !== "REJECTED" && stepUpper !== "REJECTED";
+};
+
+const getLotSeriesPrefix = (lotNumber) => {
+  const raw = String(lotNumber || "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^(.*?)(\d{3})$/);
+  if (!match) return "";
+  return match[1];
+};
+
 const MazakView = ({ stationId = "Mazak", products = [] }) => {
   const { t } = useTranslation();
   const { user } = useAdminAuth();
@@ -48,7 +63,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showActionModal, setShowActionModal] = useState(false);
-  const [scanInput, setScanInput] = useState("");
+  const [scanInputInbox, setScanInputInbox] = useState("");
+  const [scanInputProcess, setScanInputProcess] = useState("");
   const [scannerMode, setScannerMode] = useState(true);
   const scanInputRef = useRef(null);
   const selectedProductRef = useRef(null);
@@ -65,6 +81,15 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
   const [planningSearch, setPlanningSearch] = useState("");
   const [showAllWeeks, setShowAllWeeks] = useState(true);
   const [referenceDate, setReferenceDate] = useState(new Date());
+  const activeScanInput = activeTab === "process" ? scanInputProcess : scanInputInbox;
+
+  const setActiveScanInput = (value) => {
+    if (activeTab === "process") {
+      setScanInputProcess(value);
+      return;
+    }
+    setScanInputInbox(value);
+  };
 
   useEffect(() => {
     selectedProductRef.current = selectedProduct;
@@ -244,6 +269,13 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
 
   const inboxItems = useMemo(() => items.filter(i => !i.mazakLabelPrinted), [items]);
   const processItems = useMemo(() => items.filter(i => i.mazakLabelPrinted), [items]);
+  const isBulkInboxMode = activeTab === "inbox" && bulkSeriesProducts.length > 1;
+
+  useEffect(() => {
+    if (activeTab !== "inbox" && bulkSeriesProducts.length > 0) {
+      setBulkSeriesProducts([]);
+    }
+  }, [activeTab, bulkSeriesProducts.length]);
 
   const groupedSeries = useMemo(() => {
     const grouped = new Map();
@@ -342,17 +374,40 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
   }, [planningOrders, showAllWeeks, referenceDate, planningSearch]);
 
   const handleItemClick = (item) => {
+    let sameSeries = [];
+
     if (activeTab === "inbox" && item.seriesGroupId) {
-      const sameSeries = inboxItems.filter(
+      sameSeries = inboxItems.filter(
         (seriesItem) =>
-          seriesItem.seriesGroupId === item.seriesGroupId &&
-          String(seriesItem.status || "").toUpperCase() !== "REJECTED" &&
-          String(seriesItem.currentStep || "").toUpperCase() !== "REJECTED"
+          seriesItem.seriesGroupId === item.seriesGroupId && isSeriesEligibleItem(seriesItem)
       );
-      setBulkSeriesProducts(sameSeries.length > 1 ? sameSeries : []);
-    } else {
-      setBulkSeriesProducts([]);
     }
+
+    // Fallback voor legacy records zonder seriesGroupId: groepeer op lot-prefix + order/item.
+    if (activeTab === "inbox" && sameSeries.length <= 1) {
+      const lotPrefix = getLotSeriesPrefix(item?.lotNumber);
+      const orderKey = String(item?.orderId || "").trim().toUpperCase();
+      const itemCodeKey = String(item?.itemCode || "").trim().toUpperCase();
+
+      if (lotPrefix) {
+        sameSeries = inboxItems.filter((seriesItem) => {
+          if (!isSeriesEligibleItem(seriesItem)) return false;
+
+          const candidatePrefix = getLotSeriesPrefix(seriesItem?.lotNumber);
+          if (!candidatePrefix || candidatePrefix !== lotPrefix) return false;
+
+          const candidateOrder = String(seriesItem?.orderId || "").trim().toUpperCase();
+          if (orderKey && candidateOrder && candidateOrder !== orderKey) return false;
+
+          const candidateItemCode = String(seriesItem?.itemCode || "").trim().toUpperCase();
+          if (itemCodeKey && candidateItemCode && candidateItemCode !== itemCodeKey) return false;
+
+          return true;
+        });
+      }
+    }
+
+    setBulkSeriesProducts(sameSeries.length > 1 ? sameSeries : []);
     setSelectedProduct(item);
   };
 
@@ -374,7 +429,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
     try {
       const isReprint = activeTab === "process";
       const templateToUse = availableLabels.find(l => l.id === selectedLabelId);
-      const itemsToPrint = bulkSeriesProducts.length > 1 ? bulkSeriesProducts : [selectedProduct];
+      const itemsToPrint = isBulkInboxMode ? bulkSeriesProducts : [selectedProduct];
 
       const batchTasks = itemsToPrint.map(async (item) => {
         const processedData = processLabelData(item);
@@ -448,6 +503,47 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
     }
   };
 
+  const handleManualPrintForward = async () => {
+    if (!selectedProduct) return;
+
+    const itemsToForward = isBulkInboxMode ? bulkSeriesProducts : [selectedProduct];
+    if (!itemsToForward.length) return;
+
+    setPrinting(true);
+    try {
+      await markMazakLabelsPrinted({
+        productIds: itemsToForward.map((item) => item.id || item.lotNumber).filter(Boolean),
+        stationId,
+        isReprint: false,
+        source: "MazakView:manual-forward",
+        actorLabel: user?.email || "Mazak Operator",
+      });
+
+      await logActivity(
+        user?.uid || "system",
+        "MARK_MAZAK_LABELS_MANUAL",
+        `Mazak: ${itemsToForward.length} lot(s) handmatig gelabeld en doorgestuurd voor ${selectedProduct.orderId || "onbekend"}`
+      );
+
+      setSelectedProduct(null);
+      setBulkSeriesProducts([]);
+      setActiveTab("process");
+
+      notify(
+        t(
+          "mazak.manual_labels_forwarded",
+          "{{count}} lot(s) handmatig gelabeld en doorgestuurd naar Gereedmelden.",
+          { count: itemsToForward.length }
+        )
+      );
+    } catch (err) {
+      console.error("Fout bij handmatig labelen/doorgaan:", err);
+      notify(t("mazak.manual_label_forward_error", "Handmatig labelen/doorgaan is mislukt."));
+    } finally {
+      setPrinting(false);
+    }
+  };
+
   const handlePostProcessingFinish = async (status, data, productOverride = null) => {
     const product = productOverride || selectedProduct;
     if (!product) return;
@@ -463,6 +559,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
           actorLabel: user?.email,
           source: "MazakView",
         });
+        setActiveTab("process");
+        notify(t("mazak.process_success", "Lot {{lot}} is succesvol doorgestuurd.", { lot: product.lotNumber || productId }));
         if (selectedProductRef.current && selectedProductRef.current.id === product.id) {
           handleCloseModal();
         }
@@ -477,6 +575,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
           source: "MazakView",
           actorLabel: user?.email,
         });
+        setActiveTab("process");
+        notify(t("mazak.reject_success", "Lot {{lot}} is definitief afgekeurd.", { lot: product.lotNumber || productId }));
         if (selectedProductRef.current && selectedProductRef.current.id === product.id) {
           handleCloseModal();
         }
@@ -497,32 +597,36 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
         `Mazak afhandeling: lot ${product.lotNumber || product.id}, status temp_reject`
       );
 
+      setActiveTab("process");
+      notify(t("mazak.temp_reject_success", "Lot {{lot}} is op tijdelijke afkeur gezet.", { lot: product.lotNumber || productId }));
+
       if (selectedProductRef.current && selectedProductRef.current.id === product.id) {
         handleCloseModal();
       }
     } catch (error) {
       console.error("Fout bij Mazak afronden:", error);
+      notify(t("mazak.process_error", "Verwerken is mislukt. Probeer opnieuw."));
     }
   };
 
   const handleScan = async (event) => {
     if (event.key !== "Enter") return;
 
-    const code = scanInput.trim().toUpperCase();
+    const code = activeScanInput.trim().toUpperCase();
     if (!code) return;
 
     if (activeTab === "planning") {
-      setScanInput("");
+      setActiveScanInput("");
       return;
     }
 
     if (code === QR_CODE_OK_CONFIRMATION && selectedProduct) {
       if (activeTab === "inbox") {
         notify(t("mazak.must_print_before_approve", "Dit item moet eerst geprint worden voordat het goedgekeurd kan worden."));
-        setScanInput("");
+        setActiveScanInput("");
         return;
       }
-      setScanInput("");
+      setActiveScanInput("");
       await handlePostProcessingFinish("completed", { note: "Goedgekeurd via QR Scan" }, selectedProduct);
       return;
     }
@@ -535,11 +639,16 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
     );
 
     if (found) {
-      setSelectedProduct(found);
-      setScanInput("");
+      handleItemClick(found);
+      setActiveScanInput("");
+      if (activeTab === "process") {
+        setTimeout(() => {
+          setShowActionModal(true);
+        }, 0);
+      }
     } else {
       notify(t("lossen.item_not_found", "Item {{code}} niet gevonden", { code }));
-      setScanInput("");
+      setActiveScanInput("");
       setSelectedProduct(null);
     }
 
@@ -645,24 +754,26 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
       `}</style>
 
       {showActionModal && selectedProduct && (
-        <PostProcessingFinishModal
-          product={selectedProduct}
-          onClose={handleCloseModal}
-          onConfirm={handlePostProcessingFinish}
-          currentStation={stationId}
-          autoFocus={!scannerMode}
-        />
+        <div className="fixed z-[9999]">
+          <PostProcessingFinishModal
+            product={selectedProduct}
+            onClose={handleCloseModal}
+            onConfirm={handlePostProcessingFinish}
+            currentStation={stationId}
+            autoFocus={!scannerMode}
+          />
+        </div>
       )}
 
       {showPrintModal && selectedProduct && (
-        <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white rounded-[30px] shadow-2xl w-full max-w-7xl flex flex-col md:flex-row overflow-hidden max-h-[90vh]">
-            <div className="w-full md:w-1/3 shrink-0 p-8 border-r border-slate-100 flex flex-col overflow-y-auto">
+        <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-[24px] sm:rounded-[30px] shadow-2xl w-full max-w-7xl flex flex-col md:flex-row overflow-hidden max-h-[95vh] sm:max-h-[90vh]">
+            <div className="w-full md:w-1/3 shrink-0 p-5 sm:p-6 md:p-8 border-b md:border-b-0 md:border-r border-slate-100 flex flex-col overflow-y-auto custom-scrollbar">
                <h3 className="text-2xl font-black uppercase italic text-slate-800 mb-2">
                  {activeTab === "process" ? t("mazak.reprint_label", "Label herprinten") : t("mazak.print_labels", "Labels printen")}
                </h3>
                <p className="text-sm font-bold text-slate-500 mb-8">
-                  {bulkSeriesProducts.length > 1 
+                  {isBulkInboxMode
                     ? t("mazak.bulk_labels_printing", "{{count}} labels worden geprint voor deze bulk-serie.", { count: bulkSeriesProducts.length }) 
                     : activeTab === "process"
                     ? t("mazak.one_label_reprint", "1 label wordt opnieuw geprint voor dit product.")
@@ -701,12 +812,12 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
                      ? t("common.loading", "Laden...")
                      : activeTab === "process"
                        ? t("mazak.reprint_label", "Label herprinten")
-                       : t("mazak.print_count_labels", "Print {{count}} label(s)", { count: bulkSeriesProducts.length > 1 ? bulkSeriesProducts.length : 1 })}
+                       : t("mazak.print_count_labels", "Print {{count}} label(s)", { count: isBulkInboxMode ? bulkSeriesProducts.length : 1 })}
                  </button>
                </div>
             </div>
 
-            <div className="flex-1 bg-slate-50 p-8 flex flex-col items-center justify-center relative min-h-[400px] overflow-hidden">
+            <div className="flex-1 bg-slate-50 p-5 sm:p-8 flex flex-col items-center justify-center relative min-h-[300px] md:min-h-[400px] overflow-hidden">
                <div className="absolute top-4 left-4 text-[9px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-2 z-10">
                  <Printer size={12} className="text-blue-500" /> {t("productionStartModal.labels.labelPreview", "Etiket preview")}
                </div>
@@ -757,8 +868,14 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
               <input
                 ref={scanInputRef}
                 type="text"
-                value={scanInput}
-                onChange={(event) => setScanInput(event.target.value)}
+                value={activeScanInput}
+                onChange={(event) => {
+                  if (activeTab === "process") {
+                    setScanInputProcess(event.target.value);
+                    return;
+                  }
+                  setScanInputInbox(event.target.value);
+                }}
                 inputMode={scannerMode ? "none" : "text"}
                 onKeyDown={handleScan}
                 placeholder={t("digitalplanning.terminal.scan_lot_or_order", "Scan lotnummer of order...")}
@@ -987,7 +1104,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
               <div className="text-left flex-1">
                 <span className="text-[8px] font-black text-blue-400 uppercase block mb-1 text-left">{t("mazak.title", "Mazak")}</span>
                 <h2 className="text-3xl font-black italic leading-none text-left">
-                  {bulkSeriesProducts.length > 1 ? (() => {
+                  {isBulkInboxMode ? (() => {
                     const sortedLots = bulkSeriesProducts.map(p => String(p.lotNumber || "")).sort();
                     const firstLot = sortedLots[0];
                     const lastLot = sortedLots[sortedLots.length - 1];
@@ -1000,12 +1117,23 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
 
             <div className="bg-white rounded-[40px] p-8 border border-slate-200 shadow-sm space-y-5 text-left">
               {activeTab === "inbox" ? (
-                <button 
-                  onClick={() => setShowPrintModal(true)} 
-                  className="w-full py-4 bg-blue-50 text-blue-700 rounded-[22px] font-black uppercase text-sm hover:bg-blue-100 transition-all flex items-center justify-center gap-3 active:scale-95 group border border-blue-200"
-                >
-                  <Printer size={20} /> {t("mazak.print_labels", "Labels printen")}
-                </button>
+                <>
+                  <button 
+                    onClick={() => setShowPrintModal(true)} 
+                    disabled={printing}
+                    className="w-full py-4 bg-blue-50 text-blue-700 rounded-[22px] font-black uppercase text-sm hover:bg-blue-100 transition-all flex items-center justify-center gap-3 active:scale-95 group border border-blue-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <Printer size={20} /> {t("mazak.print_labels", "Labels printen")}
+                  </button>
+                  <button
+                    onClick={handleManualPrintForward}
+                    disabled={printing}
+                    className="w-full py-4 bg-amber-50 text-amber-800 rounded-[22px] font-black uppercase text-sm hover:bg-amber-100 transition-all flex items-center justify-center gap-3 active:scale-95 group border border-amber-200 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {printing ? <Loader2 size={20} className="animate-spin" /> : <ArrowRight size={20} />}
+                    {t("mazak.manual_print_and_forward", "Labels handmatig printen")}
+                  </button>
+                </>
               ) : (
                 <>
                   <button 

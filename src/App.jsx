@@ -88,7 +88,34 @@ const App = () => {
         window.location.reload();
       }
     });
-    return unsubscribe;
+
+    // Fallback voor omgevingen waar de Firestore versie-write niet draait.
+    // Leest een no-cache version.json van de host en forceert reload bij verschil.
+    let cancelled = false;
+    const checkHostedVersion = async () => {
+      try {
+        const response = await fetch(`/version.json?t=${Date.now()}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const hostedVersion = String(payload?.version || "").trim();
+        if (!cancelled && hostedVersion && hostedVersion !== versionRef.current) {
+          window.location.reload();
+        }
+      } catch {
+        // Niet kritisch: app blijft werken zonder endpoint.
+      }
+    };
+
+    checkHostedVersion();
+    const timer = window.setInterval(checkHostedVersion, 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      unsubscribe();
+    };
   }, []);
 
   // Check of gebruiker wachtwoord moet wijzigen
@@ -267,7 +294,7 @@ const App = () => {
             onMobileMenuClose={() => setIsMobileMenuOpen(false)}
           />
 
-          <main className="flex-1 flex flex-col overflow-hidden relative md:pl-16" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <main className="flex-1 flex flex-col overflow-hidden relative md:pl-16">
             <Suspense
               fallback={
                 <div className="flex-1 flex items-center justify-center bg-white">

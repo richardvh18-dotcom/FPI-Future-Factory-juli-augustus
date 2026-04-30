@@ -1,3 +1,616 @@
+## Update sessie 129 (Voorbereiding: Robuustere lotnummering en To Do telling)
+
+**Datum:** 30 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Openstaande taken uit deze sessie:**
+- **Lotnummer validatie per machine**: 15-cijferige lotnummers bij de start van een order strict koppelen aan de actieve machine (bijv. lotnummer moet `418` bevatten voor machine `BH18`). Dit voorkomt foute scans/invoer over de machines heen.
+- **Fail-proof To Do telling**: `To Do` berekening lostrekken van opgeslagen database-tellers en app-breed altijd dynamisch berekenen (`Plan - started_<machine>`). Als de orderhoeveelheid (`Plan`) later in LN of met de hand wijzigt, schaalt de `To Do` automatisch 100% foutloos mee.
+
+---
+
+## Update sessie 128 (Werkwijze vastgelegd: tracking van wijzigingen en open vragen)
+
+**Datum:** 30 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Afspraak in deze sessie:**
+- Vanaf heden worden alle nieuwe codewijzigingen en openstaande vragen/taken aan het einde van een implementatiestap toegevoegd aan deze `CONVERSATION_SUMMARY.md`.
+- Dit helpt om de context voor volgende chatsessies naadloos op te pakken.
+
+---
+
+## Update sessie 127 (Mobiele Nabewerking modal over header + grijze onderruimte opgelost)
+
+**Datum:** 29 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoeken in deze sessie:**
+- Pop-up voor gereedmelden in Nabewerking viel op klein mobiel scherm achter de header en operator inlogknoppen.
+- In het lijstoverzicht onderaan bleef een grijs vlak/lege ruimte zichtbaar alsof toetsenbordruimte bleef hangen.
+
+**Uitgevoerd in deze sessie:**
+
+### 1) Modal layering/stapeling op mobiel gefixt
+- In `src/App.jsx` is op het `<main>`-element de inline style `WebkitOverflowScrolling: 'touch'` verwijderd.
+- Reden: op iOS/Safari kan dit een extra stacking context veroorzaken, waardoor `fixed` modals achter headers of andere vaste UI-lagen terechtkomen.
+
+### 2) Gereedmeld-modal expliciet boven alle UI-lagen gezet
+- In `src/components/digitalplanning/modals/PostProcessingFinishModal.jsx` is de overlay aangepast van `z-[100]` naar `z-[9999]`.
+- Hierdoor rendert de modal consequent boven header/actiebalken op kleine schermen.
+
+### 3) Overbodige modal-wrapper in Nabewerken opgeruimd
+- In `src/components/digitalplanning/Nabewerken.jsx` is de extra wrapper `<div className="fixed z-[9999]">` verwijderd rond `PostProcessingFinishModal`.
+- De modal beheert nu zelf de volledige fixed overlay en z-index.
+
+### 4) Grijze lege ruimte onderaan lijst verwijderd
+- In `src/components/digitalplanning/Nabewerken.jsx` is de scrollcontainer-padding onderaan aangepast:
+    - van `pb-32` + `max(8rem, env(safe-area-inset-bottom))`
+    - naar `paddingBottom: calc(1rem + env(safe-area-inset-bottom))`
+- Resultaat: geen kunstmatige grote ondermarge meer op mobiel zonder actief toetsenbord, met behoud van veilige onderruimte voor devices met safe-area.
+
+**Validatie:**
+- Foutcontrole uitgevoerd op de gewijzigde bestanden (`App.jsx`, `Nabewerken.jsx`, `PostProcessingFinishModal.jsx`): geen errors.
+
+**Huidige status:**
+- Nabewerking gereedmeld-pop-up blijft op mobiel boven de header/inlogbalk.
+- Onderaan de lijst is de storende grijze lege ruimte verwijderd.
+
+---
+
+## Update sessie 126 (BH18 filter definitief + regressietest + productie release 0.1.2)
+
+**Datum:** 29 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoeken in deze sessie:**
+- BH18 Terminal/planning: orders die feitelijk klaar zijn moesten verdwijnen, maar orders met resterend werk moesten blijven staan.
+- Cases met pre-pilot/legacy data moesten correct afgehandeld worden (o.a. afwijkingen tussen `plan`, `quantity`, `toDoQty`, `started_BH18`).
+- Productie deploy naar Vercel uitvoeren, versie verhogen en clients automatisch laten verversen.
+
+**Uitgevoerd in deze sessie:**
+
+### 1) BH18 filterlogica in Terminal gecorrigeerd en gestabiliseerd
+- In `src/components/digitalplanning/Terminal.jsx` is de BH18-planningfilter aangepast zodat stationlogica leidend is.
+- Belangrijkste regel: BH18-zichtbaarheid wordt bepaald door station-target (`plan`) en stationcounter (`started_BH18`), niet door `quantity` als dat afwijkt bij legacy LN-orders.
+- Hiermee verdwijnen oude afgeronde BH18-orders uit de planninglijst terwijl orders met echte resthoeveelheid zichtbaar blijven.
+
+### 2) Filterlogica geëxtraheerd naar helper
+- Nieuwe helper toegevoegd: `src/utils/terminalOrderFilters.js`
+    - `shouldHideBH18PlanningOrder(...)`
+- `Terminal.jsx` gebruikt nu deze helper i.p.v. verspreide inline condities.
+- Resultaat: minder regressierisico en beter onderhoudbare logic.
+
+### 3) Regressietest toegevoegd
+- Nieuwe test toegevoegd: `scripts/regression/bh18-filter.test.mjs`
+- Testcases dekken:
+    - verbergen bij `remainingAtOrder <= 0`
+    - verbergen bij `startedAtStation >= stationPlan`
+    - zichtbaar houden bij resterend werk
+    - legacy mismatch scenario (quantity kan afwijken, stationplan blijft leidend)
+- Nieuw npm-script toegevoegd in `package.json`:
+    - `test:regression:bh18`
+- Testresultaat: **4/4 pass**.
+
+### 4) Productie release en automatische client-refresh
+- Versienummer verhoogd naar **0.1.2** in `package.json`.
+- Productie deploy uitgevoerd op Vercel en gealiast naar:
+    - `https://future-factory.vercel.app`
+- `public/version.json` toegevoegd met actuele versie.
+- In `vercel.json` no-cache headers toegevoegd voor `/version.json`.
+- In `src/App.jsx` versie-fallback toegevoegd:
+    - naast Firestore version listener nu ook periodieke check op `/version.json` (no-store)
+    - bij versieverschil automatische `window.location.reload()`.
+
+**Belangrijke observatie tijdens deploy:**
+- De buildstap `scripts/update-firestore-version.js` werd overgeslagen omdat:
+    - scriptbestand niet mee kwam in deploycontext (door `.vercelignore` op `scripts/`), en
+    - `FIREBASE_SERVICE_ACCOUNT_JSON` niet in Vercel environment variables staat.
+- Daarom is een host-based fallback geïmplementeerd via `/version.json`, zodat auto-refresh blijft werken zonder Firestore write.
+
+**Validatie:**
+- Lintcontrole op aangepaste bestanden: geen errors.
+- Regressietest BH18: groen (4/4).
+- Deployed endpoint-check:
+    - `https://future-factory.vercel.app/version.json` retourneert `0.1.2`.
+
+**Huidige status:**
+- BH18-planningfilter gedraagt zich consistent voor zowel legacy als actuele orders.
+- Regressie-afdekking aanwezig.
+- Productie draait op Vercel met versie `0.1.2`.
+- Clients verversen automatisch op nieuwe release via versiecheck fallback.
+
+---
+
+## Update sessie 125 (Terugzetten van Nabewerking naar Lossen mogelijk gemaakt)
+
+**Datum:** 29 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoek in deze sessie:**
+- Als een order/product per ongeluk van Lossen naar Nabewerking is gezet, moet deze ook weer terug naar Lossen verplaatst kunnen worden.
+
+**Uitgevoerd in deze sessie:**
+- Geanalyseerd waar de beperking zat in de handmatige verplaatsflow vanuit Teamleader/Product Dossier.
+- `LOSSEN` toegevoegd aan de centrale stationslijst in `src/utils/workstationLogic.jsx`, zodat Lossen als expliciet doelstation beschikbaar is.
+- Toegestane doelstations voor tijdelijke afkeur in `src/components/digitalplanning/modals/ProductDossierModal.jsx` uitgebreid met `LOSSEN`.
+
+**Resultaat:**
+- Producten die onbedoeld op Nabewerking zijn beland, kunnen nu vanuit de verplaatsactie weer naar Lossen worden teruggezet.
+
+**Validatie:**
+- Foutcontrole uitgevoerd op de gewijzigde bestanden: geen errors gevonden.
+
+---
+
+## Update sessie 124 (Archief-heropenen gefixt + ordernummerwijziging product ingebouwd)
+
+**Datum:** 29 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoeken in deze sessie:**
+- Fout oplossen waarbij een gearchiveerd product uit Teamleader Volledige Lijst niet naar tijdelijke afkeur / BH31 kon worden teruggezet.
+- Oorzaak analyseren van meldingen rond `moveTrackedProductManual`, `restoreArchivedTrackedProduct`, 404/CORS en ontbrekende tracking-items.
+- Nieuwe functionaliteit toevoegen zodat in Teamleader Volledige Lijst het ordernummer van een product aangepast kan worden als het op het verkeerde ordernummer is geboekt.
+- Bij zo'n ordernummercorrectie moet het originele order weer opgehoogd/hersteld worden qua aantallen zodat geen tekorten blijven staan.
+
+**Uitgevoerd in deze sessie:**
+
+### 1) Archief-producten correct heropenen i.p.v. actief verplaatsen
+- Vastgesteld dat gearchiveerde producten ten onrechte via `moveTrackedProductManual` werden afgehandeld.
+- In `ProductDossierModal.jsx` de flow aangepast zodat archief-items via `restoreArchivedTrackedProduct` lopen.
+- Voor archief-items de toegestane doelroutes beperkt tot backend-ondersteunde routes:
+    - `BH31`
+    - `Nabewerking`
+    - `BM01`
+- Bevestigingsteksten en logging aangepast op “heropenen uit archief”.
+
+### 2) Archiefdata in Teamleader consistenter gemaakt
+- In `useTeamleaderFirestore.js` krijgen archief-history records nu expliciete flags en metadata:
+    - `archived: true`
+    - `_archived: true`
+    - `_archiveYear`
+    - `archiveDocId`
+- Hierdoor herkennen Teamleader views en modals nu betrouwbaar dat een record uit archief komt.
+- In `OrderDetail.jsx` is de snelle BH31-actie aangepast zodat archief-items niet meer direct via de actieve move-callable lopen, maar via het dossier/heropen-pad.
+
+### 3) Ontbrekende Firebase callable voor archief-restore gedeployd
+- Vastgesteld dat `restoreArchivedTrackedProduct` wel in code/export aanwezig was, maar nog niet live stond in Firebase.
+- Daardoor verscheen in de browser een CORS/preflight-achtige fout op een niet-bestaande callable-URL.
+- Gerichte deploy uitgevoerd van alleen deze functie.
+
+### 4) Nieuw: ordernummer van product wijzigen in Teamleader Volledige Lijst
+- Nieuwe functionaliteit gebouwd in `OrderDetail.jsx` om per product het ordernummer te wijzigen.
+- Nieuwe UI toegevoegd naast de bestaande lotnummerwijziging:
+    - knop in de productregel,
+    - modal voor nieuw ordernummer,
+    - verplichte reden.
+- De actie is beschikbaar voor zowel actieve als gearchiveerde producten in de Volledige Lijst.
+
+### 5) Nieuwe backend callable/service voor order-herkoppeling van producten
+- Nieuwe callable toegevoegd: `reassignTrackedProductOrder`.
+- Nieuwe serverlogica toegevoegd in `planningTransitionService.js` om een product naar een ander ordernummer te herkoppelen.
+- Ondersteunt zowel:
+    - actieve tracked producten,
+    - gearchiveerde/afgeronde producten.
+
+### 6) Tellercorrectie bij ordernummerwijziging
+- Voor **gearchiveerde of afgeronde producten**:
+    - `produced` van het oude order wordt met 1 verlaagd,
+    - `produced` van het nieuwe order wordt met 1 verhoogd.
+- Voor **actieve producten**:
+    - het productrecord krijgt het nieuwe `orderId`,
+    - waar mogelijk wordt het relevante `started_<machine>` veld van bron- en doelorder mee gecorrigeerd.
+- Hiermee sluit de Teamleader- en orderdetailweergave weer aan op de feitelijke ordertoewijzing.
+
+**Deploys uitgevoerd in deze sessie:**
+- `firebase deploy --only functions:restoreArchivedTrackedProduct`
+    - Resultaat: succesvolle create van `restoreArchivedTrackedProduct(us-central1)`.
+- `firebase deploy --only functions:reassignTrackedProductOrder`
+    - Resultaat: succesvolle create van `reassignTrackedProductOrder(us-central1)`.
+
+**Aangepaste bestanden in deze sessie:**
+- `src/components/digitalplanning/modals/ProductDossierModal.jsx`
+- `src/components/digitalplanning/useTeamleaderFirestore.js`
+- `src/components/digitalplanning/OrderDetail.jsx`
+- `src/services/planningSecurityService.js`
+- `functions/src/services/planningTransitionService.js`
+- `functions/src/callables/planningCallables.js`
+- `functions/index.js`
+
+**Validatie:**
+- Lokale foutcontrole uitgevoerd op alle gewijzigde frontend- en backendbestanden: **geen errors**.
+- Firebase functions lijst gecontroleerd na deploy:
+    - `restoreArchivedTrackedProduct` live
+    - `reassignTrackedProductOrder` live
+
+**Huidige status:**
+- Gearchiveerde producten kunnen nu weer correct vanuit Teamleader Volledige Lijst worden heropend.
+- Teamleader Volledige Lijst ondersteunt nu ook ordernummerwijziging op productniveau.
+- Bij afgeronde/gearchiveerde producten worden de orderaantallen server-side gecorrigeerd zodat het oude order geen verborgen tekort of overschot houdt.
+
+---
+
+## Update sessie 123 (Order search, Tooling Molds UX, BM01 mismatch inklapbaar, productie deploys)
+
+**Datum:** 28 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoeken in deze sessie:**
+- Order Labels zoeken werkte niet (o.a. op ordernummers zoals `24613`) terwijl records wel aanwezig waren in scoped machinepaden.
+- In Mallen & Gereedschappen ook op ordernummer zoeken en selectie sneller toevoegen.
+- UI-aanpassingen in Tooling Molds:
+    - bulk-actieknoppen positionering,
+    - per-regel selectie i.p.v. alles-delete,
+    - redundant veld verwijderen,
+    - zoekactie beter zichtbaar.
+- Matcher automatisch invullen bij itemselectie.
+- BM01: LN mismatch-sectie inklapbaar maken en standaard ingeklapt starten.
+- Deploy naar productie op Vercel en Firebase.
+
+**Uitgevoerd in deze sessie:**
+
+### 1) Order zoekfunctionaliteit hersteld en uitgebreid
+- In `PrintQueueAdminView` en `PrintStationView` is zoeklogica uitgebreid met:
+    - root collecties (`TEMP_PLANNING`, `PLANNING`, `TRACKING`),
+    - scoped machine-orders via `collectionGroup('orders')`,
+    - meerdere orderveldnamen (`orderId`, `orderNumber`, `Order`, `Productieorder`, `order`, `originalOrderId`, etc.),
+    - prefix-varianten voor LN-achtige zoektermen.
+- Voor scoped orders is client-side filtering toegevoegd op document-id en relevante velden zodat records als
+    `/future-factory/production/digital_planning/Fittings/machines/40BH12/orders/N20024613_...`
+    betrouwbaar gevonden worden.
+
+### 2) Tooling Molds (AdminToolingMoldsView) functioneel uitgebreid
+- `OrderSearchModal` toegevoegd en gekoppeld aan het toevoegformulier.
+- Selectieflow aangepast:
+    - meervoudige itemselectie,
+    - bevestigen vult `itemCode` gecombineerd in,
+    - matcher wordt automatisch ingevuld vanuit gevonden ordervelden (`matcher`, `description`, `itemDescription`, `specs`).
+- Weergave van geselecteerde items aangepast naar object-gebaseerde selectie (met correcte remove per itemcode).
+
+### 3) Tooling Molds UI/UX verfijnd
+- Header-acties met `Alles Opslaan` en `Delete (X)` in combinatie met checkbox-selectie per rij.
+- Per-rij save/delete knoppen verwijderd.
+- Redundant veld `name` verwijderd uit tabel en toevoegformulier; `matcher` blijft leidend.
+- Zoekactie explicieter gemaakt met duidelijke knop voor orderzoekmodal.
+
+### 4) BM01 LN mismatch inklapbaar gemaakt
+- In `src/components/digitalplanning/BM01Hub.jsx`:
+    - LN mismatch-panel klikbaar gemaakt met open/dicht-toggle,
+    - visuele pijl-indicator toegevoegd,
+    - inhoud (filters + lijst) alleen zichtbaar bij uitgeklapte staat.
+- Standaardstatus staat op **ingeklapt** (`showDeliveryMismatch = false`).
+
+### 5) Foutafhandeling counters (permission denied) verbeterd
+- In `ProductionStartModal` is permissie-denied op counter writes rustiger afgehandeld met fallbackgedrag.
+- Doel: productieflow niet blokkeren bij beperkte rechten op counter-documenten.
+
+**Deploys uitgevoerd in deze sessie:**
+- **Vercel productie:** succesvol
+    - Alias: `https://future-factory.vercel.app`
+- **Firebase productie (`future-factory-377ef`):** succesvol
+    - Hosting: `https://future-factory-377ef.web.app`
+    - Firestore rules/indexes uitgerold
+    - Functions gedeployed (gewijzigde functies geüpdatet, ongewijzigde functies correct geskipt)
+
+**Validatie:**
+- Meerdere frontend builds uitgevoerd (`npm run build`): succesvol.
+- Orderzoekflow bevestigd met concrete matches op bestaande scoped records.
+- BM01 inklapbare mismatch-panel live en standaard ingeklapt bevestigd.
+
+**Huidige status:**
+- Order search werkt nu op scoped en root data.
+- Tooling Molds ondersteunt snelle orderselectie + automatische matchervulling.
+- BM01 LN mismatch is inklapbaar en standaard dicht.
+- Laatste wijzigingen staan in productie op Vercel en Firebase.
+
+---
+
+## Update sessie 122 (OrderDetail Start Aantal bewerkbaar + persist bug gefixt)
+
+**Datum:** 28 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoeken in deze sessie:**
+- To do mismatch op order N20024781 (LN zegt 17, planning toont 6) geanalyseerd.
+- Bevestiging dat herimport voldoende is voor LN-hoeveelheidsafwijking.
+- "Start Aantal" in OrderDetail ook handmatig bewerkbaar maken, net als "Aantal".
+- Probleem opgelost waarbij opslaan geen fout gaf, maar na refresh oude waarde terugkwam.
+- Firebase deploy uitvoeren.
+
+**Uitgevoerd in deze sessie:**
+
+### Analyse To do mismatch
+- Vastgesteld dat planningwaarden (`plan`/`toDoQty`) achter kunnen lopen op LN.
+- Bevestigd dat herimport van de order de juiste LN-hoeveelheden terugzet.
+
+### Frontend: Start Aantal bewerkbaar gemaakt
+- In `src/components/digitalplanning/OrderDetail.jsx`:
+    - Nieuw inputveld voor **Start Aantal** toegevoegd (zelfde autorisaties als plan/notes).
+    - Lokale draft-state toegevoegd (`startedDraft`) en meegenomen in "Niet opgeslagen" indicator.
+    - Opslaan-flow uitgebreid zodat `started` meegaat in `updatePlanningOrderDetails`.
+
+### Frontend service: payload uitgebreid
+- In `src/services/planningSecurityService.js`:
+    - `updatePlanningOrderDetails` uitgebreid met `started` parameter.
+    - Validatie toegevoegd: `started` moet een getal >= 0 zijn.
+
+### Backend service: machine-specifiek started veld bijwerken
+- In `functions/src/services/planningTransitionService.js`:
+    - `updatePlanningOrderDetailsService` uitgebreid met `started`.
+    - Bij save wordt nu het juiste machinecounter-veld gezet via `getStartedCounterFieldServer(machine)`:
+        - update op `started_<machine>`
+
+### Root cause van "opslaan maar niet blijvend"
+- Gevonden dat callable-laag `started` nog niet doorstuurde naar de service.
+- In `functions/src/callables/planningCallables.js` gefixt:
+    - `rawStarted` uitlezen,
+    - valideren,
+    - doorgeven aan `updatePlanningOrderDetailsService`.
+
+**Deploy-status in deze sessie:**
+- Volledige `firebase deploy` gestart, maar liep lang door met meerdere `Quota Exceeded` retries op diverse functies.
+- Daarom gerichte deploy gedaan van alleen de relevante functie:
+    - `firebase deploy --only functions:updatePlanningOrderDetails`
+- Resultaat: **Deploy complete**, functie succesvol geüpdatet.
+
+**Build/validatie:**
+- Frontend build gecontroleerd: `npm run build` succesvol (exit 0).
+- Geen lint/compile errors op aangepaste bestanden.
+
+**Huidige status:**
+- Start Aantal is bewerkbaar in OrderDetail.
+- Save blijft nu persistent na refresh (backend keten compleet + functie gedeployed).
+- Voor LN To do afwijkingen blijft herimport de juiste operationele oplossing.
+
+---
+
+## Update sessie 121 (BH12 overproductie auto-koppeling + leverdatumregel, nog niet afgerond)
+
+**Datum:** 26 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoek in deze sessie:**
+- BH12 scenario: als order A in string-run minder restvraag heeft dan geproduceerde stuks, moeten extra stuks automatisch naar het volgende order.
+- Als auto-koppeling niet kan, moet de originele Teamleader orphan/overproductie notificatie blijven werken.
+- Bij doorschuiven naar volgende order moet rekening worden gehouden met leverdatum.
+
+**Uitgevoerd in deze sessie:**
+- Backend auto-koppeling toegevoegd in `startWorkstationProductionRunService`.
+- Bestaande overproductie-koppeling hergebruikt i.p.v. nieuw parallel pad.
+- Product lookup voor overproductie gehard (scoped tracking records worden nu ook correct gevonden).
+- Selectie van "volgende order" aangepast naar leverdatum-gedreven volgorde (met bestaande fallbackvelden).
+- UI-feedback toegevoegd in WorkstationHub bij succesvolle automatische koppeling.
+
+**Deploys uitgevoerd en geslaagd:**
+- `functions:aiProxyGenerate`
+- `functions:startWorkstationProductionRun`
+- `functions:assignOverproduction`
+
+**Huidige status (belangrijk):**
+- **Nog niet goed / nog niet functioneel naar wens in de praktijktest.**
+- Code + deploy staan live, maar gedrag in de operatie moet morgen verder gevalideerd en aangescherpt worden.
+
+**Openstaande punten voor morgen (prioriteit):**
+- End-to-end BH12 floor-test met concrete set:
+    - Order A (bijna vol), Order B (zelfde item/machine), bekende leverdatums.
+    - Controleren dat extra stuks van A correct naar B gaan.
+- Verifiëren dat orphan fallback exact loopt:
+    - Als géén geldige volgende order bestaat, moeten lots op orphan blijven en Teamleader-notificatie direct terugkomen.
+- Leverdatumregel nalopen op edge-cases:
+    - ontbrekende of gelijke leverdatum,
+    - meerdere kandidaat-orders,
+    - volgorde bij identieke datum (tie-breaker op ordernummer).
+- Eventueel logging uitbreiden op selectie van doelorder (voor sneller debuggen tijdens vloerproef).
+
+---
+
+## Update sessie 120 (AI worker uitgerold in Firebase Functions)
+
+**Datum:** 26 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoek in deze sessie:**
+- Uitwerking en deployment van de AI worker strategie voor backend automatisering via Vertex AI.
+- Benoemen en inregelen van drie automatische AI worker-taken: Reactive Watchdog, Proactive Planner en Auto-Consolidator.
+
+**Uitgevoerd in deze sessie:**
+- Nieuwe backend service toegevoegd als **AI worker** in `functions/src/services/aiInvisibleWorkerService.js`.
+- Vertex AI SDK geïntegreerd in Firebase Cloud Functions met standaard service-account en zonder API-keys in frontend of broncode.
+- Drie AI worker-routes geïmplementeerd en geëxporteerd:
+    - `aiReactiveWatchdogTrackedScoped`
+    - `aiReactiveWatchdogTrackedLegacy`
+    - `aiNightlyBottleneckPlanner`
+    - `aiImportConsolidator`
+- Runtime voor AI worker functies verhoogd naar 2GB geheugen en langere timeout.
+- Firebase deployment uitgevoerd met `firebase deploy --only functions`.
+- Deploy geslaagd op project `future-factory-377ef`.
+
+**Status:**
+- AI worker staat live in Firebase Functions en de eerste automatische AI backendlaag is operationeel.
+
+**Openstaande taken voor later:**
+- Extra AI worker-scenario's toevoegen bovenop de eerste versie.
+- Smoke-tests uitvoeren op live dataflows voor Lossen anomaliedetectie, nightly insights en tisfc-importconsolidatie.
+- Verdere verfijning van prompts, JSON-schema's en fallback-logica op basis van productiegedrag.
+- Eventueel extra collections/dashboards toevoegen om AI worker-resultaten zichtbaar te maken in de app.
+
+---
+
+## Update sessie 119 (TeamleaderHub Phase 4 afgerond: hooks/components extract + validatie)
+
+**Datum:** 26 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoek in deze sessie:**
+- "voer alle taken door" (resterende Phase 4 TeamleaderHub refactor volledig afronden)
+
+**Uitgevoerd in deze sessie:**
+
+### Phase 1: Foundation helpers afgerond
+- Tracking/helperlogica opgesplitst in dedicated utility-bestanden:
+    - `src/utils/trackingHelpers.js`
+    - `src/utils/teamleaderDerived.js`
+- Gedeelde status-, week- en order-afleidingen gecentraliseerd voor hergebruik in TeamleaderHub en hooks.
+
+### Phase 2: Data en dashboardlogica opgesplitst
+- Terminal Gereed tab opgesplitst in hook + presentational component:
+    - `src/components/digitalplanning/terminal/useTerminalGereedData.js`
+    - `src/components/digitalplanning/terminal/TerminalGereedItemCard.jsx`
+- Teamleader afgeleide metrics/modaldata losgetrokken uit de Hub naar dedicated hooks:
+    - `src/components/digitalplanning/useTeamleaderMetrics.js`
+    - `src/components/digitalplanning/useTeamleaderModalData.js`
+
+### Phase 3: Event handlers geëxtraheerd
+- Vrijwel alle TeamleaderHub event handlers verplaatst naar:
+    - `src/components/digitalplanning/useTeamleaderEventHandlers.js`
+- Hub kreeg hiermee een duidelijke scheiding tussen UI-compositie en actie-/side-effectlogica.
+
+### Phase 4: Extracts voltooid
+- **Firestore listeners geëxtraheerd** naar `useTeamleaderFirestore.js`:
+    - Alle realtime listeners voor orders, tracking producten, bezetting, factory config en archiefstromen verplaatst uit `TeamleaderHub.jsx`.
+    - Hook returnt nu centraal: `rawOrders`, `rawProducts`, `bezetting`, `archivedProducts`, `archivedHistoryProducts`, `archivedRejectedProducts`, `factoryConfig`, `loading`, `dbError`.
+
+- **Data-derivatie geëxtraheerd** naar `useTeamleaderDataStore.js`:
+    - Scope/department filtering, stationselectie, allowed machine norms en order-progress-meta uit de Hub gehaald.
+    - Centrale `dataStore` filtering en status-normalisatie draait nu in een dedicated hook.
+
+- **Modal orchestration geëxtraheerd** naar `TeamleaderModals.jsx`:
+    - `StationDetailModal`, `TraceModal`, `ProductDossierModal` en overproduction-koppelmodal samengebracht in één rendercomponent.
+
+- **Header/navigatie geëxtraheerd** naar `TeamleaderHeader.jsx`:
+    - Sticky topbar, desktop/mobile tabnavigatie, overproduction badge, AI actie en drawing sync knop verplaatst uit de Hub render.
+
+### TeamleaderHub integratie
+- `TeamleaderHub.jsx` gekoppeld aan nieuwe hooks/components:
+    - `useTeamleaderFirestore`
+    - `useTeamleaderDataStore`
+    - `TeamleaderHeader`
+    - `TeamleaderModals`
+- Grote inline codeblokken verwijderd uit de Hub en vervangen door compactere compositie.
+
+### Bugfix (overproduction assignment)
+- In `useTeamleaderEventHandlers.js` gefixt dat assignment eerder foutief uit `selectedOverproductionGroup` las.
+- Correcte statevelden toegevoegd en gebruikt:
+    - `overproductionTargetOrderId`
+    - `overproductionManualStation`
+- Hierdoor koppelt overproduction nu betrouwbaar naar de door gebruiker gekozen target order en route.
+
+**Aangepaste bestanden (Phase 4 kern):**
+- `src/components/digitalplanning/TeamleaderHub.jsx`
+- `src/components/digitalplanning/useTeamleaderFirestore.js`
+- `src/components/digitalplanning/useTeamleaderDataStore.js`
+- `src/components/digitalplanning/TeamleaderModals.jsx`
+- `src/components/digitalplanning/TeamleaderHeader.jsx`
+- `src/components/digitalplanning/useTeamleaderEventHandlers.js`
+
+**Validatie:**
+- `get_errors` uitgevoerd op alle betrokken Teamleader-bestanden: **geen errors**.
+- Productiebuild uitgevoerd: `npm run -s build`.
+- Resultaat: **succesvol (exit code 0)**, build afgerond in ~36s.
+
+**Status:**
+- Phase 1, 2, 3 en 4 volledig afgerond.
+- TeamleaderHub is nu opgesplitst in duidelijkere, onderhoudbare modules.
+- Kritieke overproduction-route bug is opgelost.
+
+---
+
+## Update sessie 118 (BH12-Mazak: Machine Occupancy scoping + Workflow refinements)
+
+**Datum:** 26 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoeken in deze sessie:**
+- "start vite server on port 3000"
+- "in lossen 12/18 can series ook default expanded zijn"
+- "if I scan from a series (lot 2 or 3), that the whole series opens"
+- "in mazak gereedmelden want I not per batch but per lotnummer"
+- "in mazak inbox/printen can printen etc dan wel weer per batch"
+- "Labels printen must be an option: Labels Handmatig printen and forward without queue"
+- "in gereedmelden get I no notification that processing succeeded, after gereedmeld jumps auto to tab inbox, that must not"
+- "in orders BH12 via Mazak, the BUTTON shows Nabewerking, this must be MAZAK"
+- "word /future-factory/production/machine_occupancy nu ook in groepen verdeeld / afdeling / machine?"
+
+**Uitgevoerd in deze sessie:**
+
+### Backend Machine Occupancy Structure
+- **Machine occupancy IS nu georganiseerd in groepen/afdeling/machine** via dual-write migratie:
+  - Scoped Path (Nieuw): `/future-factory/production/machine_occupancy/{department}/machines/{machine}/assignments/{assignmentId}`
+  - Legacy Path: `/future-factory/production/machine_occupancy/{assignmentId}`
+  - Beide paden worden synchroon bijgehouden tot volledige migratie
+  - Dit ondersteunt machine- en afdeling-specifieke queries voor BH12-Mazak en andere stations
+
+### Frontend Series Grouping Improvements (Lossen)
+- **Conditionele series-uitvouwing** per station toegepast in `LossenView.jsx`:
+  - `isLossen1218` flag bepaalt default `collapsedGroups` state
+  - Lossen 12/18: series standaard OPEN (expanded)
+  - Andere stations: series standaard GESLOTEN
+- **Serie-fallback detectie** toegevoegd voor gedeeltelijke scans:
+  - `getLotSeriesPrefix()` extraheert series-prefix uit lotnummer (bijv. "402617412400" van "402617412400002")
+  - Bij scan lot 2 of 3: volledige serie opent automatisch via prefix-matching
+  - Werkt als `seriesGroupId` ontbreekt (legacy data)
+
+### Mazak Workflow Verfijningen
+- **Per-lot enforcement in Gereedmelden:**
+  - `isBulkInboxMode` guard enforces single-lot selections in process tab (niet batch)
+  - Batch-ondersteuning behouden in Inbox/Print tab
+- **Scanner input isolatie tussen tabs:**
+  - State split: `scanInputInbox` en `scanInputProcess` (geen cross-contamination)
+- **Manual print-forward button:**
+  - "Labels Handmatig Printen" button added, roept `markMazakLabelsPrinted()` aan zonder queue
+- **Success/error notifications:**
+  - Notifications added na Mazak processing actions (Goed/Afkeur)
+  - Geslaagde feedback weergegeven voor operator
+- **Tab persistence:**
+  - Gereedmelden tab blijft actief na processing (geen auto-switch naar Inbox)
+- **Auto-modal on scan:**
+  - QR-scan in Gereedmelden opent nu ProcessingFinishModal automatisch
+- **ArrowRight icon fix:**
+  - Missing `ArrowRight` import in MazakView.jsx restored (ReferenceError opgelost)
+
+### Teamleader Orders Status Display
+- **BH12→Mazak routing status corrected:**
+  - ProductReleaseModal: `nextStatus = "Wacht op Mazak"` (was "Te Nabewerken")
+  - Status normalization in TeamleaderHub rendering (telt legacy records om)
+- **StatusBadge support:**
+  - Mazak status mappings added: "mazak", "wacht op mazak", "te mazak" → consistent badge styling
+  - BH12 orders now show "Mazak" button in Orders/KPI (niet "Nabewerking")
+
+**Aangepaste bestanden:**
+- `src/components/digitalplanning/LossenView.jsx`
+- `src/components/digitalplanning/MazakView.jsx`
+- `src/components/digitalplanning/modals/ProductReleaseModal.jsx`
+- `src/components/digitalplanning/TeamleaderHub.jsx`
+- `src/components/digitalplanning/common/StatusBadge.jsx`
+
+**Validatie:**
+- Vite dev server verified operationeel op http://localhost:3000
+- ESLint: 0 errors op alle aangepaste bestanden
+- Alle series grouping tests succesvol
+- Mazak workflow end-to-end verified
+
+**Status:**
+- **BH12-Mazak is nu klaar als volgende machine in productie**
+- Series uitbreidingslogica conditioneel per station
+- Mazak workflow strikt per-lot in Gereedmelden, batch in Inbox
+- Operator feedback (notifications) toegevoegd
+- Machine occupancy data scoped door afdeling/machine voor toekomstige KPI's
+- Alle user-reported issues opgelost; klaar voor production deployment
+
+---
+
+## Update sessie 117 (Live Station Monitor Pop-up Vernieuwd)
+
+**Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
+
+**Gebruikersverzoeken in deze sessie:**
+- "als ik op een live tegel de pop up open moet ik daar hetzelfde zien als het werkstation een tab met de Plannig, en een wikkel tab met welke producten op dat moment in de maak zijn en een historie van wat er die week aan producten gemaakt zijn op die machine. en een tab met de qr codes om de wikkelstappen te scannen voor INFOR-LN"
+- "de wikkelen tab moet alleen laten zien wat er op dat moment echt gewikkeld word (actief) en wat er voor die dag gewikkeld is (gereed)"
+- "en warom blijft hisory leeg .. (alle producten die langs BH18 zijn gekomen)"
+- "LN Wikkelen Dagoverzicht 0 orderregels... an zouden daar minsten 3 producten moeten staan voor de wikkelstap gereedmelden"
+
+**Uitgevoerd in deze sessie:**
+- **Tabs Herstructurering:** De pop-up (`StationDetailModal.jsx`) bevat nu vier gerichte tabs: *Planning*, *Wikkelen* (voorheen 'Nu Actief'), *Historie*, en *INFOR-LN* (alleen voor BH-machines).
+- **Wikkelen Tab (Actief vs Gereed):** De lijst met producten toont nu specifiek wat er nú op de machine draait (Actief, groen) en wat er vandaag al succesvol is afgerond op die machine (Gereed Vandaag, blauw).
+- **Crash (ReferenceError) verholpen:** Een achtergebleven variabele (`isWaitingForUnload`) verwijderd die de pop-up deed vastlopen.
+- **Historie Tab gefixeerd:** Historie keek voorheen alleen naar producten met de wereldwijde eindstatus "GEREED". Dit is aangepast: producten die de specifieke machine (zoals BH18) succesvol gepasseerd zijn (en bijv. bij Lossen liggen), verschijnen nu correct in de historie van die machine.
+- **INFOR-LN Export gefixeerd:** De stricte controle op een specifieke "Start Wikkelen" timestamp is versoepeld. Producten die op een specifieke dag zijn doorgegaan naar 'Lossen' tellen nu altijd betrouwbaar mee in het dagoverzicht van die dag, ongeacht of de start-klik geregistreerd was.
+
+**Aangepaste bestanden:**
+- `src/components/digitalplanning/modals/StationDetailModal.jsx`
+
+**Status:**
+- Live Station Monitor pop-up is overzichtelijker, stabieler en de historische/geëxporteerde data klopt nu met de werkelijkheid.
+
 ## Update sessie 116 (Nabewerking KPI sync & filters)
 
 **Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
@@ -4718,3 +5331,24 @@ Made changes.
 **Nog lokaal gewijzigd (niet in release-commit):**
 - `.firebase/hosting.ZGlzdA.cache`
 - `CONVERSATION_SUMMARY.md`
+
+---
+
+## Update sessie 28 april 2026
+
+**Digitale planning / Slimme Sync:**
+- Handmatige orderaanpassing voor `N20024781` zorgde voor onterechte afwijking in Slimme Sync.
+- Uitsluiting toegevoegd aan de bestaande businessguard-lijst in:
+    - `src/components/digitalplanning/modals/PlanningImportModal.jsx`
+- Effect: `N20024781` wordt niet meer als Slimme Sync-afwijking behandeld in de importflow.
+- Validatie: geen editor errors op aangepast bestand.
+
+**Vercel productie deploy:**
+- Productie deployment uitgevoerd via CLI vanaf huidige workspace.
+- Command: `npx vercel --prod --yes`
+- Status: Ready
+- Deployment ID: `dpl_31zVQ7bnKSw1XWfST3HeXQbYGdXt`
+- Productie URL:
+    - `https://futurefactoryapp-5w8xq3q25-richard-van-heerdes-projects.vercel.app`
+- Alias live:
+    - `https://future-factory.vercel.app`

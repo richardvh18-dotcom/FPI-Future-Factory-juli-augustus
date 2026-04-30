@@ -99,6 +99,15 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
     return unitRejects || order.rejectedCount || 0;
   }, [units, order]);
 
+  const completedUnits = useMemo(() => {
+    return units.filter((u) => u.status === "completed").length;
+  }, [units]);
+
+  const producedForDisplay = useMemo(() => {
+    const orderProduced = Number(order?.produced) || 0;
+    return Math.max(orderProduced, completedUnits);
+  }, [order?.produced, completedUnits]);
+
   // Haal gekoppelde productie-units op (actief + archief)
   useEffect(() => {
     const fetchUnits = async () => {
@@ -333,11 +342,11 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
                     <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
                       <div 
                         className="h-full bg-purple-500" 
-                        style={{ width: `${Math.min(100, ((order.produced || units.filter(u => u.status === 'completed').length) / (order.quantity || 1)) * 100)}%` }}
+                        style={{ width: `${Math.min(100, (producedForDisplay / (order.quantity || 1)) * 100)}%` }}
                       ></div>
                     </div>
                     <span className="text-xs font-bold text-purple-700">
-                      {order.produced || units.filter(u => u.status === 'completed').length} / {order.quantity}
+                      {producedForDisplay} / {order.quantity}
                     </span>
                   </div>
                 </div>

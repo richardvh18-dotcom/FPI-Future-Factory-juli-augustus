@@ -197,6 +197,7 @@ const resolveDbContext = () => {
   return {
     trackingPath: TRACKING_COLLECTION,
     planningPath: PLANNING_COLLECTION,
+    eventsPath: `${prodBase}/events`,
     planningLegacyPath: PLANNING_COLLECTION_LEGACY,
     efficiencyPath: `${prodBase}/efficiency_hours`,
     archiveItemsPath: (year) => `${prodBase}/archive/${year}/items`,

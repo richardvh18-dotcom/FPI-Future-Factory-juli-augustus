@@ -14,6 +14,7 @@ import { getLivePlanningContext } from "../../services/planningContext";
 import { useTranslation } from "react-i18next";
 import { extractTextFromPdf } from "../../utils/pdfUtils";
 import AiMessage from "./AiMessage";
+import { fetchScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
 
 const logRejectedAnswer = async ({ content, userInput, context, userId }) => {
   try {
@@ -277,16 +278,15 @@ const AiChatView = () => {
       } catch (err) { console.error("Kon bezetting niet ophalen:", err); }
 
       try {
-        const efficiencyRef = collection(db, ...PATHS.EFFICIENCY_HOURS);
-        const efficiencySnap = await getDocs(query(efficiencyRef, limit(50)));
-        const trackingRef = collection(db, ...(PATHS?.TRACKING || ['future-factory', 'production', 'tracking']));
-        const trackingSnap = await getDocs(query(trackingRef, orderBy("updatedAt", "desc"), limit(500)));
+        const efficiencyRows = await fetchScopedEfficiencyHours({ db, mode: "active", maxDocs: 50 });
+        // Haal tracking op zonder orderBy zodat er geen samengestelde index nodig is
+        const trackingRef = collection(db, ...(PATHS?.TRACKING || ['future-factory', 'production', 'tracked_products']));
+        const trackingSnap = await getDocs(query(trackingRef, limit(500)));
         const trackingData = trackingSnap.docs.map(d => d.data());
 
-        if (!efficiencySnap.empty) {
+        if (efficiencyRows.length > 0) {
           let efficiencyContext = "\n\n## CAPACITEITSNORMEN & PLANNING STATUS:\n";
-          efficiencySnap.forEach(doc => {
-             const std = doc.data();
+          efficiencyRows.forEach(std => {
              if (std.orderId) {
                 const relatedLogs = trackingData.filter(t => String(t.orderId || t.orderNumber) === String(std.orderId));
                 let actualMinutes = 0, producedQty = 0;
@@ -482,6 +482,17 @@ BELANGRIJK: Gebruik altijd proper Markdown formatting in je antwoorden:
 - Gebruik code formatting voor technische termen en knoppen
 - Gebruik --- voor visuele scheiding tussen secties waar nuttig
 - **Cruciaal:** Als een gebruiker vraagt naar een machine (bijv. BH11, Mazak) of order (N...), noem deze dan expliciet in je antwoord. Het systeem maakt hier automatisch klikbare links van.
+
+## PLANNINGS-AANBEVELINGEN (PROACTIEF):
+Wanneer je planningsdata ter beschikking hebt, geef je ALTIJD proactieve aanbevelingen. Gebruik daarvoor de volgende logica:
+- Huidige weekdag (maandag=1 t/m vrijdag=5) en weeknummer zijn bekend via de systeemdata.
+- Werkdagen in een week: maandag t/m vrijdag (5 dagen).
+- Een order met weekdeadline W19 moet **uiterlijk vrijdag van week 19** klaar zijn.
+- Bereken hoeveel werkdagen er nog zijn tot het einde van de deadline-week.
+- Als er weinig werkdagen resten, adviseer dan om **zo snel mogelijk te starten** (bijv. "Start uiterlijk donderdag").
+- Baseer het startadvies op de productiehoeveelheid en de capaciteitsdata (minuten per stuk).
+- Meld altijd: "Op basis van de huidige planning adviseer ik om order X te starten op [dag], zodat de deadline van week Y gehaald wordt."
+- Als orders de deadline al gepasseerd zijn, markeer dat als **SPOEDEISEND**.
 
 ## PRODUCTIE INFORMATIE:
 

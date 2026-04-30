@@ -15,6 +15,17 @@ import { getArchiveItemsPath, PATHS } from "../../config/dbPaths";
 import { format, getISOWeek, startOfWeek, endOfWeek, startOfDay, endOfDay, startOfMonth, endOfMonth, isWithinInterval, isValid, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths } from "date-fns";
 import { calculateDuration } from "../../utils/efficiencyCalculator";
 import { calculateWorkingMinutes } from "../../utils/workingTimeUtils";
+import { subscribeScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
+import { normalizeMachine } from "../../utils/hubHelpers";
+
+const toEpochMs = (value) => {
+  if (!value) return 0;
+  if (typeof value?.toMillis === "function") return value.toMillis();
+  if (typeof value?.toDate === "function") return value.toDate().getTime();
+  if (typeof value?.seconds === "number") return value.seconds * 1000;
+  const d = new Date(value);
+  return Number.isFinite(d.getTime()) ? d.getTime() : 0;
+};
 
 /**
  * TimeTrackingView - Compare actual vs planned time
@@ -31,6 +42,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
   const [periodMode, setPeriodMode] = useState("week");
   const [filterStatus, setFilterStatus] = useState("all");
   const [selectedDepartment, setSelectedDepartment] = useState(initialDepartment || "ALLES");
+  const [selectedMachine, setSelectedMachine] = useState("ALLES");
   const [departments, setDepartments] = useState(["ALLES"]);
   const [factoryConfig, setFactoryConfig] = useState({ departments: [] });
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
@@ -97,17 +109,24 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       }
     );
 
-    // Load efficiency/imported hours
-    const unsubEfficiency = onSnapshot(
-      collection(db, ...readPaths.EFFICIENCY_HOURS),
-      (snapshot) => {
+    // Load efficiency/imported hours (scoped)
+    const unsubEfficiency = subscribeScopedEfficiencyHours({
+      db,
+      mode: "active",
+      onData: (rows) => {
         const data = {};
-        snapshot.docs.forEach((doc) => {
-          data[doc.id] = doc.data();
+        rows.forEach((row) => {
+          const key = String(row.orderId || row.id || "").trim();
+          if (!key) return;
+          data[key] = row;
         });
         setEfficiencyData(data);
-      }
-    );
+      },
+      onError: (error) => {
+        console.warn("Scoped efficiency listener failed:", error);
+        setEfficiencyData({});
+      },
+    });
 
     // Laad LN Reference Operations stamdata voor DB-gestuurde uren-classificatie
     const unsubRefOps = onSnapshot(
@@ -124,12 +143,35 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
 
     // Load tracking logs for actuals calculation
     const mergeTrackingRows = (activeRows, archivedRows) => {
-      const merged = new Map();
+      const mergedByLot = new Map();
+
       [...activeRows, ...archivedRows].forEach((row) => {
-        const key = String(row.__docPath || row.id || row.lotNumber || `${row.orderId || ""}-${row.itemCode || ""}`);
-        if (!merged.has(key)) merged.set(key, row);
+        const lotKey = String(row.lotNumber || row.id || `${row.orderId || ""}-${row.itemCode || ""}`).trim();
+        if (!lotKey) return;
+
+        const current = mergedByLot.get(lotKey);
+        if (!current) {
+          mergedByLot.set(lotKey, row);
+          return;
+        }
+
+        const currentTsCount = Object.keys(current.timestamps || {}).length;
+        const nextTsCount = Object.keys(row.timestamps || {}).length;
+        const currentUpdated = toEpochMs(current.updatedAt || current.createdAt);
+        const nextUpdated = toEpochMs(row.updatedAt || row.createdAt);
+
+        // Neem de rijkste/nieuwste snapshot per lot (voorkomt root+scoped inconsistenties).
+        if (nextTsCount > currentTsCount || (nextTsCount === currentTsCount && nextUpdated >= currentUpdated)) {
+          mergedByLot.set(lotKey, {
+            ...current,
+            ...row,
+            timestamps: { ...(current.timestamps || {}), ...(row.timestamps || {}) },
+            history: Array.isArray(row.history) && row.history.length > 0 ? row.history : current.history,
+          });
+        }
       });
-      setTrackingLogs(Array.from(merged.values()));
+
+      setTrackingLogs(Array.from(mergedByLot.values()));
     };
 
     let rootTrackingRows = [];
@@ -237,16 +279,102 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
   };
 
   const inferDepartmentFromMachine = (machine) => {
-    const m = String(machine || "").trim().toUpperCase();
+    const m = normalizeMachine(machine || "");
     if (m.startsWith("BH")) return "Fittings";
     if (m.startsWith("BA")) return "Pipes";
     if (m.startsWith("BM")) return "Spools";
     return "";
   };
 
+  const normalizeText = (value) => String(value || "").trim().toLowerCase();
+
+  const resolveDepartmentNameFromId = (departmentId) => {
+    if (!departmentId) return "";
+    const idLower = String(departmentId).trim().toLowerCase();
+    const dept = (factoryConfig.departments || []).find(
+      (d) => String(d?.id || "").trim().toLowerCase() === idLower
+    );
+    return dept?.name || "";
+  };
+
   const parseNumber = (value) => {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : 0;
+  };
+
+  const normalizeStatus = (value) =>
+    String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+
+  const COMPLETED_STATUSES = new Set([
+    "completed",
+    "finished",
+    "gereed",
+    "shipped",
+    "completed_in_ln",
+    "archived",
+    "archived_completed",
+  ]);
+
+  const isCompletedLikeStatus = (value) => {
+    const normalized = normalizeStatus(value);
+    if (!normalized) return false;
+    if (COMPLETED_STATUSES.has(normalized)) return true;
+    return normalized.includes("gereed") || normalized.includes("finish") || normalized.includes("complet");
+  };
+
+  const isInProgressLikeStatus = (value) => {
+    const normalized = normalizeStatus(value);
+    if (!normalized) return false;
+    if (isCompletedLikeStatus(normalized)) return false;
+
+    return [
+      "planned",
+      "open",
+      "pending",
+      "in_progress",
+      "in_behandeling",
+      "wacht_op_lossen",
+      "te_lossen",
+      "te_keuren",
+      "quality_check",
+      "in_productie",
+      "processing",
+      "running",
+    ].some((token) => normalized.includes(token));
+  };
+
+  const matchesStatusFilter = (order, relatedLogs) => {
+    if (filterStatus === "all") return true;
+
+    const statusCandidates = [
+      order?.status,
+      order?.currentStep,
+      order?.currentStation,
+      ...(relatedLogs || []).flatMap((log) => [
+        log?.status,
+        log?.currentStep,
+        log?.currentStation,
+      ]),
+    ].filter(Boolean);
+
+    const hasArchivedLog = (relatedLogs || []).some((log) => Boolean(log?._archived));
+
+    if (filterStatus === "gereed") {
+      if (hasArchivedLog || order?._archived) return true;
+      return statusCandidates.some((status) => isCompletedLikeStatus(status));
+    }
+
+    if (filterStatus === "in_behandeling") {
+      if (hasArchivedLog || order?._archived) return false;
+      const hasCompleted = statusCandidates.some((status) => isCompletedLikeStatus(status));
+      if (hasCompleted) return false;
+      return statusCandidates.some((status) => isInProgressLikeStatus(status)) || statusCandidates.length === 0;
+    }
+
+    return true;
   };
 
   const classifyByWc = (wc) => {
@@ -342,49 +470,75 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return toDateValue(row?.timestamp);
   };
 
+  const getLatestHistoryTimestampBy = (log, matcher) => {
+    if (!Array.isArray(log?.history)) return null;
+    for (let i = log.history.length - 1; i >= 0; i -= 1) {
+      const row = log.history[i] || {};
+      if (matcher(row)) {
+        return toDateValue(row?.timestamp);
+      }
+    }
+    return null;
+  };
+
+  const getTimestampFromObject = (timestamps, keys = []) => {
+    for (const key of keys) {
+      const value = timestamps?.[key];
+      const date = toDateValue(value);
+      if (date) return date;
+    }
+    return null;
+  };
+
   const getLogProcessBounds = (log) => {
     const ts = log?.timestamps || {};
 
     const wikkelenStart =
-      toDateValue(ts.wikkelen_start) ||
-      getHistoryTimestampBy(log, (h) => String(h?.action || "").toLowerCase().includes("start wikkelen")) ||
-      getHistoryTimestampBy(log, (h) => String(h?.action || "").toLowerCase().includes("start")) ||
+      getTimestampFromObject(ts, ["wikkelen_start", "station_start", "production_start"]) ||
+      getLatestHistoryTimestampBy(log, (h) => String(h?.action || "").toLowerCase().includes("start wikkelen")) ||
+      getLatestHistoryTimestampBy(log, (h) => String(h?.action || "").toLowerCase().includes("start")) ||
       toDateValue(log?.createdAt);
 
     const wikkelenEnd =
-      toDateValue(ts.wikkelen_end) ||
-      getHistoryTimestampBy(log, (h) => String(h?.details || "").toLowerCase().includes("wikkelen naar lossen"));
+      getTimestampFromObject(ts, ["wikkelen_end", "wacht_op_lossen_start", "lossen_start"]) ||
+      getLatestHistoryTimestampBy(
+        log,
+        (h) => String(h?.details || "").toLowerCase().includes("wikkelen") && String(h?.details || "").toLowerCase().includes("wacht op lossen")
+      ) ||
+      getLatestHistoryTimestampBy(log, (h) => String(h?.details || "").toLowerCase().includes("wikkelen naar lossen"));
 
     const lossenStart =
-      toDateValue(ts.lossen_start) ||
-      getHistoryTimestampBy(log, (h) => String(h?.details || "").toLowerCase().includes("wikkelen naar lossen"));
+      getTimestampFromObject(ts, ["lossen_start", "wacht_op_lossen_start"]) ||
+      getLatestHistoryTimestampBy(log, (h) => String(h?.details || "").toLowerCase().includes("wikkelen naar lossen"));
 
     const lossenEnd =
-      toDateValue(ts.lossen_end) ||
-      getHistoryTimestampBy(log, (h) => String(h?.details || "").toLowerCase().includes("lossen naar nabewerking"));
+      getTimestampFromObject(ts, ["lossen_end", "nabewerking_start", "nabewerken_start"]) ||
+      getLatestHistoryTimestampBy(
+        log,
+        (h) => String(h?.details || "").toLowerCase().includes("lossen") && String(h?.details || "").toLowerCase().includes("nabewerking")
+      ) ||
+      getLatestHistoryTimestampBy(log, (h) => String(h?.details || "").toLowerCase().includes("lossen naar nabewerking"));
 
     const nabewerkingStart =
-      toDateValue(ts.nabewerking_start) ||
-      getHistoryTimestampBy(log, (h) => String(h?.details || "").toLowerCase().includes("lossen naar nabewerking"));
+      getTimestampFromObject(ts, ["nabewerking_start", "nabewerken_start"]) ||
+      getLatestHistoryTimestampBy(log, (h) => String(h?.details || "").toLowerCase().includes("lossen naar nabewerking"));
 
-    const nabewerkingEnd =
-      toDateValue(ts.nabewerking_end) ||
-      toDateValue(ts.bm01_start) ||
-      getHistoryTimestampBy(log, (h) => String(h?.details || "").toLowerCase().includes("verwerking afgerond")) ||
-      getHistoryTimestampBy(log, (h) => String(h?.station || "").toUpperCase() === "BM01") ||
-      toDateValue(ts.finished) ||
-      toDateValue(ts.completed) ||
+    const nabewerkingEndCandidate =
+      getTimestampFromObject(ts, ["nabewerking_end", "nabewerken_end", "bm01_start", "eindinspectie_start"]) ||
+      getLatestHistoryTimestampBy(log, (h) => String(h?.details || "").toLowerCase().includes("verwerking afgerond")) ||
+      getLatestHistoryTimestampBy(log, (h) => String(h?.station || "").toUpperCase() === "BM01") ||
+      getTimestampFromObject(ts, ["finished", "completed"]) ||
       toDateValue(log?.updatedAt);
+    const nabewerkingEnd = nabewerkingStart ? nabewerkingEndCandidate : null;
 
     const repairStart =
-      toDateValue(ts.repair_start) ||
-      getHistoryTimestampBy(log, (h) => String(h?.action || "").toLowerCase().includes("reparatie"));
+      getTimestampFromObject(ts, ["repair_start", "reparatie_start"]) ||
+      getLatestHistoryTimestampBy(log, (h) => String(h?.action || "").toLowerCase().includes("reparatie"));
 
-    const repairEnd =
-      toDateValue(ts.repair_end) ||
-      toDateValue(ts.bm01_start) ||
-      toDateValue(ts.eindinspectie_start) ||
+    const repairEndCandidate =
+      getTimestampFromObject(ts, ["repair_end", "reparatie_end", "bm01_start", "eindinspectie_start"]) ||
       null;
+    const repairEnd = repairStart ? repairEndCandidate : null;
 
     return {
       wikkelenStart,
@@ -417,24 +571,24 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       originMachine: log?.originMachine,
     };
     const bm01Start =
-      toDateValue(log?.timestamps?.bm01_start) ||
-      getHistoryTimestampBy(log, (h) => String(h?.station || "").toUpperCase() === "BM01");
-    const bm01End =
-      toDateValue(log?.timestamps?.finished) ||
-      toDateValue(log?.timestamps?.completed) ||
+      getTimestampFromObject(log?.timestamps, ["bm01_start", "eindinspectie_start"]) ||
+      getLatestHistoryTimestampBy(log, (h) => String(h?.station || "").toUpperCase() === "BM01");
+    const bm01EndCandidate =
+      getTimestampFromObject(log?.timestamps, ["bm01_end", "eindinspectie_end", "finished", "completed"]) ||
       toDateValue(log?.updatedAt);
+    const bm01End = bm01Start ? bm01EndCandidate : null;
 
-    const wikkelenMinutes = getRangeDurationMinutes(bounds.wikkelenStart, bounds.wikkelenEnd, durationContext);
-    const lossenMinutes = getRangeDurationMinutes(bounds.lossenStart, bounds.lossenEnd, durationContext);
-    const nabewerkingMinutes = getRangeDurationMinutes(bounds.nabewerkingStart, bounds.nabewerkingEnd, durationContext);
-    const bm01Minutes = getRangeDurationMinutes(bm01Start, bm01End, durationContext);
-    const repairMinutes = getRangeDurationMinutes(bounds.repairStart, bounds.repairEnd, durationContext);
+    const wikkelenMinutes = getRangeDurationMinutes(bounds.wikkelenStart, bounds.wikkelenEnd, { ...durationContext, phase: "wikkelen" });
+    const lossenMinutes = getRangeDurationMinutes(bounds.lossenStart, bounds.lossenEnd, { ...durationContext, phase: "lossen" });
+    const nabewerkingMinutes = getRangeDurationMinutes(bounds.nabewerkingStart, bounds.nabewerkingEnd, { ...durationContext, phase: "nabewerking" });
+    const bm01Minutes = getRangeDurationMinutes(bm01Start, bm01End, { ...durationContext, phase: "eindinspectie" });
+    const repairMinutes = getRangeDurationMinutes(bounds.repairStart, bounds.repairEnd, { ...durationContext, phase: "reparatie" });
     const totalMinutes = wikkelenMinutes + lossenMinutes + nabewerkingMinutes + bm01Minutes + repairMinutes;
 
     return {
       id: log?.id,
       lotNumber: log?.lotNumber || log?.id || "Onbekend",
-      machine: log?.machine || log?.stationLabel || log?.currentStation || "-",
+      machine: normalizeMachine(log?.machine || log?.stationLabel || log?.currentStation || "-") || "-",
       status: log?.status || "-",
       currentStation: log?.currentStation || log?.lastStation || "-",
       actualHours: totalMinutes / 60,
@@ -479,6 +633,8 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       toDateValue(ts.nabewerking_end) ||
       toDateValue(ts.completed) ||
       toDateValue(ts.finished) ||
+      toDateValue(log?.completedAt) ||
+      toDateValue(log?.archivedAt) ||
       toDateValue(log?.updatedAt) ||
       toDateValue(ts.lossen_end) ||
       toDateValue(ts.wikkelen_end) ||
@@ -502,8 +658,11 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       ts.nabewerking_end,
       ts.finished,
       ts.completed,
+      ts.archived,
       log?.startedAt,
       log?.startTime,
+      log?.completedAt,
+      log?.archivedAt,
       log?.createdAt,
       log?.updatedAt,
     ]
@@ -511,13 +670,29 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       .filter(Boolean);
   };
 
+  const getTrackingGroupKey = (log) => {
+    const directOrderKey = String(
+      log?.orderId ||
+      log?.orderNumber ||
+      log?.originalOrderId ||
+      log?.productionOrderId ||
+      ""
+    ).trim();
+    if (directOrderKey) return directOrderKey;
+
+    const lotKey = String(log?.lotNumber || log?.id || "").trim();
+    if (lotKey) return `LOT:${lotKey}`;
+
+    return "";
+  };
+
   const trackingByOrder = useMemo(() => {
     const grouped = new Map();
     trackingLogs.forEach((log) => {
-      const orderId = String(log?.orderId || log?.orderNumber || "").trim();
-      if (!orderId) return;
-      if (!grouped.has(orderId)) grouped.set(orderId, []);
-      grouped.get(orderId).push(log);
+      const groupKey = getTrackingGroupKey(log);
+      if (!groupKey) return;
+      if (!grouped.has(groupKey)) grouped.set(groupKey, []);
+      grouped.get(groupKey).push(log);
     });
     return grouped;
   }, [trackingLogs]);
@@ -528,15 +703,18 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     orders.forEach((order) => {
       const orderId = String(order?.orderId || order?.id || "").trim();
       if (!orderId) return;
-      byOrderId.set(orderId, { ...order, orderId });
+      byOrderId.set(orderId, { ...order, orderId, _trackingGroupKey: orderId });
     });
 
-    trackingByOrder.forEach((logs, orderId) => {
-      if (byOrderId.has(orderId)) return;
+    trackingByOrder.forEach((logs, groupKey) => {
+      if (byOrderId.has(groupKey)) return;
       const sample = logs[0] || {};
-      byOrderId.set(orderId, {
-        id: sample.id || orderId,
-        orderId,
+      const lotFallback = String(sample.lotNumber || sample.id || "").trim();
+      const displayOrderId = String(sample.orderId || sample.orderNumber || sample.originalOrderId || "").trim() || (lotFallback ? `LOT ${lotFallback}` : groupKey);
+      byOrderId.set(groupKey, {
+        id: sample.id || groupKey,
+        orderId: displayOrderId,
+        _trackingGroupKey: groupKey,
         item: sample.item,
         itemCode: sample.itemCode,
         machine: sample.machine || sample.stationLabel || sample.currentStation,
@@ -550,6 +728,56 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
 
     return Array.from(byOrderId.values());
   }, [orders, trackingByOrder]);
+
+  const machineOptions = useMemo(() => {
+    const options = new Set();
+    const deptFilter = normalizeText(selectedDepartment);
+
+    const matchesDeptForMachine = (departmentCandidate, machine) => {
+      if (selectedDepartment === "ALLES") return true;
+      const inferred = normalizeText(inferDepartmentFromMachine(machine));
+      const candidate = normalizeText(departmentCandidate);
+      return (
+        candidate === deptFilter ||
+        candidate.includes(deptFilter) ||
+        deptFilter.includes(candidate) ||
+        inferred === deptFilter ||
+        inferred.includes(deptFilter) ||
+        deptFilter.includes(inferred)
+      );
+    };
+
+    mergedOrders.forEach((order) => {
+      const machine = normalizeMachine(order?.machine || "");
+      if (!machine) return;
+      const departmentCandidate =
+        order?.department ||
+        resolveDepartmentNameFromId(order?.departmentId) ||
+        inferDepartmentFromMachine(machine);
+      if (!matchesDeptForMachine(departmentCandidate, machine)) return;
+      options.add(machine);
+    });
+
+    trackingLogs.forEach((log) => {
+      const machine = normalizeMachine(log?.machine || log?.originMachine || log?.currentStation || log?.lastStation || "");
+      if (!machine) return;
+      const departmentCandidate =
+        log?.department ||
+        resolveDepartmentNameFromId(log?.departmentId || log?.deptId) ||
+        inferDepartmentFromMachine(machine);
+      if (!matchesDeptForMachine(departmentCandidate, machine)) return;
+      options.add(machine);
+    });
+
+    return Array.from(options).sort((a, b) => a.localeCompare(b, "nl"));
+  }, [mergedOrders, trackingLogs, selectedDepartment, factoryConfig]);
+
+  useEffect(() => {
+    if (selectedMachine === "ALLES") return;
+    if (!machineOptions.includes(selectedMachine)) {
+      setSelectedMachine("ALLES");
+    }
+  }, [selectedMachine, machineOptions]);
 
   // Helper functie voor department matching
   const matchesDepartment = (order, filterDepartmentName) => {
@@ -586,6 +814,24 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return false;
   };
 
+  const matchesMachine = (order, filterMachineName) => {
+    if (filterMachineName === "ALLES") return true;
+    const filter = normalizeText(filterMachineName);
+
+    const candidates = [
+      normalizeMachine(order?.machine),
+      normalizeMachine(order?.currentStation),
+      normalizeMachine(order?.originMachine),
+      normalizeMachine(order?.lastStation),
+    ]
+      .map((v) => normalizeText(v))
+      .filter(Boolean);
+
+    return candidates.some((machine) =>
+      machine === filter || machine.includes(filter) || filter.includes(machine)
+    );
+  };
+
   // Filter orders by selected week
   const weekOrders = useMemo(() => {
     const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
@@ -602,26 +848,29 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
         : { start: weekStart, end: weekEnd };
 
     return mergedOrders.filter(order => {
-      const orderKey = String(order.orderId || order.id || "").trim();
+      const orderKey = String(order._trackingGroupKey || order.orderId || order.id || "").trim();
       const relatedLogs = trackingByOrder.get(orderKey) || [];
-      
-      const planDate = toDateValue(order.plannedDate);
-      const hasPlanInRange = planDate ? isWithinInterval(planDate, range) : false;
+      const hasTrackingData = relatedLogs.length > 0;
       const hasActivityInRange = relatedLogs.some((log) => {
         const eventDates = getLogActivityDates(log);
         return eventDates.some((eventDate) => isWithinInterval(eventDate, range));
       });
 
-      if (!hasPlanInRange && !hasActivityInRange) return false;
+      // Time Tracking toont alleen orders met echte trackingdata binnen de gekozen periode.
+      if (!hasTrackingData) return false;
+      if (!hasActivityInRange) return false;
       
-      if (filterStatus !== "all" && order.status !== filterStatus) return false;
+      if (!matchesStatusFilter(order, relatedLogs)) return false;
       
       // Filter by department
       if (selectedDepartment !== "ALLES" && !matchesDepartment(order, selectedDepartment)) return false;
 
+      // Filter by machine
+      if (selectedMachine !== "ALLES" && !matchesMachine(order, selectedMachine)) return false;
+
       return true;
     });
-  }, [mergedOrders, trackingByOrder, selectedDate, periodMode, filterStatus, selectedDepartment, factoryConfig]);
+  }, [mergedOrders, trackingByOrder, selectedDate, periodMode, filterStatus, selectedDepartment, selectedMachine, factoryConfig]);
 
   const navigatePrevious = () => {
     setSelectedDate((prev) => (
@@ -645,10 +894,45 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
 
   const jumpToToday = () => setSelectedDate(new Date());
 
+  const dayInputValue = format(selectedDate, "yyyy-MM-dd");
+  const monthInputValue = format(selectedDate, "yyyy-MM");
+  const weekInputValue = (() => {
+    const week = String(getISOWeek(selectedDate)).padStart(2, "0");
+    const year = format(startOfWeek(selectedDate, { weekStartsOn: 1 }), "yyyy");
+    return `${year}-W${week}`;
+  })();
+
+  const handleDayChange = (value) => {
+    if (!value) return;
+    const parsed = new Date(`${value}T00:00:00`);
+    if (isValid(parsed)) setSelectedDate(parsed);
+  };
+
+  const handleMonthChange = (value) => {
+    if (!value) return;
+    const [year, month] = value.split("-").map((x) => Number(x));
+    if (!Number.isFinite(year) || !Number.isFinite(month)) return;
+    const parsed = new Date(year, month - 1, 1);
+    if (isValid(parsed)) setSelectedDate(parsed);
+  };
+
+  const handleWeekChange = (value) => {
+    if (!value) return;
+    const match = String(value).match(/^(\d{4})-W(\d{2})$/);
+    if (!match) return;
+    const year = Number(match[1]);
+    const week = Number(match[2]);
+    if (!Number.isFinite(year) || !Number.isFinite(week)) return;
+    const jan4 = new Date(year, 0, 4);
+    const firstIsoMonday = startOfWeek(jan4, { weekStartsOn: 1 });
+    const target = addWeeks(firstIsoMonday, week - 1);
+    if (isValid(target)) setSelectedDate(target);
+  };
+
   // Calculate time metrics per order
   const orderMetrics = useMemo(() => {
     return weekOrders.map(order => {
-      const currentOrderId = String(order.orderId || order.id || "").trim();
+      const currentOrderId = String(order._trackingGroupKey || order.orderId || order.id || "").trim();
       const relatedLogs = trackingByOrder.get(currentOrderId) || [];
       const lotDetails = relatedLogs.map((log) => getLotMetrics(log));
       const planCount = parseInt(order.quantity) || parseInt(order.plan) || 0;
@@ -834,6 +1118,34 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
                   Maand
                 </button>
               </div>
+
+              {periodMode === "day" && (
+                <input
+                  type="date"
+                  value={dayInputValue}
+                  onChange={(e) => handleDayChange(e.target.value)}
+                  className="px-2 py-1.5 rounded-md border-2 border-slate-200 text-xs font-bold text-slate-700 bg-white"
+                />
+              )}
+
+              {periodMode === "week" && (
+                <input
+                  type="week"
+                  value={weekInputValue}
+                  onChange={(e) => handleWeekChange(e.target.value)}
+                  className="px-2 py-1.5 rounded-md border-2 border-slate-200 text-xs font-bold text-slate-700 bg-white"
+                />
+              )}
+
+              {periodMode === "month" && (
+                <input
+                  type="month"
+                  value={monthInputValue}
+                  onChange={(e) => handleMonthChange(e.target.value)}
+                  className="px-2 py-1.5 rounded-md border-2 border-slate-200 text-xs font-bold text-slate-700 bg-white"
+                />
+              )}
+
               <button onClick={navigatePrevious} className="px-2 py-1.5 rounded-md bg-slate-100 text-slate-700 text-xs font-bold">
                 Vorige
               </button>
@@ -866,16 +1178,29 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
               </select>
             </div>
 
+            <div className="flex items-center gap-2">
+              <Clock size={16} className="text-slate-600" />
+              <select
+                value={selectedMachine}
+                onChange={(e) => setSelectedMachine(e.target.value)}
+                className="px-3 py-1.5 border-2 border-slate-200 rounded-lg text-sm font-bold"
+              >
+                <option value="ALLES">Alle Machines</option>
+                {machineOptions.map((machine) => (
+                  <option key={machine} value={machine}>{machine}</option>
+                ))}
+              </select>
+            </div>
+
             {/* Filter Status */}
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
               className="px-3 py-1.5 border-2 border-slate-200 rounded-lg text-sm font-bold"
             >
-              <option value="all">Alle Status</option>
-              <option value="planned">Gepland</option>
-              <option value="in_production">In Productie</option>
-              <option value="quality_check">Controle</option>
+              <option value="all">Alle status</option>
+              <option value="in_behandeling">In behandeling</option>
+              <option value="gereed">Gereed (incl. archief)</option>
             </select>
           </div>
         </div>
@@ -998,13 +1323,15 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
                   <tr key={order.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3">
                       <div className="font-bold text-sm text-slate-800">{order.orderId || order.item}</div>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedOrderDetail(order)}
-                        className="mt-1 text-xs font-bold text-blue-600 hover:text-blue-800"
-                      >
-                        Bekijk lots ({order.lotCount || 0})
-                      </button>
+                      {Number(order.lotCount || 0) > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOrderDetail(order)}
+                          className="mt-1 text-xs font-bold text-blue-600 hover:text-blue-800"
+                        >
+                          Bekijk lots ({order.lotCount || 0})
+                        </button>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="text-sm text-slate-600">{order.itemCode || order.extraCode}</div>
@@ -1100,7 +1427,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
                 <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
                   <tr>
                     <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">Lot</th>
-                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">Machine</th>
+                    <th className="w-20 px-2 py-2 text-left text-xs font-bold text-slate-600 uppercase">Machine</th>
                     <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">Status</th>
                     <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">Wikkelen</th>
                     <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">Lossen</th>
@@ -1118,8 +1445,13 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
                 <tbody>
                   {selectedOrderDetail.lotDetails?.map((lot) => (
                     <tr key={lot.id || lot.lotNumber} className="border-b border-slate-100 align-top">
-                      <td className="px-3 py-3 text-sm font-bold text-slate-800 truncate">{lot.lotNumber}</td>
-                      <td className="px-3 py-3 text-sm text-slate-600 truncate">{lot.machine}</td>
+                      <td
+                        className="px-3 py-3 text-sm font-bold text-slate-800 whitespace-nowrap"
+                        title={String(lot.lotNumber || "")}
+                      >
+                        {lot.lotNumber}
+                      </td>
+                      <td className="w-20 px-2 py-3 text-sm text-slate-600 whitespace-nowrap">{lot.machine}</td>
                       <td className="px-3 py-3 text-sm text-slate-600 truncate">{lot.status}</td>
                       <td className="px-3 py-3 text-sm text-right font-bold text-slate-700 whitespace-nowrap">{lot.stationMetrics.wikkelenHours.toFixed(1)}h</td>
                       <td className="px-3 py-3 text-sm text-right font-bold text-slate-700 whitespace-nowrap">{lot.stationMetrics.lossenHours.toFixed(1)}h</td>

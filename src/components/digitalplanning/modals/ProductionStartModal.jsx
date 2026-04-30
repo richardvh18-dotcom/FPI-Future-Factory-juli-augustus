@@ -45,6 +45,12 @@ const getPixelsPerMm = (printerDpi = 203) => {
 const DEFAULT_PRINTER_DPI = 203;
 const LOT_ARCHIVE_LOOKBACK_YEARS = 6;
 
+const isPermissionDeniedError = (error) => {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  return code.includes("permission-denied") || message.includes("insufficient permissions");
+};
+
 // Functie om ISO week en bijbehorend ISO jaar te berekenen
 const getIsoWeekAndYear = (d) => {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
@@ -142,6 +148,7 @@ const ProductionStartModal = ({
 
   const containerRef = useRef(null);
   const previewAreaRef = useRef(null);
+  const counterPermissionWarnedRef = useRef(false);
 
   const [isCheckingLot, setIsCheckingLot] = useState(false);
   const [lotError, setLotError] = useState("");
@@ -595,7 +602,16 @@ const ProductionStartModal = ({
 
     try {
         await setDoc(counterRef, { lastSequence: maxSeq, updatedAt: serverTimestamp() }, { merge: true });
-    } catch (e) { console.error("Kon counter niet initialiseren", e); }
+    } catch (e) {
+      if (isPermissionDeniedError(e)) {
+        if (!counterPermissionWarnedRef.current) {
+          counterPermissionWarnedRef.current = true;
+          console.warn("Counter write overgeslagen door rechten; fallback zonder counter-sync actief.");
+        }
+      } else {
+        console.error("Kon counter niet initialiseren", e);
+      }
+    }
 
     return maxSeq;
   };
@@ -620,7 +636,15 @@ const ProductionStartModal = ({
       const exists = await checkLotNumberExists(candidate);
       if (!exists) {
         const nextRecycled = recycled.filter((n) => n !== seq);
-        await setDoc(counterRef, { recycledSequences: nextRecycled, updatedAt: serverTimestamp() }, { merge: true });
+        await setDoc(counterRef, { recycledSequences: nextRecycled, updatedAt: serverTimestamp() }, { merge: true }).catch((e) => {
+          if (!isPermissionDeniedError(e)) {
+            throw e;
+          }
+          if (!counterPermissionWarnedRef.current) {
+            counterPermissionWarnedRef.current = true;
+            console.warn("Counter recycled-sequence update overgeslagen door rechten.");
+          }
+        });
         return candidate;
       }
     }
@@ -717,6 +741,50 @@ const ProductionStartModal = ({
     });
   };
 
+  const claimAutoLotRangeWithoutCounter = async (count = 1) => {
+    const quantity = Math.max(1, parseInt(String(count || 1), 10) || 1);
+    const d = new Date();
+    const iso = getIsoWeekAndYear(d);
+
+    const bedrijf = "40";
+    const jaar = iso.year.slice(-2);
+    const week = iso.week;
+    const machine = getMachineCode(stationId);
+    const land = "40";
+    const baseLot = `${bedrijf}${jaar}${week}${machine}${land}`;
+    const weekSuffix = `${jaar}${week}`;
+
+    const highestSeq = await getHighestSequenceForBaseLot(baseLot, stationId, weekSuffix);
+    let sequenceToTry = Math.max(1, highestSeq + 1);
+    const maxAttempts = 250;
+
+    for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
+      let hasCollision = false;
+      if (sequenceToTry <= 0 || sequenceToTry + quantity - 1 > 9999) {
+        hasCollision = true;
+      }
+
+      if (!hasCollision) {
+        for (let i = 0; i < quantity; i += 1) {
+          const candidateLot = `${baseLot}${String(sequenceToTry + i).padStart(4, "0")}`;
+          const exists = await checkLotNumberExists(candidateLot);
+          if (exists) {
+            hasCollision = true;
+            break;
+          }
+        }
+      }
+
+      if (!hasCollision) {
+        return `${baseLot}${String(sequenceToTry).padStart(4, "0")}`;
+      }
+
+      sequenceToTry += 1;
+    }
+
+    throw new Error("Geen uniek lotnummer beschikbaar voor deze machine/week.");
+  };
+
   useEffect(() => {
     let isMounted = true;
 
@@ -811,7 +879,16 @@ const ProductionStartModal = ({
           
           await deleteDoc(doc(db, "future-factory", "production", "counters", oldDocId)).catch(() => {});
 
-      } catch (e) { console.error("Kon counter niet updaten:", e); }
+      } catch (e) {
+        if (isPermissionDeniedError(e)) {
+          if (!counterPermissionWarnedRef.current) {
+            counterPermissionWarnedRef.current = true;
+            console.warn("Counter update overgeslagen door rechten; productie gaat door.");
+          }
+        } else {
+          console.error("Kon counter niet updaten:", e);
+        }
+      }
   };
 
   useEffect(() => {
@@ -882,6 +959,37 @@ const ProductionStartModal = ({
     }
   };
 
+  // Stations waar lotnummers van andere machines verwacht worden (reparatie, nabewerking, etc.).
+  // Op deze stations wordt de machinecode in het lotnummer NIET gevalideerd.
+  const isLotMachineValidationExempt = (station) => {
+    if (!station) return false;
+    const s = String(station).toUpperCase().replace(/\s/g, "");
+    const base = s.startsWith("40") ? s.slice(2) : s;
+    return (
+      base === "BH31" ||
+      base.includes("REPARATI") ||
+      base.includes("REPAIR") ||
+      base.includes("NABEWERK") ||
+      base === "LOSSEN" ||
+      base === "BM01" ||
+      base === "MAZAK"
+    );
+  };
+
+  const validateLotMachineCode = (lotValue) => {
+    if (!stationId) return "";
+    // Reparatie en downstream stations: geen machinecode-controle — ze verwerken lots van andere machines.
+    if (isLotMachineValidationExempt(stationId)) return "";
+    const digits = String(lotValue || "").replace(/\D/g, "");
+    if (digits.length !== 15) return "";
+    const expectedCode = getMachineCode(stationId);
+    const lotMachineCode = digits.slice(6, 9);
+    if (lotMachineCode !== expectedCode) {
+      return `Verkeerde machine: lotnummer bevat machinecode '${lotMachineCode}', verwacht '${expectedCode}' voor ${stationId}.`;
+    }
+    return "";
+  };
+
   const handleManualLotChange = async (e) => {
     const value = e.target.value.toUpperCase();
     const now = Date.now();
@@ -892,7 +1000,10 @@ const ProductionStartModal = ({
 
     setManualLotInput(value);
     setLotNumber(value);
-    setLotError("");
+
+    // Machine-specifieke validatie: 15-cijferig lotnummer moet machinecode voor dit station bevatten.
+    const machineError = validateLotMachineCode(value);
+    setLotError(machineError);
 
     if (!value.trim()) {
       scannerLikeLotInputRef.current = false;
@@ -943,7 +1054,21 @@ const ProductionStartModal = ({
 
       if (!isManualMode) {
         targetPrinter = await resolveTargetPrinterAsync();
-        effectiveLotNumber = await claimAutoLotRange(totalToProduce);
+        try {
+          effectiveLotNumber = await claimAutoLotRange(totalToProduce);
+        } catch (counterErr) {
+          if (!isPermissionDeniedError(counterErr)) {
+            throw counterErr;
+          }
+
+          if (!counterPermissionWarnedRef.current) {
+            counterPermissionWarnedRef.current = true;
+            console.warn("Counter transactie geweigerd; fallback lot-allocatie zonder counter wordt gebruikt.");
+          }
+
+          notify("Beperkte rechten op counters gedetecteerd. Fallback lot-allocatie actief.");
+          effectiveLotNumber = await claimAutoLotRangeWithoutCounter(totalToProduce);
+        }
         counterClaimed = true;
         setLotNumber(effectiveLotNumber);
 
@@ -970,6 +1095,13 @@ const ProductionStartModal = ({
           printData = await generatePrintData(selectedLabel, printPreviewData, dpiForPrint);
         }
       } else {
+        // Manual mode: eerst machinecode validatie, dan uniciteitscheck.
+        const machineCodeError = validateLotMachineCode(effectiveLotNumber);
+        if (machineCodeError) {
+          setLotError(machineCodeError);
+          throw new Error(machineCodeError);
+        }
+
         // Manual mode moet ook altijd uniciteit afdwingen voor we starten.
         const manualExists = await checkLotNumberExists(effectiveLotNumber);
         if (manualExists) {

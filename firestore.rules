@@ -322,6 +322,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Algemene collectionGroup("items") reads voor scoped subcollecties zoals
+    // efficiency_hours en print_queue.
+    match /{path=**}/items/{itemId} {
+      allow read: if hasUserRecord() || isSignedIn();
+      allow write: if false;
+    }
+
     match /future-factory/production/data/digital_planning/orders/{orderId} {
       allow read: if hasUserRecord() || isSignedIn();
       allow write: if false;
@@ -331,13 +338,8 @@ service cloud.firestore {
       allow read: if hasUserRecord() || isSignedIn();
       allow write: if (
         collectionId in [
-          'machine_occupancy',
           'efficiency_hours',
-          'time_logs',
-          'downtime_reports',
-          'defect_reports',
-          'archive',
-          'counters'
+              'time_logs'
         ] && canOperateProduction()
       ) || (
         collectionId in [

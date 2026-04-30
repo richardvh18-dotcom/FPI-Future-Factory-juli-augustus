@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { db } from '../../config/firebase';
-import { collection, query, where, getDocs, limit, doc, getDoc, documentId, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, doc, getDoc, documentId, onSnapshot, collectionGroup } from 'firebase/firestore';
 import { PATHS } from '../../config/dbPaths';
 import { Loader2, Printer, Search, Send, X, Tag, ChevronDown, Usb } from 'lucide-react';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -184,9 +184,11 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
     const loadInitialList = async () => {
       setLoadingInitialList(true);
       try {
-        const [tempSnap, planSnap] = await Promise.all([
+        const [tempSnap, planSnap, trackSnap, scopedOrdersSnap] = await Promise.all([
           getDocs(query(collection(db, ...PATHS.TEMP_PLANNING), limit(120))),
           getDocs(query(collection(db, ...PATHS.PLANNING), limit(120))),
+          getDocs(query(collection(db, ...PATHS.TRACKING), limit(120))),
+          getDocs(query(collectionGroup(db, 'orders'), limit(120))),
         ]);
 
         if (!isMounted) return;
@@ -198,6 +200,8 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
 
         pushRows(tempSnap);
         pushRows(planSnap);
+        pushRows(trackSnap);
+        pushRows(scopedOrdersSnap);
 
         const dedup = [];
         const seen = new Set();
@@ -240,7 +244,7 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
     }
   }, [displayItems]);
 
-  const handleSearch = async () => {
+  const handleOrderLabelSearch = async () => {
     if (!orderStr.trim()) {
       setResults([]);
       return;
@@ -261,18 +265,22 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
       if (digitsMatch) {
           const digits = digitsMatch[0];
           if (digits.length >= 3) {
-              searchOptions.push(`N${digits}`);
-              searchOptions.push(`N20${digits}`);
-              searchOptions.push(`N200${digits}`);
-              searchOptions.push(`N21${digits}`);
-              searchOptions.push(`N210${digits}`);
-              searchOptions.push(`P${digits}`);
+              // Check if searchStr already starts with a prefix, if not add variations
+              if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
+                  searchOptions.push(`N${digits}`);
+                  searchOptions.push(`N20${digits}`);
+                  searchOptions.push(`N200${digits}`);
+                  searchOptions.push(`N21${digits}`);
+                  searchOptions.push(`N210${digits}`);
+                  searchOptions.push(`P${digits}`);
+              }
           }
       }
 
       const uniqueOptions = Array.from(new Set(searchOptions)).slice(0, 15);
       const colRef = collection(db, ...PATHS.TEMP_PLANNING);
       const planRef = collection(db, ...PATHS.PLANNING);
+      const trackRef = collection(db, ...PATHS.TRACKING);
       
       let foundDocs = new Map();
       const addDocs = (snap) => {
@@ -280,6 +288,29 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
           snap.docs.forEach(d => foundDocs.set(d.id, { id: d.id, ...d.data() }));
         }
       };
+
+      // 0. Scoped machine orders zoeken (collectionGroup voor alle 'orders' onder alle machines)
+      try {
+        const scopedQueries = [
+          getDocs(query(collectionGroup(db, 'orders'), where('id', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('orderId', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('orderNumber', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('Order', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('Productieorder', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('order', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('originalOrderId', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('itemCode', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('productCode', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('articleCode', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('Item', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('Artikel', 'in', uniqueOptions))),
+          getDocs(query(collectionGroup(db, 'orders'), where('itemDescription', 'in', uniqueOptions))),
+        ];
+        const scopedSnaps = await Promise.all(scopedQueries.map(p => p.catch(() => null)));
+        scopedSnaps.forEach(addDocs);
+      } catch (err) {
+        console.warn('Fout bij zoeken in scoped orders:', err);
+      }
 
       // 1. Direct op Document ID proberen
       for (const opt of uniqueOptions) {
@@ -293,6 +324,11 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
               const planDocSnap = await getDoc(planDocRef);
               if (planDocSnap.exists()) {
                   foundDocs.set(planDocSnap.id, { id: planDocSnap.id, ...planDocSnap.data() });
+              }
+              const trackDocRef = doc(db, ...PATHS.TRACKING, opt);
+              const trackDocSnap = await getDoc(trackDocRef);
+              if (trackDocSnap.exists()) {
+                  foundDocs.set(trackDocSnap.id, { id: trackDocSnap.id, ...trackDocSnap.data() });
               }
                 } catch {
                   continue;
@@ -324,7 +360,15 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
         getDocs(query(planRef, where("articleCode", "in", uniqueOptions))),
         getDocs(query(planRef, where("Item", "in", uniqueOptions))),
         getDocs(query(planRef, where("Artikel", "in", uniqueOptions))),
-        getDocs(query(planRef, where("itemDescription", "in", uniqueOptions)))
+        getDocs(query(planRef, where("itemDescription", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("orderId", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("orderNumber", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("Order", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("order", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("originalOrderId", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("itemCode", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("item", "in", uniqueOptions))),
+        getDocs(query(trackRef, where("itemDescription", "in", uniqueOptions)))
       ];
       const exactSnaps = await Promise.all(exactQueries.map(p => p.catch(() => null)));
       exactSnaps.forEach(addDocs);
@@ -333,10 +377,13 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
       if (foundDocs.size < 5 && searchStr.length >= 3) {
         const startOptions = [searchStr];
         if (digitsMatch && digitsMatch[0].length >= 3) {
-            startOptions.push(`N200${digitsMatch[0]}`);
-            startOptions.push(`N20${digitsMatch[0]}`);
-            startOptions.push(`N210${digitsMatch[0]}`);
-            startOptions.push(`N21${digitsMatch[0]}`);
+            // Only add prefix variations if searchStr doesn't already start with a prefix
+            if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
+                startOptions.push(`N200${digitsMatch[0]}`);
+                startOptions.push(`N20${digitsMatch[0]}`);
+                startOptions.push(`N210${digitsMatch[0]}`);
+                startOptions.push(`N21${digitsMatch[0]}`);
+            }
         }
         
         const startsWithQueries = [];
@@ -359,6 +406,13 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
           startsWithQueries.push(getDocs(query(planRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
           startsWithQueries.push(getDocs(query(planRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
           startsWithQueries.push(getDocs(query(planRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
+          startsWithQueries.push(getDocs(query(trackRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
+          startsWithQueries.push(getDocs(query(trackRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
+          startsWithQueries.push(getDocs(query(trackRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
+          startsWithQueries.push(getDocs(query(trackRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
+          startsWithQueries.push(getDocs(query(trackRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
+          startsWithQueries.push(getDocs(query(trackRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
+          startsWithQueries.push(getDocs(query(trackRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
         });
 
         const startSnaps = await Promise.all(startsWithQueries.map(p => p.catch(() => null)));
@@ -431,11 +485,11 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
                 className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase outline-none focus:bg-white focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all text-sm text-slate-900 placeholder:text-slate-400"
                 value={orderStr}
                 onChange={(e) => setOrderStr(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                onKeyDown={(e) => e.key === 'Enter' && handleOrderLabelSearch()}
               />
             </div>
             <button 
-              onClick={handleSearch} 
+              onClick={handleOrderLabelSearch} 
               disabled={loading} 
               className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-amber-500 transition-all flex items-center justify-center gap-2 shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -818,7 +872,7 @@ const PrintStationView = () => {
     return Number.isFinite(parsed) ? parsed : 15;
   }, [activeQueuePrinter]);
 
-  const handleSearch = async (e) => {
+  const handleLotNumberSearch = async (e) => {
     e.preventDefault();
     if (!lotNumber) return;
 
@@ -990,7 +1044,7 @@ const PrintStationView = () => {
         
         <p className="text-slate-600 mb-8">Scan of typ een lotnummer om een label te (her)printen. De printopdracht wordt naar de centrale printer bij BH18 gestuurd.</p>
 
-        <form onSubmit={handleSearch} className="flex gap-2 mb-8">
+        <form onSubmit={handleLotNumberSearch} className="flex gap-2 mb-8">
           <div className="relative flex-grow">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
             <input

@@ -37,6 +37,7 @@ import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { normalizeMachine, getStartedCounterField } from "../../utils/hubHelpers";
 import { getOrderFinishedUnits } from "../../utils/planningProgress";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
+import { shouldHideBH18PlanningOrder } from "../../utils/terminalOrderFilters";
 import TerminalPlanningView from "./terminal/TerminalPlanningView";
 import TerminalProductionView from "./terminal/TerminalProductionView";
 import TerminalManualInput from "./terminal/TerminalManualInput";
@@ -180,6 +181,20 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     return isRejected || isRemoved;
   };
 
+  const toFiniteNumber = (value) => {
+    const direct = Number(value);
+    if (Number.isFinite(direct)) return direct;
+
+    const raw = String(value || "").trim();
+    if (!raw) return 0;
+    const normalized = raw.replace(",", ".");
+    const match = normalized.match(/-?\d+(?:\.\d+)?/);
+    if (!match) return 0;
+
+    const parsed = Number(match[0]);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
   // Real-time Data Sync - ONLY for tracked products (orders come from prop)
   useEffect(() => {
     if (!stationId) return;
@@ -261,6 +276,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     const map = new Map();
     const stationNorm = String(normalizedStationId || "").toUpperCase().trim();
     const stationClean = stationNorm.replace(/\s/g, "");
+    const isWikkelToLossenSourceStation = ["BH12", "BH15", "BH17", "BH18"].includes(stationClean);
 
     const matchesStation = (value) => {
       const norm = (normalizeMachine(value) || "").toUpperCase().trim();
@@ -289,10 +305,12 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
 
       const statusUpper = String(product?.status || "").toUpperCase();
       const stepUpper = String(product?.currentStep || "").toUpperCase();
+      const isWaitingForLossen = stepUpper.includes("WACHT OP LOSSEN");
       const isClosed =
         ["COMPLETED", "FINISHED", "GEREED", "REJECTED", "AFKEUR"].includes(statusUpper) ||
         stepUpper === "FINISHED" ||
-        stepUpper === "REJECTED";
+        stepUpper === "REJECTED" ||
+        (isWikkelToLossenSourceStation && isWaitingForLossen);
 
       const entry = map.get(orderId) || { active: 0, total: 0 };
       entry.total += 1;
@@ -337,6 +355,31 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       // Fail-safe: voorkom leeg scherm door ontbrekende machinebron-velden in legacy docs.
       return filteredLossenOrders.length > 0 ? filteredLossenOrders : allOrders;
     }
+
+    const waitingForLossenOnlyByOrder = new Map();
+    if (["BH12", "BH15", "BH17", "BH18"].includes(cleanStationId)) {
+      allTracked.forEach((p) => {
+        const orderId = String(p?.orderId || "").trim();
+        if (!orderId) return;
+
+        const stationNorm = (normalizeMachine(p?.currentStation) || "").toUpperCase().trim();
+        if (stationNorm !== normalizedStationId) return;
+
+        const statusUpper = String(p?.status || "").toUpperCase();
+        const stepUpper = String(p?.currentStep || "").toUpperCase();
+        const isActive =
+          !["COMPLETED", "FINISHED", "GEREED", "REJECTED", "AFKEUR"].includes(statusUpper) &&
+          stepUpper !== "FINISHED" &&
+          stepUpper !== "REJECTED";
+        if (!isActive) return;
+
+        const entry = waitingForLossenOnlyByOrder.get(orderId) || { totalActive: 0, waitingForLossen: 0 };
+        entry.totalActive += 1;
+        if (stepUpper.includes("WACHT OP LOSSEN")) entry.waitingForLossen += 1;
+        waitingForLossenOnlyByOrder.set(orderId, entry);
+      });
+    }
+
     const result = allOrders.filter(o => {
       const machineNorm = (normalizeMachine(o.machine) || "").toUpperCase().trim();
       const returnNorm = (normalizeMachine(o.returnStation) || "").toUpperCase().trim();
@@ -345,7 +388,34 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         const planAtStation = Number(o.plan || o.quantity || 0);
         const hasRemainingPlan = startedAtStation > 0 && planAtStation > startedAtStation;
         const meta = stationOrderMeta.get(orderId);
-        const hasStationActivity = (meta?.active || 0) > 0 || (meta?.total || 0) > 0;
+        const hasStationActivity = (meta?.active || 0) > 0;
+
+        const isWikkelToLossenSourceStation = ["BH12", "BH15", "BH17", "BH18"].includes(cleanStationId);
+        if (isWikkelToLossenSourceStation) {
+          const waitingOnlyMeta = waitingForLossenOnlyByOrder.get(orderId);
+          if (
+            waitingOnlyMeta &&
+            waitingOnlyMeta.totalActive > 0 &&
+            waitingOnlyMeta.waitingForLossen === waitingOnlyMeta.totalActive
+          ) {
+            return false;
+          }
+
+          const waitingForLossenCount = allTracked.filter((p) => {
+            if (String(p?.orderId || "").trim() !== orderId) return false;
+            const stationNorm = (normalizeMachine(p?.currentStation) || "").toUpperCase().trim();
+            if (stationNorm !== normalizedStationId) return false;
+            const stepUpper = String(p?.currentStep || "").toUpperCase();
+            return stepUpper.includes("WACHT OP LOSSEN");
+          }).length;
+
+          // Altijd dynamisch berekenen: plan - started_<machine>.
+          const remainingQueue = Math.max(0, planAtStation - startedAtStation);
+
+          if (waitingForLossenCount > 0 && !hasStationActivity && remainingQueue <= 0) {
+            return false;
+          }
+        }
 
         return (
           machineNorm === normalizedStationId ||
@@ -393,6 +463,22 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
           if (!map[oid]) map[oid] = 0;
           map[oid]++;
       }
+    });
+    return map;
+  }, [allTracked, normalizedStationId]);
+
+  const waitingForLossenMap = useMemo(() => {
+    const map = {};
+    allTracked.forEach((p) => {
+      const currentStationNorm = (normalizeMachine(p.currentStation) || "").toUpperCase().trim();
+      const stepNorm = String(p.currentStep || "").trim().toLowerCase();
+      if (currentStationNorm !== normalizedStationId) return;
+      if (!stepNorm.includes("wacht op lossen")) return;
+
+      const oid = String(p.orderId || "").trim();
+      if (!oid) return;
+      if (!map[oid]) map[oid] = 0;
+      map[oid]++;
     });
     return map;
   }, [allTracked, normalizedStationId]);
@@ -509,15 +595,24 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     const base = enrichedOrders.filter((o) => {
       // Gebruik het HOOGSTE van plan en quantity: als plan opgehoogd is (bijv. 10→17),
       // moet het nieuwe plan leidend zijn, niet de originele quantity.
-      const quantity = Math.max(Number(o.plan || 0), Number(o.quantity || 0));
-      const startedAtStation = Number(o.startedAtStation || 0);
-      const producedAtOrder = Number(o.produced || 0);
+      const quantity = Math.max(toFiniteNumber(o.plan), toFiniteNumber(o.quantity));
+      const startedAtStation = toFiniteNumber(o.startedAtStation);
+      const producedAtOrder = toFiniteNumber(o.produced);
       const orderId = String(o.orderId || "").trim();
       const madeCount = madeCountMap[orderId] || 0;
       const hasActiveTracked = (productionProgressMap[orderId] || 0) > 0;
-      const remainingAtOrder = Math.max(0, quantity - producedAtOrder);
+      const waitingForLossenCount = waitingForLossenMap[orderId] || 0;
+      const stationPlan = toFiniteNumber(o.plan);
+      // Altijd dynamisch berekenen: plan - started_<machine>.
+      const remainingAtOrder = Math.max(0, stationPlan - startedAtStation);
       const isFullyProduced = quantity > 0 && producedAtOrder >= quantity;
       const stationWorkCompleted = quantity > 0 && (startedAtStation >= quantity || madeCount >= quantity);
+
+      // BH18 wikkelplanning gebruikt station-logica (plan + started counter),
+      // zodat legacy orders met afwijkende quantity niet blijven hangen.
+      if (isBH18 && shouldHideBH18PlanningOrder({ remainingAtOrder, startedAtStation, stationPlan })) {
+        return false;
+      }
 
       // LOSSEN 12/18 UITZONDERING: order blijft in de lijst zolang er nog actieve tracked
       // producten zijn voor deze order. Verdwijnt pas als alles volledig afgerond is.
@@ -530,9 +625,10 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         return true;
       }
 
-      // Reguliere stations: verberg pas wanneer orderniveau echt geen resterende stuks meer heeft.
-      // Actieve downstream lots mogen een order met open to-do niet wegdrukken.
-      if (!isBM01 && stationWorkCompleted && remainingAtOrder <= 0) return false;
+      // Reguliere stations: verberg zodra orderniveau geen resterende stuks meer heeft.
+      // Dit voorkomt dat volledig geproduceerde orders blijven hangen wanneer station-tellers achterlopen.
+      // Actieve downstream lots mogen alleen zichtbaar houden zolang er orderniveau nog resthoeveelheid is.
+      if (!isBM01 && remainingAtOrder <= 0 && (stationWorkCompleted || isFullyProduced)) return false;
 
       // Volledig geproduceerd en niet meer actief
       if (isFullyProduced && !["in_progress", "in production", "in productie"].includes(String(o.status || "").toLowerCase()) && !hasActiveTracked) return false;
@@ -654,7 +750,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         return combinedText.includes(token);
       });
     });
-  }, [myOrders, madeCountMap, stationCounterField, targetWeekNum, targetYearNum, showAllWeeks, sidebarSearch, isBM01, normalizedStationId, productionProgressMap, absCurrentReal]);
+  }, [myOrders, madeCountMap, stationCounterField, targetWeekNum, targetYearNum, showAllWeeks, sidebarSearch, isBM01, isBH18, normalizedStationId, productionProgressMap, waitingForLossenMap, absCurrentReal]);
 
   // LOSSEN 12/18: gefilterde planning per machine (filter via filterbar)
   const lossenFilteredOrders = useMemo(() => {
@@ -1187,47 +1283,55 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       />
 
       {showStartModal && selectedOrder && (
-        <ProductionStartModal
-          isOpen={true} onClose={() => setShowStartModal(false)}
-          order={selectedOrder} stationId={stationId}
-          onStartInitiated={() => {
-            setShowStartModal(false);
-            if (!isNabewerking && !isLossenStation && !isBM01 && !isBH31) {
-              setActiveTab("wikkelen");
-            }
-          }}
-          onStart={handleStartProduction} existingProducts={allTracked}
-        />
+        <div className="fixed z-[9999]">
+          <ProductionStartModal
+            isOpen={true} onClose={() => setShowStartModal(false)}
+            order={selectedOrder} stationId={stationId}
+            onStartInitiated={() => {
+              setShowStartModal(false);
+              if (!isNabewerking && !isLossenStation && !isBM01 && !isBH31) {
+                setActiveTab("wikkelen");
+              }
+            }}
+            onStart={handleStartProduction} existingProducts={allTracked}
+          />
+        </div>
       )}
       
       {productToRelease && (
-        <ProductReleaseModal
-          isOpen={true} product={productToRelease}
-          bulkProducts={bulkProductsToRelease}
-          autoApproveTrigger={releaseAutoApproveToken}
-          onClose={() => {
-            setProductToRelease(null);
-            setBulkProductsToRelease([]);
-            setSelectedTrackedId(null);
-          }}
-          appId={appId}
-        />
+        <div className="fixed z-[9999]">
+          <ProductReleaseModal
+            isOpen={true} product={productToRelease}
+            bulkProducts={bulkProductsToRelease}
+            autoApproveTrigger={releaseAutoApproveToken}
+            onClose={() => {
+              setProductToRelease(null);
+              setBulkProductsToRelease([]);
+              setSelectedTrackedId(null);
+            }}
+            appId={appId}
+          />
+        </div>
       )}
 
       {showRepairModal && itemToRepair && (
-        <RepairModal
-            product={itemToRepair}
-            onClose={() => { setShowRepairModal(false); setItemToRepair(null); }}
-            onConfirm={handleRepairComplete}
-        />
+        <div className="fixed z-[9999]">
+          <RepairModal
+              product={itemToRepair}
+              onClose={() => { setShowRepairModal(false); setItemToRepair(null); }}
+              onConfirm={handleRepairComplete}
+          />
+        </div>
       )}
 
       {viewingProduct && (
-        <ProductDetailModal
-          product={viewingProduct}
-          onClose={() => setViewingProduct(null)}
-          userRole={user?.role || "operator"}
-        />
+        <div className="fixed z-[9999]">
+          <ProductDetailModal
+            product={viewingProduct}
+            onClose={() => setViewingProduct(null)}
+            userRole={user?.role || "operator"}
+          />
+        </div>
       )}
     </>
   );

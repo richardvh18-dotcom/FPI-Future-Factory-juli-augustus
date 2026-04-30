@@ -1,6 +1,6 @@
 {
   "name": "fpi-future-factory",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "dependencies": {
@@ -67,6 +67,7 @@
     "validate": "npm run lint && npm run type-check && npm run build",
     "validate:strict": "npm run lint:strict && npm run type-check && npm run build",
     "type-check": "tsc --noEmit",
+    "test:regression:bh18": "node --test scripts/regression/bh18-filter.test.mjs",
     "find-bugs": "find src -name '\\*,jsx'"
   },
   "lint-staged": {

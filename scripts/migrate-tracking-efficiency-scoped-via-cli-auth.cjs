@@ -50,6 +50,15 @@ const normalizeMachineToken = (rawValue = '') => {
   return '';
 };
 
+const readTokenFromFirebaseAuthPrint = () => {
+  try {
+    const raw = execSync('firebase auth:print-access-token', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return String(raw || '').trim();
+  } catch {
+    return '';
+  }
+};
+
 const readTokenFromFirebaseCli = () => {
   try {
     const raw = execSync('firebase login:list --json', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -73,7 +82,7 @@ const readTokenFromFirebaseConfig = () => {
 };
 
 const getToken = () => {
-  const token = readTokenFromFirebaseCli() || readTokenFromFirebaseConfig();
+  const token = readTokenFromFirebaseAuthPrint() || readTokenFromFirebaseCli() || readTokenFromFirebaseConfig();
   if (!token) throw new Error('Geen bruikbaar Firebase access_token gevonden. Run eerst: firebase login');
   return token;
 };

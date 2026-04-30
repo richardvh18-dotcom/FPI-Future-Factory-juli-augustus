@@ -34,7 +34,11 @@ import { useLabelPreview } from "../../../hooks/useLabelPreview";
 import ConfirmationModal from "./ConfirmationModal";
 import { formatDateTimeSafe, toDateSafe } from "../../../utils/dateUtils";
 import { useNotifications } from '../../../contexts/NotificationContext';
-import { rejectTrackedProductFinal, queuePrintJob } from "../../../services/planningSecurityService";
+import {
+  rejectTrackedProductFinal,
+  queuePrintJob,
+  restoreArchivedTrackedProduct,
+} from "../../../services/planningSecurityService";
 
 /**
  * ProductDossierModal: Toont proces-stappen, kwaliteitsmetingen en order-info.
@@ -102,6 +106,7 @@ const ProductDossierModal = ({
   }, [dossierLabel, showLabelPreview]);
 
   const isTijdelijkeAfkeur = product?.inspection?.status === "Tijdelijke afkeur";
+  const isArchivedProduct = Boolean(product?.archived || product?.isArchivedOrder || product?.archivedAt);
 
   const REJECTION_REASON_LABELS = {
     "rejection.surfaceDamage": "Oppervlakteschade",
@@ -327,10 +332,14 @@ const ProductDossierModal = ({
   }, []);
 
   const moveStations = useMemo(() => {
+    if (isArchivedProduct) {
+      const allowed = new Set(["BH31", "Nabewerking", "BM01"]);
+      return sortedStations.filter((s) => allowed.has(s.id));
+    }
     if (!isTijdelijkeAfkeur) return sortedStations;
-    const allowed = new Set(["BH31", "Nabewerking"]);
+    const allowed = new Set(["BH31", "Nabewerking", "LOSSEN"]);
     return sortedStations.filter((s) => allowed.has(s.id));
-  }, [isTijdelijkeAfkeur, sortedStations]);
+  }, [isArchivedProduct, isTijdelijkeAfkeur, sortedStations]);
 
   // Effect: Verrijk historie met operator data uit occupancy als deze ontbreekt
   React.useEffect(() => {
@@ -418,25 +427,55 @@ const ProductDossierModal = ({
 
   const handleExecuteMove = async () => {
     if (!targetStation) return;
+
+    const productMoveIdentifier = String(
+      isArchivedProduct
+        ? product?.archiveDocId || product?.lotNumber || product?.sourceDataId || product?.id || ""
+        : product?.sourcePath || product?.__docPath || product?.id || product?.lotNumber || ""
+    ).trim();
+    if (!productMoveIdentifier) return;
+
+    const restoreRouteMap = {
+      BH31: "BH31",
+      NABEWERKING: "NABEWERKING",
+      BM01: "BM01",
+    };
+    const restoreTargetRoute = restoreRouteMap[String(targetStation || "").trim().toUpperCase()] || null;
     
     setOverrideLoading(true);
-    await onMoveLot(product.id, targetStation, {
-      isRepairMove: isTijdelijkeAfkeur,
-      repairInstruction: repairInstruction.trim(),
-    });
+    try {
+      if (isArchivedProduct) {
+        if (!restoreTargetRoute) {
+          throw new Error("Gearchiveerde producten kunnen alleen worden heropend naar BH31, Nabewerking of BM01.");
+        }
 
-    // Planning order machine/week updates lopen nu server-side via moveTrackedProductManual callable.
+        await restoreArchivedTrackedProduct({
+          productId: productMoveIdentifier,
+          targetRoute: restoreTargetRoute,
+          note: repairInstruction.trim(),
+          sourceContext: "TEAMLEADER_FULL_LIST",
+        });
+      } else {
+        await onMoveLot(productMoveIdentifier, targetStation, {
+          isRepairMove: isTijdelijkeAfkeur,
+          repairInstruction: repairInstruction.trim(),
+        });
+      }
 
-    await logActivity(
-      user?.uid || "system",
-      "LOT_MANUAL_MOVE",
-      `${isTijdelijkeAfkeur ? "Reparatie verplaatsing" : "Handmatige verplaatsing"}: lot ${product.lotNumber || product.id} -> ${targetStation} (order ${displayOrderId})${repairInstruction.trim() ? ` | instructie: ${repairInstruction.trim()}` : ""}`
-    );
+      // Planning order machine/week updates lopen nu server-side via moveTrackedProductManual callable.
 
-    setOverrideLoading(false);
-    setIsMoving(false);
-    setRepairInstruction("");
-    onClose();
+      await logActivity(
+        user?.uid || "system",
+        isArchivedProduct ? "ARCHIVED_LOT_RESTORE" : "LOT_MANUAL_MOVE",
+        `${isArchivedProduct ? "Heropend uit archief" : isTijdelijkeAfkeur ? "Reparatie verplaatsing" : "Handmatige verplaatsing"}: lot ${product.lotNumber || product.id} -> ${targetStation} (order ${displayOrderId})${repairInstruction.trim() ? ` | instructie: ${repairInstruction.trim()}` : ""}`
+      );
+
+      setIsMoving(false);
+      setRepairInstruction("");
+      onClose();
+    } finally {
+      setOverrideLoading(false);
+    }
   };
 
   const printerHasStation = (printer, station) => {
@@ -1044,11 +1083,13 @@ const ProductDossierModal = ({
         isOpen={showConfirmMove}
         onClose={() => setShowConfirmMove(false)}
         onConfirm={handleExecuteMove}
-        title={isTijdelijkeAfkeur ? "Reparatie Inplannen" : "Product Verplaatsen"}
-        message={isTijdelijkeAfkeur
+        title={isArchivedProduct ? "Product Heropenen" : isTijdelijkeAfkeur ? "Reparatie Inplannen" : "Product Verplaatsen"}
+        message={isArchivedProduct
+          ? `Weet je zeker dat je dit gearchiveerde product wilt heropenen naar ${moveStations.find(s => s.id === targetStation)?.name || targetStation}?`
+          : isTijdelijkeAfkeur
           ? `Weet je zeker dat je deze tijdelijke afkeur wilt doorzetten naar ${moveStations.find(s => s.id === targetStation)?.name || targetStation}?`
           : `Weet je zeker dat je dit product wilt verplaatsen naar ${moveStations.find(s => s.id === targetStation)?.name || targetStation}?`}
-        confirmText={isTijdelijkeAfkeur ? "Ja, Reparatie" : "Ja, Verplaatsen"}
+        confirmText={isArchivedProduct ? "Ja, Heropenen" : isTijdelijkeAfkeur ? "Ja, Reparatie" : "Ja, Verplaatsen"}
       />
 
       {showConfirmReject && (

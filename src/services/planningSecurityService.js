@@ -22,6 +22,7 @@ const retrievePlanningOrderCallable = callableWithRuntime(httpsCallable(function
 const togglePlanningOrderHoldCallable = callableWithRuntime(httpsCallable(functions, "togglePlanningOrderHold"));
 const updatePlanningOrderDetailsCallable = callableWithRuntime(httpsCallable(functions, "updatePlanningOrderDetails"));
 const patchPlanningOrderMetadataCallable = callableWithRuntime(httpsCallable(functions, "patchPlanningOrderMetadata"));
+const archivePlanningOrderCallable = callableWithRuntime(httpsCallable(functions, "archivePlanningOrder"));
 const assignOverproductionCallable = callableWithRuntime(httpsCallable(functions, "assignOverproduction"));
 const cancelPlanningOrderCallable = callableWithRuntime(httpsCallable(functions, "cancelPlanningOrder"));
 const assignPersonnelToStationCallable = callableWithRuntime(httpsCallable(functions, "assignPersonnelToStation"));
@@ -36,6 +37,7 @@ const requeuePrintQueueJobCallable = callableWithRuntime(httpsCallable(functions
 const deletePrintQueueJobCallable = callableWithRuntime(httpsCallable(functions, "deletePrintQueueJob"));
 const startProductionLotsCallable = callableWithRuntime(httpsCallable(functions, "startProductionLots"));
 const editTrackedProductLotNumberCallable = callableWithRuntime(httpsCallable(functions, "editTrackedProductLotNumber"));
+const reassignTrackedProductOrderCallable = callableWithRuntime(httpsCallable(functions, "reassignTrackedProductOrder"));
 const linkPlanningOrderProductCallable = callableWithRuntime(httpsCallable(functions, "linkPlanningOrderProduct"));
 const createPlanningOrderManualCallable = callableWithRuntime(httpsCallable(functions, "createPlanningOrderManual"));
 const markMazakLabelsPrintedCallable = callableWithRuntime(httpsCallable(functions, "markMazakLabelsPrinted"));
@@ -47,6 +49,7 @@ const updateOrderPlannedDateCallable = callableWithRuntime(httpsCallable(functio
 const updateOrderKanbanStatusCallable = callableWithRuntime(httpsCallable(functions, "updateOrderKanbanStatus"));
 const markReadyForNextStepCallable = callableWithRuntime(httpsCallable(functions, "markReadyForNextStep"));
 const startTrackedProductRepairCallable = callableWithRuntime(httpsCallable(functions, "startTrackedProductRepair"));
+const restoreArchivedTrackedProductCallable = callableWithRuntime(httpsCallable(functions, "restoreArchivedTrackedProduct"));
 const reportShopFloorIssueCallable = callableWithRuntime(httpsCallable(functions, "reportShopFloorIssue"));
 const resolveShopFloorIssueCallable = callableWithRuntime(httpsCallable(functions, "resolveShopFloorIssue"));
 const importPlanningOrdersCallable = callableWithRuntime(httpsCallable(functions, "importPlanningOrders"));
@@ -499,14 +502,17 @@ export const updatePlanningOrderDetails = async ({
   orderDocId,
   notes = "",
   plan = null,
+  started = null,
   source = "",
   actorLabel = "",
 }) => {
   const normalizedPlan = plan === null || plan === undefined || plan === "" ? null : Number(plan);
+  const normalizedStarted = started === null || started === undefined || started === "" ? null : Number(started);
   const payload = {
     orderDocId: String(orderDocId || "").trim(),
     notes: String(notes || "").trim(),
     plan: normalizedPlan,
+    started: normalizedStarted,
     source: String(source || "").trim(),
     actorLabel: String(actorLabel || "").trim(),
   };
@@ -517,6 +523,10 @@ export const updatePlanningOrderDetails = async ({
 
   if (payload.plan !== null && (!Number.isFinite(payload.plan) || payload.plan < 0)) {
     throw new Error("plan moet een geldig getal van 0 of hoger zijn.");
+  }
+
+  if (payload.started !== null && (!Number.isFinite(payload.started) || payload.started < 0)) {
+    throw new Error("started moet een geldig getal van 0 of hoger zijn.");
   }
 
   const result = await updatePlanningOrderDetailsCallable(payload);
@@ -545,6 +555,31 @@ export const patchPlanningOrderMetadata = async ({
     actorLabel: String(actorLabel || "").trim(),
   });
 
+  return result?.data || { ok: false };
+};
+
+export const archivePlanningOrder = async ({
+  orderDocId,
+  reason = "completed",
+  source = "",
+  actorLabel = "",
+}) => {
+  const payload = {
+    orderDocId: String(orderDocId || "").trim(),
+    reason: String(reason || "").trim().toLowerCase(),
+    source: String(source || "").trim(),
+    actorLabel: String(actorLabel || "").trim(),
+  };
+
+  if (!payload.orderDocId) {
+    throw new Error("orderDocId is verplicht.");
+  }
+
+  if (!["completed", "manual", "rejected"].includes(payload.reason)) {
+    throw new Error('reason moet "completed", "manual" of "rejected" zijn.');
+  }
+
+  const result = await archivePlanningOrderCallable(payload);
   return result?.data || { ok: false };
 };
 
@@ -940,6 +975,29 @@ export const editTrackedProductLotNumber = async ({
   return result?.data || { ok: false };
 };
 
+export const reassignTrackedProductOrder = async ({
+  productId,
+  newOrderId,
+  reason,
+  source = "",
+  actorLabel = "",
+}) => {
+  const payload = {
+    productId: String(productId || "").trim(),
+    newOrderId: String(newOrderId || "").trim(),
+    reason: String(reason || "").trim(),
+    source: String(source || "").trim(),
+    actorLabel: String(actorLabel || "").trim(),
+  };
+
+  if (!payload.productId || !payload.newOrderId || !payload.reason) {
+    throw new Error("productId, newOrderId en reason zijn verplicht.");
+  }
+
+  const result = await reassignTrackedProductOrderCallable(payload);
+  return result?.data || { ok: false };
+};
+
 export const linkPlanningOrderProduct = async ({
   orderDocId,
   productId,
@@ -1113,6 +1171,34 @@ export const startTrackedProductRepair = async ({ productId, repairReason = "" }
     productId: safeProductId,
     repairReason: String(repairReason || "").trim(),
   });
+  return result?.data || { ok: false };
+};
+
+export const restoreArchivedTrackedProduct = async ({
+  productId,
+  targetRoute,
+  note = "",
+  sourceContext = "TEAMLEADER_FULL_LIST",
+}) => {
+  const safeProductId = String(productId || "").trim();
+  const safeTargetRoute = String(targetRoute || "").trim().toUpperCase();
+  const safeSourceContext = String(sourceContext || "").trim().toUpperCase();
+
+  if (!safeProductId) {
+    throw new Error("productId is verplicht.");
+  }
+
+  if (!["BH31", "NABEWERKING", "BM01"].includes(safeTargetRoute)) {
+    throw new Error("targetRoute moet BH31, NABEWERKING of BM01 zijn.");
+  }
+
+  const result = await restoreArchivedTrackedProductCallable({
+    productId: safeProductId,
+    targetRoute: safeTargetRoute,
+    note: String(note || "").trim(),
+    sourceContext: safeSourceContext,
+  });
+
   return result?.data || { ok: false };
 };
 

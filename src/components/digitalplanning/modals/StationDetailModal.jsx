@@ -13,6 +13,8 @@ import {
   ChevronLeft,
   ChevronRight,
   FileDown,
+  QrCode,
+  CheckCircle2,
 } from "lucide-react";
 import {
   normalizeMachine,
@@ -30,7 +32,7 @@ const StationDetailModal = ({
   onClose,
 }) => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState("active");
+  const [activeTab, setActiveTab] = useState("planning");
   const [historyFilter, setHistoryFilter] = useState("week");
   const [selectedExportDate, setSelectedExportDate] = useState(() => {
     const now = new Date();
@@ -159,11 +161,17 @@ const StationDetailModal = ({
     for (let i = history.length - 1; i >= 0; i -= 1) {
       const entry = history[i];
       const text = `${entry?.action || ""} ${entry?.details || ""}`.toLowerCase();
-      if (text.includes("wikkelen naar lossen") || text.includes("doorgestuurd naar lossen")) {
-        const ts = toDateValue(entry?.timestamp);
+      if (text.includes("wikkelen naar lossen") || text.includes("doorgestuurd naar lossen") || text.includes("lossen")) {
+        const ts = toDateValue(entry?.timestamp || entry?.time);
         if (ts) return ts;
       }
     }
+
+    const stepUpper = String(product?.currentStep || "").toUpperCase();
+    if (stepUpper !== "WIKKELEN" && stepUpper !== "HOLD_AREA" && stepUpper !== "REJECTED" && stepUpper !== "") {
+      return toDateValue(product?.updatedAt) || toDateValue(product?.createdAt);
+    }
+
     return null;
   };
 
@@ -191,11 +199,9 @@ const StationDetailModal = ({
       const orderId = String(product?.orderId || "").trim();
       if (!orderId) return;
 
-      const wikkelenStart = getWikkelenStartTime(product);
       const wikkelenCompletion = getWikkelenCompletionTime(product);
-      if (!wikkelenStart || !wikkelenCompletion) return;
+      if (!wikkelenCompletion) return;
 
-      if (wikkelenStart > selectedDayEnd) return;
       if (wikkelenCompletion < selectedDayStart || wikkelenCompletion > selectedDayEnd) return;
       if (isToday && wikkelenCompletion > cutoff) return;
 
@@ -323,8 +329,13 @@ const StationDetailModal = ({
 
   // 1. Nu Actief (Live)
   const activeItems = useMemo(() => {
-    return allProducts.filter((p) => {
-      if (p.currentStep === "Finished" || p.currentStep === "REJECTED")
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const sourceProducts = [...allProducts, ...allArchivedProducts];
+
+    const filtered = sourceProducts.filter((p) => {
+      if (p.currentStep === "REJECTED" || String(p.status || "").toLowerCase() === "rejected" || String(p.status || "").toLowerCase() === "archived_rejected")
         return false;
       
       const currentNorm = normalizeMachine(p.currentStation || "");
@@ -332,19 +343,56 @@ const StationDetailModal = ({
       const machineNorm = normalizeMachine(p.machine || "");
       const stepNorm = normalizeMachine(p.currentStep || "");
 
-      return currentNorm === stationNorm || originNorm === stationNorm || machineNorm === stationNorm || stepNorm === stationNorm;
-    });
-  }, [allProducts, stationNorm]);
+      const isRelatedToStation = currentNorm === stationNorm || originNorm === stationNorm || machineNorm === stationNorm || stepNorm === stationNorm;
+      
+      if (!isRelatedToStation) return false;
 
-  // Teller voor items die wachten op lossen
-  const waitingForUnloadCount = useMemo(() => {
-    return activeItems.filter(p => 
-      p.currentStep === "Lossen" || 
-      p.status === "Wacht op Lossen" || 
-      p.status === "Te Lossen" ||
-      (p.currentStation && normalizeMachine(p.currentStation) === "LOSSEN")
-    ).length;
+      const stepUpper = String(p.currentStep || "").toUpperCase();
+      
+      // 1. Echt gewikkeld wordt (actief)
+      const isActivelyWinding = stepUpper === "WIKKELEN" || stepUpper === "HOLD_AREA";
+      
+      if (isActivelyWinding && p.status !== "completed") {
+        return true;
+      }
+
+      // 2. Voor die dag gewikkeld is (gereed)
+      const hasLeftWinding = stepUpper !== "WIKKELEN" && stepUpper !== "HOLD_AREA";
+      if (hasLeftWinding || p.status === "completed") {
+        const eventDate = p.timestamps?.lossen_start || p.timestamps?.wikkelen_end || p.updatedAt || p.createdAt;
+        const d = typeof eventDate?.toDate === "function" ? eventDate.toDate() : new Date(eventDate || 0);
+        if (Number.isFinite(d?.getTime?.()) && d >= today) {
+          return true;
+        }
+      }
+
+      return false;
+    });
+
+    const uniqueMap = new Map();
+    filtered.forEach(p => uniqueMap.set(p.lotNumber || p.id, p));
+    
+    return Array.from(uniqueMap.values()).sort((a, b) => {
+      const aActive = (String(a.currentStep || "").toUpperCase() === "WIKKELEN" || String(a.currentStep || "").toUpperCase() === "HOLD_AREA") && a.status !== "completed";
+      const bActive = (String(b.currentStep || "").toUpperCase() === "WIKKELEN" || String(b.currentStep || "").toUpperCase() === "HOLD_AREA") && b.status !== "completed";
+      
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+
+      const tA = a.updatedAt?.toDate ? a.updatedAt.toDate().getTime() : new Date(a.updatedAt || 0).getTime();
+      const tB = b.updatedAt?.toDate ? b.updatedAt.toDate().getTime() : new Date(b.updatedAt || 0).getTime();
+      return tB - tA;
+    });
+  }, [allProducts, allArchivedProducts, stationNorm]);
+
+  const activelyWindingCount = useMemo(() => {
+    return activeItems.filter(p => {
+      const stepUpper = String(p.currentStep || "").toUpperCase();
+      return (stepUpper === "WIKKELEN" || stepUpper === "HOLD_AREA") && p.status !== "completed";
+    }).length;
   }, [activeItems]);
+
+  const woundTodayCount = activeItems.length - activelyWindingCount;
 
   // 2. Planning (Wachtrij)
   const groupedPlanning = useMemo(() => {
@@ -425,28 +473,50 @@ const StationDetailModal = ({
 
     return sourceProducts
       .filter((p) => {
-        const pMachine = String(
-          p.lastStation || p.originMachine || p.currentStation || p.machine || ""
-        );
+        if (p.currentStep === "REJECTED" || String(p.status || "").toLowerCase() === "rejected" || String(p.status || "").toLowerCase() === "archived_rejected")
+          return false;
 
-        const statusNorm = String(p.status || "").toUpperCase();
-        const stepNorm = String(p.currentStep || "").toUpperCase();
-        const isFinished =
-          statusNorm === "FINISHED" ||
-          statusNorm === "COMPLETED" ||
-          statusNorm === "GEREED" ||
-          stepNorm === "FINISHED";
+        const currentNorm = normalizeMachine(p.currentStation || "");
+        const originNorm = normalizeMachine(p.originMachine || "");
+        const machineNorm = normalizeMachine(p.machine || "");
+        const lastNorm = normalizeMachine(p.lastStation || "");
 
-        if (
-          normalizeMachine(pMachine) !== stationNorm ||
-          !isFinished
-        ) {
+        const isRelatedToStation = currentNorm === stationNorm || originNorm === stationNorm || machineNorm === stationNorm || lastNorm === stationNorm;
+
+        if (!isRelatedToStation) {
           return false;
         }
 
-        const updatedAt = p.updatedAt?.toDate
-          ? p.updatedAt.toDate()
-          : new Date(p.updatedAt || 0);
+        const stepUpper = String(p.currentStep || "").toUpperCase();
+        let isFinishedAtStation = false;
+
+        if (stationNorm.startsWith("BH") || stationNorm.startsWith("BA")) {
+          const isActivelyWinding = stepUpper === "WIKKELEN" || stepUpper === "HOLD_AREA";
+          isFinishedAtStation = (!isActivelyWinding || p.status === "completed");
+        } else {
+          isFinishedAtStation = p.status === "completed" || stepUpper === "FINISHED" || (currentNorm !== stationNorm && lastNorm === stationNorm);
+        }
+
+        if (!isFinishedAtStation) {
+          return false;
+        }
+
+        let eventDate = p.updatedAt || p.createdAt;
+        if (stationNorm.startsWith("BH") || stationNorm.startsWith("BA")) {
+            eventDate = p.timestamps?.lossen_start || p.timestamps?.wikkelen_end || p.timestamps?.finished || eventDate;
+        } else if (stationNorm.includes("LOSSEN")) {
+            eventDate = p.timestamps?.nabewerking_start || p.timestamps?.lossen_end || p.timestamps?.finished || eventDate;
+        } else if (stationNorm.includes("NABEWERK") || stationNorm === "NABW") {
+            eventDate = p.timestamps?.bm01_start || p.timestamps?.nabewerking_end || p.timestamps?.finished || eventDate;
+        } else {
+            eventDate = p.timestamps?.finished || p.timestamps?.completed || eventDate;
+        }
+
+        const updatedAt = typeof eventDate?.toDate === "function" ? eventDate.toDate() : new Date(eventDate || 0);
+        if (!Number.isFinite(updatedAt.getTime())) return false;
+
+        p._sortDate = updatedAt; // Attach for sorting
+
         const itemWeekInfo = getISOWeekInfo(updatedAt);
 
         if (historyFilter === "week") {
@@ -470,17 +540,7 @@ const StationDetailModal = ({
 
         return true;
       })
-      .sort(
-        (a, b) => {
-          const aTime = a.updatedAt?.toDate
-            ? a.updatedAt.toDate().getTime()
-            : new Date(a.updatedAt || 0).getTime() || 0;
-          const bTime = b.updatedAt?.toDate
-            ? b.updatedAt.toDate().getTime()
-            : new Date(b.updatedAt || 0).getTime() || 0;
-          return bTime - aTime;
-        }
-      );
+      .sort((a, b) => b._sortDate.getTime() - a._sortDate.getTime());
   }, [allProducts, allArchivedProducts, stationNorm, historyFilter]);
 
   return (
@@ -568,16 +628,6 @@ const StationDetailModal = ({
         {/* Tabs */}
         <div className="flex border-b border-gray-100 px-6 gap-6 bg-white sticky top-0 z-10">
           <button
-            onClick={() => setActiveTab("active")}
-            className={`py-4 text-sm font-bold uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${
-              activeTab === "active"
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-400 hover:text-gray-600"
-            }`}
-          >
-            <Zap size={16} /> {t("digitalplanning.station_detail.active_now", "Nu Actief")} ({activeItems.length})
-          </button>
-          <button
             onClick={() => setActiveTab("planning")}
             className={`py-4 text-sm font-bold uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${
               activeTab === "planning"
@@ -586,6 +636,16 @@ const StationDetailModal = ({
             }`}
           >
             <CalendarIcon size={16} /> {t("digitalplanning.terminal.tab_planning", "Planning")} ({groupedPlanning.total})
+          </button>
+          <button
+            onClick={() => setActiveTab("active")}
+            className={`py-4 text-sm font-bold uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${
+              activeTab === "active"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-400 hover:text-gray-600"
+            }`}
+          >
+            <Zap size={16} /> {t("digitalplanning.terminal.tab_winding", "Wikkelen")} ({activeItems.length})
           </button>
           <button
             onClick={() => setActiveTab("history")}
@@ -597,6 +657,18 @@ const StationDetailModal = ({
           >
             <History size={16} /> {t("digitalplanning.station_detail.history", "Historie")}
           </button>
+          {stationNorm.startsWith("BH") && (
+            <button
+              onClick={() => setActiveTab("ln_export")}
+              className={`py-4 text-sm font-bold uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${
+                activeTab === "ln_export"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-gray-400 hover:text-gray-600"
+              }`}
+            >
+              <QrCode size={16} /> INFOR-LN
+            </button>
+          )}
         </div>
 
         {/* Content */}
@@ -605,20 +677,20 @@ const StationDetailModal = ({
             <div className="space-y-3">
               {activeItems.length > 0 && (
                 <div className="flex flex-wrap gap-2 px-1 mb-2">
-                   {waitingForUnloadCount > 0 && (
-                     <div className="px-3 py-1.5 bg-orange-50 border border-orange-100 rounded-lg flex items-center gap-2">
-                       <Clock size={12} className="text-orange-500" />
-                       <span className="text-[10px] font-black text-orange-600 uppercase tracking-wide">
-                         {t("lossen.wait_for_unload", "Wacht op Lossen")}: {waitingForUnloadCount}
-                       </span>
-                     </div>
-                   )}
                    <div className="px-3 py-1.5 bg-green-50 border border-green-100 rounded-lg flex items-center gap-2">
                      <Activity size={12} className="text-green-500" />
                      <span className="text-[10px] font-black text-green-600 uppercase tracking-wide">
-                       {t("status.in_production", "In Productie")}: {activeItems.length - waitingForUnloadCount}
+                       Actief: {activelyWindingCount}
                      </span>
                    </div>
+                   {woundTodayCount > 0 && (
+                     <div className="px-3 py-1.5 bg-blue-50 border border-blue-100 rounded-lg flex items-center gap-2">
+                       <CheckCircle2 size={12} className="text-blue-500" />
+                       <span className="text-[10px] font-black text-blue-600 uppercase tracking-wide">
+                         Gereed (Vandaag): {woundTodayCount}
+                       </span>
+                     </div>
+                   )}
                 </div>
               )}
 
@@ -630,90 +702,48 @@ const StationDetailModal = ({
                   </p>
                 </div>
               ) : (
-                activeItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm flex justify-between items-center border-l-4 border-l-green-500 animate-in slide-in-from-bottom-2"
-                  >
-                    <div>
-                      <h4 className="text-lg font-black text-gray-800">
-                        {item.lotNumber}
-                      </h4>
-                      <p className="text-sm font-bold text-gray-500">
-                        {item.item}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="bg-green-100 text-green-700 px-3 py-1 rounded-lg text-xs font-bold uppercase animate-pulse inline-block mb-1">
-                        {t("status.active", "Actief")}
+                activeItems.map((item) => {
+                  const stepUpper = String(item.currentStep || "").toUpperCase();
+                  const isActivelyWinding = (stepUpper === "WIKKELEN" || stepUpper === "HOLD_AREA") && item.status !== "completed";
+                  return (
+                    <div
+                      key={item.id}
+                      className={`bg-white p-4 rounded-xl border shadow-sm flex justify-between items-center border-l-4 animate-in slide-in-from-bottom-2 ${isActivelyWinding ? "border-blue-100 border-l-green-500" : "border-blue-100 border-l-blue-500"}`}
+                    >
+                      <div>
+                        <h4 className="text-lg font-black text-gray-800">
+                          {item.lotNumber}
+                        </h4>
+                        <p className="text-sm font-bold text-gray-500">
+                          {item.item}
+                        </p>
+                        {item.orderId && (
+                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Order: {item.orderId}</p>
+                        )}
+                      </div>
+                      <div className="text-right flex flex-col items-end">
+                    {isActivelyWinding ? (
+                          <span className="bg-green-100 text-green-700 px-3 py-1 rounded-lg text-xs font-bold uppercase animate-pulse inline-block mb-1">
+                            {t("status.active", "Actief")}
+                          </span>
+                    ) : (
+                      <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-xs font-bold uppercase inline-block mb-1">
+                        Gereed (Vandaag)
                       </span>
-                      <p className="text-[10px] text-gray-400 font-bold uppercase">
-                        {t("personnelOccupancy.labels.operator", "Operator")}: {item.operator?.split("@")[0] || t("common.unknown", "Onbekend")}
-                      </p>
+                        )}
+                        <p className="text-[10px] text-gray-400 font-bold uppercase mt-1">
+                          {t("personnelOccupancy.labels.operator", "Operator")}: {item.operatorName || item.operatorNumber || item.operator?.split("@")[0] || t("common.unknown", "Onbekend")}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}
 
           {activeTab === "planning" && (
             <div className="space-y-6">
-              {stationNorm.startsWith("BH") && (
-                <div className="bg-white border border-slate-200 rounded-2xl p-4">
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div>
-                      <h4 className="text-xs font-black uppercase tracking-widest text-slate-600">
-                        {t("digitalplanning.station_detail.ln_wikkelen_daily", "LN Wikkelen Dagoverzicht")}
-                      </h4>
-                      <p className="text-[11px] font-bold text-slate-400">
-                        {t("digitalplanning.station_detail.ln_wikkelen_rows", {
-                          count: lnWikkelenRows.length,
-                          defaultValue: "{{count}} orderregels voor {{date}}",
-                          date: selectedDayIso,
-                        })}
-                      </p>
-                    </div>
-                  </div>
-
-                  {lnWikkelenRows.length === 0 ? (
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                      {t("digitalplanning.station_detail.no_wikkelen_records_day", "Geen afgeronde wikkelstappen op deze dag.")}
-                    </p>
-                  ) : (
-                    <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
-                      {lnWikkelenRows.map((row) => (
-                        <div key={row.orderId} className="border border-slate-100 rounded-xl p-3 bg-slate-50/50">
-                          <div className="flex items-center justify-between mb-2">
-                            <div>
-                              <p className="text-sm font-black text-slate-800">{row.orderId}</p>
-                              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">RefOps: {row.refOpsText} | Aantal: {row.count}</p>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
-                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Order</p>
-                              <InternalQrImage value={row.orderQr} size={140} alt="Order QR" className="w-full aspect-square object-contain" />
-                              <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.orderId}</p>
-                            </div>
-                            <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
-                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Ref Ops</p>
-                              <InternalQrImage value={row.refQr} size={140} alt="Reference operations QR" className="w-full aspect-square object-contain" />
-                              <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.refOpsText}</p>
-                            </div>
-                            <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
-                              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Aantal</p>
-                              <InternalQrImage value={row.countQr} size={140} alt="Dag aantal QR" className="w-full aspect-square object-contain" />
-                              <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.count}</p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
               {groupedPlanning.sortedWeeks.map((week) => (
                 <div key={week} className="animate-in slide-in-from-bottom-2">
                   <div className="flex items-center gap-2 mb-2 px-1">
@@ -790,6 +820,63 @@ const StationDetailModal = ({
             </div>
           )}
 
+          {activeTab === "ln_export" && stationNorm.startsWith("BH") && (
+            <div className="space-y-6">
+              <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-600">
+                      {t("digitalplanning.station_detail.ln_wikkelen_daily", "LN Wikkelen Dagoverzicht")}
+                    </h4>
+                    <p className="text-[11px] font-bold text-slate-400">
+                      {t("digitalplanning.station_detail.ln_wikkelen_rows", {
+                        count: lnWikkelenRows.length,
+                        defaultValue: "{{count}} orderregels voor {{date}}",
+                        date: selectedDayIso,
+                      })}
+                    </p>
+                  </div>
+                </div>
+
+                {lnWikkelenRows.length === 0 ? (
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                    {t("digitalplanning.station_detail.no_wikkelen_records_day", "Geen afgeronde wikkelstappen op deze dag.")}
+                  </p>
+                ) : (
+                  <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                    {lnWikkelenRows.map((row) => (
+                      <div key={row.orderId} className="border border-slate-100 rounded-xl p-3 bg-slate-50/50">
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <p className="text-sm font-black text-slate-800">{row.orderId}</p>
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">RefOps: {row.refOpsText} | Aantal: {row.count}</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Order</p>
+                            <InternalQrImage value={row.orderQr} size={140} alt="Order QR" className="w-full aspect-square object-contain" />
+                            <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.orderId}</p>
+                          </div>
+                          <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Ref Ops</p>
+                            <InternalQrImage value={row.refQr} size={140} alt="Reference operations QR" className="w-full aspect-square object-contain" />
+                            <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.refOpsText}</p>
+                          </div>
+                          <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
+                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Aantal</p>
+                            <InternalQrImage value={row.countQr} size={140} alt="Dag aantal QR" className="w-full aspect-square object-contain" />
+                            <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.count}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {activeTab === "history" && (
             <div className="space-y-4">
               <div className="flex bg-white p-1 rounded-lg border border-gray-200 w-fit">
@@ -827,7 +914,7 @@ const StationDetailModal = ({
                     <div className="text-right">
                       <StatusBadge status={item.status || "completed"} />
                       <p className="text-[10px] text-gray-400 font-mono mt-0.5">
-                        {formatDate(item.updatedAt)}
+                        {formatDate(item._sortDate || item.updatedAt)}
                       </p>
                     </div>
                   </div>
