@@ -410,16 +410,21 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         if (directTs > 0) return directTs;
 
         const historyList = Array.isArray(item?.history) ? item.history : [];
-        const nahardingEvent = [...historyList]
-            .reverse()
-            .find((entry) => {
-                const details = String(entry?.details || "").toUpperCase();
-                const station = String(entry?.station || "").toUpperCase();
-                const action = String(entry?.action || "").toUpperCase();
-                return details.includes("NAHARD") || details.includes("OVEN") ||
-                       station.includes("NAHARD") || station.includes("OVEN") ||
-                       action.includes("NAHARD");
-            });
+        
+        // Zoek het EERSTE event (oudste) dat verwijst naar Naharding.
+        // Hiermee vangen we het moment van *aanbieden* aan de oven, i.p.v. het moment van *afronden*.
+        const nahardingEvent = historyList.find((entry) => {
+            const details = String(entry?.details || "").toUpperCase();
+            const station = String(entry?.station || "").toUpperCase();
+            const action = String(entry?.action || "").toUpperCase();
+            
+            // Negeer expliciete afrond-events zodat we niet de datum van uithalen pakken
+            if (details.includes("GEREEDGEMELD") || action === "ARCHIVE" || action === "COMPLETED") return false;
+
+            return details.includes("NAHARD") || details.includes("OVEN") ||
+                   station.includes("NAHARD") || station.includes("OVEN") ||
+                   action.includes("NAHARD");
+        });
         const historyTs = toMillisSafe(nahardingEvent?.timestamp || nahardingEvent?.time);
         if (historyTs > 0) return historyTs;
 
@@ -436,6 +441,11 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
             lastStation.includes("NAHARD") || lastStation.includes("OVEN");
 
         if (isNahardingRelated) {
+            const isFinished = status === "COMPLETED" || station === "GEREED";
+            if (isFinished) {
+                // Als het al afgerond is, is updatedAt van vandaag (de afronding). We zoeken de starttijd.
+                return toMillisSafe(item?.createdAt);
+            }
             return toMillisSafe(item?.updatedAt) || toMillisSafe(item?.createdAt);
         }
 
@@ -570,12 +580,27 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         end.setHours(23, 59, 59, 999);
     }
 
+    let queryEnd = new Date(end);
+    if (activeTab === "naharding_batch") {
+        // Voor naharding: items die op de geselecteerde datum de oven in zijn gegaan,
+        // kunnen pas dagen later zijn afgerond (gearchiveerd).
+        // Verruim de einddatum van de query met max 14 dagen (of tot vandaag) om ze te vangen.
+        const maxEnd = new Date(end);
+        maxEnd.setDate(maxEnd.getDate() + 14);
+        
+        const now = new Date();
+        now.setHours(23, 59, 59, 999);
+        
+        queryEnd = maxEnd < now ? maxEnd : now;
+        if (queryEnd < end) queryEnd = new Date(end);
+    }
+
     // Luister naar de archief collectie voor de geselecteerde periode
     const archiveRef = collection(db, ...getArchiveItemsPath(year));
     const q = query(
         archiveRef,
         where("timestamps.finished", ">=", start),
-        where("timestamps.finished", "<=", end)
+        where("timestamps.finished", "<=", queryEnd)
     );
 
     const unsub = onSnapshot(q, (snap) => {

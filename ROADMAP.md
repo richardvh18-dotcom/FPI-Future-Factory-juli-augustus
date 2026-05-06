@@ -1,4 +1,3 @@
-pus
 # 🚀 Master Roadmap: FPi Future Factory
 
 ## 🌐 Internationale Normen & Compliance (MES)
