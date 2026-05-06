@@ -196,7 +196,16 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
   const isExistingOrder = (order) => getOrderKeys(order).some((key) => existingIds.has(key));
   const isSmartSyncExcludedOrder = (order) => {
     const orderId = clean(order?.orderId || order?.orderNumber || order?.id).toUpperCase();
-    return SMART_SYNC_EXCLUDED_ORDER_IDS.has(orderId);
+    
+    // 1. Check hardcoded exclusion list
+    if (SMART_SYNC_EXCLUDED_ORDER_IDS.has(orderId)) return true;
+
+    // 2. Check dynamic exclusion field from Firestore
+    const existing = getExistingOrder(order);
+    if (existing?.smartSyncExcluded === true) return true;
+    if (existing?.smartSyncIncluded === false) return true;
+
+    return false;
   };
   const getExistingOrder = (order) => {
     const keys = getPreferredLookupKeys(order);
@@ -1226,8 +1235,8 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         newPlannedHours,
         hasManualPlanOverride,
         // Ready LN vs FF is informatief; deze import schrijft produced/gereed niet terug.
-        // Als we readyChanged of todoChanged als trigger gebruiken, blijven orders onterecht als "Sync" terugkomen.
-        hasSmartChange,
+        // We triggeren nu ook op quantity/todo wijzigingen zodat orders met gewijzigde aantallen verschijnen in de Smart Sync.
+        hasSmartChange: hasSmartChange || todoChanged || quantityChanged,
       });
     });
     return byId;

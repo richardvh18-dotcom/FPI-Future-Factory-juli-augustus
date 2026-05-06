@@ -22,6 +22,8 @@ import {
   Zap,
   Edit3,
   Printer,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import ProductMoveModal from "./ProductMoveModal";
 import ProductJourneyModal from "./modals/ProductJourneyModal";
@@ -47,6 +49,7 @@ import {
   archivePlanningOrder,
   editTrackedProductLotNumber,
   reassignTrackedProductOrder,
+  patchPlanningOrderMetadata,
 } from "../../services/planningSecurityService";
 import { useNotifications } from "../../contexts/NotificationContext";
 import StatusBadge from "./common/StatusBadge";
@@ -444,6 +447,32 @@ const OrderDetail = React.memo(({
   const hasPendingChanges = hasNoteChanged || hasPlanChanged || hasStartedChanged;
   const startedCounterField = getStartedCounterField(order?.machine || "");
   const stationStartedAmount = Number(startedCounterField ? order?.[startedCounterField] : 0) || 0;
+  
+  const handleToggleSyncExclusion = async (exclude) => {
+    const orderDocId = order.__docPath || order.id;
+    if (!orderDocId) return;
+
+    try {
+      await patchPlanningOrderMetadata({
+        orderDocId,
+        patch: {
+          smartSyncExcluded: exclude,
+          smartSyncIncluded: !exclude
+        },
+        source: "OrderDetail",
+        actorLabel: auth.currentUser?.email,
+      });
+
+      await logActivity(
+        auth.currentUser?.uid,
+        "ORDER_SYNC_TOGGLE",
+        `Order ${order.orderId} sync status gewijzigd naar: ${exclude ? "Uitgesloten" : "Opgenomen"}`
+      );
+    } catch (e) {
+      console.error("Fout bij wijzigen sync status:", e);
+    }
+  };
+
   const summedStartedAmount = Object.entries(order || {}).reduce((sum, [key, value]) => {
     if (!String(key || "").startsWith("started_")) return sum;
     return sum + (Number(value) || 0);
@@ -859,6 +888,38 @@ const OrderDetail = React.memo(({
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.status")}</span>
           <StatusBadge status={displayStatus} />
         </div>
+
+        {/* Smart Sync Opties */}
+        {canEditOrderPlan && (
+          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 xl:col-span-2">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Slimme Sync Controle</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleToggleSyncExclusion(false)}
+                className={`flex-1 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
+                  order.smartSyncIncluded === true
+                    ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/20"
+                    : "bg-white text-slate-400 hover:bg-slate-100 border border-slate-200"
+                }`}
+              >
+                <CheckCircle size={14} />
+                Sync Opnemen
+              </button>
+              <button
+                onClick={() => handleToggleSyncExclusion(true)}
+                className={`flex-1 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
+                  order.smartSyncExcluded === true
+                    ? "bg-rose-600 text-white shadow-lg shadow-rose-600/20"
+                    : "bg-white text-slate-400 hover:bg-slate-100 border border-slate-200"
+                }`}
+              >
+                <XCircle size={14} />
+                Sync Uitsluiten
+              </button>
+            </div>
+          </div>
+        )}
+
         <button
           onClick={async () => {
             setDrawingLoading(true);

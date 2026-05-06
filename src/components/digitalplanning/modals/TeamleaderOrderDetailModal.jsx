@@ -13,7 +13,9 @@ import {
   ArrowRight,
   History,
   Star,
-  Ban
+  Ban,
+  CheckCircle,
+  XCircle
 } from "lucide-react";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db, auth, logActivity } from "../../../config/firebase";
@@ -22,7 +24,11 @@ import { FITTING_MACHINES, PIPE_MACHINES } from "../../../utils/hubHelpers";
 import { useAdminAuth } from "../../../hooks/useAdminAuth";
 import { formatDateTimeSafe } from "../../../utils/dateUtils";
 import { resolvePostLossenStation } from "../../../utils/workstationLogic";
-import { updatePlanningOrderPriority, cancelPlanningOrder } from "../../../services/planningSecurityService";
+import { 
+  updatePlanningOrderPriority, 
+  cancelPlanningOrder,
+  patchPlanningOrderMetadata 
+} from "../../../services/planningSecurityService";
 import StatusBadge from "../common/StatusBadge.jsx";
 import CancelOrderModal from "./CancelOrderModal";
 
@@ -107,6 +113,31 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
     const orderProduced = Number(order?.produced) || 0;
     return Math.max(orderProduced, completedUnits);
   }, [order?.produced, completedUnits]);
+
+  const handleToggleSyncExclusion = async (exclude) => {
+    const orderDocId = order.__docPath || order.id;
+    if (!orderDocId) return;
+
+    try {
+      await patchPlanningOrderMetadata({
+        orderDocId,
+        patch: {
+          smartSyncExcluded: exclude,
+          smartSyncIncluded: !exclude
+        },
+        source: "TeamleaderOrderDetailModal",
+        actorLabel: auth.currentUser?.email,
+      });
+
+      await logActivity(
+        auth.currentUser?.uid,
+        "ORDER_SYNC_TOGGLE",
+        `Order ${order.orderId} sync status gewijzigd naar: ${exclude ? "Uitgesloten" : "Opgenomen"}`
+      );
+    } catch (e) {
+      console.error("Fout bij wijzigen sync status:", e);
+    }
+  };
 
   // Haal gekoppelde productie-units op (actief + archief)
   useEffect(() => {
@@ -278,6 +309,39 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
                     1e Prio
                   </button>
                 </div>
+            )}
+
+            {/* Smart Sync Opties */}
+            {canEditPriority && (
+              <div className="flex gap-4 mt-4 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex-1">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Slimme Sync Controle</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleToggleSyncExclusion(false)}
+                      className={`flex-1 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
+                        order.smartSyncIncluded === true
+                          ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/20"
+                          : "bg-white text-slate-400 hover:bg-slate-100 border border-slate-200"
+                      }`}
+                    >
+                      <CheckCircle size={14} />
+                      Sync Opnemen
+                    </button>
+                    <button
+                      onClick={() => handleToggleSyncExclusion(true)}
+                      className={`flex-1 px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
+                        order.smartSyncExcluded === true
+                          ? "bg-rose-600 text-white shadow-lg shadow-rose-600/20"
+                          : "bg-white text-slate-400 hover:bg-slate-100 border border-slate-200"
+                      }`}
+                    >
+                      <XCircle size={14} />
+                      Sync Uitsluiten
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
           <button 
