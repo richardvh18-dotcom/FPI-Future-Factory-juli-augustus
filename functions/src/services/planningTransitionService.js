@@ -2074,6 +2074,7 @@ const updatePlanningOrderDetailsService = async ({
   notes,
   plan,
   started,
+  manualTodo,
   actorLabel,
   source,
   auth,
@@ -2093,6 +2094,12 @@ const updatePlanningOrderDetailsService = async ({
 
   if (Number.isFinite(plan)) {
     updates.plan = plan;
+  }
+
+  if (Number.isFinite(manualTodo)) {
+    updates.todoAmountManual = manualTodo;
+    updates.todoAmount = manualTodo;
+    updates.toDoQty = manualTodo;
   }
 
   if (Number.isFinite(started) && started >= 0) {

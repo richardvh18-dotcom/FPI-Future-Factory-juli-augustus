@@ -1048,10 +1048,12 @@ const updatePlanningOrderDetails = functions.https.onCall(async (data, context) 
   const notes = clampText(data?.notes, 2000);
   const rawPlan = data?.plan;
   const rawStarted = data?.started;
+  const rawManualTodo = data?.manualTodo;
   const source = clampText(data?.source, 80);
   const actorLabel = clampText(data?.actorLabel, 120);
   const plan = rawPlan === null || rawPlan === undefined || rawPlan === '' ? null : Number(rawPlan);
   const started = rawStarted === null || rawStarted === undefined || rawStarted === '' ? null : Number(rawStarted);
+  const manualTodo = rawManualTodo === null || rawManualTodo === undefined || rawManualTodo === '' ? null : Number(rawManualTodo);
 
   if (!orderDocId) {
     throw new functions.https.HttpsError('invalid-argument', 'orderDocId is verplicht.');
@@ -1065,12 +1067,17 @@ const updatePlanningOrderDetails = functions.https.onCall(async (data, context) 
     throw new functions.https.HttpsError('invalid-argument', 'started moet een geldig getal van 0 of hoger zijn.');
   }
 
+  if (manualTodo !== null && (!Number.isFinite(manualTodo) || manualTodo < 0 || manualTodo > 1000000)) {
+    throw new functions.https.HttpsError('invalid-argument', 'To do moet een geldig getal van 0 of hoger zijn.');
+  }
+
   try {
     const result = await updatePlanningOrderDetailsService({
       orderDocId,
       notes,
       plan,
       started,
+      manualTodo,
       source,
       actorLabel,
       auth: context.auth,
