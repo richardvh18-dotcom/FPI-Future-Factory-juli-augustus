@@ -1,3 +1,22 @@
+## Update sessie 148 (Fixes BM01 Naharding Datum & Historie)
+
+**Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
+
+### Gebruikersverzoeken & Doelen:
+- **QR Print Teller BM01:** De teller voor de Naharding-batch stond onterecht op "vandaag" in plaats van de dag dat de lots de oven in gingen.
+- **Historie/Weekend lots:** Lots die in het verleden de oven in gingen (bijv. voor het weekend) maar pas vandaag afgerond/gearchiveerd werden, verschenen niet in de lijst van de originele startdatum.
+
+### Uitgevoerde acties:
+**1. Datumregistratie Naharding (`BM01Hub.jsx`)**
+- De datum-detectie is omgedraaid: in plaats van de laatste bewerking (zoals het uithalen) zoekt de code nu specifiek het **allereerste (oudste)** "Naharding" of "Oven" event in de producthistorie. 
+- Events zoals "Gereedgemeld", "ARCHIVE" of "COMPLETED" worden expliciet genegeerd in de fallback, zodat lots altijd netjes op hun aanbiedingsdatum blijven staan.
+
+**2. Archief-query Uitgebreid (`BM01Hub.jsx`)**
+- Bij het selecteren van een datum in het verleden in de Naharding tab, kijkt de archief-query nu **tot maximaal 14 dagen vooruit** (tot aan 'vandaag').
+- Hierdoor worden lots die op de gekozen datum in de oven gingen, maar pas dagen later (na een weekend) uit de oven gehaald en gearchiveerd werden, alsnog correct teruggevonden en in het overzicht getoond.
+
+---
+
 ## Update sessie 147 (Idee: Automatische Oven-koppeling Naharding)
 
 **Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
