@@ -2144,6 +2144,8 @@ const patchPlanningOrderMetadataService = async ({
   if ('description' in safePatch) updates.description = clampText(safePatch.description, 600);
   if ('drawing' in safePatch) updates.drawing = clampText(safePatch.drawing, 600);
   if ('lastSync' in safePatch) updates.lastSync = clampText(safePatch.lastSync, 80);
+  if ('smartSyncExcluded' in safePatch) updates.smartSyncExcluded = Boolean(safePatch.smartSyncExcluded);
+  if ('smartSyncIncluded' in safePatch) updates.smartSyncIncluded = Boolean(safePatch.smartSyncIncluded);
   if ('quantity' in safePatch) {
     const q = Number(safePatch.quantity);
     if (!Number.isFinite(q) || q < 0 || q > 1000000) {
