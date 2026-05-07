@@ -7,7 +7,6 @@ export const useTeamleaderMetrics = ({
   dataStore,
   rawProducts,
   bezetting,
-  archivedProducts,
   archivedHistoryProducts,
   archivedRejectedProducts,
   effectiveAllowedNorms,
@@ -382,7 +381,7 @@ export const useTeamleaderMetrics = ({
           return isEventInCurrentWeek(finishedAt, { currentWeek, currentYear });
         });
 
-        const archivedFinished = archivedProducts.filter((p) => {
+        const archivedFinished = archivedHistoryProducts.filter((p) => {
           if (!validOrderIds.has(getOrderIdFromTrackedRecord(p))) return false;
           const finishedAt = getFinishedEventDate(p);
           return isEventInCurrentWeek(finishedAt, { currentWeek, currentYear });
@@ -505,7 +504,6 @@ export const useTeamleaderMetrics = ({
     dataStore,
     rawProducts,
     bezetting,
-    archivedProducts,
     archivedHistoryProducts,
     archivedRejectedProducts,
     effectiveAllowedNorms,

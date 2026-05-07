@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { collection, collectionGroup, query, onSnapshot, doc, where } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { db } from "../../config/firebase";
-import { subDays, startOfISOWeek, endOfISOWeek } from "date-fns";
+import { subDays } from "date-fns";
 import { PATHS, getArchiveItemsPath, getArchiveRejectedItemsPath } from "../../config/dbPaths";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 import { normalizeMachine } from "../../utils/hubHelpers";
@@ -19,7 +19,6 @@ export const useTeamleaderFirestore = ({ user }) => {
   const [rawOrders, setRawOrders] = useState([]);
   const [rawProducts, setRawProducts] = useState([]);
   const [bezetting, setBezetting] = useState([]);
-  const [archivedProducts, setArchivedProducts] = useState([]);
   const [archivedHistoryProducts, setArchivedHistoryProducts] = useState([]);
   const [archivedRejectedProducts, setArchivedRejectedProducts] = useState([]);
   const [factoryConfig, setFactoryConfig] = useState(null);
@@ -182,24 +181,6 @@ export const useTeamleaderFirestore = ({ user }) => {
       unsubs.push(unsubConfig);
 
       const now = new Date();
-      const start = startOfISOWeek(now);
-      const end = endOfISOWeek(now);
-      const year = now.getFullYear();
-
-      // LISTENER 5: Current week archive (for dashboard week stats)
-      const unsubArchiveWeek = onSnapshot(
-        query(
-          collection(db, ...getArchiveItemsPath(year)),
-          where("timestamps.finished", ">=", start),
-          where("timestamps.finished", "<=", end)
-        ),
-        (snap) => {
-          isMounted && setArchivedProducts(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-        },
-        (err) => console.warn("Archive Sync Error (Week Stats):", err.code)
-      );
-      unsubs.push(unsubArchiveWeek);
-
       const minArchiveDate = subDays(now, 365);
       const archiveDataByYear = {};
 
@@ -288,7 +269,6 @@ export const useTeamleaderFirestore = ({ user }) => {
     rawOrders,
     rawProducts,
     bezetting,
-    archivedProducts,
     archivedHistoryProducts,
     archivedRejectedProducts,
     factoryConfig,

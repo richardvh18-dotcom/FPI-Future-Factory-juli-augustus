@@ -4,9 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Loader2,
   AlertTriangle,
-  ClipboardList,
   Link2,
-  Layers,
 } from "lucide-react";
 import { getISOWeek, format } from "date-fns";
 import { getOrderFinishedUnits, getTrackedRecordOrderId } from "../../utils/planningProgress";
@@ -24,17 +22,23 @@ import {
   getLegacyRejectedOrders,
   buildOverproductionGroups,
 } from "../../utils/teamleaderDerived";
-import { normalizeMachine, PIPE_MACHINES } from "../../utils/hubHelpers";
+import { normalizeMachine } from "../../utils/hubHelpers";
+import {
+  getLotFromTrackedRecord,
+  resolveOverproductionRoute,
+  getPriorityLevel,
+  getOverproductionTargetCandidates,
+} from "./teamleaderHub.helpers";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { useBackgroundTasks } from "../../contexts/BackgroundTaskContext";
 import TeamleaderDashboard from "../teamleader/TeamleaderDashboard";
 import TeamleaderEfficiencyView from "../teamleader/TeamleaderEfficiencyView";
 import PersonnelOccupancyView from "../personnel/PersonnelOccupancyView";
-import PlanningSidebar from "./PlanningSidebar";
-import OrderDetail from "./OrderDetail";
 import AiPredictionView from "./AiPredictionView";
 import ImportExportDashboard from "./ImportExportDashboard";
+import TeamleaderOrderRail from "./TeamleaderOrderRail";
+import TeamleaderDetailPane from "./TeamleaderDetailPane";
 import { useTeamleaderFirestore } from "./useTeamleaderFirestore";
 import { useTeamleaderDataStore } from "./useTeamleaderDataStore";
 import { useTeamleaderMetrics } from "./useTeamleaderMetrics";
@@ -70,20 +74,7 @@ const TeamleaderHub = React.memo(({
   const currentWeek = getISOWeek(new Date());
   const currentYear = new Date().getFullYear();
 
-  const getOrderIdFromTrackedRecord = (record) => {
-    return getTrackedRecordOrderId(record);
-  };
-
-  const getLotFromTrackedRecord = (record) => {
-    const directLot = String(record?.lotNumber || record?.activeLot || "").trim();
-    if (directLot) return directLot;
-
-    const rawId = String(record?.id || "").trim();
-    if (!rawId) return "";
-
-    const lotFromId = rawId.match(/_(\d{6,})$/);
-    return lotFromId ? lotFromId[1] : "";
-  };
+  const getOrderIdFromTrackedRecord = getTrackedRecordOrderId;
 
   const [activeTab, setActiveTab] = useState("dashboard");
   const [selectedOrderId, setSelectedOrderId] = useState(null);
@@ -140,7 +131,6 @@ const TeamleaderHub = React.memo(({
     rawOrders,
     rawProducts,
     bezetting,
-    archivedProducts,
     archivedHistoryProducts,
     archivedRejectedProducts,
     factoryConfig,
@@ -229,59 +219,17 @@ const TeamleaderHub = React.memo(({
     });
   }, [rawProducts]);
 
-  const resolveOverproductionRoute = (targetOrder, group, manualStation = "") => {
-    const itemText = `${targetOrder?.item || ""} ${group?.item || ""}`.toUpperCase();
-    const normalizedItem = itemText.trim().replace(/\s+/g, " ");
-    const machineNorm = normalizeMachine(targetOrder?.machine || group?.originMachine || "");
-
-    if (normalizedItem.startsWith("FL")) {
-      return { station: "Mazak", mode: "auto", label: "Mazak" };
-    }
-
-    if (PIPE_MACHINES.includes(machineNorm) || itemText.includes("PIPE") || itemText.includes("BUIS")) {
-      const chosenStation = String(manualStation || "").trim();
-      return { station: chosenStation || null, mode: "manual", label: chosenStation || "Handmatig kiezen" };
-    }
-
-    return { station: "Nabewerking", mode: "auto", label: "Nabewerking" };
-  };
-
   const overproductionTargetCandidates = useMemo(() => {
-    const input = String(overproductionTargetOrderId || "").trim().toLowerCase();
-    const group = selectedOverproductionGroup;
-    const sameItem = String(group?.item || "").trim().toLowerCase();
-
-    return rawOrders
-      .filter((order) => !["completed", "cancelled", "rejected", "shipped"].includes(String(order?.status || "").toLowerCase()))
-      .filter((order) => {
-        if (input) {
-          return String(order.orderId || "").toLowerCase().includes(input);
-        }
-        if (!sameItem) return true;
-        return String(order.item || "").trim().toLowerCase() === sameItem;
-      })
-      .sort((a, b) => String(a.orderId || "").localeCompare(String(b.orderId || "")))
-      .slice(0, 12);
+    return getOverproductionTargetCandidates({
+      rawOrders,
+      overproductionTargetOrderId,
+      selectedOverproductionGroup,
+    });
   }, [rawOrders, overproductionTargetOrderId, selectedOverproductionGroup]);
 
   // Sidebar selection removed - now in useTeamleaderEventHandlers hook
 
   // Archived lot dossier handler removed - now in useTeamleaderEventHandlers hook
-
-  const getPriorityLevel = (order) => {
-    const rawPriority = order?.priority;
-    const normalizedPriority =
-      rawPriority === true
-        ? "high"
-        : String(rawPriority || "").toLowerCase().trim();
-
-    if (normalizedPriority === "immediate") return "immediate";
-    if (normalizedPriority === "urgent") return "urgent";
-    if (normalizedPriority === "high") return "high";
-    if (order?.isMoved) return "high";
-    if (order?.isUrgent) return "urgent";
-    return "normal";
-  };
 
   const hasActiveTrackingForOrder = (orderId) => {
     const normalizedOrderId = String(orderId || "").trim();
@@ -310,7 +258,6 @@ const TeamleaderHub = React.memo(({
     dataStore,
     rawProducts,
     bezetting,
-    archivedProducts,
     archivedHistoryProducts,
     archivedRejectedProducts,
     effectiveAllowedNorms,
@@ -522,145 +469,31 @@ const TeamleaderHub = React.memo(({
             />
           ) : (
             <div className="h-full flex gap-6 overflow-hidden">
-              <div className={`shrink-0 flex flex-col min-h-0 transition-all duration-300 ${selectedDetailEntry ? 'hidden lg:flex w-[38rem]' : 'w-full lg:w-[38rem]'}`}>
-                {canManageOverproduction && (
-                  <div className="mb-4 shrink-0 rounded-[32px] border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5 shadow-sm">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.25em] text-amber-600 flex items-center gap-2">
-                          <AlertTriangle size={14} /> {t('teamleader.overproduction', 'Overproduction')}
-                        </p>
-                        <h3 className="text-lg font-black text-slate-900 italic mt-2">{t('teamleader.pending_extra_products', 'Open pending extra products')}</h3>
-                        <p className="text-xs font-bold text-slate-500 mt-1">{t('teamleader.link_extras_help', 'Koppel extras aan een nieuw LN-ordernummer en stuur ze direct door naar de juiste vervolgstap.')}</p>
-                      </div>
-                      <div className="px-3 py-2 rounded-2xl bg-white border border-amber-200 text-amber-700 text-sm font-black min-w-[3rem] text-center">
-                        {overproductionGroups.length}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 space-y-3 max-h-[18rem] overflow-y-auto custom-scrollbar pr-1">
-                      {overproductionGroups.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-amber-200 bg-white/70 px-4 py-5 text-xs font-bold text-slate-400 uppercase tracking-widest text-center">
-                          {t('teamleader.no_pending_overproduction', 'Geen openstaande overproductie')}
-                        </div>
-                      ) : (
-                        overproductionGroups.map((group) => {
-                          const sampleRoute = resolveOverproductionRoute({ machine: group.originMachine, item: group.item }, group, "");
-                          return (
-                            <button
-                              key={group.key}
-                              onClick={() => handleOpenOverproductionGroup(group)}
-                              className="w-full rounded-2xl border border-amber-100 bg-white px-4 py-3 text-left hover:border-amber-300 hover:bg-amber-50/40 transition-all"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-sm font-black text-slate-900">{group.originalOrderId}</span>
-                                    <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-700 text-[10px] font-black uppercase tracking-widest">{t('teamleader.extra_count', '{{count}} extra', { count: group.count })}</span>
-                                  </div>
-                                  <p className="text-xs font-bold text-slate-600 mt-1 truncate">{group.item || "Onbekend product"}</p>
-                                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-2">Bron: {group.originMachine || "-"} · Route: {sampleRoute.station || "Handmatig"}</p>
-                                </div>
-                                <div className="flex items-center gap-2 text-amber-600 font-black text-xs uppercase">
-                                  <Layers size={14} /> {group.lotNumbers.length}
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                )}
-                <div className="min-h-0 flex-1">
-                  <PlanningSidebar
-                    orders={dataStore}
-                    trackedProducts={rawProducts}
-                    archivedProducts={archivedProducts}
-                    archivedHistoryProducts={archivedHistoryProducts}
-                    enableRejectionScopes={true}
-                    selectedOrderId={selectedSidebarEntryId}
-                    onSelect={handleSidebarSelect}
-                  />
-                </div>
-              </div>
-              <div className={`flex-1 bg-white rounded-[40px] border border-slate-200 shadow-sm flex flex-col overflow-hidden ${selectedDetailEntry ? 'flex' : 'hidden lg:flex'}`}>
-                {selectedOrder ? (
-                  <OrderDetail 
-                    order={selectedOrder} 
-                    products={[...rawProducts, ...archivedHistoryProducts]} 
-                    onClose={() => { setSelectedOrderId(null); setSelectedSidebarEntry(null); }} 
-                    isManager={true} 
-                    onMoveLot={handleMoveLot} 
-                    onOpenDossier={setViewingDossier} 
-                    showAllStations={true} 
-                    currentDepartment={targetSlug}
-                    allowedStations={effectiveStations}
-                  />
-                ) : selectedSidebarEntry?.isArchivedOrder ? (
-                  <div className="h-full flex flex-col p-8 lg:p-10 text-left overflow-y-auto">
-                    <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-6">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">{t('teamleader.history_archive', 'History / Archief')}</p>
-                        
-                        
-                        <h3 className="text-2xl font-black text-slate-900 italic tracking-tight mt-1">{selectedSidebarEntry.orderId || selectedSidebarEntry.id || '-'}</h3>
-                        <p className="text-sm font-bold text-slate-500 mt-1">{selectedSidebarEntry.item || selectedSidebarEntry.itemDescription || '-'}</p>
-                      </div>
-                      <button
-                        onClick={() => { setSelectedOrderId(null); setSelectedSidebarEntry(null); }}
-                        className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-black uppercase tracking-widest hover:bg-slate-200"
-                      >
-                        {t('common.close', 'Sluiten')}
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                      <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t('digitalplanning.status', 'Status')}</p>
-                        <p className="text-sm font-bold text-slate-800 mt-1">{t('teamleader.completed_archive', 'Voltooid (Archief)')}</p>
-                      </div>
-                      <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t('digitalplanning.machine', 'Machine')}</p>
-                        <p className="text-sm font-bold text-slate-800 mt-1">{selectedSidebarEntry.machine || selectedSidebarEntry.originMachine || '-'}</p>
-                      </div>
-                      <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 md:col-span-2">
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t('bm01.lot_number', 'Lotnummer')}s</p>
-                        {Array.isArray(selectedSidebarEntry.lotNumbers) && selectedSidebarEntry.lotNumbers.length > 0 ? (
-                          <div className="mt-2 space-y-2">
-                            {selectedSidebarEntry.lotNumbers.map((lot) => (
-                              <div key={lot} className="flex items-center justify-between gap-3 rounded-xl bg-white border border-slate-200 px-3 py-2">
-                                <span className="text-sm font-bold text-slate-800 break-all">{lot}</span>
-                                <button
-                                  onClick={() => handleOpenArchivedLotDossier(lot)}
-                                  className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"
-                                >
-                                  {t('digitalplanning.order_detail.view_dossier', 'Bekijk uitgebreid dossier')}
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-white border border-slate-200 px-3 py-2">
-                            <span className="text-sm font-bold text-slate-800 break-all">{selectedSidebarEntry.lotNumber || selectedSidebarEntry.lotNumbersText || '-'}</span>
-                            <button
-                              onClick={() => handleOpenArchivedLotDossier(selectedSidebarEntry.lotNumber)}
-                              className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"
-                            >
-                              {t('digitalplanning.order_detail.view_dossier', 'Bekijk uitgebreid dossier')}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex-1 flex flex-col justify-center items-center opacity-40 italic text-center">
-                    <ClipboardList size={64} className="mb-4 text-slate-300" />
-                    <p className="font-black uppercase tracking-widest text-xs text-slate-400">{t('teamleader.select_order', 'Selecteer een order uit de lijst')}</p>
-                  </div>
-                )}
-              </div>
+              <TeamleaderOrderRail
+                selectedDetailEntry={selectedDetailEntry}
+                canManageOverproduction={canManageOverproduction}
+                overproductionGroups={overproductionGroups}
+                onOpenOverproductionGroup={handleOpenOverproductionGroup}
+                resolveOverproductionRoute={resolveOverproductionRoute}
+                orders={dataStore}
+                trackedProducts={rawProducts}
+                archivedHistoryProducts={archivedHistoryProducts}
+                selectedOrderId={selectedSidebarEntryId}
+                onSelect={handleSidebarSelect}
+              />
+              <TeamleaderDetailPane
+                selectedOrder={selectedOrder}
+                selectedSidebarEntry={selectedSidebarEntry}
+                onClose={() => { setSelectedOrderId(null); setSelectedSidebarEntry(null); }}
+                handleMoveLot={handleMoveLot}
+                setViewingDossier={setViewingDossier}
+                targetSlug={targetSlug}
+                effectiveStations={effectiveStations}
+                rawProducts={rawProducts}
+                archivedHistoryProducts={archivedHistoryProducts}
+                handleOpenArchivedLotDossier={handleOpenArchivedLotDossier}
+                selectedDetailEntry={selectedDetailEntry}
+              />
             </div>
           )}
         </div>
@@ -678,7 +511,7 @@ const TeamleaderHub = React.memo(({
         setSelectedStationDetail={setSelectedStationDetail}
         dataStore={dataStore}
         rawProducts={rawProducts}
-        archivedProducts={archivedProducts}
+        archivedProducts={archivedHistoryProducts}
         activeKpi={activeKpi}
         setActiveKpi={setActiveKpi}
         lastKpi={lastKpi}
@@ -717,7 +550,7 @@ const TeamleaderHub = React.memo(({
           }}
           rawOrders={rawOrders}
           rawProducts={rawProducts}
-          archivedProducts={[...archivedProducts, ...archivedHistoryProducts]}
+          archivedProducts={archivedHistoryProducts}
           initialExportType={exportModalType}
           lockExportType={exportModalLocked}
           onTaskCreated={(taskId) => {
