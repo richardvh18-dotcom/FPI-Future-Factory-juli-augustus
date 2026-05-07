@@ -1,3 +1,62 @@
+## Update sessie 151 (Repository pattern, error handling, services, audit log UI, nieuwe repo)
+
+**Datum:** 7 mei 2026 | **Branch:** `FPiFF-18-12-May` | **Commit:** `e5bba0f`
+
+### Gebruikersverzoeken & Doelen:
+1. Hook refactoring voltooien (repository pattern)
+2. Frontend dom maken (business rules uit components)
+3. Error handling standaardiseren
+4. Echte services bouwen
+5. Audit log UI leesbaarder maken
+6. Nieuwe repository aanmaken van huidige branch
+
+### Uitgevoerde acties:
+
+**1. Repository pattern (6 hooks) ✅**
+- Alle hooks gebruiken nu `src/repositories/` i.p.v. directe Firestore imports
+- `isActivePlanningOrder` + `ACTIVE_PLANNING_STATUSES` toegevoegd aan `trackingHelpers.js`
+- Nieuwe bestanden: `planningRepository.js`, `productsRepository.js`, `settingsRepository.js`, `inventoryRepository.js`
+
+**2. Frontend dom maken ✅**
+- `usePlanningData` vereenvoudigd — geen inline business logic meer
+- Statusfiltering via `isActivePlanningOrder` uit trackingHelpers
+
+**3. Error handling standaardiseren ✅**
+- `functions/src/utils/errorHandler.js` — `handleCallableError`, `ERROR_MAP` (43 codes)
+- `src/utils/errorHandler.js` — `parseCallableError`, `logAndParseError` (NL berichten)
+- 45 catch blocks in `planningCallables.js` herschreven naar `handleCallableError`
+
+**4. Echte services bouwen ✅**
+- `updateProductionStandard` callable: auth + role-check + auditlogging
+- `autoLearningService` + `automationEngine`: directe Firestore writes vervangen door callable
+- `updateProductionStandard` wrapper toegevoegd aan `planningSecurityService.js`
+
+**5. Audit log UI leesbaarder ✅ (`AdminLogView.jsx`)**
+- `SmartDiffView`: tabel Was/Wordt, changed fields geel gemarkeerd, doorgestreept rood → groen
+- Timestamps `{seconds, nanoseconds}` → `dd-MM-yyyy HH:mm:ss`
+- `formatObjectDetails` herschreven: "Order X op werkstation Y · lotnummer Z, totaal N"
+- Technische paden (`orderDocPath`, `orderSourcePath`) worden weggelaten uit de samenvatting
+- `{ }` knop per rij voor toggle naar ruwe JSON (voor auditeurs)
+- Bug gefixed: `before/after: null` toonde onterecht lege diff
+
+**6. Nieuwe repository aangemaakt ✅**
+- `https://github.com/richardvh18-dotcom/Future-Factory-Fpi` (private)
+- Branch `FPiFF-18-12-May` gepusht als `main`
+
+### Nieuwe bestanden
+- `src/repositories/` (4 bestanden)
+- `src/utils/errorHandler.js`
+- `functions/src/utils/errorHandler.js`
+- `src/contexts/BackgroundTaskContext.jsx`
+- `src/components/notifications/BackgroundTaskOverlay.jsx`
+- `functions/src/callables/exportCallables.js`
+
+### Build status
+- ✓ 2825 modules transformed (frontend)
+- ✓ functions laadt foutloos
+
+---
+
 ## Update sessie 150 (BH18 tijdelijke filtering, versie bump en productie deploy)
 
 **Datum:** 7 mei 2026 | **Branch:** `FPiFF-18-12-May`
