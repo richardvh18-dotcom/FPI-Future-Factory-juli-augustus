@@ -110,6 +110,7 @@ const {
   migrateLegacyActivityLogs,
   reconcileOrderControl,
 } = require('./src/callables/planningCallables');
+const { runMigrationTool } = require('./src/callables/migrationCallables');
 const auditService = require('./src/services/auditService');
 const {
   aiReactiveWatchdogTrackedScoped,
@@ -1626,6 +1627,7 @@ exports.deleteAiKnowledgeEntry = deleteAiKnowledgeEntry;
 exports.migrateAiKnowledgeFields = migrateAiKnowledgeFields;
 exports.migrateLegacyActivityLogs = migrateLegacyActivityLogs;
 exports.reconcileOrderControl = reconcileOrderControl;
+exports.runMigrationTool = runMigrationTool;
 exports.aiReactiveWatchdogTrackedScoped = aiReactiveWatchdogTrackedScoped;
 exports.aiReactiveWatchdogTrackedLegacy = aiReactiveWatchdogTrackedLegacy;
 exports.aiNightlyBottleneckPlanner = aiNightlyBottleneckPlanner;

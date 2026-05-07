@@ -74,6 +74,7 @@ const deleteAiDocumentRecordCallable = httpsCallable(functions, "deleteAiDocumen
 const verifyAiKnowledgeEntryCallable = httpsCallable(functions, "verifyAiKnowledgeEntry");
 const deleteAiKnowledgeEntryCallable = httpsCallable(functions, "deleteAiKnowledgeEntry");
 const migrateAiKnowledgeFieldsCallable = httpsCallable(functions, "migrateAiKnowledgeFields");
+const runMigrationToolCallable = httpsCallable(functions, "runMigrationTool");
 
 export const rejectTrackedProductFinal = async ({
   productId,
@@ -1484,4 +1485,9 @@ export const deleteAiKnowledgeEntry = async (entryId) => {
 export const migrateAiKnowledgeFields = async () => {
   const result = await migrateAiKnowledgeFieldsCallable({});
   return result?.data || { ok: false, updated: 0 };
+};
+
+export const runMigrationTool = async ({ mode, orderId, mismatches }) => {
+  const result = await runMigrationToolCallable({ mode, orderId: orderId || null, mismatches: mismatches || null });
+  return result?.data;
 };

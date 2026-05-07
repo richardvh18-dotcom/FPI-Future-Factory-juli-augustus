@@ -76,6 +76,29 @@ const toFirestoreSegment = (value, fallback) => {
   return sanitized || fallback;
 };
 
+const buildReassignedTrackedDocId = ({
+  currentDocId,
+  newOrderId,
+  lotNumber,
+}) => {
+  const safeCurrentDocId = clean(currentDocId);
+  const safeNewOrderId = clean(newOrderId).toUpperCase();
+  const safeLotNumber = clean(lotNumber);
+
+  if (!safeCurrentDocId || !safeNewOrderId) return safeCurrentDocId;
+
+  const segments = safeCurrentDocId.split('_').filter(Boolean);
+  if (segments.length <= 1) {
+    const fallback = safeLotNumber
+      ? `${safeNewOrderId}_${safeLotNumber}`
+      : `${safeNewOrderId}_${safeCurrentDocId}`;
+    return toFirestoreSegment(fallback, safeCurrentDocId);
+  }
+
+  const tail = segments.slice(1).join('_');
+  return toFirestoreSegment(`${safeNewOrderId}_${tail}`, safeCurrentDocId);
+};
+
 const resolveScopedDepartment = (...values) => {
   for (const value of values) {
     const cleaned = clean(value);
@@ -3953,6 +3976,24 @@ const reassignTrackedProductOrderService = async ({
   const sourceOrderData = sourceOrderDoc?.data() || {};
   const userLabel = getActorLabel(auth, actorLabel);
   const nowIso = new Date().toISOString();
+  const lotNumber = clean(productData.lotNumber) || productDoc.id;
+  const nextProductDocId = buildReassignedTrackedDocId({
+    currentDocId: productDoc.id,
+    newOrderId: safeNewOrderId,
+    lotNumber,
+  });
+  const shouldMoveProductDoc = Boolean(nextProductDocId && nextProductDocId !== productDoc.id);
+  const nextProductRef = shouldMoveProductDoc
+    ? productDoc.ref.parent.doc(nextProductDocId)
+    : productDoc.ref;
+
+  if (shouldMoveProductDoc) {
+    const existingTarget = await nextProductRef.get();
+    if (existingTarget.exists) {
+      throw new Error('TARGET_PRODUCT_DOC_EXISTS');
+    }
+  }
+
   const historyEntry = {
     action: 'Ordernummer gewijzigd',
     timestamp: nowIso,
@@ -3963,11 +4004,26 @@ const reassignTrackedProductOrderService = async ({
   };
 
   const batch = db.batch();
-  batch.set(productDoc.ref, {
+
+  const productUpdates = {
+    id: nextProductRef.id,
     orderId: safeNewOrderId,
+    originalOrderId: clean(productData.originalOrderId) || currentOrderId,
+    reassignedFromOrderId: currentOrderId,
+    reassignedToOrderId: safeNewOrderId,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     history: admin.firestore.FieldValue.arrayUnion(historyEntry),
-  }, { merge: true });
+  };
+
+  if (shouldMoveProductDoc) {
+    batch.set(nextProductRef, {
+      ...productData,
+      ...productUpdates,
+    }, { merge: false });
+    batch.delete(productDoc.ref);
+  } else {
+    batch.set(productDoc.ref, productUpdates, { merge: true });
+  }
 
   if (isArchivedProduct) {
     const sourceProduced = Math.max(0, Number(sourceOrderData.produced || 0));
@@ -4027,19 +4083,22 @@ const reassignTrackedProductOrderService = async ({
   await writeActivityLog({
     auth,
     action: 'TRACKED_PRODUCT_ORDER_REASSIGN',
-    details: `Product ${clean(productData.lotNumber) || productDoc.id} order gewijzigd: ${currentOrderId} -> ${safeNewOrderId}`,
+    details: `Product ${lotNumber} order gewijzigd: ${currentOrderId} -> ${safeNewOrderId}${shouldMoveProductDoc ? ` | docId ${productDoc.id} -> ${nextProductRef.id}` : ''}`,
     source: source || null,
     actorLabel: userLabel,
     orderId: safeNewOrderId,
-    productId: clean(productData.lotNumber) || productDoc.id,
+    productId: lotNumber,
   });
 
   return {
     ok: true,
-    productId: productDoc.id,
-    lotNumber: clean(productData.lotNumber) || productDoc.id,
+    productId: nextProductRef.id,
+    lotNumber,
     oldOrderId: currentOrderId,
     orderId: safeNewOrderId,
+    movedDoc: shouldMoveProductDoc,
+    oldProductDocId: productDoc.id,
+    newProductDocId: nextProductRef.id,
     isArchivedProduct,
     restoredArchiveYear: archivedLookup?.year || null,
     before: {
