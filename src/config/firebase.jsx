@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
+import { getFunctions } from "firebase/functions";
 import { PATHS } from "./dbPaths";
 
 /**
@@ -52,6 +53,7 @@ const createFirestoreInstance = () => {
 export const db = createFirestoreInstance();
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+export const functions = getFunctions(app, 'europe-west1');
 export const appId = firebaseConfig.projectId;
 
 /**

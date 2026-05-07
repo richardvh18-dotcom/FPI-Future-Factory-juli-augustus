@@ -1650,7 +1650,18 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
                         <th className="px-2 py-3 sticky top-0 bg-slate-50 text-center w-[100px]">{t("digitalplanning.planning_import.table_extra_code", "ExtraCode")}</th>
                         <th className="px-2 py-3 sticky top-0 bg-slate-50">{t("digitalplanning.planning_import.table_po_text", "PO Text")}</th>
                         <th className="px-3 py-3 sticky top-0 bg-slate-50 text-center">{t("digitalplanning.planning_import.table_plan_hours", "Plan Uren")}</th>
-                        <th className="px-3 py-3 sticky top-0 bg-slate-50 text-right pr-4">{t("digitalplanning.planning_import.table_in_planning", "In Planning")}</th>
+                        <th className="px-3 py-3 sticky top-0 bg-slate-50 text-right pr-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <span className="text-[10px]">{t("digitalplanning.planning_import.table_in_planning", "In Planning")}</span>
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4 rounded accent-blue-600 cursor-pointer border-slate-300"
+                              checked={displayData.length > 0 && displayData.every(order => selectedOrderIds.has(order.id))}
+                              onChange={(e) => setVisibleSelection(e.target.checked)}
+                              title={t("digitalplanning.planning_import.toggle_all_visible", "Selecteer alle zichtbare orders")}
+                            />
+                          </div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">

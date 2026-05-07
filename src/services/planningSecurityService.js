@@ -1346,6 +1346,17 @@ export const executeAutomationRule = async (rule) => {
   return result?.data || { triggered: false, error: "Lege automation response" };
 };
 
+const updateProductionStandardCallable = callableWithRuntime(httpsCallable(functions, "updateProductionStandard"));
+
+export const updateProductionStandard = async ({ standardId, standardMinutes, autoLearning = null }) => {
+  const result = await updateProductionStandardCallable({
+    standardId: String(standardId || "").trim(),
+    standardMinutes: Number(standardMinutes),
+    ...(autoLearning ? { autoLearning } : {}),
+  });
+  return result?.data || { ok: false };
+};
+
 export const saveProductRecord = async ({ productId = "", productData = {}, clearVerification = false }) => {
   const payload = {
     productId: String(productId || "").trim(),

@@ -3,12 +3,8 @@ import {
   getDocs, 
   query, 
   where, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  serverTimestamp 
 } from "firebase/firestore";
-import { db, logActivity } from "../config/firebase";
+import { db } from "../config/firebase";
 import { PATHS } from "../config/dbPaths";
 import i18n from "../i18n";
 import { executeAutomationRule as executeAutomationRuleBackend } from "../services/planningSecurityService";
@@ -333,51 +329,8 @@ export const evaluateOrderStatusChange = async (conditions) => {
 /**
  * Execute send notification action
  */
-export const executeSendNotification = async (params, triggerData) => {
-  const { 
-    message = i18n.t("automation.rule_executed", "Automation regel uitgevoerd"), 
-    severity = "info",
-    recipients = [] 
-  } = params;
-  
-  // 1. Schrijf naar de notificatie logs (voor de specifieke notificatie view)
-  await addDoc(collection(db, ...PATHS.NOTIFICATION_LOGS), {
-    message: message || triggerData.message,
-    severity: severity || triggerData.severity,
-    recipients,
-    type: "automation",
-    status: "unread",
-    createdAt: serverTimestamp(),
-    data: triggerData.data
-  });
-
-  await logActivity(
-    "system",
-    "AUTOMATION_NOTIFICATION_LOG",
-    `Automation notificatie aangemaakt (${severity || triggerData.severity || "info"})`
-  );
-
-  // 2. Schrijf naar het centrale berichtensysteem (Inbox)
-  await addDoc(collection(db, ...PATHS.MESSAGES), {
-    to: "admin", // Zichtbaar voor alle admins
-    subject: `🔔 Automation: ${triggerData.message || i18n.t("automation.system_alert", "Systeem Alert")}`,
-    content: message || triggerData.message,
-    senderId: "system_automation",
-    senderName: "Automation Engine",
-    from: "system@futurefactory.local",
-    timestamp: serverTimestamp(),
-    read: false,
-    archived: false,
-    type: "automation_alert",
-    priority: severity === "critical" || severity === "alert" ? "urgent" : "normal"
-  });
-
-  await logActivity(
-    "system",
-    "AUTOMATION_MESSAGE_CREATE",
-    "Automation inboxbericht aangemaakt"
-  );
-  
+export const executeSendNotification = async () => {
+  // Uitgevoerd server-side via executeAutomationRule callable
   return { success: true, message: i18n.t("automation.notification_sent", "Notificatie verzonden") };
 };
 
@@ -386,149 +339,38 @@ export const executeSendNotification = async (params, triggerData) => {
  */
 export const executeUpdateStatus = async (params) => {
   const { targetStatus = "in_progress" } = params;
-  
-  // This would typically be executed with specific order IDs from trigger data
-  // For now, return success
   return { success: true, message: i18n.t("automation.status_update_planned", { status: targetStatus, defaultValue: `Status update naar ${targetStatus} gepland` }) };
 };
 
 /**
  * Execute create log action
  */
-export const executeCreateLog = async (params, triggerData) => {
-  const { logMessage = i18n.t("automation.log_default", "Automation log") } = params;
-  
-  await addDoc(collection(db, ...PATHS.MESSAGES), {
-    to: "admin",
-    subject: i18n.t("automation.log_event", "🤖 Automation Event"),
-    content: logMessage || triggerData.message,
-    senderId: "system_automation",
-    senderName: "Automation Engine",
-    from: "system@futurefactory.local",
-    timestamp: serverTimestamp(),
-    read: false,
-    archived: false,
-    type: "system_log",
-    priority: "normal",
-    data: triggerData.data
-  });
-
-  await logActivity(
-    "system",
-    "AUTOMATION_EVENT_LOG",
-    "Automation event als bericht gelogd"
-  );
-  
+export const executeCreateLog = async () => {
+  // Uitgevoerd server-side via executeAutomationRule callable
   return { success: true, message: i18n.t("automation.log_created", "Log entry aangemaakt") };
 };
 
 /**
  * Execute auto-learning update action
- * Migrated from: autoLearningService.js
+ * Server-side uitgevoerd via executeAutomationRule callable.
  */
-export const executeAutoLearningUpdate = async (params, triggerData) => {
-  const { 
-    learningRate = 0.3,
-    dryRun = true 
-  } = params;
-  
-  if (!triggerData.data?.standards) {
-    return { success: false, message: i18n.t("automation.no_standards", "Geen standaarden gevonden in trigger data") };
-  }
-  
-  const standards = triggerData.data.standards;
-  let updated = 0;
-  
-  for (const std of standards) {
-    const currentStandard = std.currentStandard;
-    const observedMedian = std.observedMedian;
-    
-    // Gradual adjustment with learning rate
-    const change = (observedMedian - currentStandard) * learningRate;
-    const newStandard = Math.round(currentStandard + change);
-    
-    if (!dryRun) {
-      // Find the standard document
-      const standardsSnap = await getDocs(
-        query(
-          collection(db, ...PATHS.PRODUCTION_STANDARDS),
-          where("itemCode", "==", std.itemCode),
-          where("machine", "==", std.machine)
-        )
-      );
-      
-      if (!standardsSnap.empty) {
-        const standardDoc = standardsSnap.docs[0];
-        await updateDoc(doc(db, ...PATHS.PRODUCTION_STANDARDS, standardDoc.id), {
-          standardMinutes: newStandard,
-          updatedAt: serverTimestamp(),
-          autoLearning: {
-            lastUpdate: new Date().toISOString(),
-            sampleCount: std.sampleCount,
-            previousStandard: currentStandard,
-            observedMedian,
-            deviation: std.deviation
-          }
-        });
-        await logActivity(
-          "system",
-          "AUTOMATION_STANDARD_UPDATE",
-          `Auto-learning standaard bijgewerkt: ${std.itemCode} op ${std.machine} (${currentStandard} -> ${newStandard})`
-        );
-        updated++;
-      }
-    }
-  }
-  
-  return { 
-    success: true, 
-    message: dryRun 
-      ? i18n.t("automation.standards_would_update", { count: standards.length, defaultValue: `${standards.length} standaard(en) zouden bijgewerkt worden` })
-      : i18n.t("automation.standards_updated", { count: updated, defaultValue: `${updated} standaard(en) bijgewerkt` })
+export const executeAutoLearningUpdate = async (params) => {
+  const { dryRun = true } = params;
+  return {
+    success: true,
+    message: dryRun
+      ? i18n.t("automation.standards_would_update", { count: 0, defaultValue: "Auto-learning wordt server-side uitgevoerd" })
+      : i18n.t("automation.standards_updated", { count: 0, defaultValue: "Auto-learning uitgevoerd via server" }),
   };
 };
 
 /**
  * Execute inspection reminder action
- * Migrated from: WorkstationHub.jsx
+ * Server-side uitgevoerd via executeAutomationRule callable.
  */
-export const executeInspectionReminder = async (params, triggerData) => {
-  if (!triggerData.data?.products) {
-    return { success: false, message: i18n.t("automation.no_products", "Geen producten gevonden in trigger data") };
-  }
-  
-  let reminded = 0;
-  
-  for (const product of triggerData.data.products) {
-    // Send message
-    await addDoc(collection(db, ...PATHS.MESSAGES), {
-      to: "admin",
-      subject: i18n.t("automation.reminder_subject", "⏰ Reminder: Tijdelijke Afkeur"),
-      content: i18n.t("automation.reminder_content", { lot: product.lotNumber, days: product.daysSince, station: product.station, defaultValue: `Product ${product.lotNumber} ligt al ${product.daysSince}+ dagen op ${product.station} ter reparatie. Graag actie.` }),
-      senderId: "system_automation",
-      senderName: "Automation Engine",
-      from: "system@futurefactory.local",
-      timestamp: serverTimestamp(),
-      read: false,
-      archived: false,
-      type: "alert",
-      priority: "urgent",
-      relatedLot: product.lotNumber
-    });
-    await logActivity(
-      "system",
-      "AUTOMATION_INSPECTION_REMINDER",
-      `Inspectie-reminder verzonden voor lot ${product.lotNumber} op ${product.station}`
-    );
-    
-    // Mark reminder as sent in product (would need product doc ID)
-    reminded++;
-  }
-  
-  return { 
-    success: true, 
-    message: i18n.t("automation.reminders_sent", { count: reminded, defaultValue: `${reminded} reminder(s) verzonden` })
-  };
+export const executeInspectionReminder = async () => {
+  // Uitgevoerd server-side via executeAutomationRule callable
+  return { success: true, message: i18n.t("automation.reminders_sent", { count: 0, defaultValue: "Reminders worden server-side verzonden" }) };
 };
 
 // ==============================================

@@ -1,4 +1,5 @@
 const { db, admin } = require('../config/firebase');
+const auditService = require('./auditService');
 
 const PRODUCTS_COLLECTION = db.collection('future-factory').doc('production').collection('products');
 
@@ -36,10 +37,20 @@ async function saveProductRecordService({ productId = '', productData = {}, acto
     delete payload.fittingSpecs;
     delete payload.socketSpecs;
     const docRef = await PRODUCTS_COLLECTION.add(payload);
+
+    auditService.logSystem('PRODUCT_CREATED', {
+      productId: docRef.id,
+      actorUid: actorUid || 'system',
+      after: { ...payload },
+    }, { category: 'ADMIN', severity: 'INFO', userId: actorUid || 'system' });
+
     return { ok: true, productId: docRef.id, operation: 'create' };
   }
 
-  // Bestaand product: expliciete verwijdering van spec-velden
+  // Bestaand product: leg before-snapshot vast voor audit trail
+  const before = await auditService.captureSnapshot(PRODUCTS_COLLECTION.doc(normalizedId));
+
+  // Expliciete verwijdering van spec-velden
   const updatePayload = {
     ...cleanData,
     specs: FieldValue.delete(),
@@ -57,6 +68,14 @@ async function saveProductRecordService({ productId = '', productData = {}, acto
 
   await PRODUCTS_COLLECTION.doc(normalizedId).set(updatePayload, { merge: true });
 
+  auditService.logSystem('PRODUCT_UPDATED', {
+    productId: normalizedId,
+    actorUid: actorUid || 'system',
+    clearVerification,
+    before,
+    after: cleanData,
+  }, { category: 'ADMIN', severity: 'INFO', userId: actorUid || 'system' });
+
   return { ok: true, productId: normalizedId, operation: 'update' };
 }
 
@@ -66,7 +85,14 @@ async function deleteProductRecordService({ productId = '' }) {
     throw new Error('productId is verplicht.');
   }
 
+  const before = await auditService.captureSnapshot(PRODUCTS_COLLECTION.doc(normalizedId));
   await PRODUCTS_COLLECTION.doc(normalizedId).delete();
+
+  auditService.logSystem('PRODUCT_DELETED', {
+    productId: normalizedId,
+    before,
+  }, { category: 'ADMIN', severity: 'WARNING' });
+
   return { ok: true, productId: normalizedId };
 }
 
@@ -105,6 +131,14 @@ async function verifyProductRecordService({ productId = '', actor = {}, isAdmin 
     },
     { merge: true }
   );
+
+  auditService.logSystem('PRODUCT_VERIFIED', {
+    productId: normalizedId,
+    actorUid: actor.uid || 'system',
+    isAdmin,
+    selfVerifiedByAdmin: current.lastModifiedBy === actor.uid && Boolean(isAdmin),
+    before: { verificationStatus: current.verificationStatus, lastModifiedBy: current.lastModifiedBy },
+  }, { category: 'QUALITY', severity: 'INFO', userId: actor.uid || 'system' });
 
   return { ok: true, productId: normalizedId };
 }

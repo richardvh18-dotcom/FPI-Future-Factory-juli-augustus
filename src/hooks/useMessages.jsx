@@ -1,7 +1,5 @@
 import { useState, useEffect } from "react";
-import { db } from "../config/firebase";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
-import { PATHS } from "../config/dbPaths"; // Importeer de centrale paden
+import { subscribeMessages } from "../repositories/planningRepository";
 
 /**
  * useMessages - Haalt berichten op uit de nieuwe root-structuur.
@@ -17,22 +15,16 @@ export const useMessages = (user) => {
       return;
     }
 
-    // Gebruik het nieuwe pad: /future-factory/production/messages
-    const messagesRef = collection(db, ...PATHS.MESSAGES);
-
-    const q = query(messagesRef, where("to", "==", user.email.toLowerCase()));
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const msgs = snapshot.docs.map((doc) => ({
+    const unsubscribe = subscribeMessages(
+      user.email,
+      (docs) => {
+        const msgs = docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
           timestamp: doc.data().timestamp?.toDate
             ? doc.data().timestamp.toDate()
             : new Date(),
         }));
-
         msgs.sort((a, b) => b.timestamp - a.timestamp);
         setMessages(msgs);
         setLoading(false);
@@ -40,7 +32,7 @@ export const useMessages = (user) => {
       (err) => {
         console.error("Berichten database error (Check Rules):", err);
         setLoading(false);
-      }
+      },
     );
 
     return () => unsubscribe();

@@ -1,4 +1,5 @@
 const { db, admin } = require('../config/firebase');
+const auditService = require('./auditService');
 
 const PLANNING_PATH = ['future-factory', 'production', 'data', 'digital_planning', 'orders'];
 const EFFICIENCY_PATH = ['future-factory', 'production', 'efficiency_hours'];
@@ -139,12 +140,22 @@ async function processInforUpdateService(csvData = []) {
         productionMinutes: 0,
         postProcessingMinutes: 0,
         qcMinutes: 0,
+        operations: [],
       });
     }
 
     const entry = ordersMap.get(orderId);
-    if (rawStatus) entry.status = rawStatus;
+    
+    // Status aggregatie: Als één van de rijen nog 'actief' is, blijft de order actief in FF.
+    // Alleen als alle unieke onderdelen 'gereed' zijn, mag hij naar archief.
+    if (entry.status !== 'actief' && rawStatus) {
+      entry.status = rawStatus;
+    }
+    
+    // Kwantiteit aggregatie: We nemen het maximum gevonden aantal (LN herhaalt vaak het totaal per regel)
     if (qty > entry.quantity) entry.quantity = qty;
+
+    entry.operations.push({ opCode, minutes: totalMin, status: rawStatus });
 
     if (opCode === 60) {
       entry.qcMinutes += totalMin;
@@ -163,11 +174,53 @@ async function processInforUpdateService(csvData = []) {
       productionMinutes,
       postProcessingMinutes,
       qcMinutes,
+      operations,
     } = orderData;
 
-    const isReady = rawStatus.includes('gereed') || rawStatus.includes('afgehandeld');
+    let isReady = rawStatus.includes('gereed') || rawStatus.includes('afgehandeld');
+    
+    // Extra check: even als de hoofstatus 'actief' is, maar alle bewerkingen zijn 'gereed',
+    // dan beschouwen we hem toch als klaar voor archivering (ook conform suggestie gebruiker).
+    if (!isReady && operations.length > 0) {
+      const allOpsReady = operations.every(op => op.status.includes('gereed') || op.status.includes('afgehandeld'));
+      if (allOpsReady) isReady = true;
+    }
 
-    const planningSnap = await getPlanningRef().where('orderId', '==', orderId).get();
+    let planningSnap = await getPlanningRef().where('orderId', '==', orderId).get();
+    
+    // RESTORE LOGICA: Als niet gevonden in actieve planning, zoek in het archief
+    if (planningSnap.empty && !isReady) {
+      const archiveSnap = await getPlanningArchiveRef(currentYear).where('orderId', '==', orderId).get();
+      if (!archiveSnap.empty) {
+        console.log(`[inforSync] Herstellende order ${orderId} uit archief naar actieve planning.`);
+        for (const archDoc of archiveSnap.docs) {
+          const data = archDoc.data();
+          const beforeSnapshot = { ...data };
+          // Verwijder archief-specifieke velden voordat we herstellen
+          delete data.archivedAt;
+          delete data.finalStatus;
+          delete data.efficiencySnapshot;
+          
+          const restoredData = {
+            ...data,
+            restoredFromArchiveAt: new Date().toISOString(),
+            status: 'active',
+          };
+          await getPlanningRef().add(restoredData);
+          await archDoc.ref.delete();
+
+          auditService.logSystem('ORDER_RESTORED_FROM_ARCHIVE', {
+            orderId,
+            archiveYear: currentYear,
+            before: beforeSnapshot,
+            after: restoredData,
+          }, { category: 'PLANNING', severity: 'WARNING' });
+        }
+        // Haal de snapshot opnieuw op nu hij hersteld is
+        planningSnap = await getPlanningRef().where('orderId', '==', orderId).get();
+      }
+    }
+
     if (planningSnap.empty) {
       unmatchedOrders.push(orderId);
       continue;
@@ -205,14 +258,63 @@ async function processInforUpdateService(csvData = []) {
 
     if (isReady) {
       for (const planningDoc of planningSnap.docs) {
-        await getPlanningArchiveRef(currentYear).add({
-          ...planningDoc.data(),
+        const planningData = planningDoc.data();
+        const articleId = planningData.articleId || planningData.item || '';
+        const orderQty = Number(quantity);
+        const inspectionApprovedQty = Number(planningData.produced || planningData.inspectionApprovedQty || 0);
+
+        // DOORTEL LOGICA: Als deze order klaar is maar méér heeft geproduceerd dan gepland (overproductie),
+        // probeer dan het verschil over te zetten naar de eerstvolgende order van hetzelfde artikel.
+        if (inspectionApprovedQty > orderQty && articleId) {
+          const surplus = inspectionApprovedQty - orderQty;
+          console.log(`[inforSync] Overproductie van ${surplus} gevonden voor order ${orderId} (${articleId}). Zoeken naar volgende order...`);
+          
+          const nextOrderSnap = await getPlanningRef()
+            .where('articleId', '==', articleId)
+            .where('status', '==', 'active')
+            .orderBy('plannedDate', 'asc')
+            .limit(5)
+            .get();
+
+          let distributed = false;
+          for (const nextDoc of nextOrderSnap.docs) {
+            if (nextDoc.id === planningDoc.id) continue;
+            
+            const nextData = nextDoc.data();
+            const currentProduced = Number(nextData.produced || 0);
+            await nextDoc.ref.update({
+                produced: currentProduced + surplus,
+                overproductionCarriedFrom: orderId,
+                lastUpdated: admin.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`[inforSync] ${surplus} stuks overgedragen naar volgende order: ${nextData.orderId}`);
+            distributed = true;
+            auditService.logSystem('OVERPRODUCTION_CARRIED_FORWARD', {
+              fromOrderId: orderId,
+              toOrderId: nextData.orderId,
+              articleId,
+              surplusQty: surplus,
+            }, { category: 'PRODUCTION', severity: 'WARNING' });
+            break; // Slechts naar de eerstvolgende overdragen
+          }
+        }
+
+        const archivePayload = {
+          ...planningData,
           finalStatus: 'completed_in_ln',
           archivedAt: new Date().toISOString(),
           efficiencySnapshot: efficiencyData,
-        });
+        };
+        await getPlanningArchiveRef(currentYear).add(archivePayload);
         await planningDoc.ref.delete();
         countDeleted += 1;
+
+        auditService.logSystem('ORDER_ARCHIVED_BY_INFOR_SYNC', {
+          orderId,
+          archiveYear: currentYear,
+          before: planningData,
+          after: { finalStatus: 'completed_in_ln', archivedAt: archivePayload.archivedAt },
+        }, { category: 'PLANNING', severity: 'INFO' });
       }
 
       const effRef = getEfficiencyRef().doc(String(orderId));
@@ -252,7 +354,7 @@ async function processInforUpdateService(csvData = []) {
         const inspectionApprovedQty = Number(planningData.produced || 0);
         const deliveryInspectionDelta = Number(quantity) - inspectionApprovedQty;
 
-        await planningDoc.ref.set({
+        const updatePayload = {
           quantity,
           lnDeliveredQty: Number(quantity),
           deliveredQty: Number(quantity),
@@ -262,7 +364,17 @@ async function processInforUpdateService(csvData = []) {
           deliveryInspectionLastCheckedAt: admin.firestore.FieldValue.serverTimestamp(),
           lastSync: syncTimestamp,
           lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
+        };
+        await planningDoc.ref.set(updatePayload, { merge: true });
+
+        if (deliveryInspectionDelta !== 0) {
+          auditService.logSystem('ORDER_QTY_MISMATCH_DETECTED', {
+            orderId,
+            lnDeliveredQty: Number(quantity),
+            inspectionApprovedQty,
+            delta: deliveryInspectionDelta,
+          }, { category: 'QUALITY', severity: 'WARNING' });
+        }
       }
       countUpdated += 1;
     }

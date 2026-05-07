@@ -95,6 +95,7 @@ const {
   upsertConversionBatchService,
 } = require('../services/conversionCatalogService');
 const { processInforUpdateService } = require('../services/inforSyncService');
+const { handleCallableError } = require('../utils/errorHandler');
 const auditService = require('../services/auditService');
 const {
   saveAiContextConfigService,
@@ -185,13 +186,7 @@ const rejectTrackedProductFinal = functions.https.onCall(async (data, context) =
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
-    }
-    if (error?.message === 'ALREADY_REJECTED') {
-      throw new functions.https.HttpsError('failed-precondition', 'Product is al definitief afgekeurd.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -241,9 +236,6 @@ const tempRejectTrackedProduct = functions.https.onCall(async (data, context) =>
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
-    }
     const rawMessage = String(error?.message || '').toLowerCase();
     if (rawMessage.includes('document path') || rawMessage.includes('document id') || rawMessage.includes('invalid query')) {
       throw new functions.https.HttpsError('invalid-argument', 'Ongeldig productId of documentpad voor annuleren.');
@@ -316,13 +308,7 @@ const advanceTrackedProduct = functions.https.onCall(async (data, context) => {
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
-    }
-    if (error?.message === 'INVALID_ADVANCE_TARGET') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige doeltransitie.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -368,10 +354,7 @@ const completeTrackedProductRepair = functions.https.onCall(async (data, context
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -420,13 +403,7 @@ const routeTrackedProductsToLossen = functions.https.onCall(async (data, context
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NO_PRODUCTS_TO_ROUTE') {
-      throw new functions.https.HttpsError('invalid-argument', 'Geen producten om te routeren.');
-    }
-    if (error?.message === 'NO_PRODUCTS_FOUND') {
-      throw new functions.https.HttpsError('not-found', 'Geen actieve trackingproducten gevonden om te routeren.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -484,25 +461,7 @@ const startWorkstationProductionRun = functions.https.onCall(async (data, contex
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
-    }
-    if (
-      error?.message === 'INVALID_WORKSTATION_START_PAYLOAD'
-      || error?.message === 'INVALID_LOT_FORMAT'
-      || error?.message === 'INVALID_LOT_SEQUENCE'
-      || error?.message === 'LOT_NUMBER_EXISTS'
-      || error?.message === 'LOT_MATCHES_ORDER_ID'
-    ) {
-      if (error?.message === 'LOT_NUMBER_EXISTS') {
-        throw new functions.https.HttpsError('invalid-argument', 'Lotnummer bestaat al in actieve productie.');
-      }
-      if (error?.message === 'LOT_MATCHES_ORDER_ID') {
-        throw new functions.https.HttpsError('invalid-argument', 'Lotnummer mag niet gelijk zijn aan ordernummer.');
-      }
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige startpayload voor productie-run.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -544,10 +503,7 @@ const toggleTrackedProductPause = functions.https.onCall(async (data, context) =
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -588,10 +544,7 @@ const markTrackedProductReminder = functions.https.onCall(async (data, context) 
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -640,10 +593,7 @@ const moveTrackedProductManual = functions.https.onCall(async (data, context) =>
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_TRACKED') {
-      throw new functions.https.HttpsError('not-found', `Geen tracking item gevonden voor ${productOrLotId}.`);
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -683,10 +633,7 @@ const archiveRejectedTrackedProduct = functions.https.onCall(async (data, contex
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -732,16 +679,7 @@ const archivePlanningOrder = functions.https.onCall(async (data, context) => {
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
-    }
-    if (error?.message === 'ACTIVE_PRODUCTS_REMAIN') {
-      throw new functions.https.HttpsError(
-        'failed-precondition',
-        'Er zijn nog actieve producten in productie. Archiveren is alleen mogelijk nadat het laatste product goedgekeurd is bij Eindinspectie.'
-      );
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -790,13 +728,7 @@ const completeTrackedProduct = functions.https.onCall(async (data, context) => {
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
-    }
-    if (error?.message === 'INVALID_FINISH_TYPE') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldig finishType.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -838,10 +770,7 @@ const cancelTrackedProduction = functions.https.onCall(async (data, context) => 
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -892,10 +821,7 @@ const updatePlanningOrderPriority = functions.https.onCall(async (data, context)
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -940,13 +866,7 @@ const movePlanningOrder = functions.https.onCall(async (data, context) => {
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
-    }
-    if (error?.message === 'INVALID_MOVE_TARGET') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldig verplaatsingsdoel.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -985,10 +905,7 @@ const retrievePlanningOrder = functions.https.onCall(async (data, context) => {
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1027,10 +944,7 @@ const togglePlanningOrderHold = functions.https.onCall(async (data, context) => 
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1092,10 +1006,7 @@ const updatePlanningOrderDetails = functions.https.onCall(async (data, context) 
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1136,13 +1047,7 @@ const patchPlanningOrderMetadata = functions.https.onCall(async (data, context) 
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
-    }
-    if (error?.message === 'INVALID_PATCH_PAYLOAD' || error?.message === 'INVALID_PATCH_QUANTITY') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige planning patch payload.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1194,16 +1099,7 @@ const assignOverproduction = functions.https.onCall(async (data, context) => {
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_TARGET_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Doelorder niet gevonden.');
-    }
-    if (error?.message === 'NOT_FOUND_OVERPRODUCTION_PRODUCTS') {
-      throw new functions.https.HttpsError('not-found', 'Geen actieve overproduction-producten gevonden.');
-    }
-    if (error?.message === 'INVALID_OVERPRODUCTION_PAYLOAD') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige overproduction payload.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1244,10 +1140,7 @@ const cancelPlanningOrder = functions.https.onCall(async (data, context) => {
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1331,10 +1224,7 @@ const removePersonnelAssignment = functions.https.onCall(async (data, context) =
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ASSIGNMENT') {
-      throw new functions.https.HttpsError('not-found', 'Toewijzing niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1417,10 +1307,7 @@ const saveOccupancyAssignments = functions.https.onCall(async (data, context) =>
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'INVALID_OCCUPANCY_RECORDS') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige occupancy records.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1450,10 +1337,7 @@ const deleteOccupancyAssignments = functions.https.onCall(async (data, context) 
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'INVALID_OCCUPANCY_ASSIGNMENT_IDS') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige occupancy assignment ids.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1489,10 +1373,7 @@ const savePersonnelRecord = functions.https.onCall(async (data, context) => {
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'INVALID_PERSONNEL_PAYLOAD') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige personnel payload.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1525,10 +1406,7 @@ const createProductionMessages = functions.https.onCall(async (data, context) =>
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'INVALID_MESSAGES_PAYLOAD') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige messages payload.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1565,13 +1443,7 @@ const transitionPrintQueueJobStatus = functions.https.onCall(async (data, contex
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRINT_JOB') {
-      throw new functions.https.HttpsError('not-found', 'Printjob niet gevonden.');
-    }
-    if (error?.message === 'INVALID_PRINT_QUEUE_TRANSITION') {
-      throw new functions.https.HttpsError('failed-precondition', 'Ongeldige print queue statusovergang.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1604,10 +1476,7 @@ const requeuePrintQueueJob = functions.https.onCall(async (data, context) => {
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRINT_JOB') {
-      throw new functions.https.HttpsError('not-found', 'Printjob niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1640,10 +1509,7 @@ const deletePrintQueueJob = functions.https.onCall(async (data, context) => {
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRINT_JOB') {
-      throw new functions.https.HttpsError('not-found', 'Printjob niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1717,19 +1583,6 @@ const startProductionLots = functions.https.onCall(async (data, context) => {
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
-    }
-    if (error?.message === 'INVALID_START_PRODUCTION_LOTS_PAYLOAD') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige startpayload voor productie-lots.');
-    }
-    if (error?.message === 'LOT_NUMBER_EXISTS') {
-      throw new functions.https.HttpsError('invalid-argument', 'Lotnummer bestaat al in actieve productie.');
-    }
-    if (error?.message === 'LOT_MATCHES_ORDER_ID') {
-      throw new functions.https.HttpsError('invalid-argument', 'Lotnummer mag niet gelijk zijn aan ordernummer.');
-    }
-
     const rawMessage = String(error?.message || '').toLowerCase();
     if (
       rawMessage.includes('document path') ||
@@ -1740,9 +1593,7 @@ const startProductionLots = functions.https.onCall(async (data, context) => {
       throw new functions.https.HttpsError('invalid-argument', 'Ongeldig order documentpad of order-id bij productie-start.');
     }
 
-    if (error instanceof functions.https.HttpsError) {
-      throw error;
-    }
+    handleCallableError(error);
 
     console.error('startProductionLots onverwachte fout:', {
       message: error?.message || String(error),
@@ -1801,16 +1652,7 @@ const editTrackedProductLotNumber = functions.https.onCall(async (data, context)
 
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking.');
-    }
-    if (error?.message === 'LOT_NUMBER_EXISTS') {
-      throw new functions.https.HttpsError('already-exists', 'Lotnummer bestaat al in actieve tracking.');
-    }
-    if (error?.message === 'LOT_NUMBER_UNCHANGED' || error?.message === 'INVALID_LOT_EDIT_PAYLOAD') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige lotnummerwijziging payload.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1859,20 +1701,7 @@ const reassignTrackedProductOrder = functions.https.onCall(async (data, context)
 
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking of archief.');
-    }
-    if (error?.message === 'NOT_FOUND_TARGET_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Doelordernummer niet gevonden.');
-    }
-    if (
-      error?.message === 'INVALID_ORDER_REASSIGN_PAYLOAD' ||
-      error?.message === 'ORDER_ID_UNCHANGED' ||
-      error?.message === 'MISSING_SOURCE_ORDER'
-    ) {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige ordernummerwijziging payload.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1910,10 +1739,7 @@ const linkPlanningOrderProduct = functions.https.onCall(async (data, context) =>
     );
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Planning-order niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1953,13 +1779,7 @@ const createPlanningOrderManual = functions.https.onCall(async (data, context) =
     );
     return result;
   } catch (error) {
-    if (error?.message === 'ORDER_ALREADY_EXISTS') {
-      throw new functions.https.HttpsError('already-exists', 'Order bestaat al in planning.');
-    }
-    if (error?.message === 'INVALID_MANUAL_ORDER_PAYLOAD') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige payload voor handmatige order.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -1998,13 +1818,7 @@ const markMazakLabelsPrinted = functions.https.onCall(async (data, context) => {
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'NO_PRODUCTS_TO_UPDATE') {
-      throw new functions.https.HttpsError('invalid-argument', 'Geen producten opgegeven voor label update.');
-    }
-    if (error?.message === 'NO_PRODUCTS_FOUND') {
-      throw new functions.https.HttpsError('not-found', 'Geen actieve trackingproducten gevonden voor label update.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -2041,13 +1855,7 @@ const appendQcNote = functions.https.onCall(async (data, context) => {
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'INVALID_QC_NOTE_PAYLOAD') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldige payload voor QC-notitie.');
-    }
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden in tracking of archief.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -2078,13 +1886,7 @@ const reserveAutoLotNumberRange = functions.https.onCall(async (data, context) =
       dbCtx: resolveDbContext(),
     });
   } catch (error) {
-    if (error?.message === 'INVALID_LOT_RANGE_SIZE') {
-      throw new functions.https.HttpsError('invalid-argument', 'count moet tussen 1 en 200 liggen.');
-    }
-    if (error?.message === 'NO_UNIQUE_LOT_AVAILABLE') {
-      throw new functions.https.HttpsError('resource-exhausted', 'Geen uniek lotnummer beschikbaar voor deze machine/week.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -2114,10 +1916,7 @@ const addOrderDependency = functions.https.onCall(async (data, context) => {
         dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Order niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -2147,10 +1946,7 @@ const removeOrderDependency = functions.https.onCall(async (data, context) => {
         dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Order niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -2192,10 +1988,7 @@ const updateOrderPlannedDate = functions.https.onCall(async (data, context) => {
 
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Order niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -2237,10 +2030,7 @@ const updateOrderKanbanStatus = functions.https.onCall(async (data, context) => 
 
     return result;
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_ORDER') {
-      throw new functions.https.HttpsError('not-found', 'Order niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -2268,10 +2058,7 @@ const markReadyForNextStep = functions.https.onCall(async (data, context) => {
         dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -2301,10 +2088,7 @@ const startTrackedProductRepair = functions.https.onCall(async (data, context) =
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'NOT_FOUND_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Product niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -2350,19 +2134,7 @@ const restoreArchivedTrackedProduct = functions.https.onCall(async (data, contex
       dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'INVALID_PRODUCT_ID') {
-      throw new functions.https.HttpsError('invalid-argument', 'productId is ongeldig.');
-    }
-    if (error?.message === 'INVALID_RESTORE_ROUTE') {
-      throw new functions.https.HttpsError('invalid-argument', 'targetRoute is ongeldig.');
-    }
-    if (error?.message === 'NOT_FOUND_ARCHIVED_PRODUCT') {
-      throw new functions.https.HttpsError('not-found', 'Gearchiveerd product niet gevonden.');
-    }
-    if (error?.message === 'ALREADY_ACTIVE_IN_TRACKING') {
-      throw new functions.https.HttpsError('already-exists', 'Product is al actief in tracking.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -2426,13 +2198,7 @@ const resolveShopFloorIssue = functions.https.onCall(async (data, context) => {
         dbCtx: resolveDbContext(extractRds(data)),
     });
   } catch (error) {
-    if (error?.message === 'INVALID_ISSUE_TYPE') {
-      throw new functions.https.HttpsError('invalid-argument', 'Ongeldig issue type.');
-    }
-    if (error?.message === 'NOT_FOUND_ISSUE') {
-      throw new functions.https.HttpsError('not-found', 'Melding niet gevonden.');
-    }
-    throw error;
+    handleCallableError(error);
   }
 });
 
@@ -2687,6 +2453,51 @@ const executeAutomationRule = functions.https.onCall(async (data, context) => {
   auditService.logCallable(context, 'EXECUTE_AUTOMATION_RULE', { ruleId: rule?.id || 'unknown' }, { category: 'SYSTEM', severity: 'WARNING' });
 
   return executeAutomationRuleService(rule);
+});
+
+const updateProductionStandard = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
+  }
+
+  const userRole = await resolveUserRoleForContext(context);
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om productietijdstandaarden bij te werken.');
+  }
+
+  const standardId = clean(data?.standardId);
+  const standardMinutes = Number(data?.standardMinutes);
+  const autoLearning = (typeof data?.autoLearning === 'object' && data.autoLearning) || null;
+
+  if (!standardId) {
+    throw new functions.https.HttpsError('invalid-argument', 'standardId is verplicht.');
+  }
+  if (!Number.isFinite(standardMinutes) || standardMinutes <= 0) {
+    throw new functions.https.HttpsError('invalid-argument', 'standardMinutes moet een positief getal zijn.');
+  }
+
+  const { db } = require('../config/firebase');
+  const dbCtx = resolveDbContext();
+  const docRef = db.doc(`${dbCtx.standardsPath}/${standardId}`);
+
+  const before = await docRef.get().then((snap) => snap.exists ? snap.data() : null);
+
+  const patch = {
+    standardMinutes,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    ...(autoLearning ? { autoLearning } : {}),
+  };
+
+  await docRef.set(patch, { merge: true });
+
+  auditService.logCallable(
+    context,
+    'UPDATE_PRODUCTION_STANDARD',
+    { standardId, standardMinutes, before, after: patch },
+    { category: 'PRODUCTION', severity: 'INFO' }
+  );
+
+  return { ok: true, standardId, standardMinutes };
 });
 
 const saveProductRecord = functions.https.onCall(async (data, context) => {
@@ -3227,6 +3038,7 @@ module.exports = {
   submitAccountRequest,
   updateUserLanguage,
   executeAutomationRule,
+  updateProductionStandard,
   saveProductRecord,
   deleteProductRecord,
   verifyProductRecord,

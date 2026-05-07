@@ -27,6 +27,7 @@ import {
 import { normalizeMachine, PIPE_MACHINES } from "../../utils/hubHelpers";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useBackgroundTasks } from "../../contexts/BackgroundTaskContext";
 import TeamleaderDashboard from "../teamleader/TeamleaderDashboard";
 import TeamleaderEfficiencyView from "../teamleader/TeamleaderEfficiencyView";
 import PersonnelOccupancyView from "../personnel/PersonnelOccupancyView";
@@ -116,6 +117,23 @@ const TeamleaderHub = React.memo(({
   const [overproductionManualStation, setOverproductionManualStation] = useState("");
   const [assigningOverproduction, setAssigningOverproduction] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [exportModalType, setExportModalType] = useState("planning");
+  const [exportModalLocked, setExportModalLocked] = useState(false);
+  const [exportTrackingTaskId, setExportTrackingTaskId] = useState(null);
+  const [exportPreloadedTask, setExportPreloadedTask] = useState(null);
+
+  const { tasks } = useBackgroundTasks();
+
+  // Wanneer de getrackte taak klaar is en de modal gesloten is → heropen de modal
+  useEffect(() => {
+    if (!exportTrackingTaskId || showExportModal) return;
+    const task = tasks.find(t => t.id === exportTrackingTaskId);
+    if (task && (task.status === 'completed' || task.status === 'failed')) {
+      setExportPreloadedTask(task);
+      setShowExportModal(true);
+      setExportTrackingTaskId(null);
+    }
+  }, [tasks, exportTrackingTaskId, showExportModal]);
 
   // All Firestore real-time listeners extracted to useTeamleaderFirestore hook (Phase 4)
   const {
@@ -496,7 +514,11 @@ const TeamleaderHub = React.memo(({
               archivedHistoryProducts={archivedHistoryProducts}
               effectiveAllowedNorms={effectiveAllowedNorms}
               planningOrders={dataStore}
-              setShowExportModal={setShowExportModal}
+              onOpenMachineExport={(type) => {
+                setExportModalType(type || "planning");
+                setExportModalLocked(true);
+                setShowExportModal(true);
+              }}
             />
           ) : (
             <div className="h-full flex gap-6 overflow-hidden">
@@ -688,10 +710,20 @@ const TeamleaderHub = React.memo(({
       {showExportModal && (
         <TeamleaderExportModal
           isOpen={showExportModal}
-          onClose={() => setShowExportModal(false)}
+          onClose={() => {
+            setShowExportModal(false);
+            setExportModalLocked(false);
+            setExportPreloadedTask(null);
+          }}
           rawOrders={rawOrders}
           rawProducts={rawProducts}
           archivedProducts={[...archivedProducts, ...archivedHistoryProducts]}
+          initialExportType={exportModalType}
+          lockExportType={exportModalLocked}
+          onTaskCreated={(taskId) => {
+            setExportTrackingTaskId(taskId);
+          }}
+          preloadedTask={exportPreloadedTask}
         />
       )}
     </div>
