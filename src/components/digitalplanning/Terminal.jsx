@@ -35,6 +35,7 @@ import { normalizeMachine, getStartedCounterField } from "../../utils/hubHelpers
 import { getOrderFinishedUnits } from "../../utils/planningProgress";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 import { shouldHideBH18PlanningOrder } from "../../utils/terminalOrderFilters";
+
 import TerminalPlanningView from "./terminal/TerminalPlanningView";
 import TerminalProductionView from "./terminal/TerminalProductionView";
 import TerminalManualInput from "./terminal/TerminalManualInput";
@@ -422,19 +423,18 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
 
         const isWikkelToLossenSourceStation = ["BH12", "BH15", "BH17", "BH18"].includes(cleanStationId);
         if (isWikkelToLossenSourceStation) {
-          // Altijd dynamisch berekenen: plan - started_<machine>.
-          const realRemainingToStart = Math.max(0, planAtStation - actualStartedCount);
-          const remainingQueue = Math.max(0, planAtStation - startedAtStation, realRemainingToStart);
-
           const waitingOnlyMeta = waitingForLossenOnlyByOrder.get(orderId);
           // BH18: laat filteredOrders/shouldHideBH18PlanningOrder via readyForReturnMap oordelen.
           // Lot met step "Wacht op Lossen" is fysiek nog op BH18 en moet zichtbaar blijven.
+          const realRemainingToStart = Math.max(0, planAtStation - actualStartedCount);
+          const computedRemainingQueue = Math.max(0, planAtStation - startedAtStation, realRemainingToStart);
+          
           if (
             !isBH18 &&
             waitingOnlyMeta &&
             waitingOnlyMeta.totalActive > 0 &&
             waitingOnlyMeta.waitingForLossen === waitingOnlyMeta.totalActive &&
-            remainingQueue <= 0  // Verberg alleen als er ook geen resterende startvolgorde meer is
+            computedRemainingQueue <= 0  // Verberg alleen als er ook geen resterende startvolgorde meer is
           ) {
             return false;
           }
@@ -448,7 +448,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
             return stepUpper.includes("WACHT OP LOSSEN") || statusUpper.includes("WACHT OP LOSSEN") || statusUpper.includes("TE LOSSEN") || stepUpper === "LOSSEN";
           }).length;
 
-          if (!isBH18 && waitingForLossenCount > 0 && !hasStationActivity && remainingQueue <= 0) {
+          if (!isBH18 && waitingForLossenCount > 0 && !hasStationActivity && computedRemainingQueue <= 0) {
             return false;
           }
         }
@@ -468,6 +468,13 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     const map = {};
     allTracked.forEach((p) => {
       const oid = String(p.orderId || "").trim();
+      if (!oid) return;
+      // Alleen actieve (niet-afgeronde) producten tellen mee
+      const statusUpper = String(p.status || "").toUpperCase();
+      const stepUpper = String(p.currentStep || "").toUpperCase();
+      const isDone = ["COMPLETED", "FINISHED", "GEREED", "REJECTED", "AFKEUR"].includes(statusUpper)
+        || stepUpper === "FINISHED" || stepUpper === "REJECTED";
+      if (isDone) return;
       if (!map[oid]) map[oid] = 0;
       map[oid]++;
     });
@@ -639,11 +646,17 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       const isFullyProduced = quantity > 0 && producedAtOrder >= quantity;
       const stationWorkCompleted = quantity > 0 && remainingAtOrder <= 0;
 
-      // BH18 wikkelplanning gebruikt station-logica (plan + started counter),
-      // zodat legacy orders met afwijkende quantity niet blijven hangen.
-      // Alleen activity op BH18 zelf houdt de order zichtbaar; downstream activity niet.
-      if (isBH18 && !hasShortage && shouldHideBH18PlanningOrder({ remainingAtOrder, startedAtStation: bh18StartedCount, stationPlan, hasStationActivity })) {
-        return false;
+      // BH filter logic is now strictly based on To Do amount, so we don't need additional patches here.
+      const isWikkelToLossenSourceStation = ["BH12", "BH15", "BH17", "BH18"].includes(cleanStationId);
+      if (isWikkelToLossenSourceStation) {
+        const producedDisplay = Math.max(producedAtOrder, madeCount);
+        const rejectedCount = rejectedCountMap[orderId] || 0;
+        const effectiveGood = Math.max(producedDisplay - rejectedCount, 0);
+        const exactToDo = Math.max(0, stationPlan - effectiveGood);
+        
+        if (exactToDo <= 0) {
+          return false;
+        }
       }
 
       // LOSSEN 12/18 UITZONDERING: order blijft in de lijst zolang er nog actieve tracked
@@ -662,8 +675,9 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       // er kan nog work-in-progress zijn dat nog niet in produced/madeCount is verwerkt.
       if (!isBM01 && remainingAtOrder <= 0 && (stationWorkCompleted || isFullyProduced) && !hasActiveTracked && !hasStationActivity) return false;
 
-      // Volledig geproduceerd en niet meer actief
-      if (isFullyProduced && !["in_progress", "in production", "in productie"].includes(String(o.status || "").toLowerCase()) && !hasActiveTracked && !hasStationActivity) return false;
+      // Volledig geproduceerd zonder actieve lots → altijd verbergen, ook als status "In Productie" is.
+      // Dit vangt orders waarbij de station-counter ontbreekt maar madeCount >= quantity.
+      if (isFullyProduced && !hasActiveTracked && !hasStationActivity) return false;
 
       // Als een order opnieuw opengezet is via plan-verhoging (bijv. 10 -> 17),
       // moet deze zichtbaar blijven zolang er orderniveau resthoeveelheid is.

@@ -492,13 +492,13 @@ const OrderDetail = React.memo(({
     const statusUpper = String(product?.status || "").toUpperCase();
     const stepUpper = String(product?.currentStep || "").toUpperCase();
     const isClosed =
-      ["COMPLETED", "FINISHED", "GEREED", "REJECTED", "AFKEUR"].includes(statusUpper) ||
+      ["COMPLETED", "FINISHED", "GEREED", "REJECTED", "AFKEUR", "CANCELLED", "CANCELED", "DELETED"].includes(statusUpper) ||
       stepUpper === "FINISHED" ||
       stepUpper === "REJECTED";
     return !isClosed;
   }).length;
   // linkedStartedAmount = alle ooit gestarte lots, exclusief definitief afgekeurde/verwijderde.
-  // Basis voor "Te doen": plan - gestart (gestart = goed + wip + temp-afkeur, NIET definitieve afkeur).
+  // Basis voor "Te doen": plan - gestart (gestart = goed + wip + temp-afkeur, NIET definitieve afkeur of geannuleerd).
   const linkedStartedAmount = Array.from(
     new Set(
       orderProducts
@@ -509,6 +509,8 @@ const OrderDetail = React.memo(({
           const isDefinitivelyOut =
             statusUpper === "ARCHIVED_REJECTED" ||
             statusUpper === "DELETED" ||
+            statusUpper === "CANCELLED" ||
+            statusUpper === "CANCELED" ||
             (statusUpper === "REJECTED" && stepUpper === "REJECTED");
           return !isDefinitivelyOut;
         })
@@ -518,7 +520,10 @@ const OrderDetail = React.memo(({
   ).length;
   // startedAmount: als er live tracking data is, is die altijd betrouwbaarder dan
   // de stale started_<machine> Firestore-teller (die niet automatisch wordt bijgehouden).
-  const startedAmount = linkedStartedAmount > 0
+  // Als we lokale tracking data hebben (zelfs als deze volledig geannuleerd is),
+  // vertrouwen we op onze eigen tellers i.p.v. terug te vallen op LN.
+  const hasLocalTracking = orderProducts.length > 0;
+  const startedAmount = hasLocalTracking
     ? Math.max(linkedStartedAmount, liveStartedAmount)
     : Math.max(
         stationStartedAmount,
@@ -529,7 +534,7 @@ const OrderDetail = React.memo(({
   // producedAmount: als we live tracking hebben, is dat de bron van waarheid.
   // order.produced is een LN-import waarde die snel verouderd raakt en mag
   // de live telling niet overschrijven.
-  const producedAmount = linkedStartedAmount > 0
+  const producedAmount = hasLocalTracking
     ? trackedProducedAmount
     : getOrderFinishedUnits(order, { trackedFinishedCount: trackedProducedAmount });
   const rawInProcessFromCounters = Number((startedAmount - producedAmount).toFixed(2));

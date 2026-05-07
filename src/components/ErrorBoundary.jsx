@@ -1,6 +1,6 @@
 import React from 'react';
 import { withTranslation } from 'react-i18next';
-import { AlertTriangle, RefreshCw, Send, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Send, CheckCircle2, Loader2, Copy, Check } from 'lucide-react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth, logActivity } from '../config/firebase';
 import { PATHS } from '../config/dbPaths';
@@ -12,8 +12,20 @@ class ErrorBoundary extends React.Component {
       hasError: false, 
       error: null, 
       errorInfo: null,
-      reportStatus: 'idle' // 'idle' | 'sending' | 'success' | 'error'
+      reportStatus: 'idle', // 'idle' | 'sending' | 'success' | 'error'
+      copied: false
     };
+  }
+
+  handleCopyStack = () => {
+    const fullError = `Message: ${this.state.error?.message}\n\nStack:\n${this.state.error?.stack}\n\nComponent Stack:\n${this.state.errorInfo?.componentStack}`;
+    
+    navigator.clipboard.writeText(fullError).then(() => {
+      this.setState({ copied: true });
+      setTimeout(() => this.setState({ copied: false }), 2000);
+    }).catch(err => {
+      console.error('Copy failed', err);
+    });
   }
 
   static getDerivedStateFromError(error) {
@@ -138,8 +150,24 @@ class ErrorBoundary extends React.Component {
             </div>
             {this.state.error && import.meta.env.DEV && (
               <div className="mt-6 text-left">
-                <details className="text-xs text-slate-400 cursor-pointer">
-                  <summary>{t('errorBoundary.stacktrace', 'Toon Stack Trace (Dev Only)')}</summary>
+                <details className="text-xs text-slate-400 group">
+                  <summary className="cursor-pointer flex items-center justify-between">
+                    <span>{t('errorBoundary.stacktrace', 'Toon Stack Trace (Dev Only)')}</span>
+                    <button 
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.handleCopyStack();
+                      }}
+                      className="ml-2 p-1 hover:bg-slate-100 rounded-md transition-colors flex items-center gap-1 text-[10px] font-bold text-blue-600"
+                    >
+                      {this.state.copied ? (
+                        <><Check size={12} /> {t('common.copied', 'Gekopieerd')}</>
+                      ) : (
+                        <><Copy size={12} /> {t('common.copy', 'Kopieer Stack')}</>
+                      )}
+                    </button>
+                  </summary>
                   <pre className="mt-2 p-4 bg-slate-900 text-red-400 rounded-xl overflow-auto max-h-48 font-mono text-[10px]">
                     {this.state.errorInfo?.componentStack}
                   </pre>

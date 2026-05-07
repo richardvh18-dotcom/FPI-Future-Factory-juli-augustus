@@ -91,6 +91,7 @@ const {
   submitAccountRequest,
   updateUserLanguage,
   executeAutomationRule,
+  updateProductionStandard,
   saveProductRecord,
   deleteProductRecord,
   verifyProductRecord,
@@ -1253,6 +1254,17 @@ exports.importPlanningFromWebhook = functions.https.onRequest(async (req, res) =
       { merge: true }
     );
 
+    auditService.logSystem('IMPORT_PLANNING_WEBHOOK', {
+      provider,
+      fileName,
+      idempotencyKey,
+      ordersFound: orders.length,
+      imported: result.imported,
+      skipped: result.skipped,
+      skippedByMachine: result.skippedByMachine,
+      allowedMachines: Array.from(allowedMachines),
+    }, { category: 'PLANNING', severity: 'INFO' });
+
     return res.status(200).json({
       ok: true,
       imported: result.imported,
@@ -1339,6 +1351,17 @@ exports.importPlanningFromStorage = functions.storage.object().onFinalize(async 
       },
       { merge: true }
     );
+
+    auditService.logSystem('IMPORT_PLANNING_STORAGE', {
+      fileName: objectName,
+      bucket: bucketName,
+      idempotencyKey,
+      ordersFound: orders.length,
+      imported: result.imported,
+      skipped: result.skipped,
+      skippedByMachine: result.skippedByMachine,
+      allowedMachines: Array.from(allowedMachines),
+    }, { category: 'PLANNING', severity: 'INFO' });
 
     console.log('Storage import completed:', objectName, result);
     return null;
@@ -1585,6 +1608,7 @@ exports.clearPasswordChangeFlag = clearPasswordChangeFlag;
 exports.submitAccountRequest = submitAccountRequest;
 exports.updateUserLanguage = updateUserLanguage;
 exports.executeAutomationRule = executeAutomationRule;
+exports.updateProductionStandard = updateProductionStandard;
 exports.saveProductRecord = saveProductRecord;
 exports.deleteProductRecord = deleteProductRecord;
 exports.verifyProductRecord = verifyProductRecord;
@@ -1606,6 +1630,10 @@ exports.aiReactiveWatchdogTrackedScoped = aiReactiveWatchdogTrackedScoped;
 exports.aiReactiveWatchdogTrackedLegacy = aiReactiveWatchdogTrackedLegacy;
 exports.aiNightlyBottleneckPlanner = aiNightlyBottleneckPlanner;
 exports.aiImportConsolidator = aiImportConsolidator;
+
+// Export Callables
+const { requestExportTask } = require('./src/callables/exportCallables');
+exports.requestExportTask = requestExportTask;
 
 /**
  * Backend AI proxy: voorkomt dat API keys in de frontend staan.

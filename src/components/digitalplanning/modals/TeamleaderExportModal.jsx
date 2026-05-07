@@ -1,14 +1,53 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { X, FileSpreadsheet, FileText, Download, Info, CheckCircle2, Factory, CalendarRange, ListTodo } from "lucide-react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
+import { X, FileSpreadsheet, FileText, Download, Info, CheckCircle2, Factory, CalendarRange, ListTodo, Search, Loader2 } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 import { format, formatDistanceStrict } from "date-fns";
 import { nl } from "date-fns/locale";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "../../../config/firebase";
+import { useBackgroundTasks } from "../../../contexts/BackgroundTaskContext";
 
-export default function TeamleaderExportModal({ isOpen, onClose, rawOrders = [], rawProducts = [], archivedProducts = [] }) {
-  const [exportType, setExportType] = useState("planning"); // 'planning' of 'lotnummers'
+const safeToDate = (value) => {
+  if (!value) return null;
+
+  if (typeof value?.toDate === "function") {
+    const converted = value.toDate();
+    return Number.isFinite(converted?.getTime?.()) ? converted : null;
+  }
+
+  if (typeof value === "object" && Number.isFinite(value.seconds)) {
+    const converted = new Date(value.seconds * 1000);
+    return Number.isFinite(converted.getTime()) ? converted : null;
+  }
+
+  const converted = new Date(value);
+  return Number.isFinite(converted.getTime()) ? converted : null;
+};
+
+const safeFormatDate = (value, pattern, fallback = "") => {
+  const dateObj = safeToDate(value);
+  if (!dateObj) return fallback;
+  return format(dateObj, pattern);
+};
+
+export default function TeamleaderExportModal({
+  isOpen,
+  onClose,
+  rawOrders = [],
+  rawProducts = [],
+  archivedProducts = [],
+  initialExportType = "planning",
+  lockExportType = false,
+  onTaskCreated = null,
+  preloadedTask = null,
+}) {
+  const [exportType, setExportType] = useState("planning"); // 'planning', 'lotnummers' of 'ln_compare'
   const [selectedMachine, setSelectedMachine] = useState("Alle machines");
+  const [isRequestingExport, setIsRequestingExport] = useState(false);
+  const [activeTaskId, setActiveTaskId] = useState(null);
+  const { tasks, downloadTaskResult } = useBackgroundTasks();
 
   // Planning Filters (Origineel)
   const [orderStatusFilter, setOrderStatusFilter] = useState("lopend");
@@ -16,6 +55,21 @@ export default function TeamleaderExportModal({ isOpen, onClose, rawOrders = [],
   const [singleDate, setSingleDate] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (["planning", "lotnummers", "ln_compare"].includes(initialExportType)) {
+      setExportType(initialExportType);
+    } else {
+      setExportType("planning");
+    }
+    // Reset task state when modal (re)opens, unless we have a preloadedTask
+    if (!preloadedTask) setActiveTaskId(null);
+  }, [initialExportType, isOpen, preloadedTask]);
+
+  // Haal actieve taak op uit de task lijst
+  const activeTask = preloadedTask ||
+    (activeTaskId ? tasks.find(t => t.id === activeTaskId) : null);
 
   // 1. Ontdubbelen en meest definitieve staat bepalen voor lotnummers
   const allProducts = useMemo(() => {
@@ -144,10 +198,7 @@ export default function TeamleaderExportModal({ isOpen, onClose, rawOrders = [],
   const planningExportData = useMemo(() => {
     const getDeliveryDate = (order) => {
       const d = order.deliveryDate || order.plannedDeliveryDate || order.dueDate || order.dateObj;
-      if (!d) return null;
-      if (typeof d.toDate === 'function') return d.toDate();
-      const parsed = new Date(d);
-      return isNaN(parsed.getTime()) ? null : parsed;
+      return safeToDate(d);
     };
 
     const machineOrders = allOrders.filter(o => {
@@ -194,7 +245,7 @@ export default function TeamleaderExportModal({ isOpen, onClose, rawOrders = [],
 
       const isGeheelGereed = gereedCount >= planQty && inBehandelingCount === 0 && planQty > 0;
       const deliveryDateObj = getDeliveryDate(order);
-      const datumLabel = deliveryDateObj ? format(deliveryDateObj, 'dd-MM-yyyy') : (order.date || '');
+      const datumLabel = safeFormatDate(deliveryDateObj, 'dd-MM-yyyy', order.date || '');
       const teDoenCount = Math.max(0, planQty - gereedCount);
 
       let huidigeStap = "";
@@ -226,11 +277,13 @@ export default function TeamleaderExportModal({ isOpen, onClose, rawOrders = [],
 
       if (dateFilterType === "single" && singleDate) {
         if (!order.deliveryDateObj) return false;
-        const d = format(order.deliveryDateObj, 'yyyy-MM-dd');
+        const d = safeFormatDate(order.deliveryDateObj, 'yyyy-MM-dd');
+        if (!d) return false;
         if (d !== singleDate) return false;
       } else if (dateFilterType === "range" && startDate && endDate) {
         if (!order.deliveryDateObj) return false;
-        const d = format(order.deliveryDateObj, 'yyyy-MM-dd');
+        const d = safeFormatDate(order.deliveryDateObj, 'yyyy-MM-dd');
+        if (!d) return false;
         if (d < startDate || d > endDate) return false;
       }
       return true;
@@ -286,7 +339,79 @@ export default function TeamleaderExportModal({ isOpen, onClose, rawOrders = [],
   }, [activeProducts, selectedMachine]);
 
   // 7. Active Data Array
-  const currentData = exportType === "planning" ? planningExportData : lotnummerExportData;
+  const currentData = useMemo(() => {
+    if (exportType === "planning") return planningExportData;
+    if (exportType === "lotnummers") return lotnummerExportData;
+    
+    // LN Vergelijking Export (Nieuw)
+    // We maken een platte lijst die lijkt op de LN export tisfc140101200
+    const filteredOrders = allOrders.filter(o => {
+        if (selectedMachine === "Alle machines") return true;
+        let m = String(o.machine || "").toUpperCase().replace(/\s/g, "");
+        if (m.startsWith("40")) m = m.slice(2);
+        return m === selectedMachine;
+    });
+
+    return filteredOrders.map(order => {
+        const orderId = String(order.orderId || "").trim().toUpperCase();
+        const orderProducts = allProducts.filter(p => String(p.orderId || "").trim().toUpperCase() === orderId);
+        const rawDate = order.deliveryDate ?? order.dateObj;
+        
+        const gereedCount = orderProducts.filter(p => {
+            const stepUpper = String(p.currentStep || "").toUpperCase();
+            const statusUpper = String(p.status || "").toUpperCase();
+            const isArchived = !!(p.archived || p._archived || p.archivedAt);
+            return isArchived || statusUpper === "COMPLETED" || statusUpper === "GEREED" || stepUpper === "FINISHED";
+        }).length;
+
+        // Formaat matcht tisfc140... kolom posities (ongeveer)
+        return {
+            "Ordernummer": orderId,
+          "Datum": safeFormatDate(rawDate, 'yyyy-MM-dd HH:mm:ss', ''),
+            "Afdeling": order.machine || "",
+            "Status": order.isGeheelGereed ? "Gereed" : "Actief",
+            "Artikel": order.itemCode || order.articleId || "",
+            "Omschrijving": order.item || order.description || "",
+            "Plan Aantal": Number(order.plan || order.quantity || 0),
+            "Gemaakt Aantal": gereedCount,
+            "Totaal Gemaakt": gereedCount,
+            "Laatste Sync": order.lastSync || ""
+        };
+    });
+  }, [exportType, planningExportData, lotnummerExportData, allOrders, allProducts, selectedMachine]);
+
+  const handleExportCloud = async () => {
+    setIsRequestingExport(true);
+    try {
+      const requestExportTask = httpsCallable(functions, 'requestExportTask');
+      const result = await requestExportTask({
+        exportType,
+        taskName: `Export ${exportType} voor ${selectedMachine}`,
+        filter: {
+          selectedMachine,
+          orderStatusFilter,
+          dateFilterType,
+          singleDate,
+          startDate,
+          endDate
+        }
+      });
+      const taskId = result?.data?.taskId;
+      if (taskId) {
+        setActiveTaskId(taskId);
+        if (onTaskCreated) onTaskCreated(taskId);
+      } else {
+        // Geen taskId → fallback
+        handleExportExcel();
+      }
+    } catch (err) {
+      console.error("Cloud export error:", err);
+      alert("Cloud export niet beschikbaar. We starten direct lokale export.");
+      handleExportExcel();
+    } finally {
+      setIsRequestingExport(false);
+    }
+  };
 
   const handleExportExcel = () => {
     if (exportType === "planning") {
@@ -319,11 +444,17 @@ export default function TeamleaderExportModal({ isOpen, onClose, rawOrders = [],
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Planning");
       XLSX.writeFile(wb, `Planning_Export_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
-    } else {
+    } else if (exportType === "lotnummers") {
       const ws = XLSX.utils.json_to_sheet(lotnummerExportData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Lotnummers");
       XLSX.writeFile(wb, `Lotnummer_Export_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
+    } else {
+      // LN Compare Export
+      const ws = XLSX.utils.json_to_sheet(currentData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "LN_Comparison");
+      XLSX.writeFile(wb, `LN_Vergelijking_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
     }
     onClose();
   };
@@ -420,14 +551,19 @@ export default function TeamleaderExportModal({ isOpen, onClose, rawOrders = [],
 
         <div className="p-6 space-y-6">
           {/* Export Type Toggle */}
-          <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-2">
-            <button onClick={() => setExportType("planning")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'planning' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
-              <CalendarRange size={16} /> Planning
-            </button>
-            <button onClick={() => setExportType("lotnummers")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'lotnummers' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
-              <ListTodo size={16} /> Lotnummers
-            </button>
-          </div>
+          {!lockExportType && (
+            <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-2">
+              <button onClick={() => setExportType("planning")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'planning' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
+                <CalendarRange size={16} /> Planning
+              </button>
+              <button onClick={() => setExportType("lotnummers")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'lotnummers' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
+                <ListTodo size={16} /> Lotnummers
+              </button>
+              <button onClick={() => setExportType("ln_compare")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'ln_compare' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
+                <Search size={16} /> Vergelijking
+              </button>
+            </div>
+          )}
 
           {/* Filter Dropdown */}
           <div>
@@ -477,29 +613,96 @@ export default function TeamleaderExportModal({ isOpen, onClose, rawOrders = [],
                 )}
               </div>
             </div>
-          ) : (
+          ) : exportType === "lotnummers" ? (
             <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 flex gap-3 items-start animate-in slide-in-from-right-2 duration-300">
               <Info className="text-blue-500 shrink-0 mt-0.5" size={20} />
               <p className="text-xs text-blue-800 leading-relaxed font-medium">
                 Deze export toont de <strong>fysieke werkvoorraad</strong> op de vloer. Je ziet direct waar actieve lotnummers liggen en hoelang ze daar al verblijven. Vervangt de oude To Do lijst.
               </p>
             </div>
+          ) : (
+            <div className="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 flex gap-3 items-start animate-in slide-in-from-right-2 duration-300">
+                <Search className="text-emerald-500 shrink-0 mt-0.5" size={20} />
+                <p className="text-xs text-emerald-800 leading-relaxed font-medium">
+                    Deze export genereert een lijst met alle orders, hun status en het <strong>werkelijk aantal gereedgemelde producten</strong>. Ideaal om naast een LN dump te leggen om verschillen op te sporen.
+                </p>
+            </div>
           )}
 
           {/* Actieknoppen & Teller */}
           <div className="pt-2 border-t border-slate-100">
-            <div className="flex items-center justify-between mb-4 mt-2">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resultaat</span>
-              <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${currentData.length > 0 ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-slate-100 text-slate-400"}`}>
-                <CheckCircle2 size={12} />
-                {currentData.length} item(s)
-              </span>
-            </div>
-            
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button disabled={currentData.length === 0} onClick={handleExportExcel} className="flex-1 flex items-center justify-center gap-2 py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all shadow-md active:scale-95"><FileSpreadsheet size={16} /> Excel</button>
-              <button disabled={currentData.length === 0} onClick={handleExportPDF} className="flex-1 flex items-center justify-center gap-2 py-4 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all shadow-md active:scale-95"><FileText size={16} /> PDF</button>
-            </div>
+
+            {/* === VOORTGANGSSTATUS WANNEER CLOUD EXPORT LOOPT === */}
+            {activeTask ? (
+              <div className="flex flex-col gap-4">
+                {activeTask.status === 'processing' || activeTask.status === 'pending' ? (
+                  <div className="flex flex-col items-center gap-4 py-6 px-4 bg-blue-50 rounded-2xl border border-blue-200">
+                    <Loader2 className="animate-spin text-blue-500" size={40} />
+                    <div className="text-center">
+                      <p className="font-black text-blue-800 text-sm uppercase tracking-widest">Export wordt aangemaakt</p>
+                      <p className="text-xs text-blue-500 mt-1">Dit kan even duren. Je kunt dit venster sluiten — we melden het als het klaar is.</p>
+                    </div>
+                    <button
+                      onClick={onClose}
+                      className="text-xs text-blue-400 hover:text-blue-600 underline"
+                    >
+                      Naar achtergrond sturen
+                    </button>
+                  </div>
+                ) : activeTask.status === 'completed' ? (
+                  <div className="flex flex-col items-center gap-4 py-6 px-4 bg-emerald-50 rounded-2xl border border-emerald-200">
+                    <CheckCircle2 className="text-emerald-500" size={40} />
+                    <div className="text-center">
+                      <p className="font-black text-emerald-800 text-sm uppercase tracking-widest">Export klaar!</p>
+                      <p className="text-xs text-emerald-600 mt-1">{activeTask.fileName || 'export.xlsx'}</p>
+                    </div>
+                    <button
+                      onClick={() => { downloadTaskResult(activeTask); onClose(); }}
+                      className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs rounded-2xl transition-all shadow-lg shadow-emerald-200 active:scale-95"
+                    >
+                      <Download size={18} /> Bestand downloaden
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-4 py-6 px-4 bg-red-50 rounded-2xl border border-red-200">
+                    <p className="font-black text-red-700 text-sm uppercase tracking-widest">Export mislukt</p>
+                    <p className="text-xs text-red-500">{activeTask.error || 'Onbekende fout'}</p>
+                    <button
+                      onClick={() => setActiveTaskId(null)}
+                      className="text-xs text-red-400 hover:text-red-600 underline"
+                    >
+                      Opnieuw proberen
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between mb-4 mt-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resultaat</span>
+                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${currentData.length > 0 ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-slate-100 text-slate-400"}`}>
+                    <CheckCircle2 size={12} />
+                    {currentData.length} item(s)
+                  </span>
+                </div>
+                
+                <div className="flex flex-col gap-3">
+                  <button 
+                    disabled={currentData.length === 0 || isRequestingExport} 
+                    onClick={handleExportCloud} 
+                    className="w-full flex items-center justify-center gap-2 py-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-xs rounded-2xl transition-all shadow-lg shadow-blue-200 active:scale-95"
+                  >
+                    {isRequestingExport ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />} 
+                    Achtergrond Export (Cloud)
+                  </button>
+                  
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <button disabled={currentData.length === 0} onClick={handleExportExcel} className="flex-1 flex items-center justify-center gap-2 py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all shadow-md active:scale-95"><FileSpreadsheet size={16} /> Direct Excel</button>
+                    <button disabled={currentData.length === 0} onClick={handleExportPDF} className="flex-1 flex items-center justify-center gap-2 py-4 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all shadow-md active:scale-95"><FileText size={16} /> PDF</button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
           
         </div>

@@ -374,6 +374,13 @@ service cloud.firestore {
       allow write: if canManagePlanningSettings() || isSignedIn();
     }
 
+    // Achtergrond exports: gebruiker mag alleen eigen taken lezen.
+    // Schrijven gebeurt via backend (Admin SDK / callable), niet direct vanuit de client.
+    match /future-factory/exports/tasks/{taskId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
     match /future-factory/logs/email_logs/{logId} {
       allow read: if isAdmin();
       allow write: if false; // Alleen backend via Cloud Functions

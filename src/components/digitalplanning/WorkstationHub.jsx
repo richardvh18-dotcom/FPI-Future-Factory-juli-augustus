@@ -1579,44 +1579,16 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           const activityMetaForOrder = stationActivityByOrder.get(orderIdForActivity);
           const hasStationActivity = (activityMetaForOrder?.active || 0) > 0;
 
-          // Wikkelstations BH12/15/17/18: orders die alleen nog op
-          // "Wacht op Lossen" staan en geen resterende queue meer hebben,
-          // horen niet meer in de werkplanning van het bronstation.
-          if (isWikkelToLossenSourceStation && !isBH18) {
-            const waitingOnlyMeta = waitingForLossenOnlyByOrder.get(orderIdForActivity);
+          // Wikkelstations (BH-machines): Orders filteren op basis van "To do".
+          // Als de "To do" op 0 staat, moet de order uit de planning van de BH machine 
+          // gefilterd worden. Ongeacht de staat van de rest (stroomafwaarts).
+          if (isWikkelToLossenSourceStation) {
+            const producedAtOrder = toFiniteNumber(o.produced);
+            // actualStartedCount excludes rejected products in WorkstationHub
+            const effectiveGood = Math.max(producedAtOrder, actualStartedCount);
+            const exactToDo = Math.max(0, planAtStation - effectiveGood);
 
-            const rawToDo = o.toDoQty;
-            const hasExplicitToDo = !(rawToDo === null || rawToDo === undefined || String(rawToDo).trim() === "");
-            const explicitTodo = hasExplicitToDo ? toFiniteNumber(rawToDo) : null;
-            const remainingQueue = hasExplicitToDo
-              ? Math.max(0, explicitTodo)
-              : Math.max(0, planAtStation - effectiveStarted);
-
-            if (
-              waitingOnlyMeta &&
-              waitingOnlyMeta.totalActive > 0 &&
-              waitingOnlyMeta.waitingForLossen === waitingOnlyMeta.totalActive &&
-              remainingQueue <= 0  // Verberg alleen als er ook geen resterende startvolgorde meer is
-            ) {
-              return false;
-            }
-
-            const waitingForLossenCount = rawProducts.filter((p) => {
-              if (String(p?.orderId || "").trim() !== orderIdForActivity) return false;
-              const stationNorm = normalizeMachine(p?.originMachine || p?.machine || p?.currentStation || "");
-              if (stationNorm !== currentStationNorm) return false;
-              const stepUpper = String(p?.currentStep || "").toUpperCase();
-              const statusUpper = String(p?.status || "").toUpperCase();
-              return stepUpper.includes("WACHT OP LOSSEN") || statusUpper.includes("WACHT OP LOSSEN") || statusUpper.includes("TE LOSSEN") || stepUpper === "LOSSEN";
-            }).length;
-
-            if (waitingForLossenCount > 0 && !hasStationActivity && remainingQueue <= 0) {
-              return false;
-            }
-
-            // Verberg ook orders die voor dit wikkelstation functioneel klaar zijn,
-            // zelfs als de order downstream (bijv. Nabewerking) nog actief is.
-            if (!hasStationActivity && remainingQueue <= 0) {
+            if (exactToDo <= 0) {
               return false;
             }
           }

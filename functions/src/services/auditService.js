@@ -118,4 +118,55 @@ function logCallableSecurityDenied(context, action, reason, details = {}) {
   );
 }
 
-module.exports = { logAction, logCallable, logCallableSecurityDenied };
+/**
+ * Captures a lightweight snapshot of a Firestore DocumentReference for
+ * use as a before/after value in audit log details.
+ *
+ * Returns the plain `data()` object if the document exists, or null.
+ * Never throws — a snapshot failure must not block a production operation.
+ *
+ * @param {FirebaseFirestore.DocumentReference} docRef
+ * @returns {Promise<object|null>}
+ */
+async function captureSnapshot(docRef) {
+  try {
+    const snap = await docRef.get();
+    return snap.exists ? snap.data() : null;
+  } catch (err) {
+    console.error('[auditService] captureSnapshot failed:', err?.message || err);
+    return null;
+  }
+}
+
+/**
+ * Fire-and-forget system-level audit helper for use outside onCall handlers
+ * (e.g. Firestore triggers, Storage triggers, scheduled functions, webhooks).
+ * Uses 'system' as the actor unless an explicit userId is supplied.
+ *
+ * @param {string}  action
+ * @param {object}  [details={}]
+ * @param {object}  [options={}]
+ * @param {string}  [options.userId='system']
+ * @param {string}  [options.category='SYSTEM']
+ * @param {'INFO'|'WARNING'|'CRITICAL'} [options.severity='INFO']
+ */
+function logSystem(action, details = {}, options = {}) {
+  const {
+    userId = 'system',
+    category = 'SYSTEM',
+    severity = 'INFO',
+  } = options;
+
+  logAction(userId, action, details, { category, severity })
+    .catch((err) => {
+      console.error(`[auditService] Failed to write system audit log for action "${action}":`, err?.message || err);
+    });
+}
+
+module.exports = {
+  logAction,
+  logCallable,
+  logCallableSecurityDenied,
+  logSystem,
+  captureSnapshot,
+};

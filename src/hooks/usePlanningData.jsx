@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
-import { db } from "../config/firebase";
-import { collection, query, orderBy, onSnapshot, limit } from "firebase/firestore";
-import { PATHS } from "../config/dbPaths"; // Importeer de centrale paden
+import { subscribePlanningOrders } from "../repositories/planningRepository";
+import { normalizeOrderStatus, isActivePlanningOrder } from "../utils/trackingHelpers";
 
 /**
  * usePlanningData - Haalt de planning op uit de nieuwe root-structuur.
@@ -13,35 +12,12 @@ export const usePlanningData = () => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Gebruik het nieuwe pad: /future-factory/production/digital_planning
-    const planningRef = collection(db, ...PATHS.PLANNING);
-    const maxOrders = Math.max(10, Number(import.meta.env.VITE_PLANNING_LIMIT || 50));
-    const q = query(planningRef, orderBy("deliveryDate", "asc"), limit(maxOrders));
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const normalizeStatus = (status) => String(status || "").toLowerCase().trim();
-        const isRunningStatus = (status) => {
-          const s = normalizeStatus(status);
-          return [
-            "in_progress",
-            "in production",
-            "active",
-            "post_processing",
-            "to_unload",
-            "unloading",
-            "to_inspect",
-            "held_qc",
-            "on_hold",
-            "delegated",
-          ].includes(s);
-        };
-
-        const orderList = snapshot.docs.map((doc) => {
+    const unsubscribe = subscribePlanningOrders(
+      (docs) => {
+        const orderList = docs.map((doc) => {
           const data = doc.data();
           const hidden = Boolean(data.planningHidden);
-          const keepVisible = !hidden || isRunningStatus(data.status);
+          const keepVisible = !hidden || isActivePlanningOrder(data);
 
           if (!keepVisible) return null;
 
@@ -61,7 +37,7 @@ export const usePlanningData = () => {
         console.error("Planning database error (Check Rules):", err);
         setError(err);
         setLoading(false);
-      }
+      },
     );
 
     return () => unsubscribe();

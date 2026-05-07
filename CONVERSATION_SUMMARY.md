@@ -1,3 +1,66 @@
+## Update sessie 150 (BH18 tijdelijke filtering, versie bump en productie deploy)
+
+**Datum:** 7 mei 2026 | **Branch:** `FPiFF-18-12-May`
+
+### Gebruikersverzoeken & Doelen:
+- BH18 workstation-lijst corrigeren: alleen relevante lopende orders tonen en specifiek twee foutieve orders tijdelijk verbergen.
+- Productie-deploy uitvoeren naar Vercel.
+- Versie bumpen voor automatische client refresh.
+- Deze context expliciet opslaan voor snelle hervatting in de volgende sessie.
+
+### Uitgevoerde acties:
+**1. Tijdelijke BH18 workaround (`Terminal.jsx`)**
+- Tijdelijke blacklist toegevoegd in de workstation filtering:
+    - `N20025138`
+    - `N20024916`
+- Doel: operationeel rust creëren terwijl de structurele BH18-filterlogica later definitief wordt hersteld.
+
+**2. Regressie-herstel op filterlogica (`Terminal.jsx`)**
+- Meerdere agressieve hide-regels zijn teruggedraaid omdat daardoor ook legitieme lopende orders verdwenen.
+- Huidige staat is bewust conservatief gehouden om false positives te beperken.
+
+**3. Productie deploy + versie bump**
+- Vercel productie deploy uitgevoerd met build-env:
+    - `VITE_APP_VERSION=0.1.5`
+- Versie bijgewerkt in:
+    - `public/version.json` → `0.1.5`
+    - `package.json` → `0.1.5`
+- Productie alias actief: `https://future-factory.vercel.app`
+
+**4. Vastlegging prioriteit voor vervolg**
+- Repo memory aangemaakt met prio-item om dit als eerste op te pakken:
+    - `memories/repo/bh18-conversie-prio.md`
+
+### Eerstvolgende prioriteit (opstartpunt volgende sessie):
+- Tijdelijke blacklist verwijderen.
+- Definitieve BH18-regel implementeren op station-specifieke waarheid
+    (`currentStation/currentStep + started_BH18 + madeCount`), zonder false positives.
+- Kaartteller en filter op exact dezelfde databron laten draaien.
+
+## Update sessie 149 (Handmatige To Do & Sync Exclusie)
+
+**Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
+
+### Gebruikersverzoeken & Doelen:
+- **Sync Exclusie:** Mogelijkheid om specifieke orders uit te sluiten van de "Slimme Sync" (Teamleader koppeling).
+- **Handmatige To Do:** Aanpassen van de "To do" aantallen in de volledige lijst (Teamleader overzicht), ook als de synchronisatie nog actief is.
+
+### Uitgevoerde acties:
+**1. Slimme Sync Controle (`OrderDetail.jsx` & Backend)**
+- Knoppen toegevoegd ("Sync Opnemen" / "Sync Uitsluiten") om handmatig de synchronisatie-status van een order te beheren.
+- Backend Cloud Functions bijgewerkt om deze metadata velden (`smartSyncExcluded` / `smartSyncIncluded`) toe te staan.
+
+**2. Handmatige To Do Wijziging (`OrderDetail.jsx`)**
+- Het "To do" veld in de zijbalk is nu een invoerveld voor admins/planners.
+- Wijzigingen worden opgeslagen in Firestore onder `todoAmountManual`, `todoAmount` en `toDoQty`, zodat handmatige invoer voorrang krijgt op berekeningen.
+- Een `ReferenceError` met betrekking tot de berekeningsvolgorde van `startedAmount` is opgelost.
+
+**3. Productie Deployment**
+- Frontend gedeployed naar Vercel.
+- Cloud Functions gedeployed naar Firebase.
+
+---
+
 ## Update sessie 148 (Fixes BM01 Naharding Datum & Historie)
 
 **Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
@@ -5892,3 +5955,17 @@ Made changes.
 - Alias live:
     - `https://future-factory.vercel.app`
 2899f1f - feat: Add delivery date change detection to Smart Sync and improve date parsing (richardvh18-dotcom)\n\n## Update session (Leverdatum Sync & Datum-parsing)\n- Nieuwe parameter 'leverdatum' toegevoegd aan Slimme Sync om wijzigingen te detecteren.\n- UI-indicatie toegevoegd voor gewijzigde leverdata (oude datum doorgestreept).\n- Datumvergelijking verbeterd voor verschillende formaten (bijv. 27-03 vs 27-3) door conversie naar YYYY-MM-DD.\n- Case-insensitive vergelijking voor PO Text toegevoegd.\n- Orders N20024731 en N20024607 tijdelijk uitgesloten van sync.
+
+## Update sessie 7 mei 2026 (BH Machine Planning Filter Simplificatie)
+
+**Digitale planning / Workstation Hub & Terminal:**
+- Complexiteit uit de BH-machine (wikkelstations) order filtering gehaald in `Terminal.jsx` en `WorkstationHub.jsx`.
+- Volledige overstap naar een strikte, enkele waarheidsbron gebaseerd op het UI "Te doen" veld (`Plan - (Gemaakt - Afkeur)`).
+- Oude lappenmiddelen zoals `shouldHideBH18PlanningOrder`, afhankelijkheid van downstream stations, en expliciete (soms legacy) LN database counters zoals `started_BH18` of `toDoQty` volledig verwijderd.
+- Dit verhelpt het bug-scenario (o.a. zichtbaar op order N20024607) waarbij orders met Te doen = 0 toch in het overzicht bleven hangen omdat de achterliggende LN counter de actuele werkelijkheid achterliep.
+- Hardcoded test-blacklist set (`TEMP_HIDDEN_ORDER_IDS`) met N20025138 en N20024916 uit `Terminal.jsx` gesloopt omdat deze nu robuust afgevangen worden door de live 'Te doen' logica.
+- Bestaande regressietesten (`npm run test:regression:bh18`) succesvol doorgelopen.
+
+**Digitale planning / Teamleader Volledige Lijst (`OrderDetail.jsx`):**
+- Opgelost dat orders met uitsluitend geannuleerde (`CANCELLED`/`DELETED`) lots toch als "In behandeling" werden geteld, doordat de app terugviel op oude LN-counters (bijv. `started_BH18`).
+- Logica aangepast: de app vertrouwt nu 100% op de lokale database als er tracking data is, óók als al die tracking data geannuleerd is. Hierdoor wordt de vervuilde LN-teller genegeerd en kloppen "Start Aantal" (0), "In behandeling" (0) en "To do" (weer gelijk aan Orderhoeveelheid) exact met de werkelijkheid en de Terminal weergave.

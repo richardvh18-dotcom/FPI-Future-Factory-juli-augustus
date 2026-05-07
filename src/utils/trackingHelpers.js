@@ -29,6 +29,28 @@ export const isInactiveTrackedProduct = (product) => {
   return isArchivedRejectedProduct(product) || isFinishedProduct(product) || isRejectedProduct(product);
 };
 
+/**
+ * Statussen die een planningorder zichtbaar houden ondanks planningHidden=true.
+ * Canonical lijst — gebruik dit overal in plaats van inline status-checks.
+ */
+export const ACTIVE_PLANNING_STATUSES = new Set([
+  "in_progress",
+  "in production",
+  "active",
+  "post_processing",
+  "to_unload",
+  "unloading",
+  "to_inspect",
+  "held_qc",
+  "on_hold",
+  "delegated",
+]);
+
+export const isActivePlanningOrder = (order) => {
+  const s = normalizeOrderStatus(order?.status);
+  return ACTIVE_PLANNING_STATUSES.has(s);
+};
+
 export const subtractWorkingDays = (fromDate, days) => {
   const d = new Date(fromDate);
   let counted = 0;

@@ -58,6 +58,117 @@ const stringifyValue = (value) => {
   }
 };
 
+// --- Leesbare veldlabels voor audit diff ---
+const FIELD_LABELS = {
+  status: 'Status',
+  currentStep: 'Stap',
+  currentStation: 'Station',
+  machine: 'Machine',
+  lotNumber: 'Lotnummer',
+  orderId: 'Order',
+  itemCode: 'Artikelcode',
+  item: 'Artikel',
+  isVirtualLot: 'Virtueel lot',
+  note: 'Notitie',
+  stationLabel: 'Stationlabel',
+  lastStation: 'Vorig station',
+  labelLastPrint: 'Label geprint',
+  labelTemplateId: 'Label template',
+  updatedAt: 'Bijgewerkt',
+  createdAt: 'Aangemaakt',
+  virtualReason: 'Reden (virtueel)',
+  virtualIssuedAt: 'Uitgegeven op',
+  priority: 'Prioriteit',
+  planningHidden: 'Verborgen in planning',
+  deliveryDate: 'Leverdatum',
+  quantity: 'Aantal',
+  plan: 'Gepland',
+  standardMinutes: 'Standaard (min)',
+};
+
+// Velden die te groot/irrelevant zijn voor de diff tabel
+const SKIP_DIFF_FIELDS = new Set(['id', 'labelZPL', 'history']);
+
+const formatTimestampValue = (value) => {
+  if (!value) return null;
+  if (value?.seconds != null) {
+    try { return format(new Date(value.seconds * 1000), 'dd-MM-yyyy HH:mm:ss', { locale: nl }); } catch { return null; }
+  }
+  if (typeof value === 'string' && value.length > 10) {
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) return format(d, 'dd-MM-yyyy HH:mm:ss', { locale: nl });
+  }
+  return null;
+};
+
+const getDiffFieldLabel = (key) => {
+  if (FIELD_LABELS[key]) return FIELD_LABELS[key];
+  if (key.startsWith('timestamps.')) {
+    return '⏱ ' + key.replace('timestamps.', '').replace(/_/g, ' ');
+  }
+  return key;
+};
+
+const formatDiffValue = (value) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'boolean') return value ? 'ja' : 'nee';
+  const ts = formatTimestampValue(value);
+  if (ts) return ts;
+  if (typeof value === 'object') {
+    try { return JSON.stringify(value); } catch { return String(value); }
+  }
+  return String(value);
+};
+
+const SmartDiffView = ({ before, after }) => {
+  const patchKeys = after && typeof after === 'object' ? Object.keys(after) : [];
+  const visibleKeys = patchKeys.filter(k => !SKIP_DIFF_FIELDS.has(k));
+
+  // Fallback: als after leeg is maar before er is, toon before-only tabel
+  const showKeys = visibleKeys.length > 0 ? visibleKeys
+    : (before && typeof before === 'object' ? Object.keys(before).filter(k => !SKIP_DIFF_FIELDS.has(k)) : []);
+
+  if (showKeys.length === 0) {
+    return <pre className="text-xs font-mono text-slate-500 break-all whitespace-pre-wrap">{JSON.stringify({ before, after }, null, 2)}</pre>;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs border-separate border-spacing-y-0.5">
+        <thead>
+          <tr>
+            <th className="text-left text-[9px] font-black text-slate-400 uppercase tracking-widest pb-2 pr-4 w-36">Veld</th>
+            <th className="text-left text-[9px] font-black text-rose-400 uppercase tracking-widest pb-2 pr-4">Was</th>
+            <th className="text-left text-[9px] font-black text-emerald-500 uppercase tracking-widest pb-2">Wordt</th>
+          </tr>
+        </thead>
+        <tbody>
+          {showKeys.map((key) => {
+            const oldVal = before?.[key];
+            const newVal = after?.[key];
+            const oldStr = formatDiffValue(oldVal);
+            const newStr = formatDiffValue(newVal);
+            const changed = JSON.stringify(oldVal) !== JSON.stringify(newVal);
+            return (
+              <tr key={key} className={changed ? 'bg-amber-50' : 'bg-slate-50'}>
+                <td className="py-1 px-2 rounded-l-lg font-semibold text-slate-500 whitespace-nowrap pr-4">
+                  {getDiffFieldLabel(key)}
+                </td>
+                <td className={`py-1 px-2 font-mono pr-4 max-w-[200px] break-all ${changed ? 'text-rose-600 line-through opacity-70' : 'text-slate-400'}`}>
+                  {oldStr ?? <span className="italic opacity-30">—</span>}
+                </td>
+                <td className={`py-1 px-2 rounded-r-lg font-mono max-w-[200px] break-all ${changed ? 'text-emerald-700 font-semibold' : 'text-slate-400'}`}>
+                  {newStr ?? <span className="italic opacity-30">—</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
 const toReadableId = (value) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -72,42 +183,57 @@ const toReadableFieldValue = (value) => {
   return stringifyValue(value);
 };
 
+// Velden die technisch/intern zijn en niet getoond worden in de samenvatting
+const SKIP_SUMMARY_KEYS = new Set([
+  'before', 'after', 'orderDocPath', 'orderSourcePath', 'orderDocId',
+  'message', 'orderId', 'stationId', 'machine', 'productId',
+  'lotStart', 'totalToProduce', 'isVirtualLot', 'nextStep', 'nextStatus',
+  'action', 'userEmail',
+]);
+
 const formatObjectDetails = (details) => {
-  const detailObj = details && typeof details === "object" ? details : null;
-  if (!detailObj) return "";
+  const d = details && typeof details === 'object' ? details : null;
+  if (!d) return '';
 
-  const lines = [];
-  const usedKeys = new Set();
+  const parts = [];
 
-  const addLine = (label, key, transform = toReadableFieldValue) => {
-    if (detailObj[key] === undefined || detailObj[key] === null) return;
-    const rendered = transform(detailObj[key]);
-    if (!rendered) return;
-    usedKeys.add(key);
-    lines.push(`${label}: ${rendered}`);
-  };
+  // "Order X op werkstation Y"
+  const orderId = toReadableId(d.orderId || d.orderDocId || '');
+  const station = d.stationId || d.machine || '';
+  const product = toReadableId(d.productId || '');
 
-  addLine("Product", "productId", toReadableId);
-  addLine("Order", "orderId", toReadableId);
-  addLine("Machine", "machine");
-  addLine("Werkstation", "stationId");
-  addLine("Volgende stap", "nextStep");
-  addLine("Volgende status", "nextStatus");
-  addLine("Actie", "action");
-  addLine("Gebruiker", "userEmail");
+  if (orderId && station) parts.push(`Order ${orderId} op werkstation ${station}`);
+  else if (orderId) parts.push(`Order ${orderId}`);
+  else if (station) parts.push(`Werkstation ${station}`);
+  if (product) parts.push(`Product ${product}`);
 
-  const remaining = Object.entries(detailObj)
-    .filter(([key]) => !usedKeys.has(key))
-    .map(([key, value]) => {
-      const rendered = toReadableFieldValue(value);
-      return rendered ? `${key}: ${rendered}` : "";
+  // "lotnummer Z · totaal N · (virtueel lot)"
+  const lotParts = [];
+  if (d.lotStart != null) lotParts.push(`lotnummer ${d.lotStart}`);
+  if (d.totalToProduce != null) lotParts.push(`totaal ${d.totalToProduce}`);
+  if (d.isVirtualLot) lotParts.push('(virtueel lot)');
+  if (lotParts.length) parts.push(lotParts.join(', '));
+
+  // Volgende stap / status
+  if (d.nextStep) parts.push(`→ ${d.nextStep}`);
+  else if (d.nextStatus) parts.push(`→ ${d.nextStatus}`);
+
+  // Gebruiker
+  if (d.userEmail) parts.push(`Gebruiker: ${d.userEmail}`);
+
+  // Overige velden — geen lange paden
+  const remaining = Object.entries(d)
+    .filter(([k]) => !SKIP_SUMMARY_KEYS.has(k))
+    .map(([k, v]) => {
+      if (typeof v === 'string' && v.includes('/') && v.split('/').length > 3) return ''; // pad overslaan
+      const rendered = toReadableFieldValue(v);
+      return rendered ? `${FIELD_LABELS[k] || k}: ${rendered}` : '';
     })
     .filter(Boolean);
 
-  if (lines.length === 0 && remaining.length === 0) return "";
-  if (remaining.length === 0) return lines.join(" | ");
-  if (lines.length === 0) return remaining.join(" | ");
-  return `${lines.join(" | ")} | ${remaining.join(" | ")}`;
+  parts.push(...remaining);
+
+  return parts.join(' · ');
 };
 
 const getLogDetailsText = (log) => {
@@ -137,10 +263,10 @@ const getDiffPayload = (log) => {
   if (log?.changes && typeof log.changes === "object") return log.changes;
   const details = log?.details && typeof log.details === "object" ? log.details : {};
   if (details?.changes && typeof details.changes === "object") return details.changes;
-  if (details?.before !== undefined || details?.after !== undefined) {
+  if (details?.before != null || details?.after != null) {
     return {
-      oldValue: details.before,
-      newValue: details.after,
+      oldValue: details.before ?? null,
+      newValue: details.after ?? null,
     };
   }
   return null;
@@ -170,6 +296,8 @@ const AdminLogView = () => {
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
   const [expandedId, setExpandedId] = useState(null);
+  const [rawJsonIds, setRawJsonIds] = useState(new Set());
+  const toggleRawJson = (id) => setRawJsonIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [useYearMonthPrefilter, setUseYearMonthPrefilter] = useState(true);
   const PAGE_SIZE = 50;
 
@@ -856,10 +984,16 @@ const AdminLogView = () => {
                     </div>
                   ) : (
                     <div className="min-w-0">
-                      <p className="text-sm font-bold text-slate-600 leading-snug group-hover:text-blue-600 transition-colors break-words whitespace-pre-wrap overflow-hidden">
-                        {getLogDetailsText(log) || t('adminLogView.detailsPlaceholder')}
-                      </p>
-                      {(meta.source || meta.ipAddress || meta.status) && (
+                      {rawJsonIds.has(log.id) ? (
+                        <pre className="text-[10px] font-mono text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100 break-all whitespace-pre-wrap overflow-auto max-h-64">
+                          {JSON.stringify(log.details, null, 2)}
+                        </pre>
+                      ) : (
+                        <p className="text-sm font-bold text-slate-600 leading-snug group-hover:text-blue-600 transition-colors break-words whitespace-pre-wrap overflow-hidden">
+                          {getLogDetailsText(log) || t('adminLogView.detailsPlaceholder')}
+                        </p>
+                      )}
+                      {(meta.source || meta.ipAddress || meta.status) && !rawJsonIds.has(log.id) && (
                         <div className="flex flex-wrap items-center gap-2 mt-2 opacity-60 group-hover:opacity-100 transition-opacity min-w-0">
                           {meta.source && <span className="max-w-full text-[9px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 border border-slate-200 break-all">{t('adminLogView.sourcePrefix')} {meta.source}</span>}
                             {meta.ipAddress && <span className="max-w-full text-[9px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 border border-slate-200 break-all">{t('adminLogView.ipPrefix')} {meta.ipAddress}</span>}
@@ -890,6 +1024,17 @@ const AdminLogView = () => {
                       </button>
                     </>
                   )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleRawJson(log.id); }}
+                    title="Toon ruwe JSON"
+                    className={`p-1.5 rounded-lg transition-all text-[9px] font-black font-mono tracking-tight ${
+                      rawJsonIds.has(log.id)
+                        ? 'bg-slate-200 text-slate-700'
+                        : 'text-slate-300 hover:text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {'{ }'}
+                  </button>
                   {diffPayload && (
                     <ChevronRight size={16} className={`text-slate-300 transition-transform ${expandedId === log.id ? 'rotate-90' : ''}`} />
                   )}
@@ -902,21 +1047,8 @@ const AdminLogView = () => {
                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
                       <History size={12} /> {t('adminLogView.changeHistory')}
                     </h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                       {/* Old Value */}
-                       <div className="space-y-1">
-                          <span className="text-[9px] font-black text-rose-400 uppercase tracking-widest">{t('adminLogView.oldValue')}</span>
-                          <div className="bg-white p-3 rounded-xl border border-rose-100 text-xs font-mono text-rose-700 break-all shadow-sm min-h-[3rem]">
-                            {typeof diffPayload?.oldValue === 'object' ? JSON.stringify(diffPayload?.oldValue, null, 2) : (diffPayload?.oldValue || <span className="opacity-30 italic">{t('adminLogView.nullValue')}</span>)}
-                          </div>
-                       </div>
-                       {/* New Value */}
-                       <div className="space-y-1">
-                          <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">{t('adminLogView.newValue')}</span>
-                          <div className="bg-white p-3 rounded-xl border border-emerald-100 text-xs font-mono text-emerald-700 break-all shadow-sm min-h-[3rem]">
-                            {typeof diffPayload?.newValue === 'object' ? JSON.stringify(diffPayload?.newValue, null, 2) : (diffPayload?.newValue || <span className="opacity-30 italic">{t('adminLogView.nullValue')}</span>)}
-                          </div>
-                       </div>
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                      <SmartDiffView before={diffPayload?.oldValue} after={diffPayload?.newValue} />
                     </div>
                   </div>
                 )}
