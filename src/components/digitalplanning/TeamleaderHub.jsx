@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
@@ -46,6 +46,8 @@ import { useTeamleaderModalData } from "./useTeamleaderModalData";
 import { useTeamleaderEventHandlers } from "./useTeamleaderEventHandlers";
 import { TeamleaderHeader } from "./TeamleaderHeader";
 import { TeamleaderModals } from "./TeamleaderModals";
+import { TeamleaderSelectionProvider } from "./TeamleaderSelectionContext";
+import { TeamleaderModalProvider } from "./TeamleaderModalContext";
 import TeamleaderExportModal from "./modals/TeamleaderExportModal";
 
 /**
@@ -178,6 +180,11 @@ const TeamleaderHub = React.memo(({
     if (selectedSidebarEntry?.id) return selectedSidebarEntry.id;
     return selectedOrderId;
   }, [selectedSidebarEntry, selectedOrderId]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedOrderId(null);
+    setSelectedSidebarEntry(null);
+  }, []);
 
   const canManageOverproduction = fixedScope === "all" && ["planner", "admin", "teamleader"].includes(user?.role);
   const getFinishedQtyForOrder = (order) => {
@@ -366,7 +373,85 @@ const TeamleaderHub = React.memo(({
     fixedScope,
     targetSlug,
     departmentFilter,
+    effectiveAllowedNorms,
   });
+
+  const selectionContextValue = useMemo(
+    () => ({
+      selectedOrder,
+      selectedSidebarEntry,
+      selectedDetailEntry,
+      selectedSidebarEntryId,
+      handleSidebarSelect,
+      clearSelection,
+    }),
+    [
+      selectedOrder,
+      selectedSidebarEntry,
+      selectedDetailEntry,
+      selectedSidebarEntryId,
+      handleSidebarSelect,
+      clearSelection,
+    ]
+  );
+
+  const modalContextValue = useMemo(
+    () => ({
+      // Add order modal
+      showAddOrderModal,
+      setShowAddOrderModal,
+      creatingOrder,
+      newOrderData,
+      setNewOrderData,
+      handleCreateOrder,
+      // StationDetailModal
+      selectedStationDetail,
+      setSelectedStationDetail,
+      dataStore,
+      rawProducts,
+      archivedProducts: archivedHistoryProducts,
+      // TraceModal (KPI)
+      activeKpi,
+      setActiveKpi,
+      lastKpi,
+      setLastKpi,
+      kpiWeekOffset,
+      setKpiWeekOffset,
+      modalTitle,
+      modalData,
+      handleArchiveRejectedProduct,
+      handleMoveLot,
+      setViewingDossier,
+      // ProductDossierModal
+      viewingDossier,
+      rawOrders,
+      targetSlug,
+      effectiveStations,
+      // Overproduction modal
+      selectedOverproductionGroup,
+      setSelectedOverproductionGroup,
+      overproductionTargetOrderId,
+      setOverproductionTargetOrderId,
+      overproductionManualStation,
+      setOverproductionManualStation,
+      overproductionTargetCandidates,
+      resolveOverproductionRoute,
+      assigningOverproduction,
+      handleAssignOverproduction,
+      t,
+    }),
+    [
+      showAddOrderModal, creatingOrder, newOrderData, handleCreateOrder,
+      selectedStationDetail, dataStore, rawProducts, archivedHistoryProducts,
+      activeKpi, lastKpi, kpiWeekOffset, modalTitle, modalData,
+      handleArchiveRejectedProduct, handleMoveLot,
+      viewingDossier, rawOrders, targetSlug, effectiveStations,
+      selectedOverproductionGroup, overproductionTargetOrderId,
+      overproductionManualStation, overproductionTargetCandidates,
+      resolveOverproductionRoute, assigningOverproduction, handleAssignOverproduction,
+      t,
+    ]
+  );
 
   // All event handlers now come from useTeamleaderEventHandlers hook (Phase 3 refactoring)
 
@@ -402,6 +487,7 @@ const TeamleaderHub = React.memo(({
     );
 
   return (
+    <TeamleaderModalProvider value={modalContextValue}>
     <div className="flex flex-col h-full bg-slate-50 text-left w-full animate-in fade-in duration-300 overflow-hidden relative">
       <TeamleaderHeader
         onBack={onBack}
@@ -468,77 +554,34 @@ const TeamleaderHub = React.memo(({
               }}
             />
           ) : (
-            <div className="h-full flex gap-6 overflow-hidden">
-              <TeamleaderOrderRail
-                selectedDetailEntry={selectedDetailEntry}
-                canManageOverproduction={canManageOverproduction}
-                overproductionGroups={overproductionGroups}
-                onOpenOverproductionGroup={handleOpenOverproductionGroup}
-                resolveOverproductionRoute={resolveOverproductionRoute}
-                orders={dataStore}
-                trackedProducts={rawProducts}
-                archivedHistoryProducts={archivedHistoryProducts}
-                selectedOrderId={selectedSidebarEntryId}
-                onSelect={handleSidebarSelect}
-              />
-              <TeamleaderDetailPane
-                selectedOrder={selectedOrder}
-                selectedSidebarEntry={selectedSidebarEntry}
-                onClose={() => { setSelectedOrderId(null); setSelectedSidebarEntry(null); }}
-                handleMoveLot={handleMoveLot}
-                setViewingDossier={setViewingDossier}
-                targetSlug={targetSlug}
-                effectiveStations={effectiveStations}
-                rawProducts={rawProducts}
-                archivedHistoryProducts={archivedHistoryProducts}
-                handleOpenArchivedLotDossier={handleOpenArchivedLotDossier}
-                selectedDetailEntry={selectedDetailEntry}
-              />
-            </div>
+            <TeamleaderSelectionProvider value={selectionContextValue}>
+              <div className="h-full flex gap-6 overflow-hidden">
+                <TeamleaderOrderRail
+                  canManageOverproduction={canManageOverproduction}
+                  overproductionGroups={overproductionGroups}
+                  onOpenOverproductionGroup={handleOpenOverproductionGroup}
+                  resolveOverproductionRoute={resolveOverproductionRoute}
+                  orders={dataStore}
+                  trackedProducts={rawProducts}
+                  archivedHistoryProducts={archivedHistoryProducts}
+                />
+                <TeamleaderDetailPane
+                  handleMoveLot={handleMoveLot}
+                  setViewingDossier={setViewingDossier}
+                  targetSlug={targetSlug}
+                  effectiveStations={effectiveStations}
+                  rawProducts={rawProducts}
+                  archivedHistoryProducts={archivedHistoryProducts}
+                  handleOpenArchivedLotDossier={handleOpenArchivedLotDossier}
+                />
+              </div>
+            </TeamleaderSelectionProvider>
           )}
         </div>
       </div>
 
 
-      <TeamleaderModals
-        showAddOrderModal={showAddOrderModal}
-        setShowAddOrderModal={setShowAddOrderModal}
-        creatingOrder={creatingOrder}
-        newOrderData={newOrderData}
-        setNewOrderData={setNewOrderData}
-        handleCreateOrder={handleCreateOrder}
-        selectedStationDetail={selectedStationDetail}
-        setSelectedStationDetail={setSelectedStationDetail}
-        dataStore={dataStore}
-        rawProducts={rawProducts}
-        archivedProducts={archivedHistoryProducts}
-        activeKpi={activeKpi}
-        setActiveKpi={setActiveKpi}
-        lastKpi={lastKpi}
-        setLastKpi={setLastKpi}
-        kpiWeekOffset={kpiWeekOffset}
-        setKpiWeekOffset={setKpiWeekOffset}
-        modalTitle={modalTitle}
-        modalData={modalData}
-        handleArchiveRejectedProduct={handleArchiveRejectedProduct}
-        handleMoveLot={handleMoveLot}
-        setViewingDossier={setViewingDossier}
-        viewingDossier={viewingDossier}
-        rawOrders={rawOrders}
-        targetSlug={targetSlug}
-        effectiveStations={effectiveStations}
-        selectedOverproductionGroup={selectedOverproductionGroup}
-        setSelectedOverproductionGroup={setSelectedOverproductionGroup}
-        overproductionTargetOrderId={overproductionTargetOrderId}
-        setOverproductionTargetOrderId={setOverproductionTargetOrderId}
-        overproductionManualStation={overproductionManualStation}
-        setOverproductionManualStation={setOverproductionManualStation}
-        overproductionTargetCandidates={overproductionTargetCandidates}
-        resolveOverproductionRoute={resolveOverproductionRoute}
-        assigningOverproduction={assigningOverproduction}
-        handleAssignOverproduction={handleAssignOverproduction}
-        t={t}
-      />
+      <TeamleaderModals />
 
       {showExportModal && (
         <TeamleaderExportModal
@@ -560,6 +603,7 @@ const TeamleaderHub = React.memo(({
         />
       )}
     </div>
+    </TeamleaderModalProvider>
   );
 });
 

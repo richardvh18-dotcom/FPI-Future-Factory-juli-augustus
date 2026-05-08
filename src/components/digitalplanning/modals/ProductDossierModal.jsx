@@ -23,7 +23,7 @@ import {
 import StatusBadge from "../common/StatusBadge";
 import { WORKSTATIONS, REJECTION_REASONS } from "../../../utils/workstationLogic";
 import { format } from "date-fns";
-import { findDrawingForOrder, syncOrderDrawing } from "../../../utils/drawingLinker.jsx";
+import { findDrawingForOrder, syncOrderDrawing } from "../../../utils/drawingLinker";
 import { collection, query, where, getDocs, getDoc, doc, arrayUnion, limit } from "firebase/firestore";
 import { db, logActivity } from "../../../config/firebase";
 import { PATHS } from "../../../config/dbPaths";

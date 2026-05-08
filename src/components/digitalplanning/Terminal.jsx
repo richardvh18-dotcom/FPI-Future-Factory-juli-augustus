@@ -34,7 +34,7 @@ import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { normalizeMachine, getStartedCounterField } from "../../utils/hubHelpers";
 import { getOrderFinishedUnits } from "../../utils/planningProgress";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
-import { shouldHideBH18PlanningOrder } from "../../utils/terminalOrderFilters";
+import { shouldHidePlanningOrder } from "../../utils/terminalOrderFilters";
 
 import TerminalPlanningView from "./terminal/TerminalPlanningView";
 import TerminalProductionView from "./terminal/TerminalProductionView";
@@ -424,7 +424,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         const isWikkelToLossenSourceStation = ["BH12", "BH15", "BH17", "BH18"].includes(cleanStationId);
         if (isWikkelToLossenSourceStation) {
           const waitingOnlyMeta = waitingForLossenOnlyByOrder.get(orderId);
-          // BH18: laat filteredOrders/shouldHideBH18PlanningOrder via readyForReturnMap oordelen.
+          // Wikkelmachine: laat filteredOrders/shouldHidePlanningOrder via readyForReturnMap oordelen.
           // Lot met step "Wacht op Lossen" is fysiek nog op BH18 en moet zichtbaar blijven.
           const realRemainingToStart = Math.max(0, planAtStation - actualStartedCount);
           const computedRemainingQueue = Math.max(0, planAtStation - startedAtStation, realRemainingToStart);

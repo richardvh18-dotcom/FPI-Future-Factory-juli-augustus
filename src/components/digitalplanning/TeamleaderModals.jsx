@@ -4,6 +4,7 @@ import { X, Loader2, Factory, Link2 } from "lucide-react";
 import StationDetailModal from "./modals/StationDetailModal";
 import TraceModal from "./modals/TraceModal";
 import ProductDossierModal from "./modals/ProductDossierModal.jsx";
+import { useTeamleaderModal } from "./TeamleaderModalContext";
 
 /**
  * TeamleaderModals
@@ -13,56 +14,54 @@ import ProductDossierModal from "./modals/ProductDossierModal.jsx";
  *   - TraceModal (KPI detail)
  *   - ProductDossierModal
  *   - Overproduction assign modal
+ *
+ * All state is consumed from TeamleaderModalContext — no props needed.
  */
-export const TeamleaderModals = ({
-  // Add order modal
-  showAddOrderModal,
-  setShowAddOrderModal,
-  creatingOrder,
-  newOrderData,
-  setNewOrderData,
-  handleCreateOrder,
-
-  // StationDetailModal
-  selectedStationDetail,
-  setSelectedStationDetail,
-  dataStore,
-  rawProducts,
-  archivedProducts,
-
-  // TraceModal (KPI)
-  activeKpi,
-  setActiveKpi,
-  lastKpi,
-  setLastKpi,
-  kpiWeekOffset,
-  setKpiWeekOffset,
-  modalTitle,
-  modalData,
-  handleArchiveRejectedProduct,
-  handleMoveLot,
-  setViewingDossier,
-
-  // ProductDossierModal
-  viewingDossier,
-  rawOrders,
-  targetSlug,
-  effectiveStations,
-
-  // Overproduction modal
-  selectedOverproductionGroup,
-  setSelectedOverproductionGroup,
-  overproductionTargetOrderId,
-  setOverproductionTargetOrderId,
-  overproductionManualStation,
-  setOverproductionManualStation,
-  overproductionTargetCandidates,
-  resolveOverproductionRoute,
-  assigningOverproduction,
-  handleAssignOverproduction,
-
-  t,
-}) => {
+export const TeamleaderModals = () => {
+  const {
+    // Add order modal
+    showAddOrderModal,
+    setShowAddOrderModal,
+    creatingOrder,
+    newOrderData,
+    setNewOrderData,
+    handleCreateOrder,
+    // StationDetailModal
+    selectedStationDetail,
+    setSelectedStationDetail,
+    dataStore,
+    rawProducts,
+    archivedProducts,
+    // TraceModal (KPI)
+    activeKpi,
+    setActiveKpi,
+    lastKpi,
+    setLastKpi,
+    kpiWeekOffset,
+    setKpiWeekOffset,
+    modalTitle,
+    modalData,
+    handleArchiveRejectedProduct,
+    handleMoveLot,
+    setViewingDossier,
+    // ProductDossierModal
+    viewingDossier,
+    rawOrders,
+    targetSlug,
+    effectiveStations,
+    // Overproduction modal
+    selectedOverproductionGroup,
+    setSelectedOverproductionGroup,
+    overproductionTargetOrderId,
+    setOverproductionTargetOrderId,
+    overproductionManualStation,
+    setOverproductionManualStation,
+    overproductionTargetCandidates,
+    resolveOverproductionRoute,
+    assigningOverproduction,
+    handleAssignOverproduction,
+    t,
+  } = useTeamleaderModal();
   return (
     <>
       {showAddOrderModal && (

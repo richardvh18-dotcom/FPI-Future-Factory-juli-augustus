@@ -261,19 +261,30 @@ service cloud.firestore {
 
     // PRODUCTIE: writes geblokkeerd — beheerd via saveProductRecord / deleteProductRecord callable.
     match /future-factory/production/tracked_products/{document=**} {
-      allow read: if hasUserRecord() || isSignedIn();
+      allow read: if hasUserRecord();
       allow write: if false;
     }
 
     // PRODUCTIE: writes geblokkeerd — beheerd via processInforUpdate / planning callables.
     match /future-factory/production/digital_planning/{document=**} {
-      allow read: if hasUserRecord() || isSignedIn();
+      allow read: if hasUserRecord();
       allow write: if false;
     }
 
     // PRODUCTIE: writes geblokkeerd — beheerd via planning callables.
     match /future-factory/production/data/digital_planning/orders/{orderId} {
-      allow read: if hasUserRecord() || isSignedIn();
+      allow read: if hasUserRecord();
+      allow write: if false;
+    }
+
+    // PRODUCTIE: scoped paden (zoals 40BH18) strikt beveiligd - beheerd via callables
+    match /future-factory/production/data/digital_planning/scoped/{department}/{document=**} {
+      allow read: if hasUserRecord();
+      allow write: if false;
+    }
+
+    match /future-factory/production/scoped/{department}/{document=**} {
+      allow read: if hasUserRecord();
       allow write: if false;
     }
 

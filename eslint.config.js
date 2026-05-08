@@ -7,7 +7,7 @@ export default [
   },
   js.configs.recommended,
   {
-    files: ['src/**/*.{js,jsx}'],
+    files: ['src/**/*.{js,jsx,ts,tsx}'],
     languageOptions: {
       parser: tsParser,
       ecmaVersion: 'latest',
@@ -33,6 +33,7 @@ export default [
         FileReader: 'readonly',
         Blob: 'readonly',
         URL: 'readonly',
+        FormData: 'readonly',
         btoa: 'readonly',
         atob: 'readonly',
         ResizeObserver: 'readonly',
