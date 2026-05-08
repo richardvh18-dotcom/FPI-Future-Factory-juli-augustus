@@ -1,3 +1,22 @@
+## Update sessie 7 mei 2026 (TypeScript migratie hervatpunt)
+
+**Status:**
+- TypeScript guardrail actief: `npm run enforce:new-ts` (nieuwe `.js/.jsx` in `src/` geblokkeerd)
+- Baseline aanwezig: `scripts/ts-js-baseline.json`
+- Fase 1 afgerond: 10 utility/service bestanden naar `.ts` gemigreerd
+- Validatie geslaagd: type-check + build
+
+**Hervatpunt volgende sessie:**
+- Open eerst: `TYPESCRIPT_MIGRATIE_PLAN.md`
+- Start met **Fase 2**: 10-15 laag-risico bestanden in `src/repositories` en `src/hooks`
+- Na elke batch runnen:
+    - `npm run type-check`
+    - `npm run build`
+    - `npm run ts:refresh-baseline`
+    - `npm run enforce:new-ts`
+
+---
+
 ## Sessie 7 mei 2026 — Senior Programmer Review (stappen 1–4)
 
 **Repository overgang:**
@@ -43,6 +62,11 @@
 - `planningSecurityService.js`: `runMigrationTool` callable toegevoegd
 
 **Eindstand sessie:** Tests 3/3 ✅ · Errors 0 ✅ · Branch gepusht naar Future-Factory-Fpi ✅
+
+**Directe taak (later oppakken):**
+- Teamleader modal-state centraliseren in context (zelfde aanpak als selection-context) om prop drilling in `TeamleaderModals.jsx` verder te reduceren.
+- Scope: modal open/close state + actieve modal data vanuit `TeamleaderHub.jsx` naar een dedicated provider/hook verplaatsen.
+- Doel: eenvoudiger debuggen, minder setter-props, betere schaalbaarheid voor nieuwe modals.
 
 ---
 ## Update sessie 7 mei 2026 (BH Machine Planning Filter Simplificatie)

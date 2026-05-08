@@ -1487,6 +1487,25 @@ export const migrateAiKnowledgeFields = async () => {
   return result?.data || { ok: false, updated: 0 };
 };
 
+/**
+ * Admin migration callable contract for doc-id/orderId mismatches.
+ * Input:
+ *  - mode: 'scan' | 'apply'
+ *  - orderId?: string | null
+ *  - mismatches?: Array<{
+ *      collection: string,
+ *      oldDocId: string,
+ *      newDocId: string,
+ *      orderId: string,
+ *      machine?: string,
+ *      lotNumber?: string,
+ *      staleFieldsId?: string | null,
+ *    }> | null
+ * Output (scan):
+ *  - { mode: 'scan', mismatches: Array, totalFound: number }
+ * Output (apply):
+ *  - { mode: 'apply', results: Array<{ status: 'FIXED'|'SKIPPED'|'ERROR', reason?: string }>, totalFixed: number }
+ */
 export const runMigrationTool = async ({ mode, orderId, mismatches }) => {
   const result = await runMigrationToolCallable({ mode, orderId: orderId || null, mismatches: mismatches || null });
   return result?.data;

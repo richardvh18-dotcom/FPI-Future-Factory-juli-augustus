@@ -29,7 +29,7 @@ import { useNotifications } from "../../../contexts/NotificationContext";
 import { useProgressOperations } from "../../../contexts/ProgressOperationContext";
 import { generatePrintData, generateLotBatchZPL } from "../../../utils/zplHelper";
 import { getDriver } from "../../../utils/printerDrivers";
-import { queuePrintJob } from "../../../services/printService.js";
+import { queuePrintJob } from "../../../services/printService";
 import LabelVisualPreview from "../../printer/LabelVisualPreview";
 import { useLabelPreview } from "../../../hooks/useLabelPreview";
 import InternalQrImage from "../../../utils/InternalQrImage";

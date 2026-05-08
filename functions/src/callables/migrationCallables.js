@@ -176,13 +176,37 @@ const applyFixes = async ({ mismatches, actorUid, actorEmail, actorRole }) => {
 // Exported callable
 // ---------------------------------------------------------------------------
 
+/**
+ * runMigrationTool
+ *
+ * Scans for and fixes mismatches between document IDs and their internal `orderId` fields.
+ * Restricted to users with the 'admin' role.
+ *
+ * @param {Object} data - The payload from the client.
+ * @param {'scan'|'apply'} data.mode - The mode to run in.
+ *   - 'scan': Read-only. Returns a list of mismatches found.
+ *   - 'apply': Modifies the database. Moves documents to correct IDs and writes audit logs.
+ * @param {string} [data.orderId] - Optional. If provided, limits the scan to this specific orderId.
+ * @param {Array} [data.mismatches] - Optional. For 'apply' mode, provide the exact mismatches to fix.
+ * @param {functions.https.CallableContext} context - The Cloud Functions context (auth, etc.).
+ *
+ * @returns {Promise<Object>} The result of the operation.
+ * @returns {string} return.mode - The mode that was executed ('scan' or 'apply').
+ * @returns {Array} [return.mismatches] - Only in 'scan' mode. List of mismatches found.
+ * @returns {number} [return.totalFound] - Only in 'scan' mode. Count of mismatches.
+ * @returns {Array} [return.results] - Only in 'apply' mode. Result of each fix attempt.
+ * @returns {number} [return.totalFixed] - Only in 'apply' mode. Count of successfully fixed docs.
+ *
+ * @throws {functions.https.HttpsError} If the user is unauthenticated or not an admin.
+ */
 const runMigrationTool = functions.https.onCall(async (data, context) => {
   if (!context.auth?.uid) {
     throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
   }
 
+  // EXPLICITE ADMIN CHECK: Controleert of de gebruiker echt een Admin is (Senior Review eis)
   const userRole = await resolveUserRoleForContext(context);
-  if (!ADMIN_MIGRATION_ALLOWED_ROLES.has(userRole)) {
+  if (!ADMIN_MIGRATION_ALLOWED_ROLES.has(userRole) || userRole !== 'admin') {
     throw new functions.https.HttpsError(
       'permission-denied',
       'Alleen admins kunnen de migratie tool gebruiken.',

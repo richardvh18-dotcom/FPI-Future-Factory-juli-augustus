@@ -2,6 +2,7 @@ import React from "react";
 import OrderDetail from "./OrderDetail";
 import ArchivedOrderDetailPanel from "./ArchivedOrderDetailPanel";
 import OrderDetailPlaceholder from "./OrderDetailPlaceholder";
+import { useTeamleaderSelection } from "./TeamleaderSelectionContext";
 
 /**
  * TeamleaderDetailPane — right-side detail column of TeamleaderHub.
@@ -9,9 +10,6 @@ import OrderDetailPlaceholder from "./OrderDetailPlaceholder";
  * when an archived order entry is selected, or a placeholder when nothing is selected.
  */
 const TeamleaderDetailPane = React.memo(({
-  selectedOrder,
-  selectedSidebarEntry,
-  onClose,
   handleMoveLot,
   setViewingDossier,
   targetSlug,
@@ -19,15 +17,16 @@ const TeamleaderDetailPane = React.memo(({
   rawProducts,
   archivedHistoryProducts,
   handleOpenArchivedLotDossier,
-  selectedDetailEntry,
 }) => {
+  const { selectedOrder, selectedSidebarEntry, selectedDetailEntry, clearSelection } = useTeamleaderSelection();
+
   return (
     <div className={`flex-1 bg-white rounded-[40px] border border-slate-200 shadow-sm flex flex-col overflow-hidden ${selectedDetailEntry ? 'flex' : 'hidden lg:flex'}`}>
       {selectedOrder ? (
         <OrderDetail
           order={selectedOrder}
           products={[...rawProducts, ...archivedHistoryProducts]}
-          onClose={onClose}
+          onClose={clearSelection}
           isManager={true}
           onMoveLot={handleMoveLot}
           onOpenDossier={setViewingDossier}
@@ -38,7 +37,7 @@ const TeamleaderDetailPane = React.memo(({
       ) : selectedSidebarEntry?.isArchivedOrder ? (
         <ArchivedOrderDetailPanel
           selectedSidebarEntry={selectedSidebarEntry}
-          onClose={onClose}
+          onClose={clearSelection}
           onOpenArchivedLotDossier={handleOpenArchivedLotDossier}
         />
       ) : (

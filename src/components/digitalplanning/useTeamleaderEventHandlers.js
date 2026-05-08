@@ -87,6 +87,7 @@ export const useTeamleaderEventHandlers = ({
   fixedScope,
   targetSlug,
   departmentFilter,
+  effectiveAllowedNorms = [],
 }) => {
   // Navigation handler
   const handleOpenExtendedPersonnel = useCallback(() => {
@@ -492,9 +493,11 @@ export const useTeamleaderEventHandlers = ({
       return;
     }
 
-    const filtered = dataStore.filter((o) => normalizeMachine(o.machine || "") !== "BH18");
+    const filtered = effectiveAllowedNorms.length > 0
+      ? dataStore.filter((o) => !effectiveAllowedNorms.includes(normalizeMachine(o.machine || "")))
+      : dataStore;
     if (filtered.length === 0) {
-      notify("Geen exportdata beschikbaar buiten BH18.");
+      notify("Geen exportdata beschikbaar.");
       return;
     }
 
