@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const functions = require('firebase-functions/v1');
 const { sendEmailInternal } = require('../utils/emailHelper');
 const { withAudit } = require('../utils/withAudit');

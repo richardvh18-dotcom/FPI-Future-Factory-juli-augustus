@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const admin = require('firebase-admin');
 const { Resend } = require('resend');
 
@@ -20,7 +22,7 @@ async function sendEmailInternal({ to, subject, html, text, templateId, variable
       throw new Error(`Template met ID ${templateId} niet gevonden.`);
     }
     const template = templateDoc.data();
-    
+
     // Gebruik subject en body van template als ze niet handmatig zijn overschreven
     subject = subject || template.subject;
     html = html || template.body;

@@ -1,4 +1,9 @@
 {
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "type-check": "tsc -p tsconfig.json --noEmit"
+  },
   "engines": {
     "node": ">=22"
   },
@@ -9,5 +14,9 @@
     "firebase-functions": "^7.2.5",
     "resend": "^6.12.2",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
   }
 }

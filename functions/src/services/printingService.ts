@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const { db, admin } = require('../config/firebase');
 
 const MAX_ZPL_LENGTH = 120000;

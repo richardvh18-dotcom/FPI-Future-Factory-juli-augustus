@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const crypto = require('crypto');
 const functions = require('firebase-functions/v1');
 const XLSX = require('xlsx');

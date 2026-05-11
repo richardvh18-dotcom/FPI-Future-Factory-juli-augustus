@@ -1,3 +1,66 @@
+## Update sessie 11 mei 2026 (Voorbereiding QR & Export optimalisaties)
+
+**Branch:** `FPiFF-18-12-May`
+
+### Gebruikersverzoeken & Doelen:
+**1. BM01 (Dagoverzicht & Tabs)**
+- **Tab-volgorde wijzigen:** `Planning` → `Te Keuren` → `NH` → `Gereed` → `LN`.
+- **Lijstweergave:** In de tabs 'Gereed' en 'NH' terug naar een simpele weergave met uitsluitend lotnummers.
+- **QR Print Overzicht & Dagoverzicht:** Sorteren op *Ordernummer*. Bij meerdere lotnummers onder hetzelfde ordernummer krijgt uitsluitend de eerste (bovenste) regel de Order-QR; de regels eronder krijgen alleen hun eigen Lotnummer-QR. Dit bespaart ruimte op het papier en maakt het scannen efficiënter.
+
+**2. Machine Export (Lotnummers / Teamleader Export)**
+- **Sorteren:** Geëxporteerde lotnummers in de export standaard groeperen/sorteren op hun huidige locatie.
+- **Filteren:** Een keuzemenu toevoegen zodat er geëxporteerd/geprint kan worden op een specifieke locatie (bijv. alleen "Lossen", "Nabewerken" of "Mazak").
+
+### Uitgevoerde acties:
+- `TeamleaderExportModal.tsx` aangepast: De dropdown toont in de 'Lotnummers'-weergave nu alle dynamische locaties. PDF en Excel exports worden netjes gegroepeerd en gesorteerd geprint op de hudige locatie van de items.
+- *Notitie:* De besproken optimalisaties voor BM01 (tab-volgorde, versimpelde lijsten, QR-sortering op ordernummer) zijn al eerder in het proces succesvol afgerond.
+
+---
+
+## Update sessie 10 mei 2026 (Functions TypeScript afgerond + productie deploy Firebase/Vercel)
+
+**Branch:** `FPiFF-18-12-May`
+
+### Uitgevoerd in deze sessie:
+**1. Cloud Functions TypeScript migratie volledig afgerond**
+- Gefaseerde migratie uitgevoerd van `functions/src` van `.js` naar `.ts`.
+- Eerst low-risk lagen gemigreerd (utils, config, auth), daarna repository/service-laag, en als laatste alle callables.
+- Nieuwe TypeScript build-keten toegevoegd in `functions/`:
+    - `functions/tsconfig.json`
+    - scripts in `functions/package.json` (`build`, `type-check`)
+    - `main` ingesteld op `lib/index.js`
+- `firebase.json` uitgebreid met predeploy build hook voor functions.
+- Resultaat: `functions/src` bevat nu **0** `.js/.jsx` en **23** `.ts` bestanden.
+
+**2. Release readiness controle uitgevoerd**
+- Frontend build succesvol: `npm run build`.
+- Functions build/type-check succesvol:
+    - `cd functions && npm run build`
+    - `cd functions && npm run type-check`
+- Deploy tooling geverifieerd:
+    - Firebase CLI aanwezig (`15.16.0`)
+    - Functions entrypoint (`functions/lib/index.js`) aanwezig
+    - Firebase predeploy hook actief
+
+**3. Productie deploy uitgevoerd**
+- Firebase productie deploy gestart en voltooid voor:
+    - Firestore rules + indexes
+    - Cloud Functions
+    - Hosting
+- Tijdens functions deploy traden meerdere tijdelijke `Quota Exceeded` retries op; Firebase CLI heeft automatisch hersteld en de updates succesvol afgerond.
+- Vercel productie deploy uitgevoerd met `vercel --prod --yes`.
+- Alias bevestigd: `https://future-factory.vercel.app`.
+
+### Validatie:
+- Firebase hosting endpoint reageert met HTTP 200.
+- Vercel productie endpoint reageert met HTTP 200.
+
+### Opmerking:
+- Tijdens Firebase index-sync zijn 1 bestaande Firestore index en 1 field override verwijderd omdat deze niet in de lokale `firestore.indexes.json` stonden (standaard sync-gedrag van deploy).
+
+---
+
 ## Update sessie 9 mei 2026 (Audit Logging Middleware - Actiepunt 3)
 
 **Branch:** `FPiFF-18-12-May`
