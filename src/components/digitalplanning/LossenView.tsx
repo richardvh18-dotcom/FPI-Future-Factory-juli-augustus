@@ -73,6 +73,12 @@ const isSeriesEligibleItem = (item) => {
   return statusUpper !== "REJECTED" && stepUpper !== "REJECTED";
 };
 
+const isFlensItem = (item) => {
+  const code = String(item?.itemCode || "").trim().toUpperCase();
+  const name = String(item?.item || "").trim().toUpperCase();
+  return code.startsWith("FL") || name.startsWith("FL");
+};
+
 const getLotSeriesPrefix = (lotNumber) => {
   const raw = String(lotNumber || "").trim();
   if (!raw) return "";
@@ -639,33 +645,36 @@ const LossenView = ({ stationId, appId, products = [] }) => {
   const handleItemClick = (item) => {
     let sameSeries = [];
 
-    if (supportsSeriesGrouping && item?.seriesGroupId) {
-      sameSeries = items.filter(
-        (seriesItem) =>
-          seriesItem.seriesGroupId === item.seriesGroupId && isSeriesEligibleItem(seriesItem)
-      );
-    }
+    // Batching (series) is alleen toegestaan voor flenzen (FL) op Lossen.
+    if (supportsSeriesGrouping && isFlensItem(item)) {
+      if (item?.seriesGroupId) {
+        sameSeries = items.filter(
+          (seriesItem) =>
+            seriesItem.seriesGroupId === item.seriesGroupId && isSeriesEligibleItem(seriesItem)
+        );
+      }
 
-    // Fallback: oudere/legacy items zonder seriesGroupId koppelen op lot-prefix + order/item.
-    if (supportsSeriesGrouping && sameSeries.length <= 1) {
-      const lotPrefix = getLotSeriesPrefix(item?.lotNumber);
-      const orderKey = String(item?.orderId || "").trim().toUpperCase();
-      const itemCodeKey = String(item?.itemCode || "").trim().toUpperCase();
+      // Fallback: oudere/legacy items zonder seriesGroupId koppelen op lot-prefix + order/item.
+      if (sameSeries.length <= 1) {
+        const lotPrefix = getLotSeriesPrefix(item?.lotNumber);
+        const orderKey = String(item?.orderId || "").trim().toUpperCase();
+        const itemCodeKey = String(item?.itemCode || "").trim().toUpperCase();
 
-      if (lotPrefix) {
-        sameSeries = items.filter((seriesItem) => {
-          if (!isSeriesEligibleItem(seriesItem)) return false;
-          const candidatePrefix = getLotSeriesPrefix(seriesItem?.lotNumber);
-          if (!candidatePrefix || candidatePrefix !== lotPrefix) return false;
+        if (lotPrefix) {
+          sameSeries = items.filter((seriesItem) => {
+            if (!isSeriesEligibleItem(seriesItem)) return false;
+            const candidatePrefix = getLotSeriesPrefix(seriesItem?.lotNumber);
+            if (!candidatePrefix || candidatePrefix !== lotPrefix) return false;
 
-          const candidateOrder = String(seriesItem?.orderId || "").trim().toUpperCase();
-          if (orderKey && candidateOrder && candidateOrder !== orderKey) return false;
+            const candidateOrder = String(seriesItem?.orderId || "").trim().toUpperCase();
+            if (orderKey && candidateOrder && candidateOrder !== orderKey) return false;
 
-          const candidateItemCode = String(seriesItem?.itemCode || "").trim().toUpperCase();
-          if (itemCodeKey && candidateItemCode && candidateItemCode !== itemCodeKey) return false;
+            const candidateItemCode = String(seriesItem?.itemCode || "").trim().toUpperCase();
+            if (itemCodeKey && candidateItemCode && candidateItemCode !== itemCodeKey) return false;
 
-          return true;
-        });
+            return true;
+          });
+        }
       }
     }
 
@@ -707,6 +716,8 @@ const LossenView = ({ stationId, appId, products = [] }) => {
     if (!supportsSeriesGrouping) return new Map();
     const grouped = new Map();
     items.forEach((item) => {
+      if (!isFlensItem(item)) return; // Only allow grouping for FL items
+
       const groupId = item?.seriesGroupId;
       if (!groupId) return;
       if (!grouped.has(groupId)) grouped.set(groupId, []);

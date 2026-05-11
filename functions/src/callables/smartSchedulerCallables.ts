@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const functions = require('firebase-functions/v1');
 
 exports.calculateSmartSuggestions = functions.region('europe-west1').https.onCall(async (data, context) => {

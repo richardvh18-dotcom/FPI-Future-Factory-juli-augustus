@@ -1064,8 +1064,19 @@ const ProductionStartModal = ({
     if (!stationId) return "";
     // Reparatie en downstream stations: geen machinecode-controle — ze verwerken lots van andere machines.
     if (isLotMachineValidationExempt(stationId)) return "";
+    
     const digits = String(lotValue || "").replace(/\D/g, "");
-    if (digits.length !== 15) return "";
+    
+    if (digits.length === 0) return "";
+    
+    if (digits.length < 15) {
+      return `Lotnummer moet exact 15 cijfers bevatten (huidig: ${digits.length}).`;
+    }
+    
+    if (!digits.startsWith("40")) {
+      return "Lotnummer moet beginnen met '40'.";
+    }
+
     const expectedCode = getMachineCode(stationId);
     const lotMachineCode = digits.slice(6, 9);
     if (lotMachineCode !== expectedCode) {

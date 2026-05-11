@@ -184,15 +184,18 @@ export default function TeamleaderExportModal({
   // Filter voor dropdown: toon in Lotnummer export alleen BH machines
   const displayedMachines = useMemo(() => {
     if (exportType === "lotnummers") {
-      return availableMachines.filter(m => m.startsWith("BH"));
+      const locs = new Set();
+      activeProducts.forEach(p => {
+        const loc = p.currentStation || p.currentStep || "Onbekend";
+        if (loc) locs.add(String(loc).trim());
+      });
+      return Array.from(locs).sort();
     }
     return availableMachines;
-  }, [availableMachines, exportType]);
+  }, [availableMachines, activeProducts, exportType]);
 
   useEffect(() => {
-    if (exportType === "lotnummers" && selectedMachine !== "Alle machines" && !selectedMachine.startsWith("BH")) {
-      setSelectedMachine("Alle machines");
-    }
+    setSelectedMachine("Alle machines");
   }, [exportType, selectedMachine]);
 
   // 5. Data Planning Export (Originele logica)
@@ -314,29 +317,27 @@ export default function TeamleaderExportModal({
     };
 
     return activeProducts.filter(p => {
-      let pOrigin = String(p.originMachine || p.machine || p.currentStation || "").toUpperCase().replace(/\s/g, "");
-      if (pOrigin.startsWith("40")) pOrigin = pOrigin.slice(2);
-
       if (selectedMachine === "Alle machines") {
-        return pOrigin.startsWith("BH"); // We willen in de lotnummer lijst alleen de output van de BH machines
+        return true; 
       }
       
-      
-      let filterMachine = String(selectedMachine).toUpperCase().replace(/\s/g, "");
-      if (filterMachine.startsWith("40")) filterMachine = filterMachine.slice(2);
-      
-      return pOrigin === filterMachine;
+      const pLoc = String(p.currentStation || p.currentStep || "Onbekend").trim();
+      return pLoc.toLowerCase() === selectedMachine.toLowerCase();
     }).map(product => {
       return {
         "Lotnummer": product.lotNumber || "Onbekend",
         "Ordernummer": product.orderId || product.orderNumber || "Onbekend",
         "Product Omschrijving": product.item || product.itemDescription || "Onbekend",
         "Oorsprong": product.originMachine || product.machine || "Onbekend",
-        "Huidig Station": product.currentStation || product.machine || product.originMachine || "Onbekend",
+        "Huidig Station": product.currentStation || product.currentStep || "Onbekend",
         "Status": product.status || product.currentStep || "Onbekend",
         "Verblijftijd": getDwellTime(product)
       };
-    }).sort((a, b) => a.Lotnummer.localeCompare(b.Lotnummer));
+    }).sort((a, b) => {
+      const locCompare = a["Huidig Station"].localeCompare(b["Huidig Station"]);
+      if (locCompare !== 0) return locCompare;
+      return a.Lotnummer.localeCompare(b.Lotnummer);
+    });
   }, [activeProducts, selectedMachine]);
 
   // 7. Active Data Array
@@ -446,7 +447,20 @@ export default function TeamleaderExportModal({
       XLSX.utils.book_append_sheet(wb, ws, "Planning");
       XLSX.writeFile(wb, `Planning_Export_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
     } else if (exportType === "lotnummers") {
-      const ws = XLSX.utils.json_to_sheet(lotnummerExportData);
+      const excelData = [];
+      let currentLoc = null;
+      lotnummerExportData.forEach(row => {
+        const rowLoc = row["Huidig Station"];
+        if (currentLoc !== rowLoc) {
+          excelData.push({
+            'Lotnummer': `=== Locatie: ${rowLoc} ===`,
+            'Ordernummer': '', 'Product Omschrijving': '', 'Oorsprong': '', 'Huidig Station': '', 'Status': '', 'Verblijftijd': ''
+          });
+          currentLoc = rowLoc;
+        }
+        excelData.push(row);
+      });
+      const ws = XLSX.utils.json_to_sheet(excelData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Lotnummers");
       XLSX.writeFile(wb, `Lotnummer_Export_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
@@ -509,15 +523,26 @@ export default function TeamleaderExportModal({
       doc.setFontSize(10);
       doc.text(`Datum gegenereerd: ${format(new Date(), 'dd-MM-yyyy HH:mm')}`, 14, 22);
 
-      const tableData = lotnummerExportData.map(row => [
-        row["Lotnummer"],
-        row["Ordernummer"],
-        row["Product Omschrijving"],
-        row["Oorsprong"],
-        row["Huidig Station"],
-        row["Status"],
-        row["Verblijftijd"]
-      ]);
+      const tableData = [];
+      let currentLoc = null;
+      lotnummerExportData.forEach(row => {
+        const rowLoc = row["Huidig Station"];
+        if (currentLoc !== rowLoc) {
+          tableData.push([
+            { content: `=== Locatie: ${rowLoc} ===`, colSpan: 7, styles: { halign: 'center', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' } }
+          ]);
+          currentLoc = rowLoc;
+        }
+        tableData.push([
+          row["Lotnummer"],
+          row["Ordernummer"],
+          row["Product Omschrijving"],
+          row["Oorsprong"],
+          row["Huidig Station"],
+          row["Status"],
+          row["Verblijftijd"]
+        ]);
+      });
 
       doc.autoTable({
         startY: 28,
@@ -569,11 +594,11 @@ export default function TeamleaderExportModal({
           {/* Filter Dropdown */}
           <div>
             <label className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">
-              <Factory size={14} /> Selecteer Machine
+              <Factory size={14} /> {exportType === "lotnummers" ? "Selecteer Locatie" : "Selecteer Machine"}
             </label>
             <div className="relative">
               <select value={selectedMachine} onChange={(e) => setSelectedMachine(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors cursor-pointer appearance-none shadow-sm">
-                <option value="Alle machines">Alle machines</option>
+                <option value="Alle machines">{exportType === "lotnummers" ? "Alle locaties" : "Alle machines"}</option>
                 {displayedMachines.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
               <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">

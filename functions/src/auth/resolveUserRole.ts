@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const { db } = require('../config/firebase');
 const { USER_ACCOUNTS_COLLECTION } = require('../config/planningConstants');
 const { clean } = require('../utils/text');

@@ -488,7 +488,11 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     }, [nahardingProducts]);
 
     const nahardingBatchProducts = useMemo(() => {
-        return nahardingProducts;
+        return [...nahardingProducts].sort((a, b) => {
+            const orderA = String(a.orderId || "").trim();
+            const orderB = String(b.orderId || "").trim();
+            return orderA.localeCompare(orderB);
+        });
     }, [nahardingProducts]);
 
     const latestNahardingBatchLabel = useMemo(() => {
@@ -634,7 +638,14 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
       archivedMatches.forEach(archived => {
           if (!combined.some(p => p.id === archived.id)) combined.push(archived);
       });
-      return combined.sort((a, b) => getNahardingOfferedMillis(a) - getNahardingOfferedMillis(b));
+      return combined.sort((a, b) => {
+          const orderA = String(a.orderId || "").trim();
+          const orderB = String(b.orderId || "").trim();
+          if (orderA !== orderB) {
+              return orderA.localeCompare(orderB);
+          }
+          return getNahardingOfferedMillis(a) - getNahardingOfferedMillis(b);
+      });
   }, [products, archivedProducts, selectedDate, viewMode]);
 
   // Filter producten die gereed zijn (Aangeboden tab) op basis van geselecteerde datum
@@ -677,6 +688,11 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     });
 
     return combined.sort((a, b) => {
+        const orderA = String(a.orderId || "").trim();
+        const orderB = String(b.orderId || "").trim();
+        if (orderA !== orderB) {
+            return orderA.localeCompare(orderB);
+        }
         const tA = a.timestamps?.finished?.seconds || a.updatedAt?.seconds || 0;
         const tB = b.timestamps?.finished?.seconds || b.updatedAt?.seconds || 0;
         return tB - tA;
@@ -793,7 +809,15 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
 
     const handlePrintQrOverview = async () => {
             // BEPALING LIJST: Als we in NH tab zitten, gebruik de specifieke print lijst voor die dag
-            const listToPrint = activeTab === "naharding_batch" ? nahardingPrintList : completedProducts;
+            let listToPrint = activeTab === "naharding_batch" ? nahardingPrintList : completedProducts;
+
+            if (activeTab === "naharding_batch") {
+                listToPrint = [...listToPrint].sort((a, b) => {
+                    const orderA = String(a.orderId || "").trim();
+                    const orderB = String(b.orderId || "").trim();
+                    return orderA.localeCompare(orderB);
+                });
+            }
 
             if (listToPrint.length === 0) return;
 
@@ -839,7 +863,9 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                     let customStyle = "";
 
                     if (activeTab === "naharding_batch") {
-                        cardsHtml = itemsWithQr.map((row) => `
+                        cardsHtml = itemsWithQr.map((row, idx) => {
+                            const isFirstOfOrder = idx === 0 || itemsWithQr[idx - 1].orderId !== row.orderId;
+                            return `
                                         <article class="card">
                                             <div class="cardHeader">
                                                 <div>
@@ -850,6 +876,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                                                 <div class="time">${escapeHtml(row.finishedAtText)}</div>
                                             </div>
                                             <div class="qrGrid">
+                                                ${isFirstOfOrder ? `
                                                 <section class="qrBlock">
                                                     ${row.orderQr ? `<img src="${row.orderQr}" alt="QR Order ${escapeHtml(row.orderId)}" />` : ""}
                                                     <div>
@@ -857,6 +884,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                                                         <div class="value">${escapeHtml(row.orderId)}</div>
                                                     </div>
                                                 </section>
+                                                ` : `<div></div>`}
                                                 <section class="qrBlock">
                                                     ${row.lotQr ? `<img src="${row.lotQr}" alt="QR Lot ${escapeHtml(row.lotNumber)}" />` : ""}
                                                     <div>
@@ -866,8 +894,8 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                                                 </section>
                                             </div>
                                         </article>
-                                    `
-                        ).join("");
+                                    `;
+                        }).join("");
                     } else {
                         cardsHtml = `
                             <table class="simple-table">
@@ -1041,16 +1069,16 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                     {t('bm01.to_offer')}
                 </button>
                 <button 
-                    onClick={() => setActiveTab("completed")}
-                    className={`flex-1 px-1 py-1.5 rounded-md text-[9px] sm:text-[11px] font-black uppercase tracking-tighter sm:tracking-widest transition-all ${activeTab === "completed" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-                >
-                    {t('bm01.offered')}
-                </button>
-                <button 
                     onClick={() => setActiveTab("naharding_batch")}
                     className={`flex-1 px-1 py-1.5 rounded-md text-[9px] sm:text-[11px] font-black uppercase tracking-tighter sm:tracking-widest transition-all ${activeTab === "naharding_batch" ? "bg-white text-amber-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                 >
                     NH
+                </button>
+                <button 
+                    onClick={() => setActiveTab("completed")}
+                    className={`flex-1 px-1 py-1.5 rounded-md text-[9px] sm:text-[11px] font-black uppercase tracking-tighter sm:tracking-widest transition-all ${activeTab === "completed" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                >
+                    {t('bm01.offered')}
                 </button>
                 <button 
                     onClick={() => setActiveTab("mismatch")}
@@ -1655,7 +1683,9 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                         <p className="text-center text-slate-400 italic py-10">{t('bm01.no_products_date')}</p>
                     ) : (
                         activeTab === "naharding_batch" ? (
-                        nahardingPrintList.map((item, index) => (
+                        nahardingPrintList.map((item, index) => {
+                            const isFirstOfOrder = index === 0 || nahardingPrintList[index - 1].orderId !== item.orderId;
+                            return (
                             <div key={item.id} className="border-b border-slate-200 pb-6 mb-6 break-inside-avoid print:border print:border-slate-300 print:p-2 print:mb-0 print:rounded-lg print:pb-1 print:break-inside-avoid">
                                 <div className="flex justify-between items-start mb-4 print:mb-1">
                                     <div className="min-w-0 overflow-hidden">
@@ -1673,6 +1703,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                                 
                                 <div className="grid grid-cols-2 gap-8 print:gap-2">
                                     {/* Order QR */}
+                                    {isFirstOfOrder ? (
                                     <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 print:border-0 print:bg-transparent print:p-0 print:gap-2">
                                         <InternalQrImage value={item.orderId} size={240} alt={`QR Order ${item.orderId}`} className="w-24 h-24 mix-blend-multiply print:w-10 print:h-10" />
                                         <div className="min-w-0 overflow-hidden">
@@ -1680,6 +1711,9 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                                             <span className="block text-xl font-black font-mono text-slate-900 print:text-[10px] truncate">{item.orderId}</span>
                                         </div>
                                     </div>
+                                    ) : (
+                                        <div></div>
+                                    )}
 
                                     {/* Lot QR */}
                                     <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 print:border-0 print:bg-transparent print:p-0 print:gap-2">
@@ -1691,7 +1725,8 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                                     </div>
                                 </div>
                             </div>
-                        ))
+                            );
+                        })
                         ) : (
                             <table className="w-full border-collapse text-left text-sm print:text-[10px]">
                                 <thead>

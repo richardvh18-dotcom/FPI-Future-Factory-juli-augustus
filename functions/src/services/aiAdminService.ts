@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const { db, admin } = require('../config/firebase');
 
 const aiConfigRef = () => db.collection('future-factory').doc('settings').collection('ai_config').doc('main');

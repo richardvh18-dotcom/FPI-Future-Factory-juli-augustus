@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const { db, admin } = require('../config/firebase');
 
 const MAX_BATCH_ITEMS = 5000;

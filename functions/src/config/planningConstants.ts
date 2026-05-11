@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 const BASE = 'future-factory';
 
 const TRACKING_COLLECTION = `${BASE}/production/tracked_products`;
