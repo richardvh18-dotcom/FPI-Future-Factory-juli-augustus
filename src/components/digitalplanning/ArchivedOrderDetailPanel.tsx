@@ -1,18 +1,42 @@
-// @ts-nocheck
-import React, { useState } from "react";
+import React, { useState, FC } from "react";
 import { useTranslation } from "react-i18next";
 
-const ArchivedOrderDetailPanel = ({
+interface LotEntry {
+  orderId?: string;
+  id?: string;
+  item?: string;
+  itemDescription?: string;
+  machine?: string;
+  originMachine?: string;
+  lotNumbers?: string[];
+  lotNumber?: string;
+  lotNumbersText?: string;
+  [key: string]: any;
+}
+
+interface ReopenParams {
+  entry: LotEntry;
+  increaseBy: number;
+}
+
+interface ArchivedOrderDetailPanelProps {
+  selectedSidebarEntry: LotEntry;
+  onClose: () => void;
+  onOpenArchivedLotDossier: (lotNumber?: string) => void;
+  onReopenArchivedOrderWithIncrease: (params: ReopenParams) => Promise<void>;
+}
+
+const ArchivedOrderDetailPanel: FC<ArchivedOrderDetailPanelProps> = ({
   selectedSidebarEntry,
   onClose,
   onOpenArchivedLotDossier,
   onReopenArchivedOrderWithIncrease,
 }) => {
   const { t } = useTranslation();
-  const [increaseBy, setIncreaseBy] = useState("2");
-  const [isReopening, setIsReopening] = useState(false);
+  const [increaseBy, setIncreaseBy] = useState<string>("2");
+  const [isReopening, setIsReopening] = useState<boolean>(false);
 
-  const handleReopen = async () => {
+  const handleReopen = async (): Promise<void> => {
     if (!onReopenArchivedOrderWithIncrease || isReopening) return;
     const safeIncrease = Math.floor(Number(increaseBy));
     if (!Number.isFinite(safeIncrease) || safeIncrease <= 0) return;
@@ -80,7 +104,7 @@ const ArchivedOrderDetailPanel = ({
               min="1"
               step="1"
               value={increaseBy}
-              onChange={(e) => setIncreaseBy(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setIncreaseBy(e.target.value)}
               className="w-24 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm font-bold text-slate-800"
             />
             <button
@@ -102,7 +126,7 @@ const ArchivedOrderDetailPanel = ({
           </p>
           {Array.isArray(selectedSidebarEntry.lotNumbers) && selectedSidebarEntry.lotNumbers.length > 0 ? (
             <div className="mt-2 space-y-2">
-              {selectedSidebarEntry.lotNumbers.map((lot) => (
+              {selectedSidebarEntry.lotNumbers.map((lot: string) => (
                 <div key={lot} className="flex items-center justify-between gap-3 rounded-xl bg-white border border-slate-200 px-3 py-2">
                   <span className="text-sm font-bold text-slate-800 break-all">{lot}</span>
                   <button
