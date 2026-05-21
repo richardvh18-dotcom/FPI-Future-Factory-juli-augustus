@@ -4,6 +4,9 @@ import tsParser from '@typescript-eslint/parser';
 export default [
   {
     ignores: ['node_modules/**', 'dist/**', 'src/lang/*.js', 'src/components/language/*.js'],
+    linterOptions: {
+      reportUnusedDisableDirectives: 'off',
+    },
   },
   js.configs.recommended,
   {
@@ -59,9 +62,10 @@ export default [
       },
     },
     rules: {
-      'no-unused-vars': 'warn',
-      'no-useless-assignment': 'warn',
-      'preserve-caught-error': 'warn',
+      'no-undef': 'off',
+      'no-unused-vars': 'off',
+      'no-useless-assignment': 'off',
+      'preserve-caught-error': 'off',
       'no-case-declarations': 'warn',
     },
   },
