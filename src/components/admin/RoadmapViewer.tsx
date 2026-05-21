@@ -1,20 +1,25 @@
-// @ts-nocheck
 import React, { useState } from "react";
 import { ChevronDown, ChevronRight, Send, FileText, ListChecks, CheckCircle2, Save } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNotifications } from '../../contexts/NotificationContext';
 
+type PilotTask = {
+  id: number;
+  text: string;
+  completed: boolean;
+};
+
 const RoadmapViewer = () => {
   const { t } = useTranslation();
   const { notify } = useNotifications();
-  const [activeTab, setActiveTab] = useState("roadmap");
-  const [expandedPhase, setExpandedPhase] = useState("8");
+  const [activeTab, setActiveTab] = useState<"roadmap" | "pilot">("roadmap");
+  const [expandedPhase, setExpandedPhase] = useState<string | null>("8");
   const [newIdea, setNewIdea] = useState("");
 
   // State voor het optimalisatieplan
   const [planContent, setPlanContent] = useState(`# Optimalisatieplan: Fittings Pilot (BH18 & BM01)\n\nDit document bevat de technische en functionele optimalisaties om de 4-weekse pilot tot een succes te maken.\n\n## 1. Code & Infrastructuur "Merge"\nDe eerste stap is het samenvoegen van de kracht van beide versies (Set 1 en Set 2).\n\n- **Herstel de Backend:** Zorg dat de functions/ map uit Set 1 volledig geïntegreerd is in je werkomgeving.\n- **Fix Bestandsfouten:** Verwijder het foutieve bestand AiCenterView,jsx uit Set 2.\n- **Activeer de ERP-Sync:** Integreer infor_sync_service.js uit Set 1.\n\n## 2. Optimalisatie voor de Werkvloer (UX)\nOperators werken vaak met handschoenen of in een luidruchtige omgeving.\n\n- **Scanner Snelheid:** Optimaliseer MobileScanner.jsx (Auto-Focus).\n- **Grote Interactie-elementen:** Knoppen minimaal h-16 (64px).\n- **Offline-First Check:** Lokale cache check in workstationLogic.js.\n\n## 3. De "Hybride Brug" (Papier-Digitaal)\n- **QR-Code Generatie:** Sticker-lay-out op papieren bon.\n- **Sync-Dashboard:** Vergelijk "Papieren Status" met "App Status".\n- **BM01 Checklists:** Volgorde gelijk aan papieren formulier.\n\n## 4. AI Assistent Optimalisatie\n- **Context Injectie:** Specifieke context over BH18.\n- **Spraak-naar-Tekst:** Web Speech API in AiChatView.\n\n## 5. Performance & Data\n- **Firestore Indexen:** Controleer indexen voor usePlanningData.js.\n- **Cleanup Script:** Archiveer voltooide orders wekelijks.`);
   
-  const [pilotTasks, setPilotTasks] = useState([
+  const [pilotTasks, setPilotTasks] = useState<PilotTask[]>([
     { id: 1, text: "Voer een volledige build uit met de functions/ map actief", completed: false },
     { id: 2, text: "Test de infor_sync_service met ten minste 5 echte ordernummers", completed: false },
     { id: 3, text: "Loop met een tablet langs station BH18 om de Wi-Fi sterkte te testen", completed: false },
@@ -32,8 +37,8 @@ const RoadmapViewer = () => {
     { id: 15, text: "Cleanup Script inrichten", completed: false },
   ]);
 
-  const toggleTask = (id) => {
-    setPilotTasks(pilotTasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+  const toggleTask = (id: number) => {
+    setPilotTasks((prev) => prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)));
   };
 
   const phases = [

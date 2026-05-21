@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -26,9 +25,32 @@ import { collection, query, getDocs, limit, doc, getDoc } from "firebase/firesto
 import { db } from "../../config/firebase";
 import { getArchiveItemsPath, PATHS } from "../../config/dbPaths";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
-import { normalizeMachine } from "../../utils/hubHelpers.tsx";
+import { normalizeMachine } from "../../utils/hubHelpers";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { fetchScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
+
+type AnyRecord = Record<string, any>;
+type LeadTimeRow = { station: string; orderId: string; hours: number };
+
+const asPath = (value: unknown): string[] =>
+  Array.isArray(value) ? value.map((segment) => String(segment)) : [];
+
+const toRows = (snap: any): AnyRecord[] =>
+  Array.isArray(snap?.docs)
+    ? snap.docs.map((d: any) => ({ id: d?.id, ...((d?.data?.() as AnyRecord) || {}) }))
+    : [];
+
+const getCollectionRef = (dbRef: any, pathLike: unknown): any | null => {
+  const path = asPath(pathLike);
+  if (!path.length) return null;
+  return (collection as any)(dbRef, ...path);
+};
+
+const getDocRef = (dbRef: any, pathLike: unknown): any | null => {
+  const path = asPath(pathLike);
+  if (path.length < 2) return null;
+  return (doc as any)(dbRef, ...path);
+};
 
 /**
  * AdminReportsView - Centrale Rapportage Module
@@ -39,12 +61,12 @@ const AdminReportsView = () => {
   const readDb = db;
   const readPaths = PATHS;
   const usePilotReadData = false;
-  const getArchiveItemsPathForSource = (year) => getArchiveItemsPath(year);
+  const getArchiveItemsPathForSource = (year: number | string) => getArchiveItemsPath(year);
   
   // State
   const { notify } = useNotifications();
-  const [selectedCategory, setSelectedCategory] = useState(null);
-  const [selectedReport, setSelectedReport] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState<AnyRecord | null>(null);
+  const [selectedReport, setSelectedReport] = useState<AnyRecord | null>(null);
   const [dateRange, setDateRange] = useState("week"); // 'today', 'week', 'month', 'custom'
   const [customStartDate] = useState("");
   const [customEndDate] = useState("");
@@ -55,13 +77,13 @@ const AdminReportsView = () => {
     status: "ALL",
   });
   const [loading, setLoading] = useState(false);
-  const [reportData, setReportData] = useState(null);
+  const [reportData, setReportData] = useState<AnyRecord | null>(null);
   const [offeredDepartmentFilter, setOfferedDepartmentFilter] = useState("ALL");
   const [offeredWorkstationFilter, setOfferedWorkstationFilter] = useState("ALL");
   const [offeredKpiFilter, setOfferedKpiFilter] = useState("ALL"); // ALL | COMPLETED | OFFERED | PRODUCED_NOT_OFFERED
   const [productionDepartmentFilter, setProductionDepartmentFilter] = useState("ALL");
-  const [factoryDepartments, setFactoryDepartments] = useState([]);
-  const [kpiPopup, setKpiPopup] = useState({ open: false, type: null }); // COMPLETED | OFFERED | PRODUCED_NOT_OFFERED
+  const [factoryDepartments, setFactoryDepartments] = useState<AnyRecord[]>([]);
+  const [kpiPopup, setKpiPopup] = useState<{ open: boolean; type: string | null }>({ open: false, type: null }); // COMPLETED | OFFERED | PRODUCED_NOT_OFFERED
   const [measurementDetailMode, setMeasurementDetailMode] = useState("current_week"); // current_week | browse_week | all
   const [measurementWeekOffset, setMeasurementWeekOffset] = useState(0);
   const [measurementLotNumberSearch, setMeasurementLotNumberSearch] = useState("");
@@ -69,14 +91,18 @@ const AdminReportsView = () => {
   useEffect(() => {
     const loadFactoryDepartments = async () => {
       try {
-        const configRef = doc(readDb, ...readPaths.FACTORY_CONFIG);
+        const configRef = getDocRef(readDb, readPaths.FACTORY_CONFIG);
+        if (!configRef) {
+          setFactoryDepartments([]);
+          return;
+        }
         const configSnap = await getDoc(configRef);
         if (!configSnap.exists()) {
           setFactoryDepartments([]);
           return;
         }
 
-        const data = configSnap.data() || {};
+        const data = (configSnap.data() || {}) as AnyRecord;
         const departments = Array.isArray(data.departments) ? data.departments : [];
         setFactoryDepartments(departments);
       } catch (error) {
@@ -89,34 +115,34 @@ const AdminReportsView = () => {
   }, [readDb, readPaths]);
 
   const factoryDepartmentMeta = useMemo(() => {
-    const normalizeDeptLabel = (value) =>
+    const normalizeDeptLabel = (value: unknown) =>
       String(value || "")
         .replace(/\u00A0/g, " ")
         .replace(/\s+/g, " ")
         .trim()
         .toLowerCase();
 
-    const toDisplayDeptLabel = (value) => {
+    const toDisplayDeptLabel = (value: unknown) => {
       const normalized = normalizeDeptLabel(value);
       if (!normalized) return "Onbekend";
       return normalized.charAt(0).toUpperCase() + normalized.slice(1);
     };
 
-    const list = (factoryDepartments || []).map((dept) => {
+    const list = (factoryDepartments || []).map((dept: AnyRecord) => {
       const key = String(dept?.slug || dept?.id || dept?.name || "").trim().toLowerCase();
       const label = toDisplayDeptLabel(dept?.name || dept?.slug || dept?.id || "Onbekend");
       const stations = (dept?.stations || [])
-        .map((s) => normalizeMachine(s?.name || s?.id || ""))
+        .map((s: AnyRecord) => normalizeMachine(s?.name || s?.id || ""))
         .filter(Boolean);
       return { key, label, stations };
     }).filter((d) => d.key);
 
-    const byKey = list.reduce((acc, d) => {
+    const byKey = list.reduce((acc: Record<string, { key: string; label: string; stations: string[] }>, d) => {
       acc[d.key] = d;
       return acc;
     }, {});
 
-    const byLabel = list.reduce((acc, d) => {
+    const byLabel = list.reduce((acc: Record<string, { label: string; keys: Set<string>; stations: Set<string> }>, d) => {
       const normalizedLabel = normalizeDeptLabel(d.label) || "onbekend";
       const displayLabel = toDisplayDeptLabel(d.label);
       if (!acc[normalizedLabel]) {
@@ -127,7 +153,7 @@ const AdminReportsView = () => {
         };
       }
       acc[normalizedLabel].keys.add(d.key);
-      d.stations.forEach((s) => acc[normalizedLabel].stations.add(s));
+      d.stations.forEach((s: string) => acc[normalizedLabel].stations.add(s));
       return acc;
     }, {});
 
@@ -137,9 +163,9 @@ const AdminReportsView = () => {
       stations: Array.from(entry.stations),
     }));
 
-    const keyToLabel = {};
-    const normalizedLabelToLabel = {};
-    const stationToLabel = {};
+    const keyToLabel: Record<string, string> = {};
+    const normalizedLabelToLabel: Record<string, string> = {};
+    const stationToLabel: Record<string, string> = {};
 
     byLabelList.forEach((entry) => {
       const normalizedLabel = normalizeDeptLabel(entry.label);
@@ -419,7 +445,7 @@ const AdminReportsView = () => {
     return { startDate, endDate };
   };
 
-  const getItemDate = (item) => {
+  const getItemDate = (item: AnyRecord) => {
     const candidates = [
       item?.timestamps?.finished,
       item?.timestamps?.completed,
@@ -443,8 +469,8 @@ const AdminReportsView = () => {
     return null;
   };
 
-  const getDepartmentLabel = (item) => {
-    const normalizeRaw = (value) =>
+  const getDepartmentLabel = (item: AnyRecord) => {
+    const normalizeRaw = (value: unknown) =>
       String(value || "")
         .replace(/\u00A0/g, " ")
         .replace(/\s+/g, " ")
@@ -482,7 +508,7 @@ const AdminReportsView = () => {
     );
     if (byContains) return byContains.label;
 
-    const findByKeyword = (keyword) =>
+    const findByKeyword = (keyword: string) =>
       factoryDepartmentMeta.byLabelList.find((d) => d.label.toLowerCase().includes(keyword))?.label;
 
     if (rawDepartment.includes("pipe")) return findByKeyword("pipe") || "Pipes";
@@ -507,7 +533,7 @@ const AdminReportsView = () => {
     return "Onbekend";
   };
 
-  const getDepartmentDisplayLabel = (deptKey) => {
+  const getDepartmentDisplayLabel = (deptKey: unknown) => {
     const raw = String(deptKey || "")
       .replace(/\u00A0/g, " ")
       .replace(/\s+/g, " ")
@@ -522,7 +548,7 @@ const AdminReportsView = () => {
     return raw;
   };
 
-  const getWorkstationLabel = (item) => {
+  const getWorkstationLabel = (item: AnyRecord) => {
     const machineCandidate =
       item?.originMachine ||
       item?.machine ||
@@ -539,10 +565,10 @@ const AdminReportsView = () => {
     return n;
   };
 
-  const isDepartmentScopedReport = (reportId) =>
+  const isDepartmentScopedReport = (reportId: string) =>
     ["production_output", "lead_time", "order_completion", "wip_status"].includes(reportId);
 
-  const openKpiPopup = (type) => {
+  const openKpiPopup = (type: string) => {
     setOfferedKpiFilter(type);
     setKpiPopup({ open: true, type });
   };
@@ -551,7 +577,7 @@ const AdminReportsView = () => {
     setKpiPopup({ open: false, type: null });
   };
 
-  const formatHoursAsHM = (hoursValue) => {
+  const formatHoursAsHM = (hoursValue: unknown) => {
     const numeric = Number(hoursValue || 0);
     if (!Number.isFinite(numeric) || numeric < 0) return "0u 00m";
     const totalMinutes = Math.round(numeric * 60);
@@ -573,7 +599,7 @@ const AdminReportsView = () => {
     };
   };
 
-  const isCompletedAtInspection = (item) => {
+  const isCompletedAtInspection = (item: AnyRecord) => {
     const status = String(item?.status || "").toLowerCase();
     const step = String(item?.currentStep || "").toLowerCase();
     const station = String(item?.currentStation || "").toLowerCase();
@@ -586,7 +612,7 @@ const AdminReportsView = () => {
     );
   };
 
-  const isOfferedToInspection = (item) => {
+  const isOfferedToInspection = (item: AnyRecord) => {
     const status = String(item?.status || "").toLowerCase();
     const station = String(item?.currentStation || "").toUpperCase();
     const step = String(item?.currentStep || "").toUpperCase();
@@ -598,7 +624,7 @@ const AdminReportsView = () => {
     );
   };
 
-  const isProducedButNotOffered = (item) => {
+  const isProducedButNotOffered = (item: AnyRecord) => {
     if (isCompletedAtInspection(item) || isOfferedToInspection(item)) return false;
 
     const status = String(item?.status || "").toLowerCase();
@@ -623,16 +649,18 @@ const AdminReportsView = () => {
   const fetchTrackingProductsInRange = async () => {
     const { startDate, endDate } = getDateRange();
 
-    const trackingQuery = query(collection(readDb, ...readPaths.TRACKING), limit(3000));
+    const trackingRef = getCollectionRef(readDb, readPaths.TRACKING);
+    if (!trackingRef) return [];
+
+    const trackingQuery = query(trackingRef, limit(3000));
     const trackingSnap = await getDocs(trackingQuery);
-    const products = trackingSnap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
+    const products: AnyRecord[] = toRows(trackingSnap)
       .filter((p) => {
         const itemDate = getItemDate(p);
         return itemDate ? isWithinInterval(itemDate, { start: startDate, end: endDate }) : true;
       });
 
-    const byDepartment = productionDepartmentFilter !== "ALL"
+    const byDepartment: AnyRecord[] = productionDepartmentFilter !== "ALL"
       ? products.filter((p) => getDepartmentDisplayLabel(getDepartmentLabel(p)) === productionDepartmentFilter)
       : products;
 
@@ -646,7 +674,7 @@ const AdminReportsView = () => {
     try {
       const filteredProducts = await fetchTrackingProductsInRange();
 
-      const stationCounts = {};
+      const stationCounts: Record<string, number> = {};
       filteredProducts.forEach((p) => {
         const station = p.currentStation || p.machine || "Unknown";
         stationCounts[station] = (stationCounts[station] || 0) + 1;
@@ -672,11 +700,11 @@ const AdminReportsView = () => {
           rejected,
         },
         chartData: Object.entries(stationCounts)
-          .map(([label, value]) => ({ label, value }))
+          .map(([label, value]) => ({ label, value: Number(value || 0) }))
           .sort((a, b) => b.value - a.value)
           .slice(0, 10),
         details: Object.entries(
-          filteredProducts.reduce((acc, p) => {
+          filteredProducts.reduce((acc: Record<string, { name: string; count: number; status: string }>, p) => {
             const orderKey = p.orderId || "Geen Order";
             if (!acc[orderKey]) acc[orderKey] = { name: orderKey, count: 0, status: "in_progress" };
             acc[orderKey].count++;
@@ -696,7 +724,7 @@ const AdminReportsView = () => {
       const products = await fetchTrackingProductsInRange();
       const completedProducts = products.filter((p) => p.status === "completed" || p.currentStep === "Finished");
 
-      const byStation = {};
+      const byStation: Record<string, number> = {};
       const byShift = { Ochtend: 0, Middag: 0, Nacht: 0 };
       completedProducts.forEach((p) => {
         const station = p.currentStation || p.machine || "Unknown";
@@ -719,7 +747,7 @@ const AdminReportsView = () => {
           rejected: products.filter((p) => p.status === "rejected" || p.currentStep === "REJECTED").length,
         },
         chartData: Object.entries(byStation)
-          .map(([label, value]) => ({ label, value }))
+          .map(([label, value]) => ({ label, value: Number(value || 0) }))
           .sort((a, b) => b.value - a.value)
           .slice(0, 10),
         details: Object.entries(byShift).map(([name, count], idx) => ({
@@ -765,14 +793,14 @@ const AdminReportsView = () => {
             hours: diffMs / (1000 * 60 * 60),
           };
         })
-        .filter(Boolean);
+        .filter((x): x is LeadTimeRow => Boolean(x));
 
       const values = leadTimes.map((x) => x.hours);
       const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
       const min = values.length ? Math.min(...values) : 0;
       const max = values.length ? Math.max(...values) : 0;
 
-      const byStation = {};
+      const byStation: Record<string, { total: number; count: number }> = {};
       leadTimes.forEach((x) => {
         if (!byStation[x.station]) byStation[x.station] = { total: 0, count: 0 };
         byStation[x.station].total += x.hours;
@@ -786,7 +814,7 @@ const AdminReportsView = () => {
           trend: "down",
         },
         chartData: Object.entries(byStation)
-          .map(([label, v]) => ({ label, value: Number((v.total / v.count).toFixed(1)) }))
+          .map(([label, v]) => ({ label, value: Number(((v.total || 0) / Math.max(v.count || 1, 1)).toFixed(1)) }))
           .sort((a, b) => b.value - a.value)
           .slice(0, 10),
         details: [
@@ -806,7 +834,7 @@ const AdminReportsView = () => {
       const products = await fetchTrackingProductsInRange();
       const now = new Date();
 
-      const byOrder = {};
+      const byOrder: Record<string, { orderId: string; total: number; completed: number; dueDate: any }> = {};
       products.forEach((p) => {
         const orderId = p.orderId || "Geen Order";
         if (!byOrder[orderId]) {
@@ -821,7 +849,7 @@ const AdminReportsView = () => {
         if (p.status === "completed" || p.currentStep === "Finished") byOrder[orderId].completed += 1;
       });
 
-      const orders = Object.values(byOrder);
+      const orders = Object.values(byOrder) as Array<{ orderId: string; total: number; completed: number; dueDate: any }>;
       const completedOrders = orders.filter((o) => o.total > 0 && o.completed === o.total);
       const inProgressOrders = orders.filter((o) => o.completed > 0 && o.completed < o.total);
       const backlogOrders = orders.filter((o) => o.completed === 0);
@@ -870,7 +898,7 @@ const AdminReportsView = () => {
         return !(status === "completed" || step === "finished" || status === "rejected" || step === "rejected");
       });
 
-      const byStep = {};
+      const byStep: Record<string, number> = {};
       wipItems.forEach((p) => {
         const step = p.currentStep || p.currentStation || "Onbekend";
         byStep[step] = (byStep[step] || 0) + 1;
@@ -889,7 +917,7 @@ const AdminReportsView = () => {
           trend: "up",
         },
         chartData: Object.entries(byStep)
-          .map(([label, value]) => ({ label, value }))
+          .map(([label, value]) => ({ label, value: Number(value || 0) }))
           .sort((a, b) => b.value - a.value)
           .slice(0, 10),
         details: [
@@ -908,10 +936,22 @@ const AdminReportsView = () => {
     const { startDate, endDate } = getDateRange();
 
     try {
-      const trackingQuery = query(collection(readDb, ...readPaths.TRACKING), limit(3000));
+      const trackingRef = getCollectionRef(readDb, readPaths.TRACKING);
+      if (!trackingRef) {
+        return {
+          summary: { total: 0, change: 0, trend: "down", ftrPercentage: 0, tempRejects: 0 },
+          chartData: [],
+          details: [
+            { id: 1, name: "Definitieve Afkeur", count: 0, status: "rejected" },
+            { id: 2, name: "Tijdelijke Afkeur", count: 0, status: "temp_reject" },
+            { id: 3, name: "Goedgekeurd", count: 0, status: "completed" },
+          ],
+        };
+      }
+
+      const trackingQuery = query(trackingRef, limit(3000));
       const trackingSnap = await getDocs(trackingQuery);
-      const products = trackingSnap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
+      const products: AnyRecord[] = toRows(trackingSnap)
         .filter((p) => {
           const itemDate = getItemDate(p);
           return itemDate ? isWithinInterval(itemDate, { start: startDate, end: endDate }) : true;
@@ -933,19 +973,19 @@ const AdminReportsView = () => {
       );
 
       const totalProcessed = completed.length + rejections.length;
-      const ftrPercentage = totalProcessed > 0 
-        ? ((completed.length / totalProcessed) * 100).toFixed(1) 
+      const ftrPercentage = totalProcessed > 0
+        ? Number(((completed.length / totalProcessed) * 100).toFixed(1))
         : 0;
 
       // Rejections by station
-      const rejectionsByStation = {};
+      const rejectionsByStation: Record<string, number> = {};
       rejections.forEach((p) => {
         const station = p.currentStation || p.machine || "Unknown";
         rejectionsByStation[station] = (rejectionsByStation[station] || 0) + 1;
       });
 
       const chartData = Object.entries(rejectionsByStation)
-        .map(([label, value]) => ({ label, value }))
+        .map(([label, value]) => ({ label, value: Number(value || 0) }))
         .sort((a, b) => b.value - a.value)
         .slice(0, 10);
 
@@ -954,7 +994,7 @@ const AdminReportsView = () => {
           total: rejections.length,
           change: 0, // Could calculate trend
           trend: "down",
-          ftrPercentage: parseFloat(ftrPercentage),
+          ftrPercentage,
           tempRejects: tempRejects.length,
         },
         chartData,
@@ -976,12 +1016,11 @@ const AdminReportsView = () => {
 
     try {
       // Fetch occupancy data
-      const occupancyQuery = query(
-        collection(readDb, ...readPaths.OCCUPANCY),
-        limit(500)
-      );
+      const occupancyRef = getCollectionRef(readDb, readPaths.OCCUPANCY);
+      if (!occupancyRef) throw new Error("OCCUPANCY path ontbreekt");
+      const occupancyQuery = query(occupancyRef, limit(500));
       const occupancySnap = await getDocs(occupancyQuery);
-      const occupancy = occupancySnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const occupancy: AnyRecord[] = toRows(occupancySnap);
 
       // Filter by date range
       const filteredOccupancy = occupancy.filter((occ) => {
@@ -991,7 +1030,7 @@ const AdminReportsView = () => {
       });
 
       // Calculate utilization by station
-      const stationUtilization = {};
+      const stationUtilization: Record<string, { total: number; productive: number }> = {};
       filteredOccupancy.forEach((occ) => {
         const station = occ.station || occ.machineId || "Unknown";
         if (!stationUtilization[station]) {
@@ -1038,19 +1077,21 @@ const AdminReportsView = () => {
   // Fetch personnel data
   const fetchPersonnelData = async () => {
     try {
-      const personnelQuery = query(collection(readDb, ...readPaths.PERSONNEL), limit(200));
+      const personnelRef = getCollectionRef(readDb, readPaths.PERSONNEL);
+      if (!personnelRef) throw new Error("PERSONNEL path ontbreekt");
+      const personnelQuery = query(personnelRef, limit(200));
       const personnelSnap = await getDocs(personnelQuery);
-      const personnel = personnelSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const personnel: AnyRecord[] = toRows(personnelSnap);
 
       // Count by department/role
-      const deptCounts = {};
+      const deptCounts: Record<string, number> = {};
       personnel.forEach((p) => {
         const dept = p.department || p.role || "Unknown";
         deptCounts[dept] = (deptCounts[dept] || 0) + 1;
       });
 
       const chartData = Object.entries(deptCounts)
-        .map(([label, value]) => ({ label, value }))
+        .map(([label, value]) => ({ label, value: Number(value || 0) }))
         .sort((a, b) => b.value - a.value);
 
       return {
@@ -1077,20 +1118,21 @@ const AdminReportsView = () => {
     const { startDate, endDate } = getDateRange();
 
     try {
+      const occupancyRef = getCollectionRef(readDb, readPaths.OCCUPANCY);
       const [hoursRecords, occSnap] = await Promise.all([
         fetchScopedEfficiencyHours({ db: readDb, mode: "active", maxDocs: 3000 }),
-        getDocs(query(collection(readDb, ...readPaths.OCCUPANCY), limit(3000))),
+        occupancyRef ? getDocs(query(occupancyRef, limit(3000))) : Promise.resolve({ docs: [] } as any),
       ]);
 
-      const normalizeHours = (value) => {
-        const parsed = parseFloat(value);
+      const normalizeHours = (value: unknown) => {
+        const parsed = parseFloat(String(value ?? "0"));
         if (Number.isNaN(parsed)) return 0;
         return parsed;
       };
 
-      const occRecords = occSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const occRecords: AnyRecord[] = toRows(occSnap);
 
-      const combined = [
+      const combined: AnyRecord[] = [
         ...hoursRecords.map((r) => ({ ...r, _source: "efficiency" })),
         ...occRecords.map((r) => ({ ...r, _source: "occupancy" })),
       ].filter((r) => {
@@ -1098,8 +1140,8 @@ const AdminReportsView = () => {
         return d ? isWithinInterval(d, { start: startDate, end: endDate }) : false;
       });
 
-      const stationHours = {};
-      const dayHours = {};
+      const stationHours: Record<string, number> = {};
+      const dayHours: Record<string, number> = {};
 
       combined.forEach((r) => {
         const station = (r.station || r.machineId || r.machineName || "Unknown").toString();
@@ -1143,9 +1185,10 @@ const AdminReportsView = () => {
     const { startDate, endDate } = getDateRange();
 
     try {
-      const trackingSnap = await getDocs(query(collection(readDb, ...readPaths.TRACKING), limit(4000)));
-      const products = trackingSnap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
+      const trackingRef = getCollectionRef(readDb, readPaths.TRACKING);
+      if (!trackingRef) throw new Error("TRACKING path ontbreekt");
+      const trackingSnap = await getDocs(query(trackingRef, limit(4000)));
+      const products: AnyRecord[] = toRows(trackingSnap)
         .filter((p) => {
           const itemDate = getItemDate(p);
           return itemDate ? isWithinInterval(itemDate, { start: startDate, end: endDate }) : true;
@@ -1162,8 +1205,8 @@ const AdminReportsView = () => {
         );
       });
 
-      const byStation = {};
-      const byReason = {};
+      const byStation: Record<string, number> = {};
+      const byReason: Record<string, number> = {};
 
       tempRejects.forEach((p) => {
         const station = p.currentStation || p.lastStation || p.machine || "Unknown";
@@ -1173,7 +1216,7 @@ const AdminReportsView = () => {
         if (reasons.length === 0) {
           byReason["Geen reden opgegeven"] = (byReason["Geen reden opgegeven"] || 0) + 1;
         } else {
-          reasons.forEach((r) => {
+          reasons.forEach((r: string) => {
             byReason[r] = (byReason[r] || 0) + 1;
           });
         }
@@ -1187,11 +1230,11 @@ const AdminReportsView = () => {
           tempRejects: tempRejects.length,
         },
         chartData: Object.entries(byStation)
-          .map(([label, value]) => ({ label, value }))
+          .map(([label, value]) => ({ label, value: Number(value || 0) }))
           .sort((a, b) => b.value - a.value)
           .slice(0, 10),
         details: Object.entries(byReason)
-          .map(([name, count], idx) => ({ id: idx + 1, name, count, status: "temp_reject" }))
+          .map(([name, count], idx) => ({ id: idx + 1, name, count: Number(count || 0), status: "temp_reject" }))
           .sort((a, b) => b.count - a.count)
           .slice(0, 20),
       };
@@ -1213,25 +1256,29 @@ const AdminReportsView = () => {
       for (let y = yearStart; y <= yearEnd; y++) years.push(y);
 
       const [trackingSnap, ...archiveSnaps] = await Promise.all([
-        getDocs(query(collection(readDb, ...readPaths.TRACKING), limit(4000))),
+        (() => {
+          const trackingRef = getCollectionRef(readDb, readPaths.TRACKING);
+          if (!trackingRef) return Promise.resolve({ docs: [] } as any);
+          return getDocs(query(trackingRef, limit(4000)));
+        })(),
         ...years.map((year) =>
           getDocs(
             query(
-              collection(readDb, ...getArchiveItemsPathForSource(year)),
+              (collection as any)(readDb, ...asPath(getArchiveItemsPathForSource(year))),
               limit(4000)
             )
           )
         ),
       ]);
 
-      const trackingProducts = trackingSnap.docs.map((d) => ({ id: d.id, source: "tracking", ...d.data() }));
+      const trackingProducts: AnyRecord[] = toRows(trackingSnap).map((row: AnyRecord) => ({ ...row, source: "tracking" }));
       const archivedProducts = archiveSnaps.flatMap((snap) =>
-        snap.docs.map((d) => ({ id: d.id, source: "archive", ...d.data() }))
+        toRows(snap).map((row: AnyRecord) => ({ ...row, source: "archive" }))
       );
 
       // De-dupe op lot/id: voorkeur voor tracking-record als beide bestaan
       const mapByKey = new Map();
-      [...archivedProducts, ...trackingProducts].forEach((p) => {
+      ([...archivedProducts, ...trackingProducts] as AnyRecord[]).forEach((p) => {
         const key = p.lotNumber || p.id;
         if (!key) return;
         mapByKey.set(key, p);
@@ -1246,7 +1293,7 @@ const AdminReportsView = () => {
 
       const withMeasurements = products.filter((p) => p.measurements && typeof p.measurements === "object");
 
-      const measurementFieldCount = {};
+      const measurementFieldCount: Record<string, number> = {};
       withMeasurements.forEach((p) => {
         Object.keys(p.measurements || {}).forEach((field) => {
           measurementFieldCount[field] = (measurementFieldCount[field] || 0) + 1;
@@ -1265,7 +1312,7 @@ const AdminReportsView = () => {
           trend: "up",
         },
         chartData: Object.entries(measurementFieldCount)
-          .map(([label, value]) => ({ label, value }))
+          .map(([label, value]) => ({ label, value: Number(value || 0) }))
           .sort((a, b) => b.value - a.value)
           .slice(0, 10),
         details: withMeasurements.slice(0, 30).map((p, idx) => ({
@@ -1297,33 +1344,37 @@ const AdminReportsView = () => {
       for (let y = yearStart; y <= yearEnd; y++) years.push(y);
 
       const [trackingSnap, ...archiveSnaps] = await Promise.all([
-        getDocs(query(collection(readDb, ...readPaths.TRACKING), limit(4000))),
+        (() => {
+          const trackingRef = getCollectionRef(readDb, readPaths.TRACKING);
+          if (!trackingRef) return Promise.resolve({ docs: [] } as any);
+          return getDocs(query(trackingRef, limit(4000)));
+        })(),
         ...years.map((year) =>
           getDocs(
             query(
-              collection(readDb, ...getArchiveItemsPathForSource(year)),
+              (collection as any)(readDb, ...asPath(getArchiveItemsPathForSource(year))),
               limit(4000)
             )
           )
         ),
       ]);
 
-      const trackingProducts = trackingSnap.docs.map((d) => ({ id: d.id, source: "tracking", ...d.data() }));
+      const trackingProducts: AnyRecord[] = toRows(trackingSnap).map((row: AnyRecord) => ({ ...row, source: "tracking" }));
       const archivedProducts = archiveSnaps.flatMap((snap) =>
-        snap.docs.map((d) => ({ id: d.id, source: "archive", ...d.data() }))
+        toRows(snap).map((row: AnyRecord) => ({ ...row, source: "archive" }))
       );
 
       const byKey = new Map();
-      [...archivedProducts, ...trackingProducts].forEach((p) => {
+      ([...archivedProducts, ...trackingProducts] as AnyRecord[]).forEach((p) => {
         const key = p.lotNumber || p.id;
         if (!key) return;
         byKey.set(key, p);
       });
       const allProducts = Array.from(byKey.values());
 
-      const getDepartmentFilterLabel = (item) => getDepartmentDisplayLabel(getDepartmentLabel(item));
+      const getDepartmentFilterLabel = (item: AnyRecord) => getDepartmentDisplayLabel(getDepartmentLabel(item));
 
-      const itemMatchesOfferedFilters = (item) => {
+      const itemMatchesOfferedFilters = (item: AnyRecord) => {
         const department = getDepartmentFilterLabel(item);
         const workstation = getWorkstationLabel(item);
         if (offeredDepartmentFilter !== "ALL" && department !== offeredDepartmentFilter) return false;
@@ -1331,14 +1382,14 @@ const AdminReportsView = () => {
         return true;
       };
 
-      const allDepartments = factoryDepartmentMeta.byLabelList.map((d) => d.label);
-      const departmentWorkstationsMap = factoryDepartmentMeta.byLabelList.reduce((acc, d) => {
+      const allDepartments = factoryDepartmentMeta.byLabelList.map((d: AnyRecord) => d.label);
+      const departmentWorkstationsMap = factoryDepartmentMeta.byLabelList.reduce((acc: Record<string, string[]>, d) => {
         acc[d.label] = d.stations;
         return acc;
       }, {});
 
       const allWorkstations = Array.from(
-        new Set(factoryDepartmentMeta.byLabelList.flatMap((d) => d.stations || []))
+        new Set(factoryDepartmentMeta.byLabelList.flatMap((d: AnyRecord) => d.stations || []))
       ).sort();
 
       const filteredWorkstations = offeredDepartmentFilter === "ALL"
@@ -1369,7 +1420,7 @@ const AdminReportsView = () => {
         return isOfferedToInspection(p);
       }).filter(itemMatchesOfferedFilters);
 
-      const grouped = {};
+      const grouped: Record<string, number> = {};
       offeredItems.forEach((p) => {
         const d = p.timestamps?.eindinspectie_start?.toDate?.() || getItemDate(p);
         if (!d) return;
@@ -1377,7 +1428,7 @@ const AdminReportsView = () => {
         grouped[key] = (grouped[key] || 0) + 1;
       });
 
-      const departmentBuckets = {};
+      const departmentBuckets: Record<string, AnyRecord> = {};
       completedItems.forEach((p) => {
         const dept = getDepartmentFilterLabel(p);
         if (!departmentBuckets[dept]) {
@@ -1417,14 +1468,14 @@ const AdminReportsView = () => {
         departmentBuckets[dept].offeredToInspection += 1;
       });
 
-      const departmentOverview = Object.values(departmentBuckets)
-        .map((d) => ({
+      const departmentOverview = (Object.values(departmentBuckets) as AnyRecord[])
+        .map((d: AnyRecord) => ({
           ...d,
           totalReported: d.completedAtInspection,
         }))
-        .sort((a, b) => b.completedAtInspection - a.completedAtInspection || b.producedNotOffered - a.producedNotOffered);
+        .sort((a: AnyRecord, b: AnyRecord) => b.completedAtInspection - a.completedAtInspection || b.producedNotOffered - a.producedNotOffered);
 
-      const stationBuckets = {};
+      const stationBuckets: Record<string, AnyRecord> = {};
       completedItems.forEach((p) => {
         const station = getWorkstationLabel(p);
         if (!stationBuckets[station]) {
@@ -1464,7 +1515,7 @@ const AdminReportsView = () => {
         stationBuckets[station].offeredToInspection += 1;
       });
 
-      const stationOverview = Object.values(stationBuckets).sort(
+      const stationOverview = (Object.values(stationBuckets) as AnyRecord[]).sort(
         (a, b) => b.completedAtInspection - a.completedAtInspection || b.producedNotOffered - a.producedNotOffered
       );
 
@@ -1479,11 +1530,11 @@ const AdminReportsView = () => {
           trend: "up",
           offeredTotal: offeredItems.length,
           producedNotOfferedTotal: totalProducedNotOffered,
-          departmentsWithOutput: departmentOverview.filter((d) => d.completedAtInspection > 0 || d.producedNotOffered > 0).length,
+          departmentsWithOutput: departmentOverview.filter((d: AnyRecord) => d.completedAtInspection > 0 || d.producedNotOffered > 0).length,
           workstationsWithOutput: stationOverview.filter((s) => s.completedAtInspection > 0 || s.producedNotOffered > 0).length,
         },
-        chartData: departmentOverview.map((d) => ({ label: d.department, value: d.completedAtInspection })),
-        details: departmentOverview.map((d, idx) => ({
+        chartData: departmentOverview.map((d: AnyRecord) => ({ label: d.department, value: d.completedAtInspection })),
+        details: departmentOverview.map((d: AnyRecord, idx: number) => ({
           id: idx + 1,
           name: getDepartmentDisplayLabel(d.department),
           count: `${d.completedAtInspection} gereed | ${d.producedNotOffered} nog niet aangeboden`,
@@ -1502,7 +1553,7 @@ const AdminReportsView = () => {
   };
 
   // Main report generation function
-  const generateReportData = async (reportOverride = null) => {
+  const generateReportData = async (reportOverride: AnyRecord | null = null) => {
     const targetReport = reportOverride || selectedReport;
     if (!targetReport?.id) {
       console.warn("generateReportData called without a valid report");
@@ -1511,7 +1562,7 @@ const AdminReportsView = () => {
 
     setLoading(true);
     try {
-      let data;
+      let data: AnyRecord;
 
       if (targetReport.id === "production_output") {
         data = await fetchProductionOutputData();
@@ -1562,7 +1613,7 @@ const AdminReportsView = () => {
   };
 
   // Export helpers
-  const buildExportFilename = (extension) => {
+  const buildExportFilename = (extension: string) => {
     const safeTitle = (selectedReport?.title || "report")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
@@ -1570,7 +1621,7 @@ const AdminReportsView = () => {
     return `${safeTitle || "report"}_${new Date().toISOString().slice(0, 10)}.${extension}`;
   };
 
-  const downloadBlob = (content, mimeType, filename) => {
+  const downloadBlob = (content: string, mimeType: string, filename: string) => {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -1587,11 +1638,11 @@ const AdminReportsView = () => {
     if (!reportData || !selectedReport) return;
 
     const chartRows = (reportData.chartData || [])
-      .map((item) => `<tr><td style="padding:8px;border:1px solid #ddd;">${item.label}</td><td style="padding:8px;border:1px solid #ddd;text-align:right;">${item.value}</td></tr>`)
+      .map((item: AnyRecord) => `<tr><td style="padding:8px;border:1px solid #ddd;">${item.label}</td><td style="padding:8px;border:1px solid #ddd;text-align:right;">${item.value}</td></tr>`)
       .join("");
 
     const detailRows = (reportData.details || [])
-      .map((item) => `<tr><td style="padding:8px;border:1px solid #ddd;">${item.name}</td><td style="padding:8px;border:1px solid #ddd;text-align:right;">${item.count}</td><td style="padding:8px;border:1px solid #ddd;">${item.status}</td></tr>`)
+      .map((item: AnyRecord) => `<tr><td style="padding:8px;border:1px solid #ddd;">${item.name}</td><td style="padding:8px;border:1px solid #ddd;text-align:right;">${item.count}</td><td style="padding:8px;border:1px solid #ddd;">${item.status}</td></tr>`)
       .join("");
 
     const html = `<!doctype html>
@@ -1645,15 +1696,15 @@ const AdminReportsView = () => {
       [],
       ["Overzicht per werkstation"],
       ["Werkstation", "Waarde"],
-      ...(reportData.chartData || []).map((item) => [item.label, item.value]),
+      ...(reportData.chartData || []).map((item: AnyRecord) => [item.label, item.value]),
       [],
       ["Details"],
       ["Naam", "Aantal", "Status"],
-      ...(reportData.details || []).map((item) => [item.name, item.count, item.status]),
+      ...(reportData.details || []).map((item: AnyRecord) => [item.name, item.count, item.status]),
     ];
 
     const csvLike = summary
-      .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+      .map((row) => row.map((cell: unknown) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
       .join("\n");
 
     downloadBlob(`${header}${csvLike}`, "application/vnd.ms-excel;charset=utf-8", buildExportFilename("xls"));
@@ -1670,14 +1721,14 @@ const AdminReportsView = () => {
       ["ChangePercent", reportData.summary?.change ?? 0],
       [],
       ["Workstation", "Value"],
-      ...(reportData.chartData || []).map((d) => [d.label, d.value]),
+      ...(reportData.chartData || []).map((d: AnyRecord) => [d.label, d.value]),
       [],
       ["Name", "Count", "Status"],
-      ...(reportData.details || []).map((d) => [d.name, d.count, d.status]),
+      ...(reportData.details || []).map((d: AnyRecord) => [d.name, d.count, d.status]),
     ];
 
     const csvContent = rows
-      .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+      .map((row) => row.map((cell: unknown) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
       .join("\n");
 
     downloadBlob(csvContent, "text/csv;charset=utf-8", buildExportFilename("csv"));
@@ -1786,7 +1837,7 @@ const AdminReportsView = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {selectedCategory.reports.map((report) => (
+            {selectedCategory.reports.map((report: AnyRecord) => (
               <button
                 key={report.id}
                 onClick={() => {
@@ -1805,7 +1856,7 @@ const AdminReportsView = () => {
                   {report.description}
                 </p>
                 <div className="flex flex-wrap gap-1">
-                  {report.metrics.slice(0, 3).map((metric) => (
+                  {report.metrics.slice(0, 3).map((metric: string) => (
                     <span
                       key={metric}
                       className="px-2 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase rounded"
@@ -1828,6 +1879,7 @@ const AdminReportsView = () => {
   }
 
   const canExport = !!reportData && !loading;
+  const activeReport = selectedReport as AnyRecord;
 
   // Render report view with data
   return (
@@ -1846,9 +1898,9 @@ const AdminReportsView = () => {
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
             <div>
               <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">
-                {selectedReport.title}
+                {activeReport.title}
               </h2>
-              <p className="text-sm text-slate-500">{selectedReport.description}</p>
+              <p className="text-sm text-slate-500">{activeReport.description}</p>
             </div>
 
             <div className="flex items-center gap-2">
@@ -1905,7 +1957,7 @@ const AdminReportsView = () => {
             )}
 
             <button
-              onClick={generateReportData}
+              onClick={() => generateReportData()}
               className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors flex items-center gap-2"
             >
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Filter size={16} />}
@@ -1920,7 +1972,7 @@ const AdminReportsView = () => {
               >
                 <option value="ALL">Alle Afdelingen</option>
                 {factoryDepartmentMeta.byLabelList
-                  .map((d) => d.label)
+                  .map((d: AnyRecord) => d.label)
                   .sort((a, b) => a.localeCompare(b))
                   .map((label) => (
                     <option key={label} value={label}>{label}</option>
@@ -1939,7 +1991,7 @@ const AdminReportsView = () => {
                   className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
                 >
                   <option value="ALL">Alle Afdelingen</option>
-                  {(reportData?.availableDepartments || []).map((dept) => (
+                  {(reportData?.availableDepartments || []).map((dept: string) => (
                     <option key={dept} value={dept}>{getDepartmentDisplayLabel(dept)}</option>
                   ))}
                 </select>
@@ -1950,7 +2002,7 @@ const AdminReportsView = () => {
                   className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
                 >
                   <option value="ALL">Alle Werkstations</option>
-                  {(reportData?.availableWorkstations || []).map((station) => (
+                  {(reportData?.availableWorkstations || []).map((station: string) => (
                     <option key={station} value={station}>{station}</option>
                   ))}
                 </select>
@@ -2094,10 +2146,10 @@ const AdminReportsView = () => {
                 )}
                 <div className="space-y-3">
                   {(selectedReport?.id === "offered_totals" && offeredKpiFilter === "PRODUCED_NOT_OFFERED"
-                    ? (reportData.departmentOverview || []).map((d) => ({ label: getDepartmentDisplayLabel(d.department), value: d.producedNotOffered }))
-                    : (reportData.chartData || []).map((d) => ({ label: getDepartmentDisplayLabel(d.label), value: d.value }))
-                  ).map((item, index, arr) => {
-                    const maxValue = Math.max(1, ...arr.map((d) => d.value));
+                    ? (reportData.departmentOverview || []).map((d: AnyRecord) => ({ label: getDepartmentDisplayLabel(d.department), value: d.producedNotOffered }))
+                    : (reportData.chartData || []).map((d: AnyRecord) => ({ label: getDepartmentDisplayLabel(d.label), value: d.value }))
+                  ).map((item: AnyRecord, index: number, arr: AnyRecord[]) => {
+                    const maxValue = Math.max(1, ...arr.map((d: AnyRecord) => d.value));
                     const percentage = (item.value / maxValue) * 100;
                     
                     return (
@@ -2242,7 +2294,7 @@ const AdminReportsView = () => {
                             </thead>
                             <tbody className="divide-y divide-slate-200">
                               {(reportData.departmentOverview || [])
-                                .map((dept) => ({
+                                .map((dept: AnyRecord) => ({
                                   label: getDepartmentDisplayLabel(dept.department),
                                   value:
                                     kpiPopup.type === "COMPLETED"
@@ -2251,9 +2303,9 @@ const AdminReportsView = () => {
                                       ? (dept.offeredToInspection || 0)
                                       : dept.producedNotOffered,
                                 }))
-                                .filter((row) => row.value > 0)
-                                .sort((a, b) => b.value - a.value)
-                                .map((row) => (
+                                .filter((row: AnyRecord) => row.value > 0)
+                                .sort((a: AnyRecord, b: AnyRecord) => b.value - a.value)
+                                .map((row: AnyRecord) => (
                                   <tr key={`popup-dept-${row.label}`} className="hover:bg-slate-50">
                                     <td className="px-6 py-4 text-sm font-semibold text-slate-800">{row.label}</td>
                                     <td className="px-6 py-4 text-sm text-slate-700">{row.value.toLocaleString()}</td>
@@ -2278,7 +2330,7 @@ const AdminReportsView = () => {
                             </thead>
                             <tbody className="divide-y divide-slate-200">
                               {(reportData.stationOverview || [])
-                                .map((station) => ({
+                                .map((station: AnyRecord) => ({
                                   label: station.workstation,
                                   value:
                                     kpiPopup.type === "COMPLETED"
@@ -2287,9 +2339,9 @@ const AdminReportsView = () => {
                                       ? (station.offeredToInspection || 0)
                                       : station.producedNotOffered,
                                 }))
-                                .filter((row) => row.value > 0)
-                                .sort((a, b) => b.value - a.value)
-                                .map((row) => (
+                                .filter((row: AnyRecord) => row.value > 0)
+                                .sort((a: AnyRecord, b: AnyRecord) => b.value - a.value)
+                                .map((row: AnyRecord) => (
                                   <tr key={`popup-station-${row.label}`} className="hover:bg-slate-50">
                                     <td className="px-6 py-4 text-sm font-semibold text-slate-800">{row.label}</td>
                                     <td className="px-6 py-4 text-sm text-slate-700">{row.value.toLocaleString()}</td>
@@ -2310,8 +2362,8 @@ const AdminReportsView = () => {
                     Aangeboden Trend (Dag/Week)
                   </h3>
                   <div className="space-y-3">
-                    {reportData.timelineData.map((item, index) => {
-                      const maxValue = Math.max(1, ...reportData.timelineData.map((d) => d.value));
+                    {reportData.timelineData.map((item: AnyRecord, index: number) => {
+                      const maxValue = Math.max(1, ...reportData.timelineData.map((d: AnyRecord) => d.value));
                       const percentage = (item.value / maxValue) * 100;
 
                       return (
@@ -2432,13 +2484,13 @@ const AdminReportsView = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                       {reportData.details
-                        .filter((detail) => {
+                        .filter((detail: AnyRecord) => {
                           if (selectedReport?.id === "product_measurements" && measurementLotNumberSearch.trim()) {
                             return detail.name.toLowerCase().includes(measurementLotNumberSearch.toLowerCase());
                           }
                           return true;
                         })
-                        .map((detail) => (
+                        .map((detail: AnyRecord) => (
                         <tr key={detail.id} className="hover:bg-slate-50">
                           <td className="px-6 py-4 text-sm font-medium text-slate-800">{detail.name}</td>
                           <td className="px-6 py-4 text-sm text-slate-600">

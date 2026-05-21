@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -31,15 +30,15 @@ import ProductJourneyModal from "./modals/ProductJourneyModal";
 import ProductDossierModal from "./modals/ProductDossierModal";
 import ProductDetailModal from "../products/ProductDetailModal";
 import CancelOrderModal from "./modals/CancelOrderModal";
-import ConfirmationModal from "./modals/ConfirmationModal.tsx";
+import ConfirmationModal from "./modals/ConfirmationModal";
 import { FileImage } from "lucide-react";
-import { findDrawingForProduct } from "../../utils/findDrawingForProduct.ts";
+import { findDrawingForProduct } from "../../utils/findDrawingForProduct";
 import { format, differenceInDays } from "date-fns";
 import { collection, getDoc, getDocs, query, where, limit, doc } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { trackedLotExistsActive } from "../../utils/trackedProducts";
 import { countFinishedTrackedLots, getOrderFinishedUnits } from "../../utils/planningProgress";
-import { PATHS, getArchiveItemsPath } from "../../config/dbPaths";
+import { PATHS, getArchiveItemsPath, getPathString } from "../../config/dbPaths";
 import {
   updatePlanningOrderPriority,
   cancelPlanningOrder,
@@ -55,7 +54,35 @@ import {
 import { useNotifications } from "../../contexts/NotificationContext";
 import StatusBadge from "./common/StatusBadge";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
-import { getStartedCounterField } from "../../utils/hubHelpers.tsx";
+import { getStartedCounterField } from "../../utils/hubHelpers";
+
+type OrderDetailProps = {
+  order: any;
+  products?: any[];
+  onClose: () => void;
+  isManager?: boolean;
+  onDeleteLot?: (...args: any[]) => void;
+  onMoveLot?: (...args: any[]) => void;
+  currentDepartment?: string | null;
+  allowedStations?: StationOption[];
+  onOpenDossier?: (dossier: any) => void;
+  showAllStations?: boolean;
+};
+
+type ProductRecord = {
+  id: string;
+  lotNumber: string;
+  [key: string]: any;
+};
+type StationOption = {
+  id: string;
+  name: string;
+};
+type MoveConfirmState = {
+  type?: string;
+  name?: string;
+  id?: string;
+} | null;
 
 /**
  * OrderDetail V2.3
@@ -71,25 +98,27 @@ const OrderDetail = React.memo(({
   onMoveLot,
   currentDepartment,
   allowedStations = [],
-}) => {
+}: OrderDetailProps) => {
   const { t } = useTranslation();
   const { user, role } = useAdminAuth();
   const { showSuccess, showError, showConfirm , notify} = useNotifications();
-  const [viewingJourney, setViewingJourney] = useState(null);
-  const [viewingDossier, setViewingDossier] = useState(null);
-  const [viewingDrawing, setViewingDrawing] = useState(null);
-  const [productToMove, setProductToMove] = useState(null);
+  const actorEmail = String(user?.email || auth.currentUser?.email || "system");
+  const actorUid = String(user?.uid || auth.currentUser?.uid || "system");
+  const [viewingJourney, setViewingJourney] = useState<ProductRecord | null>(null);
+  const [viewingDossier, setViewingDossier] = useState<ProductRecord | null>(null);
+  const [viewingDrawing, setViewingDrawing] = useState<any | null>(null);
+  const [productToMove, setProductToMove] = useState<ProductRecord | null>(null);
   const [drawingLoading, setDrawingLoading] = useState(false);
   const [showOrderMoveModal, setShowOrderMoveModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [holdLoading, setHoldLoading] = useState(false);
-  const [moveConfirmData, setMoveConfirmData] = useState(null);
-  const [lotEditTarget, setLotEditTarget] = useState(null);
+  const [moveConfirmData, setMoveConfirmData] = useState<MoveConfirmState>(null);
+  const [lotEditTarget, setLotEditTarget] = useState<ProductRecord | null>(null);
   const [lotEditNewValue, setLotEditNewValue] = useState("");
   const [lotEditReason, setLotEditReason] = useState("");
   const [lotEditError, setLotEditError] = useState("");
   const [isSavingLotEdit, setIsSavingLotEdit] = useState(false);
-  const [orderEditTarget, setOrderEditTarget] = useState(null);
+  const [orderEditTarget, setOrderEditTarget] = useState<ProductRecord | null>(null);
   const [orderEditNewValue, setOrderEditNewValue] = useState("");
   const [orderEditReason, setOrderEditReason] = useState("");
   const [orderEditError, setOrderEditError] = useState("");
@@ -99,7 +128,7 @@ const OrderDetail = React.memo(({
   const [todoDraft, setTodoDraft] = useState("");
   const [startedDraft, setStartedDraft] = useState("");
   const [isSavingNote, setIsSavingNote] = useState(false);
-  const autoArchiveAttemptedRef = useRef(new Set());
+  const autoArchiveAttemptedRef = useRef<Set<string>>(new Set());
 
   const orderProducts = useMemo(() => {
     if (!order) return [];
@@ -107,14 +136,14 @@ const OrderDetail = React.memo(({
     const targetOrderId = String(order.orderId || "").trim().toUpperCase();
     if (!targetOrderId) return [];
 
-    const readDocIdOrderPrefix = (product) => {
+    const readDocIdOrderPrefix = (product: any) => {
       const path = String(product?.__docPath || product?.sourcePath || "").trim();
-      const rawDocId = path ? path.split("/").pop() : String(product?.id || "").trim();
+      const rawDocId = path ? path.split("/").pop() || "" : String(product?.id || "").trim();
       const match = rawDocId.match(/^(N\d+)_/i);
       return match ? String(match[1] || "").trim().toUpperCase() : "";
     };
 
-    return products.filter((p) => {
+    return products.filter((p: any) => {
       const fieldOrderId = String(p?.orderId || "").trim().toUpperCase();
       const docOrderPrefix = readDocIdOrderPrefix(p);
 
@@ -128,9 +157,9 @@ const OrderDetail = React.memo(({
     });
   }, [order, products]);
 
-  const canEditOrderNotes = ['admin', 'teamleader', 'planner'].includes(role);
-  const canEditOrderPlan = ['admin', 'teamleader', 'planner'].includes(role);
   const normalizedRole = String(role || "").toLowerCase();
+  const canEditOrderNotes = ['admin', 'teamleader', 'planner'].includes(normalizedRole);
+  const canEditOrderPlan = ['admin', 'teamleader', 'planner'].includes(normalizedRole);
   const canEditLotNumber =
     normalizedRole === "admin" ||
     normalizedRole === "teamleader" ||
@@ -163,7 +192,7 @@ const OrderDetail = React.memo(({
 
   if (!order) return null;
 
-  const formatExcelDate = (val) => {
+  const formatExcelDate = (val: any) => {
     if (!val) return "-";
     if (val?.toDate) return val.toDate().toLocaleDateString("nl-NL");
     const num = parseFloat(val);
@@ -176,7 +205,7 @@ const OrderDetail = React.memo(({
     return String(val);
   };
 
-  const handleMoveOrder = async (targetType, targetId) => {
+  const handleMoveOrder = async (targetType: string, targetId: string) => {
     if (!order) return;
     const orderDocId = order.__docPath || order.id;
     if (!orderDocId) { showError('Order ID niet gevonden'); return; }
@@ -188,15 +217,15 @@ const OrderDetail = React.memo(({
         targetId,
         currentDepartment: currentDepartment || order.department || "fittings",
         source: "OrderDetail",
-        actorLabel: user?.email || auth.currentUser?.email,
+        actorLabel: actorEmail,
       });
 
       showSuccess(t("digitalplanning.order_detail.move_success", "Order succesvol verplaatst"));
       setShowOrderMoveModal(false);
       onClose();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Error moving order:", err);
-      showError(t("digitalplanning.order_detail.move_error", "Fout bij verplaatsen: ") + err.message);
+      showError(t("digitalplanning.order_detail.move_error", "Fout bij verplaatsen: ") + (err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -216,28 +245,28 @@ const OrderDetail = React.memo(({
       await retrievePlanningOrder({
         orderDocId,
         source: "OrderDetail",
-        actorLabel: user?.email || auth.currentUser?.email,
+        actorLabel: actorEmail,
       });
       showSuccess(t("digitalplanning.order_detail.retrieve_success", "Order succesvol teruggehaald naar planning"));
       onClose();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Error retrieving order:", err);
-      showError(t("digitalplanning.order_detail.retrieve_error", "Fout bij terughalen: ") + err.message);
+      showError(t("digitalplanning.order_detail.retrieve_error", "Fout bij terughalen: ") + (err instanceof Error ? err.message : String(err)));
     }
   };
 
-  const handleCancelOrder = async (reason) => {
+  const handleCancelOrder = async (reason: string) => {
     const orderDocId = order.__docPath || order.id;
     try {
       await cancelPlanningOrder({
         orderDocId,
         reason,
         source: "OrderDetail",
-        actorLabel: user?.email || auth.currentUser?.email,
+        actorLabel: actorEmail,
       });
 
       await logActivity(
-        user?.uid || auth.currentUser?.uid,
+        actorUid,
         "ORDER_CANCELLED", 
         `Order ${order.orderId} geannuleerd. Reden: ${reason}`
       );
@@ -251,7 +280,7 @@ const OrderDetail = React.memo(({
     }
   };
 
-  const handleSetPriority = async (level) => {
+  const handleSetPriority = async (level: string) => {
     const orderDocId = order.__docPath || order.id;
     if (!orderDocId) return;
     const currentPrio = order.priority === true ? "high" : order.priority;
@@ -261,7 +290,7 @@ const OrderDetail = React.memo(({
         orderDocId,
         priority: newPriority,
         source: "OrderDetail",
-        actorLabel: user?.email || auth.currentUser?.email,
+        actorLabel: actorEmail,
       });
     } catch (e) {
       console.error("Fout bij wijzigen prioriteit:", e);
@@ -277,10 +306,10 @@ const OrderDetail = React.memo(({
       await togglePlanningOrderHold({
         orderDocId,
         source: "OrderDetail",
-        actorLabel: user?.email || auth.currentUser?.email,
+        actorLabel: actorEmail,
       });
       await logActivity(
-        user?.uid || auth.currentUser?.uid,
+        actorUid,
         isOnHold ? "ORDER_RESUMED" : "ORDER_ON_HOLD",
         `Order ${order.orderId} ${isOnHold ? 'hervat' : 'on hold gezet'}`
       );
@@ -293,12 +322,12 @@ const OrderDetail = React.memo(({
     }
   };
 
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(String(text || ""));
     showSuccess("Ordernummer gekopieerd");
   };
 
-  const formatDateTimeForExport = (value) => {
+  const formatDateTimeForExport = (value: any) => {
     if (!value) return "-";
     const dateValue = value?.toDate ? value.toDate() : new Date(value);
     if (Number.isNaN(dateValue.getTime())) return "-";
@@ -365,9 +394,9 @@ const OrderDetail = React.memo(({
         return !["completed", "rejected", "afkeur"].includes(status) && !["finished", "rejected"].includes(step);
       }).length;
       const generatedAt = format(new Date(), "yyyy-MM-dd HH:mm");
-      const generatedBy = String(user?.email || auth.currentUser?.email || "onbekend").trim();
+      const generatedBy = String(actorEmail || "onbekend").trim();
 
-      const drawHeaderFooter = (pageNumber) => {
+      const drawHeaderFooter = (pageNumber: number) => {
         doc.setDrawColor(226, 232, 240);
         doc.line(margin, headerBottom, pageWidth - margin, headerBottom);
         doc.line(margin, pageHeight - 10, pageWidth - margin, pageHeight - 10);
@@ -435,9 +464,9 @@ const OrderDetail = React.memo(({
 
       doc.save(`teamleader_orderoverzicht_${safeOrderId}.pdf`);
       showSuccess("PDF-overzicht met lotnummers is geëxporteerd");
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Fout bij PDF export orderoverzicht:", err);
-      showError("PDF export mislukt: " + (err?.message || "Onbekende fout"));
+      showError("PDF export mislukt: " + (err instanceof Error ? err.message : "Onbekende fout"));
     }
   };
 
@@ -460,7 +489,7 @@ const OrderDetail = React.memo(({
   const startedCounterField = getStartedCounterField(order?.machine || "");
   const stationStartedAmount = Number(startedCounterField ? order?.[startedCounterField] : 0) || 0;
   
-  const handleToggleSyncExclusion = async (exclude) => {
+  const handleToggleSyncExclusion = async (exclude: boolean) => {
     const orderDocId = order.__docPath || order.id;
     if (!orderDocId) return;
 
@@ -472,11 +501,11 @@ const OrderDetail = React.memo(({
           smartSyncIncluded: !exclude
         },
         source: "OrderDetail",
-        actorLabel: auth.currentUser?.email,
+        actorLabel: actorEmail,
       });
 
       await logActivity(
-        auth.currentUser?.uid,
+        actorUid,
         "ORDER_SYNC_TOGGLE",
         `Order ${order.orderId} sync status gewijzigd naar: ${exclude ? "Uitgesloten" : "Opgenomen"}`
       );
@@ -547,6 +576,15 @@ const OrderDetail = React.memo(({
   const todoAmount = Math.max(0, Number((Number(effectivePlanForTodo || 0) - startedAmount).toFixed(2)));
   const effectiveTodoAmount = todoAmount;
   const planAmount = Math.max(0, Number(visibleOrderPlan || 0));
+
+  const originalAantal = rawQuantity > 0 ? rawQuantity : rawPlanVal;
+  const currentPlanDisplay = planDraft !== "" ? Number(planDraft) : visibleOrderPlan;
+  const showOriginalPlan = originalAantal > 0 && currentPlanDisplay !== originalAantal;
+
+  const calculatedOriginalTodo = Math.max(0, Number((originalAantal - startedAmount).toFixed(2)));
+  const currentTodoDisplay = todoDraft !== "" ? Number(todoDraft) : todoAmount;
+  const showOriginalTodo = originalAantal > 0 && currentTodoDisplay !== calculatedOriginalTodo;
+
   const shouldShowCompletedStatus = planAmount > 0 && producedAmount >= planAmount && inProcessAmount === 0;
   const displayStatus = shouldShowCompletedStatus ? "Gereed" : order.status;
   const orderDocIdForArchive = String(order?.__docPath || order?.id || "").trim();
@@ -562,6 +600,46 @@ const OrderDetail = React.memo(({
         : (normalizedPriority === "high" || order?.isMoved)
           ? { label: "Prio", className: "bg-amber-100 text-amber-700" }
           : null;
+
+  const expectedDateVal = order.predictedReadyDate || order.plannedDate || order.plannedDeliveryDate || order.dueDate;
+  const getDaysDiffInfo = () => {
+    if (order.slipDays !== undefined) return order.slipDays;
+    if (!expectedDateVal || !order.deliveryDate) return null;
+    
+    const parseDate = (val: any) => {
+      if (val?.toDate) return val.toDate();
+      const num = parseFloat(val);
+      if (!isNaN(num) && num > 30000 && num < 100000) {
+        return new Date(Math.round((num - 25569) * 86400 * 1000));
+      }
+      return new Date(val);
+    };
+
+    const expDate = parseDate(expectedDateVal);
+    const delDate = parseDate(order.deliveryDate);
+
+    if (isNaN(expDate.getTime()) || isNaN(delDate.getTime())) return null;
+
+    // Normalizeer naar middernacht zodat we zuivere hele dagen hebben
+    const expMidnight = new Date(expDate.getFullYear(), expDate.getMonth(), expDate.getDate());
+    const delMidnight = new Date(delDate.getFullYear(), delDate.getMonth(), delDate.getDate());
+    
+    const statusStr = String(order?.status || "").toLowerCase().trim();
+    const isOrderInProgress = ["in_progress", "in progress", "in-behandeling", "in behandeling", "active", "processing", "running", "lopend"].includes(statusStr);
+    const hasStarted = isOrderInProgress || (orderProducts && orderProducts.length > 0);
+
+    if (!hasStarted) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (delMidnight.getTime() <= today.getTime()) {
+        return differenceInDays(today, delMidnight);
+      }
+      return null;
+    }
+
+    return differenceInDays(expMidnight, delMidnight);
+  };
+  const daysDiff = getDaysDiffInfo();
 
   useEffect(() => {
     if (!shouldShowCompletedStatus) return;
@@ -607,18 +685,18 @@ const OrderDetail = React.memo(({
         started: hasStartedChanged ? nextStarted : null,
         manualTodo: hasTodoChanged ? nextTodo : null,
         source: "OrderDetail",
-        actorLabel: user?.email || auth.currentUser?.email,
+        actorLabel: actorEmail,
       });
       showSuccess("Wijzigingen opgeslagen");
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Error saving order changes:", err);
-      showError("Opslaan wijzigingen mislukt: " + err.message);
+      showError("Opslaan wijzigingen mislukt: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsSavingNote(false);
     }
   };
 
-  const checkLotExistsGlobal = async (lotToCheck, excludeDocId = null) => {
+  const checkLotExistsGlobal = async (lotToCheck: string, excludeDocId: string | null = null) => {
     const normalizedLot = String(lotToCheck || "").trim().toUpperCase();
     if (!normalizedLot) return false;
 
@@ -628,7 +706,7 @@ const OrderDetail = React.memo(({
     const currentYear = new Date().getFullYear();
     for (let i = 0; i < 6; i++) {
       const year = currentYear - i;
-      const archiveRef = collection(db, ...getArchiveItemsPath(year));
+      const archiveRef = collection(db, getArchiveItemsPath(year).join("/"));
       const archiveSnap = await getDocs(query(archiveRef, where("lotNumber", "==", normalizedLot), limit(1)));
       if (!archiveSnap.empty) return true;
     }
@@ -636,7 +714,7 @@ const OrderDetail = React.memo(({
     return false;
   };
 
-  const handleOpenLotEdit = (product) => {
+  const handleOpenLotEdit = (product: ProductRecord) => {
     if (!canEditLotNumber || !product?.id) return;
     const oldLot = String(product.lotNumber || product.id || "").trim().toUpperCase();
     setLotEditTarget(product);
@@ -653,7 +731,7 @@ const OrderDetail = React.memo(({
     setLotEditError("");
   };
 
-  const resolveTrackedProductIdentifier = (product) => {
+  const resolveTrackedProductIdentifier = (product: ProductRecord | null) => {
     if (!product) return "";
     const isArchivedProduct = Boolean(product?.archived || product?._archived || product?.archivedAt);
     return String(
@@ -663,7 +741,7 @@ const OrderDetail = React.memo(({
     ).trim();
   };
 
-  const handleOpenOrderEdit = (product) => {
+  const handleOpenOrderEdit = (product: ProductRecord) => {
     const productIdentifier = resolveTrackedProductIdentifier(product);
     if (!canEditLotNumber || !productIdentifier) return;
     setOrderEditTarget(product);
@@ -711,20 +789,20 @@ const OrderDetail = React.memo(({
         newOrderId,
         reason,
         source: "OrderDetail",
-        actorLabel: user?.email || auth.currentUser?.email || "Teamleader",
+        actorLabel: actorEmail,
       });
 
       await logActivity(
-        user?.uid || auth.currentUser?.uid || "system",
+        actorUid,
         "TRACKED_PRODUCT_ORDER_REASSIGNED",
         `Product ordernummer gewijzigd in Volledige Lijst: ${lotNumber || "onbekend lot"} | ${oldOrderId} -> ${newOrderId} | Reden: ${reason}`
       );
 
       handleCloseOrderEdit();
       showSuccess(`Ordernummer gewijzigd: ${oldOrderId} -> ${newOrderId}`);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Fout bij wijzigen ordernummer:", err);
-      setOrderEditError("Wijzigen ordernummer mislukt: " + err.message);
+      setOrderEditError("Wijzigen ordernummer mislukt: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsSavingOrderEdit(false);
     }
@@ -765,20 +843,20 @@ const OrderDetail = React.memo(({
         newLotNumber: newLot,
         reason,
         source: "OrderDetail",
-        actorLabel: user?.email || auth.currentUser?.email || "Teamleader",
+        actorLabel: actorEmail,
       });
 
       await logActivity(
-        user?.uid || auth.currentUser?.uid || "system",
+        actorUid,
         "LOT_NUMBER_EDITED",
         `Lotnummer gewijzigd in Volledige Lijst: ${oldLot} -> ${newLot} (order ${order.orderId}) | Reden: ${reason}`
       );
 
       handleCloseLotEdit();
       showSuccess(`Lotnummer gewijzigd: ${oldLot} -> ${newLot}`);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Fout bij wijzigen lotnummer:", err);
-      setLotEditError("Wijzigen lotnummer mislukt: " + err.message);
+      setLotEditError("Wijzigen lotnummer mislukt: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsSavingLotEdit(false);
     }
@@ -830,6 +908,12 @@ const OrderDetail = React.memo(({
             )}
           </div>
           <p className="text-sm font-bold text-slate-500">{order.item}</p>
+          {(order.itemCode || order.productId) && (
+            <p className="text-xs font-mono font-bold text-slate-400 mt-0.5">{order.itemCode || order.productId}</p>
+          )}
+          {(order.project || order.projectDesc) && (
+            <p className="text-[10px] font-bold text-blue-600 mt-0.5 uppercase tracking-wider">{order.project} {order.projectDesc ? `- ${order.projectDesc}` : ""}</p>
+          )}
         </div>
         <button 
           onClick={onClose}
@@ -840,119 +924,151 @@ const OrderDetail = React.memo(({
       </div>
 
       {/* Details Grid */}
-      <div className="p-4 md:p-5 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3 border-b border-slate-100 shrink-0">
-        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.planning")}</span>
-          <span className="font-bold text-slate-700">{formatExcelDate(order.deliveryDate)}</span>
-        </div>
-        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.machine")}</span>
-          <span className="font-bold text-slate-700">{order.machine?.replace("_INBOX", "") || t("digitalplanning.order_detail.na")}</span>
-        </div>
-        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.amount")}</span>
-          {canEditOrderPlan ? (
+      <div className="p-2.5 md:p-3 space-y-2 border-b border-slate-100 shrink-0">
+        {/* Rij 1: Machine, Leverdatum, Verwachte leverdatum, LN import, Gewijzigd, Status */}
+        <div className="grid grid-cols-6 gap-2">
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight block mb-0.5">{t("digitalplanning.order_detail.machine")}</span>
+            <span className="font-bold text-xs text-slate-700">{order.machine?.replace("_INBOX", "") || t("digitalplanning.order_detail.na")}</span>
+          </div>
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight block mb-0.5">{t("digitalplanning.order_detail.planning")}</span>
+            <span className="text-sm font-black text-slate-800">{formatExcelDate(order.deliveryDate)}</span>
+          </div>
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight block mb-0.5" title={order.predictedReadyDate ? "Gevoed door dynamisch AI algoritme" : "Statische datum uit LN"}>
+              {order.predictedReadyDate ? t("digitalplanning.order_detail.predicted_ready", "Voorspelde gereeddatum") : t("digitalplanning.order_detail.expected_delivery", "Verwachte leverdatum")}
+            </span>
             <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={planDraft}
-                onChange={(e) => setPlanDraft(String(e.target.value || "").replace(/[^0-9]/g, ""))}
-                className="w-24 px-2 py-1 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
-              />
+              <span className="text-sm font-black text-slate-800">{formatExcelDate(expectedDateVal)}</span>
+              {daysDiff !== null && (
+                <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md ${
+                  daysDiff > 0 ? "bg-rose-100 text-rose-700" :
+                  daysDiff < 0 ? "bg-emerald-100 text-emerald-700" :
+                  "bg-slate-200 text-slate-600"
+                }`} title={daysDiff > 0 ? "Achter op schema" : daysDiff < 0 ? "Voor op schema" : "Op schema"}>
+                  {daysDiff > 0 ? `+${daysDiff}d` : `${daysDiff}d`}
+                </span>
+              )}
             </div>
-          ) : (
-            <span className="font-bold text-slate-700">{order.plan}</span>
-          )}
+          </div>
+          <div className="p-2 bg-blue-50 rounded-lg border border-blue-100">
+            <span className="text-[9px] font-black text-blue-600 uppercase tracking-tight block mb-0.5">LN import</span>
+            <span className="font-bold text-xs text-blue-900">{formatExcelDate(order.importDate || order.importedAt || order.createdAt || order.date)}</span>
+          </div>
+          <div className="p-2 bg-purple-50 rounded-lg border border-purple-100">
+            <span className="text-[9px] font-black text-purple-600 uppercase tracking-tight block mb-0.5">Gewijzigd</span>
+            <span className="font-bold text-xs text-purple-900">{formatExcelDate(order.updatedAt || order.lastSync || order.syncedAt || order.importDate || order.createdAt || order.date)}</span>
+          </div>
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight block mb-0.5">{t("digitalplanning.order_detail.status")}</span>
+            <StatusBadge status={displayStatus} />
+          </div>
         </div>
-        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.started_amount", "Start Aantal")}</span>
-          {canEditOrderPlan ? (
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={startedDraft !== "" ? startedDraft : startedAmount}
-                onChange={(e) => setStartedDraft(String(e.target.value || "").replace(/[^0-9]/g, ""))}
-                className="w-24 px-2 py-1 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
-              />
-            </div>
-          ) : (
-            <span className="font-bold text-slate-700">{startedAmount}</span>
-          )}
-        </div>
-        <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200">
-          <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest block mb-1">In behandeling</span>
-          <span className="font-black text-amber-900">{inProcessAmount}</span>
-        </div>
-        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.todo_amount", "To do")}</span>
-          {canEditOrderPlan ? (
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="0"
-                step="1"
-                value={todoDraft !== "" ? todoDraft : todoAmount}
-                onChange={(e) => setTodoDraft(String(e.target.value || "").replace(/[^0-9]/g, ""))}
-                placeholder={String(todoAmount)}
-                className="w-24 px-2 py-1 bg-white border border-slate-200 rounded-lg text-sm font-bold text-blue-700 outline-none focus:border-blue-500"
-              />
-            </div>
-          ) : (
-            <span className="font-black text-blue-700">{todoAmount}</span>
-          )}
-        </div>
-        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.produced_amount", "Gereed")}</span>
-          <span className="font-bold text-emerald-700">{producedAmount}</span>
-        </div>
-        <div className="p-3 bg-blue-50 rounded-2xl border border-blue-100">
-          <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest block mb-1">Excel import</span>
-          <span className="font-bold text-blue-900 text-xs">{formatExcelDate(order.createdAt || order.importedAt || order.date)}</span>
-        </div>
-        <div className="p-3 bg-purple-50 rounded-2xl border border-purple-100">
-          <span className="text-[10px] font-black text-purple-600 uppercase tracking-widest block mb-1">Gewijzigd</span>
-          <span className="font-bold text-purple-900 text-xs">{formatExcelDate(order.updatedAt || order.syncedAt || order.createdAt || order.date)}</span>
-        </div>
-        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("digitalplanning.order_detail.status")}</span>
-          <StatusBadge status={displayStatus} />
+
+        {/* Rij 3: Aantal, To do, In behandeling, Gereed (met LN Aangeboden) */}
+        <div className="grid grid-cols-4 gap-2">
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight block mb-0.5">{t("digitalplanning.order_detail.amount")}</span>
+            {canEditOrderPlan ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={planDraft}
+                  onChange={(e) => setPlanDraft(String(e.target.value || "").replace(/[^0-9]/g, ""))}
+                  className="w-16 px-1.5 py-0.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:border-blue-500"
+                />
+                {showOriginalPlan && (
+                  <span className="text-[10px] font-bold text-slate-400 line-through ml-1" title="Originele waarde">
+                    {originalAantal}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <span className="font-bold text-xs text-slate-700">{order.plan}</span>
+                {showOriginalPlan && (
+                  <span className="text-[10px] font-bold text-slate-400 line-through ml-1" title="Originele waarde">
+                    {originalAantal}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight block mb-0.5">{t("digitalplanning.order_detail.todo_amount", "To do")}</span>
+            {canEditOrderPlan ? (
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={todoDraft !== "" ? todoDraft : todoAmount}
+                  onChange={(e) => setTodoDraft(String(e.target.value || "").replace(/[^0-9]/g, ""))}
+                  placeholder={String(todoAmount)}
+                  className="w-14 px-1 py-0.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-blue-700 outline-none focus:border-blue-500"
+                />
+                {showOriginalTodo && (
+                  <span className="text-[10px] font-bold text-slate-400 line-through ml-1" title="Originele berekende waarde">
+                    {calculatedOriginalTodo}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <span className="font-black text-xs text-blue-700">{todoAmount}</span>
+                {showOriginalTodo && (
+                  <span className="text-[10px] font-bold text-slate-400 line-through ml-1" title="Originele berekende waarde">
+                    {calculatedOriginalTodo}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="p-2 bg-amber-50 rounded-lg border border-amber-200">
+            <span className="text-[9px] font-black text-amber-700 uppercase tracking-tight block mb-0.5">In behandeling</span>
+            <span className="font-black text-xs text-amber-900">{inProcessAmount}</span>
+          </div>
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight block mb-0.5">{t("digitalplanning.order_detail.produced_amount", "Gereed")} / LN Aangeboden</span>
+            <span className="font-bold text-xs text-emerald-700">{producedAmount}</span>
+          </div>
         </div>
 
         {/* Smart Sync Opties */}
         {canEditOrderPlan && (
-          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 xl:col-span-2">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Slimme Sync Controle</span>
-            <div className="flex gap-2">
+          <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight block mb-1.5">Slimme Sync Controle</span>
+            <div className="flex gap-1.5">
               <button
                 onClick={() => handleToggleSyncExclusion(false)}
-                className={`flex-1 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
+                className={`flex-1 px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${
                   order.smartSyncIncluded === true
                     ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/20"
                     : "bg-white text-slate-400 hover:bg-slate-100 border border-slate-200"
                 }`}
               >
-                <CheckCircle size={14} />
-                Sync Opnemen
+                <CheckCircle size={12} />
+                Opnemen
               </button>
               <button
                 onClick={() => handleToggleSyncExclusion(true)}
-                className={`flex-1 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
+                className={`flex-1 px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-tight flex items-center justify-center gap-1 transition-all ${
                   order.smartSyncExcluded === true
                     ? "bg-rose-600 text-white shadow-lg shadow-rose-600/20"
                     : "bg-white text-slate-400 hover:bg-slate-100 border border-slate-200"
                 }`}
               >
-                <XCircle size={14} />
-                Sync Uitsluiten
+                <XCircle size={12} />
+                Uitsluiten
               </button>
             </div>
           </div>
         )}
 
+        {/* Tekening */}
         <button
           onClick={async () => {
             setDrawingLoading(true);
@@ -998,15 +1114,15 @@ const OrderDetail = React.memo(({
             }
           }}
           disabled={drawingLoading}
-          className={`p-3 rounded-2xl border transition-all text-left ${
+          className={`p-2 rounded-lg border transition-all text-left w-full ${
             order.drawing && order.drawing !== "-" && order.drawing !== ""
               ? "bg-blue-50 border-blue-200 hover:bg-blue-100"
               : "bg-slate-50 border-slate-100 hover:bg-slate-100"
           }`}
         >
-          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Tekening</span>
+          <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight block mb-0.5">Tekening</span>
           <div className="flex items-center gap-2">
-            <FileImage size={18} className={
+            <FileImage size={14} className={
               order.drawing && order.drawing !== "-" && order.drawing !== ""
                 ? "text-blue-500"
                 : "text-slate-300"
@@ -1020,14 +1136,6 @@ const OrderDetail = React.memo(({
             </span>
           </div>
         </button>
-      </div>
-
-      <div className="p-4 md:p-5 border-b border-slate-100 bg-amber-50/40">
-        <div className="flex items-center justify-between gap-4 mb-1.5">
-          <h3 className="text-[10px] font-black text-amber-700 uppercase tracking-widest">
-            PO Text / Opmerking
-          </h3>
-        </div>
 
         {canEditOrderNotes ? (
           <textarea
@@ -1105,7 +1213,7 @@ const OrderDetail = React.memo(({
                       // 1. Gebruik het drawing veld (product ID) als dat er is
                       const drawingId = order.drawing;
                       if (drawingId && drawingId !== "-" && drawingId !== "") {
-                        const directRef = doc(db, ...PATHS.PRODUCTS, drawingId);
+                        const directRef = doc(db, `${getPathString(PATHS.PRODUCTS)}/${drawingId}`);
                         const directSnap = await getDoc(directRef);
                         if (directSnap.exists()) {
                           setViewingDrawing({ id: directSnap.id, ...directSnap.data() });
@@ -1113,7 +1221,7 @@ const OrderDetail = React.memo(({
                           return;
                         }
                         // Fallback: articleCode match
-                        const productsRef = collection(db, ...PATHS.PRODUCTS);
+                        const productsRef = collection(db, getPathString(PATHS.PRODUCTS));
                         const q1 = query(productsRef, where("articleCode", "==", drawingId));
                         const snap1 = await getDocs(q1);
                         if (!snap1.empty) {
@@ -1152,7 +1260,7 @@ const OrderDetail = React.memo(({
                   className={`p-2 rounded-xl transition-all ${
                     order.drawing && order.drawing !== "-" && order.drawing !== ""
                       ? "text-blue-500 bg-blue-50 hover:bg-blue-100"
-                      : "text-slate-300 hover:text-blue-500 hover:bg-blue-50"
+                      : "text-slate-500 hover:text-blue-600 hover:bg-blue-50"
                   }`}
                   title={t("digitalplanning.order_detail.view_drawing")}
                   disabled={drawingLoading}
@@ -1164,7 +1272,7 @@ const OrderDetail = React.memo(({
                       e.stopPropagation();
                       setViewingDossier(p);
                     }}
-                    className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
+                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
                     title={t("digitalplanning.order_detail.view_dossier")}
                   >
                     <FileText size={16} />
@@ -1174,7 +1282,7 @@ const OrderDetail = React.memo(({
                       e.stopPropagation();
                       setViewingJourney(p);
                     }}
-                    className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
+                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
                     title={t("digitalplanning.order_detail.view_journey")}
                   >
                     <Map size={16} />
@@ -1209,7 +1317,7 @@ const OrderDetail = React.memo(({
                       e.stopPropagation();
                       setProductToMove(p);
                     }}
-                    className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all"
+                    className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"
                     title={t("digitalplanning.order_detail.move_station")}
                   >
                     <ArrowRightLeft size={16} />
@@ -1221,7 +1329,7 @@ const OrderDetail = React.memo(({
                       e.stopPropagation();
                       handleOpenOrderEdit(p);
                     }}
-                    className="p-2 text-slate-300 hover:text-cyan-600 hover:bg-cyan-50 rounded-xl transition-all"
+                    className="p-2 text-slate-500 hover:text-cyan-600 hover:bg-cyan-50 rounded-xl transition-all"
                     title="Ordernummer aanpassen"
                   >
                     <Building2 size={16} />
@@ -1233,7 +1341,7 @@ const OrderDetail = React.memo(({
                       e.stopPropagation();
                       handleOpenLotEdit(p);
                     }}
-                    className="p-2 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                    className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
                     title="Lotnummer aanpassen"
                   >
                     <Edit3 size={16} />
@@ -1245,7 +1353,7 @@ const OrderDetail = React.memo(({
                       e.stopPropagation();
                       if(onDeleteLot) onDeleteLot(p.lotNumber);
                     }}
-                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                    className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
                     title={t("digitalplanning.order_detail.delete")}
                   >
                     <Trash2 size={16} />
@@ -1301,7 +1409,7 @@ const OrderDetail = React.memo(({
            )}
 
            {/* On Hold / Hervatten Button */}
-           {['admin', 'teamleader', 'planner'].includes(role) && (
+           {['admin', 'teamleader', 'planner'].includes(normalizedRole) && (
              order.status === 'on_hold' ? (
                <button
                  onClick={handleToggleHold}
@@ -1324,7 +1432,7 @@ const OrderDetail = React.memo(({
            )}
 
            {/* Cancel Button - Alleen voor bevoegde rollen */}
-           {['admin', 'teamleader', 'planner'].includes(role) && (
+           {['admin', 'teamleader', 'planner'].includes(normalizedRole) && (
              <button
                onClick={() => setShowCancelModal(true)}
                className="flex items-center gap-2 px-4 py-3 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap active:scale-95"
@@ -1335,7 +1443,7 @@ const OrderDetail = React.memo(({
            )}
 
            {/* Prioriteit Knoppen */}
-           {['admin', 'teamleader'].includes(role) && (
+           {['admin', 'teamleader'].includes(normalizedRole) && (
              <>
                <div className="w-px h-8 bg-slate-200 shrink-0" />
                <button
@@ -1388,9 +1496,9 @@ const OrderDetail = React.memo(({
           isOpen={true}
           product={viewingDossier}
           onClose={() => setViewingDossier(null)}
-          orders={[order]}
-          onMoveLot={onMoveLot}
-          currentDepartment={currentDepartment}
+          orders={[order] as any[]}
+          onMoveLot={onMoveLot || (() => {})}
+          currentDepartment={currentDepartment || undefined}
           allowedStations={allowedStations}
         />
       )}
@@ -1408,8 +1516,8 @@ const OrderDetail = React.memo(({
           <ProductMoveModal
             product={productToMove}
             onClose={() => setProductToMove(null)}
-            onMove={onMoveLot}
-            currentDepartment={currentDepartment}
+            onMove={onMoveLot || (() => {})}
+            currentDepartment={currentDepartment || undefined}
             allowedStations={allowedStations}
           />
         </div>
@@ -1458,13 +1566,13 @@ const OrderDetail = React.memo(({
                 <Cpu size={14} /> Intern Verplaatsen / Toewijzen
               </h4>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {allowedStations.sort((a, b) => (a.name || "").localeCompare(b.name || "")).map((station) => (
+                {[...allowedStations].sort((a, b) => String(a?.name || "").localeCompare(String(b?.name || ""))).map((station) => (
                   <button
-                    key={station.id}
-                    onClick={() => setMoveConfirmData({ type: "station", id: station.name || station.id })}
+                    key={String(station.id || station.name || "")}
+                    onClick={() => setMoveConfirmData({ type: "station", id: String(station.name || station.id || "") })}
                     className="p-4 bg-slate-50 hover:bg-blue-50 border-2 border-slate-100 hover:border-blue-200 rounded-2xl text-sm font-bold text-slate-700 hover:text-blue-700 transition-all uppercase text-center"
                   >
-                    {station.name || station.id}
+                    {String(station.name || station.id || "")}
                   </button>
                 ))}
                 {allowedStations.length === 0 && (
@@ -1488,7 +1596,7 @@ const OrderDetail = React.memo(({
       <ConfirmationModal
         isOpen={!!moveConfirmData}
         onClose={() => setMoveConfirmData(null)}
-        onConfirm={() => handleMoveOrder(moveConfirmData.type, moveConfirmData.id)}
+        onConfirm={() => moveConfirmData && handleMoveOrder(String(moveConfirmData.type || ""), String(moveConfirmData.id || ""))}
         title="Order Verplaatsen"
         message={`Weet je zeker dat je order ${order.orderId} wilt verplaatsen naar ${moveConfirmData?.id}?`}
         confirmText="Ja, Verplaatsen"

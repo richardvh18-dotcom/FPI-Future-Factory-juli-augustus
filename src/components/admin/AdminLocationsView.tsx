@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useMemo, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import {
@@ -27,7 +26,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { STANDARD_DIAMETERS } from "../../data/constants";
 import { useNotifications } from "../../contexts/NotificationContext";
 import {
@@ -41,17 +40,41 @@ import {
  * Beheert gereedschappen en stelling-locaties in de root.
  * Locatie: /future-factory/production/inventory/records/
  */
-const AdminLocationsView = ({ canEdit = false }) => {
+type InventoryItem = {
+  id: string;
+  type: string;
+  diameter: number | string;
+  pressure: number | string;
+  location: string;
+  stock: number;
+  minStock: number;
+  toolName?: string;
+  _source?: "legacy" | "scoped";
+  departmentId?: string;
+  machineId?: string;
+};
+
+type InventoryFormState = {
+  type: string;
+  diameter: string;
+  pressure: string;
+  location: string;
+  stock: number;
+  minStock: number;
+  toolName: string;
+};
+
+const AdminLocationsView = ({ canEdit = false }: { canEdit?: boolean }) => {
   const { t } = useTranslation();
   const { showConfirm , notify} = useNotifications();
-  const [moffen, setMoffen] = useState([]);
+  const [moffen, setMoffen] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditing, setIsEditing] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [formState, setFormState] = useState({
+  const [formState, setFormState] = useState<InventoryFormState>({
     type: "TB",
     diameter: "200",
     pressure: "16",
@@ -63,14 +86,14 @@ const AdminLocationsView = ({ canEdit = false }) => {
 
   // 1. Live Sync met de Root INVENTORY collectie
   useEffect(() => {
-    const legacyRef = collection(db, ...PATHS.INVENTORY);
+    const legacyRef = collection(db, getPathString(PATHS.INVENTORY));
     const scopedRef = query(
       collectionGroup(db, "items"),
       where("_scopeType", "==", "inventory")
     );
 
-    let legacyItems = [];
-    let scopedItems = [];
+    let legacyItems: InventoryItem[] = [];
+    let scopedItems: InventoryItem[] = [];
 
     const syncMerged = () => {
       const byId = new Map();
@@ -85,7 +108,7 @@ const AdminLocationsView = ({ canEdit = false }) => {
       (snap) => {
         legacyItems = snap.docs.map((d) => ({
           id: d.id,
-          ...d.data(),
+          ...(d.data() as Omit<InventoryItem, "id">),
           _source: "legacy",
         }));
         syncMerged();
@@ -103,7 +126,7 @@ const AdminLocationsView = ({ canEdit = false }) => {
           .filter((d) => isProductionInventoryScopedDoc(d.ref.path))
           .map((d) => ({
             id: d.id,
-            ...d.data(),
+            ...(d.data() as Omit<InventoryItem, "id">),
             _source: "scoped",
           }));
         syncMerged();
@@ -130,7 +153,7 @@ const AdminLocationsView = ({ canEdit = false }) => {
       .sort((a, b) => Number(a.diameter) - Number(b.diameter));
   }, [moffen, searchTerm]);
 
-  const handleSave = async (e) => {
+  const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!canEdit) return;
     setSaving(true);
@@ -139,11 +162,11 @@ const AdminLocationsView = ({ canEdit = false }) => {
       const docId =
         editingId ||
         `${formState.type}_ID${formState.diameter}_PN${formState.pressure}`.toUpperCase();
-      const docRef = doc(db, ...PATHS.INVENTORY, docId);
+      const docRef = doc(db, `${getPathString(PATHS.INVENTORY)}/${docId}`);
 
       const scope = resolveInventoryScope({
         ...formState,
-        ...moffen.find((m) => m.id === docId),
+        ...(moffen.find((m) => m.id === docId) || {}),
         id: docId,
       });
       const scopedSegments = buildScopedInventoryDocPath({
@@ -151,7 +174,7 @@ const AdminLocationsView = ({ canEdit = false }) => {
         departmentId: scope.departmentId,
         machineId: scope.machineId,
       });
-      const scopedRef = scopedSegments ? doc(db, ...scopedSegments) : null;
+      const scopedRef = scopedSegments ? doc(db, scopedSegments.join("/")) : null;
 
       const data = {
         ...formState,
@@ -172,14 +195,14 @@ const AdminLocationsView = ({ canEdit = false }) => {
       await Promise.all(writes);
 
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         editingId ? "TOOL_UPDATE" : "TOOL_ADD",
         `Gereedschap ${data.id} bijgewerkt op locatie ${data.location}`
       );
 
       setIsEditing(false);
       setEditingId(null);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Opslagfout:", err);
       notify("Kon gegevens niet opslaan.");
     } finally {
@@ -187,7 +210,7 @@ const AdminLocationsView = ({ canEdit = false }) => {
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: string) => {
     const confirmed = await showConfirm({
       title: t('adminLocations.deleteTitle', 'Locatie verwijderen'),
       message: t('adminLocations.confirmDelete'),
@@ -205,18 +228,18 @@ const AdminLocationsView = ({ canEdit = false }) => {
         machineId: scope.machineId,
       });
 
-      const deletes = [deleteDoc(doc(db, ...PATHS.INVENTORY, id))];
+      const deletes = [deleteDoc(doc(db, `${getPathString(PATHS.INVENTORY)}/${id}`))];
       if (scopedSegments) {
-        deletes.push(deleteDoc(doc(db, ...scopedSegments)));
+        deletes.push(deleteDoc(doc(db, scopedSegments.join("/"))));
       }
       await Promise.all(deletes);
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "TOOL_DELETE",
         `Gereedschap ${id} verwijderd.`
       );
-    } catch (err) {
-      notify(err.message);
+    } catch (err: unknown) {
+      notify(err instanceof Error ? err.message : String(err));
     }
   };
 
@@ -355,7 +378,15 @@ const AdminLocationsView = ({ canEdit = false }) => {
                       <div className="flex justify-end gap-1">
                         <button
                           onClick={() => {
-                            setFormState(m);
+                            setFormState({
+                              type: m.type,
+                              diameter: String(m.diameter),
+                              pressure: String(m.pressure),
+                              location: m.location,
+                              stock: Number(m.stock),
+                              minStock: Number(m.minStock),
+                              toolName: m.toolName || "",
+                            });
                             setEditingId(m.id);
                             setIsEditing(true);
                           }}
@@ -486,7 +517,7 @@ const AdminLocationsView = ({ canEdit = false }) => {
                     className="w-full p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black text-2xl text-center outline-none focus:border-blue-500"
                     value={formState.stock}
                     onChange={(e) =>
-                      setFormState({ ...formState, stock: e.target.value })
+                      setFormState({ ...formState, stock: Number(e.target.value) })
                     }
                   />
                 </div>
@@ -499,7 +530,7 @@ const AdminLocationsView = ({ canEdit = false }) => {
                     className="w-full p-5 bg-rose-50/30 border-2 border-rose-100 rounded-2xl font-black text-2xl text-center outline-none focus:border-rose-500"
                     value={formState.minStock}
                     onChange={(e) =>
-                      setFormState({ ...formState, minStock: e.target.value })
+                      setFormState({ ...formState, minStock: Number(e.target.value) })
                     }
                   />
                 </div>

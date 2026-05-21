@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { 
@@ -20,9 +19,13 @@ import {
 } from "lucide-react";
 import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { executeRuleWithLogging } from "../../utils/automationEngine";
 import { useNotifications } from "../../contexts/NotificationContext";
+
+type AnyRecord = Record<string, any>;
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error || "Onbekende fout");
 
 /**
  * AutomationRulesView - "When X happens, then Y" automation engine
@@ -31,14 +34,14 @@ import { useNotifications } from "../../contexts/NotificationContext";
 const AutomationRulesView = () => {
   const { t } = useTranslation();
   const { showConfirm , notify} = useNotifications();
-  const [rules, setRules] = useState([]);
-  const [executions, setExecutions] = useState([]);
-  const [emailTemplates, setEmailTemplates] = useState([]);
+  const [rules, setRules] = useState<AnyRecord[]>([]);
+  const [executions, setExecutions] = useState<AnyRecord[]>([]);
+  const [emailTemplates, setEmailTemplates] = useState<AnyRecord[]>([]);
   const [showAddRule, setShowAddRule] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [editingRule, setEditingRule] = useState(null);
+  const [editingRule, setEditingRule] = useState<AnyRecord | null>(null);
   const [isImporting, setIsImporting] = useState(false);
-  const [newRule, setNewRule] = useState({
+  const [newRule, setNewRule] = useState<AnyRecord>({
     name: "",
     trigger: {
       type: "capacity_shortage",
@@ -55,11 +58,11 @@ const AutomationRulesView = () => {
   useEffect(() => {
     // Load automation rules
     const unsubRules = onSnapshot(
-      collection(db, ...PATHS.AUTOMATION_RULES),
+      collection(db, getPathString(PATHS.AUTOMATION_RULES)),
       (snapshot) => {
-        const rulesData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const rulesData = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data()
         }));
         setRules(rulesData);
       }
@@ -67,11 +70,11 @@ const AutomationRulesView = () => {
 
     // Load execution history
     const unsubExecutions = onSnapshot(
-      collection(db, ...PATHS.AUTOMATION_EXECUTIONS),
+      collection(db, getPathString(PATHS.AUTOMATION_EXECUTIONS)),
       (snapshot) => {
-        const execData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const execData = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data()
         }));
         setExecutions(execData.slice(0, 100)); // Last 100
       }
@@ -79,11 +82,11 @@ const AutomationRulesView = () => {
 
     // Load email templates
     const unsubEmailTemplates = onSnapshot(
-      collection(db, ...PATHS.EMAIL_TEMPLATES),
+      collection(db, getPathString(PATHS.EMAIL_TEMPLATES)),
       (snapshot) => {
-        const templatesData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const templatesData = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data()
         }));
         setEmailTemplates(templatesData);
       }
@@ -104,26 +107,31 @@ const AutomationRulesView = () => {
     }
 
     if (editingRule) {
+      const editingRuleId = String(editingRule.id || "").trim();
+      if (!editingRuleId) {
+        notify(t("planning.automationRules.alerts.ruleNotFound", "Regel kon niet worden bijgewerkt"));
+        return;
+      }
       // Update bestaande regel
-      await updateDoc(doc(db, ...PATHS.AUTOMATION_RULES, editingRule.id), {
+      await updateDoc(doc(db, `${getPathString(PATHS.AUTOMATION_RULES)}/${editingRuleId}`), {
         ...newRule,
         updatedAt: serverTimestamp()
       });
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "AUTOMATION_RULE_UPDATE",
-        `Automationregel bijgewerkt: ${editingRule.id} (${newRule.name})`
+        `Automationregel bijgewerkt: ${editingRuleId} (${newRule.name})`
       );
     } else {
       // Voeg nieuwe regel toe
-      await addDoc(collection(db, ...PATHS.AUTOMATION_RULES), {
+      await addDoc(collection(db, getPathString(PATHS.AUTOMATION_RULES)), {
         ...newRule,
         createdAt: serverTimestamp(),
         executionCount: 0,
         lastExecuted: null
       });
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "AUTOMATION_RULE_CREATE",
         `Automationregel aangemaakt: ${newRule.name}`
       );
@@ -148,14 +156,14 @@ const AutomationRulesView = () => {
   };
 
   // Start editing rule
-  const handleEditRule = (rule) => {
+  const handleEditRule = (rule: AnyRecord) => {
     setEditingRule(rule);
     setNewRule({ ...rule });
     setShowAddRule(true);
   };
 
   // Delete rule
-  const deleteRule = async (ruleId) => {
+  const deleteRule = async (ruleId: string) => {
     const confirmed = await showConfirm({
       title: t("planning.automationRules.alerts.deleteTitle", "Automationregel verwijderen"),
       message: t("planning.automationRules.alerts.confirmDelete", "Weet je zeker dat je deze automation regel wilt verwijderen?"),
@@ -165,32 +173,32 @@ const AutomationRulesView = () => {
     });
     if (!confirmed) return;
 
-    await deleteDoc(doc(db, ...PATHS.AUTOMATION_RULES, ruleId));
+    await deleteDoc(doc(db, `${getPathString(PATHS.AUTOMATION_RULES)}/${ruleId}`));
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "AUTOMATION_RULE_DELETE",
       `Automationregel verwijderd: ${ruleId}`
     );
   };
 
   // Toggle rule
-  const toggleRule = async (ruleId, currentState) => {
-    await updateDoc(doc(db, ...PATHS.AUTOMATION_RULES, ruleId), {
+  const toggleRule = async (ruleId: string, currentState: boolean) => {
+    await updateDoc(doc(db, `${getPathString(PATHS.AUTOMATION_RULES)}/${ruleId}`), {
       enabled: !currentState
     });
 
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "AUTOMATION_RULE_TOGGLE",
       `Automationregel ${ruleId} ${!currentState ? "ingeschakeld" : "uitgeschakeld"}`
     );
   };
 
   // Test rule (manual execution using automation engine)
-  const testRule = async (rule) => {
+  const testRule = async (rule: AnyRecord) => {
     setIsTesting(true);
     try {
-      const result = await executeRuleWithLogging(rule);
+      const result: AnyRecord = await executeRuleWithLogging(rule);
       
       if (result.skipped) {
         notify(`⏸️ ${result.message}`);
@@ -201,16 +209,16 @@ const AutomationRulesView = () => {
       } else {
         notify(`ℹ️ ${t("planning.automationRules.alerts.triggerNotActivated", "Trigger niet geactiveerd")}\n\n${result.message || t("planning.automationRules.alerts.conditionsNotMet", "Condities niet voldaan")}`);
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Test error:", error);
-      notify(`❌ ${t("planning.automationRules.alerts.executionFailed", "Fout bij uitvoeren")}: ${error.message}`);
+      notify(`❌ ${t("planning.automationRules.alerts.executionFailed", "Fout bij uitvoeren")}: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
       setIsTesting(false);
     }
   };
 
-  const getTriggerLabel = (trigger) => {
-    const labels = {
+  const getTriggerLabel = (trigger: AnyRecord) => {
+    const labels: Record<string, string> = {
       // Existing
       order_status_change: t("planning.automationRules.triggers.order_status_change", "Order Status Wijziging"),
       capacity_threshold: t("planning.automationRules.triggers.capacity_threshold", "Capaciteit Threshold"),
@@ -231,8 +239,8 @@ const AutomationRulesView = () => {
     return labels[trigger.type] || trigger.type;
   };
 
-  const getActionLabel = (action) => {
-    const labels = {
+  const getActionLabel = (action: AnyRecord) => {
+    const labels: Record<string, string> = {
       send_notification: t("planning.automationRules.actions.send_notification", "Stuur Notificatie"),
       send_resend_email: t("planning.automationRules.actions.send_resend_email", "Stuur E-mail (Template)"),
       update_status: t("planning.automationRules.actions.update_status", "Update Status"),
@@ -246,7 +254,7 @@ const AutomationRulesView = () => {
     return labels[action.type] || action.type;
   };
 
-  const getConditionSummary = (rule) => {
+  const getConditionSummary = (rule: AnyRecord) => {
     if (!rule.trigger?.conditions) return null;
 
     if (rule.trigger.type === "capacity_shortage") {
@@ -280,8 +288,8 @@ const AutomationRulesView = () => {
     return null;
   };
 
-  const getTriggerIcon = (type) => {
-    const icons = {
+  const getTriggerIcon = (type: string) => {
+    const icons: Record<string, React.ReactNode> = {
       capacity_shortage: <AlertTriangle className="text-orange-600" size={14} />,
       low_efficiency: <TrendingDown className="text-red-600" size={14} />,
       order_delay: <Clock className="text-amber-600" size={14} />,
@@ -432,7 +440,7 @@ const AutomationRulesView = () => {
 
     try {
       for (const rule of defaultRules) {
-        await addDoc(collection(db, ...PATHS.AUTOMATION_RULES), {
+        await addDoc(collection(db, getPathString(PATHS.AUTOMATION_RULES)), {
           ...rule,
           createdAt: serverTimestamp(),
           executionCount: 0,
@@ -440,14 +448,14 @@ const AutomationRulesView = () => {
         });
       }
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "AUTOMATION_RULES_IMPORT",
         `${defaultRules.length} standaard automationregels geimporteerd`
       );
       notify(`✅ ${t("planning.automationRules.alerts.defaultsImported", "{{count}} standaard automation rules geïmporteerd!", { count: defaultRules.length })}`);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Import error:", error);
-      notify(`❌ ${t("planning.automationRules.alerts.importFailed", "Fout bij importeren")}: ${error.message}`);
+      notify(`❌ ${t("planning.automationRules.alerts.importFailed", "Fout bij importeren")}: ${getErrorMessage(error)}`);
     } finally {
       setIsImporting(false);
     }

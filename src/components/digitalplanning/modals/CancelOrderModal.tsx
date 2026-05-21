@@ -1,7 +1,15 @@
 import React, { useState } from 'react';
 import { X, AlertTriangle, Loader2 } from 'lucide-react';
 
-const CancelOrderModal = ({ isOpen, onClose, onConfirm, orderId, isProcessing = false }) => {
+type CancelOrderModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => void | Promise<void>;
+  orderId: string;
+  isProcessing?: boolean;
+};
+
+const CancelOrderModal = ({ isOpen, onClose, onConfirm, orderId, isProcessing = false }: CancelOrderModalProps) => {
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 

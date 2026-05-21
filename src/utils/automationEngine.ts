@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { 
   collection, 
   getDocs, 
@@ -6,9 +5,85 @@ import {
   where, 
 } from "firebase/firestore";
 import { db } from "../config/firebase";
-import { PATHS } from "../config/dbPaths";
+import { PATHS, getPathString } from "../config/dbPaths";
 import i18n from "../i18n";
 import { executeAutomationRule as executeAutomationRuleBackend } from "../services/planningSecurityService";
+
+type TriggerConditions = Record<string, unknown>;
+
+type AutomationTrigger = {
+  type: string;
+  conditions?: TriggerConditions;
+};
+
+type AutomationAction = {
+  type: string;
+  params?: Record<string, unknown>;
+};
+
+type AutomationRule = {
+  trigger: AutomationTrigger;
+  action: AutomationAction;
+};
+
+type TriggerResult = {
+  triggered: boolean;
+  message: string | null;
+  severity?: string;
+  data?: Record<string, unknown>;
+};
+
+type ActionResult = {
+  success: boolean;
+  message: string;
+};
+
+type TimestampLike = {
+  toDate?: () => Date;
+};
+
+type OccupancyRecord = {
+  hoursPerWeek?: number;
+  productionHours?: number;
+  actualHours?: number;
+  operatorName?: string;
+  station?: string;
+  machine?: string;
+};
+
+type PlanningRecord = {
+  id: string;
+  orderId?: string;
+  estimatedHours?: number;
+  plannedDate?: TimestampLike | string | number | Date;
+  status?: string;
+  dependencies?: string[];
+};
+
+type InspectionRecord = {
+  status?: string;
+  timestamp?: string | number | Date;
+};
+
+type TrackedProductRecord = {
+  id: string;
+  lotNumber?: string;
+  currentStation?: string;
+  reminderSent?: boolean;
+  inspection?: InspectionRecord;
+  timestamps?: {
+    station_start?: TimestampLike | string | number | Date;
+    completed?: TimestampLike | string | number | Date;
+    finished?: TimestampLike | string | number | Date;
+  };
+};
+
+type ProductionStandardRecord = {
+  id: string;
+  itemCode?: string;
+  machine?: string;
+  standardMinutes?: number;
+};
 
 /**
  * Automation Engine - Centralized rule evaluation and execution
@@ -23,15 +98,15 @@ import { executeAutomationRule as executeAutomationRuleBackend } from "../servic
  * Evaluate capacity shortage trigger
  * Migrated from: NotificationRulesView.jsx checkRule()
  */
-export const evaluateCapacityShortage = async (conditions) => {
-  const { threshold = 0 } = conditions;
+export const evaluateCapacityShortage = async (conditions: TriggerConditions): Promise<TriggerResult> => {
+  const threshold = Number(conditions.threshold ?? 0);
   
   // Load occupancy and planning data
-  const occupancySnap = await getDocs(collection(db, ...PATHS.OCCUPANCY));
-  const planningSnap = await getDocs(collection(db, ...PATHS.PLANNING));
+  const occupancySnap = await getDocs(collection(db, getPathString(PATHS.OCCUPANCY)));
+  const planningSnap = await getDocs(collection(db, getPathString(PATHS.PLANNING)));
   
-  const occupancy = occupancySnap.docs.map(d => d.data());
-  const planning = planningSnap.docs.map(d => d.data());
+  const occupancy = occupancySnap.docs.map((d) => d.data() as OccupancyRecord);
+  const planning = planningSnap.docs.map((d) => d.data() as PlanningRecord);
   
   const totalCapacity = occupancy.reduce((sum, o) => sum + (o.hoursPerWeek || 0), 0);
   const totalDemand = planning.reduce((sum, p) => sum + (p.estimatedHours || 0), 0);
@@ -55,14 +130,16 @@ export const evaluateCapacityShortage = async (conditions) => {
  * Evaluate low efficiency trigger
  * Migrated from: NotificationRulesView.jsx checkRule()
  */
-export const evaluateLowEfficiency = async (conditions) => {
-  const { threshold = 80 } = conditions; // percentage
+export const evaluateLowEfficiency = async (conditions: TriggerConditions): Promise<TriggerResult> => {
+  const threshold = Number(conditions.threshold ?? 80); // percentage
   
-  const occupancySnap = await getDocs(collection(db, ...PATHS.OCCUPANCY));
-  const occupancy = occupancySnap.docs.map(d => d.data());
+  const occupancySnap = await getDocs(collection(db, getPathString(PATHS.OCCUPANCY)));
+  const occupancy = occupancySnap.docs.map((d) => d.data() as OccupancyRecord);
   
   const avgEfficiency = occupancy.reduce((sum, o) => {
-    const eff = o.productionHours > 0 ? (o.actualHours || 0) / o.productionHours : 0;
+    const productionHours = Number(o.productionHours || 0);
+    const actualHours = Number(o.actualHours || 0);
+    const eff = productionHours > 0 ? actualHours / productionHours : 0;
     return sum + eff;
   }, 0) / (occupancy.length || 1);
   
@@ -85,16 +162,17 @@ export const evaluateLowEfficiency = async (conditions) => {
  * Evaluate order delay trigger
  * Migrated from: NotificationRulesView.jsx checkRule()
  */
-export const evaluateOrderDelay = async (conditions) => {
-  const { minDelayedOrders = 1 } = conditions;
+export const evaluateOrderDelay = async (conditions: TriggerConditions): Promise<TriggerResult> => {
+  const minDelayedOrders = Number(conditions.minDelayedOrders ?? 1);
   
-  const planningSnap = await getDocs(collection(db, ...PATHS.PLANNING));
-  const planning = planningSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const planningSnap = await getDocs(collection(db, getPathString(PATHS.PLANNING)));
+  const planning = planningSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PlanningRecord, "id">) }));
   
   const now = new Date();
   const delayedOrders = planning.filter(p => {
     if (!p.plannedDate || p.status === "shipped" || p.status === "completed") return false;
-    const planDate = p.plannedDate.toDate ? p.plannedDate.toDate() : new Date(p.plannedDate);
+    const planDate = toDateSafe(p.plannedDate);
+    if (!planDate) return false;
     return planDate < now;
   });
   
@@ -115,11 +193,11 @@ export const evaluateOrderDelay = async (conditions) => {
  * Evaluate missing operator trigger
  * Migrated from: NotificationRulesView.jsx checkRule()
  */
-export const evaluateMissingOperator = async (conditions) => {
-  const { threshold = 1 } = conditions;
+export const evaluateMissingOperator = async (conditions: TriggerConditions): Promise<TriggerResult> => {
+  const threshold = Number(conditions.threshold ?? 1);
   
-  const occupancySnap = await getDocs(collection(db, ...PATHS.OCCUPANCY));
-  const occupancy = occupancySnap.docs.map(d => d.data());
+  const occupancySnap = await getDocs(collection(db, getPathString(PATHS.OCCUPANCY)));
+  const occupancy = occupancySnap.docs.map((d) => d.data() as OccupancyRecord);
   
   const machinesWithoutOperators = occupancy.filter(o => 
     !o.operatorName || o.operatorName === ""
@@ -142,18 +220,18 @@ export const evaluateMissingOperator = async (conditions) => {
  * Evaluate dependency blocked trigger
  * Migrated from: NotificationRulesView.jsx checkRule()
  */
-export const evaluateDependencyBlocked = async (conditions) => {
-  const { threshold = 1 } = conditions;
+export const evaluateDependencyBlocked = async (conditions: TriggerConditions): Promise<TriggerResult> => {
+  const threshold = Number(conditions.threshold ?? 1);
   
-  const planningSnap = await getDocs(collection(db, ...PATHS.PLANNING));
-  const planning = planningSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const planningSnap = await getDocs(collection(db, getPathString(PATHS.PLANNING)));
+  const planning = planningSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PlanningRecord, "id">) }));
   
   const blockedOrders = planning.filter(p => {
     if (!p.dependencies || p.dependencies.length === 0) return false;
     if (p.status === "shipped" || p.status === "completed") return false;
     
-    const allDepsComplete = p.dependencies.every(depId => {
-      const dep = planning.find(o => o.id === depId);
+    const allDepsComplete = p.dependencies.every((depId: string) => {
+      const dep = planning.find((o) => o.id === depId);
       return dep && (dep.status === "shipped" || dep.status === "completed");
     });
     
@@ -177,11 +255,12 @@ export const evaluateDependencyBlocked = async (conditions) => {
  * Evaluate inspection overdue trigger
  * Migrated from: WorkstationHub.jsx checkAndSendReminders()
  */
-export const evaluateInspectionOverdue = async (conditions) => {
-  const { daysOverdue = 7, station = null } = conditions;
+export const evaluateInspectionOverdue = async (conditions: TriggerConditions): Promise<TriggerResult> => {
+  const daysOverdue = Number(conditions.daysOverdue ?? 7);
+  const station = typeof conditions.station === "string" ? conditions.station : null;
   
-  const trackedSnap = await getDocs(collection(db, ...PATHS.TRACKING));
-  const products = trackedSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const trackedSnap = await getDocs(collection(db, getPathString(PATHS.TRACKING)));
+  const products = trackedSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<TrackedProductRecord, "id">) }));
   
   const overdueProducts = products.filter(p => {
     // Filter by station if specified
@@ -210,7 +289,7 @@ export const evaluateInspectionOverdue = async (conditions) => {
       products: overdueProducts.map(p => ({
         lotNumber: p.lotNumber,
         station: p.currentStation,
-        daysSince: Math.floor((Date.now() - new Date(p.inspection.timestamp).getTime()) / (1000 * 60 * 60 * 24))
+        daysSince: Math.floor((Date.now() - new Date(p.inspection?.timestamp || Date.now()).getTime()) / (1000 * 60 * 60 * 24))
       })).slice(0, 5)
     }
   };
@@ -220,28 +299,38 @@ export const evaluateInspectionOverdue = async (conditions) => {
  * Evaluate production time standard deviation
  * Migrated from: autoLearningService.js
  */
-export const evaluateStandardDeviation = async (conditions) => {
+export const evaluateStandardDeviation = async (conditions: TriggerConditions): Promise<TriggerResult> => {
   const { 
-    minSamples = 5, 
+    minSamples = 5,
     minDeviation = 5 // percentage
-  } = conditions;
+  } = {
+    minSamples: Number(conditions.minSamples ?? 5),
+    minDeviation: Number(conditions.minDeviation ?? 5),
+  };
   
-  const standardsSnap = await getDocs(collection(db, ...PATHS.PRODUCTION_STANDARDS));
-  const standards = standardsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const standardsSnap = await getDocs(collection(db, getPathString(PATHS.PRODUCTION_STANDARDS)));
+  const standards = standardsSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ProductionStandardRecord, "id">) }));
   
-  const deviatingStandards = [];
+  const deviatingStandards: Array<{
+    itemCode: string;
+    machine: string;
+    currentStandard: number;
+    observedMedian: number;
+    deviation: number;
+    sampleCount: number;
+  }> = [];
   
   for (const standard of standards) {
     // Get completed products for this item/machine
     const trackedQuery = query(
-      collection(db, ...PATHS.TRACKING),
+      collection(db, getPathString(PATHS.TRACKING)),
       where("item", "==", standard.itemCode),
       where("originMachine", "==", standard.machine),
       where("status", "==", "completed")
     );
     
     const trackedSnap = await getDocs(trackedQuery);
-    const products = trackedSnap.docs.map(d => d.data());
+    const products = trackedSnap.docs.map((d) => d.data() as TrackedProductRecord);
     
     // Filter valid products with timestamps
     const validProducts = products.filter(p => 
@@ -252,11 +341,18 @@ export const evaluateStandardDeviation = async (conditions) => {
     if (validProducts.length < minSamples) continue;
     
     // Calculate actual times
-    const actualTimes = validProducts.map(p => {
-      const start = p.timestamps.station_start.toDate ? p.timestamps.station_start.toDate() : new Date(p.timestamps.station_start);
-      const end = p.timestamps.completed?.toDate ? p.timestamps.completed.toDate() : 
-                  p.timestamps.finished?.toDate ? p.timestamps.finished.toDate() : new Date(p.timestamps.completed || p.timestamps.finished);
-      return Math.round((end - start) / 60000); // minutes
+    const actualTimes = validProducts.map((p) => {
+      const stationStart = p.timestamps?.station_start;
+      const completed = p.timestamps?.completed;
+      const finished = p.timestamps?.finished;
+
+      if (!stationStart) return 0;
+
+      const start = toDateSafe(stationStart);
+      const end = toDateSafe(completed || finished);
+      if (!start || !end) return 0;
+
+      return Math.round((end.getTime() - start.getTime()) / 60000); // minutes
     }).filter(t => t > 0);
     
     if (actualTimes.length === 0) continue;
@@ -265,7 +361,8 @@ export const evaluateStandardDeviation = async (conditions) => {
     const sorted = [...actualTimes].sort((a, b) => a - b);
     const median = sorted[Math.floor(sorted.length / 2)];
     
-    const currentStandard = standard.standardMinutes;
+    const currentStandard = Number(standard.standardMinutes || 0);
+    if (currentStandard <= 0 || !standard.itemCode || !standard.machine) continue;
     const deviation = ((median - currentStandard) / currentStandard) * 100;
     
     if (Math.abs(deviation) >= minDeviation) {
@@ -297,13 +394,14 @@ export const evaluateStandardDeviation = async (conditions) => {
  * Evaluate order status change trigger
  * Existing functionality in AutomationRulesView
  */
-export const evaluateOrderStatusChange = async (conditions) => {
-  const { targetStatus = "in_production", orderId = null } = conditions;
+export const evaluateOrderStatusChange = async (conditions: TriggerConditions): Promise<TriggerResult> => {
+  const targetStatus = typeof conditions.targetStatus === "string" ? conditions.targetStatus : "in_production";
+  const orderId = typeof conditions.orderId === "string" ? conditions.orderId : null;
   
   // This is typically used with real-time listeners
   // For manual execution, check recent status changes
-  const planningSnap = await getDocs(collection(db, ...PATHS.PLANNING));
-  const planning = planningSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const planningSnap = await getDocs(collection(db, getPathString(PATHS.PLANNING)));
+  const planning = planningSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PlanningRecord, "id">) }));
   
   const matchingOrders = planning.filter(p => {
     if (orderId && p.orderId !== orderId) return false;
@@ -330,7 +428,10 @@ export const evaluateOrderStatusChange = async (conditions) => {
 /**
  * Execute send notification action
  */
-export const executeSendNotification = async () => {
+export const executeSendNotification = async (
+  _params: Record<string, unknown> = {},
+  _triggerResult?: TriggerResult
+): Promise<ActionResult> => {
   // Uitgevoerd server-side via executeAutomationRule callable
   return { success: true, message: i18n.t("automation.notification_sent", "Notificatie verzonden") };
 };
@@ -338,7 +439,10 @@ export const executeSendNotification = async () => {
 /**
  * Execute update status action
  */
-export const executeUpdateStatus = async (params) => {
+export const executeUpdateStatus = async (
+  params: Record<string, unknown> = {},
+  _triggerResult?: TriggerResult
+): Promise<ActionResult> => {
   const { targetStatus = "in_progress" } = params;
   return { success: true, message: i18n.t("automation.status_update_planned", { status: targetStatus, defaultValue: `Status update naar ${targetStatus} gepland` }) };
 };
@@ -346,7 +450,10 @@ export const executeUpdateStatus = async (params) => {
 /**
  * Execute create log action
  */
-export const executeCreateLog = async () => {
+export const executeCreateLog = async (
+  _params: Record<string, unknown> = {},
+  _triggerResult?: TriggerResult
+): Promise<ActionResult> => {
   // Uitgevoerd server-side via executeAutomationRule callable
   return { success: true, message: i18n.t("automation.log_created", "Log entry aangemaakt") };
 };
@@ -355,7 +462,10 @@ export const executeCreateLog = async () => {
  * Execute auto-learning update action
  * Server-side uitgevoerd via executeAutomationRule callable.
  */
-export const executeAutoLearningUpdate = async (params) => {
+export const executeAutoLearningUpdate = async (
+  params: Record<string, unknown> = {},
+  _triggerResult?: TriggerResult
+): Promise<ActionResult> => {
   const { dryRun = true } = params;
   return {
     success: true,
@@ -369,7 +479,10 @@ export const executeAutoLearningUpdate = async (params) => {
  * Execute inspection reminder action
  * Server-side uitgevoerd via executeAutomationRule callable.
  */
-export const executeInspectionReminder = async () => {
+export const executeInspectionReminder = async (
+  _params: Record<string, unknown> = {},
+  _triggerResult?: TriggerResult
+): Promise<ActionResult> => {
   // Uitgevoerd server-side via executeAutomationRule callable
   return { success: true, message: i18n.t("automation.reminders_sent", { count: 0, defaultValue: "Reminders worden server-side verzonden" }) };
 };
@@ -381,10 +494,10 @@ export const executeInspectionReminder = async () => {
 /**
  * Evaluate a rule and execute if triggered
  */
-export const evaluateRule = async (rule) => {
+export const evaluateRule = async (rule: AutomationRule): Promise<TriggerResult & { actionResult?: ActionResult }> => {
   const { trigger, action } = rule;
   
-  let result;
+  let result: TriggerResult;
   
   // Evaluate trigger based on type
   switch (trigger.type) {
@@ -455,21 +568,37 @@ export const evaluateRule = async (rule) => {
 /**
  * Check for recent similar executions (debouncing)
  */
-export const checkDebounce = async (ruleId, debounceMinutes = 60) => {
+const toDateSafe = (value: unknown): Date | null => {
+  if (!value) return null;
+
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toDate" in value &&
+    typeof (value as { toDate?: unknown }).toDate === "function"
+  ) {
+    return (value as { toDate: () => Date }).toDate();
+  }
+
+  const date = new Date(value as string | number | Date);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+export const checkDebounce = async (ruleId: string, debounceMinutes = 60): Promise<boolean> => {
   const cutoff = new Date(Date.now() - debounceMinutes * 60 * 1000);
   
   const executionsSnap = await getDocs(
     query(
-      collection(db, ...PATHS.AUTOMATION_EXECUTIONS),
+      collection(db, getPathString(PATHS.AUTOMATION_EXECUTIONS)),
       where("ruleId", "==", ruleId)
     )
   );
   
   const recentExecutions = executionsSnap.docs
-    .map(d => d.data())
-    .filter(e => {
-      if (!e.executedAt) return false;
-      const execDate = e.executedAt.toDate ? e.executedAt.toDate() : new Date(e.executedAt);
+    .map((d) => d.data() as Record<string, unknown>)
+    .filter((execution) => {
+      const execDate = toDateSafe(execution.executedAt);
+      if (!execDate) return false;
       return execDate > cutoff;
     });
   
@@ -479,6 +608,6 @@ export const checkDebounce = async (ruleId, debounceMinutes = 60) => {
 /**
  * Execute rule with logging and debouncing
  */
-export const executeRuleWithLogging = async (rule) => {
+export const executeRuleWithLogging = async (rule: unknown) => {
   return executeAutomationRuleBackend(rule);
 };

@@ -42,7 +42,7 @@ exports.requestExportTask = withAudit(
         if (exportType === 'ln_compare') {
             exportData = await generateLNCompareData(filter);
         } else if (exportType === 'planning') {
-            // Voeg hier andere types toe indien nodig
+            exportData = await generatePlanningExportData(filter);
         }
 
         // 2. Genereer Excel buffer
@@ -121,4 +121,31 @@ async function generateLNCompareData(filter) {
             "Laatste Sync": order.lastSync || ""
         };
     });
+}
+
+async function generatePlanningExportData(filter) {
+    const { selectedMachine } = filter;
+    
+    const ordersSnapshot = await db.collection('future-factory/production/digital_planning').get();
+    const allOrders = ordersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    const filteredOrders = allOrders.filter(o => {
+        if (!selectedMachine || selectedMachine === "Alle machines") return true;
+        let m = String(o.machine || "").toUpperCase().replace(/\s/g, "");
+        if (m.startsWith("40")) m = m.slice(2);
+        let filterM = selectedMachine.toUpperCase().replace(/\s/g, "");
+        if (filterM.startsWith("40")) filterM = filterM.slice(2);
+        return m === filterM;
+    });
+
+    return filteredOrders.map(order => ({
+        "Ordernummer": String(order.orderId || "").toUpperCase(),
+        "Artikel": order.itemCode || order.articleId || "",
+        "Omschrijving": order.item || order.description || "",
+        "Machine": order.machine || "",
+        "Leverdatum": order.deliveryDate || order.plannedDate || "",
+        "Status": order.status || "",
+        "Plan Aantal": Number(order.plan || order.quantity || 0),
+        "Te doen": Number(order.toDoQty || 0)
+    }));
 }

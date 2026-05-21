@@ -45,7 +45,7 @@ const StatusBadge = ({ status }: { status?: string }) => {
     completed: { icon: <CheckCircle className="text-green-500" size={16} />, text: 'Voltooid', color: 'bg-green-100 text-green-800' },
     error: { icon: <AlertTriangle className="text-red-500" size={16} />, text: 'Fout', color: 'bg-red-100 text-red-800' },
   };
-  const current = config[status] || config.pending;
+  const current = config[status || 'pending'] || config.pending;
   return (
     <span className={`inline-flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium ${current.color}`}>
       {current.icon}
@@ -64,24 +64,24 @@ const PrintQueueAdminView = () => {
     let rootJobs: PrintJob[] = [];
     let scopedJobs: PrintJob[] = [];
 
-    const normalizeJob = (docSnap: { id: string; data: () => Record<string, unknown> }) => {
+    const normalizeJob = (docSnap: { id: string; data: () => Record<string, unknown> }): PrintJob | null => {
       const data = (docSnap.data() || {}) as PrintJob;
       const isQueueJob = Boolean(data.printerId || data.zpl || data.status || data.metadata?.description);
       if (!isQueueJob) return null;
       const normalizedTimestamp = data.timestamp || data.createdAt || null;
       return {
-        id: docSnap.id,
         ...data,
+        id: docSnap.id,
         description: data.description || data.metadata?.description || '',
         requesterEmail: data.requesterEmail || data.metadata?.requesterEmail || data.metadata?.requesterName || '-',
         timestamp: normalizedTimestamp,
-      };
+      } as PrintJob;
     };
 
     const tsToMillis = (ts: TimestampLike | string | null | undefined): number => {
       if (!ts) return 0;
-      if (typeof ts === 'object' && typeof ts.toDate === 'function') return ts.toDate().getTime();
-      const parsed = new Date(ts);
+      if (typeof ts === 'object' && 'toDate' in ts && typeof ts.toDate === 'function') return ts.toDate().getTime();
+      const parsed = new Date(ts as string);
       return Number.isFinite(parsed.getTime()) ? parsed.getTime() : 0;
     };
 
@@ -102,9 +102,9 @@ const PrintQueueAdminView = () => {
       setLoading(false);
     };
 
-    const rootQ = query(collection(db, ...PATHS.PRINT_QUEUE), orderBy('createdAt', 'desc'));
+    const rootQ = query(collection(db, PATHS.PRINT_QUEUE.join('/')), orderBy('createdAt', 'desc'));
     const unsubscribeRoot = onSnapshot(rootQ, (snapshot) => {
-      rootJobs = snapshot.docs.map(normalizeJob).filter(Boolean) as PrintJob[];
+      rootJobs = snapshot.docs.map(normalizeJob).filter((job): job is PrintJob => Boolean(job));
       mergeJobs();
     }, () => {
       rootJobs = [];
@@ -116,14 +116,14 @@ const PrintQueueAdminView = () => {
       scopedJobs = snapshot.docs
         .filter((docSnap) => String(docSnap.ref?.path || '').includes(printQueuePathFragment))
         .map(normalizeJob)
-        .filter((job): job is PrintJob => Boolean(job) && String(job._scopeType || 'print_queue').trim() === 'print_queue');
+        .filter((job): job is PrintJob => Boolean(job) && String(job?._scopeType || 'print_queue').trim() === 'print_queue');
       mergeJobs();
     }, () => {
       scopedJobs = [];
       mergeJobs();
     });
 
-    const listenersRef = collection(db, ...PATHS.PRINT_LISTENERS);
+    const listenersRef = collection(db, PATHS.PRINT_LISTENERS.join('/'));
     const unsubscribeListeners = onSnapshot(listenersRef, (snapshot) => {
       setListeners(snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) })) as ListenerItem[]);
     });
@@ -216,8 +216,8 @@ const PrintQueueAdminView = () => {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan="5" className="text-center p-8"><Loader2 className="animate-spin inline-block" /></td></tr>}
-            {!loading && printJobs.length === 0 && <tr><td colSpan="5" className="text-center p-8">De print wachtrij is leeg.</td></tr>}
+            {loading && <tr><td colSpan={5} className="text-center p-8"><Loader2 className="animate-spin inline-block" /></td></tr>}
+            {!loading && printJobs.length === 0 && <tr><td colSpan={5} className="text-center p-8">De print wachtrij is leeg.</td></tr>}
             {printJobs.map((job) => (
               <tr key={job.id} className="bg-white border-b hover:bg-slate-50">
                 <td className="px-6 py-4">
@@ -230,7 +230,7 @@ const PrintQueueAdminView = () => {
                 </td>
                 <td className="px-6 py-4">{job.requesterEmail}</td>
                 <td className="px-6 py-4">
-                  {job.timestamp ? formatDistanceToNow(job.timestamp.toDate(), { addSuffix: true, locale: nl }) : '-'}
+                  {job.timestamp ? formatDistanceToNow(typeof job.timestamp === 'object' && 'toDate' in job.timestamp ? job.timestamp.toDate() : new Date(job.timestamp as string), { addSuffix: true, locale: nl }) : '-'}
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2">
@@ -244,9 +244,7 @@ const PrintQueueAdminView = () => {
                 </td>
               </tr>
             ))}
-                  {job.timestamp && typeof job.timestamp === 'object' && job.timestamp.toDate
-                    ? formatDistanceToNow(job.timestamp.toDate(), { addSuffix: true, locale: nl })
-                    : '-'}
+          </tbody>
         </table>
       </div>
     </div>

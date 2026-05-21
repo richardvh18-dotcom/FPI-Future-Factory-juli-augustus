@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -17,7 +17,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db, logActivity } from "../../config/firebase";
-import { PATHS, getArchiveItemsPath } from "../../config/dbPaths";
+import { PATHS, getArchiveItemsPath, getPathString } from "../../config/dbPaths";
 import { toDateSafe } from "../../utils/dateUtils";
 import {
   getISOWeek,
@@ -32,14 +32,14 @@ import ProductDetailModal from "../products/ProductDetailModal";
 import LossenView from "./LossenView";
 import Nabewerken from "./Nabewerken";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
-import { normalizeMachine, getStartedCounterField } from "../../utils/hubHelpers.tsx";
+import { normalizeMachine, getStartedCounterField } from "../../utils/hubHelpers";
 import { getOrderFinishedUnits } from "../../utils/planningProgress";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 import { shouldHidePlanningOrder } from "../../utils/terminalOrderFilters";
 
 import TerminalPlanningView from "./terminal/TerminalPlanningView";
 import TerminalProductionView from "./terminal/TerminalProductionView";
-import TerminalManualInput from "./terminal/TerminalManualInput.tsx";
+import TerminalManualInput from "./terminal/TerminalManualInput";
 import TerminalGereedTab from "./terminal/TerminalGereedTab";
 import MalOptimizationPanel from "./MalOptimizationPanel";
 import MazakView from "./MazakView";
@@ -51,20 +51,95 @@ import { completeTrackedProductRepair } from "../../services/planningSecuritySer
 const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
 const GEREED_TAB_SOURCE_STATIONS = new Set(["BH12", "BH15", "BH17", "BH18"]);
 
+declare const __app_id: string | undefined;
+
+type StationLike = { id?: string; name?: string } | string | null | undefined;
+
+type TrackedProductDoc = {
+  id: string;
+  orderId?: string;
+  lotNumber?: string;
+  status?: string;
+  currentStep?: string;
+  currentStation?: string;
+  originMachine?: string;
+  machine?: string;
+  lastStation?: string;
+  item?: string;
+  itemCode?: string;
+  itemDescription?: string;
+  productId?: string;
+  drawing?: string;
+  isManualMove?: boolean;
+  inspection?: {
+    status?: string;
+    [key: string]: unknown;
+  };
+  timestamps?: Record<string, unknown>;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  [key: string]: unknown;
+};
+
+type PlanningOrder = {
+  id?: string;
+  orderId?: string;
+  orderNumber?: string;
+  item?: string;
+  itemCode?: string;
+  productId?: string;
+  machine?: string;
+  originalMachine?: string;
+  sourceStation?: string;
+  returnStation?: string;
+  station?: string;
+  workstation?: string;
+  machineId?: string;
+  wc?: string;
+  status?: string;
+  plan?: number | string;
+  quantity?: number | string;
+  produced?: number | string;
+  week?: string | number;
+  weekNumber?: string | number;
+  year?: string | number;
+  weekYear?: string | number;
+  dateObj?: any;
+  sourcePath?: string;
+  __docPath?: string;
+  priority?: boolean | string;
+  isMoved?: boolean;
+  isUrgent?: boolean;
+  [key: string]: unknown;
+};
+
+type EnrichedPlanningOrder = PlanningOrder & {
+  produced: number;
+  startedAtStation: number;
+  parsedYear?: number;
+  parsedWeek?: number;
+};
+
+type TerminalProps = {
+  initialStation?: StationLike;
+  onCancelProduction?: (productId: string) => void;
+  orders?: PlanningOrder[];
+};
+
 /**
  * Workstation Terminal - V22.5
  * - Oplossing voor 2026 weeknotatie (W3 vs W03).
  * - Automatische selectie-reset bij navigatie.
  * - Alles-knop toegevoegd en zoekknop uit toolbar verwijderd.
  */
-const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
+const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalProps) => {
   const { t } = useTranslation();
   const { user } = useAdminAuth();
 
   // Station configuratie
   const stationId = initialStation && typeof initialStation === "object" ? initialStation.id : initialStation;
   const stationName = initialStation && typeof initialStation === "object" ? initialStation.name : initialStation;
-  const effectiveStationId = stationName || stationId;
+  const effectiveStationId = (stationName || stationId) as string;
   const normalizedStationId = (normalizeMachine(effectiveStationId) || "").toUpperCase().trim();
   const cleanStationId = normalizedStationId.replace(/\s/g, "");
 
@@ -81,29 +156,29 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   // State management
   const { notify } = useNotifications();
   const [activeTab, setActiveTab] = useState("planning");
-  const [lossenPlanningFilter, setLossenPlanningFilter] = useState(null);
-  const [allOrders, setAllOrders] = useState([]);
-  const [allTracked, setAllTracked] = useState([]);
-  const [archiveTrackedItems, setArchiveTrackedItems] = useState([]);
+  const [lossenPlanningFilter, setLossenPlanningFilter] = useState<string | null>(null);
+  const [allOrders, setAllOrders] = useState<PlanningOrder[]>([]);
+  const [allTracked, setAllTracked] = useState<TrackedProductDoc[]>([]);
+  const [archiveTrackedItems, setArchiveTrackedItems] = useState<TrackedProductDoc[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [selectedOrderId, setSelectedOrderId] = useState(null);
-  const [selectedTrackedId, setSelectedTrackedId] = useState(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedTrackedId, setSelectedTrackedId] = useState<string | null>(null);
   const [sidebarSearch, setSidebarSearch] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
   const [manualInputValue, setManualInputValue] = useState("");
   const [showStartModal, setShowStartModal] = useState(false);
-  const [productToRelease, setProductToRelease] = useState(null);
-  const [bulkProductsToRelease, setBulkProductsToRelease] = useState([]);
+  const [productToRelease, setProductToRelease] = useState<TrackedProductDoc | null>(null);
+  const [bulkProductsToRelease, setBulkProductsToRelease] = useState<TrackedProductDoc[]>([]);
   const [releaseAutoApproveToken, setReleaseAutoApproveToken] = useState(0);
-  const [viewingProduct, setViewingProduct] = useState(null);
+  const [viewingProduct, setViewingProduct] = useState<TrackedProductDoc | null>(null);
   const [showRepairModal, setShowRepairModal] = useState(false);
-  const [itemToRepair, setItemToRepair] = useState(null);
+  const [itemToRepair, setItemToRepair] = useState<TrackedProductDoc | null>(null);
 
   // Scan functionaliteit voor wikkelen tab
   const [scanInput, setScanInput] = useState("");
   const [scannerMode, setScannerMode] = useState(true);
-  const scanInputRef = useRef(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
 
   // Planning filters (Week / Alles)
   const [referenceDate, setReferenceDate] = useState(new Date());
@@ -142,30 +217,30 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     }
   }, [isGereedTabSourceStation, activeTab]);
   // Helpers
-  const parseDateSafe = (dateInput) => {
-    return toDateSafe(dateInput);
+  const parseDateSafe = (dateInput: unknown) => {
+    return toDateSafe(dateInput as any);
   };
 
-  const normalizePlanningStatus = (status) => String(status || "").trim().toLowerCase();
+  const normalizePlanningStatus = (status: unknown) => String(status || "").trim().toLowerCase();
 
-  const normalizeTrackedStatus = (status) => String(status || "").trim().toLowerCase();
+  const normalizeTrackedStatus = (status: unknown) => String(status || "").trim().toLowerCase();
 
-  const isTrackedProductionActive = (product) => {
+  const isTrackedProductionActive = (product: TrackedProductDoc) => {
     const status = normalizeTrackedStatus(product?.status);
     return ["in production", "in productie", "held_qc", "in_progress", "paused"].includes(status);
   };
 
-  const isInactivePlanningStatus = (status) => {
+  const isInactivePlanningStatus = (status: unknown) => {
     const normalized = normalizePlanningStatus(status);
     return ["completed", "cancelled", "shipped", "rejected", "finished", "deleted"].includes(normalized);
   };
 
-  const isPlannedLikeStatus = (status) => {
+  const isPlannedLikeStatus = (status: unknown) => {
     const normalized = normalizePlanningStatus(status);
     return ["planned", "delegated", "pending", "waiting"].includes(normalized);
   };
 
-  const isDefinitiveRejectedOrRemoved = (product) => {
+  const isDefinitiveRejectedOrRemoved = (product: TrackedProductDoc) => {
     const statusNorm = normalizeTrackedStatus(product?.status);
     const stepNorm = String(product?.currentStep || "").trim().toLowerCase();
     const inspectionNorm = String(product?.inspection?.status || "").trim().toLowerCase();
@@ -180,7 +255,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     return isRejected || isRemoved;
   };
 
-  const toFiniteNumber = (value) => {
+  const toFiniteNumber = (value: unknown) => {
     const direct = Number(value);
     if (Number.isFinite(direct)) return direct;
 
@@ -240,7 +315,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       now.getFullYear() - 4,
       now.getFullYear() - 5,
     ];
-    const byYear = {};
+    const byYear: Record<number, TrackedProductDoc[]> = {};
 
     const syncCombined = () => {
       if (!isMounted) return;
@@ -251,7 +326,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     const unsubs = years.map((year) =>
       onSnapshot(
         query(
-          collection(db, ...getArchiveItemsPath(year)),
+          collection(db, getArchiveItemsPath(year).join("/")),
           where("timestamps.finished", ">=", minArchiveDate)
         ),
         (snap) => {
@@ -272,12 +347,12 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   }, []);
 
   const stationOrderMeta = useMemo(() => {
-    const map = new Map();
+    const map = new Map<string, { active: number; total: number }>();
     const stationNorm = String(normalizedStationId || "").toUpperCase().trim();
     const stationClean = stationNorm.replace(/\s/g, "");
     const isWikkelToLossenSourceStation = ["BH12", "BH15", "BH17", "BH18"].includes(stationClean);
 
-    const matchesStation = (value) => {
+    const matchesStation = (value: unknown) => {
       const norm = (normalizeMachine(value) || "").toUpperCase().trim();
       if (!norm) return false;
       const clean = norm.replace(/\s/g, "");
@@ -322,14 +397,14 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
 
   // Centrale gemaakte teller: unieke lots per order uit tracked + archief.
   const madeCountMap = useMemo(() => {
-    const perOrderLots = new Map();
+    const perOrderLots = new Map<string, Set<string>>();
 
-    const addLot = (orderIdRaw, lotRaw) => {
+    const addLot = (orderIdRaw: unknown, lotRaw: unknown) => {
       const orderId = String(orderIdRaw || "").trim();
       const lot = String(lotRaw || "").trim();
       if (!orderId || !lot) return;
-      if (!perOrderLots.has(orderId)) perOrderLots.set(orderId, new Set());
-      perOrderLots.get(orderId).add(lot);
+      if (!perOrderLots.has(orderId)) perOrderLots.set(orderId, new Set<string>());
+      perOrderLots.get(orderId)?.add(lot);
     };
 
     allTracked.forEach((p) => {
@@ -342,7 +417,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       addLot(p?.orderId, p?.lotNumber || p?.id);
     });
 
-    const result = {};
+    const result: Record<string, number> = {};
     perOrderLots.forEach((lots, orderId) => {
       result[orderId] = lots.size;
     });
@@ -354,7 +429,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     if (isBM01) return allOrders;
     if (isLossen1218Station) {
       const sourceMachines = new Set(["BH12", "BH15", "BH17", "BH18", "12", "15", "17", "18"]);
-      const isLossenOrder = (order) => {
+      const isLossenOrder = (order: PlanningOrder) => {
         const values = [
           order?.machine,
           order?.originalMachine,
@@ -367,7 +442,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         ];
 
         const normalized = values
-          .map((value) => (normalizeMachine(value) || "").toUpperCase().trim())
+          .map((value: unknown) => (normalizeMachine(value) || "").toUpperCase().trim())
           .filter(Boolean);
 
         const path = String(order?.__docPath || order?.sourcePath || "").toUpperCase();
@@ -379,12 +454,10 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         return normalized.some((candidate) => sourceMachines.has(candidate));
       };
 
-      const filteredLossenOrders = allOrders.filter(isLossenOrder);
-      // Fail-safe: voorkom leeg scherm door ontbrekende machinebron-velden in legacy docs.
-      return filteredLossenOrders.length > 0 ? filteredLossenOrders : allOrders;
+      return allOrders.filter(isLossenOrder);
     }
 
-    const waitingForLossenOnlyByOrder = new Map();
+    const waitingForLossenOnlyByOrder = new Map<string, { totalActive: number; waitingForLossen: number }>();
     if (["BH12", "BH15", "BH17", "BH18"].includes(cleanStationId)) {
       allTracked.forEach((p) => {
         const orderId = String(p?.orderId || "").trim();
@@ -410,7 +483,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       });
     }
 
-    const result = allOrders.filter(o => {
+    const result = allOrders.filter((o: PlanningOrder) => {
       const machineNorm = (normalizeMachine(o.machine) || "").toUpperCase().trim();
       const returnNorm = (normalizeMachine(o.returnStation) || "").toUpperCase().trim();
         const orderId = String(o.orderId || "").trim();
@@ -466,7 +539,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   }, [allOrders, normalizedStationId, isBM01, isLossen1218Station, stationCounterField, stationOrderMeta]);
 
   const productionProgressMap = useMemo(() => {
-    const map = {};
+    const map: Record<string, number> = {};
     allTracked.forEach((p) => {
       const oid = String(p.orderId || "").trim();
       if (!oid) return;
@@ -483,11 +556,12 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   }, [allTracked]);
 
   const rejectedCountMap = useMemo(() => {
-    const map = {};
+    const map: Record<string, number> = {};
     allTracked.forEach((p) => {
       const oid = String(p.orderId || "").trim();
       if (!oid) return;
-      const isRejected = ['rejected', 'Rejected', 'AFKEUR', 'REJECTED'].includes(p.status) || p.currentStep === 'REJECTED';
+      const statusValue = String(p.status || "");
+      const isRejected = ['rejected', 'Rejected', 'AFKEUR', 'REJECTED'].includes(statusValue) || p.currentStep === 'REJECTED';
       if (!isRejected) return;
       if (!map[oid]) map[oid] = 0;
       map[oid]++;
@@ -496,7 +570,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   }, [allTracked]);
 
   const readyForReturnMap = useMemo(() => {
-    const map = {};
+    const map: Record<string, number> = {};
     allTracked.forEach((p) => {
       const currentStationNorm = (normalizeMachine(p.currentStation) || "").toUpperCase().trim();
       if (currentStationNorm === normalizedStationId && 
@@ -512,7 +586,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   }, [allTracked, normalizedStationId]);
 
   const waitingForLossenMap = useMemo(() => {
-    const map = {};
+    const map: Record<string, number> = {};
     allTracked.forEach((p) => {
       const originNorm = (normalizeMachine(p.originMachine || p.machine || p.currentStation) || "").toUpperCase().trim();
       const stepNorm = String(p.currentStep || "").trim().toLowerCase();
@@ -552,7 +626,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   }, [allTracked, normalizedStationId, sidebarSearch]);
 
   const lotConflictMeta = useMemo(() => {
-    const buckets = new Map();
+    const buckets = new Map<string, { productSignatures: Set<string>; orderIds: Set<string> }>();
 
     allTracked.forEach((p) => {
       const lotKey = String(p?.lotNumber || "").trim().toUpperCase();
@@ -579,7 +653,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       buckets.set(lotKey, existing);
     });
 
-    const meta = {};
+    const meta: Record<string, { hasConflict: boolean; productCount: number; orderCount: number }> = {};
     buckets.forEach((entry, lotKey) => {
       const hasProductConflict = entry.productSignatures.size > 1;
       const hasOrderConflict = entry.orderIds.size > 1;
@@ -602,9 +676,9 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     );
   }, [activeWikkelingen, isBH31]);
 
-  const filteredOrders = useMemo(() => {
+  const filteredOrders = useMemo<EnrichedPlanningOrder[]>(() => {
     // Eerst verrijken met live data
-    const enrichedOrders = myOrders.map(o => ({
+    const enrichedOrders: EnrichedPlanningOrder[] = myOrders.map((o: PlanningOrder) => ({
         ...o,
         // Lot-first: unieke lots uit tracked+archief zijn de primaire bron.
         // Legacy velden blijven als fallback om ondertelling te voorkomen.
@@ -614,7 +688,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         startedAtStation: Number(o[stationCounterField] || 0)
     }));
 
-    const base = enrichedOrders.filter((o) => {
+    const base = enrichedOrders.filter((o: EnrichedPlanningOrder) => {
       // Bepaal de effectieve geplande hoeveelheid.
       // Als plan handmatig omlaag is gezet (bijv. "nog maar 1 maken van de 7"), wint plan.
       // Anders wint de hoogste waarde (bijv. bij een verhoging).
@@ -706,7 +780,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       // FORCEER ZICHTBAARHEID ALS ER ACTIVITEIT IS (ZELFS ALS WEEK NIET MATCHT)
       if (hasStationActivity || hasActiveTracked) return true;
 
-      const absOrder = o.parsedYear * 52 + o.parsedWeek;
+      const absOrder = (o.parsedYear || 0) * 52 + (o.parsedWeek || 0);
       const absTarget = targetYearNum * 52 + targetWeekNum;
 
       // Als we de HUIDIGE week bekijken, toon ook de backlog (alles uit verleden dat niet af is)
@@ -724,7 +798,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
 
     if (!sidebarSearch) {
       return base.sort((a, b) => {
-        const priorityRank = (order) => {
+        const priorityRank = (order: EnrichedPlanningOrder) => {
           const normalizedPriority =
             order?.priority === true
               ? "high"
@@ -738,8 +812,8 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         const prioDiff = priorityRank(b) - priorityRank(a);
         if (prioDiff !== 0) return prioDiff;
 
-        const absOrderA = a.parsedYear * 52 + a.parsedWeek;
-        const absOrderB = b.parsedYear * 52 + b.parsedWeek;
+        const absOrderA = (a.parsedYear || 0) * 52 + (a.parsedWeek || 0);
+        const absOrderB = (b.parsedYear || 0) * 52 + (b.parsedWeek || 0);
         
         const isBacklogA = absOrderA < absCurrentReal;
         const isBacklogB = absOrderB < absCurrentReal;
@@ -771,7 +845,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
 
     const hasAlphaToken = tokens.some((t) => /[a-z]/i.test(t));
 
-    return base.filter((o) => {
+    return base.filter((o: EnrichedPlanningOrder) => {
       const orderFields = [
         o.orderId,
         o.orderNumber,
@@ -810,13 +884,13 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   // LOSSEN 12/18: gefilterde planning per machine (filter via filterbar)
   const lossenFilteredOrders = useMemo(() => {
     if (!lossenPlanningFilter) return filteredOrders;
-    return filteredOrders.filter(o => {
+    return filteredOrders.filter((o: EnrichedPlanningOrder) => {
       const machineNorm = (normalizeMachine(o.machine) || "").toUpperCase().trim();
       return machineNorm === lossenPlanningFilter;
     });
   }, [filteredOrders, lossenPlanningFilter]);
 
-  const selectedOrder = useMemo(() => {
+  const selectedOrder = useMemo<EnrichedPlanningOrder | PlanningOrder | null>(() => {
     const planningSource = isLossen1218Station ? lossenFilteredOrders : filteredOrders;
     const fromPlanning = planningSource.find(
       (o) => o.id === selectedOrderId || o.orderId === selectedOrderId
@@ -826,7 +900,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     // Fallback voor gevallen waarin selectie nog bestaat maar tijdelijk niet in de zichtbare lijst zit.
     return myOrders.find(
       (o) => o.id === selectedOrderId || o.orderId === selectedOrderId
-    );
+    ) || null;
   }, [isLossen1218Station, lossenFilteredOrders, filteredOrders, myOrders, selectedOrderId]);
 
   const selectedWikkeling = useMemo(() => activeWikkelingen.find(p => p.id === selectedTrackedId), [activeWikkelingen, selectedTrackedId]);
@@ -836,10 +910,10 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     // Alleen auto-focus gebruiken als Scanner Modus AAN staat
     if (!scannerMode) return;
 
-      const handleClick = (e) => {
+      const handleClick = (e: MouseEvent) => {
         const target = e?.target;
-        if (!target) return;
-        if (target.closest?.('input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-scan-ignore]')) return;
+        if (!(target instanceof HTMLElement)) return;
+        if (target.closest('input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-scan-ignore]')) return;
       
       if (activeTab === "wikkelen" && !selectedTrackedId && !productToRelease && !showStartModal) {
         scanInputRef.current?.focus();
@@ -855,7 +929,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   }, [activeTab, selectedTrackedId, productToRelease, showStartModal, scannerMode]);
 
   // Scan handler voor wikkelen tab
-  const handleScan = (e) => {
+  const handleScan = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       const code = scanInput.trim();
       if (!code) return;
@@ -867,12 +941,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         const isWikkelenStep = (selectedWikkeling?.currentStep || "").toLowerCase() === "wikkelen";
 
         if (!isBH18) {
-          notify(
-            t(
-              "digitalplanning.terminal.ok_qr_not_available",
-              "OK-QR is op dit station niet beschikbaar. Gebruik deze alleen op BH18 (Wikkelen) en in Nabewerken/BM01."
-            )
-          );
+          notify((String(t("digitalplanning.terminal.ok_qr_not_available", "OK-QR is op dit station niet beschikbaar. Gebruik deze alleen op BH18 (Wikkelen) en in Nabewerken/BM01."))) as any);
           setScanInput("");
           setTimeout(() => {
             scanInputRef.current?.focus();
@@ -886,12 +955,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
           setReleaseAutoApproveToken(Date.now());
           setScanInput("");
         } else {
-          notify(
-            t(
-              "digitalplanning.terminal.select_active_bh18_before_qr",
-              "Selecteer eerst een actief BH18-item in stap Wikkelen voordat je de OK-QR scant."
-            )
-          );
+          notify((String(t("digitalplanning.terminal.select_active_bh18_before_qr", "Selecteer eerst een actief BH18-item in stap Wikkelen voordat je de OK-QR scant."))) as any);
           setScanInput("");
           setTimeout(() => {
             scanInputRef.current?.focus();
@@ -912,13 +976,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       const conflictOnScannedLot = lotConflictMeta[normalizedCode]?.hasConflict;
 
       if (lotMatches.length > 1 && conflictOnScannedLot) {
-        notify(
-          t(
-            "digitalplanning.terminal.lot_duplicate_conflict",
-            "Lot {{code}} bestaat meerdere keren met verschillend product/order. Kies handmatig het juiste item in de lijst.",
-            { code }
-          )
-        );
+        notify((String(t("digitalplanning.terminal.lot_duplicate_conflict", "Lot {{code}} bestaat meerdere keren met verschillend product/order. Kies handmatig het juiste item in de lijst.", { code }))) as any);
         setScanInput("");
         setTimeout(() => {
           scanInputRef.current?.focus();
@@ -930,13 +988,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         setSelectedTrackedId(found.id);
         setScanInput("");
       } else {
-        notify(
-          t(
-            "digitalplanning.terminal.item_not_found_active_winding",
-            "Item {{code}} niet gevonden in actieve wikkelingen.",
-            { code }
-          )
-        );
+        notify((String(t("digitalplanning.terminal.item_not_found_active_winding", "Item {{code}} niet gevonden in actieve wikkelingen.", { code }))) as any);
         setScanInput("");
       }
       // Na scan altijd weer focus op het scanveld
@@ -947,7 +999,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
   };
 
   // Handlers
-  const handleTabChange = (tab) => {
+  const handleTabChange = (tab: string) => {
     setActiveTab(tab);
     // Zoekfilter wissen bij switch naar wikkelen of gereed
     // zodat de wikkellijst niet leeg lijkt door een planning-zoekterm
@@ -956,7 +1008,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     }
   };
 
-  const handleOpenReleaseModal = (product, bulkProducts = []) => {
+  const handleOpenReleaseModal = (product: TrackedProductDoc, bulkProducts: TrackedProductDoc[] = []) => {
     setProductToRelease(product || null);
     if (Array.isArray(bulkProducts) && bulkProducts.length > 1) {
       setBulkProductsToRelease(bulkProducts);
@@ -965,7 +1017,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     }
   };
 
-  const handleViewDrawing = async (productId) => {
+  const handleViewDrawing = async (productId: string | TrackedProductDoc) => {
     if (!productId) return;
     try {
       if (typeof productId === 'object') {
@@ -973,14 +1025,14 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         return;
       }
       // 1. Direct op document ID
-      const docRef = doc(db, ...PATHS.PRODUCTS, productId);
+      const docRef = doc(db, `${getPathString(PATHS.PRODUCTS)}/${productId}`);
       const snap = await getDoc(docRef);
       if (snap.exists()) {
         setViewingProduct({ id: snap.id, ...snap.data() });
         return;
       }
       // 2. Zoek op articleCode
-      const productsRef = collection(db, ...PATHS.PRODUCTS);
+      const productsRef = collection(db, getPathString(PATHS.PRODUCTS));
       const q = query(productsRef, where("articleCode", "==", productId));
       const qSnap = await getDocs(q);
       if (!qSnap.empty) {
@@ -1002,22 +1054,22 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
           return;
         }
       }
-      notify(t("digitalplanning.terminal.product_not_found"));
+    notify((String(t("digitalplanning.terminal.product_not_found"))) as any);
     } catch (err) {
       console.error("Fout bij laden product:", err);
     }
   };
 
   const handleStartProduction = async (
-    order,
-    lot,
-    _stringCount,
-    _manualOrderInput,
-    _operatorInput,
-    _selectedOperatorName,
-    labelZplData,
-    labelTemplateId,
-    startOptions = {}
+    order: PlanningOrder,
+    lot: string,
+    _stringCount: number | string,
+    _manualOrderInput?: string,
+    _operatorInput?: string,
+    _selectedOperatorName?: string,
+    labelZplData?: string,
+    labelTemplateId?: string,
+    startOptions: Record<string, unknown> = {}
   ) => {
     const previousTab = activeTab;
     const shouldJumpToWinding = !isNabewerking && !isLossenStation && !isBM01 && !isBH31;
@@ -1025,7 +1077,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     try {
       const cleanOrderId = String(order.orderId).trim();
       const cleanItemCode = String(order.itemCode || order.productId).trim();
-      const totalToProduce = Math.max(1, parseInt(_stringCount, 10) || 1);
+      const totalToProduce = Math.max(1, parseInt(String(_stringCount), 10) || 1);
       const startLot = String(lot || "").trim().toUpperCase();
       const seriesGroupId =
         startOptions?.seriesGroupId ||
@@ -1039,7 +1091,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       }
 
       const startResult = await startProductionLots({
-        orderDocId: order.id,
+        orderDocId: order.id as string,
         orderDocPath: order?.__docPath || "",
         orderSourcePath: order?.sourcePath || "",
         orderId: cleanOrderId,
@@ -1054,7 +1106,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
         labelTemplateId: labelTemplateId || "",
         seriesGroupId,
         isFlangeSeries: !!startOptions?.isFlangeSeries,
-      });
+      }) as { createdLots?: string[], firstLot?: string };
 
       const createdLots = Array.isArray(startResult?.createdLots)
         ? startResult.createdLots
@@ -1075,12 +1127,12 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     }
   };
 
-  const handleRepair = (item) => {
+  const handleRepair = (item: TrackedProductDoc) => {
     setItemToRepair(item);
     setShowRepairModal(true);
   };
 
-  const handleRepairComplete = async (data) => {
+  const handleRepairComplete = async (data: { actions?: string[], notes?: string }) => {
     if (!itemToRepair) return;
     try {
       await completeTrackedProductRepair({
@@ -1115,7 +1167,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     if (isNabewerking) {
       return (
         <div className="flex-1 overflow-hidden h-full text-left">
-          <Nabewerken products={allTracked} orders={orders} />
+          <Nabewerken products={allTracked as any} orders={orders} />
         </div>
       );
     }
@@ -1123,7 +1175,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
       return (
         <div className="flex flex-col h-full bg-slate-50 text-slate-900 overflow-hidden animate-in fade-in">
           <div className="flex-1 overflow-hidden h-full text-left">
-            <MazakView stationId={effectiveStationId} products={allTracked} />
+            <MazakView stationId={effectiveStationId || undefined} products={allTracked as any} />
           </div>
         </div>
       );
@@ -1131,7 +1183,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
     return (
       <div className="flex flex-col h-full bg-slate-50 text-slate-900 overflow-hidden animate-in fade-in">
         <div className="flex-1 overflow-hidden h-full text-left">
-          <LossenView stationId={effectiveStationId} appId={appId} products={allTracked} />
+          <LossenView stationId={effectiveStationId || undefined} appId={appId || undefined} products={allTracked as any} />
         </div>
       </div>
     );
@@ -1220,14 +1272,14 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
                   </span>
                 </div>
                 <div className="flex-1 overflow-hidden flex lg:flex-row">
-                  <TerminalPlanningView
-                    orders={lossenFilteredOrders}
+                <TerminalPlanningView
+                    orders={lossenFilteredOrders as any}
                     selectedOrderId={selectedOrderId}
-                    onSelectOrder={setSelectedOrderId}
+                    onSelectOrder={(id: string | null | undefined) => setSelectedOrderId(id || null)}
                     searchTerm={sidebarSearch}
                     onSearchChange={setSidebarSearch}
                     referenceDate={referenceDate}
-                    onDateChange={(direction) => {
+                    onDateChange={(direction: 'reset' | 'prev' | 'next') => {
                       if (direction === 'reset') setReferenceDate(new Date());
                       else setReferenceDate(direction === 'prev' ? subWeeks(referenceDate, 1) : addWeeks(referenceDate, 1));
                     }}
@@ -1238,31 +1290,31 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
                     rejectedCountMap={rejectedCountMap}
                     readyForReturnMap={readyForReturnMap}
                     isBM01={false}
-                    trackedProducts={allTracked}
-                    onStartProduction={null}
-                    selectedOrder={selectedOrder}
+                    trackedProducts={allTracked as any}
+                    onStartProduction={undefined}
+                    selectedOrder={selectedOrder as any}
                     onViewDrawing={handleViewDrawing}
                     repairItems={[]}
-                    onRepair={null}
+                    onRepair={undefined}
                     optimizationPanel={
                       <MalOptimizationPanel
-                        currentOrder={selectedOrder}
-                        allOrders={myOrders}
-                        onSelectOrder={setSelectedOrderId}
+                        currentOrder={selectedOrder as any}
+                        allOrders={myOrders as any[]}
+                        onSelectOrder={(id: string | undefined) => setSelectedOrderId(id || null)}
                       />
                     }
                   />
                 </div>
               </div>
             ) : activeTab === "planning" ? (
-              <TerminalPlanningView
-                orders={filteredOrders}
+            <TerminalPlanningView
+                orders={filteredOrders as any}
                 selectedOrderId={selectedOrderId}
-                onSelectOrder={setSelectedOrderId}
+                onSelectOrder={(id: string | null | undefined) => setSelectedOrderId(id || null)}
                 searchTerm={sidebarSearch}
                 onSearchChange={setSidebarSearch}
                 referenceDate={referenceDate}
-                onDateChange={(direction) => {
+                onDateChange={(direction: 'reset' | 'prev' | 'next') => {
                   if (direction === 'reset') setReferenceDate(new Date());
                   else setReferenceDate(direction === 'prev' ? subWeeks(referenceDate, 1) : addWeeks(referenceDate, 1));
                 }}
@@ -1273,33 +1325,33 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
                 rejectedCountMap={rejectedCountMap}
                 readyForReturnMap={readyForReturnMap}
                 isBM01={isBM01}
-                trackedProducts={allTracked}
+                trackedProducts={allTracked as any}
                 onStartProduction={() => setShowStartModal(true)}
-                selectedOrder={selectedOrder}
+                selectedOrder={selectedOrder as any}
                 onViewDrawing={handleViewDrawing}
-                repairItems={repairItems}
+                repairItems={repairItems as any}
                 onRepair={handleRepair}
                 // Mal Optimalisatie: Toon gerelateerde orders in het paneel
                 optimizationPanel={
                   <MalOptimizationPanel 
-                    currentOrder={selectedOrder}
-                    allOrders={myOrders}
-                    onSelectOrder={setSelectedOrderId}
+                    currentOrder={selectedOrder as any}
+                    allOrders={myOrders as any[]}
+                    onSelectOrder={(id: string | undefined) => setSelectedOrderId(id || null)}
                   />
                 }
               />
             ) : activeTab === "wikkelen" ? (
               /* TAB WIKKELEN */
-              <TerminalProductionView
-                activeWikkelingen={activeWikkelingen}
+            <TerminalProductionView
+                activeWikkelingen={activeWikkelingen as any}
                 lotConflictMeta={lotConflictMeta}
                 selectedTrackedId={selectedTrackedId}
-                onSelectTracked={setSelectedTrackedId}
+                onSelectTracked={(id: string | null | undefined) => setSelectedTrackedId(id || null)}
                 selectedWikkeling={selectedWikkeling}
                 onReleaseProduct={handleOpenReleaseModal}
                 scanInput={scanInput}
-                setScanInput={setScanInput}
-                onScan={handleScan}
+                setScanInput={setScanInput as any}
+                onScan={handleScan as any}
                 scanInputRef={scanInputRef}
                 scannerMode={scannerMode}
                 onCancelProduction={onCancelProduction}
@@ -1307,17 +1359,17 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
               />
             ) : activeTab === "gereed" ? (
               <TerminalGereedTab
-                allTracked={allTracked}
-                stationId={stationId}
-                effectiveStationId={effectiveStationId}
+                allTracked={allTracked as any}
+                stationId={stationId || undefined}
+                effectiveStationId={effectiveStationId || undefined}
               />
             ) : (
               /* TAB LOSSEN */
               <div className="flex-1 overflow-hidden h-full text-left">
                 {isMazak ? (
-                  <MazakView stationId={effectiveStationId} products={allTracked} />
+                  <MazakView stationId={effectiveStationId || undefined} products={allTracked as any} />
                 ) : (
-                  <LossenView stationId={effectiveStationId} appId={appId} products={allTracked} />
+                  <LossenView stationId={effectiveStationId || undefined} appId={appId || undefined} products={allTracked as any} />
                 )}
               </div>
             )}
@@ -1340,32 +1392,32 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }) => {
 
       {showStartModal && selectedOrder && (
         <div className="fixed z-[9999]">
-          <ProductionStartModal
+      <ProductionStartModal
             isOpen={true} onClose={() => setShowStartModal(false)}
-            order={selectedOrder} stationId={stationId}
+            order={selectedOrder} stationId={stationId || undefined}
             onStartInitiated={() => {
               setShowStartModal(false);
               if (!isNabewerking && !isLossenStation && !isBM01 && !isBH31) {
                 setActiveTab("wikkelen");
               }
             }}
-            onStart={handleStartProduction} existingProducts={allTracked}
+          onStart={handleStartProduction} existingProducts={allTracked as any[]}
           />
         </div>
       )}
       
       {productToRelease && (
         <div className="fixed z-[9999]">
-          <ProductReleaseModal
+      <ProductReleaseModal
             isOpen={true} product={productToRelease}
-            bulkProducts={bulkProductsToRelease}
+          bulkProducts={bulkProductsToRelease}
             autoApproveTrigger={releaseAutoApproveToken}
             onClose={() => {
               setProductToRelease(null);
               setBulkProductsToRelease([]);
               setSelectedTrackedId(null);
             }}
-            appId={appId}
+            appId={appId || undefined}
           />
         </div>
       )}

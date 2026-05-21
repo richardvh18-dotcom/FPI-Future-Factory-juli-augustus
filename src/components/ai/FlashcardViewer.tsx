@@ -73,7 +73,7 @@ const FlashcardViewer = ({ data, onClose }: FlashcardViewerProps) => {
         timestamp: serverTimestamp(),
       });
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "FLASHCARD_RESULT_SAVE",
         `Flashcard resultaat opgeslagen (${correct ? "correct" : "incorrect"})`
       );

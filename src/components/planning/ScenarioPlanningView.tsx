@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo } from "react";
 import { 
   Beaker, 
@@ -8,9 +7,94 @@ import {
 } from "lucide-react";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { addDays } from "date-fns";
 import { useNotifications } from "../../contexts/NotificationContext";
+
+type ChangeType =
+  | "add_capacity"
+  | "remove_capacity"
+  | "delay_order"
+  | "rush_order"
+  | "change_efficiency";
+
+type ScenarioChange = {
+  id: number;
+  type: ChangeType;
+  machine: string;
+  hours: number;
+  days: number;
+  orderId: string;
+  efficiency: number;
+};
+
+type Scenario = {
+  id: string;
+  name: string;
+  description: string;
+  changes: ScenarioChange[];
+  [key: string]: unknown;
+};
+
+type ScenarioDraft = {
+  name: string;
+  description: string;
+  changes: ScenarioChange[];
+};
+
+type OccupancyRow = {
+  id: string;
+  machine?: string;
+  productionHours?: number;
+  efficiency?: number;
+  [key: string]: unknown;
+};
+
+type DateLike =
+  | { seconds?: number; _seconds?: number; toDate?: () => Date }
+  | Date
+  | string
+  | number
+  | null
+  | undefined;
+
+type PlanningRow = {
+  id: string;
+  plannedDate?: DateLike;
+  estimatedHours?: number;
+  [key: string]: unknown;
+};
+
+const isChangeType = (value: string): value is ChangeType => {
+  return [
+    "add_capacity",
+    "remove_capacity",
+    "delay_order",
+    "rush_order",
+    "change_efficiency",
+  ].includes(value);
+};
+
+const toNumber = (value: unknown): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const toSeconds = (value: DateLike): number | null => {
+  if (!value) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (value instanceof Date) return Math.floor(value.getTime() / 1000);
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null;
+  }
+  if (typeof value === "object") {
+    if (typeof value.toDate === "function") return Math.floor(value.toDate().getTime() / 1000);
+    if (typeof value.seconds === "number") return value.seconds;
+    if (typeof value._seconds === "number") return value._seconds;
+  }
+  return null;
+};
 
 /**
  * ScenarioPlanningView - What-if analysis for capacity planning
@@ -18,12 +102,12 @@ import { useNotifications } from "../../contexts/NotificationContext";
  */
 const ScenarioPlanningView = () => {
   const { showConfirm , notify} = useNotifications();
-  const [scenarios, setScenarios] = useState([]);
-  const [occupancy, setOccupancy] = useState([]);
-  const [planning, setPlanning] = useState([]);
-  const [activeScenario, setActiveScenario] = useState(null);
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [occupancy, setOccupancy] = useState<OccupancyRow[]>([]);
+  const [planning, setPlanning] = useState<PlanningRow[]>([]);
+  const [activeScenario, setActiveScenario] = useState<Scenario | null>(null);
   const [showCreateScenario, setShowCreateScenario] = useState(false);
-  const [newScenario, setNewScenario] = useState({
+  const [newScenario, setNewScenario] = useState<ScenarioDraft>({
     name: "",
     description: "",
     changes: []
@@ -32,28 +116,54 @@ const ScenarioPlanningView = () => {
   useEffect(() => {
     // Load scenarios
     const unsubScenarios = onSnapshot(
-      collection(db, ...PATHS.SCENARIOS),
+      collection(db, getPathString(PATHS.SCENARIOS)),
       (snapshot) => {
-        const scenariosData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const scenariosData: Scenario[] = snapshot.docs.map((docEntry) => {
+          const raw = docEntry.data() as Record<string, unknown>;
+          const rawChanges = Array.isArray(raw.changes) ? raw.changes : [];
+          const changes: ScenarioChange[] = rawChanges
+            .map((change, idx) => {
+              const c = (change || {}) as Record<string, unknown>;
+              const type = typeof c.type === "string" && isChangeType(c.type) ? c.type : "add_capacity";
+              return {
+                id: typeof c.id === "number" ? c.id : Date.now() + idx,
+                type,
+                machine: String(c.machine || ""),
+                hours: toNumber(c.hours),
+                days: toNumber(c.days),
+                orderId: String(c.orderId || ""),
+                efficiency: toNumber(c.efficiency),
+              };
+            });
+
+          return {
+            id: docEntry.id,
+            name: String(raw.name || ""),
+            description: String(raw.description || ""),
+            changes,
+            ...raw,
+          };
+        });
         setScenarios(scenariosData);
       }
     );
 
     // Load current data
     const unsubOccupancy = onSnapshot(
-      collection(db, ...PATHS.OCCUPANCY),
+      collection(db, getPathString(PATHS.OCCUPANCY)),
       (snapshot) => {
-        setOccupancy(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setOccupancy(
+          snapshot.docs.map((docEntry): OccupancyRow => ({ id: docEntry.id, ...(docEntry.data() as Record<string, unknown>) }))
+        );
       }
     );
 
     const unsubPlanning = onSnapshot(
-      collection(db, ...PATHS.PLANNING),
+      collection(db, getPathString(PATHS.PLANNING)),
       (snapshot) => {
-        setPlanning(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setPlanning(
+          snapshot.docs.map((docEntry): PlanningRow => ({ id: docEntry.id, ...(docEntry.data() as Record<string, unknown>) }))
+        );
       }
     );
 
@@ -65,35 +175,37 @@ const ScenarioPlanningView = () => {
   }, []);
 
   // Calculate scenario impact
-  const calculateScenarioImpact = (scenario) => {
+  const calculateScenarioImpact = (scenario: Scenario | null) => {
     if (!scenario) return null;
 
     let modifiedOccupancy = [...occupancy];
     let modifiedPlanning = [...planning];
 
     // Apply scenario changes
-    scenario.changes.forEach(change => {
+    scenario.changes.forEach((change) => {
       switch (change.type) {
         case "add_capacity":
-          modifiedOccupancy = modifiedOccupancy.map(o => 
+          modifiedOccupancy = modifiedOccupancy.map((o) => 
             o.machine === change.machine 
-              ? { ...o, productionHours: (o.productionHours || 0) + change.hours }
+              ? { ...o, productionHours: toNumber(o.productionHours) + change.hours }
               : o
           );
           break;
 
         case "remove_capacity":
-          modifiedOccupancy = modifiedOccupancy.map(o => 
+          modifiedOccupancy = modifiedOccupancy.map((o) => 
             o.machine === change.machine 
-              ? { ...o, productionHours: Math.max(0, (o.productionHours || 0) - change.hours) }
+              ? { ...o, productionHours: Math.max(0, toNumber(o.productionHours) - change.hours) }
               : o
           );
           break;
 
         case "delay_order":
-          modifiedPlanning = modifiedPlanning.map(o => {
+          modifiedPlanning = modifiedPlanning.map((o) => {
             if (o.id === change.orderId && o.plannedDate) {
-              const oldDate = new Date(o.plannedDate.seconds * 1000);
+              const oldSeconds = toSeconds(o.plannedDate);
+              if (oldSeconds === null) return o;
+              const oldDate = new Date(oldSeconds * 1000);
               const newDate = addDays(oldDate, change.days);
               return { 
                 ...o, 
@@ -105,9 +217,11 @@ const ScenarioPlanningView = () => {
           break;
 
         case "rush_order":
-          modifiedPlanning = modifiedPlanning.map(o => {
+          modifiedPlanning = modifiedPlanning.map((o) => {
             if (o.id === change.orderId && o.plannedDate) {
-              const oldDate = new Date(o.plannedDate.seconds * 1000);
+              const oldSeconds = toSeconds(o.plannedDate);
+              if (oldSeconds === null) return o;
+              const oldDate = new Date(oldSeconds * 1000);
               const newDate = addDays(oldDate, -change.days);
               return { 
                 ...o, 
@@ -119,7 +233,7 @@ const ScenarioPlanningView = () => {
           break;
 
         case "change_efficiency":
-          modifiedOccupancy = modifiedOccupancy.map(o => 
+          modifiedOccupancy = modifiedOccupancy.map((o) => 
             o.machine === change.machine 
               ? { ...o, efficiency: change.efficiency }
               : o
@@ -129,14 +243,14 @@ const ScenarioPlanningView = () => {
     });
 
     // Calculate metrics
-    const totalCapacity = modifiedOccupancy.reduce((sum, o) => sum + (o.productionHours || 0), 0);
-    const totalDemand = modifiedPlanning.reduce((sum, o) => sum + (o.estimatedHours || 0), 0);
+    const totalCapacity = modifiedOccupancy.reduce((sum, o) => sum + toNumber(o.productionHours), 0);
+    const totalDemand = modifiedPlanning.reduce((sum, o) => sum + toNumber(o.estimatedHours), 0);
     const utilization = totalCapacity > 0 ? (totalDemand / totalCapacity) * 100 : 0;
     const gap = totalCapacity - totalDemand;
 
     // Compare with baseline
-    const baselineCapacity = occupancy.reduce((sum, o) => sum + (o.productionHours || 0), 0);
-    const baselineDemand = planning.reduce((sum, o) => sum + (o.estimatedHours || 0), 0);
+    const baselineCapacity = occupancy.reduce((sum, o) => sum + toNumber(o.productionHours), 0);
+    const baselineDemand = planning.reduce((sum, o) => sum + toNumber(o.estimatedHours), 0);
     const baselineGap = baselineCapacity - baselineDemand;
 
     const capacityChange = totalCapacity - baselineCapacity;
@@ -168,14 +282,14 @@ const ScenarioPlanningView = () => {
       return;
     }
 
-    await addDoc(collection(db, ...PATHS.SCENARIOS), {
+    await addDoc(collection(db, getPathString(PATHS.SCENARIOS)), {
       ...newScenario,
       createdAt: serverTimestamp(),
       createdBy: "current_user"
     });
 
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "SCENARIO_CREATE",
       `Scenario aangemaakt: ${newScenario.name}`
     );
@@ -189,7 +303,7 @@ const ScenarioPlanningView = () => {
   };
 
   // Delete scenario
-  const deleteScenario = async (scenarioId) => {
+  const deleteScenario = async (scenarioId: string) => {
     const confirmed = await showConfirm({
       title: "Scenario verwijderen",
       message: "Weet je zeker dat je dit scenario wilt verwijderen?",
@@ -199,9 +313,9 @@ const ScenarioPlanningView = () => {
     });
     if (!confirmed) return;
 
-    await deleteDoc(doc(db, ...PATHS.SCENARIOS, scenarioId));
+    await deleteDoc(doc(db, `${getPathString(PATHS.SCENARIOS)}/${scenarioId}`));
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "SCENARIO_DELETE",
       `Scenario verwijderd: ${scenarioId}`
     );
@@ -211,8 +325,8 @@ const ScenarioPlanningView = () => {
   };
 
   // Clone scenario
-  const cloneScenario = async (scenario) => {
-    await addDoc(collection(db, ...PATHS.SCENARIOS), {
+  const cloneScenario = async (scenario: Scenario) => {
+    await addDoc(collection(db, getPathString(PATHS.SCENARIOS)), {
       name: `${scenario.name} (kopie)`,
       description: scenario.description,
       changes: scenario.changes,
@@ -221,14 +335,14 @@ const ScenarioPlanningView = () => {
     });
 
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "SCENARIO_CLONE",
       `Scenario gekloond: ${scenario.name}`
     );
   };
 
   // Add change to new scenario
-  const addChange = (changeType) => {
+  const addChange = (changeType: ChangeType) => {
     setNewScenario({
       ...newScenario,
       changes: [
@@ -247,32 +361,32 @@ const ScenarioPlanningView = () => {
   };
 
   // Remove change
-  const removeChange = (changeId) => {
+  const removeChange = (changeId: number) => {
     setNewScenario({
       ...newScenario,
-      changes: newScenario.changes.filter(c => c.id !== changeId)
+      changes: newScenario.changes.filter((c) => c.id !== changeId)
     });
   };
 
   // Update change
-  const updateChange = (changeId, field, value) => {
+  const updateChange = (changeId: number, field: keyof ScenarioChange, value: string | number) => {
     setNewScenario({
       ...newScenario,
-      changes: newScenario.changes.map(c => 
-        c.id === changeId ? { ...c, [field]: value } : c
+      changes: newScenario.changes.map((c) => 
+        c.id === changeId ? { ...c, [field]: value } as ScenarioChange : c
       )
     });
   };
 
-  const getChangeTypeLabel = (type) => {
-    const labels = {
+  const getChangeTypeLabel = (type: ChangeType) => {
+    const labels: Record<ChangeType, string> = {
       add_capacity: "Capaciteit Toevoegen",
       remove_capacity: "Capaciteit Verminderen",
       delay_order: "Order Uitstellen",
       rush_order: "Order Vervroegen",
       change_efficiency: "Efficiency Aanpassen"
     };
-    return labels[type] || type;
+    return labels[type] || String(type);
   };
 
   return (
@@ -320,7 +434,7 @@ const ScenarioPlanningView = () => {
                   value={newScenario.description}
                   onChange={(e) => setNewScenario({ ...newScenario, description: e.target.value })}
                   className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg text-sm"
-                  rows="3"
+                  rows={3}
                 />
 
                 <div>
@@ -328,7 +442,7 @@ const ScenarioPlanningView = () => {
                     Wijzigingen
                   </label>
                   <div className="space-y-2 mb-3">
-                    {newScenario.changes.map(change => (
+                    {newScenario.changes.map((change) => (
                       <div key={change.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-bold text-slate-600">
@@ -367,7 +481,7 @@ const ScenarioPlanningView = () => {
                   <select
                     onChange={(e) => {
                       if (e.target.value) {
-                        addChange(e.target.value);
+                        if (isChangeType(e.target.value)) addChange(e.target.value);
                         e.target.value = "";
                       }
                     }}
@@ -410,7 +524,7 @@ const ScenarioPlanningView = () => {
                   Nog geen scenarios
                 </div>
               ) : (
-                scenarios.map(scenario => (
+                scenarios.map((scenario) => (
                   <div
                     key={scenario.id}
                     onClick={() => setActiveScenario(scenario)}
@@ -530,7 +644,7 @@ const ScenarioPlanningView = () => {
                   {activeScenario.changes.map((change, idx) => (
                     <div key={idx} className="p-4 bg-purple-50 border-2 border-purple-200 rounded-xl">
                       <div className="font-bold text-sm text-slate-800 mb-2">
-                        {getChangeTypeLabel(change.type)}
+                        {getChangeTypeLabel(change.type as ChangeType)}
                       </div>
                       <div className="text-xs text-slate-600">
                         {change.machine && `Machine: ${change.machine}`}

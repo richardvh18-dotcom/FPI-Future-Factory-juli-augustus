@@ -1,60 +1,131 @@
-// @ts-nocheck
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { db } from '../../config/firebase';
-import { collection, query, where, getDocs, limit, doc, getDoc, documentId, onSnapshot, collectionGroup } from 'firebase/firestore';
-import { PATHS } from '../../config/dbPaths';
-import { Loader2, Printer, Search, Send, X, Tag, ChevronDown, Usb } from 'lucide-react';
+import { collection, query, where, getDocs, limit, doc, getDoc, documentId, onSnapshot, collectionGroup, orderBy } from 'firebase/firestore';
+import { PATHS, getPathString } from '../../config/dbPaths';
+import { Loader2, Printer, Search, RefreshCw, Send, X, Tag, Usb } from 'lucide-react';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { generatePrintData, generateLotBatchZPL } from '../../utils/zplHelper';
 import { getDriver } from '../../utils/printerDrivers';
 import { getISOWeekInfo, getStationMachineCode } from '../../utils/lotLogic';
-import AutoScaledLabelPreview from './AutoScaledLabelPreview.tsx';
+import AutoScaledLabelPreview from './AutoScaledLabelPreview';
 import { useLabelPreview } from '../../hooks/useLabelPreview';
 import { processLabelData, applyLabelLogic, filterTempOrderLabelsByProduct, resolveLabelContent } from '../../utils/labelHelpers';
+import { executeOrderLabelSearch, loadFactoryMachinePaths, normalizeText } from "../../utils/orderLabelSearch";
 
-const stationNameFromValue = (stationValue) => {
+type AnyRecord = Record<string, unknown>;
+
+type LabelTemplate = {
+  id: string;
+  name?: string;
+  width?: number;
+  height?: number;
+  tags?: string[];
+  elements?: unknown[];
+  [key: string]: unknown;
+};
+
+type PrinterConfig = {
+  id: string;
+  vendorId?: number | string;
+  productId?: number | string;
+  productName?: string;
+  dpi?: number | string;
+  darkness?: number | string;
+  isDefault?: boolean;
+  queueStations?: unknown[];
+  linkedStations?: unknown[];
+  [key: string]: unknown;
+};
+
+type DepartmentGroup = {
+  key: string;
+  label: string;
+  stations: string[];
+};
+
+type TempLabelItemProps = {
+  item: AnyRecord;
+  labelTemplates: LabelTemplate[];
+  labelRules: AnyRecord[];
+  onPrint: (orderData: AnyRecord, templateId: string) => Promise<void>;
+  printerDpi?: number;
+};
+
+type TempLabelModalProps = {
+  onClose: () => void;
+  onPrint: (orderData: AnyRecord, templateId: string) => Promise<void>;
+  labelTemplates?: LabelTemplate[];
+  labelRules?: AnyRecord[];
+  printerDpi?: number;
+};
+
+type LotPrintModalProps = {
+  onClose: () => void;
+  departmentGroups: DepartmentGroup[];
+  onPrintBatch: (batchData: string, lotCount: number) => Promise<void>;
+  printer: PrinterConfig | null;
+};
+
+const stationNameFromValue = (stationValue: unknown): string => {
   if (!stationValue) return '';
   if (typeof stationValue === 'string') return stationValue.trim();
   if (typeof stationValue === 'object') {
+    const stationObj = stationValue as AnyRecord;
     return String(
-      stationValue.name || stationValue.station || stationValue.id || stationValue.code || ''
+      stationObj.name || stationObj.station || stationObj.id || stationObj.code || ''
     ).trim();
   }
   return String(stationValue).trim();
 };
 
-const getOrderLabelOrder = (item = {}) =>
-  item.orderId ||
-  item.orderNumber ||
-  item.Order ||
-  item.Productieorder ||
-  item.order ||
-  item.originalOrderId ||
-  item.id ||
-  "ONBEKEND";
+const getOrderLabelOrder = (item: AnyRecord = {}): string =>
+  String(
+    item.orderId ||
+    item.orderNumber ||
+    item.Order ||
+    item.Productieorder ||
+    item.order ||
+    item.originalOrderId ||
+    item.id ||
+    "ONBEKEND"
+  );
 
-const getOrderLabelItemCode = (item = {}) =>
-  item.itemCode ||
-  item.productCode ||
-  item.articleCode ||
-  item.productId ||
-  item.Item ||
-  item.Artikel ||
-  item.item ||
-  "";
+const getOrderLabelItemCode = (item: AnyRecord = {}): string =>
+  String(
+    item.itemCode ||
+    item.productCode ||
+    item.articleCode ||
+    item.productId ||
+    item.Item ||
+    item.Artikel ||
+    item.item ||
+    ""
+  );
 
-const getOrderLabelDescription = (item = {}) =>
-  item.itemDescription ||
-  item.description ||
-  item.Description ||
-  item.Omschrijving ||
-  item.item ||
-  "";
+const getOrderLabelDescription = (item: AnyRecord = {}): string =>
+  String(
+    item.itemDescription ||
+    item.description ||
+    item.Description ||
+    item.Omschrijving ||
+    item.item ||
+    ""
+  );
+
+
+const getErrMsg = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message?: unknown }).message || "onbekende fout");
+  }
+  return String(err);
+};
 
 // --- Helper voor Tijdelijke Labels ---
-const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, isExpanded, onToggle, printerDpi = 300 }) => {
+const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi = 203 }: TempLabelItemProps) => {
   const itemDisplay = getOrderLabelDescription(item) || getOrderLabelItemCode(item);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
   const topOptions = useMemo(() => {
     const normalizedProduct = {
@@ -64,186 +135,174 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, isExpanded, 
       item: item.item || getOrderLabelDescription(item),
       extraCode: item.extraCode || item.Code || ''
     };
-
-    return filterTempOrderLabelsByProduct(labelTemplates || [], normalizedProduct);
+    return filterTempOrderLabelsByProduct(labelTemplates || [], normalizedProduct as AnyRecord) as LabelTemplate[];
   }, [item, labelTemplates]);
 
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
-
   useEffect(() => {
-     if (topOptions.length > 0) {
-       const isValidSelection = topOptions.some(t => t.id === selectedTemplateId);
-       if (!selectedTemplateId || !isValidSelection) {
-         setSelectedTemplateId(topOptions[0]?.id || "");
-       }
-     } else if (selectedTemplateId) {
-       setSelectedTemplateId("");
-     }
-    }, [topOptions, selectedTemplateId]);
+    if (topOptions.length > 0) {
+      const isValidSelection = topOptions.some((t: LabelTemplate) => t.id === selectedTemplateId);
+      if (!selectedTemplateId || !isValidSelection) {
+        setSelectedTemplateId(topOptions[0]?.id || "");
+      }
+    } else if (selectedTemplateId) {
+      setSelectedTemplateId("");
+    }
+  }, [topOptions, selectedTemplateId]);
 
-    const selectedTemplate = topOptions.find(t => t.id === selectedTemplateId) || topOptions[0];
-  
-  const previewData = useMemo(() => {
-    if (!isExpanded) return {};
-    const order = getOrderLabelOrder(item);
-    const itemCode = getOrderLabelItemCode(item);
-    const desc = getOrderLabelDescription(item);
+  const selectedTemplate = topOptions.find((t: LabelTemplate) => t.id === selectedTemplateId) || topOptions[0];
 
-    const labelData = processLabelData({
-        ...item,
-        orderNumber: order,
-        productId: itemCode,
-        description: desc,
-        lotNumber: item.lotNumber || order
+  const previewData = useMemo<Record<string, unknown>>(() => {
+    const order = item.orderId || item.Order || item.Productieorder || item.order || item.id || "ONBEKEND";
+    const itemCode = item.itemCode || item.Item || item.Artikel || item.item || "";
+    const desc = item.description || item.Description || item.Omschrijving || "";
+    const base = processLabelData({
+      ...item,
+      orderNumber: order,
+      productId: itemCode,
+      description: desc,
+      lotNumber: String(item.lotNumber || order),
     });
-    return applyLabelLogic(labelData, labelRules || []);
-  }, [item, labelRules, isExpanded]);
+    return applyLabelLogic(base, labelRules || []);
+  }, [item, labelRules]);
 
   return (
-    <div className={`p-0 bg-white border-2 hover:border-emerald-300 rounded-[24px] transition-all shadow-sm hover:shadow-md group overflow-hidden ${isExpanded ? 'border-emerald-500' : 'border-slate-100'}`}>
-      <div 
-        className="p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 cursor-pointer"
-        onClick={onToggle}
-      >
-        <div className="flex-1">
-          <p className="text-xl font-black text-slate-800 tracking-tight leading-none mb-1">
-            {getOrderLabelOrder(item)}
-          </p>
-          {itemDisplay && (
-            <p className="text-sm font-bold text-slate-600 tracking-wider mb-0.5 mt-2">
-              {itemDisplay}
-            </p>
+    <div className="w-full p-4 bg-white border border-slate-200 hover:border-amber-300 rounded-2xl transition-all">
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-black text-slate-800 truncate">{getOrderLabelOrder(item)}</p>
+          <p className="text-xs font-bold text-slate-500 truncate">{itemDisplay}</p>
+          <div className="mt-3">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Template</label>
+            {topOptions.length > 0 ? (
+              <select
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+              >
+                {topOptions.map((t: LabelTemplate) => (
+                  <option key={t.id} value={t.id}>{String(t.name || t.id)}</option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-xs italic text-amber-600">Geen passende tijdelijke template gevonden.</p>
+            )}
+          </div>
+          <button
+            onClick={() => onPrint(item, selectedTemplateId)}
+            disabled={!selectedTemplateId || topOptions.length === 0}
+            className="mt-3 px-3 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-amber-600 disabled:opacity-50"
+          >
+            Print
+          </button>
+        </div>
+        <div className="w-full lg:w-64 h-36 bg-white border border-slate-200 rounded-xl p-2 flex items-center justify-center">
+          {selectedTemplate ? (
+            <AutoScaledLabelPreview label={selectedTemplate} data={previewData} maxScale={1} />
+          ) : (
+            <p className="text-xs text-slate-400 italic">Geen preview</p>
           )}
         </div>
-        <div className="shrink-0 w-full sm:w-auto flex justify-end">
-           <button 
-             className={`p-3 rounded-full transition-colors flex items-center justify-center ${isExpanded ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-50 text-slate-400 group-hover:bg-emerald-50 group-hover:text-emerald-600'}`}
-           >
-             <ChevronDown size={20} className={`transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
-           </button>
-        </div>
       </div>
-      
-      {isExpanded && (
-        <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex flex-col md:flex-row gap-6 animate-in slide-in-from-top-2">
-          <div className="flex-1 flex flex-col gap-4">
-            <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Label Formaat / Template</label>
-                {topOptions.length > 0 ? (
-                  <select 
-                    className="w-full p-4 border-2 border-slate-200 rounded-xl text-sm font-bold bg-white outline-none focus:border-emerald-500 transition-colors cursor-pointer"
-                    value={selectedTemplateId}
-                    onChange={e => setSelectedTemplateId(e.target.value)}
-                  >
-                    {topOptions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                ) : (
-                  <div className="text-xs text-orange-500 italic p-4 bg-orange-50 rounded-xl border border-orange-100">Geen tijdelijke labels met passende tags gevonden voor dit product.</div>
-                )}
-            </div>
-            
-            <button 
-              onClick={() => onPrint(item, selectedTemplateId)} 
-              disabled={!selectedTemplateId || topOptions.length === 0}
-              className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 disabled:opacity-50 mt-auto"
-            >
-              <Printer size={18} /> Etiket Printen
-            </button>
-          </div>
-          
-          <div className="w-full md:w-96 lg:w-[450px] shrink-0 flex flex-col items-center justify-center bg-white border-2 border-slate-200 p-4 rounded-3xl relative min-h-[250px] shadow-inner">
-             <span className="absolute top-4 left-4 text-[10px] font-black text-slate-400 uppercase tracking-widest z-10">Live Preview</span>
-             {selectedTemplate ? (
-                 <div className="w-full h-full flex items-center justify-center pt-8 pb-2">
-                    <AutoScaledLabelPreview label={selectedTemplate} data={previewData} printerDpi={printerDpi} />
-                 </div>
-             ) : (
-                 <span className="text-xs text-slate-400 italic">Selecteer een template</span>
-             )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
 // --- Modal: Tijdelijke Labels Zoeken ---
-const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = [], printerDpi = 300 }) => {
+const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = [], printerDpi = 203 }: TempLabelModalProps) => {
   const { t } = useTranslation();
+  const { notify } = useNotifications();
   const [orderStr, setOrderStr] = useState("");
-  const [results, setResults] = useState([]);
-  const [initialList, setInitialList] = useState([]);
+  const [results, setResults] = useState<AnyRecord[]>([]);
+  const [initialList, setInitialList] = useState<AnyRecord[]>([]);
   const [loadingInitialList, setLoadingInitialList] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [expandedItemId, setExpandedItemId] = useState(null);
+  const [searchDiagnostics, setSearchDiagnostics] = useState<string[]>([]);
+  const isMountedRef = useRef(true);
 
-  const normalizeText = (value) => String(value || "").toLowerCase().trim();
+  const refreshInitialList = useCallback(async () => {
+    setLoadingInitialList(true);
+    try {
+      const planningPrefix = `${getPathString(PATHS.PLANNING)}/`;
 
-  useEffect(() => {
-    let isMounted = true;
+      const loadInitialDeepPaths = async () => {
+        const deepResults: AnyRecord[] = [];
+        const machinePairs = await loadFactoryMachinePaths();
+        for (const { productType, machine } of machinePairs) {
+          try {
+            const machinePath = `${getPathString(PATHS.PLANNING)}/${productType}/machines/${machine}/orders`;
+            const machineSnap = await getDocs(query(collection(db, machinePath), limit(200)));
+            machineSnap.docs.forEach((d) => {
+              deepResults.push({ id: d.id, ...(d.data() as AnyRecord) });
+            });
+          } catch {
+            // Silent fail
+          }
+        }
+        return deepResults;
+      };
 
-    const loadInitialList = async () => {
-      setLoadingInitialList(true);
-      try {
-        const [tempSnap, planSnap, trackSnap, scopedOrdersSnap] = await Promise.all([
-          getDocs(query(collection(db, ...PATHS.TEMP_PLANNING), limit(120))),
-          getDocs(query(collection(db, ...PATHS.PLANNING), limit(120))),
-          getDocs(query(collection(db, ...PATHS.TRACKING), limit(120))),
-          getDocs(query(collectionGroup(db, 'orders'), limit(120))),
-        ]);
+      const [tempSnap, planSnap, trackSnap, scopedPlanningSnap, deepPaths] = await Promise.all([
+        getDocs(query(collection(db, getPathString(PATHS.TEMP_PLANNING)), limit(120))),
+        getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(120))),
+        getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(120))),
+        getDocs(query(collectionGroup(db, 'orders'), limit(120))),
+        loadInitialDeepPaths(),
+      ]);
 
-        if (!isMounted) return;
+      if (!isMountedRef.current) return;
 
-        const rows = [];
-        const pushRows = (snap) => {
-          snap.docs.forEach((d) => rows.push({ id: d.id, ...d.data() }));
-        };
-
-        pushRows(tempSnap);
-        pushRows(planSnap);
-        pushRows(trackSnap);
-        pushRows(scopedOrdersSnap);
-
-        const dedup = [];
-        const seen = new Set();
-        rows.forEach((r) => {
-          if (seen.has(r.id)) return;
-          seen.add(r.id);
-          dedup.push(r);
+      const rows: AnyRecord[] = [];
+      const pushRows = (snap: any, pathPrefix?: string) => {
+        snap.docs.forEach((d: any) => {
+          if (pathPrefix && !String(d.ref?.path || "").startsWith(pathPrefix)) return;
+          rows.push({ id: d.id, ...(d.data() as AnyRecord) });
         });
+      };
 
-        dedup.sort((a, b) =>
-          String(getOrderLabelOrder(a)).localeCompare(
-            String(getOrderLabelOrder(b)),
-            undefined,
-            { numeric: true }
-          )
-        );
+      pushRows(tempSnap);
+      pushRows(planSnap);
+      pushRows(trackSnap);
+      pushRows(scopedPlanningSnap, planningPrefix);
+      deepPaths.forEach((item) => {
+        if (!rows.find((r) => r.id === item.id)) rows.push(item);
+      });
 
-        setInitialList(dedup);
-      } catch (err) {
-        console.error("Fout bij laden order labels lijst:", err);
-      } finally {
-        if (isMounted) setLoadingInitialList(false);
-      }
-    };
+      const dedup: AnyRecord[] = [];
+      const seen = new Set<string>();
+      rows.forEach((r) => {
+        const rowId = String(r.id || "");
+        if (!rowId || seen.has(rowId)) return;
+        seen.add(rowId);
+        dedup.push(r);
+      });
 
-    loadInitialList();
+      dedup.sort((a, b) =>
+        String(getOrderLabelOrder(a)).localeCompare(
+          String(getOrderLabelOrder(b)),
+          undefined,
+          { numeric: true }
+        )
+      );
 
-    return () => {
-      isMounted = false;
-    };
+      setInitialList(dedup);
+    } catch (err) {
+      console.error("Fout bij laden order labels lijst:", err);
+    } finally {
+      if (isMountedRef.current) setLoadingInitialList(false);
+    }
   }, []);
 
-  const displayItems = orderStr.trim() ? results : initialList;
 
   useEffect(() => {
-    if (displayItems.length === 1) {
-        setExpandedItemId(displayItems[0].id || 0);
-    } else {
-        setExpandedItemId(null);
-    }
-  }, [displayItems]);
+    isMountedRef.current = true;
+    refreshInitialList();
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [refreshInitialList]);
+
+  const displayItems = orderStr.trim() ? results : initialList;
 
   const handleOrderLabelSearch = async () => {
     if (!orderStr.trim()) {
@@ -252,201 +311,31 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
     }
     setLoading(true);
     setResults([]);
-    setExpandedItemId(null);
+    setSearchDiagnostics([]);
     try {
-      let searchStr = orderStr.trim().toUpperCase();
-      // Als de gebruiker per ongeluk een heel databasepad plakt, pak het laatste stuk (de ID)
-      if (searchStr.includes('/')) {
-        searchStr = searchStr.split('/').filter(Boolean).pop();
-      }
+      const { results: finalResults, diagnostics } = await executeOrderLabelSearch(orderStr, initialList);
+      setSearchDiagnostics(diagnostics);
+      setResults(finalResults);
 
-      // Genereer logische FPI voorvoegsels
-      let searchOptions = [searchStr];
-      const digitsMatch = searchStr.match(/\d+/);
-      if (digitsMatch) {
-          const digits = digitsMatch[0];
-          if (digits.length >= 3) {
-              // Check if searchStr already starts with a prefix, if not add variations
-              if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
-                  searchOptions.push(`N${digits}`);
-                  searchOptions.push(`N20${digits}`);
-                  searchOptions.push(`N200${digits}`);
-                  searchOptions.push(`N21${digits}`);
-                  searchOptions.push(`N210${digits}`);
-                  searchOptions.push(`P${digits}`);
-              }
-          }
-      }
-
-      const uniqueOptions = Array.from(new Set(searchOptions)).slice(0, 15);
-      const colRef = collection(db, ...PATHS.TEMP_PLANNING);
-      const planRef = collection(db, ...PATHS.PLANNING);
-      const trackRef = collection(db, ...PATHS.TRACKING);
-      
-      let foundDocs = new Map();
-      const addDocs = (snap) => {
-        if (snap && snap.docs) {
-          snap.docs.forEach(d => foundDocs.set(d.id, { id: d.id, ...d.data() }));
-        }
-      };
-
-      // 0. Scoped machine orders zoeken (collectionGroup voor alle 'orders' onder alle machines)
-      try {
-        const scopedQueries = [
-          getDocs(query(collectionGroup(db, 'orders'), where('id', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('orderId', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('orderNumber', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('Order', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('Productieorder', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('order', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('originalOrderId', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('itemCode', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('productCode', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('articleCode', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('Item', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('Artikel', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('itemDescription', 'in', uniqueOptions))),
-        ];
-        const scopedSnaps = await Promise.all(scopedQueries.map(p => p.catch(() => null)));
-        scopedSnaps.forEach(addDocs);
-      } catch (err) {
-        console.warn('Fout bij zoeken in scoped orders:', err);
-      }
-
-      // 1. Direct op Document ID proberen
-      for (const opt of uniqueOptions) {
-          try {
-              const docRef = doc(db, ...PATHS.TEMP_PLANNING, opt);
-              const docSnap = await getDoc(docRef);
-              if (docSnap.exists()) {
-                  foundDocs.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
-              }
-              const planDocRef = doc(db, ...PATHS.PLANNING, opt);
-              const planDocSnap = await getDoc(planDocRef);
-              if (planDocSnap.exists()) {
-                  foundDocs.set(planDocSnap.id, { id: planDocSnap.id, ...planDocSnap.data() });
-              }
-              const trackDocRef = doc(db, ...PATHS.TRACKING, opt);
-              const trackDocSnap = await getDoc(trackDocRef);
-              if (trackDocSnap.exists()) {
-                  foundDocs.set(trackDocSnap.id, { id: trackDocSnap.id, ...trackDocSnap.data() });
-              }
-                } catch {
-                  continue;
-                }
-      }
-
-      // 2. Parallelle exacte zoekopdrachten
-      const exactQueries = [
-        getDocs(query(colRef, where("orderId", "in", uniqueOptions))),
-        getDocs(query(colRef, where("orderNumber", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Order", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Productieorder", "in", uniqueOptions))),
-        getDocs(query(colRef, where("order", "in", uniqueOptions))),
-        getDocs(query(colRef, where("originalOrderId", "in", uniqueOptions))),
-        getDocs(query(colRef, where("itemCode", "in", uniqueOptions))),
-        getDocs(query(colRef, where("productCode", "in", uniqueOptions))),
-        getDocs(query(colRef, where("articleCode", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Item", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Artikel", "in", uniqueOptions))),
-        getDocs(query(colRef, where("itemDescription", "in", uniqueOptions))),
-        getDocs(query(planRef, where("orderId", "in", uniqueOptions))),
-        getDocs(query(planRef, where("orderNumber", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Order", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Productieorder", "in", uniqueOptions))),
-        getDocs(query(planRef, where("order", "in", uniqueOptions))),
-        getDocs(query(planRef, where("originalOrderId", "in", uniqueOptions))),
-        getDocs(query(planRef, where("itemCode", "in", uniqueOptions))),
-        getDocs(query(planRef, where("productCode", "in", uniqueOptions))),
-        getDocs(query(planRef, where("articleCode", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Item", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Artikel", "in", uniqueOptions))),
-        getDocs(query(planRef, where("itemDescription", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("orderId", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("orderNumber", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("Order", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("order", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("originalOrderId", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("itemCode", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("item", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("itemDescription", "in", uniqueOptions)))
-      ];
-      const exactSnaps = await Promise.all(exactQueries.map(p => p.catch(() => null)));
-      exactSnaps.forEach(addDocs);
-        
-      // 3. 'Begint met' zoekopdrachten (als we nog weinig of niks hebben)
-      if (foundDocs.size < 5 && searchStr.length >= 3) {
-        const startOptions = [searchStr];
-        if (digitsMatch && digitsMatch[0].length >= 3) {
-            // Only add prefix variations if searchStr doesn't already start with a prefix
-            if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
-                startOptions.push(`N200${digitsMatch[0]}`);
-                startOptions.push(`N20${digitsMatch[0]}`);
-                startOptions.push(`N210${digitsMatch[0]}`);
-                startOptions.push(`N21${digitsMatch[0]}`);
-            }
-        }
-        
-        const startsWithQueries = [];
-        Array.from(new Set(startOptions)).forEach(opt => {
-            startsWithQueries.push(getDocs(query(colRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("Productieorder", ">=", opt), where("Productieorder", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(planRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(trackRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(trackRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(trackRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(trackRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(trackRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(trackRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
-          startsWithQueries.push(getDocs(query(trackRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
+      if (finalResults.length === 0) {
+        setSearchDiagnostics((prev) => {
+          const msgs = prev.length > 0 ? prev : ["Geen matches in fallback queries."];
+          notify({ type: 'warning', message: `Geen resultaat gevonden voor '${orderStr}'.` });
+          return msgs;
         });
-
-        const startSnaps = await Promise.all(startsWithQueries.map(p => p.catch(() => null)));
-        startSnaps.forEach(addDocs);
       }
-      
-      const queryText = normalizeText(orderStr);
-      const clientMatches = initialList.filter((item) => {
-        const orderText = normalizeText(getOrderLabelOrder(item));
-        const productText = normalizeText([
-          item.item,
-          item.itemDescription,
-          item.itemCode,
-          item.productCode,
-          item.articleCode,
-          item.Item,
-          item.Artikel,
-          item.description,
-          item.Description,
-          item.Omschrijving,
-        ].filter(Boolean).join(' '));
-        return orderText.includes(queryText) || productText.includes(queryText);
-      });
-
-      const merged = new Map();
-      Array.from(foundDocs.values()).forEach((item) => merged.set(item.id, item));
-      clientMatches.forEach((item) => merged.set(item.id, item));
-      setResults(Array.from(merged.values()));
     } catch (e) {
       console.error("Zoekfout temp labels:", e);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    setOrderStr("");
+    setResults([]);
+    setSearchDiagnostics([]);
+    await refreshInitialList();
   };
 
   return (
@@ -496,6 +385,15 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
             >
               {loading ? <Loader2 className="animate-spin" size={18} /> : t("common.search")}
             </button>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={loadingInitialList || loading}
+              className="px-4 py-4 bg-slate-50 border-2 border-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-100 hover:text-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Ververs lijst"
+            >
+              <RefreshCw size={18} className={loadingInitialList ? 'animate-spin' : ''} />
+            </button>
           </div>
 
           {/* Results Area */}
@@ -504,13 +402,11 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
               <div className="space-y-3">
                 {displayItems.map((item, idx) => (
                   <TempLabelItem 
-                    key={idx} 
+                    key={String(item.id || idx)} 
                     item={item} 
                     labelTemplates={labelTemplates} 
                     labelRules={labelRules}
-                    onPrint={onPrint} 
-                    isExpanded={expandedItemId === (item.id || idx)}
-                    onToggle={() => setExpandedItemId(expandedItemId === (item.id || idx) ? null : (item.id || idx))}
+                    onPrint={onPrint}
                     printerDpi={printerDpi}
                   />
                 ))}
@@ -531,6 +427,15 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
                 </div>
                 <p className="text-sm font-black text-slate-600 uppercase tracking-widest">{t("common.nothingFound")}</p>
                 <p className="text-xs text-slate-400 font-medium mt-1">{t("common.noOrderOrProductFoundFor", { query: orderStr })}</p>
+                
+                {searchDiagnostics.length > 0 && (
+                  <div className="mt-4 mx-auto max-w-xl text-[11px] font-mono bg-slate-100 border border-slate-200 rounded-xl p-3 text-slate-600">
+                    <p className="font-black mb-1">Zoekdiagnostiek</p>
+                    {searchDiagnostics.map((line, idx) => (
+                      <p key={`${line}-${idx}`} className="break-all">{line}</p>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -540,7 +445,7 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
   );
 };
 
-const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }) => {
+const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: LotPrintModalProps) => {
   const { t } = useTranslation();
   const { notify } = useNotifications();
   const [departmentKey, setDepartmentKey] = useState(departmentGroups[0]?.key || "");
@@ -568,7 +473,7 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }) => 
     }
   }, [departmentGroups, departmentKey, availableStations, station]);
 
-  const handleGenerate = async (e) => {
+  const handleGenerate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!station) {
       notify(t("common.noStationAvailable"));
@@ -590,12 +495,12 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }) => 
         lots.push(`${baseLot}${currentNum}`);
       }
 
-      const parsedDpi = printer?.dpi ? parseInt(printer.dpi, 10) : NaN;
-      const fallbackDpi = getDriver(printer)?.nativeDpi;
-      const dpi = Number.isFinite(parsedDpi) && parsedDpi > 0
-        ? parsedDpi
-        : (Number.isFinite(fallbackDpi) && fallbackDpi > 0 ? fallbackDpi : 203);
-      const darkness = printer?.darkness ? parseInt(printer.darkness, 10) : 15;
+      const driverDpi = Number(getDriver(printer)?.nativeDpi);
+      const parsedDpi = printer?.dpi ? parseInt(String(printer.dpi), 10) : NaN;
+      const dpi = Number.isFinite(driverDpi) && driverDpi > 0
+        ? driverDpi
+        : (Number.isFinite(parsedDpi) && parsedDpi > 0 ? parsedDpi : 203);
+      const darkness = printer?.darkness ? parseInt(String(printer.darkness), 10) : 15;
       const zplBatch = generateLotBatchZPL({
         lots,
         printerDpi: dpi,
@@ -605,7 +510,8 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }) => 
       await onPrintBatch(zplBatch, lots.length);
       notify(t("common.lotsPrintedDirectUsb", { count: parsedCount }));
     } catch (err) {
-      notify(t("common.generationError", { message: err.message }));
+      const message = err instanceof Error ? err.message : String(err);
+      notify(t("common.generationError", { message }));
     } finally {
       setLoading(false);
     }
@@ -643,7 +549,7 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }) => 
               disabled={departmentGroups.length === 0}
             >
               {departmentGroups.length === 0 && <option value="">{t("common.noDepartmentsFound")}</option>}
-              {departmentGroups.map((group) => (
+              {departmentGroups.map((group: DepartmentGroup) => (
                 <option key={group.key} value={group.key}>{group.label}</option>
               ))}
             </select>
@@ -652,7 +558,7 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }) => 
             <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">{t("common.stationMachine")}</label>
             <select value={station} onChange={e => setStation(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50" disabled={availableStations.length === 0}>
               {availableStations.length === 0 && <option value="">{t("common.noStationsFound")}</option>}
-              {availableStations.map(s => <option key={s} value={s}>{s}</option>)}
+              {availableStations.map((s: string) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
@@ -727,22 +633,50 @@ const PrintStationView = () => {
   const { t } = useTranslation();
   const [lotNumber, setLotNumber] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [productData, setProductData] = useState(null);
+  const [productData, setProductData] = useState<AnyRecord | null>(null);
   const [error, setError] = useState('');
   const { showSuccess, showError } = useNotifications();
 
   const [selectedLabelId, setSelectedLabelId] = useState('');
   const [showTempModal, setShowTempModal] = useState(false);
   const [showLotModal, setShowLotModal] = useState(false);
-  const [labelTemplates, setLabelTemplates] = useState([]);
-  const [labelRules, setLabelRules] = useState([]);
-  const [printers, setPrinters] = useState([]);
-  const [factoryConfig, setFactoryConfig] = useState(null);
+  const [labelTemplates, setLabelTemplates] = useState<LabelTemplate[]>([]);
+  const [labelRules, setLabelRules] = useState<AnyRecord[]>([]);
+  const [printers, setPrinters] = useState<PrinterConfig[]>([]);
+  const [factoryConfig, setFactoryConfig] = useState<AnyRecord | null>(null);
 
-  const { selectedLabel, previewData, availableLabels } = useLabelPreview(productData, selectedLabelId);
+  const normalizedProductData = useMemo(() => {
+    if (!productData) return null;
+    const order = getOrderLabelOrder(productData);
+    const code = getOrderLabelItemCode(productData);
+    const desc = getOrderLabelDescription(productData);
+    return {
+      ...productData,
+      orderId: order,
+      orderNumber: order,
+      itemCode: code,
+      productId: code,
+      item: desc,
+      description: desc,
+      lotNumber: productData.lotNumber || order
+    };
+  }, [productData]);
+
+  const { selectedLabel, previewData, availableLabels } = useLabelPreview(normalizedProductData, selectedLabelId);
+
+  const filteredLabels = useMemo(() => {
+    if (!normalizedProductData) return availableLabels;
+    return filterTempOrderLabelsByProduct(availableLabels as any[], normalizedProductData as AnyRecord);
+  }, [availableLabels, normalizedProductData]);
+
+  useEffect(() => {
+    if (filteredLabels.length > 0 && !filteredLabels.find((l: any) => String(l.id) === selectedLabelId)) {
+      setSelectedLabelId(String(filteredLabels[0].id));
+    }
+  }, [filteredLabels, selectedLabelId]);
 
   // --- USB State & Logic ---
-  const [usbDevice, setUsbDevice] = useState(null);
+  const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
 
   useEffect(() => {
     const restoreUsbConnection = async () => {
@@ -752,7 +686,7 @@ const PrintStationView = () => {
       if (savedVendor && savedProduct) {
         try {
           const devices = await navigator.usb.getDevices();
-          const match = devices.find(d => 
+          const match = devices.find((d) => 
             d.vendorId === parseInt(savedVendor) && 
             d.productId === parseInt(savedProduct)
           );
@@ -769,15 +703,16 @@ const PrintStationView = () => {
     try {
       const device = await navigator.usb.requestDevice({ filters: [] });
       setUsbDevice(device);
-      localStorage.setItem('usb_printer_vendor', device.vendorId);
-      localStorage.setItem('usb_printer_product', device.productId);
+      localStorage.setItem('usb_printer_vendor', String(device.vendorId));
+      localStorage.setItem('usb_printer_product', String(device.productId));
       showSuccess(`Verbonden met USB printer: ${device.productName}`);
     } catch (err) {
-      showError("USB Koppelen mislukt: " + err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      showError("USB Koppelen mislukt: " + message);
     }
   };
 
-  const printRawUsb = async (device, content) => {
+  const printRawUsb = async (device: USBDevice, content: string) => {
     if (!device) throw new Error("Geen printer verbonden");
     if (!device.opened) await device.open();
     if (device.configuration === null) await device.selectConfiguration(1);
@@ -787,22 +722,24 @@ const PrintStationView = () => {
 
     const encoder = new globalThis.TextEncoder();
     const data = encoder.encode(content);
-    const interface0 = device.configuration.interfaces[0];
-    const endpoint = interface0?.alternate?.endpoints.find(e => e.direction === 'out');
+    const configuration = device.configuration;
+    if (!configuration) throw new Error('USB configuratie ontbreekt op apparaat.');
+    const interface0 = configuration.interfaces[0];
+    const endpoint = interface0?.alternates?.flatMap((a) => a.endpoints || []).find((e) => e.direction === 'out');
     const endpointNumber = endpoint ? endpoint.endpointNumber : 1;
 
     await device.transferOut(endpointNumber, data);
   };
 
   useEffect(() => {
-    const unsubTemplates = onSnapshot(collection(db, ...PATHS.LABEL_TEMPLATES), (snap) => {
-      setLabelTemplates(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsubTemplates = onSnapshot(collection(db, getPathString(PATHS.LABEL_TEMPLATES)), (snap) => {
+      setLabelTemplates(snap.docs.map((d): LabelTemplate => ({ id: d.id, ...(d.data() as AnyRecord) })));
     });
-    const unsubRules = onSnapshot(collection(db, ...PATHS.LABEL_LOGIC), (snap) => {
-      setLabelRules(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsubRules = onSnapshot(collection(db, getPathString(PATHS.LABEL_LOGIC)), (snap) => {
+      setLabelRules(snap.docs.map((d): AnyRecord => ({ id: d.id, ...(d.data() as AnyRecord) })));
     });
-    const unsubPrinters = onSnapshot(collection(db, ...PATHS.PRINTERS), (snap) => {
-      setPrinters(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsubPrinters = onSnapshot(collection(db, getPathString(PATHS.PRINTERS)), (snap) => {
+      setPrinters(snap.docs.map((d): PrinterConfig => ({ id: d.id, ...(d.data() as AnyRecord) })));
     });
 
     return () => {
@@ -813,46 +750,46 @@ const PrintStationView = () => {
   }, []);
 
   useEffect(() => {
-    const unsubFactory = onSnapshot(doc(db, ...PATHS.FACTORY_CONFIG), (snap) => {
-      setFactoryConfig(snap.exists() ? snap.data() : null);
+    const unsubFactory = onSnapshot(doc(db, getPathString(PATHS.FACTORY_CONFIG)), (snap) => {
+      setFactoryConfig(snap.exists() ? (snap.data() as AnyRecord) : null);
     });
     return () => unsubFactory();
   }, []);
 
-  const activeQueuePrinter = useMemo(() => {
+  const activeQueuePrinter = useMemo<PrinterConfig | null>(() => {
     if (usbDevice) {
       const matched = printers.find(
-        (p) => p.vendorId === usbDevice.vendorId && p.productId === usbDevice.productId
+        (p) => Number(p.vendorId) === usbDevice.vendorId && Number(p.productId) === usbDevice.productId
       );
       if (matched) return matched;
     }
     return printers.find((p) => p.isDefault) || printers[0] || null;
   }, [printers, usbDevice]);
 
-  const stationGroups = useMemo(() => {
+  const stationGroups = useMemo<string[]>(() => {
     if (!activeQueuePrinter) return [];
     const stations = Array.isArray(activeQueuePrinter.queueStations)
       ? activeQueuePrinter.queueStations
       : (activeQueuePrinter.linkedStations || []);
     return Array.from(new Set(stations.map(stationNameFromValue).filter(Boolean)))
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
   }, [activeQueuePrinter]);
 
-  const departmentGroups = useMemo(() => {
-    const departments = Array.isArray(factoryConfig?.departments) ? factoryConfig.departments : [];
+  const departmentGroups = useMemo<DepartmentGroup[]>(() => {
+    const departments = Array.isArray(factoryConfig?.departments) ? (factoryConfig?.departments as AnyRecord[]) : [];
     const fromConfig = departments
-      .map((dept, idx) => {
-        const stations = Array.from(new Set((dept?.stations || [])
+      .map((dept: AnyRecord, idx) => {
+        const stations = Array.from(new Set(((dept?.stations as unknown[]) || [])
           .map(stationNameFromValue)
           .filter(Boolean)))
-          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+          .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
         if (stations.length === 0) return null;
 
         const key = String(dept?.slug || dept?.id || `dept-${idx}`);
         const label = String(dept?.name || dept?.slug || dept?.id || `Afdeling ${idx + 1}`);
         return { key, label, stations };
       })
-      .filter(Boolean);
+      .filter((v): v is DepartmentGroup => Boolean(v));
 
     if (fromConfig.length > 0) return fromConfig;
 
@@ -862,18 +799,21 @@ const PrintStationView = () => {
   }, [factoryConfig, stationGroups]);
 
   const printerDpi = useMemo(() => {
-    const parsed = parseInt(activeQueuePrinter?.dpi, 10);
+    const parsed = parseInt(String(activeQueuePrinter?.dpi ?? ''), 10);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
-    const fallback = getDriver(activeQueuePrinter)?.nativeDpi;
-    return Number.isFinite(fallback) && fallback > 0 ? fallback : 203;
+
+    const driverDpi = Number(getDriver(activeQueuePrinter)?.nativeDpi);
+    if (Number.isFinite(driverDpi) && driverDpi > 0) return driverDpi;
+
+    return 203;
   }, [activeQueuePrinter]);
 
   const printerDarkness = useMemo(() => {
-    const parsed = parseInt(activeQueuePrinter?.darkness, 10);
+    const parsed = parseInt(String(activeQueuePrinter?.darkness ?? ''), 10);
     return Number.isFinite(parsed) ? parsed : 15;
   }, [activeQueuePrinter]);
 
-  const handleLotNumberSearch = async (e) => {
+  const handleLotNumberSearch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!lotNumber) return;
 
@@ -882,41 +822,83 @@ const PrintStationView = () => {
     setError('');
 
     try {
-      let foundDoc = null;
-      // Zoek in actieve productie
-      const activeRef = collection(db, ...PATHS.ACTIVE_PRODUCTION);
-      const qActive = query(activeRef, where('lotNumber', '==', lotNumber.toUpperCase()), limit(1));
-      const activeSnap = await getDocs(qActive);
+      const searchStr = lotNumber.trim().toUpperCase();
+      let foundDoc: AnyRecord | null = null;
 
-      if (!activeSnap.empty) {
-        foundDoc = activeSnap.docs[0];
-      } else {
-        // Zoek in archief (vereist mogelijk index)
-        const archiveRef = collection(db, ...PATHS.PRODUCTION_ARCHIVE);
-        const qArchive = query(archiveRef, where('lotNumber', '==', lotNumber.toUpperCase()), limit(1));
-        const archiveSnap = await getDocs(qArchive);
-        if (!archiveSnap.empty) {
-          foundDoc = archiveSnap.docs[0];
+      // 1. Zoek in actieve productie (Lotnummer)
+      try {
+        const activeRef = collection(db, getPathString(PATHS.ACTIVE_PRODUCTION));
+        const activeSnap = await getDocs(query(activeRef, where('lotNumber', '==', searchStr), limit(1)));
+        if (!activeSnap.empty) foundDoc = { id: activeSnap.docs[0].id, ...(activeSnap.docs[0].data() as AnyRecord) };
+      } catch (e) { console.warn(e); }
+
+      // 2. Zoek in archief
+      if (!foundDoc) {
+        try {
+          const archiveRef = collection(db, getPathString(PATHS.PRODUCTION_ARCHIVE));
+          const archiveSnap = await getDocs(query(archiveRef, where('lotNumber', '==', searchStr), limit(1)));
+          if (!archiveSnap.empty) foundDoc = { id: archiveSnap.docs[0].id, ...(archiveSnap.docs[0].data() as AnyRecord) };
+        } catch (e) { console.warn(e); }
+      }
+
+      // 3. Fallback: Zoek in orders via collectionGroup (Voor als een ordernummer gescand wordt ipv lotnummer)
+      if (!foundDoc) {
+        try {
+          const orderQueries = [
+            getDocs(query(collectionGroup(db, 'orders'), where('orderId', '==', searchStr), limit(1))),
+            getDocs(query(collectionGroup(db, 'orders'), where('orderNumber', '==', searchStr), limit(1))),
+            getDocs(query(collectionGroup(db, 'orders'), where('Order', '==', searchStr), limit(1)))
+          ];
+          const snaps = await Promise.all(orderQueries.map(p => p.catch(() => null)));
+          for (const snap of snaps) {
+            if (snap && !snap.empty) {
+              foundDoc = { id: snap.docs[0].id, ...(snap.docs[0].data() as AnyRecord) };
+              break;
+            }
+          }
+        } catch (e) { console.warn(e); }
+      }
+
+      // 4. Fallback: Direct Document ID Lookup (Voor legacy paden zoals BH18 waar ID = N20025243 is)
+      if (!foundDoc) {
+        const targetedPaths = [
+          `${getPathString(PATHS.PLANNING)}/Fittings/machines/40BH18/orders`,
+          `${getPathString(PATHS.PLANNING)}/Fittings/machines/BH18/orders`,
+          getPathString(PATHS.TEMP_PLANNING),
+          getPathString(PATHS.PLANNING),
+          getPathString(PATHS.TRACKING)
+        ];
+        for (const path of targetedPaths) {
+          try {
+            const docRef = doc(db, path, searchStr);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+              foundDoc = { id: docSnap.id, ...(docSnap.data() as AnyRecord) };
+              break;
+            }
+          } catch (e) { console.warn(e); }
         }
       }
 
       if (foundDoc) {
-        setProductData({ id: foundDoc.id, ...foundDoc.data() });
+        setProductData(foundDoc);
+        showSuccess(`Gevonden: ${foundDoc.orderId || foundDoc.lotNumber || foundDoc.id}`);
       } else {
-        setError(`Lotnummer ${lotNumber} niet gevonden.`);
-        showError(`Lotnummer ${lotNumber} niet gevonden.`);
+        setError(`Order of Lotnummer '${searchStr}' niet gevonden.`);
+        showError(`Order of Lotnummer '${searchStr}' niet gevonden.`);
       }
     } catch (err) {
       console.error("Fout bij zoeken:", err);
       setError("Er is een fout opgetreden bij het zoeken.");
-      showError("Zoekfout: " + err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      showError("Zoekfout: " + message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleTempLegacyPrint = async (orderData, templateId) => {
-    const template = labelTemplates.find(t => t.id === templateId);
+  const handleTempLegacyPrint = async (orderData: AnyRecord, templateId: string) => {
+    const template = labelTemplates.find((t: LabelTemplate) => t.id === templateId);
     const dpi = printerDpi;
     const dotsPerMm = dpi / 25.4;
     const darkness = printerDarkness;
@@ -930,21 +912,25 @@ const PrintStationView = () => {
     if (template) {
         const labelData = processLabelData({
             ...orderData,
+            orderId: order,
             orderNumber: order,
+            itemCode: item,
             productId: item,
+            item: desc,
             description: desc,
             lotNumber: orderData.lotNumber || order
         });
         const processedData = applyLabelLogic(labelData, labelRules);
-        zpl = await generatePrintData(template, processedData, dpi, resolveLabelContent, t);
+        zpl = await generatePrintData(template, processedData, dpi, resolveLabelContent as any, t);
     } else {
+      const qrMag = Math.max(2, Math.round((8 * dotsPerMm) / 24));
         zpl = `^XA
 ^PW${Math.round(90 * dotsPerMm)}
 ~SD${darkness}
 ^FO${Math.round(5 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^A0N,${Math.round(8 * dotsPerMm)},${Math.round(6 * dotsPerMm)}^FDOrder: ${order}^FS
 ^FO${Math.round(5 * dotsPerMm)},${Math.round(15 * dotsPerMm)}^A0N,${Math.round(6 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^FDItem: ${item}^FS
 ^FO${Math.round(5 * dotsPerMm)},${Math.round(25 * dotsPerMm)}^A0N,${Math.round(5 * dotsPerMm)},${Math.round(4 * dotsPerMm)}^FD${desc.substring(0, 40)}^FS
-^FO${Math.round(60 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^BQN,2,${Math.max(2, Math.round(4 * dpi / 203))}^FDQA,${order}^FS
+  ^FO${Math.round(60 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^BQN,2,${qrMag}^FDQA,${order}^FS
 ^XZ`;
     }
 
@@ -961,7 +947,8 @@ const PrintStationView = () => {
       setShowTempModal(false);
       return;
     } catch (e) {
-      showError("Print Fout: " + e.message);
+      const message = e instanceof Error ? e.message : String(e);
+      showError("Print Fout: " + message);
     }
   };
 
@@ -972,14 +959,14 @@ const PrintStationView = () => {
     }
     setIsLoading(true);
     try {
-      const printData = await generatePrintData(selectedLabel, previewData, printerDpi, resolveLabelContent, t);
+      const printData = await generatePrintData(selectedLabel as any, previewData as AnyRecord, printerDpi, resolveLabelContent as any, t);
       
       let deviceToUse = usbDevice;
       if (!deviceToUse) {
         deviceToUse = await navigator.usb.requestDevice({ filters: [] });
         setUsbDevice(deviceToUse);
-        localStorage.setItem('usb_printer_vendor', deviceToUse.vendorId);
-        localStorage.setItem('usb_printer_product', deviceToUse.productId);
+        localStorage.setItem('usb_printer_vendor', String(deviceToUse.vendorId));
+        localStorage.setItem('usb_printer_product', String(deviceToUse.productId));
       }
 
       await printRawUsb(deviceToUse, printData);
@@ -989,19 +976,20 @@ const PrintStationView = () => {
       setLotNumber('');
     } catch (err) {
       console.error("Fout bij direct printen:", err);
-      showError("Print Fout: " + err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      showError("Print Fout: " + message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDirectLotPrintBatch = async (batchData, lotCount) => {
+  const handleDirectLotPrintBatch = async (batchData: string, lotCount: number) => {
     let deviceToUse = usbDevice;
     if (!deviceToUse) {
       deviceToUse = await navigator.usb.requestDevice({ filters: [] });
       setUsbDevice(deviceToUse);
-      localStorage.setItem('usb_printer_vendor', deviceToUse.vendorId);
-      localStorage.setItem('usb_printer_product', deviceToUse.productId);
+      localStorage.setItem('usb_printer_vendor', String(deviceToUse.vendorId));
+      localStorage.setItem('usb_printer_product', String(deviceToUse.productId));
     }
 
     await printRawUsb(deviceToUse, batchData);
@@ -1066,12 +1054,12 @@ const PrintStationView = () => {
 
         {productData && (
           <div className="bg-white p-6 rounded-lg shadow-md animate-in fade-in">
-            <h2 className="text-2xl font-bold mb-4">Product Gevonden: {productData.lotNumber}</h2>
+            <h2 className="text-2xl font-bold mb-4">Product Gevonden: {String(productData.lotNumber || '')}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <p><strong>Order:</strong> {productData.orderId}</p>
-                <p><strong>Artikel:</strong> {productData.itemCode}</p>
-                <p><strong>Omschrijving:</strong> {productData.item}</p>
+                <p><strong>Order:</strong> {String(productData.orderId || '')}</p>
+                <p><strong>Artikel:</strong> {String(productData.itemCode || '')}</p>
+                <p><strong>Omschrijving:</strong> {String(productData.item || '')}</p>
                 
                 <div className="mt-4">
                   <label htmlFor="label-select" className="block text-sm font-medium text-slate-700 mb-1">Kies Label Template</label>
@@ -1081,7 +1069,7 @@ const PrintStationView = () => {
                     onChange={(e) => setSelectedLabelId(e.target.value)}
                     className="w-full p-2 border border-slate-300 rounded-md"
                   >
-                    {availableLabels.map(l => <option key={l.id} value={l.id}>{l.name} ({l.width}x{l.height}mm)</option>)}
+                    {(filteredLabels as AnyRecord[]).map((l) => <option key={String(l.id)} value={String(l.id)}>{String(l.name || l.id)} ({String(l.width || '-')}x{String(l.height || '-')}mm)</option>)}
                   </select>
                 </div>
 
@@ -1092,7 +1080,7 @@ const PrintStationView = () => {
               </div>
               <div className="bg-slate-800 p-4 rounded-lg">
                 <h3 className="text-white font-bold mb-2">Label Preview</h3>
-                {selectedLabel ? <AutoScaledLabelPreview label={selectedLabel} data={previewData} className="mx-auto" printerDpi={printerDpi} /> : <p className="text-slate-400">Selecteer een label</p>}
+                {selectedLabel ? <AutoScaledLabelPreview label={selectedLabel} data={previewData} className="mx-auto" printerDpi={printerDpi} maxScale={1} /> : <p className="text-slate-400">Selecteer een label</p>}
               </div>
             </div>
           </div>

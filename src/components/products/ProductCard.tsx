@@ -8,7 +8,26 @@ import {
  * ProductCard: Toont een product in de catalogus.
  * GEFIXT: Afbeelding is nu zichtbaar in het overzicht.
  */
-const ProductCard = React.memo(({ product, onClick }) => {
+type ProductCardProduct = {
+  id?: string;
+  name?: string;
+  imageUrl?: string;
+  label?: string;
+  articleCode?: string;
+  pressure?: string | number;
+  pn?: string | number;
+  diameter?: string | number;
+  dn?: string | number;
+  status?: string;
+  [key: string]: unknown;
+};
+
+type ProductCardProps = {
+  product: ProductCardProduct;
+  onClick: (product: ProductCardProduct) => void;
+};
+
+const ProductCard = React.memo(({ product, onClick }: ProductCardProps) => {
   return (
     <div
       onClick={() => onClick(product)}

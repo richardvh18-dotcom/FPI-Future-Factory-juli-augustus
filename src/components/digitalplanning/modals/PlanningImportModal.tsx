@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -15,39 +14,96 @@ import {
   getDocs,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
+import { PATHS, getPathString } from "../../../config/dbPaths";
 import { importPlanningOrders } from "../../../services/planningSecurityService";
 import * as XLSX from "xlsx";
 import { getISOWeek, format, startOfISOWeek, differenceInCalendarWeeks, parse, parseISO, isValid, subWeeks } from "date-fns";
 
+type PlanningImportModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
+  currentDepartment?: string;
+};
+
+type PlanningImportEntry = {
+  id: string;
+  orderId?: string;
+  orderNumber?: string;
+  sourceDataId?: string;
+  machine?: string;
+  isValidForImport?: boolean;
+  atEindinspectieCount?: number;
+  smartSyncExcluded?: boolean;
+  smartSyncIncluded?: boolean;
+  inspectionApprovedQty?: number;
+  produced?: number;
+  [key: string]: any;
+};
+
+type DebugLogEntry = {
+  msg: string;
+  type: string;
+  time: string;
+};
+
+type LnOperationRow = {
+  pTime: number;
+  aTime: number;
+  wc: string;
+};
+
+type LnGroupedOperation = {
+  derived: LnOperationRow[];
+  original: LnOperationRow[];
+};
+
+type PlanningOperationTotals = {
+  planned: number;
+  actual: number;
+  wc: string;
+};
+
+type PlanningImportAggregate = PlanningImportEntry & {
+  machine: string;
+  machineTotals?: Record<string, number>;
+  _opRows?: Record<string, LnGroupedOperation>;
+  operations: Record<string, PlanningOperationTotals>;
+  totalPlannedHours: number;
+  totalActualHours: number;
+  totalEstimatedHoursFromLn?: number;
+  plannedDeliveryDate?: string | Date | null;
+  weekNumber?: number | null;
+};
+
 /**
  * PlanningImportModal v4.7 - Pilot Version (Order Creation Date Support)
  */
-const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "all" }) => {
+const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "all" }: PlanningImportModalProps) => {
   const { t } = useTranslation();
-  const [fileData, setFileData] = useState([]);
-  const [rawWorkbook, setRawWorkbook] = useState(null);
+  const [fileData, setFileData] = useState<PlanningImportEntry[]>([]);
+  const [rawWorkbook, setRawWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [loading, setLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [existingIds, setExistingIds] = useState(new Set());
-  const [existingOrderMap, setExistingOrderMap] = useState(new Map());
+  const [existingIds, setExistingIds] = useState<Set<string>>(new Set());
+  const [existingOrderMap, setExistingOrderMap] = useState<Map<string, PlanningImportEntry>>(new Map());
   const [importMode, setImportMode] = useState("smart_update");
   const [hoursOnlyMode, setHoursOnlyMode] = useState(false);
-  const [selectedMachines, setSelectedMachines] = useState([]);
+  const [selectedMachines, setSelectedMachines] = useState<string[]>([]);
   const [machineGroupFilter, setMachineGroupFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [readySyncFilter, setReadySyncFilter] = useState("all");
-  const [selectedOrderIds, setSelectedOrderIds] = useState(new Set());
-  const [toDoOverrides, setToDoOverrides] = useState({});
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
+  const [toDoOverrides, setToDoOverrides] = useState<Record<string, unknown>>({});
   const [pasteMode, setPasteMode] = useState(false);
   const [importProgressPct, setImportProgressPct] = useState(0);
   const [importProgressLabel, setImportProgressLabel] = useState("");
   const [importEtaLabel, setImportEtaLabel] = useState("");
-  const [, setDebugLogs] = useState([]);
+  const [, setDebugLogs] = useState<DebugLogEntry[]>([]);
 
-  const fileInputRef = useRef(null);
-  const pasteTextAreaRef = useRef(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pasteTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // Tijdelijke businessguard: deze orders staan bevestigd in DB en mogen niet via slimme sync worden bijgewerkt.
   const SMART_SYNC_EXCLUDED_ORDER_IDS = useMemo(
@@ -77,13 +133,13 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       try {
         // Fetch planning orders first (critical for existing-order detection)
         const [rootSnap, scopedSnap] = await Promise.all([
-          getDocs(collection(db, ...PATHS.PLANNING)),
+          getDocs(collection(db, getPathString(PATHS.PLANNING))),
           getDocs(collectionGroup(db, "orders")),
         ]);
 
-        const byKey = new Map();
+        const byKey = new Map<string, { data: PlanningImportEntry; priority: number }>();
 
-        const scopedPlanningDocs = scopedSnap.docs.filter((docEntry) => {
+        const scopedPlanningDocs = scopedSnap.docs.filter((docEntry: any) => {
           const path = String(docEntry?.ref?.path || "");
           return (
             path.includes("/production/digital_planning/") &&
@@ -92,13 +148,13 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
           );
         });
 
-        const indexDoc = (docEntry, { priority = 1 } = {}) => {
+        const indexDoc = (docEntry: any, { priority = 1 }: { priority?: number } = {}) => {
           const data = docEntry.data() || {};
-          const indexedData = { ...data, id: docEntry.id, __docPath: docEntry?.ref?.path || "" };
+          const indexedData: PlanningImportEntry = { ...data, id: docEntry.id, __docPath: docEntry?.ref?.path || "" };
           const keys = getOrderKeys(indexedData);
           if (!keys.length) return;
 
-          keys.forEach((key) => {
+          keys.forEach((key: string) => {
             const existing = byKey.get(key);
             if (!existing || priority >= existing.priority) {
               byKey.set(key, { data: indexedData, priority });
@@ -116,8 +172,8 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         // Fetch Eindinspectie counts separately (non-blocking, best-effort)
         try {
           const trackedSnap = await getDocs(collectionGroup(db, "items"));
-          const atEindinspectieCountMap = new Map();
-          trackedSnap.docs.forEach((docEntry) => {
+          const atEindinspectieCountMap = new Map<string, number>();
+          trackedSnap.docs.forEach((docEntry: any) => {
             const path = String(docEntry?.ref?.path || "");
             if (!path.includes("/tracked_products/")) return;
 
@@ -155,20 +211,20 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     fetchExisting();
   }, [isOpen, t]);
 
-  const addLog = (msg, type = "info") => {
-    setDebugLogs(prev => [{ msg, type, time: new Date().toLocaleTimeString() }, ...prev.slice(0, 15)]);
+  const addLog = (msg: string, type = "info") => {
+    setDebugLogs((prev) => [{ msg, type, time: new Date().toLocaleTimeString() }, ...prev.slice(0, 15)]);
   };
 
-  const clean = (val) => String(val || "").trim();
-  const buildImportDocId = (orderId, ...suffixCandidates) => {
+  const clean = (val: unknown) => String(val || "").trim();
+  const buildImportDocId = (orderId: unknown, ...suffixCandidates: unknown[]) => {
     const safeOrderId = clean(orderId);
     const suffix = suffixCandidates
-      .map((value) => clean(value))
-      .find((value) => value.length > 0);
+      .map((value: unknown) => clean(value))
+      .find((value: string) => value.length > 0);
     const raw = suffix ? `${safeOrderId}_${suffix}` : safeOrderId;
     return raw.replace(/[^a-zA-Z0-9]/g, "_");
   };
-  const toKeyVariants = (value) => {
+  const toKeyVariants = (value: unknown) => {
     const base = clean(value).toUpperCase();
     if (!base) return [];
 
@@ -181,21 +237,21 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return Array.from(new Set(variants.filter(Boolean)));
   };
 
-  const getOrderKeys = (entry) => {
+  const getOrderKeys = (entry: PlanningImportEntry) => {
     const rawValues = [entry?.orderId, entry?.orderNumber, entry?.sourceDataId, entry?.id];
     const keys = rawValues.flatMap((value) => toKeyVariants(value));
     return Array.from(new Set(keys));
   };
-  const getPreferredLookupKeys = (entry) => {
+  const getPreferredLookupKeys = (entry: PlanningImportEntry) => {
     // Eerst zo specifiek mogelijk matchen (doc-id/sourceDataId), daarna pas op ordernummer.
     const exactValues = [entry?.id, entry?.sourceDataId];
     const broadValues = [entry?.orderId, entry?.orderNumber];
     const keys = [...exactValues, ...broadValues].flatMap((value) => toKeyVariants(value));
     return Array.from(new Set(keys));
   };
-  const getOrderKey = (entry) => getOrderKeys(entry)[0] || "";
-  const isExistingOrder = (order) => getOrderKeys(order).some((key) => existingIds.has(key));
-  const isSmartSyncExcludedOrder = (order) => {
+  const getOrderKey = (entry: PlanningImportEntry) => getOrderKeys(entry)[0] || "";
+  const isExistingOrder = (order: PlanningImportEntry) => getOrderKeys(order).some((key) => existingIds.has(key));
+  const isSmartSyncExcludedOrder = (order: PlanningImportEntry) => {
     const orderId = clean(order?.orderId || order?.orderNumber || order?.id).toUpperCase();
     
     // 1. Check hardcoded exclusion list
@@ -208,7 +264,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
     return false;
   };
-  const getExistingOrder = (order) => {
+  const getExistingOrder = (order: PlanningImportEntry) => {
     const keys = getPreferredLookupKeys(order);
     for (const key of keys) {
       const hit = existingOrderMap.get(key);
@@ -216,7 +272,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     }
     return null;
   };
-  const normalizeDepartment = (value) => String(value || "").trim().toLowerCase();
+  const normalizeDepartment = (value: unknown) => String(value || "").trim().toLowerCase();
   const departmentScope = normalizeDepartment(currentDepartment);
   const isFittingsScoped = departmentScope === "fittings";
 
@@ -232,20 +288,20 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     setImportEtaLabel("");
   }, [isOpen, isFittingsScoped]);
 
-  const normalizeMachineCodeForFilter = (machineCode) => {
+  const normalizeMachineCodeForFilter = (machineCode: unknown) => {
     const raw = clean(machineCode).toUpperCase();
     if (!raw) return "-";
     return raw.startsWith("40") ? raw.slice(2) : raw;
   };
 
-  const parseNum = (val) => {
+  const parseNum = (val: unknown) => {
     if (val === null || val === undefined || val === "") return 0;
     const s = String(val).replace(/\s/g, "").replace(",", ".");
     const n = parseFloat(s);
     return isNaN(n) ? 0 : n;
   };
 
-  const getComparableReadyQty = (order) => {
+  const getComparableReadyQty = (order: PlanningImportEntry) => {
     const produced =
       order?.inspectionApprovedQty ??
       order?.produced ??
@@ -257,9 +313,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return Number.isFinite(n) ? n : 0;
   };
 
-  const parsePastedTabularData = (text) => {
-    const rows = [];
-    let row = [];
+  const parsePastedTabularData = (text: string) => {
+    const rows: string[][] = [];
+    let row: string[] = [];
     let cell = "";
     let inQuotes = false;
 
@@ -308,23 +364,23 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return rows.filter((r) => r.some((c) => clean(c) !== ""));
   };
 
-  const normalizeHeader = (value) =>
+  const normalizeHeader = (value: unknown) =>
     String(value || "")
       .toLowerCase()
       .trim()
       .replace(/[_-]+/g, " ")
       .replace(/\s+/g, " ");
 
-  const firstIndex = (headers, candidates) => {
+  const firstIndex = (headers: unknown[], candidates: unknown[]) => {
     const normalized = headers.map(normalizeHeader);
     for (const candidate of candidates) {
-      const idx = normalized.findIndex((h) => h === normalizeHeader(candidate));
+      const idx = normalized.findIndex((h: string) => h === normalizeHeader(candidate));
       if (idx !== -1) return idx;
     }
     return -1;
   };
 
-  const parseFlexibleDate = (rawValue) => {
+  const parseFlexibleDate = (rawValue: unknown) => {
     if (!rawValue) return null;
     if (rawValue instanceof Date && !isNaN(rawValue.getTime())) return rawValue;
 
@@ -347,17 +403,17 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return candidates.find((d) => isValid(d)) || null;
   };
 
-  const processTabularPlanningRows = (rawRows) => {
+  const processTabularPlanningRows = (rawRows: unknown[][]) => {
     if (!Array.isArray(rawRows) || rawRows.length === 0) return [];
 
-    const headerIdx = rawRows.findIndex((row) => {
-      const headers = (row || []).map((h) => normalizeHeader(h));
+    const headerIdx = rawRows.findIndex((row: unknown[]) => {
+      const headers = (row || []).map((h: unknown) => normalizeHeader(h));
       return headers.includes("order") && (headers.includes("machine") || headers.includes("datum") || headers.includes("date"));
     });
 
     if (headerIdx === -1) return [];
 
-    const headers = (rawRows[headerIdx] || []).map((h) => String(h || "").trim());
+    const headers = (rawRows[headerIdx] || []).map((h: unknown) => String(h || "").trim());
     const dataRows = rawRows.slice(headerIdx + 1);
 
     const idxOrder = firstIndex(headers, ["order", "order id", "ordernummer", "production order"]);
@@ -380,8 +436,8 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
     if (idxOrder === -1) return [];
 
-    const orders = dataRows
-      .map((row) => {
+    const orders: PlanningImportEntry[] = dataRows
+      .map((row: unknown[]) => {
         const orderId = clean(row[idxOrder]);
         if (!orderId) return null;
 
@@ -391,7 +447,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         const rawStatus = idxStatus !== -1 ? clean(row[idxStatus]) : "released";
         const deliveryObj = idxDatum !== -1 ? parseFlexibleDate(row[idxDatum]) : null;
         const parsedWeek = idxWeek !== -1 ? Number(row[idxWeek]) : null;
-        const weekNumber = Number.isFinite(parsedWeek) && parsedWeek > 0
+        const weekNumber = typeof parsedWeek === "number" && Number.isFinite(parsedWeek) && parsedWeek > 0
           ? parsedWeek
           : (deliveryObj ? getISOWeek(deliveryObj) : null);
 
@@ -435,15 +491,17 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
           sourceType: "Pasted Table",
         };
       })
-      .filter(Boolean);
+      .filter((order) => Boolean(order)) as PlanningImportEntry[];
 
     // Dedupe op id: laatste regel wint.
-    const byId = new Map();
-    orders.forEach((o) => byId.set(o.id, o));
+    const byId = new Map<string, PlanningImportEntry>();
+    orders.forEach((o) => {
+      if (o.id) byId.set(o.id, o);
+    });
     return Array.from(byId.values());
   };
 
-  const normalizeMachine = (val) => {
+  const normalizeMachine = (val: unknown) => {
     let str = clean(val).toUpperCase();
     // Work Center uit LN moet zichtbaar blijven zoals aangeleverd (bijv. 40BH18).
     if (str === "BM18") str = "BH18";
@@ -451,7 +509,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return str || "-";
   };
 
-  const extractMachineHint = (...values) => {
+  const extractMachineHint = (...values: unknown[]) => {
     const machinePattern = /(?:^|[^A-Z0-9])((?:40)?[A-Z]{2}\d{2})(?=$|[^A-Z0-9])/i;
 
     for (const value of values.flat(Infinity)) {
@@ -464,14 +522,14 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return "";
   };
 
-  const isStatusAllowed = (status) => {
+  const isStatusAllowed = (status: unknown) => {
     const s = clean(status).toLowerCase();
     if (s.includes("production completed") || s.includes("completed")) return false;
     const allowed = ["released", "planned", "active", "created", "vrijgegeven", "aangemaakt", "actief"];
     return allowed.some(keyword => s.includes(keyword));
   };
 
-  const getMachinePriority = (machineCode) => {
+  const getMachinePriority = (machineCode: unknown) => {
     const m = clean(machineCode).toUpperCase();
     if (/^40BH\d{2}$/.test(m)) return 600;
     if (/^40BM\d{2}$/.test(m)) return 550;
@@ -482,14 +540,14 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return 50;
   };
 
-  const isFittingsMachine = (machineCode) => {
+  const isFittingsMachine = (machineCode: unknown) => {
     const m = clean(machineCode).toUpperCase();
     const normalized = m.startsWith("40") ? m.slice(2) : m;
     const allowed = new Set(["BH11", "BH12", "BH15", "BH16", "BH17", "BH18", "BH31"]);
     return allowed.has(normalized);
   };
 
-  const isPipesMachine = (machineCode) => {
+  const isPipesMachine = (machineCode: unknown) => {
     const m = clean(machineCode).toUpperCase();
     const normalized = m.startsWith("40") ? m.slice(2) : m;
     const padded = normalized.replace(/^BA(\d)$/, "BA0$1");
@@ -497,7 +555,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return allowed.has(padded);
   };
 
-  const getDeliveryMeta = (order) => {
+  const getDeliveryMeta = (order: PlanningImportEntry) => {
     const raw = order?.deliveryDate || order?.plannedDeliveryDate;
     const parsed = raw ? new Date(raw) : null;
     const isValidDate = parsed && !isNaN(parsed.getTime());
@@ -505,19 +563,21 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       return { dateLabel: "-", weekLabel: "W?", weekDiff: null };
     }
 
+    const parsedDate = parsed as Date;
+
     const nowWeekStart = startOfISOWeek(new Date());
-    const targetWeekStart = startOfISOWeek(parsed);
+    const targetWeekStart = startOfISOWeek(parsedDate);
     const weekDiff = differenceInCalendarWeeks(targetWeekStart, nowWeekStart);
-    const weekNumber = order?.weekNumber || getISOWeek(parsed);
+    const weekNumber = order?.weekNumber || getISOWeek(parsedDate);
 
     return {
-      dateLabel: format(parsed, "dd-MM-yyyy"),
+      dateLabel: format(parsedDate, "dd-MM-yyyy"),
       weekLabel: `W${weekNumber}`,
       weekDiff,
     };
   };
 
-  const getDeliveryColorClass = (weekDiff) => {
+  const getDeliveryColorClass = (weekDiff: number | null) => {
     if (weekDiff === null) return "bg-slate-100 text-slate-500 border-slate-200";
     if (weekDiff < 0) return "bg-red-50 text-red-700 border-red-200";
     if (weekDiff === 0) return "bg-amber-50 text-amber-700 border-amber-200";
@@ -527,14 +587,14 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
   // QC-stations per afdeling: wc na normalizeMachine ("40BM01" → "BM01")
   const QC_STATIONS = ["BM01", "BA01"];
 
-  const classifyByWc = (wc) => {
-    const upper = (wc || "").toUpperCase();
+  const classifyByWc = (wc: unknown) => {
+    const upper = String(wc || "").toUpperCase();
     if (QC_STATIONS.some(s => upper.includes(s))) return "qc";
     if (upper.includes("NABEWERK") || upper.includes("NABEW")) return "post";
     return null; // geen WC-match, val terug op refOp-code
   };
 
-  const classifyReferenceOperation = (refOp, wc, refOpsConfig = null) => {
+  const classifyReferenceOperation = (refOp: unknown, wc: unknown, refOpsConfig: Record<string, { type?: string }> | null = null) => {
     // 1. Database-driven lookup (indien aanwezig via Firestore import)
     if (refOpsConfig && refOp) {
       const entry = refOpsConfig[String(refOp).trim()];
@@ -544,7 +604,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     const wcBucket = classifyByWc(wc);
     if (wcBucket) return wcBucket;
     // 3. Hardcoded bekende codes
-    const knownTypes = { "1020": "qc", "1715": "production", "1740": "post", "1115": "post" };
+    const knownTypes: Record<string, string> = { "1020": "qc", "1715": "production", "1740": "post", "1115": "post" };
     if (knownTypes[String(refOp).trim()]) return knownTypes[String(refOp).trim()];
     // 4. Modulo-heuristiek als laatste fallback
     const digits = parseInt(String(refOp || "").replace(/\D/g, ""), 10);
@@ -557,9 +617,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
 
   // LOGICA: Aggregatie van Operations per unieke Productie Order inclusief Creation Date
-  const processRawLNDump = (rawRows) => {
+  const processRawLNDump = (rawRows: unknown[][]) => {
     const headerIdx = rawRows.findIndex((r) =>
-      r.some((c) => {
+      r.some((c: unknown) => {
         const h = normalizeHeader(c);
         return (
           h === "production order" ||
@@ -574,10 +634,10 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       return [];
     }
 
-    const headers = rawRows[headerIdx].map((h) => normalizeHeader(h));
+    const headers = rawRows[headerIdx].map((h: unknown) => normalizeHeader(h));
     const dataRows = rawRows.slice(headerIdx + 1);
-    const findCol = (names) =>
-      headers.findIndex((h) => names.some((n) => h.includes(normalizeHeader(n))));
+    const findCol = (names: string[]) =>
+      headers.findIndex((h: string) => names.some((n: string) => h.includes(normalizeHeader(n))));
 
     const idx = {
       order: findCol(["production order", "productieorder", "ordernummer", "order number"]),
@@ -605,9 +665,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       creation: findCol(["order creation date"]) // Nieuwe kolom voor Dossier
     };
 
-    const orderMap = new Map();
+    const orderMap = new Map<string, PlanningImportAggregate>();
 
-    dataRows.forEach(row => {
+    dataRows.forEach((row: unknown[]) => {
       const orderId = clean(row[idx.order]);
       if (!orderId || orderId === "" || orderId === "0") return;
 
@@ -618,6 +678,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       const rawStatus = clean(row[idx.status]);
       const rowMachine = normalizeMachine(row[idx.machine]);
       const rowStatusAllowed = isStatusAllowed(rawStatus);
+      const rawDelivery = idx.delivery !== -1 ? row[idx.delivery] : null;
 
       if (!orderMap.has(orderId)) {
         orderMap.set(orderId, {
@@ -635,7 +696,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
           deliveredQty: idx.delivered !== -1 ? parseNum(row[idx.delivered]) : null,
           produced: idx.ready !== -1 ? parseNum(row[idx.ready]) : 0,
           toDoQty: parseNum(row[idx.qty]),
-          plannedDeliveryDate: row[idx.delivery],
+          plannedDeliveryDate: rawDelivery instanceof Date ? rawDelivery : (clean(rawDelivery) || null),
           orderCreationDate: clean(row[idx.creation]), // Alleen voor dossier
           orderStatus: rawStatus,
           drawing: clean(row[idx.drawing]),
@@ -652,6 +713,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       }
 
       const order = orderMap.get(orderId);
+      if (!order) return;
       if ((order.machine === "-" || !order.machine) && rowMachine !== "-") {
         order.machine = rowMachine;
       }
@@ -699,7 +761,8 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
       if (rowMachine !== "-") {
         const machineWeight = pTime > 0 ? pTime : 0.001;
-        order.machineTotals[rowMachine] = (order.machineTotals[rowMachine] || 0) + machineWeight;
+        const machineTotals = order.machineTotals ?? (order.machineTotals = {});
+        machineTotals[rowMachine] = (machineTotals[rowMachine] || 0) + machineWeight;
       }
 
       order.totalPlannedHours += pTime;
@@ -725,11 +788,11 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     });
 
     const result = Array.from(orderMap.values()).map((order) => {
-      const rankedMachines = Object.entries(order.machineTotals || {})
+      const rankedMachines = Object.entries(order.machineTotals ?? {})
         .map(([machineCode, weightedHours]) => ({
           machineCode,
-          weightedHours,
-          score: getMachinePriority(machineCode) + weightedHours,
+          weightedHours: Number(weightedHours) || 0,
+          score: getMachinePriority(machineCode) + (Number(weightedHours) || 0),
         }))
         .sort((a, b) => b.score - a.score);
 
@@ -741,12 +804,13 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       // Convert _opRows to final operations map with derived-bewerking selection:
       // if a derived row exists for a refOp (Bewerking ≠ OorspronkelijkeBewerking) use its
       // Productietijd; otherwise sum the original rows.
-      const correctedOperations = {};
+      const correctedOperations: Record<string, PlanningOperationTotals> = {};
       let correctedTotalHours = 0;
-      Object.entries(order._opRows || {}).forEach(([refOp, { derived, original }]) => {
+      Object.entries(order._opRows || {}).forEach(([refOp, opGroup]) => {
+        const { derived, original } = opGroup as LnGroupedOperation;
         const rows = derived.length > 0 ? derived : original;
-        const planned = rows.reduce((sum, r) => sum + r.pTime, 0);
-        const actual = rows.reduce((sum, r) => sum + r.aTime, 0);
+        const planned = rows.reduce((sum: number, r: LnOperationRow) => sum + r.pTime, 0);
+        const actual = rows.reduce((sum: number, r: LnOperationRow) => sum + r.aTime, 0);
         const wc = rows[0]?.wc || "";
         correctedOperations[refOp] = { planned, actual, wc };
         correctedTotalHours += planned;
@@ -796,7 +860,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return result;
   };
 
-  const handleSheetChange = (sheetName, workbookOverride = null) => {
+  const handleSheetChange = (sheetName: string, workbookOverride: XLSX.WorkBook | null = null) => {
     const workbook = workbookOverride || rawWorkbook;
     if (!workbook) return;
     setLoading(true);
@@ -813,8 +877,8 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         setFileData([]);
         return;
       }
-      const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-      let data = processRawLNDump(rawRows);
+      const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" }) as unknown[][];
+      let data: PlanningImportEntry[] = processRawLNDump(rawRows);
       if (!data.length) {
         data = processTabularPlanningRows(rawRows);
       }
@@ -827,7 +891,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     }
   };
 
-  const handleFile = async (e) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setLoading(true);
@@ -835,22 +899,22 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { cellDates: true });
       setRawWorkbook(workbook);
-      const bestSheet = workbook.SheetNames.find(n => n.toLowerCase().includes("data") || n.toLowerCase().includes("format") || n === "40BM01");
+      const bestSheet = workbook.SheetNames.find((n: string) => n.toLowerCase().includes("data") || n.toLowerCase().includes("format") || n === "40BM01");
       handleSheetChange(bestSheet || workbook.SheetNames[0], workbook);
     } catch { addLog(t("digitalplanning.planning_import.logs.file_unreadable", "Bestand onleesbaar."), "error"); } finally { setLoading(false); }
   };
 
-  const handleDragOver = (e) => {
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(true);
   };
 
-  const handleDragLeave = (e) => {
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
   };
 
-  const handleDrop = async (e) => {
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
@@ -860,7 +924,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { cellDates: true });
       setRawWorkbook(workbook);
-      const bestSheet = workbook.SheetNames.find(n => n.toLowerCase().includes("data") || n.toLowerCase().includes("format") || n === "40BM01");
+      const bestSheet = workbook.SheetNames.find((n: string) => n.toLowerCase().includes("data") || n.toLowerCase().includes("format") || n === "40BM01");
       handleSheetChange(bestSheet || workbook.SheetNames[0], workbook);
     } catch { addLog(t("digitalplanning.planning_import.logs.file_unreadable", "Bestand onleesbaar."), "error"); } finally { setLoading(false); }
   };
@@ -982,9 +1046,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         });
       }
 
-      let parsedData = processRawLNDump(preparedRows);
+      let parsedData: PlanningImportEntry[] = processRawLNDump(preparedRows as unknown[][]);
       if (!parsedData.length) {
-        parsedData = processTabularPlanningRows(preparedRows);
+        parsedData = processTabularPlanningRows(preparedRows as unknown[][]);
       }
       if (!parsedData.length) {
         alert(t("digitalplanning.planning_import.alerts.no_importable_orders", "Geen importeerbare orders gevonden in geplakte data."));
@@ -1011,7 +1075,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
   const validOrders = useMemo(() => fileData.filter((d) => d.isValidForImport), [fileData]);
 
-  const getComparableToDoQty = (order) => {
+  const getComparableToDoQty = (order: PlanningImportEntry) => {
     const raw =
       order?.toDoQty ??
       order?.plan ??
@@ -1023,7 +1087,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
   const effectiveValidOrders = useMemo(() => {
     return validOrders.map((order) => {
-      const overrideRaw = toDoOverrides[order.id];
+      const orderId = order.id;
+      if (!orderId) return order;
+      const overrideRaw = toDoOverrides[orderId];
       if (overrideRaw === undefined || overrideRaw === null || String(overrideRaw).trim() === "") {
         return order;
       }
@@ -1055,37 +1121,37 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     });
   }, [availableMachines]);
 
-  const isSpoolsMachine = (machineCode) => {
+  const isSpoolsMachine = (machineCode: unknown) => {
     const m = clean(machineCode).toUpperCase();
     const normalized = m.startsWith("40") ? m.slice(2) : m;
     return /^BB\d{2}$/.test(normalized) || /^BM\d{2}$/.test(normalized);
   };
 
-  const getDepartmentGroupMachines = (groupName) => {
+  const getDepartmentGroupMachines = (groupName: string) => {
     if (groupName === "fittings") return availableMachines.filter((machine) => isFittingsMachine(machine));
     if (groupName === "pipes") return availableMachines.filter((machine) => isPipesMachine(machine));
     if (groupName === "spools") return availableMachines.filter((machine) => isSpoolsMachine(machine));
     return availableMachines;
   };
 
-  const toggleMachineSelection = (machineCode) => {
+  const toggleMachineSelection = (machineCode: string) => {
     setSelectedMachines((prev) => {
       if (prev.includes(machineCode)) return prev.filter((m) => m !== machineCode);
       return [...prev, machineCode].sort();
     });
   };
 
-  const selectMachines = (machines) => {
-    const unique = Array.from(new Set(machines.map((m) => normalizeMachineCodeForFilter(m)))).filter((m) => availableMachines.includes(m));
+  const selectMachines = (machines: string[]) => {
+    const unique = Array.from(new Set(machines.map((m: string) => normalizeMachineCodeForFilter(m)))).filter((m): m is string => availableMachines.includes(m));
     setSelectedMachines(unique.sort());
   };
 
-  const isAllowedBySelectedMachines = (order) => {
+  const isAllowedBySelectedMachines = (order: PlanningImportEntry) => {
     if (!selectedMachines.length) return false;
     return selectedMachines.includes(normalizeMachineCodeForFilter(order.machine));
   };
 
-  const getComparableQty = (order) => {
+  const getComparableQty = (order: PlanningImportEntry) => {
     const raw =
       order?.plan ??
       order?.quantity ??
@@ -1095,12 +1161,12 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return Number.isFinite(n) ? n : 0;
   };
 
-  const getComparablePlannedHours = (order) => {
+  const getComparablePlannedHours = (order: PlanningImportEntry) => {
     if (!order || typeof order !== "object") return null;
 
-    const fromReferenceOps = order?.referenceOperationTimes;
+    const fromReferenceOps = order?.referenceOperationTimes as Record<string, { plannedHours?: number; planned?: number }> | undefined;
     if (fromReferenceOps && typeof fromReferenceOps === "object" && Object.keys(fromReferenceOps).length > 0) {
-      const total = Object.values(fromReferenceOps).reduce((sum, op) => {
+      const total = Object.values(fromReferenceOps).reduce((sum: number, op) => {
         const value = Number(op?.plannedHours ?? op?.planned ?? 0);
         return sum + (Number.isFinite(value) ? value : 0);
       }, 0);
@@ -1114,9 +1180,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       return splitCandidates.reduce((sum, value) => sum + value, 0);
     }
 
-    const fromOperations = order?.operations;
+    const fromOperations = order?.operations as Record<string, { planned?: number; plannedHours?: number }> | undefined;
     if (fromOperations && typeof fromOperations === "object" && Object.keys(fromOperations).length > 0) {
-      const total = Object.values(fromOperations).reduce((sum, op) => {
+      const total = Object.values(fromOperations).reduce((sum: number, op) => {
         const value = Number(op?.planned ?? op?.plannedHours ?? 0);
         return sum + (Number.isFinite(value) ? value : 0);
       }, 0);
@@ -1126,14 +1192,14 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return null;
   };
 
-  const normalizePoText = (value) =>
+  const normalizePoText = (value: unknown) =>
     clean(value)
       .replace(/\s+/g, " ")
       .trim();
 
   const orderChangeMeta = useMemo(() => {
-    const byId = new Map();
-    effectiveValidOrders.forEach((order) => {
+    const byId = new Map<string, any>();
+    effectiveValidOrders.forEach((order: PlanningImportEntry) => {
       const existing = getExistingOrder(order);
       if (!existing) {
         byId.set(order.id, {
@@ -1181,9 +1247,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       const readyChanged = Math.abs(oldReadyQty - newReadyQty) > 0.001;
 
       // Verfijnde datumvergelijking op dag-niveau om format-verschillen (bijv. 27-03 vs 27-3) te negeren
-      const parseForCompare = (d) => {
+      const parseForCompare = (d: unknown) => {
         if (!d) return "";
-        const parsed = new Date(d);
+        const parsed = d instanceof Date ? d : new Date(String(d));
         if (isNaN(parsed.getTime())) {
           // Fallback voor d-m-yyyy tekst (LN her-import)
           const parts = clean(d).split(/[-/]/);
@@ -1333,7 +1399,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
     // Alleen geselecteerde orders meenemen in importCandidates
     // Zodat zij ook daadwerkelijk de enigen zijn die de database raken.
-    return rows.filter((order) => selectedOrderIds.has(order.id));
+    return rows.filter((order: PlanningImportEntry) => selectedOrderIds.has(order.id));
   }, [effectiveValidOrders, importMode, existingIds, selectedMachines, orderChangeMeta, isFittingsScoped, pasteMode, SMART_SYNC_EXCLUDED_ORDER_IDS, hoursOnlyMode, selectedOrderIds]);
 
   useEffect(() => {
@@ -1356,7 +1422,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         candidates = effectiveValidOrders;
       }
       
-      const filtered = candidates.filter((d) => isAllowedBySelectedMachines(d));
+      const filtered = candidates.filter((d: PlanningImportEntry) => isAllowedBySelectedMachines(d));
       return new Set(filtered.map((d) => d.id));
     });
   }, [effectiveValidOrders.length, importMode, pasteMode, hoursOnlyMode]); // Trigger op verandering van data-lengte of modus
@@ -1379,7 +1445,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     );
   }, [displayData]);
 
-  const toggleOrderSelection = (id) => {
+  const toggleOrderSelection = (id: string) => {
     setSelectedOrderIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -1388,7 +1454,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     });
   };
 
-  const setVisibleSelection = (selected) => {
+  const setVisibleSelection = (selected: boolean) => {
     setSelectedOrderIds((prev) => {
       const next = new Set(prev);
       displayData.forEach((order) => {
@@ -1464,7 +1530,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       setImportProgressLabel(t("digitalplanning.planning_import.progress_done", "Import voltooid"));
       setImportEtaLabel("");
       addLog(t("digitalplanning.planning_import.logs.import_success", "Import succesvol!"), "success");
-      await logActivity(auth.currentUser?.uid, "PLANNING_IMPORT", logMsg);
+      await logActivity(auth.currentUser?.uid || "system", "PLANNING_IMPORT", logMsg);
       setTimeout(() => { onSuccess?.(); onClose(); }, 1000);
     } catch {
       addLog(t("digitalplanning.planning_import.logs.database_error", "Database fout."), "error");
@@ -1743,7 +1809,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
                                 type="number"
                                 min="0"
                                 step="1"
-                                value={toDoOverrides[order.id] ?? Number(order.toDoQty ?? order.plan ?? order.quantity ?? 0)}
+                                value={String(toDoOverrides[order.id] ?? Number(order.toDoQty ?? order.plan ?? order.quantity ?? 0))}
                                 onChange={(e) => {
                                   const nextVal = e.target.value;
                                   setToDoOverrides((prev) => ({

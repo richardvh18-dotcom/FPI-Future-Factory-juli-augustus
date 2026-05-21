@@ -34,14 +34,42 @@ export default defineConfig({
         reportCompressedSize: false,
         rollupOptions: {
             output: {
-                manualChunks: {
-                    'react-vendor': ['react', 'react-dom', 'react-router-dom', 'react-i18next', 'i18next'],
-                    'firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage', 'firebase/functions'],
-                    'xlsx-vendor': ['xlsx'],
-                    'jspdf-vendor': ['jspdf', 'jspdf-autotable'],
-                    'pdfjs-vendor': ['pdfjs-dist'],
-                    'date-vendor': ['date-fns'],
-                    'icons-vendor': ['lucide-react']
+                manualChunks(id) {
+                    if (!id.includes('node_modules'))
+                        return;
+                    if (id.includes('/node_modules/@firebase/firestore') || id.includes('/node_modules/firebase/firestore')) {
+                        return 'firebase-firestore';
+                    }
+                    if (id.includes('/node_modules/@firebase/auth') || id.includes('/node_modules/firebase/auth')) {
+                        return 'firebase-auth';
+                    }
+                    if (id.includes('/node_modules/@firebase/storage') || id.includes('/node_modules/firebase/storage')) {
+                        return 'firebase-storage';
+                    }
+                    if (id.includes('/node_modules/@firebase/functions') || id.includes('/node_modules/firebase/functions')) {
+                        return 'firebase-functions';
+                    }
+                    if (id.includes('/node_modules/@firebase/app') || id.includes('/node_modules/firebase/app')) {
+                        return 'firebase-core';
+                    }
+                    if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/') || id.includes('/node_modules/react-router-dom/') || id.includes('/node_modules/react-i18next/') || id.includes('/node_modules/i18next/')) {
+                        return 'react-vendor';
+                    }
+                    if (id.includes('/node_modules/xlsx/')) {
+                        return 'xlsx-vendor';
+                    }
+                    if (id.includes('/node_modules/jspdf/') || id.includes('/node_modules/jspdf-autotable/')) {
+                        return 'jspdf-vendor';
+                    }
+                    if (id.includes('/node_modules/pdfjs-dist/')) {
+                        return 'pdfjs-vendor';
+                    }
+                    if (id.includes('/node_modules/date-fns/')) {
+                        return 'date-vendor';
+                    }
+                    if (id.includes('/node_modules/lucide-react/')) {
+                        return 'icons-vendor';
+                    }
                 }
             }
         }

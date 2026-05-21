@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
@@ -27,17 +27,78 @@ import {
   getDoc,
   documentId,
   limit,
+  type DocumentData,
+  type QuerySnapshot,
 } from "firebase/firestore";
 import { db, auth } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 
-const parseStations = (input) =>
+type ToolingDoc = {
+  id: string;
+  name?: string;
+  itemCode?: string;
+  item?: string;
+  productCode?: string;
+  matcher?: string;
+  Matcher?: string;
+  stations?: string[] | string;
+  cavityCount?: number | string;
+  active?: boolean;
+  application?: string;
+  description?: string;
+  itemDescription?: string;
+  specs?: unknown;
+  [key: string]: unknown;
+};
+
+type ToolingRow = {
+  id: string;
+  name: string;
+  itemCode: string;
+  matcher: string;
+  stations: string;
+  cavityCount: number;
+  active: boolean;
+  application: string;
+};
+
+type NewRowState = {
+  itemCode: string;
+  matcher: string;
+  stations: string;
+  cavityCount: number;
+};
+
+type StatusMessage = {
+  type: "success" | "error";
+  msg: string;
+};
+
+type NormalizableEntry = {
+  name?: unknown;
+  itemCode?: unknown;
+  matcher?: unknown;
+  stations?: unknown;
+  cavityCount?: unknown;
+  active?: unknown;
+  application?: unknown;
+};
+
+const colPath = (path: string[]) => collection(db, getPathString(path));
+const docPath = (path: string[], id: string) => doc(db, `${getPathString(path)}/${id}`);
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  return String(error || "onbekende fout");
+};
+
+const parseStations = (input: unknown): string[] =>
   String(input || "")
     .split(",")
     .map((segment) => segment.trim().toUpperCase())
     .filter(Boolean);
 
-const normalizeInput = (entry, forcedApplication = "") => {
+const normalizeInput = (entry: NormalizableEntry, forcedApplication = "") => {
   const cavityParsed = Number.parseInt(String(entry?.cavityCount || ""), 10);
   return {
     name: String(entry?.name || "").trim(),
@@ -50,22 +111,28 @@ const normalizeInput = (entry, forcedApplication = "") => {
   };
 };
 
-const rowFromDoc = (entry) => ({
-  id: entry.id,
+const rowFromDoc = (entry: Partial<ToolingDoc>): ToolingRow => ({
+  id: String(entry.id || ""),
   name: entry.name || "",
   itemCode: entry.itemCode || "",
   matcher: entry.matcher || "",
   stations: Array.isArray(entry.stations) ? entry.stations.join(", ") : "",
-  cavityCount: entry.cavityCount || 1,
+  cavityCount: Number(entry.cavityCount) || 1,
   active: entry.active !== false,
   application: String(entry.application || "general").trim().toLowerCase(),
 });
 
-const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow }) => {
+const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow }: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSelectItems: (items: ToolingDoc[]) => void;
+  newRow: NewRowState;
+  setNewRow: React.Dispatch<React.SetStateAction<NewRowState>>;
+}) => {
   const [orderStr, setOrderStr] = useState("");
-  const [results, setResults] = useState([]);
+  const [results, setResults] = useState<ToolingDoc[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selectedItems, setSelectedItems] = useState([]);
+  const [selectedItems, setSelectedItems] = useState<ToolingDoc[]>([]);
 
   const handleSearchOrder = async () => {
     if (!orderStr.trim()) {
@@ -79,10 +146,10 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow })
     try {
       let searchStr = orderStr.trim().toUpperCase();
       if (searchStr.includes("/")) {
-        searchStr = searchStr.split("/").filter(Boolean).pop();
+        searchStr = searchStr.split("/").filter(Boolean).pop() || "";
       }
 
-      let searchOptions = [searchStr];
+      const searchOptions = [searchStr];
       const digitsMatch = searchStr.match(/\d+/);
       if (digitsMatch) {
         const digits = digitsMatch[0];
@@ -92,15 +159,15 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow })
       }
 
       const uniqueOptions = Array.from(new Set(searchOptions)).slice(0, 15);
-      const colRef = collection(db, ...PATHS.TEMP_PLANNING);
-      const planRef = collection(db, ...PATHS.PLANNING);
-      const trackRef = collection(db, ...PATHS.TRACKING);
+      const colRef = colPath(PATHS.TEMP_PLANNING);
+      const planRef = colPath(PATHS.PLANNING);
+      const trackRef = colPath(PATHS.TRACKING);
 
-      let foundDocs = new Map();
-      const addDocs = (snap) => {
+      const foundDocs = new Map<string, ToolingDoc>();
+      const addDocs = (snap: QuerySnapshot<DocumentData> | null) => {
         if (snap && snap.docs) {
           snap.docs.forEach((d) => {
-            const data = { id: d.id, ...d.data() };
+            const data = { id: d.id, ...(d.data() as DocumentData) } as ToolingDoc;
             foundDocs.set(d.id, data);
           });
         }
@@ -115,7 +182,7 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow })
         
         allScopedSnap.docs.forEach((d) => {
           const docId = d.id.toUpperCase();
-          const data = d.data();
+          const data = d.data() as DocumentData;
           
           // Check if any search option matches in doc ID or fields
           const matches = uniqueOptions.some(opt => {
@@ -142,7 +209,7 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow })
           }
         });
         console.log(`✓ Scoped orders search completed. Found: ${foundDocs.size}`);
-      } catch (err) {
+      } catch (err: unknown) {
         console.warn("Fout bij zoeken in scoped orders:", err);
       }
 
@@ -150,17 +217,17 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow })
       for (const opt of uniqueOptions) {
         try {
           const snaps = await Promise.all([
-            getDoc(doc(db, ...PATHS.TEMP_PLANNING, opt)),
-            getDoc(doc(db, ...PATHS.PLANNING, opt)),
-            getDoc(doc(db, ...PATHS.TRACKING, opt)),
+            getDoc(docPath(PATHS.TEMP_PLANNING, opt)),
+            getDoc(docPath(PATHS.PLANNING, opt)),
+            getDoc(docPath(PATHS.TRACKING, opt)),
           ]);
           snaps.forEach((s) => {
             if (s.exists()) {
-              foundDocs.set(s.id, { id: s.id, ...s.data() });
+              foundDocs.set(s.id, { id: s.id, ...(s.data() as DocumentData) } as ToolingDoc);
               console.log(`✓ Gevonden via doc ID: ${s.id}`);
             }
           });
-        } catch (err) {
+        } catch (err: unknown) {
           console.warn(`Doc ID lookup fout voor ${opt}:`, err);
         }
       }
@@ -168,7 +235,7 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow })
       // Exact field queries for root collections - search all relevant fields
       try {
         const fieldNames = ["orderId", "orderNumber", "Order", "Productieorder", "order", "originalOrderId", "itemCode", "productCode", "articleCode"];
-        const exactQueries = [];
+        const exactQueries: Array<Promise<QuerySnapshot<DocumentData> | null>> = [];
         
         for (const field of fieldNames) {
           exactQueries.push(
@@ -181,7 +248,7 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow })
         const exactSnaps = await Promise.all(exactQueries);
         exactSnaps.forEach(snap => snap && addDocs(snap));
         console.log(`✓ Root collection search completed. Total found: ${foundDocs.size}`);
-      } catch (err) {
+      } catch (err: unknown) {
         console.warn("Fout bij exact queries:", err);
       }
 
@@ -191,22 +258,22 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow })
       } else {
         console.log(`✅ ${foundDocs.size} resultaat(en) gevonden!`);
       }
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Zoekfout:", e);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSelectItem = (item) => {
+  const handleSelectItem = (item: ToolingDoc) => {
     const itemCode = item.itemCode || item.item || item.productCode || item.id;
     // Check if already selected by itemCode
-    if (!selectedItems.some(sel => (sel.itemCode || sel.item || sel.productCode || sel.id) === itemCode)) {
+    if (!selectedItems.some((sel) => (sel.itemCode || sel.item || sel.productCode || sel.id) === itemCode)) {
       setSelectedItems([...selectedItems, item]);
     }
   };
 
-  const handleRemoveSelected = (itemCode) => {
+  const handleRemoveSelected = (itemCode: string) => {
     setSelectedItems(selectedItems.filter((item) => {
       const code = item.itemCode || item.item || item.productCode || item.id;
       return code !== itemCode;
@@ -215,11 +282,11 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow })
 
   const handleConfirm = () => {
     // Combine itemCodes
-    const itemCodes = selectedItems.map(item => item.itemCode || item.item || item.productCode || item.id).join(",");
+    const itemCodes = selectedItems.map((item) => item.itemCode || item.item || item.productCode || item.id).join(",");
     
     // Extract matchers - try multiple field names
     const matchers = selectedItems
-      .map(item => item.matcher || item.Matcher || item.description || item.itemDescription || item.specs || "")
+      .map((item) => item.matcher || item.Matcher || item.description || item.itemDescription || String(item.specs || ""))
       .filter(Boolean)
       .join(" | ");
 
@@ -342,12 +409,12 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow })
 const AdminToolingMoldsView = () => {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<StatusMessage | null>(null);
   const [activeTab, setActiveTab] = useState("flange_series");
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState<ToolingRow[]>([]);
   const [showOrderSearch, setShowOrderSearch] = useState(false);
-  const [selectedRows, setSelectedRows] = useState(new Set());
-  const [newRow, setNewRow] = useState({
+  const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
+  const [newRow, setNewRow] = useState<NewRowState>({
     itemCode: "",
     matcher: "",
     stations: "",
@@ -356,10 +423,10 @@ const AdminToolingMoldsView = () => {
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
-      collection(db, ...PATHS.TOOLING_MOLDS),
+      colPath(PATHS.TOOLING_MOLDS),
       (snap) => {
         const parsed = snap.docs
-          .map((entry) => ({ id: entry.id, ...entry.data() }))
+          .map((entry) => ({ id: entry.id, ...(entry.data() as DocumentData) }))
           .map((entry) => rowFromDoc(entry))
           .sort((a, b) => String(a.name || a.itemCode).localeCompare(String(b.name || b.itemCode)));
         setRows(parsed);
@@ -380,8 +447,18 @@ const AdminToolingMoldsView = () => {
     return rows.filter((entry) => entry.application === activeTab);
   }, [rows, activeTab]);
 
-  const handleRowChange = (rowId, field, value) => {
-    setRows((prev) => prev.map((entry) => (entry.id === rowId ? { ...entry, [field]: value } : entry)));
+  const handleRowChange = (rowId: string, field: keyof ToolingRow, value: string | number | boolean) => {
+    setRows((prev) => {
+      let hasChanges = false;
+      const nextRows = prev.map((entry) => {
+        if (entry.id === rowId && entry[field] !== value) {
+          hasChanges = true;
+          return { ...entry, [field]: value };
+        }
+        return entry;
+      });
+      return hasChanges ? nextRows : prev;
+    });
   };
 
   const resolveApplicationForNewRow = () => {
@@ -400,7 +477,7 @@ const AdminToolingMoldsView = () => {
 
     setBusy(true);
     try {
-      await addDoc(collection(db, ...PATHS.TOOLING_MOLDS), {
+      await addDoc(colPath(PATHS.TOOLING_MOLDS), {
         ...payload,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -409,15 +486,15 @@ const AdminToolingMoldsView = () => {
       setNewRow({ itemCode: "", matcher: "", stations: "", cavityCount: 1 });
       setStatus({ type: "success", msg: "Record toegevoegd." });
       setTimeout(() => setStatus(null), 2500);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Toevoegen mislukt:", error);
-      setStatus({ type: "error", msg: "Toevoegen mislukt." });
+      setStatus({ type: "error", msg: `Toevoegen mislukt: ${getErrorMessage(error)}` });
     } finally {
       setBusy(false);
     }
   };
 
-  const handleSaveRow = async (entry) => {
+  const handleSaveRow = async (entry: ToolingRow) => {
     const payload = normalizeInput(entry);
     if (!payload.itemCode && !payload.matcher) {
       setStatus({ type: "error", msg: "Vul minimaal itemCode of matcher in." });
@@ -426,36 +503,36 @@ const AdminToolingMoldsView = () => {
 
     setBusy(true);
     try {
-      await updateDoc(doc(db, ...PATHS.TOOLING_MOLDS, entry.id), {
+      await updateDoc(docPath(PATHS.TOOLING_MOLDS, entry.id), {
         ...payload,
         updatedAt: serverTimestamp(),
         updatedBy: auth.currentUser?.uid || "admin",
       });
       setStatus({ type: "success", msg: "Record opgeslagen." });
       setTimeout(() => setStatus(null), 2500);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Opslaan mislukt:", error);
-      setStatus({ type: "error", msg: "Opslaan mislukt." });
+      setStatus({ type: "error", msg: `Opslaan mislukt: ${getErrorMessage(error)}` });
     } finally {
       setBusy(false);
     }
   };
 
-  const handleDeleteRow = async (rowId) => {
+  const handleDeleteRow = async (rowId: string) => {
     setBusy(true);
     try {
-      await deleteDoc(doc(db, ...PATHS.TOOLING_MOLDS, rowId));
+      await deleteDoc(docPath(PATHS.TOOLING_MOLDS, rowId));
       setStatus({ type: "success", msg: "Record verwijderd." });
       setTimeout(() => setStatus(null), 2500);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Verwijderen mislukt:", error);
-      setStatus({ type: "error", msg: "Verwijderen mislukt." });
+      setStatus({ type: "error", msg: `Verwijderen mislukt: ${getErrorMessage(error)}` });
     } finally {
       setBusy(false);
     }
   };
 
-  const toggleRowSelection = (rowId) => {
+  const toggleRowSelection = (rowId: string) => {
     const newSelected = new Set(selectedRows);
     if (newSelected.has(rowId)) {
       newSelected.delete(rowId);
@@ -488,18 +565,18 @@ const AdminToolingMoldsView = () => {
     try {
       for (const rowId of selectedRows) {
         try {
-          await deleteDoc(doc(db, ...PATHS.TOOLING_MOLDS, rowId));
+          await deleteDoc(docPath(PATHS.TOOLING_MOLDS, rowId));
           successCount++;
-        } catch (e) {
+        } catch (e: unknown) {
           console.error(`Fout bij verwijderen ${rowId}:`, e);
         }
       }
       setSelectedRows(new Set());
       setStatus({ type: "success", msg: `${successCount} record(s) verwijderd.` });
       setTimeout(() => setStatus(null), 2500);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Batch delete mislukt:", error);
-      setStatus({ type: "error", msg: "Batch delete mislukt." });
+      setStatus({ type: "error", msg: `Batch delete mislukt: ${getErrorMessage(error)}` });
     } finally {
       setBusy(false);
     }

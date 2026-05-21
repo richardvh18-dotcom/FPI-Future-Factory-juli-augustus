@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo } from "react";
 import { 
   GitBranch, 
@@ -12,9 +11,29 @@ import {
 } from "lucide-react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { addOrderDependency, removeOrderDependency } from "../../services/planningSecurityService";
 import { useNotifications } from '../../contexts/NotificationContext';
+
+type DependencyOrder = {
+  id: string;
+  orderId?: string;
+  item?: string;
+  itemCode?: string;
+  extraCode?: string;
+  machine?: string;
+  status?: string;
+  estimatedHours?: number;
+  dependencies?: string[];
+};
+
+type GraphNode = {
+  order: DependencyOrder;
+  dependencies: string[];
+  duration: number;
+  earliestStart: number;
+  latestStart: number;
+};
 
 /**
  * OrderDependenciesView - Manage order dependencies and critical path
@@ -22,20 +41,26 @@ import { useNotifications } from '../../contexts/NotificationContext';
  */
 const OrderDependenciesView = () => {
   const { notify } = useNotifications();
-  const [orders, setOrders] = useState([]);
-  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [orders, setOrders] = useState<DependencyOrder[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<DependencyOrder | null>(null);
   const [showAddDependency, setShowAddDependency] = useState(false);
   const [potentialDependency, setPotentialDependency] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsubOrders = onSnapshot(
-      collection(db, ...PATHS.PLANNING),
+      collection(db, getPathString(PATHS.PLANNING)),
       (snapshot) => {
-        const ordersData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const ordersData: DependencyOrder[] = snapshot.docs.map((doc) => {
+          const data = doc.data() as Partial<DependencyOrder>;
+          return {
+            id: doc.id,
+            ...data,
+            dependencies: Array.isArray(data.dependencies)
+              ? data.dependencies.filter((dep): dep is string => typeof dep === "string")
+              : [],
+          };
+        });
         setOrders(ordersData);
         setLoading(false);
       }
@@ -45,26 +70,26 @@ const OrderDependenciesView = () => {
   }, []);
 
   // Get dependencies for an order
-  const getDependencies = (order) => {
-    return (order.dependencies || []).map(depId => 
-      orders.find(o => o.id === depId)
-    ).filter(Boolean);
+  const getDependencies = (order: DependencyOrder): DependencyOrder[] => {
+    return (order.dependencies || [])
+      .map((depId) => orders.find((o) => o.id === depId) || null)
+      .filter((dep): dep is DependencyOrder => dep !== null);
   };
 
   // Get blocked orders (orders that depend on this one)
-  const getBlockedOrders = (orderId) => {
-    return orders.filter(o => 
+  const getBlockedOrders = (orderId: string): DependencyOrder[] => {
+    return orders.filter((o) => 
       (o.dependencies || []).includes(orderId)
     );
   };
 
   // Calculate critical path
-  const criticalPath = useMemo(() => {
+  const criticalPath = useMemo<DependencyOrder[]>(() => {
     if (orders.length === 0) return [];
 
     // Build dependency graph
-    const graph = {};
-    orders.forEach(order => {
+    const graph: Record<string, GraphNode> = {};
+    orders.forEach((order) => {
       graph[order.id] = {
         order,
         dependencies: order.dependencies || [],
@@ -75,7 +100,7 @@ const OrderDependenciesView = () => {
     });
 
     // Calculate earliest start times (forward pass)
-    const calculateEarliestStart = (orderId, visited = new Set()) => {
+    const calculateEarliestStart = (orderId: string, visited = new Set<string>()): number => {
       if (visited.has(orderId)) return graph[orderId].earliestStart;
       visited.add(orderId);
 
@@ -83,8 +108,9 @@ const OrderDependenciesView = () => {
       if (!node) return 0;
 
       let maxDependencyFinish = 0;
-      node.dependencies.forEach(depId => {
-        const depEarliestFinish = calculateEarliestStart(depId, visited) + graph[depId]?.duration || 0;
+      node.dependencies.forEach((depId) => {
+        const depDuration = graph[depId]?.duration || 0;
+        const depEarliestFinish = calculateEarliestStart(depId, visited) + depDuration;
         maxDependencyFinish = Math.max(maxDependencyFinish, depEarliestFinish);
       });
 
@@ -92,13 +118,13 @@ const OrderDependenciesView = () => {
       return node.earliestStart;
     };
 
-    orders.forEach(order => calculateEarliestStart(order.id));
+    orders.forEach((order) => calculateEarliestStart(order.id));
 
     // Find project completion time
-    const projectEndTime = Math.max(...Object.values(graph).map(n => n.earliestStart + n.duration));
+    const projectEndTime = Math.max(...Object.values(graph).map((n) => n.earliestStart + n.duration));
 
     // Calculate latest start times (backward pass)
-    const calculateLatestStart = (orderId, visited = new Set()) => {
+    const calculateLatestStart = (orderId: string, visited = new Set<string>()): number => {
       if (visited.has(orderId)) return graph[orderId].latestStart;
       visited.add(orderId);
 
@@ -112,7 +138,7 @@ const OrderDependenciesView = () => {
       } else {
         // Must finish before earliest successor starts
         let minSuccessorStart = Infinity;
-        blockedOrders.forEach(blocked => {
+        blockedOrders.forEach((blocked) => {
           calculateLatestStart(blocked.id, visited);
           const blockedNode = graph[blocked.id];
           minSuccessorStart = Math.min(minSuccessorStart, blockedNode.latestStart);
@@ -123,10 +149,10 @@ const OrderDependenciesView = () => {
       return node.latestStart;
     };
 
-    orders.forEach(order => calculateLatestStart(order.id));
+    orders.forEach((order) => calculateLatestStart(order.id));
 
     // Identify critical path (slack = 0)
-    const critical = orders.filter(order => {
+    const critical = orders.filter((order) => {
       const node = graph[order.id];
       const slack = node.latestStart - node.earliestStart;
       return Math.abs(slack) < 0.01; // floating point tolerance
@@ -151,7 +177,7 @@ const OrderDependenciesView = () => {
     });
 
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "ORDER_DEPENDENCY_ADD",
       `Dependency toegevoegd: ${selectedOrder.id} <- ${potentialDependency}`
     );
@@ -161,37 +187,37 @@ const OrderDependenciesView = () => {
   };
 
   // Remove dependency
-  const removeDependency = async (orderId, depId) => {
+  const removeDependency = async (orderId: string, depId: string) => {
     await removeOrderDependency({
       orderId,
       dependencyId: depId,
     });
 
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "ORDER_DEPENDENCY_REMOVE",
       `Dependency verwijderd: ${orderId} -/-> ${depId}`
     );
   };
 
   // Check if adding dependency would create circular reference
-  const wouldCreateCircular = (orderId, newDepId, visited = new Set()) => {
+  const wouldCreateCircular = (orderId: string, newDepId: string, visited = new Set<string>()): boolean => {
     if (orderId === newDepId) return true;
     if (visited.has(newDepId)) return false;
     visited.add(newDepId);
 
-    const newDepOrder = orders.find(o => o.id === newDepId);
+    const newDepOrder = orders.find((o) => o.id === newDepId);
     if (!newDepOrder || !newDepOrder.dependencies) return false;
 
-    return newDepOrder.dependencies.some(depId => 
+    return newDepOrder.dependencies.some((depId) => 
       wouldCreateCircular(orderId, depId, visited)
     );
   };
 
   // Get status icon
-  const getStatusIcon = (order) => {
+  const getStatusIcon = (order: DependencyOrder) => {
     const deps = getDependencies(order);
-    const allDepsComplete = deps.every(d => d.status === "shipped");
+    const allDepsComplete = deps.every((d) => d.status === "shipped");
     
     if (order.status === "shipped") return <CheckCircle className="text-emerald-600" size={20} />;
     if (!allDepsComplete) return <Clock className="text-amber-600" size={20} />;
@@ -238,10 +264,10 @@ const OrderDependenciesView = () => {
             <h3 className="text-sm font-bold text-slate-800">Orders</h3>
           </div>
           <div className="p-4 max-h-[700px] overflow-y-auto space-y-2">
-            {orders.map(order => {
+            {orders.map((order) => {
               const deps = getDependencies(order);
               const blocked = getBlockedOrders(order.id);
-              const isCritical = criticalPath.some(cp => cp.id === order.id);
+              const isCritical = criticalPath.some((cp) => cp.id === order.id);
               const isSelected = selectedOrder?.id === order.id;
 
               return (
@@ -346,8 +372,8 @@ const OrderDependenciesView = () => {
                       >
                         <option value="">Selecteer order...</option>
                         {orders
-                          .filter(o => o.id !== selectedOrder.id && !(selectedOrder.dependencies || []).includes(o.id))
-                          .map(o => (
+                          .filter((o) => o.id !== selectedOrder.id && !(selectedOrder.dependencies || []).includes(o.id))
+                          .map((o) => (
                             <option key={o.id} value={o.id}>
                               {o.orderId || o.item} - {o.itemCode}
                             </option>
@@ -378,7 +404,7 @@ const OrderDependenciesView = () => {
                       Geen dependencies - kan direct starten
                     </div>
                   ) : (
-                    getDependencies(selectedOrder).map(dep => (
+                    getDependencies(selectedOrder).map((dep) => (
                       <div key={dep.id} className="flex items-center justify-between p-3 bg-amber-50 border-2 border-amber-200 rounded-xl">
                         <div className="flex items-center gap-2">
                           {dep.status === "shipped" ? (
@@ -414,7 +440,7 @@ const OrderDependenciesView = () => {
                       Geen blocked orders
                     </div>
                   ) : (
-                    getBlockedOrders(selectedOrder.id).map(blocked => (
+                    getBlockedOrders(selectedOrder.id).map((blocked) => (
                       <div key={blocked.id} className="p-3 bg-blue-50 border-2 border-blue-200 rounded-xl">
                         <div className="flex items-center gap-2">
                           <AlertTriangle className="text-blue-600" size={16} />

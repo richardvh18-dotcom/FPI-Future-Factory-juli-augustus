@@ -15,24 +15,15 @@ import {
   deleteProduct,
 } from "../../utils/productHelpers";
 import { useProductsData } from "../../hooks/useProductsData";
+import type { User } from "firebase/auth";
 
-type ProductRecord = {
-  id?: string;
-  [key: string]: unknown;
-};
-
-type NotificationApi = {
-  notify: (message: string) => void;
-};
-
-type ProductsHookResult = {
-  products: ProductRecord[];
-  loading: boolean;
-  refresh?: () => Promise<void>;
-};
+type ProductsDataResult = ReturnType<typeof useProductsData>;
+type ProductItem = ProductsDataResult["products"][number];
+type EditableProduct = { id: string; [key: string]: unknown };
+type AdminUser = (User & { role?: string }) | null | undefined;
 
 type AdminProductManagerProps = {
-  user: unknown;
+  user: AdminUser;
 };
 
 /**
@@ -42,21 +33,21 @@ type AdminProductManagerProps = {
  */
 const AdminProductManager = ({ user }: AdminProductManagerProps) => {
   const { t } = useTranslation();
-  const { notify } = useNotifications() as NotificationApi;
-  const [view, setView] = useState("list"); // 'list' of 'form'
-  const [selectedProduct, setSelectedProduct] = useState<ProductRecord | null>(null);
+  const { notify } = useNotifications();
+  const [view, setView] = useState<"list" | "form">("list"); // 'list' of 'form'
+  const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
   // Haal live data op uit de root via de custom hook
-  const { products, loading, refresh } = useProductsData(user) as ProductsHookResult;
+  const { products, loading, refresh } = useProductsData(user);
 
   const handleCreateNew = () => {
     setSelectedProduct(null);
     setView("form");
   };
 
-  const handleEdit = (product: ProductRecord) => {
-    setSelectedProduct(product);
+  const handleEdit = (product: EditableProduct) => {
+    setSelectedProduct(product as ProductItem);
     setView("form");
   };
 
@@ -76,7 +67,7 @@ const AdminProductManager = ({ user }: AdminProductManagerProps) => {
     setActionLoading(true);
     try {
       await deleteProduct(id);
-      if (refresh) await refresh();
+      refresh();
     } catch (error: unknown) {
       console.error("Delete Error:", error);
       const message = error instanceof Error ? error.message : String(error || "Onbekende fout");
@@ -90,7 +81,7 @@ const AdminProductManager = ({ user }: AdminProductManagerProps) => {
     setActionLoading(true);
     try {
       handleCancel();
-      if (refresh) await refresh();
+      refresh();
     } catch (error: unknown) {
       console.error("Save Error:", error);
       const message = error instanceof Error ? error.message : String(error || "Onbekende fout");

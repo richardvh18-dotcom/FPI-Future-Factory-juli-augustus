@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect } from "react";
 import { 
   BookOpen, 
@@ -20,11 +20,39 @@ import {
 } from "lucide-react";
 import { aiService } from "../../services/aiService";
 
+type FileDetail = {
+  title: string;
+  desc: string;
+  tags: string[];
+};
+
+type TreeNodeData = {
+  label: string;
+  icon?: React.ReactNode;
+  children: Array<TreeNodeData | string>;
+};
+
+type TreeNodeProps = {
+  node: TreeNodeData | string;
+  path?: string;
+  level?: number;
+  onSelect: (path: string) => void;
+  selectedPath: string;
+};
+
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message?: unknown }).message || "onbekende fout");
+  }
+  return String(err || "onbekende fout");
+};
+
 /**
  * UITGEBREIDE TECHNISCHE DOCUMENTATIE
  * Deze database bevat de uitleg voor elk bestand in het systeem.
  */
-const fileDetails = {
+const fileDetails: Record<string, FileDetail> = {
   // CONFIGURATIE
   "src/config/dbPaths.js": {
     title: "Database Path Manager",
@@ -149,7 +177,7 @@ const fileDetails = {
  * DE VOLLEDIGE PROJECTBOOM
  * Gebaseerd op de 5e405e21 snapshot.
  */
-const projectStructure = [
+const projectStructure: TreeNodeData[] = [
   {
     label: "Config & Core",
     icon: <Shield className="w-4 h-4 text-red-500" />,
@@ -237,11 +265,11 @@ const projectStructure = [
   }
 ];
 
-const TreeNode = ({ node, path = "", level = 0, onSelect, selectedPath }) => {
+const TreeNode = ({ node, path = "", level = 0, onSelect, selectedPath }: TreeNodeProps) => {
   const [open, setOpen] = useState(level === 0 || level === 1);
-  const isDir = typeof node === "object" && node.children;
-  const label = node.label || node;
-  const fullPath = path ? (node.label ? `${path}/${label}` : label) : label;
+  const isDir = typeof node === "object" && "children" in node;
+  const label = typeof node === "string" ? node : node.label;
+  const fullPath = path ? (typeof node === "string" ? label : `${path}/${label}`) : label;
   const isSelected = selectedPath === fullPath;
 
   return (
@@ -262,7 +290,7 @@ const TreeNode = ({ node, path = "", level = 0, onSelect, selectedPath }) => {
           </div>
         )}
         
-        {isDir && node.icon && <span className="mr-2">{node.icon}</span>}
+        {isDir && typeof node !== "string" && node.icon && <span className="mr-2">{node.icon}</span>}
         
         <span className={`text-sm ${isDir ? "font-bold text-gray-700" : "text-gray-600"}`}>
           {label.split('/').pop()}
@@ -271,7 +299,7 @@ const TreeNode = ({ node, path = "", level = 0, onSelect, selectedPath }) => {
       
       {isDir && open && (
         <div className="border-l border-gray-200 ml-3 mt-1 mb-2">
-          {node.children.map((child, i) => (
+          {typeof node !== "string" && node.children.map((child: TreeNodeData | string, i: number) => (
             <TreeNode 
               key={i} 
               node={child} 
@@ -288,11 +316,11 @@ const TreeNode = ({ node, path = "", level = 0, onSelect, selectedPath }) => {
 };
 
 const ProjectStructureExpertView = () => {
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFile, setSelectedFile] = useState("");
   const [aiExplanation, setAiExplanation] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isAiConfigured, setIsAiConfigured] = useState(false);
-  const detail = fileDetails[selectedFile] || null;
+  const detail = selectedFile ? (fileDetails[selectedFile] || null) : null;
 
   useEffect(() => {
     setAiExplanation("");
@@ -314,7 +342,7 @@ const ProjectStructureExpertView = () => {
       setAiExplanation(response);
     } catch (error) {
       console.error("AI Error:", error);
-      if (String(error?.message || "").toLowerCase().includes('key')) {
+      if (getErrorMessage(error).toLowerCase().includes('key')) {
         setAiExplanation("Configuratie fout: backend AI sleutel ontbreekt of is ongeldig. Controleer Firebase Functions config of environment variables op de server.");
       } else {
           setAiExplanation("Kon geen uitleg genereren. Controleer de console voor foutmeldingen.");
@@ -393,7 +421,7 @@ const ProjectStructureExpertView = () => {
                         <Layers className="w-3 h-3 mr-1" /> Systeem Tags
                       </h4>
                       <div className="flex flex-wrap gap-2">
-                        {detail.tags.map(tag => (
+                        {detail.tags.map((tag: string) => (
                           <span key={tag} className="px-3 py-1 bg-white text-blue-600 text-[10px] font-black rounded-full border-2 border-blue-50 shadow-sm uppercase tracking-tighter">
                             #{tag}
                           </span>

@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React, { useState, useMemo } from 'react';
 import { X, AlertTriangle, Clock, Users, Filter, Plus, Minus } from 'lucide-react';
 import { getWeek } from 'date-fns';
@@ -40,6 +41,21 @@ type OccupancyItem = {
   date?: string;
   departmentId?: string;
   hoursWorked?: string | number;
+};
+
+const getCurrentRotationShift = (
+  rotationSchedule: RotationSchedule | undefined,
+  currentWeek: number
+): string | null => {
+  if (!rotationSchedule?.enabled) return null;
+  const rotationShifts = rotationSchedule.shifts;
+  if (!rotationShifts?.length) return null;
+  const startWeekNum = rotationSchedule.startWeek || 1;
+  const weeksSinceStart = currentWeek - startWeekNum;
+  const shiftIndex =
+    ((weeksSinceStart % rotationShifts.length) + rotationShifts.length) %
+    rotationShifts.length;
+  return rotationShifts[shiftIndex] || null;
 };
 
 type AdvancedOperatorAssignModalProps = {
@@ -95,13 +111,8 @@ const AdvancedOperatorAssignModal = ({
       
       // Shift filter
       if (selectedShift !== 'all') {
-        // Bereken actuele shift voor persoon met rotatie
-        if (p.rotationSchedule?.enabled && p.rotationSchedule.shifts?.length > 0) {
-          const startWeekNum = p.rotationSchedule.startWeek || 1;
-          const rotationShifts = p.rotationSchedule.shifts;
-          const weeksSinceStart = currentWeek - startWeekNum;
-          const shiftIndex = ((weeksSinceStart % rotationShifts.length) + rotationShifts.length) % rotationShifts.length;
-          const currentShiftId = rotationShifts[shiftIndex];
+        const currentShiftId = getCurrentRotationShift(p.rotationSchedule, currentWeek);
+        if (currentShiftId) {
           return currentShiftId === selectedShift;
         }
         // Vaste shift
@@ -114,7 +125,7 @@ const AdvancedOperatorAssignModal = ({
 
   // Check of persoon al ergens is toegewezen
   const getExistingAssignments = (person: PersonnelItem | null) => {
-    if (!person || !occupancy) return [];
+    if (!person || !occupancy || !department?.id) return [];
     return occupancy.filter(o => 
       o.operatorNumber === person.employeeNumber &&
       o.date === selectedDate &&
@@ -126,25 +137,19 @@ const AdvancedOperatorAssignModal = ({
   const getAvailableHours = (person: PersonnelItem | null) => {
     if (!person) return 0;
     const existing = getExistingAssignments(person);
-    const totalUsed = existing.reduce((sum, o) => sum + (parseFloat(o.hoursWorked) || 0), 0);
+    const totalUsed = existing.reduce((sum, o) => sum + (Number.parseFloat(String(o.hoursWorked || 0)) || 0), 0);
     
     // Bereken max uren op basis van shift
     let maxHours = 8.0;
     if (person.rotationSchedule?.enabled && shifts) {
+      const currentRotationShift = getCurrentRotationShift(person.rotationSchedule, currentWeek);
       const shift = shifts.find((s) => {
-        if (person.rotationSchedule.shifts?.length > 0) {
-          const startWeekNum = person.rotationSchedule.startWeek || 1;
-          const rotationShifts = person.rotationSchedule.shifts;
-          const weeksSinceStart = currentWeek - startWeekNum;
-          const shiftIndex = ((weeksSinceStart % rotationShifts.length) + rotationShifts.length) % rotationShifts.length;
-          return rotationShifts[shiftIndex] === s.id;
-        }
-        return false;
+        return Boolean(currentRotationShift) && currentRotationShift === s.id;
       });
       if (shift?.start && shift?.end) {
         const start = new Date(`2000-01-01T${shift.start}`);
         const end = new Date(`2000-01-01T${shift.end}`);
-        let diff = (end - start) / (1000 * 60 * 60);
+        let diff = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
         if (diff < 0) diff += 24;
         const isPloeg = shift.id !== 'DAGDIENST' && shift.id !== undefined;
         const deduction = isPloeg ? 0 : 0.75;

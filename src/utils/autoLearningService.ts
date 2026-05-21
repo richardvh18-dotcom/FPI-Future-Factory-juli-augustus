@@ -6,7 +6,7 @@
 
 import { collection, collectionGroup, query, where, getDocs } from "firebase/firestore";
 import { db } from "../config/firebase";
-import { PATHS } from "../config/dbPaths";
+import { PATHS, getPathString } from "../config/dbPaths";
 import { calculateDuration } from "./efficiencyCalculator";
 import i18n from "../i18n";
 import { updateProductionStandard } from "../services/planningSecurityService";
@@ -96,7 +96,7 @@ export const analyzeAndUpdateStandards = async (options: AutoLearningOptions = {
 
   try {
     // Haal alle standaard tijden op
-    const standardsSnapshot = await getDocs(collection(db, ...PATHS.PRODUCTION_STANDARDS));
+    const standardsSnapshot = await getDocs(collection(db, getPathString(PATHS.PRODUCTION_STANDARDS)));
     const standards = standardsSnapshot.docs
       .map((doc) => ({ id: doc.id, ...(doc.data() as Record<string, unknown>) }) as StandardRecord)
       .filter((record) => typeof record.itemCode === "string" && typeof record.machine === "string");
@@ -122,7 +122,7 @@ export const analyzeAndUpdateStandards = async (options: AutoLearningOptions = {
         // Eerst checken we de oude/platte structuur
         try {
           const trackedQuery = query(
-            collection(db, ...PATHS.TRACKING),
+            collection(db, getPathString(PATHS.TRACKING)),
             where("item", "==", standard.itemCode as string),
             where("originMachine", "==", standard.machine as string),
             where("status", "==", "completed")
@@ -166,8 +166,8 @@ export const analyzeAndUpdateStandards = async (options: AutoLearningOptions = {
         // Bereken werkelijke tijden
         const actualTimes = validProducts.map((p) => {
           const duration = calculateDuration(
-            p.timestamps.station_start,
-            p.timestamps.completed || p.timestamps.finished
+            p.timestamps?.station_start as any,
+            (p.timestamps?.completed || p.timestamps?.finished) as any
           );
           return duration;
         }).filter((t) => t > 0);

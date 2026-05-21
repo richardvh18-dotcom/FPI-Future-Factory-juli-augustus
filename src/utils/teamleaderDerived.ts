@@ -28,10 +28,11 @@ const toValidDate = (value: DateValueLike): Date | null => {
   if (!value) return null;
   if (value instanceof Date) return Number.isFinite(value.getTime()) ? value : null;
 
-  if (typeof value === "object" && value !== null && "toDate" in value) {
-    const dateFactory = (value as { toDate?: () => Date }).toDate;
-    if (typeof dateFactory === "function") {
-      const parsed = dateFactory();
+  if (typeof value === "object" && value !== null) {
+    const withToDate = value as { toDate?: () => Date };
+    if (typeof withToDate.toDate === "function") {
+      // Belangrijk: roep als objectmethode aan zodat `this` behouden blijft.
+      const parsed = withToDate.toDate();
       return parsed instanceof Date && Number.isFinite(parsed.getTime()) ? parsed : null;
     }
   }
@@ -45,10 +46,11 @@ const toValidDate = (value: DateValueLike): Date | null => {
 };
 
 const toMillisSafe = (value: DateValueLike): number => {
-  if (typeof value === "object" && value !== null && "toMillis" in value) {
-    const millisFactory = (value as { toMillis?: () => number }).toMillis;
-    if (typeof millisFactory === "function") {
-      const millis = millisFactory();
+  if (typeof value === "object" && value !== null) {
+    const withToMillis = value as { toMillis?: () => number };
+    if (typeof withToMillis.toMillis === "function") {
+      // Zelfde context-probleem als bij toDate voorkomen.
+      const millis = withToMillis.toMillis();
       return Number.isFinite(millis) ? millis : 0;
     }
   }

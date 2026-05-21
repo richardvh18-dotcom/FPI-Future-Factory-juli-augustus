@@ -3,14 +3,33 @@ import { Loader2, X, ImageIcon } from "lucide-react";
 import { collection, query, where, limit, getDocs } from "firebase/firestore";
 import { db } from "../../../config/firebase";
 
+type OperatorLinkOrder = {
+  id?: string;
+  orderId?: string;
+};
+
+type CatalogProduct = {
+  id: string;
+  name?: string;
+  articleCode?: string;
+  imageUrl?: string;
+  [key: string]: unknown;
+};
+
+type OperatorLinkModalProps = {
+  order: OperatorLinkOrder;
+  onClose: () => void;
+  onLinkProduct: (orderId: string, product: CatalogProduct) => void | Promise<void>;
+};
+
 const getAppId = () => {
   if (typeof window !== "undefined" && window.__app_id) return window.__app_id;
   return "fittings-app-v1";
 };
 
-const OperatorLinkModal = ({ order, onClose, onLinkProduct }) => {
+const OperatorLinkModal = ({ order, onClose, onLinkProduct }: OperatorLinkModalProps) => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
+  const [searchResults, setSearchResults] = useState<CatalogProduct[]>([]);
   const [searching, setSearching] = useState(false);
 
   const searchCatalog = async () => {
@@ -21,7 +40,7 @@ const OperatorLinkModal = ({ order, onClose, onLinkProduct }) => {
       const productsRef = collection(db, "artifacts", appId, "public", "data", "products");
       const q = query(productsRef, where("name", ">=", searchQuery), where("name", "<=", searchQuery + "\uf8ff"), limit(10));
       const snapshot = await getDocs(q);
-      setSearchResults(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setSearchResults(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })));
     } catch (err) {
       console.error("Zoekfout:", err);
     } finally {
@@ -29,8 +48,8 @@ const OperatorLinkModal = ({ order, onClose, onLinkProduct }) => {
     }
   };
 
-  const handleSave = (product) => {
-    onLinkProduct(order.id, product);
+  const handleSave = (product: CatalogProduct) => {
+    onLinkProduct(order.id || order.orderId || "", product);
     onClose();
   };
 

@@ -7,6 +7,8 @@ const getPixelsPerMm = (printerDpi = 203) => {
 
 interface LabelDefinition {
   width?: number;
+  height?: number;
+  elements?: unknown[];
   [key: string]: unknown;
 }
 
@@ -56,9 +58,15 @@ const AutoScaledLabelPreview = ({
 
   if (!label) return null;
 
+  const normalizedLabel = {
+    ...label,
+    width: Number(label.width) || 1,
+    height: Number(label.height) || 1,
+  };
+
   return (
     <div ref={containerRef} className={`w-full flex justify-center items-center overflow-hidden ${className}`}>
-      <LabelVisualPreview label={label} data={data} zoom={scale} printerDpi={printerDpi} />
+      <LabelVisualPreview label={normalizedLabel as any} data={data} zoom={scale} printerDpi={printerDpi} />
     </div>
   );
 };

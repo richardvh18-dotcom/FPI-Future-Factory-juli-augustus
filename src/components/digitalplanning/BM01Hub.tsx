@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { FileText, Layers, Calendar, History, Package, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, Printer, X, Download, ScanBarcode, Keyboard, AlertTriangle } from "lucide-react";
@@ -11,16 +11,109 @@ import ProductDossierModal from "./modals/ProductDossierModal";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { collection, query, where, getDocs, onSnapshot, limit } from "firebase/firestore";
 import { db, logActivity } from "../../config/firebase";
-import { PATHS, getArchiveItemsPath } from "../../config/dbPaths";
+import { PATHS, getArchiveItemsPath, getPathString } from "../../config/dbPaths";
 import { rejectTrackedProductFinal, completeTrackedProduct, tempRejectTrackedProduct, appendQcNote } from "../../services/planningSecurityService";
-import { getStartedCounterField } from "../../utils/hubHelpers.tsx";
-import InternalQrImage from "../../utils/InternalQrImage.tsx";
+import { getStartedCounterField } from "../../utils/hubHelpers";
+import InternalQrImage from "../../utils/InternalQrImage";
 import PlanningSidebar from "./PlanningSidebar";
 import { useNotifications } from '../../contexts/NotificationContext';
 
+type TimestampLike = {
+    toMillis?: () => number;
+    seconds?: number;
+};
+
+type OrderRecord = {
+    id?: string;
+    orderId?: string;
+    status?: string;
+    item?: string;
+    itemDescription?: string;
+    lnDeliveredQty?: string | number | null;
+    deliveredQty?: string | number | null;
+    quantityDelivered?: string | number | null;
+    inspectionApprovedQty?: string | number | null;
+    produced?: string | number | null;
+    [key: string]: unknown;
+};
+
+type HistoryEntry = {
+    details?: string;
+    station?: string;
+    action?: string;
+    timestamp?: TimestampLike | string | number | Date | null;
+    time?: TimestampLike | string | number | Date | null;
+    [key: string]: unknown;
+};
+
+type ProductRecord = {
+    id?: string;
+    sourcePath?: string;
+    __docPath?: string;
+    lotNumber?: string;
+    activeLot?: string;
+    currentStation?: string;
+    currentStep?: string;
+    status?: string;
+    orderId?: string;
+    machine?: string;
+    originMachine?: string;
+    item?: string;
+    itemDescription?: string;
+    itemCode?: string;
+    updatedAt?: TimestampLike | string | number | Date | null;
+    createdAt?: TimestampLike | string | number | Date | null;
+    lastStation?: string;
+    timestamps?: Record<string, TimestampLike | string | number | Date | null | undefined>;
+    history?: HistoryEntry[];
+    inspection?: { status?: string };
+    qcNotes?: Array<{ text: string; timestamp: string; user: string }>;
+    [key: string]: unknown;
+};
+
+type SidebarEntry = {
+    id?: string;
+    orderId?: string;
+    status?: string;
+    item?: string;
+    itemDescription?: string;
+    machine?: string;
+    originMachine?: string;
+    isArchivedOrder?: boolean;
+    archived?: boolean;
+    archivedCandidates?: ProductRecord[];
+    lotNumbers?: string[];
+    lotNumbersText?: string;
+    lotNumber?: string;
+    timestamps?: Record<string, TimestampLike | string | number | Date | null | undefined>;
+    updatedAt?: TimestampLike | string | number | Date | null;
+    qcNotes?: Array<{ text: string; timestamp: string; user: string }>;
+    [key: string]: unknown;
+};
+
+type FinishPayload = {
+    note?: string;
+    [key: string]: unknown;
+};
+
+type DeliveryMismatch = {
+    orderId: string;
+    item: string;
+    deliveredQty: number;
+    inspectionApprovedQty: number;
+    delta: number;
+};
+
+type BM01HubProps = {
+    onBack?: () => void;
+    orders?: OrderRecord[];
+    products?: ProductRecord[];
+    onMoveLot?: (lotNumber: string, station: string) => void;
+};
+
 const QR_CODE_OK_CONFIRMATION = 'FPI-ACTION-APPROVE-OK';
 
-const escapeHtml = (value) =>
+const escapeHtml = (value: unknown) =>
     String(value || "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
@@ -28,23 +121,43 @@ const escapeHtml = (value) =>
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
 
-const resolveProductIdentifier = (product) =>
+const resolveProductIdentifier = (product: ProductRecord | null | undefined) =>
     String(product?.sourcePath || product?.__docPath || product?.id || product?.lotNumber || "").trim();
 
-const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
+const archiveColPath = (year: number) => collection(db, getPathString(getArchiveItemsPath(year)));
+
+const toMillisFromMixed = (value: unknown): number => {
+    if (!value) return 0;
+    if (typeof value === "object" && value !== null && "toMillis" in value && typeof value.toMillis === "function") return value.toMillis();
+    if (typeof value === "object" && value !== null && "seconds" in value && typeof value.seconds === "number") return value.seconds * 1000;
+    if (value instanceof Date) return value.getTime();
+    if (typeof value !== "string" && typeof value !== "number") return 0;
+    const parsed = new Date(value).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const toDateFromMixed = (value: unknown): Date | null => {
+    const millis = toMillisFromMixed(value);
+    if (!millis) return null;
+    const date = new Date(millis);
+    return isValid(date) ? date : null;
+};
+
+const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: BM01HubProps) => {
+    void onBack;
     const { t } = useTranslation();
     const { user } = useAdminAuth();
   // AANGEPAST: Standaard view op 'inspectie' (Aan te bieden)
   const { notify } = useNotifications();
   const [activeTab, setActiveTab] = useState("inspectie");
-    const [selectedOrderId, setSelectedOrderId] = useState(null);
-    const [selectedSidebarEntry, setSelectedSidebarEntry] = useState(null);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [viewingDossier, setViewingDossier] = useState(null);
+        const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+        const [selectedSidebarEntry, setSelectedSidebarEntry] = useState<SidebarEntry | null>(null);
+    const [selectedProduct, setSelectedProduct] = useState<ProductRecord | null>(null);
+    const [viewingDossier, setViewingDossier] = useState<(ProductRecord & SidebarEntry) | null>(null);
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [archivedProducts, setArchivedProducts] = useState([]);
+    const [archivedProducts, setArchivedProducts] = useState<ProductRecord[]>([]);
   const [viewMode, setViewMode] = useState("day"); // 'day' or 'week'
     const [deliveryMismatchFilter, setDeliveryMismatchFilter] = useState("all"); // all | over | under
         const [showDeliveryMismatch, setShowDeliveryMismatch] = useState(false);
@@ -52,8 +165,8 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
   const [scanInput, setScanInput] = useState("");
   const [scannerMode, setScannerMode] = useState(true);
     const [isNahardingBatchProcessing, setIsNahardingBatchProcessing] = useState(false);
-  const scanInputRef = useRef(null);
-  const selectedProductRef = useRef(null); // Ref voor race-condition preventie
+    const scanInputRef = useRef<HTMLInputElement | null>(null);
+    const selectedProductRef = useRef<ProductRecord | null>(null); // Ref voor race-condition preventie
 
     const focusScanInput = useCallback(() => {
         const input = scanInputRef.current;
@@ -83,10 +196,10 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         // Focus direct bij laden of als scannerMode aan gaat
         scheduleScanFocus();
         // Ook bij click buiten input, behalve op interactieve elementen
-        const handleClick = (e) => {
+        const handleClick = (e: MouseEvent) => {
             const target = e?.target;
-            if (!target) return;
-            if (target.closest?.('input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-scan-ignore]')) return;
+            if (!(target instanceof HTMLElement)) return;
+            if (target.closest('input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-scan-ignore]')) return;
             if (activeTab === "inspectie" && !showFinishModal && !viewingDossier && !selectedOrderId) {
                 scheduleScanFocus();
             }
@@ -109,7 +222,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         scheduleScanFocus();
     }, [scheduleScanFocus]);
 
-    const handleScan = async (e) => {
+    const handleScan = async (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             const code = scanInput.trim().toUpperCase();
             if (!code) return;
@@ -121,12 +234,12 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
             // Goedkeuren met QR-code (OK QR)
             if (code === QR_CODE_OK_CONFIRMATION && selectedForAction) {
                 setScanInput("");
-                await handlePostProcessingFinish('completed', { note: 'Goedgekeurd via QR Scan' }, selectedForAction);
+                await handlePostProcessingFinish('completed', { note: 'Goedgekeurd via QR Scan' }, selectedForAction as ProductRecord);
                 return;
             }
 
             // Zoek product op lotnummer
-            const found = bm01Products.find(i => (i.lotNumber || "").toUpperCase() === code);
+            const found = bm01Products.find((i: ProductRecord) => (i.lotNumber || "").toUpperCase() === code);
             if (found) {
                 setSelectedProduct(found);
                 setShowFinishModal(true); // Direct popup openen
@@ -146,17 +259,17 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     };
 
     const planningOrders = useMemo(() => {
-        return (orders || []).filter(o => o.status !== "completed" && o.status !== "cancelled");
+        return (orders || []).filter((o: OrderRecord) => o.status !== "completed" && o.status !== "cancelled");
     }, [orders]);
 
     const deliveryInspectionMismatches = useMemo(() => {
-        const toFinite = (value) => {
+        const toFinite = (value: unknown) => {
             const num = Number(value);
             return Number.isFinite(num) ? num : null;
         };
 
         return planningOrders
-            .map((order) => {
+            .map((order: OrderRecord): DeliveryMismatch | null => {
                 const deliveredQty =
                     toFinite(order?.lnDeliveredQty) ??
                     toFinite(order?.deliveredQty) ??
@@ -166,19 +279,20 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                 if (!Number.isFinite(deliveredQty)) return null;
 
                 const inspectionApprovedQty = toFinite(order?.inspectionApprovedQty) ?? toFinite(order?.produced) ?? 0;
-                const delta = deliveredQty - inspectionApprovedQty;
+                const safeDeliveredQty = deliveredQty ?? 0;
+                const delta = safeDeliveredQty - inspectionApprovedQty;
                 if (delta === 0) return null;
 
                 return {
                     orderId: order?.orderId || order?.id || "-",
                     item: order?.item || order?.itemDescription || "-",
-                    deliveredQty,
+                    deliveredQty: safeDeliveredQty,
                     inspectionApprovedQty,
                     delta,
                 };
             })
-            .filter(Boolean)
-            .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+                .filter((entry): entry is DeliveryMismatch => Boolean(entry))
+                .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
     }, [planningOrders]);
 
     const deliveryInspectionOverMismatches = useMemo(() => {
@@ -201,7 +315,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
 
     const selectedOrder = useMemo(() => {
         if (!selectedOrderId) return null;
-        return planningOrders.find((o) => o.id === selectedOrderId || o.orderId === selectedOrderId);
+        return planningOrders.find((o: OrderRecord) => o.id === selectedOrderId || o.orderId === selectedOrderId) || null;
     }, [planningOrders, selectedOrderId]);
 
     const selectedDetailEntry = useMemo(() => {
@@ -216,7 +330,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         return selectedOrderId;
     }, [selectedSidebarEntry, selectedOrderId]);
 
-    const handleSidebarSelect = async (entry) => {
+    const handleSidebarSelect = async (entry: SidebarEntry | null) => {
         if (!entry) {
             setSelectedOrderId(null);
             setSelectedSidebarEntry(null);
@@ -234,27 +348,17 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                 const years = [baseYear, baseYear - 1, baseYear - 2, baseYear - 3];
                 const snapshots = await Promise.all(
                     years.map((year) =>
-                        getDocs(
-                            query(
-                                collection(db, ...getArchiveItemsPath(year)),
-                                where("orderId", "==", entryOrderId),
-                                limit(100)
-                            )
-                        )
+                        getDocs(query(archiveColPath(year), where("orderId", "==", entryOrderId), limit(100)))
                     )
                 );
 
-                const candidates = snapshots.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-                const best = candidates
+                const candidates: ProductRecord[] = snapshots.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ProductRecord, 'id'>) })));
+                const best: ProductRecord | null = candidates
                     .sort((a, b) => {
-                        const ta = a?.timestamps?.finished?.toMillis
-                            ? a.timestamps.finished.toMillis()
-                            : new Date(a?.timestamps?.finished || a?.updatedAt || 0).getTime();
-                        const tb = b?.timestamps?.finished?.toMillis
-                            ? b.timestamps.finished.toMillis()
-                            : new Date(b?.timestamps?.finished || b?.updatedAt || 0).getTime();
+                        const ta = toMillisFromMixed(a?.timestamps?.finished || a?.updatedAt || 0);
+                        const tb = toMillisFromMixed(b?.timestamps?.finished || b?.updatedAt || 0);
                         return tb - ta;
-                    })[0];
+                    })[0] || null;
 
                 if (best) {
                     const lotNumbers = Array.from(
@@ -294,7 +398,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         setSelectedOrderId(entry.id || entryOrderId);
     };
 
-    const handleOpenArchivedLotDossier = async (lotNumber) => {
+    const handleOpenArchivedLotDossier = async (lotNumber: string) => {
         if (!selectedSidebarEntry?.isArchivedOrder) return;
 
         const lot = String(lotNumber || "").trim();
@@ -302,7 +406,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
             ? selectedSidebarEntry.archivedCandidates
             : [];
 
-        let best = null;
+        let best: ProductRecord | null = null;
 
         if (localCandidates.length > 0) {
             const scoped = lot
@@ -310,12 +414,8 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                 : localCandidates;
 
             best = scoped.sort((a, b) => {
-                const ta = a?.timestamps?.finished?.toMillis
-                    ? a.timestamps.finished.toMillis()
-                    : new Date(a?.timestamps?.finished || a?.updatedAt || 0).getTime();
-                const tb = b?.timestamps?.finished?.toMillis
-                    ? b.timestamps.finished.toMillis()
-                    : new Date(b?.timestamps?.finished || b?.updatedAt || 0).getTime();
+                const ta = toMillisFromMixed(a?.timestamps?.finished || a?.updatedAt || 0);
+                const tb = toMillisFromMixed(b?.timestamps?.finished || b?.updatedAt || 0);
                 return tb - ta;
             })[0] || null;
         }
@@ -327,30 +427,20 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                 const years = [baseYear, baseYear - 1, baseYear - 2, baseYear - 3];
                 const snaps = await Promise.all(
                     years.map((year) =>
-                        getDocs(
-                            query(
-                                collection(db, ...getArchiveItemsPath(year)),
-                                where("orderId", "==", orderId),
-                                limit(150)
-                            )
-                        )
+                        getDocs(query(archiveColPath(year), where("orderId", "==", orderId), limit(150)))
                     )
                 );
 
-                const candidates = snaps
-                    .flatMap((s) => s.docs.map((d) => ({ id: d.id, ...d.data() })))
-                    .filter((c) => {
+                const candidates: ProductRecord[] = snaps
+                    .flatMap((s) => s.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ProductRecord, 'id'>) })))
+                    .filter((c: ProductRecord) => {
                         if (!lot) return true;
                         return String(c.lotNumber || c.activeLot || "").trim() === lot;
                     });
 
                 best = candidates.sort((a, b) => {
-                    const ta = a?.timestamps?.finished?.toMillis
-                        ? a.timestamps.finished.toMillis()
-                        : new Date(a?.timestamps?.finished || a?.updatedAt || 0).getTime();
-                    const tb = b?.timestamps?.finished?.toMillis
-                        ? b.timestamps.finished.toMillis()
-                        : new Date(b?.timestamps?.finished || b?.updatedAt || 0).getTime();
+                        const ta = toMillisFromMixed(a?.timestamps?.finished || a?.updatedAt || 0);
+                        const tb = toMillisFromMixed(b?.timestamps?.finished || b?.updatedAt || 0);
                     return tb - ta;
                 })[0] || null;
             } catch (err) {
@@ -379,7 +469,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
   // Filter producten specifiek voor BM01 (Aan te bieden tab)
   // Dit zorgt ervoor dat items met stap 'Eindinspectie' of station 'BM01' correct worden doorgegeven
   const bm01Products = useMemo(() => {
-    return products.filter(p => {
+        return products.filter((p: ProductRecord) => {
         const station = (p.currentStation || "").toUpperCase().replace(/\s/g, "");
         const step = (p.currentStep || "").toUpperCase();
         const status = (p.status || "").toUpperCase();
@@ -394,15 +484,9 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     });
   }, [products]);
 
-    const toMillisSafe = (value) => {
-        if (!value) return 0;
-        if (typeof value?.toMillis === "function") return value.toMillis();
-        if (typeof value?.seconds === "number") return value.seconds * 1000;
-        const parsed = new Date(value).getTime();
-        return Number.isFinite(parsed) ? parsed : 0;
-    };
+    const toMillisSafe = (value: unknown) => toMillisFromMixed(value);
 
-    const getNahardingOfferedMillis = (item) => {
+    const getNahardingOfferedMillis = (item: ProductRecord) => {
         const ts = item?.timestamps || {};
         const directTs =
             toMillisSafe(ts.oven_naharding_start)
@@ -454,7 +538,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     };
 
     const nahardingProducts = useMemo(() => {
-        const items = products.filter((p) => {
+        const items = products.filter((p: ProductRecord) => {
             const station = String(p.currentStation || "").toUpperCase().replace(/\s/g, "");
             const step = String(p.currentStep || "").toUpperCase().replace(/\s/g, "");
             const status = String(p.status || "").toUpperCase().trim();
@@ -601,7 +685,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     }
 
     // Luister naar de archief collectie voor de geselecteerde periode
-    const archiveRef = collection(db, ...getArchiveItemsPath(year));
+    const archiveRef = archiveColPath(year);
     const q = query(
         archiveRef,
         where("timestamps.finished", ">=", start),
@@ -609,7 +693,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     );
 
     const unsub = onSnapshot(q, (snap) => {
-        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const items: ProductRecord[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ProductRecord, 'id'>) }));
         setArchivedProducts(items);
     }, (err) => {
         console.error("Fout bij ophalen archief:", err);
@@ -620,7 +704,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
 
   // Specifieke lijst voor de Naharding Print-tegel, inclusief historie/archief van de geselecteerde dag
   const nahardingPrintList = useMemo(() => {
-      const isTargetPeriod = (p) => {
+      const isTargetPeriod = (p: ProductRecord) => {
           const ts = getNahardingOfferedMillis(p);
           if (!ts) return false;
           const date = new Date(ts);
@@ -632,11 +716,11 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
               return isWithinInterval(date, { start, end });
           }
       };
-      const activeMatches = products.filter(p => isTargetPeriod(p));
-      const archivedMatches = archivedProducts.filter(p => isTargetPeriod(p));
-      const combined = [...activeMatches];
-      archivedMatches.forEach(archived => {
-          if (!combined.some(p => p.id === archived.id)) combined.push(archived);
+      const activeMatches = products.filter((p: ProductRecord) => isTargetPeriod(p));
+      const archivedMatches = archivedProducts.filter((p: ProductRecord) => isTargetPeriod(p));
+      const combined: ProductRecord[] = [...activeMatches];
+      archivedMatches.forEach((archived: ProductRecord) => {
+          if (!combined.some((p: ProductRecord) => p.id === archived.id)) combined.push(archived);
       });
       return combined.sort((a, b) => {
           const orderA = String(a.orderId || "").trim();
@@ -652,7 +736,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
   // Combineert actieve producten (die nog niet gearchiveerd zijn) en gearchiveerde producten
   const completedProducts = useMemo(() => {
     // Voor de 'Gereed' tab (Completed)
-    const activeFinished = products.filter(p => {
+        const activeFinished: ProductRecord[] = products.filter((p: ProductRecord) => {
         const station = (p.currentStation || "").toUpperCase().replace(/\s/g, "");
         const status = (p.status || "").toUpperCase();
         
@@ -661,12 +745,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         if (!isFinished) return false;
 
         // Bepaal datum van afronding
-        let finishDate = null;
-        if (p.timestamps?.finished) {
-            finishDate = p.timestamps.finished.toDate ? p.timestamps.finished.toDate() : new Date(p.timestamps.finished);
-        } else if (p.updatedAt) {
-            finishDate = p.updatedAt.toDate ? p.updatedAt.toDate() : new Date(p.updatedAt);
-        }
+        const finishDate = toDateFromMixed(p.timestamps?.finished || p.updatedAt);
 
         if (!finishDate) return false;
 
@@ -680,9 +759,9 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
     });
 
     // Combineer met gearchiveerde producten (voorkom dubbelen op ID)
-    const combined = [...activeFinished];
-    archivedProducts.forEach(archived => {
-        if (!combined.some(p => p.id === archived.id)) {
+    const combined: ProductRecord[] = [...activeFinished];
+    archivedProducts.forEach((archived: ProductRecord) => {
+        if (!combined.some((p: ProductRecord) => p.id === archived.id)) {
             combined.push(archived);
         }
     });
@@ -693,13 +772,13 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         if (orderA !== orderB) {
             return orderA.localeCompare(orderB);
         }
-        const tA = a.timestamps?.finished?.seconds || a.updatedAt?.seconds || 0;
-        const tB = b.timestamps?.finished?.seconds || b.updatedAt?.seconds || 0;
+                const tA = toMillisFromMixed(a.timestamps?.finished || a.updatedAt || 0);
+                const tB = toMillisFromMixed(b.timestamps?.finished || b.updatedAt || 0);
         return tB - tA;
     });
   }, [products, archivedProducts, selectedDate, viewMode]);
 
-  const handleItemClick = (item) => {
+    const handleItemClick = (item: ProductRecord) => {
     setSelectedProduct(item); // Selecteer item
     setShowFinishModal(true); // Open modal voor handmatige actie
   };
@@ -710,7 +789,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         setTimeout(scheduleScanFocus, 50);
   };
 
-  const handlePostProcessingFinish = async (status, data, productOverride = null) => {
+    const handlePostProcessingFinish = async (status: string, data: FinishPayload, productOverride: ProductRecord | null = null) => {
     const product = productOverride || selectedProduct;
     if (!product) return;
 
@@ -773,9 +852,9 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
       );
             notify(`Lot ${product.lotNumber || productId} is tijdelijk afgekeurd.`);
     if (resolveProductIdentifier(selectedProductRef.current) === productId) handleCloseModal();
-    } catch (error) {
+        } catch (error: unknown) {
       console.error("Fout bij afronden:", error);
-            notify(`Afronden mislukt: ${error?.message || "onbekende fout"}`);
+            notify(`Afronden mislukt: ${error instanceof Error ? error.message : "onbekende fout"}`);
     }
   };
 
@@ -783,8 +862,8 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
       if (completedProducts.length === 0) return;
       
       const headers = ["Order", "Lot", "Item", "Item Code", "Gereed Datum", "Tijd"];
-      const rows = completedProducts.map(p => {
-          const date = p.timestamps?.finished?.toDate ? p.timestamps.finished.toDate() : new Date(p.timestamps?.finished || p.updatedAt);
+      const rows = completedProducts.map((p: ProductRecord) => {
+          const date = toDateFromMixed(p.timestamps?.finished || p.updatedAt) || new Date();
           return [
               p.orderId || "",
               p.lotNumber || "",
@@ -809,7 +888,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
 
     const handlePrintQrOverview = async () => {
             // BEPALING LIJST: Als we in NH tab zitten, gebruik de specifieke print lijst voor die dag
-            let listToPrint = activeTab === "naharding_batch" ? nahardingPrintList : completedProducts;
+            let listToPrint: ProductRecord[] = activeTab === "naharding_batch" ? nahardingPrintList : completedProducts;
 
             if (activeTab === "naharding_batch") {
                 listToPrint = [...listToPrint].sort((a, b) => {
@@ -823,7 +902,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
 
             try {
                     const itemsWithQr = await Promise.all(
-                            listToPrint.map(async (item, index) => {
+                            listToPrint.map(async (item: ProductRecord, index: number) => {
                                     const orderId = String(item.orderId || "").trim();
                                     const lotNumber = String(item.lotNumber || "").trim();
                                     const itemName = String(item.item || "").trim();
@@ -836,11 +915,9 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                                             ? await QRCode.toDataURL(lotNumber, { errorCorrectionLevel: "H", margin: 1, width: 220 })
                                             : "";
 
-                                    const finishedAt = item.timestamps?.finished?.toDate
-                                            ? item.timestamps.finished.toDate()
-                                            : (activeTab === "naharding_batch" 
-                                                ? new Date(getNahardingOfferedMillis(item))
-                                                : new Date(item.timestamps?.finished || item.updatedAt || Date.now()));
+                                        const finishedAt = activeTab === "naharding_batch"
+                                            ? new Date(getNahardingOfferedMillis(item))
+                                            : (toDateFromMixed(item.timestamps?.finished || item.updatedAt || Date.now()) || new Date());
 
                                     return {
                                             index: index + 1,
@@ -1009,15 +1086,13 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
             }
     };
 
-  const handleAddQcNote = async (noteText) => {
+    const handleAddQcNote = async (noteText: string) => {
       if (!viewingDossier || !noteText.trim()) return;
       
       try {
           const product = viewingDossier;
           const isArchived = archivedProducts.some(p => p.id === product.id);
-          const date = product.timestamps?.finished?.toDate
-            ? product.timestamps.finished.toDate()
-            : new Date(product.timestamps?.finished || product.updatedAt || Date.now());
+                    const date = toDateFromMixed(product.timestamps?.finished || product.updatedAt || Date.now()) || new Date();
           const archiveYear = isArchived && Number.isFinite(date.getFullYear()) ? date.getFullYear() : null;
 
           const noteObj = {
@@ -1040,13 +1115,16 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                     );
           
           // Update lokale state voor directe feedback in de modal
-          setViewingDossier(prev => ({
-              ...prev,
-              qcNotes: [...(prev.qcNotes || []), noteObj]
-          }));
-      } catch (err) {
+          setViewingDossier((prev) => {
+              if (!prev) return prev;
+              return {
+                  ...prev,
+                  qcNotes: [...(prev.qcNotes || []), noteObj],
+              };
+          });
+      } catch (err: unknown) {
           console.error("Fout bij opslaan notitie:", err);
-          notify("Kon rapport niet opslaan: " + err.message);
+          notify("Kon rapport niet opslaan: " + (err instanceof Error ? err.message : String(err)));
       }
   };
 
@@ -1110,7 +1188,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         {activeTab === "planning" ? (
             <div className="h-full flex gap-6 overflow-hidden">
                 <div className={`shrink-0 flex flex-col min-h-0 transition-all duration-300 ${selectedDetailEntry ? 'hidden lg:flex w-[38rem]' : 'w-full lg:w-[38rem]'}`}>
-                    <PlanningSidebar orders={planningOrders} selectedOrderId={selectedSidebarEntryId} onSelect={handleSidebarSelect} />
+                    <PlanningSidebar orders={planningOrders as any[]} selectedOrderId={selectedSidebarEntryId || undefined} onSelect={handleSidebarSelect as any} />
                 </div>
 
                 <div className={`flex-1 bg-white rounded-[40px] border border-slate-200 shadow-sm flex flex-col overflow-hidden ${selectedDetailEntry ? 'flex' : 'hidden lg:flex'}`}>
@@ -1119,7 +1197,6 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                             order={selectedOrder}
                             products={products}
                             onClose={() => { setSelectedOrderId(null); setSelectedSidebarEntry(null); }}
-                            showAllStations={true}
                             onMoveLot={onMoveLot}
                             isManager={true}
                         />
@@ -1168,7 +1245,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                                         <div className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-white border border-slate-200 px-3 py-2">
                                             <span className="text-sm font-bold text-slate-800 break-all">{selectedSidebarEntry.lotNumber || selectedSidebarEntry.lotNumbersText || '-'}</span>
                                             <button
-                                                onClick={() => handleOpenArchivedLotDossier(selectedSidebarEntry.lotNumber)}
+                                                onClick={() => handleOpenArchivedLotDossier(String(selectedSidebarEntry.lotNumber || ""))}
                                                 className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"
                                             >
                                                 Open dossier
@@ -1362,7 +1439,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                                         <p className="text-xs text-slate-500 font-bold uppercase truncate">{item.item}</p>
                                         <div className="flex items-center gap-2 mt-1">
                                             <span className="text-[10px] text-emerald-600 font-bold uppercase">
-                                                Gereedgemeld om {item.timestamps?.finished ? format(item.timestamps.finished.toDate ? item.timestamps.finished.toDate() : new Date(item.timestamps.finished), "HH:mm") : "--:--"}
+                                                Gereedgemeld om {item.timestamps?.finished ? format(toDateFromMixed(item.timestamps.finished) || new Date(), "HH:mm") : "--:--"}
                                             </span>
                                             <button
                                                 onClick={(e) => {
@@ -1584,11 +1661,11 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
         <div className="fixed z-[9999]">
           <ProductDossierModal
               isOpen={true}
-              product={viewingDossier}
+                            product={viewingDossier as React.ComponentProps<typeof ProductDossierModal>["product"]}
               onClose={() => setViewingDossier(null)}
               onAddNote={handleAddQcNote}
-              orders={orders}
-              onMoveLot={onMoveLot}
+                            orders={orders as React.ComponentProps<typeof ProductDossierModal>["orders"]}
+                            onMoveLot={onMoveLot as React.ComponentProps<typeof ProductDossierModal>["onMoveLot"]}
           />
         </div>
       )}
@@ -1697,7 +1774,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                                         <p className="text-sm text-slate-500 font-bold print:hidden">{item.itemCode}</p>
                                     </div>
                                     <div className="text-right shrink-0 ml-1">
-                                        <span className="block text-sm font-bold text-slate-900 print:text-[8px]">{item.timestamps?.finished ? format(item.timestamps.finished.toDate ? item.timestamps.finished.toDate() : new Date(item.timestamps.finished), "HH:mm") : "--:--"}</span>
+                                        <span className="block text-sm font-bold text-slate-900 print:text-[8px]">{item.timestamps?.finished ? format(toDateFromMixed(item.timestamps.finished) || new Date(), "HH:mm") : "--:--"}</span>
                                     </div>
                                 </div>
                                 
@@ -1740,7 +1817,7 @@ const BM01Hub = React.memo(({ orders = [], products = [], onMoveLot }) => {
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {completedProducts.map((item, index) => {
-                                        const date = item.timestamps?.finished?.toDate ? item.timestamps.finished.toDate() : new Date(item.timestamps?.finished || item.updatedAt);
+                                        const date = toDateFromMixed(item.timestamps?.finished || item.updatedAt) || new Date();
                                         return (
                                             <tr key={item.id} className="hover:bg-slate-50">
                                                 <td className="py-3 px-2 font-bold text-slate-400">{index + 1}</td>

@@ -20,8 +20,6 @@ type FactoryConfigDoc = {
   departments?: DepartmentConfig[];
 };
 
-const TeamleaderHubAny = TeamleaderHub as React.ComponentType<any>;
-
 /**
  * TeamleaderSpoolsHub - V2 (Future Factory Path)
  */
@@ -77,7 +75,7 @@ const TeamleaderSpoolsHub = React.memo((props: Record<string, unknown>) => {
   const machineIds = stations.map((s: StationConfig) => s.name).filter(Boolean);
 
   return (
-    <TeamleaderHubAny
+    <TeamleaderHub
       {...props}
       fixedScope="spools"
       departmentName={t('teamleader.spools_productions', 'Spools Producties')}

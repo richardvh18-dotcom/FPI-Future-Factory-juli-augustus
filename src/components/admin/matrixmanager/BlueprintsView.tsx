@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import { useNotifications } from '../../../contexts/NotificationContext';
 import React, { useState, useMemo, useRef } from "react";
 import {
@@ -19,6 +19,36 @@ import {
   Zap,
 } from "lucide-react";
 
+type BlueprintEntry = {
+  fields: string[];
+  [key: string]: unknown;
+};
+
+type LibraryData = {
+  product_names?: string[];
+  connections?: string[];
+  extraCodes?: string[];
+  codes?: string[];
+  borings?: string[];
+  [key: string]: unknown;
+};
+
+type NewBlueprintState = {
+  productType: string;
+  connectionType: string;
+  extraCode: string;
+  boreType: string;
+  fields: string[];
+  angle: string;
+};
+
+type BlueprintsViewProps = {
+  blueprints: Record<string, BlueprintEntry>;
+  setBlueprints: React.Dispatch<React.SetStateAction<Record<string, BlueprintEntry>>>;
+  libraryData?: LibraryData;
+  setHasUnsavedChanges?: (value: boolean) => void;
+};
+
 /**
  * BlueprintsView V2.3: Beheert templates voor Fittings én Boringen.
  * Alle wijzigingen worden via props gesynchroniseerd met de AdminMatrixManager
@@ -29,23 +59,24 @@ const BlueprintsView = ({
   setBlueprints,
   libraryData,
   setHasUnsavedChanges,
-}) => {
+}: BlueprintsViewProps) => {
   const { notify } = useNotifications();
-  const [selectedBlueprintKey, setSelectedBlueprintKey] = useState(null);
-  const [expandedGroups, setExpandedGroups] = useState({ BORINGEN: true });
+  const [selectedBlueprintKey, setSelectedBlueprintKey] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ BORINGEN: true });
   const [searchTerm, setSearchTerm] = useState("");
   const [isNewAnim, setIsNewAnim] = useState(false);
-  const [designMode, setDesignMode] = useState("fitting"); // 'fitting' | 'bore'
+  const [designMode, setDesignMode] = useState<"fitting" | "bore">("fitting"); // 'fitting' | 'bore'
   const [copySourceKey, setCopySourceKey] = useState(""); // Voor de kopieer-functie
 
-  const editorRef = useRef(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
 
-  const [newBlueprint, setNewBlueprint] = useState({
+  const [newBlueprint, setNewBlueprint] = useState<NewBlueprintState>({
     productType: "",
     connectionType: "",
     extraCode: "",
     boreType: "",
     fields: [],
+    angle: "",
   });
   const [newField, setNewField] = useState("");
 
@@ -74,7 +105,7 @@ const BlueprintsView = ({
   );
 
   const groupedBlueprints = useMemo(() => {
-    const groups = {};
+    const groups: Record<string, string[]> = {};
     const keys = Object.keys(blueprints || {}).sort();
     keys.forEach((key) => {
       if (searchTerm && !key.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -88,10 +119,10 @@ const BlueprintsView = ({
     return groups;
   }, [blueprints, searchTerm]);
 
-  const toggleGroup = (group) =>
+  const toggleGroup = (group: string) =>
     setExpandedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
 
-  const handleSelect = (key) => {
+  const handleSelect = (key: string) => {
     setSelectedBlueprintKey(key);
 
     if (key.startsWith("BORE_")) {
@@ -113,6 +144,7 @@ const BlueprintsView = ({
         extraCode: parts.slice(2).join("_") || "",
         boreType: "",
         fields: blueprints[key].fields || [],
+        angle: "",
       });
     }
 
@@ -127,6 +159,7 @@ const BlueprintsView = ({
       extraCode: "",
       boreType: "",
       fields: [],
+      angle: "",
     });
     setNewField("");
     setCopySourceKey("");
@@ -165,7 +198,7 @@ const BlueprintsView = ({
     }
   };
 
-  const handleRemoveField = (fieldToRemove) => {
+  const handleRemoveField = (fieldToRemove: string) => {
     setNewBlueprint({
       ...newBlueprint,
       fields: newBlueprint.fields.filter((f) => f !== fieldToRemove),
@@ -193,10 +226,10 @@ const BlueprintsView = ({
 
     setBlueprints({ ...blueprints, [key]: { fields: newBlueprint.fields } });
     if (setHasUnsavedChanges) setHasUnsavedChanges(true);
-    setSelectedBlueprintKey(key);
+    setSelectedBlueprintKey(String(key));
   };
 
-  const handleDelete = (key) => {
+  const handleDelete = (key: string) => {
     if (window.confirm(`Blauwdruk '${key}' verwijderen?`)) {
       const updated = { ...blueprints };
       delete updated[key];

@@ -32,7 +32,7 @@ const InternalQrImage = ({
     const cacheKey = `${size}::${qrValue}`;
     const cached = qrDataUrlCache.get(cacheKey);
     if (cached) {
-      setSrc(cached);
+      setSrc((prev) => prev !== cached ? cached : prev);
       return () => {
         mounted = false;
       };

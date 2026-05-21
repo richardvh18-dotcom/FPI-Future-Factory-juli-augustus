@@ -1,12 +1,11 @@
-// @ts-nocheck
 import { collection, collectionGroup, query, onSnapshot, doc, serverTimestamp, where, limit, getDocs, getDoc, arrayUnion, increment } from "firebase/firestore";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { LogOut, Loader2, Menu, X, Clock, Calendar, ScanBarcode, UserCheck, Nfc, Pencil } from "lucide-react";
+import { LogOut, Loader2, Menu, X, Clock, Calendar, UserCheck } from "lucide-react";
 import { useNFCReader, NFC_STATUS } from "../../hooks/useNFCReader";
 import { db, logActivity } from "../../config/firebase";
-import { PATHS, getArchiveItemsPath } from "../../config/dbPaths";
+import { PATHS, getArchiveItemsPath, getPathString } from "../../config/dbPaths";
 import {
   rejectTrackedProductFinal,
   completeTrackedProduct,
@@ -35,22 +34,131 @@ import {
   getISOWeekInfo,
   isInspectionOverdue,
 } from "../../utils/workstationLogic";
-import { normalizeMachine, FITTING_MACHINES, PIPE_MACHINES, getStartedCounterField } from "../../utils/hubHelpers.tsx";
+import { normalizeMachine, FITTING_MACHINES, PIPE_MACHINES, getStartedCounterField } from "../../utils/hubHelpers";
 import { toDateSafe } from "../../utils/dateUtils";
 import ActiveProductionView from "./views/ActiveProductionView";
-import PostProcessingFinishModal from "./modals/PostProcessingFinishModal";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
+import { useWorkstationStore } from "./useWorkstationStore";
+import { WorkstationModals } from "./WorkstationModals";
 
 import Terminal from "./Terminal";
 import Nabewerken from "./Nabewerken";
 import LossenView from "./LossenView";
 import MazakView from "./MazakView";
-import GereedView from "./GereedView.tsx";
-import ProductDetailModal from "../products/ProductDetailModal";
-import ProductionStartModal from "./modals/ProductionStartModal";
-import OperatorLinkModal from "./modals/OperatorLinkModal";
+import GereedView from "./GereedView";
 import BM01Hub from "./BM01Hub";
-import RepairModal from "./modals/RepairModal";
+
+declare global {
+  interface Window {
+    __app_id?: string;
+    MSStream?: unknown;
+  }
+  interface Navigator {
+    standalone?: boolean;
+  }
+}
+
+type TimestampLike = {
+  toDate?: () => Date;
+  seconds?: number;
+};
+
+type PlanningOrder = {
+  id?: string;
+  orderId?: string;
+  orderNumber?: string;
+  item?: string;
+  productCode?: string;
+  plan?: number | string;
+  quantity?: number | string;
+  status?: string;
+  machine?: string;
+  week?: number | string;
+  weekNumber?: number | string;
+  weekYear?: number | string;
+  year?: number | string;
+  dateObj?: Date;
+  plannedDate?: unknown;
+  createdAt?: TimestampLike | string | number | Date | null;
+  updatedAt?: TimestampLike | string | number | Date | null;
+  [key: string]: unknown;
+};
+
+type TrackedProductDoc = {
+  id?: string;
+  lotNumber?: string;
+  orderId?: string;
+  status?: string;
+  currentStep?: string;
+  currentStation?: string;
+  lastStation?: string;
+  originMachine?: string;
+  item?: string;
+  itemCode?: string;
+  machine?: string;
+  reminderSent?: boolean;
+  inspection?: { status?: string; timestamp?: unknown };
+  timestamps?: {
+    lossen_start?: TimestampLike | string | number | Date | null;
+    wikkelen_end?: TimestampLike | string | number | Date | null;
+    finished?: TimestampLike | string | number | Date | null;
+  };
+  createdAt?: TimestampLike | string | number | Date | null;
+  updatedAt?: TimestampLike | string | number | Date | null;
+  [key: string]: unknown;
+};
+
+type OccupancyEntry = {
+  id?: string;
+  machineId?: string;
+  station?: string;
+  date?: TimestampLike | string | number | Date | null;
+  shift?: string;
+  isActive?: boolean;
+  checkedOutAt?: unknown;
+  operatorNumber?: string;
+  operatorName?: string;
+  hoursWorked?: number | string;
+  shiftEffectiveStart?: unknown;
+  checkedInAt?: unknown;
+  isSecondary?: boolean;
+  hoursAdjusted?: boolean;
+  [key: string]: unknown;
+};
+
+type PersonnelEntry = {
+  id?: string;
+  employeeNumber?: string;
+  personnelNumber?: string;
+  number?: string;
+  name?: string;
+  shiftId?: string;
+  temporaryShiftOverride?: {
+    enabled?: boolean;
+    startDate?: string;
+    endDate?: string;
+    shiftId?: string;
+  };
+  rotationSchedule?: {
+    enabled?: boolean;
+    startWeek?: number;
+    shifts?: string[];
+  };
+  [key: string]: unknown;
+};
+
+type AppUser = {
+  uid?: string;
+  email?: string | null;
+  role?: string;
+  [key: string]: unknown;
+};
+
+type WorkstationHubProps = {
+  initialStationId?: string | { name?: string };
+  onExit?: () => void;
+  searchOrder?: string | null;
+};
 
 const getAppId = () => {
   if (typeof window !== "undefined" && window.__app_id) return window.__app_id;
@@ -67,7 +175,7 @@ const AUTO_LOSSEN_1218_SOURCE_STATIONS = new Set(["BH12", "BH15", "BH17", "BH18"
 // TB >= 300mm  → station LOSSEN (centraal)
 // CB 25-350mm  → tab lossen (lokaal)
 // CB >= 350mm  → station LOSSEN (centraal)
-const getLossenRoute = (itemText, originStation = "") => {
+const getLossenRoute = (itemText: unknown, originStation = "") => {
   const originNorm = String(originStation || "").toUpperCase().replace(/\s/g, "");
   if (LOSSEN_1218_SOURCE_STATIONS.has(originNorm)) {
     return { mode: "STATION", station: LOSSEN_1218_STATION_NAME };
@@ -111,21 +219,21 @@ const getYesterdayString = () => {
   return `${year}-${month}-${day}`;
 };
 
-const isDateWithinInclusiveRange = (dateStr, startDateStr, endDateStr) => {
+const isDateWithinInclusiveRange = (dateStr: unknown, startDateStr: unknown, endDateStr: unknown) => {
   if (!dateStr || !startDateStr) return false;
   const from = String(startDateStr);
   const to = String(endDateStr || startDateStr);
   return dateStr >= from && dateStr <= to;
 };
 
-const normalizePlanningStatus = (status) => String(status || "").trim().toLowerCase();
+const normalizePlanningStatus = (status: unknown) => String(status || "").trim().toLowerCase();
 
-const isInactivePlanningStatus = (status) => {
+const isInactivePlanningStatus = (status: unknown) => {
   const normalized = normalizePlanningStatus(status);
   return ["completed", "cancelled", "shipped", "rejected", "finished", "deleted"].includes(normalized);
 };
 
-const toFiniteNumber = (value) => {
+const toFiniteNumber = (value: unknown) => {
   const direct = Number(value);
   if (Number.isFinite(direct)) return direct;
 
@@ -144,19 +252,21 @@ const toFiniteNumber = (value) => {
  * checkoutMinute = minuut van de dag waarop de dienst eindigt (voor auto-uitlog).
  * breakMinutes   = te verrekenen pauzetijd voor efficiency/uren (alleen voor DAGDIENST).
  */
-const SHIFT_CONFIG = {
+export const SHIFT_CONFIG = {
   VROEG: { label: "VROEGE DIENST", checkinMinute: 6 * 60,       checkoutMinute: 14 * 60, breakMinutes: 0 },
   DAG:   { label: "DAGDIENST",     checkinMinute: 7 * 60 + 15,  checkoutMinute: 16 * 60, breakMinutes: 45 },
   LAAT:  { label: "LATE DIENST",   checkinMinute: 14 * 60,      checkoutMinute: 22 * 60, breakMinutes: 0 },
   NACHT: { label: "NACHTDIENST",   checkinMinute: 22 * 60,      checkoutMinute: 6 * 60,  breakMinutes: 0 },
 };
 
+type ShiftKey = keyof typeof SHIFT_CONFIG;
+
 /**
  * Bereken de effectieve starttijd voor een ploeg.
  * De timer begint altijd op het officiële starttijdstip van de ploeg,
  * ongeacht of de operator eerder of later inlogt.
  */
-const getShiftEffectiveStart = (shiftKey, referenceDate = new Date()) => {
+const getShiftEffectiveStart = (shiftKey: ShiftKey, referenceDate = new Date()) => {
   const config = SHIFT_CONFIG[shiftKey];
   if (!config) return referenceDate;
   const startMinute = config.checkinMinute;
@@ -180,7 +290,7 @@ const getShiftEffectiveStart = (shiftKey, referenceDate = new Date()) => {
  *   LAAT   13:50 → check-in venster 13:45–21:30
  *   NACHT  22:00 → rest
  */
-const getCurrentShiftKey = (date = new Date()) => {
+const getCurrentShiftKey = (date = new Date()): ShiftKey => {
   const m = date.getHours() * 60 + date.getMinutes();
   if (m >= 5 * 60      && m < 7 * 60 + 15)  return "VROEG";
   if (m >= 7 * 60 + 15 && m < 13 * 60 + 45) return "DAG";
@@ -193,7 +303,7 @@ const getCurrentShiftLabel = (date = new Date()) => {
   return SHIFT_CONFIG[key]?.label ?? "NACHTDIENST";
 };
 
-const shiftMatchesBucket = (shiftLabel, bucket) => {
+const shiftMatchesBucket = (shiftLabel: unknown, bucket: ShiftKey) => {
   const label = String(shiftLabel || "").toUpperCase();
   if (bucket === "VROEG") return label.includes("VROEGE") || label.includes("OCHTEND") || label.includes("MORNING") || label.includes("EARLY");
   if (bucket === "DAG")   return label.includes("DAGDIENST") || label === "DAG" || label.includes("DAGPLOEG") || label.includes("DAY SHIFT");
@@ -207,7 +317,7 @@ const shiftMatchesBucket = (shiftLabel, bucket) => {
  * Leest eerst person.shiftId uit het personeelsbestand (bijv. "DAGDIENST", "VROEGE DIENST"),
  * en valt terug op kloktijd-detectie als het veld ontbreekt of niet herkend wordt.
  */
-const resolveShiftKeyFromPerson = (person) => {
+const resolveShiftKeyFromPerson = (person: PersonnelEntry | null | undefined): ShiftKey => {
   const todayStr = getTodayString();
   const override = person?.temporaryShiftOverride;
   const overrideShiftId =
@@ -217,11 +327,11 @@ const resolveShiftKeyFromPerson = (person) => {
 
   // Ploegenrotatie: bepaal welke ploeg actief is op basis van het weeknummer
   let shiftIdFromRotation = "";
-  if (!overrideShiftId && person?.rotationSchedule?.enabled && person.rotationSchedule.shifts?.length > 0) {
+  if (!overrideShiftId && person?.rotationSchedule?.enabled && (person.rotationSchedule.shifts || []).length > 0) {
     const today = new Date();
     const currentWeekNum = getISOWeek(today);
     const startWeekNum = person.rotationSchedule.startWeek || 1;
-    const rotationShifts = person.rotationSchedule.shifts;
+    const rotationShifts = person.rotationSchedule.shifts || [];
     const weeksSinceStart = currentWeekNum - startWeekNum;
     const shiftIndex = ((weeksSinceStart % rotationShifts.length) + rotationShifts.length) % rotationShifts.length;
     shiftIdFromRotation = String(rotationShifts[shiftIndex] || "");
@@ -230,18 +340,18 @@ const resolveShiftKeyFromPerson = (person) => {
   const raw = String(overrideShiftId || shiftIdFromRotation || person?.shiftId || "").toUpperCase().trim();
   if (!raw) return getCurrentShiftKey();
   // Directe match op sleutel (bijv. "DAG", "VROEG", "LAAT", "NACHT")
-  if (raw in SHIFT_CONFIG) return raw;
+  if (raw in SHIFT_CONFIG) return raw as ShiftKey;
   // Match via label-logica
-  for (const key of Object.keys(SHIFT_CONFIG)) {
+  for (const key of Object.keys(SHIFT_CONFIG) as ShiftKey[]) {
     if (shiftMatchesBucket(raw, key)) return key;
   }
   // Fallback: kloktijd
   return getCurrentShiftKey();
 };
 
-const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
+const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHubProps) => {
   const { t } = useTranslation();
-  const { user: currentUser } = useAdminAuth();
+  const { user: currentUser } = useAdminAuth() as { user: AppUser | null };
   const { showSuccess, showError, showInfo, showWarning, requestBrowserPermission, showConfirm , notify} = useNotifications();
   const navigate = useNavigate();
   const initialStationName = typeof initialStationId === "object" ? initialStationId?.name : initialStationId;
@@ -249,42 +359,30 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   const [selectedStation, setSelectedStation] = useState(
     initialStationName || "BH11"
   );
-  const [activeTab, setActiveTab] = useState("terminal");
-  const [rawOrders, setRawOrders] = useState([]);
-  const [rawProducts, setRawProducts] = useState([]);
-  const [occupancy, setOccupancy] = useState([]);
-  const [personnel, setPersonnel] = useState([]);
+  const activeTab = useWorkstationStore((state) => state.activeTab);
+  const setActiveTab = useWorkstationStore((state) => state.setActiveTab);
+  const [rawOrders, setRawOrders] = useState<PlanningOrder[]>([]);
+  const [rawProducts, setRawProducts] = useState<TrackedProductDoc[]>([]);
+  const [occupancy, setOccupancy] = useState<OccupancyEntry[]>([]);
+  const [personnel, setPersonnel] = useState<PersonnelEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataSourceRefreshKey, setDataSourceRefreshKey] = useState(0);
-  const [searchFilterOrder] = useState(searchOrder || null);
-  const [archivedStats, setArchivedStats] = useState({ done: 0, items: [] });
+  const [searchFilterOrder] = useState<string | null>(searchOrder || null);
+  const [archivedStats, setArchivedStats] = useState<{ done: number; items: TrackedProductDoc[] }>({ done: 0, items: [] });
   
   // Huidige datum/tijd voor display
   const currentDate = new Date();
   const currentWeekInfo = getISOWeekInfo(currentDate);
 
   // Mobiel menu state
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-  // Modals & Selecties
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [showStartModal, setShowStartModal] = useState(false);
-  const [linkedProductData, setLinkedProductData] = useState(null);
-  const [showLinkModal, setShowLinkModal] = useState(false);
-  const [orderToLink, setOrderToLink] = useState(null);
-  const [finishModalOpen, setFinishModalOpen] = useState(false);
-  const [itemToFinish, setItemToFinish] = useState(null);
-  const [showRepairModal, setShowRepairModal] = useState(false);
-  const [itemToRepair, setItemToRepair] = useState(null);
-  const [showOperatorCheckinModal, setShowOperatorCheckinModal] = useState(false);
-  const [operatorBadgeInput, setOperatorBadgeInput] = useState("");
-  const [isCheckingInOperator, setIsCheckingInOperator] = useState(false);
-  const [checkedInOperator, setCheckedInOperator] = useState(null);
-  const [dismissedPromptShift, setDismissedPromptShift] = useState(null);
+  const isMobileMenuOpen = useWorkstationStore((state) => state.isMobileMenuOpen);
+  const setIsMobileMenuOpen = useWorkstationStore((state) => state.setIsMobileMenuOpen);
+  const [checkedInOperator, setCheckedInOperator] = useState<PersonnelEntry | null>(null);
+  const [dismissedPromptShift, setDismissedPromptShift] = useState<ShiftKey | null>(null);
   const [timeHeartbeat, setTimeHeartbeat] = useState(Date.now());
-  const lastShiftRef = useRef(getCurrentShiftKey(new Date()));
+  const lastShiftRef = useRef<ShiftKey>(getCurrentShiftKey(new Date()));
 
-  const logWorkstationActivity = async (action, details, options = {}) => {
+  const logWorkstationActivity = async (action: string, details: string, options: { personnelNumber?: string } = {}) => {
     const baseDetails = String(details || "");
     const resolvedPersonnelNumber = String(
       options?.personnelNumber || checkedInOperator?.number || ""
@@ -301,10 +399,10 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
   // NFC scanner (Web NFC API — Android Chrome 89+)
   // handleOperatorShiftCheckinRef wordt hieronder ingesteld na de functiedefinitie
-  const nfcPendingBadgeRef = useRef(null);
-  const handleOperatorShiftCheckinRef = useRef(null);
+  const nfcPendingBadgeRef = useRef<string | null>(null);
+  const handleOperatorShiftCheckinRef = useRef<((badgeOverride?: unknown) => Promise<void>) | null>(null);
   const nfc = useNFCReader((employeeNumber) => {
-    setOperatorBadgeInput(employeeNumber);
+    useWorkstationStore.getState().setOperatorBadgeInput(employeeNumber);
     nfcPendingBadgeRef.current = employeeNumber;
     // Aanmelden via ref zodat we geen forward-reference nodig hebben
     setTimeout(() => {
@@ -318,7 +416,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
   // Start NFC automatisch zodra de operator-aanmeldmodal opent.
   useEffect(() => {
-    if (!showOperatorCheckinModal || !nfc.isSupported) return;
+    if (!useWorkstationStore.getState().showOperatorCheckinModal || !nfc.isSupported) return;
     if (nfc.status !== NFC_STATUS.IDLE) return;
 
     nfc.startScan();
@@ -328,16 +426,9 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         nfc.stopScan();
       }
     };
-  }, [showOperatorCheckinModal, nfc]);
-
-  // Uren-correctie modal (teamleader)
-  const [showHourCorrectionModal, setShowHourCorrectionModal] = useState(false);
-  const [hourCorrectionEntry, setHourCorrectionEntry] = useState(null); // occupancy doc
-  const [correctedHours, setCorrectedHours] = useState("");
-  const [correctionReason, setCorrectionReason] = useState("");
-  const [isSavingCorrection, setIsSavingCorrection] = useState(false);
+  }, [useWorkstationStore.getState().showOperatorCheckinModal, nfc]);
   const lastAutoCheckoutMinuteRef = useRef("");
-  const lastAppliedInitialStationRef = useRef(null);
+  const lastAppliedInitialStationRef = useRef<string | null>(null);
 
   const currentAppId = getAppId();
   const isPostProcessing = [
@@ -375,7 +466,6 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   useEffect(() => {
     if (!requiresShiftCheckin || !selectedStation) return;
     setCheckedInOperator(null);
-    setOperatorBadgeInput("");
   }, [selectedStation, requiresShiftCheckin]);
 
   useEffect(() => {
@@ -398,13 +488,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   useEffect(() => {
     if (searchFilterOrder && rawOrders.length > 0) {
       console.log(`🔍 WorkstationHub: Zoeken naar order ${searchFilterOrder}`);
-      const foundOrder = rawOrders.find(order => 
+      const foundOrder = rawOrders.find((order: PlanningOrder) => 
         order.orderId === searchFilterOrder || order.id === searchFilterOrder
       );
       
       if (foundOrder) {
         console.log(`✅ Order gevonden:`, foundOrder);
-        setSelectedOrder(foundOrder);
+        useWorkstationStore.getState().setSelectedOrder(foundOrder);
         setActiveTab("terminal"); // Toon de orders tab
         showInfo(t("digitalplanning.workstation.order_loaded", { order: searchFilterOrder }));
       } else {
@@ -444,7 +534,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     }
 
     let isMounted = true;
-    const unsubs = [];
+    const unsubs: Array<() => void> = [];
     let loadedCount = 0;
     
     // Track which data sources have reported back (for faster perceived loading)
@@ -473,10 +563,10 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       if (!isMounted) return;
       
       // LISTENER 1: Orders (root pad + scoped per-machine paden)
-      let rootOrders = [];
-      let scopedOrders = [];
+      let rootOrders: PlanningOrder[] = [];
+      let scopedOrders: PlanningOrder[] = [];
 
-      const mapOrderDoc = (docSnap) => {
+      const mapOrderDoc = (docSnap: any): PlanningOrder | null => {
         const data = docSnap.data();
         const explicitScopeType = String(data?._scopeType || "").trim();
         const resolvedOrderId = String(data?.orderId || data?.orderNumber || "").trim();
@@ -509,7 +599,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         if (!isMounted) return;
         const merged = new Map();
 
-        const getMergeKey = (order) => {
+        const getMergeKey = (order: PlanningOrder) => {
           const pathKey = String(order?.__docPath || order?.sourcePath || "").trim();
           if (pathKey) return pathKey;
 
@@ -531,12 +621,12 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         setRawOrders(Array.from(merged.values()));
       };
 
-      const ordersRef = collection(db, ...PATHS.PLANNING);
+      const ordersRef = collection(db, getPathString(PATHS.PLANNING));
       const ordersQuery = query(ordersRef, limit(400));
       const unsubOrders = onSnapshot(ordersQuery, (snap) => {
         rootOrders = snap.docs
           .map(mapOrderDoc)
-          .filter(Boolean)
+          .filter((o): o is PlanningOrder => Boolean(o))
           .filter((o) => {
             const s = String(o?.status || "").toLowerCase().trim();
             return !["completed", "cancelled", "shipped", "rejected", "finished"].includes(s);
@@ -564,7 +654,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
               );
             })
             .map(mapOrderDoc)
-            .filter(Boolean)
+            .filter((o): o is PlanningOrder => Boolean(o))
             .filter((o) => {
               const s = String(o.status || "").toLowerCase();
               return !["completed", "cancelled", "shipped", "rejected", "finished"].includes(s);
@@ -597,15 +687,15 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       
       // LISTENER 3: Occupancy (lazy load after main data is ready)
       const unsubOccupancy = onSnapshot(
-        query(collection(db, ...PATHS.OCCUPANCY), where("date", "==", getTodayString()), limit(100)),
+        query(collection(db, getPathString(PATHS.OCCUPANCY)), where("date", "==", getTodayString()), limit(100)),
         (snap) => {
-          if (isMounted) setOccupancy(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+          if (isMounted) setOccupancy(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OccupancyEntry, "id">) })));
         },
         (error) => {
           console.warn("Occupancy Sync Error (filtered), fallback to limit:", error);
           // Fallback if index missing or date format mismatch
-          onSnapshot(query(collection(db, ...PATHS.OCCUPANCY), limit(50)), (snap) => {
-             if (isMounted) setOccupancy(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+          onSnapshot(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(50)), (snap) => {
+             if (isMounted) setOccupancy(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OccupancyEntry, "id">) })));
           });
         }
       );
@@ -613,9 +703,9 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       
       // LISTENER 4: Personnel (lazy load after main data is ready)
       const unsubPersonnel = onSnapshot(
-        query(collection(db, ...PATHS.PERSONNEL), limit(300)),
+        query(collection(db, getPathString(PATHS.PERSONNEL)), limit(300)),
         (snap) => {
-          if (isMounted) setPersonnel(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+          if (isMounted) setPersonnel(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PersonnelEntry, "id">) })));
         },
         (error) => console.warn("Personnel Sync Error:", error)
       );
@@ -635,12 +725,12 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       const year = now.getFullYear();
       
       const q = query(
-          collection(db, ...getArchiveItemsPath(year)),
+          collection(db, getPathString(getArchiveItemsPath(year))),
           where("timestamps.finished", ">=", startOfWeek)
       );
       
       const unsub = onSnapshot(q, (snap) => {
-          const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          const items: TrackedProductDoc[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<TrackedProductDoc, "id">) }));
           setArchivedStats({ done: snap.size, items });
       }, (error) => console.warn("Archive Sync Error:", error));
       
@@ -710,9 +800,9 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     return () => clearTimeout(timer);
   }, [rawProducts, selectedStation]);
 
-  // Huidige operator voor dit werkstation berekenen  // Shift color helper
-  const getShiftColor = (shiftLabel) => {
-    const label = (shiftLabel || "").toUpperCase();
+  // Huidige operator voor dit werkstation berekenen // Shift color helper
+  const getShiftColor = useCallback((shiftLabel: unknown) => {
+    const label = String(shiftLabel || "").toUpperCase();
     if (label.includes(t("digitalplanning.workstation.shift_morning_label").toUpperCase()) || label.includes("MORNING") || label.includes("EARLY") || label.includes("VROEGE")) {
       return "bg-amber-100 text-amber-800 border-amber-300";
     }
@@ -726,16 +816,16 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       return "bg-blue-100 text-blue-800 border-blue-300";
     }
     return "bg-slate-100 text-slate-800 border-slate-300";
-  };
+  }, [t]);
 
   // Helper om te checken of een shift momenteel actief is
-  const isShiftActive = useCallback((shiftLabel) => {
+  const isShiftActive = useCallback((shiftLabel: unknown) => {
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
     const currentTime = currentHour * 60 + currentMinute; // tijd in minuten sinds middernacht
     
-    const label = (shiftLabel || "").toUpperCase();
+    const label = String(shiftLabel || "").toUpperCase();
     
     // Ochtend: 05:30 - 14:00
     if (label.includes("OCHTEND") || label.includes("MORNING") || label.includes("EARLY") || label.includes("VROEGE")) {
@@ -784,7 +874,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         if (!occ.date) return false;
         
         if (!isActiveOccupancy) return false;
-        const occDate = occ.date.toDate ? occ.date.toDate() : new Date(occ.date);
+        const occDate = toDateSafe(occ.date) || new Date(occ.date as string | number | Date);
         occDate.setHours(0, 0, 0, 0);
         
         if (occDate.getTime() !== today.getTime()) return false;
@@ -792,8 +882,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         // FILTER: Alleen tonen als de shift momenteel actief is
         return isShiftActive(occ.shift);
       })
-      .map(occ => {
-        const operator = personnel.find(p => p.id === occ.operatorNumber || p.employeeNumber === occ.operatorNumber);
+      .map((occ: OccupancyEntry) => {
+        const operator = personnel.find((p: PersonnelEntry) => p.id === occ.operatorNumber || p.employeeNumber === occ.operatorNumber);
         return {
           ...occ,
           operatorName: occ.operatorName || operator?.name || `Operator ${occ.operatorNumber}`,
@@ -804,15 +894,15 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
   useEffect(() => {
     if (!requiresShiftCheckin || !selectedStation) return;
-    if (showOperatorCheckinModal) return;
+    if (useWorkstationStore.getState().showOperatorCheckinModal) return;
     if (stationOccupancy.length > 0) return;
     if (dismissedPromptShift === currentShiftKey) return;
     // Auto-popup tijdelijk uitgeschakeld — operator meldt zich aan via de knop in de header
-    // setShowOperatorCheckinModal(true);
+    // useWorkstationStore.getState().setShowOperatorCheckinModal(true);
   }, [
     requiresShiftCheckin,
     selectedStation,
-    showOperatorCheckinModal,
+    useWorkstationStore.getState().showOperatorCheckinModal,
     stationOccupancy.length,
     dismissedPromptShift,
     currentShiftKey,
@@ -823,7 +913,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
     const now = new Date(timeHeartbeat);
     const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    let targetBucket = null;
+    let targetBucket: ShiftKey | null = null;
 
     // Trigger op de exacte eindminuut én 1 minuut eerder (heartbeat = 30s, mag niet gemist worden).
     // VROEGE DIENST eindigt 14:00  → trigger op 13:59 of 14:00
@@ -850,13 +940,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         const queryDate = targetBucket === "NACHT" ? getYesterdayString() : todayStr;
 
         const occSnap = await getDocs(
-          query(collection(db, ...PATHS.OCCUPANCY), where("date", "==", queryDate), limit(500))
+          query(collection(db, getPathString(PATHS.OCCUPANCY)), where("date", "==", queryDate), limit(500))
         );
 
         // Sluit ALLE actieve operators van deze dienst, ongeacht machine.
         // Zo worden ook operators meegenomen die tussentijds van machine wisselden.
-        const toCheckout = occSnap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
+        const toCheckout: OccupancyEntry[] = occSnap.docs
+          .map((d): OccupancyEntry => ({ id: d.id, ...(d.data() as Omit<OccupancyEntry, "id">) }))
           .filter((entry) => {
             const isActive = entry.isActive !== false && !entry.checkedOutAt;
             return isActive && shiftMatchesBucket(entry.shift, targetBucket);
@@ -869,7 +959,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         await saveOccupancyAssignments({
           records: toCheckout.map((entry) => {
             const previousHours = Number(entry.hoursWorked || 0);
-            const checkedInDate = toDateSafe(entry.shiftEffectiveStart) || toDateSafe(entry.checkedInAt);
+            const checkedInDate = toDateSafe(entry.shiftEffectiveStart as any) || toDateSafe(entry.checkedInAt as any);
             const elapsedHours = checkedInDate
               ? Math.max(0, (now.getTime() - checkedInDate.getTime()) / 3600000)
               : 0;
@@ -912,20 +1002,20 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     runAutoCheckout();
   }, [selectedStation, timeHeartbeat, showInfo]);
 
-  const handleOperatorShiftCheckin = async (badgeOverride) => {
-    const resolveBadgeInput = (input) => {
+  const handleOperatorShiftCheckin = async (badgeOverride?: unknown) => {
+    const resolveBadgeInput = (input: unknown) => {
       if (typeof input === "string" || typeof input === "number") return String(input).trim();
       if (input && typeof input === "object") {
         // React/DOM events, NFC payloads of object-structuren kunnen hier terechtkomen.
-        const eventValue = input?.target?.value ?? input?.currentTarget?.value;
+        const eventValue = (input as { target?: { value?: unknown }; currentTarget?: { value?: unknown } })?.target?.value ?? (input as { target?: { value?: unknown }; currentTarget?: { value?: unknown } })?.currentTarget?.value;
         if (eventValue !== undefined && eventValue !== null) return String(eventValue).trim();
-        const objectBadge = input?.employeeNumber ?? input?.badge ?? input?.uid;
+        const objectBadge = (input as { employeeNumber?: unknown; badge?: unknown; uid?: unknown })?.employeeNumber ?? (input as { employeeNumber?: unknown; badge?: unknown; uid?: unknown })?.badge ?? (input as { employeeNumber?: unknown; badge?: unknown; uid?: unknown })?.uid;
         if (objectBadge !== undefined && objectBadge !== null) return String(objectBadge).trim();
       }
       return "";
     };
 
-    const rawBadge = resolveBadgeInput(badgeOverride) || String(operatorBadgeInput || "").trim();
+    const rawBadge = resolveBadgeInput(badgeOverride) || String(useWorkstationStore.getState().operatorBadgeInput || "").trim();
     if (!rawBadge) {
       showWarning("Scan of vul eerst een personeelsnummer in.", "Personeel");
       return;
@@ -933,13 +1023,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     // Registreer deze functie zodat de NFC hook hem kan aanroepen
     handleOperatorShiftCheckinRef.current = handleOperatorShiftCheckin;
 
-    setIsCheckingInOperator(true);
+    useWorkstationStore.getState().setIsCheckingInOperator(true);
     try {
       const normalizedBadge = rawBadge.toUpperCase();
       const normalizedAlphaNumericBadge = rawBadge.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
       const numericBadge = rawBadge.replace(/\D/g, "");
       const normalizedNumericBadge = numericBadge.replace(/^0+/, "");
-      const sameBadgeValue = (value) => {
+      const sameBadgeValue = (value: unknown) => {
         const candidate = String(value || "").trim();
         if (!candidate) return false;
         if (candidate.toUpperCase() === normalizedBadge) return true;
@@ -950,11 +1040,11 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         return candidateDigits.replace(/^0+/, "") === normalizedNumericBadge;
       };
 
-      let person = personnel.find((p) => {
+      let person: PersonnelEntry | null = personnel.find((p: PersonnelEntry) => {
         const id = String(p.id || "").trim();
         const empNo = String(p.employeeNumber || "").trim();
         return sameBadgeValue(id) || sameBadgeValue(empNo);
-      });
+      }) || null;
 
       if (!person) {
         const employeeCandidates = Array.from(new Set([
@@ -966,22 +1056,22 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
         for (const candidate of employeeCandidates) {
           const byEmployeeSnap = await getDocs(
-            query(collection(db, ...PATHS.PERSONNEL), where("employeeNumber", "==", candidate), limit(1))
+            query(collection(db, getPathString(PATHS.PERSONNEL)), where("employeeNumber", "==", candidate), limit(1))
           );
           if (!byEmployeeSnap.empty) {
             const d = byEmployeeSnap.docs[0];
-            person = { id: d.id, ...d.data() };
+            person = { id: d.id, ...(d.data() as Omit<PersonnelEntry, "id">) };
             break;
           }
 
           const numericCandidate = Number(candidate);
           if (Number.isFinite(numericCandidate) && candidate !== String(numericCandidate)) {
             const byEmployeeNumericSnap = await getDocs(
-              query(collection(db, ...PATHS.PERSONNEL), where("employeeNumber", "==", numericCandidate), limit(1))
+              query(collection(db, getPathString(PATHS.PERSONNEL)), where("employeeNumber", "==", numericCandidate), limit(1))
             );
             if (!byEmployeeNumericSnap.empty) {
               const d = byEmployeeNumericSnap.docs[0];
-              person = { id: d.id, ...d.data() };
+              person = { id: d.id, ...(d.data() as Omit<PersonnelEntry, "id">) };
               break;
             }
           }
@@ -998,15 +1088,15 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         ].filter(Boolean)));
 
         for (const mappingDocId of mappingDocCandidates) {
-          const tagMapSnap = await getDoc(doc(db, ...PATHS.NFC_TAG_MAPPINGS, mappingDocId));
+          const tagMapSnap = await getDoc(doc(db, `${getPathString(PATHS.NFC_TAG_MAPPINGS)}/${mappingDocId}`));
           if (tagMapSnap.exists()) {
             const mapping = tagMapSnap.data();
             const empNum = mapping.employeeNumber;
             const personSnap = await getDocs(
-              query(collection(db, ...PATHS.PERSONNEL), where("employeeNumber", "==", empNum), limit(1))
+              query(collection(db, getPathString(PATHS.PERSONNEL)), where("employeeNumber", "==", empNum), limit(1))
             );
             if (!personSnap.empty) {
-              person = { id: personSnap.docs[0].id, ...personSnap.docs[0].data() };
+              person = { id: personSnap.docs[0].id, ...(personSnap.docs[0].data() as Omit<PersonnelEntry, "id">) };
               break;
             }
           }
@@ -1024,9 +1114,9 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         ].filter(Boolean)));
 
         for (const docIdCandidate of docIdCandidates) {
-          const personDoc = await getDoc(doc(db, ...PATHS.PERSONNEL, docIdCandidate));
+          const personDoc = await getDoc(doc(db, `${getPathString(PATHS.PERSONNEL)}/${docIdCandidate}`));
           if (personDoc.exists()) {
-            person = { id: personDoc.id, ...personDoc.data() };
+            person = { id: personDoc.id, ...(personDoc.data() as Omit<PersonnelEntry, "id">) };
             break;
           }
         }
@@ -1039,7 +1129,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
       const now = new Date();
       const todayStr = getTodayString();
-      const extractDigits = (value) => String(value || "").replace(/\D/g, "").replace(/^0+/, "");
+      const extractDigits = (value: unknown) => String(value || "").replace(/\D/g, "").replace(/^0+/, "");
       const personIdDigits = extractDigits(person.id);
       const badgeDigits = extractDigits(rawBadge);
       const operatorNumber = String(
@@ -1050,7 +1140,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         rawBadge
       );
 
-      const resolveOperatorName = (personRecord, fallbackNumber) => {
+      const resolveOperatorName = (personRecord: PersonnelEntry, fallbackNumber: string) => {
         const directName =
           personRecord?.name ||
           personRecord?.displayName ||
@@ -1085,11 +1175,11 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       const resolvedOperatorName = resolveOperatorName(person, operatorNumber);
 
       const occSnap = await getDocs(
-        query(collection(db, ...PATHS.OCCUPANCY), where("date", "==", todayStr), limit(300))
+        query(collection(db, getPathString(PATHS.OCCUPANCY)), where("date", "==", todayStr), limit(300))
       );
 
-      const activeEntries = occSnap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
+      const activeEntries: OccupancyEntry[] = occSnap.docs
+        .map((d): OccupancyEntry => ({ id: d.id, ...(d.data() as Omit<OccupancyEntry, "id">) }))
         .filter((entry) => {
           const sameOperator = String(entry.operatorNumber || "").toUpperCase() === operatorNumber.toUpperCase();
           const isActive = entry.isActive !== false && !entry.checkedOutAt;
@@ -1124,7 +1214,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         await saveOccupancyAssignments({
           records: activeEntries.map((entry) => {
             const previousHours = Number(entry.hoursWorked || 0);
-            const checkedInDate = toDateSafe(entry.shiftEffectiveStart) || toDateSafe(entry.checkedInAt);
+            const checkedInDate = toDateSafe(entry.shiftEffectiveStart as any) || toDateSafe(entry.checkedInAt as any);
             const elapsedHours = checkedInDate ? Math.max(0, (now.getTime() - checkedInDate.getTime()) / 3600000) : 0;
             const finalHours = entry.isSecondary ? 0 : Number((previousHours + elapsedHours).toFixed(2));
             return {
@@ -1211,7 +1301,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         name: resolvedOperatorName,
         machineId: selectedStation,
       });
-      setOperatorBadgeInput("");
+      useWorkstationStore.getState().setOperatorBadgeInput("");
 
       if (activeEntries.length > 0) {
         if (otherActiveStations.length > 0) {
@@ -1229,11 +1319,11 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         try {
           // Controleer of operator vandaag al een actief secondary-record heeft bij LOSSEN 12/18
           const lossen1218OccSnap = await getDocs(
-            query(collection(db, ...PATHS.OCCUPANCY), where("date", "==", todayStr), limit(300))
+            query(collection(db, getPathString(PATHS.OCCUPANCY)), where("date", "==", todayStr), limit(300))
           );
           const alreadyAtLossen1218 = lossen1218OccSnap.docs
-            .map(d => ({ id: d.id, ...d.data() }))
-            .some(e => {
+            .map((d) => ({ id: d.id, ...(d.data() as Omit<OccupancyEntry, "id">) }))
+            .some((e: OccupancyEntry) => {
               const eMachineNorm = normalizeMachine(e.machineId || "").toUpperCase().replace(/\s/g, "");
               const sameOp = String(e.operatorNumber || "").toUpperCase() === operatorNumber.toUpperCase();
               const isAtLossen1218 = eMachineNorm === "LOSSEN12/18";
@@ -1277,9 +1367,9 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       showInfo("Je kunt direct nog een operator scannen.");
     } catch (err) {
       console.error("Operator check-in fout:", err);
-      showError(`Aanmelden op station mislukt: ${err.message}`);
+      showError(`Aanmelden op station mislukt: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setIsCheckingInOperator(false);
+      useWorkstationStore.getState().setIsCheckingInOperator(false);
     }
   };
 
@@ -1290,22 +1380,23 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
 
   // Uren-correctie opslaan (teamleider)
   const handleSaveHourCorrection = async () => {
-    if (!hourCorrectionEntry) return;
-    const newHours = parseFloat(String(correctedHours).replace(",", "."));
+    const store = useWorkstationStore.getState();
+    if (!store.hourCorrectionEntry) return;
+    const newHours = parseFloat(String(store.correctedHours).replace(",", "."));
     if (isNaN(newHours) || newHours < 0) {
       showWarning("Vul een geldig aantal uren in (bijv. 6 of 6.5).");
       return;
     }
-    setIsSavingCorrection(true);
+    store.setIsSavingCorrection(true);
     try {
       await saveOccupancyAssignment({
-        assignmentId: hourCorrectionEntry.id,
+        assignmentId: store.hourCorrectionEntry.id,
         data: {
           hoursWorked: newHours,
           hoursAdjusted: true,
           hoursAdjustedAt: "__SERVER_TIMESTAMP__",
           hoursAdjustedBy: currentUser?.email || currentUser?.uid || "teamleader",
-          hoursCorrectionReason: correctionReason.trim() || null,
+          hoursCorrectionReason: store.correctionReason.trim() || null,
           atpsExported: false, // markeer als nog niet geëxporteerd naar ATPS
           updatedAt: "__SERVER_TIMESTAMP__",
         },
@@ -1314,18 +1405,18 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       });
       await logWorkstationActivity(
         "HOURS_CORRECTED",
-        `Uren gecorrigeerd: ${hourCorrectionEntry.operatorName} op ${hourCorrectionEntry.machineId} → ${newHours}u (was ${hourCorrectionEntry.hoursWorked}u). Reden: ${correctionReason || "–"}`
+        `Uren gecorrigeerd: ${store.hourCorrectionEntry.operatorName} op ${store.hourCorrectionEntry.machineId} → ${newHours}u (was ${store.hourCorrectionEntry.hoursWorked}u). Reden: ${store.correctionReason || "–"}`
       );
-      showSuccess(`Uren bijgewerkt: ${hourCorrectionEntry.operatorName} → ${newHours} uur`);
-      setShowHourCorrectionModal(false);
-      setHourCorrectionEntry(null);
-      setCorrectedHours("");
-      setCorrectionReason("");
+      showSuccess(`Uren bijgewerkt: ${store.hourCorrectionEntry.operatorName} → ${newHours} uur`);
+      store.setShowHourCorrectionModal(false);
+      store.setHourCorrectionEntry(null);
+      store.setCorrectedHours("");
+      store.setCorrectionReason("");
     } catch (err) {
       console.error("Uren correctie fout:", err);
-      showError(`Opslaan mislukt: ${err.message}`);
+      showError(`Opslaan mislukt: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
-      setIsSavingCorrection(false);
+      store.setIsSavingCorrection(false);
     }
   };
 
@@ -1354,7 +1445,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     const isBm01Station = stationClean === "BM01" || stationClean.includes("BM01");
     const isWikkelToLossenSourceStation = ["BH12", "BH15", "BH17", "BH18"].includes(stationClean);
 
-    const matchesStation = (value) => {
+    const matchesStation = (value: unknown) => {
       const norm = normalizeMachine(value || "");
       if (!norm) return false;
       const clean = norm.toUpperCase().replace(/\s/g, "");
@@ -1410,7 +1501,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     const isWikkelToLossenSourceStation = ["BH12", "BH15", "BH17", "BH18"].includes(currentStationClean);
     const lossen1218OrderMachines = new Set(["BH12", "BH15", "BH17", "BH18", "12", "15", "17", "18"]);
 
-    const getLossen1218Candidates = (order) => {
+    const getLossen1218Candidates = (order: PlanningOrder) => {
       const values = [
         order?.machine,
         order?.originalMachine,
@@ -1442,8 +1533,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     const pipeStationsNorm = new Set(PIPE_MACHINES.map((s) => normalizeMachine(s)));
     const fittingStationsNorm = new Set(FITTING_MACHINES.map((s) => normalizeMachine(s)));
 
-    const routePresenceByOrder = {};
-    rawOrders.forEach((order) => {
+    const routePresenceByOrder: Record<string, { hasPipe: boolean; hasFitting: boolean }> = {};
+    rawOrders.forEach((order: PlanningOrder) => {
       const orderId = String(order.orderId || "").trim();
       if (!orderId) return;
 
@@ -1482,8 +1573,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       }
     });
     
-    const orderStats = {};
-    rawProducts.forEach((p) => {
+    const orderStats: Record<string, { started: number; finished: number }> = {};
+    rawProducts.forEach((p: TrackedProductDoc) => {
       if (!p.orderId) return;
       if (p.status === "rejected" || p.currentStep === "REJECTED") return;
 
@@ -1493,7 +1584,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       
       // FIX: 'Lossen' verwijderd uit active steps. Zodra een item op 'Lossen' staat, is het klaar voor de machine.
       const activeMachineSteps = ["Wikkelen", "HOLD_AREA"];
-      const isFinishedForMachine = !activeMachineSteps.includes(p.currentStep) || p.currentStep === "Finished" || p.status === "completed";
+      const isFinishedForMachine = !activeMachineSteps.includes(String(p.currentStep || "")) || p.currentStep === "Finished" || p.status === "completed";
       if (isFinishedForMachine) orderStats[p.orderId].finished++;
     });
 
@@ -1526,6 +1617,11 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         const orderIdForActivity = String(o.orderId || "").trim();
         const activityMeta = stationActivityByOrder.get(orderIdForActivity);
         const hasStationActivityCheck = (activityMeta?.active || 0) > 0;
+        const docPath = String(o?.__docPath || o?.sourcePath || "").toUpperCase();
+        const isBh12StrictView = currentStationClean === "BH12";
+        if (isBh12StrictView && !docPath.includes("40BH12")) {
+          return false;
+        }
         
         // Bereken effectieve plan: respecteer handmatige verlagingen (plan < quantity)
         const rawQuantity = toFiniteNumber(o.quantity);
@@ -1601,9 +1697,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             hasStationActivity
         );
       })
-      .map((o) => {
-        const stats = orderStats[o.orderId] || { started: 0, finished: 0 };
-        const startedAtStation = o[stationField] || 0;
+      .map((o: PlanningOrder) => {
+        const orderIdKey = String(o.orderId || "");
+        const stats = orderStats[orderIdKey] || { started: 0, finished: 0 };
+        let startedAtStation = 0;
+        if (stationField) {
+          startedAtStation = toFiniteNumber((o as Record<string, unknown>)[String(stationField)]);
+        }
         const remainingAtStation = Math.max(0, Number(o.quantity || o.plan || 0) - startedAtStation);
         
         return {
@@ -1615,38 +1715,9 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       })
       .sort(
         (a, b) =>
-          a.dateObj - b.dateObj ||
+          (a.dateObj?.getTime?.() || 0) - (b.dateObj?.getTime?.() || 0) ||
           String(a.orderId).localeCompare(String(b.orderId))
       );
-
-    // Fail-safe voor LOSSEN 12/18:
-    // sommige legacy/planning-import records hebben geen eenduidig machineveld.
-    // Toon in dat geval minimaal alle actieve orders i.p.v. een leeg scherm.
-    if (isLossen1218Station && baseStationOrders.length === 0) {
-      return rawOrders
-        .filter((o) => {
-          const orderIdForActivity = String(o.orderId || "").trim();
-          const activityMeta = stationActivityByOrder.get(orderIdForActivity);
-          const hasStationActivityCheck = (activityMeta?.active || 0) > 0;
-          return !isInactivePlanningStatus(o.status) || hasStationActivityCheck;
-        })
-        .map((o) => {
-          const stats = orderStats[o.orderId] || { started: 0, finished: 0 };
-          const startedAtStation = o[stationField] || 0;
-          const remainingAtStation = Math.max(0, Number(o.quantity || o.plan || 0) - startedAtStation);
-          return {
-            ...o,
-            liveToDo: remainingAtStation,
-            liveFinish: stats.finished,
-            startedAtStation,
-          };
-        })
-        .sort(
-          (a, b) =>
-            a.dateObj - b.dateObj ||
-            String(a.orderId).localeCompare(String(b.orderId))
-        );
-    }
 
     return baseStationOrders;
   }, [rawOrders, rawProducts, selectedStation, stationActivityByOrder]);
@@ -1691,13 +1762,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             return { plan, todo, done };
         }
 
-        const isActiveProduct = (p) => {
+        const isActiveProduct = (p: TrackedProductDoc) => {
           const pStep = (p.currentStep || "").toUpperCase();
           const pStatus = String(p.status || "").toLowerCase();
           return pStep !== "FINISHED" && pStep !== "REJECTED" && pStatus !== "completed" && pStatus !== "rejected";
         };
 
-        const todoCount = rawProducts.filter((p) => {
+        const todoCount = rawProducts.filter((p: TrackedProductDoc) => {
           const pStationNorm = normalizeMachine(p.currentStation || "");
           const pStep = p.currentStep || "";
           if (!isActiveProduct(p)) return false;
@@ -1716,7 +1787,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           return pStationNorm === currentStationNorm;
         }).length;
 
-        const doneCount = rawProducts.filter((p) => {
+        const doneCount = rawProducts.filter((p: TrackedProductDoc) => {
           const pLastStationNorm = normalizeMachine(p.lastStation || "");
           const pStationNorm = normalizeMachine(p.currentStation || "");
           const isFinished = p.status === "completed" || p.currentStep === "Finished";
@@ -1742,10 +1813,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     let todo = 0;
     const stationField = getStartedCounterField(selectedStation);
     
-    stationOrders.forEach(o => {
+    stationOrders.forEach((o: PlanningOrder) => {
       // Altijd dynamisch berekenen: plan - started_<machine>.
       const orderPlan = Number(o.plan || o.quantity || 0);
-      const startedAtStation = Number(stationField ? o?.[stationField] || 0 : 0);
+      let startedAtStation = 0;
+      if (stationField) {
+        startedAtStation = toFiniteNumber((o as Record<string, unknown>)[String(stationField)]);
+      }
       const remainingQueue = Math.max(0, orderPlan - startedAtStation);
       
       todo += remainingQueue;
@@ -1761,7 +1835,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     let doneThisWeek = 0;
     const startOfWeekDate = startOfISOWeek(new Date());
 
-    rawProducts.forEach(p => {
+    rawProducts.forEach((p: TrackedProductDoc) => {
        const pMachineNorm = normalizeMachine(p.originMachine || p.machine || "");
        if (pMachineNorm !== currentStationNorm) return;
        if (p.status === "rejected" || p.currentStep === "REJECTED") return;
@@ -1778,13 +1852,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
        }
     });
 
-    (archivedStats.items || []).forEach(p => {
+    (archivedStats.items || []).forEach((p: TrackedProductDoc) => {
        const pMachineNorm = normalizeMachine(p.originMachine || p.machine || "");
        if (pMachineNorm !== currentStationNorm) return;
        if (p.status === "rejected" || p.currentStep === "REJECTED") return;
        
        const eventDate = p.timestamps?.lossen_start || p.timestamps?.wikkelen_end || p.timestamps?.finished || p.archivedAt;
-       const d = toDateSafe(eventDate);
+      const d = toDateSafe(eventDate as any);
        if (d && d >= startOfWeekDate) {
            doneThisWeek++;
        }
@@ -1874,22 +1948,22 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   };
 
   const handleStartProduction = async (
-    order,
-    customLotNumber,
+    order: any,
+    customLotNumber: string,
     stringCount = 1,
-    _manualOrderInput,
-    _operatorInput,
-    _selectedOperatorName,
-    labelZplData,
-    labelTemplateId,
-    startOptions = {}
+    _manualOrderInput?: string,
+    _operatorInput?: string,
+    _selectedOperatorName?: string,
+    labelZplData?: string,
+    labelTemplateId?: string,
+    startOptions: any = {}
   ) => {
     if (!currentUser || !customLotNumber) return;
     const previousTab = activeTab;
 
     // Snellere UX: direct modal sluiten en naar Wikkelen schakelen,
     // terwijl de backend startflow op de achtergrond afrondt.
-    setShowStartModal(false);
+    useWorkstationStore.getState().setShowStartModal(false);
     if (!isPostProcessing && !isBM01) {
       setActiveTab("winding");
     }
@@ -1906,7 +1980,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         .filter((occ) => {
           if (occ.station !== selectedStation) return false;
           if (!occ.date) return false;
-          const occDate = occ.date.toDate ? occ.date.toDate() : new Date(occ.date);
+          const occDate = toDateSafe(occ.date as any) || new Date();
           occDate.setHours(0, 0, 0, 0);
           const today = new Date();
           today.setHours(0, 0, 0, 0);
@@ -1915,7 +1989,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         .map((occ) => occ.operatorNumber)
         .filter(Boolean);
 
-      const startResult = await startWorkstationProductionRun({
+      const startResult: any = await startWorkstationProductionRun({
         orderDocId: order.id,
         lotStart: customLotNumber,
         stringCount,
@@ -1986,7 +2060,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   };
 
   // Handler voor handmatig verplaatsen van product (Nieuw toegevoegd voor Dossier)
-  const handleMoveLot = async (lotNumber, newStation, options = {}) => {
+  const handleMoveLot = async (lotNumber: string, newStation: string, options: any = {}) => {
     if (!lotNumber || !newStation) return;
     try {
       const isRepairMove = Boolean(options?.isRepairMove);
@@ -2006,13 +2080,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         `${isRepairMove ? "Workstation reparatie" : "Workstation move"}: lot ${lotNumber} -> ${newStation}${repairInstruction ? ` | instructie: ${repairInstruction}` : ""}`
       );
       showSuccess(`${isRepairMove ? "Reparatie" : "Product"} ${lotNumber} verplaatst naar ${newStation}`);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Fout bij verplaatsen:", err);
-      showError("Fout bij verplaatsen: " + err.message);
+      showError("Fout bij verplaatsen: " + (err instanceof Error ? err.message : String(err)));
     }
   };
 
-  const handlePauseResume = async (product) => {
+  const handlePauseResume = async (product: TrackedProductDoc) => {
     if (!product) return;
     try {
       const isPaused = product.status === "PAUSED";
@@ -2035,7 +2109,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     }
   };
 
-  const handleLinkProduct = async (docId, product) => {
+  const handleLinkProduct = async (docId: string, product: TrackedProductDoc) => {
     try {
       await linkPlanningOrderProduct({
         orderDocId: docId,
@@ -2047,15 +2121,16 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         `Order gelinkt: planning ${docId} -> product ${product?.id}`
       );
       showSuccess("Product succesvol gekoppeld!");
-      setShowLinkModal(false);
-      setOrderToLink(null);
+      useWorkstationStore.getState().setShowLinkModal(false);
+      useWorkstationStore.getState().setOrderToLink(null);
     } catch (error) {
       console.error(error);
       showError("Kon product niet koppelen", "Koppelen mislukt");
     }
   };
 
-  const handlePostProcessingFinish = async (status, data) => {
+  const handlePostProcessingFinish = async (status: string, data: any) => {
+    const itemToFinish = useWorkstationStore.getState().itemToFinish;
     if (!itemToFinish) return;
     const productId = itemToFinish.id || itemToFinish.lotNumber;
     try {
@@ -2072,8 +2147,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           actorLabel: currentUser?.email,
           source: "WorkstationHub",
         });
-        setFinishModalOpen(false);
-        setItemToFinish(null);
+        useWorkstationStore.getState().setFinishModalOpen(false);
+        useWorkstationStore.getState().setItemToFinish(null);
         return;
       }
 
@@ -2085,8 +2160,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           source: "WorkstationHub",
           actorLabel: currentUser?.email,
         });
-        setFinishModalOpen(false);
-        setItemToFinish(null);
+        useWorkstationStore.getState().setFinishModalOpen(false);
+        useWorkstationStore.getState().setItemToFinish(null);
         return;
       }
 
@@ -2104,21 +2179,21 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         "QUALITY_TEMP_REJECT",
         `Post-processing: lot ${itemToFinish?.lotNumber || itemToFinish?.id}, station ${selectedStation}, status temp_reject`
       );
-      setFinishModalOpen(false);
-      setItemToFinish(null);
+      useWorkstationStore.getState().setFinishModalOpen(false);
+      useWorkstationStore.getState().setItemToFinish(null);
     } catch (error) {
       console.error("Fout bij afronden:", error);
       showError("Kon wijzigingen niet opslaan", "Fout bij opslaan");
     }
   };
 
-  const handleProcessUnit = async (product, options = {}) => {
+  const handleProcessUnit = async (product: TrackedProductDoc, options: { bulkUnits?: TrackedProductDoc[] } = {}) => {
     const stationCheck = String(selectedStation).toLowerCase();
 
     // NIEUW: BH31 Reparatie flow
     if (stationCheck === "bh31") {
-        setItemToRepair(product);
-        setShowRepairModal(true);
+        useWorkstationStore.getState().setItemToRepair(product);
+        useWorkstationStore.getState().setShowRepairModal(true);
         return;
     }
 
@@ -2128,8 +2203,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
       stationCheck === "bm01" ||
       selectedStation === "Station BM01"
     ) {
-      setItemToFinish(product);
-      setFinishModalOpen(true);
+      useWorkstationStore.getState().setItemToFinish(product);
+      useWorkstationStore.getState().setFinishModalOpen(true);
       return;
     }
 
@@ -2176,7 +2251,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           if (stationName !== "LOSSEN") return false;
           
           if (!occ.date) return false;
-          const occDate = occ.date.toDate ? occ.date.toDate() : new Date(occ.date);
+          const occDate = toDateSafe(occ.date as any) || new Date();
           occDate.setHours(0, 0, 0, 0);
           const today = new Date();
           today.setHours(0, 0, 0, 0);
@@ -2186,7 +2261,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         .map(occ => occ.operatorNumber)
         .filter(Boolean);
 
-      const routingResult = await routeTrackedProductsToLossen({
+      const routingResult: any = await routeTrackedProductsToLossen({
         productIds: targets.map((target) => target?.id || target?.lotNumber).filter(Boolean),
         originStation: selectedStation,
         centralStation: "LOSSEN",
@@ -2209,7 +2284,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   };
 
   // NIEUW: Afhandelen van reparatie op BH31
-  const handleRepairComplete = async (data) => {
+  const handleRepairComplete = async (data: any) => {
+      const itemToRepair = useWorkstationStore.getState().itemToRepair;
       if (!itemToRepair) return;
       try {
         await completeTrackedProductRepair({
@@ -2225,21 +2301,21 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             `Reparatie afgerond: lot ${itemToRepair?.lotNumber || itemToRepair?.id}, BH31 -> BM01`
           );
           showSuccess(`Product ${itemToRepair.lotNumber} gerepareerd en doorgestuurd naar BM01`);
-          setShowRepairModal(false);
-          setItemToRepair(null);
+          useWorkstationStore.getState().setShowRepairModal(false);
+          useWorkstationStore.getState().setItemToRepair(null);
       } catch (err) {
           console.error("Fout bij reparatie afronden:", err);
           showError("Kon reparatie niet opslaan");
       }
   };
 
-  const handleOpenProductInfo = async (productId) => {
+  const handleOpenProductInfo = async (productId: string) => {
     try {
       const productSnap = await getDoc(
-        doc(db, ...PATHS.PRODUCTS, productId)
+        doc(db, `${getPathString(PATHS.PRODUCTS)}/${productId}`)
       );
       if (productSnap.exists()) {
-        setLinkedProductData({ id: productSnap.id, ...productSnap.data() });
+        useWorkstationStore.getState().setLinkedProductData({ id: productSnap.id, ...(productSnap.data() as Omit<TrackedProductDoc, "id">) });
       } else {
         showWarning(t("digitalplanning.workstation.product_not_found"), t("digitalplanning.workstation.not_found"));
       }
@@ -2249,16 +2325,16 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
     }
   };
 
-  const handleActiveUnitClick = (unit) => {
+  const handleActiveUnitClick = (unit: TrackedProductDoc) => {
     const parentOrder = rawOrders.find((o) => o.orderId === unit.orderId);
     if (parentOrder && parentOrder.linkedProductId) {
-      handleOpenProductInfo(parentOrder.linkedProductId);
+      handleOpenProductInfo(String(parentOrder.linkedProductId));
     } else if (unit.originalOrderId) {
       const origOrder = rawOrders.find(
         (o) => o.orderId === unit.originalOrderId
       );
       if (origOrder && origOrder.linkedProductId)
-        handleOpenProductInfo(origOrder.linkedProductId);
+        handleOpenProductInfo(String(origOrder.linkedProductId));
       else showWarning(t("digitalplanning.workstation.no_dossier_for_order", { order: unit.originalOrderId }), t("digitalplanning.workstation.dossier_missing"));
     } else {
       showWarning(t("digitalplanning.workstation.no_dossier_linked", { order: unit.orderId }), t("digitalplanning.workstation.dossier_missing"));
@@ -2266,7 +2342,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   };
 
   // NIEUW: Handler voor annuleren productie (Prullenbak)
-  const handleCancelProduction = async (productId) => {
+  const handleCancelProduction = async (productId: string) => {
     if (!productId) return;
 
     // Optioneel product opzoeken voor details (lotnummer), maar niet vereist
@@ -2296,15 +2372,15 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
   const [pullStartY, setPullStartY] = useState(0);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const contentRef = useRef(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
-  const handleTouchStart = (e) => {
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (contentRef.current && contentRef.current.scrollTop === 0) {
       setPullStartY(e.touches[0].clientY);
     }
   };
 
-  const handleTouchMove = (e) => {
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
     if (pullStartY > 0 && contentRef.current && contentRef.current.scrollTop === 0) {
       const touchY = e.touches[0].clientY;
       const diff = touchY - pullStartY;
@@ -2371,8 +2447,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
             <button
               type="button"
               onClick={() => {
-                setShowOperatorCheckinModal(true);
-                setOperatorBadgeInput("");
+                useWorkstationStore.getState().setShowOperatorCheckinModal(true);
+                useWorkstationStore.getState().setOperatorBadgeInput("");
               }}
               className="hidden xl:flex items-center gap-2 px-3 py-2 bg-white rounded-lg border border-slate-200 shadow-sm min-w-[200px] justify-center hover:bg-slate-50 transition-colors"
               title="Klik om operator aan te melden"
@@ -2557,8 +2633,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
               <button
                 type="button"
                 onClick={() => {
-                  setShowOperatorCheckinModal(true);
-                  setOperatorBadgeInput("");
+                        useWorkstationStore.getState().setShowOperatorCheckinModal(true);
+                        useWorkstationStore.getState().setOperatorBadgeInput("");
                   setIsMobileMenuOpen(false);
                 }}
                 className="shrink-0 px-3 py-2 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest"
@@ -2638,14 +2714,14 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
           <>
             {activeTab === "winding" && (
               ((selectedStation || "").toUpperCase().replace(/\s/g, "").includes("NABEWERK")) ? (
-                <Nabewerken products={rawProducts} orders={rawOrders} />
+            <Nabewerken products={rawProducts as any} orders={rawOrders as any} />
               ) : (
-                <ActiveProductionView
-                  activeUnits={activeUnitsHere}
-                  smartSuggestions={isPostProcessing ? [] : []}
+              <ActiveProductionView
+                  activeUnits={activeUnitsHere as any}
+              smartSuggestions={[] as any}
                   selectedStation={selectedStation}
                   onProcessUnit={handleProcessUnit}
-                  onPauseResume={handlePauseResume}
+                  
                   onClickUnit={handleActiveUnitClick}
                 />
               )
@@ -2654,21 +2730,19 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
               <div className="h-full bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                 {isWorkstationGereedTab ? (
                   <GereedView
-                    products={rawProducts}
+                products={rawProducts as any}
                     stationId={selectedStation}
                   />
                 ) : ((selectedStation || "").toUpperCase().replace(/\s/g, "").includes("NABEWERK")) ? (
-                  <Nabewerken products={rawProducts} orders={rawOrders} />
+              <Nabewerken products={rawProducts as any} orders={rawOrders as any} />
                 ) : (String(selectedStation || "").toUpperCase().replace(/\s/g, "") === "MAZAK") ? (
                   <MazakView
-                    products={rawProducts}
+                products={rawProducts as any}
                     stationId={selectedStation}
                   />
                 ) : (
-                  <LossenView
-                    currentUser={currentUser}
-                    products={rawProducts}
-                    currentStation={selectedStation}
+                <LossenView
+                products={rawProducts as any}
                     stationId={selectedStation}
                     appId={currentAppId}
                   />
@@ -2680,17 +2754,14 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
                 {isBM01 ? (
                   <BM01Hub 
                     onBack={handleBack} 
-                    orders={rawOrders}
-                    products={rawProducts}
+                  orders={rawOrders as any}
+                  products={rawProducts as any}
                     onMoveLot={handleMoveLot}
                   />
                 ) : (
-                  <Terminal
-                    currentUser={currentUser}
+              <Terminal
                     initialStation={selectedStation}
-                    products={rawProducts}
                     orders={isLossen1218Station ? rawOrders : stationOrders}
-                    onBack={() => setActiveTab("planning")}
                     onCancelProduction={handleCancelProduction}
                   />
                 )}
@@ -2700,290 +2771,27 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }) => {
         )}
       </div>
 
-      {/* MODALS */}
-      {showStartModal && selectedOrder && (
-        <div className="fixed z-[9999]">
-          <ProductionStartModal
-            order={selectedOrder}
-            isOpen={showStartModal}
-            onClose={() => setShowStartModal(false)}
-            onStartInitiated={() => {
-              setShowStartModal(false);
-              if (!isPostProcessing && !isBM01) {
-                setActiveTab("winding");
-              }
-            }}
-            onStart={handleStartProduction}
-            stationId={selectedStation}
-            existingProducts={rawProducts}
-            onOpenProductInfo={handleOpenProductInfo}
-          />
-        </div>
-      )}
-      {linkedProductData && (
-        <div className="fixed z-[9999]">
-          <ProductDetailModal
-            product={linkedProductData}
-            onClose={() => setLinkedProductData(null)}
-            userRole={currentUser?.role || "operator"}
-          />
-        </div>
-      )}
-      {showLinkModal && orderToLink && (
-        <div className="fixed z-[9999]">
-          <OperatorLinkModal
-            order={orderToLink}
-            onClose={() => {
-              setShowLinkModal(false);
-              setOrderToLink(null);
-            }}
-            onLinkProduct={handleLinkProduct}
-          />
-        </div>
-      )}
-      {finishModalOpen && itemToFinish && (
-        <div className="fixed z-[9999]">
-          <PostProcessingFinishModal
-            product={itemToFinish}
-            onClose={() => {
-              setFinishModalOpen(false);
-              setItemToFinish(null);
-            }}
-            onConfirm={handlePostProcessingFinish}
-            currentStation={selectedStation}
-          />
-        </div>
-      )}
-      {showRepairModal && itemToRepair && (
-        <div className="fixed z-[9999]">
-          <RepairModal
-              product={itemToRepair}
-              onClose={() => { setShowRepairModal(false); setItemToRepair(null); }}
-              onConfirm={handleRepairComplete}
-          />
-        </div>
-      )}
-
-      {showOperatorCheckinModal && (
-        <div className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-md bg-white rounded-[24px] border border-slate-200 shadow-2xl p-5 sm:p-6 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
-                  <ScanBarcode size={20} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-slate-900 uppercase">{t("digitalplanning.workstation.operator_checkin", "Operator aanmelden")}</h3>
-                  <p className="text-xs text-slate-500 font-bold">{t("digitalplanning.workstation.station", "Station")}: {selectedStation}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setDismissedPromptShift(currentShiftKey);
-                  setShowOperatorCheckinModal(false);
-                }}
-                className="px-2 py-1 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 font-bold text-xs uppercase"
-              >
-                {t("digitalplanning.workstation.later", "Later")}
-              </button>
-            </div>
-
-            {/* Huidige dienst + auto-uitlog tijd */}
-            {(() => {
-              const shiftCfg = SHIFT_CONFIG[currentShiftKey];
-              const endH = shiftCfg ? Math.floor(shiftCfg.checkoutMinute / 60) : null;
-              const endM = shiftCfg ? shiftCfg.checkoutMinute % 60 : null;
-              const endLabel = endH !== null
-                ? `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`
-                : null;
-              return shiftCfg ? (
-                <div className="mb-4 px-3 py-2 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-black uppercase text-blue-400 tracking-widest">{t("digitalplanning.workstation.current_shift", "Huidige dienst")}</p>
-                    <p className="text-sm font-black text-blue-800">{shiftCfg.label}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] font-black uppercase text-blue-400 tracking-widest">{t("digitalplanning.workstation.auto_logout_at", "Auto-uitlog om")}</p>
-                    <p className="text-sm font-black text-blue-800">{endLabel}</p>
-                  </div>
-                </div>
-              ) : null;
-            })()}
-
-            <p className="text-sm text-slate-600 mb-4">
-              {t("digitalplanning.workstation.checkin_help", "Scan badge/QR of vul personeelsnummer in om de shift op deze machine te starten. Je kunt meerdere operators achter elkaar aanmelden.")}
-            </p>
-
-            <input
-              type="text"
-              value={operatorBadgeInput}
-              onChange={(e) => setOperatorBadgeInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleOperatorShiftCheckin();
-                }
-              }}
-              placeholder={t("personnelOccupancy.labels.employeeNumber", "Personeelsnummer")}
-              autoFocus
-              className="w-full p-3 rounded-xl border-2 border-slate-200 font-bold text-slate-800 outline-none focus:border-blue-500"
-            />
-
-            <button
-              onClick={() => handleOperatorShiftCheckin()}
-              disabled={isCheckingInOperator}
-              className="w-full mt-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-xs tracking-widest disabled:opacity-60"
-            >
-              {isCheckingInOperator ? t("digitalplanning.workstation.checking_in", "Aanmelden...") : t("digitalplanning.workstation.checkin_on_machine", "Aanmelden op machine")}
-            </button>
-
-            {/* NFC scan knop — alleen zichtbaar als browser het ondersteunt */}
-            {nfc.isSupported && (
-              <button
-                type="button"
-                onClick={nfc.status === NFC_STATUS.SCANNING ? nfc.stopScan : nfc.startScan}
-                disabled={isCheckingInOperator}
-                className={`w-full mt-2 py-3 rounded-xl font-black uppercase text-xs tracking-widest flex items-center justify-center gap-2 transition-all disabled:opacity-60 ${
-                  nfc.status === NFC_STATUS.SCANNING
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse"
-                    : nfc.status === NFC_STATUS.SUCCESS
-                    ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
-                    : nfc.status === NFC_STATUS.ERROR
-                    ? "bg-red-50 text-red-600 border border-red-200"
-                    : "bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200"
-                }`}
-              >
-                <Nfc size={16} />
-                {nfc.status === NFC_STATUS.SCANNING
-                  ? "NFC actief — houd tag voor lezer..."
-                  : nfc.status === NFC_STATUS.SUCCESS
-                  ? "Tag gelezen ✓"
-                  : nfc.status === NFC_STATUS.ERROR
-                  ? nfc.errorMessage || "NFC fout"
-                  : "Aanmelden via NFC-tag"}
-              </button>
-            )}
-
-            {/* Huidige ingelogde operators + uren-correctie knop (teamleider) */}
-            {stationOccupancy.length > 0 && (
-              <div className="mt-4 p-3 rounded-xl border border-slate-200 bg-slate-50">
-                <p className="text-[11px] font-black uppercase text-slate-500 mb-2">{t("digitalplanning.workstation.currently_logged_in_here", "Nu ingelogd op dit station")}</p>
-                <div className="flex flex-wrap gap-2">
-                  {stationOccupancy.map((occ, idx) => (
-                    <div key={`${occ.operatorNumber || occ.id || idx}_${idx}`} className="flex items-center gap-1">
-                      <span className="px-2 py-1 rounded-md text-[10px] font-bold uppercase border border-slate-200 bg-white text-slate-700">
-                        {occ.operatorName}
-                        {occ.hoursWorked > 0 && (
-                          <span className="ml-1 text-slate-400">({occ.hoursWorked.toFixed(1)}u)</span>
-                        )}
-                        {occ.hoursAdjusted && (
-                          <span className="ml-1 text-amber-500 font-black" title="Uren gecorrigeerd">✎</span>
-                        )}
-                      </span>
-                      {/* Uren-correctie knop — alleen voor teamleider/admin */}
-                      {["teamleader", "admin", "planner"].includes(String(currentUser?.role || "").toLowerCase()) && (
-                        <button
-                          type="button"
-                          title="Uren corrigeren"
-                          onClick={() => {
-                            setHourCorrectionEntry(occ);
-                            setCorrectedHours(String(occ.hoursWorked || ""));
-                            setCorrectionReason("");
-                            setShowHourCorrectionModal(true);
-                          }}
-                          className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                        >
-                          <Pencil size={12} />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Uren-correctie modal (teamleider) */}
-      {showHourCorrectionModal && hourCorrectionEntry && (
-        <div className="fixed inset-0 z-[130] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-sm bg-white rounded-[24px] border border-slate-200 shadow-2xl p-5 sm:p-6 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="p-2 rounded-xl bg-amber-50 text-amber-600"><Pencil size={18} /></div>
-                <div>
-                  <h3 className="text-base font-black text-slate-900">Uren corrigeren</h3>
-                  <p className="text-xs text-slate-500 font-bold">{hourCorrectionEntry.operatorName} · {hourCorrectionEntry.machineId}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setShowHourCorrectionModal(false); setHourCorrectionEntry(null); }}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-xs text-amber-800 font-bold">
-              Gebruik dit als iemand eerder naar huis is gegaan. De gecorrigeerde uren worden ook gemarkeerd voor ATPS-export.
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">
-                  Gewerkte uren (gecorrigeerd)
-                </label>
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  max="12"
-                  value={correctedHours}
-                  onChange={(e) => setCorrectedHours(e.target.value)}
-                  placeholder="bijv. 6 of 7.5"
-                  className="w-full p-3 rounded-xl border-2 border-slate-200 font-black text-lg text-slate-900 outline-none focus:border-amber-400 text-center"
-                />
-                <p className="text-[10px] text-slate-400 mt-1 text-center">
-                  Origineel automatisch berekend: {Number(hourCorrectionEntry.hoursWorked || 0).toFixed(1)} uur
-                </p>
-              </div>
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">
-                  Reden (optioneel)
-                </label>
-                <input
-                  type="text"
-                  value={correctionReason}
-                  onChange={(e) => setCorrectionReason(e.target.value)}
-                  placeholder="bijv. eerder naar huis, doktersbezoek..."
-                  className="w-full p-3 rounded-xl border-2 border-slate-200 font-bold text-sm text-slate-800 outline-none focus:border-amber-400"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-5">
-              <button
-                type="button"
-                onClick={() => { setShowHourCorrectionModal(false); setHourCorrectionEntry(null); }}
-                className="flex-1 py-2.5 rounded-xl border-2 border-slate-200 text-slate-600 font-black text-xs uppercase hover:bg-slate-50"
-              >
-                Annuleren
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveHourCorrection}
-                disabled={isSavingCorrection}
-                className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-black text-xs uppercase disabled:opacity-60"
-              >
-                {isSavingCorrection ? "Opslaan..." : "Opslaan"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <WorkstationModals
+        stationId={selectedStation}
+        rawProducts={rawProducts}
+        handleStartProduction={handleStartProduction}
+        handleOpenProductInfo={handleOpenProductInfo}
+        handleLinkProduct={handleLinkProduct}
+        handlePostProcessingFinish={handlePostProcessingFinish}
+        handleRepairComplete={handleRepairComplete}
+        handleOperatorShiftCheckin={handleOperatorShiftCheckin}
+        handleSaveHourCorrection={handleSaveHourCorrection}
+        onDismissPromptShift={() => setDismissedPromptShift(currentShiftKey)}
+        stationOccupancy={stationOccupancy}
+        currentShiftKey={currentShiftKey}
+        nfc={nfc}
+        SHIFT_CONFIG={SHIFT_CONFIG}
+        getShiftColor={getShiftColor}
+        toFiniteNumber={toFiniteNumber}
+        currentUser={currentUser}
+        isPostProcessing={isPostProcessing}
+        isBM01={isBM01}
+      />
     </div>
     </>
   );

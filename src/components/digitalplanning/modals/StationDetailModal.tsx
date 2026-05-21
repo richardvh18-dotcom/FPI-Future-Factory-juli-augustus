@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -21,9 +20,34 @@ import {
   normalizeMachine,
   formatDate,
   getISOWeekInfo,
-} from "../../../utils/hubHelpers.tsx";
+} from "../../../utils/hubHelpers";
 import StatusBadge from "../common/StatusBadge";
-import InternalQrImage from "../../../utils/InternalQrImage.tsx";
+import InternalQrImage from "../../../utils/InternalQrImage";
+
+type AnyRecord = Record<string, any>;
+
+type DateLikeInput =
+  | Date
+  | string
+  | number
+  | {
+      toDate?: () => Date;
+      toMillis?: () => number;
+      seconds?: number;
+      _seconds?: number;
+      nanoseconds?: number;
+      _nanoseconds?: number;
+    }
+  | null
+  | undefined;
+
+type StationDetailModalProps = {
+  stationId: string;
+  allOrders: any[];
+  allProducts: any[];
+  allArchivedProducts?: any[];
+  onClose: () => void;
+};
 
 const StationDetailModal = ({
   stationId,
@@ -31,7 +55,7 @@ const StationDetailModal = ({
   allProducts,
   allArchivedProducts = [],
   onClose,
-}) => {
+}: StationDetailModalProps) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("planning");
   const [historyFilter, setHistoryFilter] = useState("week");
@@ -41,7 +65,7 @@ const StationDetailModal = ({
     return now;
   });
   const [exportingLnPdf, setExportingLnPdf] = useState(false);
-  const historyFilterLabels = {
+  const historyFilterLabels: Record<string, string> = {
     week: t("common.week", "Deze week"),
     "2weeks": t("digitalplanning.station_detail.two_weeks", "2 weken"),
     month: t("digitalplanning.station_detail.thirty_days", "30 dagen"),
@@ -50,13 +74,14 @@ const StationDetailModal = ({
   const stationNorm = normalizeMachine(stationId);
   const LN_EXPORT_DELAY_MINUTES = 5;
 
-  const toDateValue = (value) => {
+  const toDateValue = (value: DateLikeInput) => {
     if (!value) return null;
-    if (value?.toDate) {
-      const converted = value.toDate();
+    const valueObj = typeof value === "object" ? (value as { toDate?: () => Date }) : null;
+    if (valueObj && typeof valueObj.toDate === "function") {
+      const converted = valueObj.toDate();
       return Number.isFinite(converted?.getTime?.()) ? converted : null;
     }
-    const parsed = new Date(value);
+    const parsed = value instanceof Date ? value : new Date(String(value));
     return Number.isFinite(parsed.getTime()) ? parsed : null;
   };
 
@@ -89,8 +114,8 @@ const StationDetailModal = ({
   }, [selectedDayStart]);
 
   const allOrdersByOrderId = useMemo(() => {
-    const map = new Map();
-    (allOrders || []).forEach((order) => {
+    const map = new Map<string, AnyRecord>();
+    (allOrders || []).forEach((order: AnyRecord) => {
       const key = String(order?.orderId || order?.id || "").trim();
       if (!key || map.has(key)) return;
       map.set(key, order);
@@ -98,7 +123,7 @@ const StationDetailModal = ({
     return map;
   }, [allOrders]);
 
-  const extractReferenceOperations = (order) => {
+  const extractReferenceOperations = (order: AnyRecord) => {
     if (!order || typeof order !== "object") return [];
 
     const fromReferenceMap = Object.keys(order.referenceOperationTimes || {})
@@ -118,7 +143,7 @@ const StationDetailModal = ({
     return [];
   };
 
-  const toLnReferenceCode = (value) => {
+  const toLnReferenceCode = (value: unknown) => {
     const raw = String(value || "").trim();
     if (!raw) return "";
 
@@ -128,14 +153,14 @@ const StationDetailModal = ({
     return digits.slice(-2);
   };
 
-  const toLnReferenceList = (values = []) => {
+  const toLnReferenceList = (values: unknown[] | unknown = []) => {
     const normalized = (Array.isArray(values) ? values : [values])
-      .map((value) => toLnReferenceCode(value))
+      .map((value: unknown) => toLnReferenceCode(value))
       .filter(Boolean);
     return Array.from(new Set(normalized));
   };
 
-  const getWikkelenStartTime = (product) => {
+  const getWikkelenStartTime = (product: AnyRecord) => {
     const direct =
       toDateValue(product?.timestamps?.wikkelen_start) ||
       toDateValue(product?.timestamps?.station_start);
@@ -152,7 +177,7 @@ const StationDetailModal = ({
     return null;
   };
 
-  const getStationStartTime = (product) => {
+  const getStationStartTime = (product: AnyRecord) => {
     const direct =
       toDateValue(product?.timestamps?.wikkelen_start) ||
       toDateValue(product?.timestamps?.station_start) ||
@@ -161,7 +186,7 @@ const StationDetailModal = ({
     return direct;
   };
 
-  const getWikkelenCompletionTime = (product) => {
+  const getWikkelenCompletionTime = (product: AnyRecord) => {
     const direct =
       toDateValue(product?.timestamps?.wikkelen_end) ||
       toDateValue(product?.timestamps?.lossen_start);
@@ -194,10 +219,10 @@ const StationDetailModal = ({
     const isToday = currentDay.getTime() === selectedDayStart.getTime();
     const cutoff = new Date(now.getTime() - LN_EXPORT_DELAY_MINUTES * 60 * 1000);
 
-    const perOrder = new Map();
+    const perOrder = new Map<string, { orderId: string; refOpsText: string; count: number }>();
     const sourceProducts = [...(allProducts || []), ...(allArchivedProducts || [])];
 
-    sourceProducts.forEach((product) => {
+    sourceProducts.forEach((product: AnyRecord) => {
       const productStationNorm = normalizeMachine(
         product?.originMachine || product?.machine || product?.lastStation || product?.currentStation || ""
       );
@@ -256,10 +281,10 @@ const StationDetailModal = ({
       const doc = new jsPDF("p", "mm", "a4");
 
       doc.setFontSize(14);
-      doc.setFont(undefined, "bold");
+      doc.setFont("helvetica", "bold");
       doc.text(`LN Wikkelen Export - ${stationId}`, 12, 12);
       doc.setFontSize(10);
-      doc.setFont(undefined, "normal");
+      doc.setFont("helvetica", "normal");
       doc.text(`Datum: ${selectedDayIso} | Buffer: ${LN_EXPORT_DELAY_MINUTES} min`, 12, 18);
 
       let y = 24;
@@ -276,18 +301,18 @@ const StationDetailModal = ({
         }
 
         const [orderDataUrl, refDataUrl, countDataUrl] = await Promise.all([
-          QRCode.toDataURL(row.orderQr, { width: 220, margin: 1 }),
-          QRCode.toDataURL(row.refQr, { width: 220, margin: 1 }),
-          QRCode.toDataURL(row.countQr, { width: 220, margin: 1 }),
+          QRCode.toDataURL(String(row.orderQr || ""), { width: 220, margin: 1 }),
+          QRCode.toDataURL(String(row.refQr || ""), { width: 220, margin: 1 }),
+          QRCode.toDataURL(String(row.countQr || ""), { width: 220, margin: 1 }),
         ]);
 
         doc.setDrawColor(225, 230, 238);
         doc.roundedRect(10, y - 2, 190, blockHeight - 2, 2, 2);
 
         doc.setFontSize(10);
-        doc.setFont(undefined, "bold");
+        doc.setFont("helvetica", "bold");
         doc.text(`Order ${row.orderId}`, 12, y + 3);
-        doc.setFont(undefined, "normal");
+        doc.setFont("helvetica", "normal");
         doc.text(`RefOps: ${row.refOpsText}`, 12, y + 8);
         doc.text(`Aantal: ${row.count}`, 12, y + 13);
 
@@ -340,7 +365,7 @@ const StationDetailModal = ({
 
     const sourceProducts = [...allProducts, ...allArchivedProducts];
 
-    const filtered = sourceProducts.filter((p) => {
+    const filtered = sourceProducts.filter((p: AnyRecord) => {
       if (p.currentStep === "REJECTED" || String(p.status || "").toLowerCase() === "rejected" || String(p.status || "").toLowerCase() === "archived_rejected")
         return false;
       
@@ -376,9 +401,9 @@ const StationDetailModal = ({
     });
 
     const uniqueMap = new Map();
-    filtered.forEach(p => uniqueMap.set(p.lotNumber || p.id, p));
+    filtered.forEach((p: AnyRecord) => uniqueMap.set(p.lotNumber || p.id, p));
     
-    return Array.from(uniqueMap.values()).sort((a, b) => {
+    return Array.from(uniqueMap.values()).sort((a: AnyRecord, b: AnyRecord) => {
       const aActive = (String(a.currentStep || "").toUpperCase() === "WIKKELEN" || String(a.currentStep || "").toUpperCase() === "HOLD_AREA") && a.status !== "completed";
       const bActive = (String(b.currentStep || "").toUpperCase() === "WIKKELEN" || String(b.currentStep || "").toUpperCase() === "HOLD_AREA") && b.status !== "completed";
       
@@ -406,14 +431,16 @@ const StationDetailModal = ({
     const { week: currentWeek, year: currentYear } = getISOWeekInfo(now);
 
     const relevantOrders = allOrders
-      .filter((o) => {
+      .filter((o: AnyRecord) => {
         return o.normMachine === stationNorm && o.status !== "completed";
       })
-      .sort((a, b) => {
-        return a.dateObj - b.dateObj;
+      .sort((a: AnyRecord, b: AnyRecord) => {
+        const aTime = toDateValue(a.dateObj)?.getTime() || 0;
+        const bTime = toDateValue(b.dateObj)?.getTime() || 0;
+        return aTime - bTime;
       });
 
-    const groups = relevantOrders.reduce((acc, order) => {
+    const groups = relevantOrders.reduce((acc: Record<string, AnyRecord[]>, order: AnyRecord) => {
       let week = parseInt(order.weekNumber);
       let year = parseInt(order.weekYear);
 
@@ -437,11 +464,12 @@ const StationDetailModal = ({
         // year = currentYear; // Impliciet
       }
 
-      if (!acc[week]) acc[week] = [];
+      const weekKey = String(week);
+      if (!acc[weekKey]) acc[weekKey] = [];
       
       // Voeg flags toe voor weergave (isOverdue, isMoved)
       // We nemen aan dat 'isMoved' of 'priority' in de order data zit als deze verplaatst is
-      acc[week].push({ 
+      acc[weekKey].push({ 
         ...order, 
         isOverdue: isPast,
         isPriority: order.isMoved || order.priority === true || order.priority === "high" 
@@ -450,8 +478,8 @@ const StationDetailModal = ({
     }, {});
 
     // Sorteer binnen de weken: Verplaatst/Prio eerst, dan Plan nummer, dan Datum
-    Object.keys(groups).forEach(week => {
-      groups[week].sort((a, b) => {
+    Object.keys(groups).forEach((week) => {
+      groups[week].sort((a: AnyRecord, b: AnyRecord) => {
         // 1. Verplaatste / Priority orders bovenaan
         if (a.isPriority && !b.isPriority) return -1;
         if (!a.isPriority && b.isPriority) return 1;
@@ -462,11 +490,13 @@ const StationDetailModal = ({
         if (planA !== planB) return planA - planB;
         
         // 3. Datum
-        return a.dateObj - b.dateObj;
+        const aTime = toDateValue(a.dateObj)?.getTime() || 0;
+        const bTime = toDateValue(b.dateObj)?.getTime() || 0;
+        return aTime - bTime;
       });
     });
 
-    const sortedWeeks = Object.keys(groups).sort((a, b) => a - b);
+    const sortedWeeks = Object.keys(groups).sort((a, b) => Number(a) - Number(b));
 
     return { groups, sortedWeeks, total: relevantOrders.length };
   }, [allOrders, stationNorm]);
@@ -478,7 +508,7 @@ const StationDetailModal = ({
     const sourceProducts = [...allProducts, ...allArchivedProducts];
 
     return sourceProducts
-      .filter((p) => {
+      .filter((p: AnyRecord) => {
         if (p.currentStep === "REJECTED" || String(p.status || "").toLowerCase() === "rejected" || String(p.status || "").toLowerCase() === "archived_rejected")
           return false;
 
@@ -533,20 +563,20 @@ const StationDetailModal = ({
         }
 
         if (historyFilter === "2weeks") {
-          const diffTime = Math.abs(now - updatedAt);
+          const diffTime = Math.abs(now.getTime() - updatedAt.getTime());
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
           return diffDays <= 14;
         }
 
         if (historyFilter === "month") {
-          const diffTime = Math.abs(now - updatedAt);
+          const diffTime = Math.abs(now.getTime() - updatedAt.getTime());
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
           return diffDays <= 30;
         }
 
         return true;
       })
-      .sort((a, b) => b._sortDate.getTime() - a._sortDate.getTime());
+      .sort((a: AnyRecord, b: AnyRecord) => b._sortDate.getTime() - a._sortDate.getTime());
   }, [allProducts, allArchivedProducts, stationNorm, historyFilter]);
 
   return (
@@ -759,7 +789,7 @@ const StationDetailModal = ({
                     <div className="h-px bg-slate-200 flex-1"></div>
                   </div>
                   <div className="space-y-2">
-                    {groupedPlanning.groups[week].map((order) => (
+                    {groupedPlanning.groups[week].map((order: AnyRecord) => (
                       <div
                           key={order.id || Math.random()}
                           className={`p-3 rounded-xl border shadow-sm flex justify-between items-center hover:shadow-md transition-shadow ${
@@ -861,17 +891,17 @@ const StationDetailModal = ({
                         <div className="grid grid-cols-3 gap-2">
                           <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
                             <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Order</p>
-                            <InternalQrImage value={row.orderQr} size={140} alt="Order QR" className="w-full aspect-square object-contain" />
+                            <InternalQrImage value={String(row.orderQr || "")} size={140} alt="Order QR" className="w-full aspect-square object-contain" />
                             <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.orderId}</p>
                           </div>
                           <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
                             <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Ref Ops</p>
-                            <InternalQrImage value={row.refQr} size={140} alt="Reference operations QR" className="w-full aspect-square object-contain" />
+                            <InternalQrImage value={String(row.refQr || "")} size={140} alt="Reference operations QR" className="w-full aspect-square object-contain" />
                             <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.refOpsText}</p>
                           </div>
                           <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
                             <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Aantal</p>
-                            <InternalQrImage value={row.countQr} size={140} alt="Dag aantal QR" className="w-full aspect-square object-contain" />
+                            <InternalQrImage value={String(row.countQr || "")} size={140} alt="Dag aantal QR" className="w-full aspect-square object-contain" />
                             <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.count}</p>
                           </div>
                         </div>
@@ -904,7 +934,7 @@ const StationDetailModal = ({
                 {t("digitalplanning.station_detail.ready_items", "{{count}} items completed", { count: historyItems.length })}
               </p>
               <div className="space-y-2">
-                {historyItems.map((item) => (
+                {historyItems.map((item: AnyRecord) => (
                   <div
                     key={item.id}
                     className="bg-white p-3 rounded-xl border border-gray-100 flex justify-between items-center opacity-75 hover:opacity-100 transition-opacity"

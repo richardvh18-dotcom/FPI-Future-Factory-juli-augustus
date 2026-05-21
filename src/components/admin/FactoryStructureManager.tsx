@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect } from "react";
 import {
   Building2,
@@ -24,7 +23,49 @@ import {
 } from "lucide-react";
 import { db, auth, logActivity } from "../../config/firebase";
 import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
-import { PATHS, isValidPath } from "../../config/dbPaths";
+import { PATHS, isValidPath, getPathString } from "../../config/dbPaths";
+
+type StationRecord = {
+  id: string;
+  name: string;
+  type: string;
+};
+
+type ShiftRecord = {
+  id: string;
+  label: string;
+  start: string;
+  end: string;
+};
+
+type DepartmentRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  country: string;
+  stations: StationRecord[];
+  shifts: ShiftRecord[];
+  isActive: boolean;
+};
+
+type FactoryConfig = {
+  departments: DepartmentRecord[];
+  [key: string]: unknown;
+};
+
+type StatusState = {
+  type: "success" | "error";
+  msg: string;
+};
+
+const docPath = (path: string[]) => doc(db, getPathString(path));
+
+const getErrorCode = (error: unknown): string | undefined => {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    return String((error as { code?: unknown }).code || "");
+  }
+  return undefined;
+};
 
 /**
  * FactoryStructureManager V5.0 - Industrial Root Sync
@@ -32,11 +73,11 @@ import { PATHS, isValidPath } from "../../config/dbPaths";
  * Target Path: /future-factory/settings/factory_configs/main
  */
 const FactoryStructureManager = () => {
-  const [config, setConfig] = useState({ departments: [] });
+  const [config, setConfig] = useState<FactoryConfig>({ departments: [] });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState(null);
-  const [expandedDepts, setExpandedDepts] = useState({});
+  const [status, setStatus] = useState<StatusState | null>(null);
+  const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
   const [showDebug, setShowDebug] = useState(false);
 
   // Use the verified path from dbPaths.js
@@ -49,16 +90,16 @@ const FactoryStructureManager = () => {
       return;
     }
 
-    const docRef = doc(db, ...CONFIG_PATH);
+    const docRef = docPath(CONFIG_PATH);
     const unsub = onSnapshot(
       docRef,
       (docSnap) => {
         if (docSnap.exists()) {
-          const data = docSnap.data();
+          const data = (docSnap.data() || {}) as Partial<FactoryConfig>;
           setConfig({
             ...data,
             departments: Array.isArray(data.departments)
-              ? data.departments
+              ? (data.departments as DepartmentRecord[])
               : [],
           });
         } else {
@@ -66,11 +107,11 @@ const FactoryStructureManager = () => {
         }
         setLoading(false);
       },
-      (err) => {
+      (err: unknown) => {
         console.error("Firestore Sync Error:", err);
         // FIX: Voorkom foutmelding bij uitloggen
-        if (err.code === 'permission-denied') return;
-        setStatus({ type: "error", msg: `Access Denied: ${err.code}` });
+        if (getErrorCode(err) === "permission-denied") return;
+        setStatus({ type: "error", msg: `Access Denied: ${getErrorCode(err) || "unknown"}` });
         setLoading(false);
       }
     );
@@ -78,14 +119,14 @@ const FactoryStructureManager = () => {
     return () => unsub();
   }, []);
 
-  const toggleExpand = (id) => {
+  const toggleExpand = (id: string) => {
     setExpandedDepts((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   // --- DEPARTMENT LOGIC ---
   const addDepartment = () => {
     const id = `dept_${Date.now()}`;
-    const newDept = {
+    const newDept: DepartmentRecord = {
       id: id,
       name: "New Production Unit",
       slug: "new-unit",
@@ -101,7 +142,7 @@ const FactoryStructureManager = () => {
     setExpandedDepts((prev) => ({ ...prev, [id]: true }));
   };
 
-  const updateDept = (id, field, value) => {
+  const updateDept = (id: string, field: keyof DepartmentRecord, value: string | boolean | StationRecord[] | ShiftRecord[]) => {
     setConfig((prev) => ({
       ...prev,
       departments: prev.departments.map((d) =>
@@ -110,7 +151,7 @@ const FactoryStructureManager = () => {
     }));
   };
 
-  const deleteDept = (id) => {
+  const deleteDept = (id: string) => {
     if (
       !window.confirm(
         "Delete this entire production department and all linked stations?"
@@ -124,12 +165,12 @@ const FactoryStructureManager = () => {
   };
 
   // --- STATION LOGIC ---
-  const addStation = (deptId) => {
+  const addStation = (deptId: string) => {
     setConfig((prev) => ({
       ...prev,
       departments: prev.departments.map((d) => {
         if (d.id === deptId) {
-          const newStation = {
+          const newStation: StationRecord = {
             id: `st_${Date.now()}`,
             name: "STATION-X",
             type: "machine",
@@ -141,7 +182,7 @@ const FactoryStructureManager = () => {
     }));
   };
 
-  const updateStation = (deptId, stationId, value) => {
+  const updateStation = (deptId: string, stationId: string, value: string) => {
     setConfig((prev) => ({
       ...prev,
       departments: prev.departments.map((d) => {
@@ -158,7 +199,7 @@ const FactoryStructureManager = () => {
     }));
   };
 
-  const removeStation = (deptId, stationId) => {
+  const removeStation = (deptId: string, stationId: string) => {
     setConfig((prev) => ({
       ...prev,
       departments: prev.departments.map((d) => {
@@ -174,12 +215,12 @@ const FactoryStructureManager = () => {
   };
 
   // --- SHIFT LOGIC ---
-  const addShift = (deptId) => {
+  const addShift = (deptId: string) => {
     setConfig((prev) => ({
       ...prev,
       departments: prev.departments.map((d) => {
         if (d.id === deptId) {
-          const newShift = {
+          const newShift: ShiftRecord = {
             id: `sh_${Date.now()}`,
             label: "New Shift",
             start: "06:00",
@@ -192,7 +233,7 @@ const FactoryStructureManager = () => {
     }));
   };
 
-  const updateShift = (deptId, shiftId, field, value) => {
+  const updateShift = (deptId: string, shiftId: string, field: keyof ShiftRecord, value: string) => {
     setConfig((prev) => ({
       ...prev,
       departments: prev.departments.map((d) => {
@@ -209,7 +250,7 @@ const FactoryStructureManager = () => {
     }));
   };
 
-  const removeShift = (deptId, shiftId) => {
+  const removeShift = (deptId: string, shiftId: string) => {
     setConfig((prev) => ({
       ...prev,
       departments: prev.departments.map((d) => {
@@ -226,7 +267,7 @@ const FactoryStructureManager = () => {
     setSaving(true);
     setStatus(null);
     try {
-      const docRef = doc(db, ...CONFIG_PATH);
+      const docRef = docPath(CONFIG_PATH);
       await setDoc(
         docRef,
         {
@@ -237,13 +278,13 @@ const FactoryStructureManager = () => {
         { merge: true }
       );
 
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", "Factory structure updated");
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", "Factory structure updated");
 
       setStatus({ type: "success", msg: "Factory logic published to root!" });
       setTimeout(() => setStatus(null), 4000);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Save Error:", err);
-      setStatus({ type: "error", msg: `Failed: ${err.code}` });
+      setStatus({ type: "error", msg: `Failed: ${getErrorCode(err) || "unknown"}` });
     } finally {
       setSaving(false);
     }

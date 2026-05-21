@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -25,7 +25,7 @@ import { db, storage, logActivity } from "../../config/firebase";
 import { doc, serverTimestamp, getDoc, collection, query, where, getDocs, limit, addDoc } from "firebase/firestore";
 import { saveProductRecord } from "../../services/planningSecurityService";
 import { ref, uploadBytes, getDownloadURL, listAll } from "firebase/storage";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { useSettingsData } from "../../hooks/useSettingsData";
 import {
   ALL_PRODUCT_TYPES,
@@ -34,9 +34,77 @@ import {
 } from "../../data/constants";
 import { useNotifications } from '../../contexts/NotificationContext';
 
+type ProductSpecMap = Record<string, unknown>;
+
+type ProductFormState = {
+  name: string;
+  displayId: string;
+  type: string;
+  label: string;
+  connection: string;
+  dn: string;
+  dn2: string;
+  pn: string;
+  angle: string;
+  radius: string;
+  articleCode: string;
+  extraCode: string;
+  specs: ProductSpecMap;
+  bellSpecs: ProductSpecMap;
+  fittingSpecs: ProductSpecMap;
+  socketSpecs: ProductSpecMap;
+  imageUrl: string;
+  sourcePdfs: string[];
+  imageFile: File | null;
+  pdfFiles: File[];
+  verificationStatus: string;
+  assignedVerifier: string;
+};
+
+type ProductCandidate = {
+  id?: string;
+  targetProductId?: string;
+  manufacturedId?: string;
+  description?: string;
+  type?: string;
+  ends?: string;
+  serie?: string;
+  [key: string]: unknown;
+};
+
+type Verifier = {
+  id: string;
+  email?: string;
+  name?: string;
+  displayName?: string;
+  [key: string]: unknown;
+};
+
+type ProductFormProps = {
+  initialData?: any;
+  onSubmit?: () => void;
+  onCancel?: () => void;
+  user?: any;
+};
+
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message?: unknown }).message || "onbekende fout");
+  }
+  return String(err || "onbekende fout");
+};
+
+const getErrorCode = (err: unknown): string => {
+  if (typeof err === "object" && err !== null && "code" in err) {
+    return String((err as { code?: unknown }).code || "");
+  }
+  return "";
+};
+
 // Helper functies voor naamgeving en paden (buiten component om re-renders te voorkomen)
-const getTypeAbbr = (t) => {
-  const map = {
+const getTypeAbbr = (t: string): string => {
+  const map: Record<string, string> = {
     "Elbow": "Elb",
     "Tee": "Tee",
     "Coupler": "Cpl",
@@ -49,12 +117,12 @@ const getTypeAbbr = (t) => {
   return map[t] || (t ? t.substring(0, 3) : "");
 };
 
-const normalizeProductType = (value) => {
+const normalizeProductType = (value: unknown): string => {
   const raw = String(value || "").trim();
   if (!raw) return "";
 
   const normalized = raw.toLowerCase();
-  const aliasMap = {
+  const aliasMap: Record<string, string> = {
     elbow: "Elbow",
     elb: "Elbow",
     tee: "Tee",
@@ -79,7 +147,7 @@ const normalizeProductType = (value) => {
   return aliasMap[normalized] || raw;
 };
 
-const buildGeneratedProductName = (productData) => {
+const buildGeneratedProductName = (productData: Partial<ProductFormState>): string => {
   const normalizedType = normalizeProductType(productData?.type);
   const typeStr = getTypeAbbr(normalizedType);
   const dnStr = productData?.dn
@@ -98,7 +166,7 @@ const buildGeneratedProductName = (productData) => {
   return generatedName.replace(/\s+/g, " ").trim();
 };
 
-const formatConnection = (c) => {
+const formatConnection = (c?: string): string => {
   if (!c) return "";
   const clean = c.replace(/[^a-zA-Z0-9]/g, "");
   // Als het 2 karakters zijn (bijv CB), verdubbelen naar CBCB
@@ -106,7 +174,7 @@ const formatConnection = (c) => {
   return clean;
 };
 
-const sanitizeFileName = (name) => {
+const sanitizeFileName = (name: string): string => {
   return name.replace(/[^a-zA-Z0-9.-]/g, "_");
 };
 
@@ -115,23 +183,27 @@ const sanitizeFileName = (name) => {
  * Bevat de volledige technische logica voor FPi GRE producten.
  * Slaat op in: /future-factory/production/products/
  */
-const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
+const ProductForm = ({ initialData, onSubmit, onCancel, user }: ProductFormProps) => {
   const { t } = useTranslation();
   const {
     loading: settingsLoading,
     productRange,
     generalConfig,
-  } = useSettingsData(user);
+  } = useSettingsData(user as any);
   const { notify } = useNotifications();
   const [saving, setSaving] = useState(false);
   const isAdminUser = String(user?.role || "").toLowerCase() === "admin";
 
-  const productTypes = generalConfig?.product_names || ALL_PRODUCT_TYPES;
-  const connectionTypes = generalConfig?.connections || CONNECTION_TYPES;
-  const productLabels = generalConfig?.productLabels || [];
+  const productTypes: string[] = Array.isArray(generalConfig?.product_names) ? (generalConfig.product_names as string[]) : ALL_PRODUCT_TYPES;
+  const connectionTypes: string[] = Array.isArray(generalConfig?.connections) ? (generalConfig.connections as string[]) : CONNECTION_TYPES;
+  const productLabels: string[] = Array.isArray(generalConfig?.productLabels) ? (generalConfig.productLabels as string[]) : [];
+  const configCodes: string[] = Array.isArray(generalConfig?.codes) ? (generalConfig.codes as string[]) : [];
+  const configAngles: string[] = Array.isArray(generalConfig?.angles) ? (generalConfig.angles as string[]) : ["11.25", "22.5", "30", "45", "60", "90"];
+  const configPns: number[] = Array.isArray(generalConfig?.pns) ? (generalConfig.pns as number[]) : [];
+  const configDiameters: number[] = Array.isArray(generalConfig?.diameters) ? (generalConfig.diameters as number[]) : [];
 
   // State voor het formulier
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<ProductFormState>({
     name: "",
     displayId: "",
     type: "",
@@ -160,23 +232,23 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
   const generatedProductName = buildGeneratedProductName({ ...formData, type: normalizedFormType });
 
   // LN Search State
-  const [lnSearchResults, setLnSearchResults] = useState([]);
+  const [lnSearchResults, setLnSearchResults] = useState<ProductCandidate[]>([]);
   const [isSearchingLn, setIsSearchingLn] = useState(false);
   const [showLnResults, setShowLnResults] = useState(false);
   const [searchEnabled, setSearchEnabled] = useState(false);
   const [isAutoLinked, setIsAutoLinked] = useState(false);
   const [showStoragePicker, setShowStoragePicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState(null); // 'image' or 'pdf'
-  const [imagePreview, setImagePreview] = useState(null);
-  const [verifiers, setVerifiers] = useState([]);
+  const [pickerMode, setPickerMode] = useState<"image" | "pdf" | null>(null); // 'image' or 'pdf'
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [verifiers, setVerifiers] = useState<Verifier[]>([]);
 
   // Fetch verifiers
   useEffect(() => {
     const fetchVerifiers = async () => {
       try {
-        const q = query(collection(db, ...PATHS.USERS), where("canVerify", "==", true));
+        const q = query(collection(db, getPathString(PATHS.USERS)), where("canVerify", "==", true));
         const snapshot = await getDocs(q);
-        setVerifiers(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+        setVerifiers(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Verifier)));
       } catch (err) { console.error(err); }
     };
     fetchVerifiers();
@@ -190,20 +262,25 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
   }, [imagePreview]);
 
   // Handle file input changes
-  const handleImageChange = (e) => {
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       setFormData((prev) => ({ ...prev, imageFile: file }));
       setImagePreview(URL.createObjectURL(file));
     }
   };
-  const handlePdfChange = (e) => {
+  const handlePdfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      setFormData((prev) => ({ ...prev, pdfFiles: Array.from(e.target.files) }));
+      const files: File[] = [];
+      for (let i = 0; i < e.target.files.length; i++) {
+        const file = e.target.files.item(i);
+        if (file) files.push(file);
+      }
+      setFormData((prev) => ({ ...prev, pdfFiles: files }));
     }
   };
 
-  const handleStorageSelect = (url) => {
+  const handleStorageSelect = (url: string) => {
     if (pickerMode === 'image') {
         setFormData(prev => ({ ...prev, imageUrl: url, imageFile: null }));
         setImagePreview(null);
@@ -216,19 +293,31 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
   // 1. Initialisatie bij bewerken
   useEffect(() => {
     if (initialData) {
+      const data = initialData as Partial<ProductFormState> & { articleCode?: string };
       setFormData((prev) => ({
         ...prev,
-        ...initialData,
-        angle: initialData.angle || "",
-        radius: initialData.radius || "",
-        specs: initialData.specs || {},
-        bellSpecs: initialData.bellSpecs || {},
-        fittingSpecs: initialData.fittingSpecs || {},
-        socketSpecs: initialData.socketSpecs || {},
-        sourcePdfs: initialData.sourcePdfs || [],
-        assignedVerifier: initialData.assignedVerifier || "",
+        name: typeof data.name === "string" ? data.name : prev.name,
+        displayId: typeof data.displayId === "string" ? data.displayId : prev.displayId,
+        type: typeof data.type === "string" ? data.type : prev.type,
+        label: typeof data.label === "string" ? data.label : prev.label,
+        connection: typeof data.connection === "string" ? data.connection : prev.connection,
+        dn: typeof data.dn === "string" ? data.dn : prev.dn,
+        dn2: typeof data.dn2 === "string" ? data.dn2 : prev.dn2,
+        pn: typeof data.pn === "string" ? data.pn : prev.pn,
+        angle: typeof data.angle === "string" ? data.angle : "",
+        radius: typeof data.radius === "string" ? data.radius : "",
+        articleCode: typeof data.articleCode === "string" ? data.articleCode : prev.articleCode,
+        extraCode: typeof data.extraCode === "string" ? data.extraCode : prev.extraCode,
+        specs: (data.specs as ProductSpecMap) || {},
+        bellSpecs: (data.bellSpecs as ProductSpecMap) || {},
+        fittingSpecs: (data.fittingSpecs as ProductSpecMap) || {},
+        socketSpecs: (data.socketSpecs as ProductSpecMap) || {},
+        imageUrl: typeof data.imageUrl === "string" ? data.imageUrl : prev.imageUrl,
+        sourcePdfs: Array.isArray(data.sourcePdfs) ? (data.sourcePdfs as string[]) : [],
+        verificationStatus: typeof data.verificationStatus === "string" ? data.verificationStatus : prev.verificationStatus,
+        assignedVerifier: typeof data.assignedVerifier === "string" ? data.assignedVerifier : "",
       }));
-      if (initialData.articleCode) {
+      if (typeof data.articleCode === "string" && data.articleCode) {
         setIsAutoLinked(true);
       }
     } else {
@@ -264,27 +353,36 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
   useEffect(() => {
     if (!formData.type) {
       if (!initialData) {
-        setFormData((prev) => ({ ...prev, name: "", displayId: "" }));
+        setFormData((prev) => {
+          if (prev.name === "" && prev.displayId === "") return prev;
+          return { ...prev, name: "", displayId: "" };
+        });
       }
       return;
     }
 
-    setFormData((prev) => ({
-      ...prev,
-      type: normalizedFormType,
-      name: generatedProductName,
-      displayId: prev.displayId && prev.displayId !== "" ? prev.displayId : generatedProductName,
-    }));
+    setFormData((prev) => {
+      const nextDisplayId = prev.displayId && prev.displayId !== "" ? prev.displayId : generatedProductName;
+      if (prev.type === normalizedFormType && prev.name === generatedProductName && prev.displayId === nextDisplayId) {
+        return prev; // Geen wijzigingen, voorkom extra re-render
+      }
+      return {
+        ...prev,
+        type: normalizedFormType,
+        name: generatedProductName,
+        displayId: nextDisplayId,
+      };
+    });
   }, [normalizedFormType, generatedProductName, initialData]);
 
   // 3. Matrix Validatie: Beschikbare PN's ophalen o.b.v. Verbinding
   const availablePNs = useMemo(() => {
     if (!formData.connection || !productRange) {
-      return (generalConfig?.pns || []).sort((a, b) => a - b);
+      return [...configPns].sort((a, b) => a - b);
     }
 
     const connKey = formData.connection;
-    const matrixData = productRange[connKey];
+    const matrixData = (productRange as Record<string, Record<string, number[]>>)[connKey];
 
     if (matrixData) {
       const configuredPNs = Object.keys(matrixData)
@@ -296,26 +394,26 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
       }
     }
 
-    return (generalConfig?.pns || []).sort((a, b) => a - b);
-  }, [productRange, formData.connection, generalConfig]);
+    return [...configPns].sort((a, b) => a - b);
+  }, [productRange, formData.connection, configPns]);
 
   // 4. Matrix Validatie: Beschikbare DN's ophalen o.b.v. Gekozen PN
   const availableDNs = useMemo(() => {
     if (!formData.connection || !productRange) {
-      return (generalConfig?.diameters || []).sort((a, b) => a - b);
+      return [...configDiameters].sort((a, b) => a - b);
     }
 
     const connKey = formData.connection;
-    const matrixData = productRange[connKey];
+    const matrixData = (productRange as Record<string, Record<string, number[]>>)[connKey];
 
     if (!matrixData) {
-      return (generalConfig?.diameters || []).sort((a, b) => a - b);
+      return [...configDiameters].sort((a, b) => a - b);
     }
 
     if (!formData.pn) {
-      const allIds = new Set();
-      Object.values(matrixData).forEach((ids) => {
-        if (Array.isArray(ids)) ids.forEach((id) => allIds.add(id));
+      const allIds = new Set<number>();
+      Object.values(matrixData).forEach((ids: number[]) => {
+        if (Array.isArray(ids)) ids.forEach((id: number) => allIds.add(id));
       });
       return Array.from(allIds).sort((a, b) => a - b);
     }
@@ -328,7 +426,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
     }
 
     return [];
-  }, [productRange, formData.connection, formData.pn, generalConfig]);
+  }, [productRange, formData.connection, formData.pn, configDiameters]);
 
   // 5. Auto-fetch Specs uit Matrix/Database
   useEffect(() => {
@@ -364,7 +462,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
         else if (connKey === "CB") bellPath = PATHS.CB_DIMENSIONS;
 
         if (bellPath) {
-          const bellDocRef = doc(db, ...bellPath, bellId);
+          const bellDocRef = doc(db, `${getPathString(bellPath)}/${bellId}`);
           const bellSnap = await getDoc(bellDocRef);
           if (bellSnap.exists()) {
             newBellSpecs = bellSnap.data();
@@ -374,7 +472,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
 
         // 2. Haal Fitting maten op (Stream 2)
         if (PATHS.FITTING_SPECS) {
-          const fittingDocRef = doc(db, ...PATHS.FITTING_SPECS, fittingId);
+          const fittingDocRef = doc(db, `${getPathString(PATHS.FITTING_SPECS)}/${fittingId}`);
           const fittingSnap = await getDoc(fittingDocRef);
           if (fittingSnap.exists()) {
             newFittingSpecs = fittingSnap.data();
@@ -386,7 +484,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
         // Generiek patroon voor alle fittings: TYPE_SOCKET_CONN_PN_ID
         if (PATHS.SOCKET_SPECS) {
           const socketId = `${normalizedFormType.toUpperCase()}_SOCKET_${connKey}_${pnStr}_${idStr}${extraCodeSuffix}`;
-          const socketDocRef = doc(db, ...PATHS.SOCKET_SPECS, socketId);
+          const socketDocRef = doc(db, `${getPathString(PATHS.SOCKET_SPECS)}/${socketId}`);
           const socketSnap = await getDoc(socketDocRef);
           if (socketSnap.exists()) {
             newSocketSpecs = socketSnap.data();
@@ -398,7 +496,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
         const isFlange = normalizedFormType.toLowerCase().includes("flange") || formData.connection.toLowerCase().includes("flange");
         if (isFlange && PATHS.BORE_DIMENSIONS) {
           const q = query(
-            collection(db, ...PATHS.BORE_DIMENSIONS), 
+            collection(db, getPathString(PATHS.BORE_DIMENSIONS)), 
             where("diameter", "==", Number(formData.dn))
           );
           const boreSnaps = await getDocs(q);
@@ -437,14 +535,14 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
         const upperTerm = term.trim().toUpperCase();
         
         const q1 = query(
-          collection(db, ...PATHS.CONVERSION_MATRIX),
+          collection(db, getPathString(PATHS.CONVERSION_MATRIX)),
           where("manufacturedId", ">=", upperTerm),
           where("manufacturedId", "<=", upperTerm + "\uf8ff"),
           limit(20)
         );
         
         const q2 = query(
-          collection(db, ...PATHS.CONVERSION_MATRIX),
+          collection(db, getPathString(PATHS.CONVERSION_MATRIX)),
           where("targetProductId", ">=", upperTerm),
           where("targetProductId", "<=", upperTerm + "\uf8ff"),
           limit(20)
@@ -477,7 +575,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
         // Query Conversion Matrix by DN and PN
         // 1. Probeer als String (standaard)
         let q = query(
-          collection(db, ...PATHS.CONVERSION_MATRIX),
+          collection(db, getPathString(PATHS.CONVERSION_MATRIX)),
           where("dn", "==", String(formData.dn)),
           where("pn", "==", String(formData.pn))
         );
@@ -485,9 +583,9 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
         let snapshot = await getDocs(q);
 
         // 2. Fallback: Probeer als Number (als import numeriek was)
-        if (snapshot.empty && !isNaN(formData.dn) && !isNaN(formData.pn)) {
+        if (snapshot.empty && !isNaN(Number(formData.dn)) && !isNaN(Number(formData.pn))) {
            q = query(
-            collection(db, ...PATHS.CONVERSION_MATRIX),
+            collection(db, getPathString(PATHS.CONVERSION_MATRIX)),
             where("dn", "==", Number(formData.dn)),
             where("pn", "==", Number(formData.pn))
           );
@@ -496,7 +594,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
 
         if (snapshot.empty) return;
 
-        const candidates = snapshot.docs.map(d => d.data());
+        const candidates = snapshot.docs.map(d => d.data() as ProductCandidate);
         
         // Client-side filtering
         const formType = normalizedFormType.toLowerCase();
@@ -505,7 +603,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
         const formAngle = formData.angle;
         const formRadius = formData.radius;
 
-        const match = candidates.find(c => {
+        const match = candidates.find((c) => {
             // Type Match
             const cType = (c.type || "").toLowerCase();
             const cDesc = (c.description || "").toLowerCase();
@@ -565,7 +663,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
         if (match && (match.targetProductId || match.manufacturedId)) {
             setIsAutoLinked(true);
             setFormData(prev => {
-                const codeToUse = match.targetProductId || match.manufacturedId;
+                const codeToUse = match.targetProductId || match.manufacturedId || "";
                 if (prev.articleCode !== codeToUse) {
                     return { ...prev, articleCode: codeToUse };
                 }
@@ -582,7 +680,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
   }, [normalizedFormType, formData.dn, formData.pn, formData.connection, formData.angle, formData.extraCode, formData.radius]);
 
   // 6. Opslaan naar Root
-  const handleSave = async (e) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!normalizedFormType || !generatedProductName || !formData.dn || !formData.pn) {
       notify(t('productForm.fill_required'));
@@ -639,7 +737,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
       }
 
       // Upload PDFs if present
-      let pdfUrls = formData.sourcePdfs || [];
+      let pdfUrls: string[] = formData.sourcePdfs || [];
       if (formData.pdfFiles && formData.pdfFiles.length > 0) {
         pdfUrls = [];
         for (let i = 0; i < formData.pdfFiles.length; i++) {
@@ -660,20 +758,22 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
 
       // Filter out spec fields and temporary file objects before saving
       // We want to store ONLY identification and system links, specs should be live fetched.
-      const cleanFormData = {
+      const {
+        specs: _specs,
+        bellSpecs: _bellSpecs,
+        fittingSpecs: _fittingSpecs,
+        socketSpecs: _socketSpecs,
+        imageFile: _imageFile,
+        pdfFiles: _pdfFiles,
+        ...cleanFormData
+      } = {
         ...formData,
         type: resolvedProductType,
         name: resolvedProductName,
         displayId: resolvedDisplayId,
       };
-      delete cleanFormData.specs;
-      delete cleanFormData.bellSpecs;
-      delete cleanFormData.fittingSpecs;
-      delete cleanFormData.socketSpecs;
-      delete cleanFormData.imageFile;
-      delete cleanFormData.pdfFiles;
 
-      const productData = {
+      const productData: Record<string, unknown> = {
         ...cleanFormData,
         // Backward compatibility: Save diameter/pressure aliases for Catalog views
         diameter: cleanFormData.dn,
@@ -711,10 +811,10 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
       );
 
       // Send notification to verifier if assigned
-      if (formData.assignedVerifier) {
+       if (formData.assignedVerifier) {
         const verifier = verifiers.find(v => v.id === formData.assignedVerifier);
         if (verifier && verifier.email) {
-           await addDoc(collection(db, ...PATHS.MESSAGES), {
+         await addDoc(collection(db, getPathString(PATHS.MESSAGES)), {
             to: verifier.email,
             subject: t('productForm.verification_request') + resolvedProductName,
             content: t('productForm.new_product_verification', { name: resolvedProductName }),
@@ -738,10 +838,10 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
       if (onSubmit) onSubmit();
     } catch (err) {
       console.error("Save failed:", err);
-      if (err.code === 'storage/unauthorized') {
+      if (getErrorCode(err) === 'storage/unauthorized') {
         notify(t('productForm.storage_unauthorized'));
       } else {
-        notify(t('productForm.save_error') + err.message);
+        notify(t('productForm.save_error') + getErrorMessage(err));
       }
     } finally {
       setSaving(false);
@@ -749,7 +849,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
   };
 
   // Helper voor het sorteren van specificaties
-  const sortSpecs = (specs, order) => {
+  const sortSpecs = (specs: ProductSpecMap, order: string[]): Array<[string, unknown]> => {
     return Object.entries(specs)
       .filter(([key, value]) => !['id', 'lastUpdated', 'updatedBy', 'type', 'diameter', 'pressure', 'dn', 'pn', 'sourceNode', 'articleCode'].includes(key) && typeof value !== 'object')
       .sort(([keyA], [keyB]) => {
@@ -840,7 +940,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
                   >
                     <option value="">{t('productForm.select_code')}</option>
                     <option value="-">{t('productForm.no_code')}</option>
-                    {(generalConfig?.codes || []).map((code) => (
+                    {configCodes.map((code) => (
                       <option key={code} value={code}>{code}</option>
                     ))}
                   </select>
@@ -900,7 +1000,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
                         }}
                       >
                         <option value="">{t('productForm.choose_angle')}</option>
-                        {(generalConfig?.angles || ["11.25", "22.5", "30", "45", "60", "90"]).map(a => <option key={a} value={a}>{a}°</option>)}
+                        {configAngles.map((a) => <option key={a} value={a}>{a}°</option>)}
                       </select>
                     </div>
                     {formData.angle === "90" && (
@@ -1007,7 +1107,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
                                .map(([key, value]) => (
                                  <div key={key} className="bg-white p-2 rounded-xl border border-slate-100 flex flex-col shadow-sm">
                                    <span className="text-[7px] font-black text-slate-400 uppercase mb-0.5">{key}</span>
-                                   <span className="text-xs font-bold text-slate-700 truncate" title={value}>{value}</span>
+                                   <span className="text-xs font-bold text-slate-700 truncate" title={String(value)}>{String(value)}</span>
                                  </div>
                                ))}
                            </div>
@@ -1023,7 +1123,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
                                .map(([key, value]) => (
                                  <div key={key} className="bg-white p-2 rounded-xl border border-slate-100 flex flex-col shadow-sm">
                                    <span className="text-[7px] font-black text-slate-400 uppercase mb-0.5">{key}</span>
-                                   <span className="text-xs font-bold text-slate-700 truncate" title={value}>{value}</span>
+                                   <span className="text-xs font-bold text-slate-700 truncate" title={String(value)}>{String(value)}</span>
                                  </div>
                                ))}
                            </div>
@@ -1096,7 +1196,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
                             key={idx}
                             type="button"
                             onClick={() => {
-                              setFormData(prev => ({ ...prev, articleCode: res.targetProductId || res.manufacturedId }));
+                              setFormData(prev => ({ ...prev, articleCode: res.targetProductId || res.manufacturedId || "" }));
                               setIsAutoLinked(true);
                               setSearchEnabled(false);
                               setShowLnResults(false);
@@ -1285,10 +1385,23 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }) => {
   );
 };
 
-const StoragePicker = ({ onClose, onSelect, initialPath = "product_library" }) => {
+type StorageItem = {
+  name: string;
+  fullPath: string;
+  isFolder: boolean;
+  url?: string;
+};
+
+type StoragePickerProps = {
+  onClose: () => void;
+  onSelect: (url: string, name?: string) => void;
+  initialPath?: string;
+};
+
+const StoragePicker = ({ onClose, onSelect, initialPath = "product_library" }: StoragePickerProps) => {
   const { t } = useTranslation();
   const [currentPath, setCurrentPath] = useState(initialPath);
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState<StorageItem[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -1300,7 +1413,7 @@ const StoragePicker = ({ onClose, onSelect, initialPath = "product_library" }) =
         const storageRef = ref(storage, path);
         const res = await listAll(storageRef);
         
-        const folders = res.prefixes.map(p => ({
+        const folders: StorageItem[] = res.prefixes.map(p => ({
           name: p.name,
           fullPath: p.fullPath,
           isFolder: true
@@ -1331,7 +1444,7 @@ const StoragePicker = ({ onClose, onSelect, initialPath = "product_library" }) =
     fetchItems();
   }, [currentPath]);
 
-  const handleNavigate = (folderPath) => {
+  const handleNavigate = (folderPath: string) => {
     setCurrentPath(folderPath);
   };
 
@@ -1378,7 +1491,7 @@ const StoragePicker = ({ onClose, onSelect, initialPath = "product_library" }) =
                         {items.map((item) => (
                             <button 
                                 key={item.fullPath}
-                                onClick={() => item.isFolder ? handleNavigate(item.fullPath) : onSelect(item.url, item.name)}
+                            onClick={() => item.isFolder ? handleNavigate(item.fullPath) : onSelect(item.url || "", item.name)}
                                 className="flex flex-col items-center p-4 bg-white border border-slate-100 rounded-2xl hover:border-blue-400 hover:shadow-md transition-all group text-center h-32 justify-center"
                             >
                                 {item.isFolder ? (

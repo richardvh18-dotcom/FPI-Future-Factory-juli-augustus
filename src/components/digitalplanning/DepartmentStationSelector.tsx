@@ -3,7 +3,7 @@ import { ArrowLeft, Cpu, Loader2, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { getPathString, PATHS } from "../../config/dbPaths";
 import WorkstationHub from "./WorkstationHub";
 import TeamleaderHub from "./TeamleaderHub";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
@@ -83,7 +83,7 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
 
   // Luister naar factory config
   useEffect(() => {
-    const docRef = doc(db, ...PATHS.FACTORY_CONFIG);
+    const docRef = doc(db, getPathString(PATHS.FACTORY_CONFIG));
 
     const unsubscribe = onSnapshot(
       docRef,
@@ -106,7 +106,7 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
   const stations = useMemo(() => {
     if (!factoryConfig || !department) return [];
     
-    const slugMap = { FITTINGS: "fittings", PIPES: "pipes", SPOOLS: "spools" };
+    const slugMap: Record<string, string> = { FITTINGS: "fittings", PIPES: "pipes", SPOOLS: "spools" };
     const targetSlug = slugMap[department] || department.toLowerCase();
     
     const deptData = (factoryConfig.departments || []).find(
@@ -207,7 +207,7 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {stations.map((station) => {
-            const key = station.name?.toLowerCase() || station.id?.toLowerCase();
+            const key = (station.name || station.id || "").toLowerCase();
             const isTeamleader = key.includes("teamleader");
             
             // Bepaal stijl op basis van naam
@@ -223,7 +223,7 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
             return (
               <button
                 key={station.id}
-                onClick={() => isTeamleader ? setShowTeamleader(true) : setSelectedStation(station.name)}
+                onClick={() => isTeamleader ? setShowTeamleader(true) : setSelectedStation(String(station.name || station.id || ""))}
                 className={`group relative p-6 rounded-2xl border-2 border-slate-200 bg-white text-center transition-all duration-200 hover:border-blue-500 hover:shadow-xl ${isTeamleader ? "col-span-2 row-span-2" : ""}`}
               >
                 <div className={`${isTeamleader ? "w-20 h-20" : "w-12 h-12"} rounded-xl flex items-center justify-center mb-3 shadow-md mx-auto transition-transform group-hover:scale-110 ${style.color.split(' ')[0]}`}> 

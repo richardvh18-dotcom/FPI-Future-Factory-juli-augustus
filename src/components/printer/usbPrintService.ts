@@ -1,25 +1,7 @@
 /**
  * Controleert of WebUSB wordt ondersteund in deze browser.
  */
-type UsbEndpointInfo = {
-  direction?: string;
-  endpointNumber: number;
-};
-
-type UsbDeviceLike = {
-  opened: boolean;
-  configuration: {
-    interfaces: Array<{
-      alternate?: {
-        endpoints: UsbEndpointInfo[];
-      };
-    }>;
-  } | null;
-  open: () => Promise<void>;
-  selectConfiguration: (configurationValue: number) => Promise<void>;
-  claimInterface: (interfaceNumber: number) => Promise<void>;
-  transferOut: (endpointNumber: number, data: Uint8Array) => Promise<unknown>;
-};
+type UsbDeviceLike = USBDevice;
 
 const usbNavigator = navigator as Navigator & {
   usb?: {
@@ -66,7 +48,9 @@ export const printRawUsb = async (device: UsbDeviceLike | null | undefined, zplD
   const configuration = device.configuration;
   if (!configuration) throw new Error("USB configuratie ontbreekt op dit apparaat.");
   const interface0 = configuration.interfaces[0];
-  const endpoint = interface0?.alternate?.endpoints.find((endpointInfo: UsbEndpointInfo) => endpointInfo.direction === "out");
+  const endpoint = interface0?.alternates
+    ?.flatMap((alternate) => alternate.endpoints || [])
+    .find((endpointInfo: USBEndpoint) => endpointInfo.direction === "out");
   
   if (!endpoint) throw new Error("Geen schrijf-endpoint gevonden op dit apparaat.");
 

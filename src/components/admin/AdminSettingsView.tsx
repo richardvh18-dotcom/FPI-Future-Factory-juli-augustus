@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useNotifications } from '../../contexts/NotificationContext';
 import React, { useState, useEffect, useRef } from "react";
 import { useTranslation } from 'react-i18next';
@@ -23,6 +22,7 @@ import {
   onSnapshot,
   serverTimestamp,
   setDoc,
+  type DocumentData,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
@@ -31,6 +31,32 @@ import {
   ACTIVE_SITE,
   getPathString,
 } from "../../config/dbPaths";
+
+type UploadedLogo = {
+  id: string;
+  url: string;
+  uploadedAt: string;
+  fileName: string;
+};
+
+type SettingsState = {
+  appName: string;
+  logoUrl: string;
+  themeColor: string;
+  maintenanceMode: boolean;
+  uploadedLogos: UploadedLogo[];
+  [key: string]: unknown;
+};
+
+type StatusMessage = {
+  type: "success" | "error";
+  msg: string;
+};
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  return String(error || "onbekende fout");
+};
 
 // Handige presets voor snelle branding
 const PRESET_LOGOS = [
@@ -64,12 +90,12 @@ const AdminSettingsView = () => {
   useAdminAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<StatusMessage | null>(null);
   const [activeTab, setActiveTab] = useState("general");
-  const [uploadedLogos, setUploadedLogos] = useState([]);
-  const fileInputRef = useRef(null);
+  const [uploadedLogos, setUploadedLogos] = useState<UploadedLogo[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<SettingsState>({
     appName: "FPI Future Factory",
     logoUrl: "",
     themeColor: "blue",
@@ -79,18 +105,18 @@ const AdminSettingsView = () => {
 
   // 1. Live Sync met de Root
   useEffect(() => {
-    const docRef = doc(db, ...PATHS.GENERAL_SETTINGS);
+    const docRef = doc(db, getPathString(PATHS.GENERAL_SETTINGS));
 
     const unsubscribe = onSnapshot(
       docRef,
       (snap) => {
         if (snap.exists()) {
-          const data = snap.data();
+          const data = snap.data() as DocumentData;
           setSettings((prev) => ({
             ...prev,
             ...data,
           }));
-          setUploadedLogos(data.uploadedLogos || []);
+          setUploadedLogos((data.uploadedLogos as UploadedLogo[] | undefined) || []);
         }
         setLoading(false);
       },
@@ -108,7 +134,7 @@ const AdminSettingsView = () => {
     setSaving(true);
     setStatus(null);
     try {
-      const docRef = doc(db, ...PATHS.GENERAL_SETTINGS);
+      const docRef = doc(db, getPathString(PATHS.GENERAL_SETTINGS));
       await setDoc(
         docRef,
         {
@@ -119,20 +145,20 @@ const AdminSettingsView = () => {
         { merge: true }
       );
 
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", "General settings updated");
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", "General settings updated");
       setStatus({ type: "success", msg: "Systeeminstellingen gepubliceerd!" });
       setTimeout(() => setStatus(null), 3000);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Save Error:", error);
-      setStatus({ type: "error", msg: "Opslaan mislukt." });
+      setStatus({ type: "error", msg: `Opslaan mislukt: ${getErrorMessage(error)}` });
     } finally {
       setSaving(false);
     }
   };
 
   // --- LOGO HANDLERS ---
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
     if (file.size > 500 * 1024) {
@@ -142,8 +168,8 @@ const AdminSettingsView = () => {
 
     const reader = new FileReader();
     reader.onloadend = () => {
-      const newLogoUrl = reader.result;
-      const newUploadedLogos = [
+      const newLogoUrl = typeof reader.result === "string" ? reader.result : "";
+      const newUploadedLogos: UploadedLogo[] = [
         ...settings.uploadedLogos,
         {
           id: Date.now().toString(),
@@ -167,9 +193,9 @@ const AdminSettingsView = () => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const deleteUploadedLogo = (logoId) => {
-    const updatedLogos = settings.uploadedLogos.filter(logo => logo.id !== logoId);
-    const wasCurrentLogo = uploadedLogos.find(logo => logo.id === logoId)?.url === settings.logoUrl;
+  const deleteUploadedLogo = (logoId: string) => {
+    const updatedLogos = settings.uploadedLogos.filter((logo) => logo.id !== logoId);
+    const wasCurrentLogo = uploadedLogos.find((logo) => logo.id === logoId)?.url === settings.logoUrl;
     
     setSettings({ 
       ...settings, 
@@ -410,7 +436,7 @@ const AdminSettingsView = () => {
                 )}
               </div>
               <button
-                onClick={() => fileInputRef.current.click()}
+                onClick={() => fileInputRef.current?.click()}
                 className="bg-slate-100 text-slate-600 px-6 rounded-2xl font-black text-[10px] uppercase hover:bg-blue-600 hover:text-white transition-all shadow-sm active:scale-95 border-2 border-transparent hover:border-blue-300"
               >
                 <Upload size={18} />

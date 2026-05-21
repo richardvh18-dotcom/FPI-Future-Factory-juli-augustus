@@ -1,26 +1,14 @@
 import React from 'react';
 import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react';
-import { useNotifications } from '../../contexts/NotificationContext';
+import { useNotificationStore } from '../../contexts/NotificationContext';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
 
-type ActiveToast = {
-  id: number | string;
-  title: string;
-  message?: string;
-  type: ToastType;
-  duration: number;
-  count?: number;
-};
-
-type NotificationToastApi = {
-  activeToast: ActiveToast | null;
-  queuedCount: number;
-  removeToast: (id: number | string) => void;
-};
 
 const ToastContainer = () => {
-  const { activeToast, queuedCount, removeToast } = useNotifications() as NotificationToastApi;
+  const activeToast = useNotificationStore((state) => state.activeToast);
+  const queuedCount = useNotificationStore((state) => state.toastQueue.length);
+  const removeToast = useNotificationStore((state) => state.removeToast);
 
   const getIcon = (type: ToastType) => {
     switch (type) {
@@ -104,9 +92,9 @@ const ToastContainer = () => {
                 <h4 className="text-[11px] font-black uppercase tracking-[0.24em] text-slate-800 sm:text-xs">
                   {activeToast.title}
                 </h4>
-                {activeToast.count > 1 && (
+                {Number(activeToast.count || 1) > 1 && (
                   <span className="inline-flex items-center rounded-full bg-black/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-700">
-                    {activeToast.count}x
+                    {Number(activeToast.count || 1)}x
                   </span>
                 )}
                 {queuedCount > 0 && (
@@ -167,9 +155,9 @@ const ToastContainer = () => {
               <h4 className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-800">
                 {activeToast.title}
               </h4>
-              {activeToast.count > 1 && (
+              {Number(activeToast.count || 1) > 1 && (
                 <span className="inline-flex items-center rounded-full bg-black/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.18em] text-slate-700">
-                  {activeToast.count}x
+                  {Number(activeToast.count || 1)}x
                 </span>
               )}
               {queuedCount > 0 && (
@@ -212,4 +200,3 @@ const ToastContainer = () => {
 };
 
 export default ToastContainer;
-

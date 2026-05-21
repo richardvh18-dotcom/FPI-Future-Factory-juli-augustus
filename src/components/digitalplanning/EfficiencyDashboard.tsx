@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
@@ -13,22 +13,117 @@ import {
 } from 'lucide-react';
 import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { PATHS, getPlanningArchivePath } from '../../config/dbPaths';
+import { PATHS, getPathString, getPlanningArchivePath } from '../../config/dbPaths';
 import { format as formatDate, getISOWeek, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths } from 'date-fns';
 import { calculateDuration, formatMinutes, getEfficiencyColor } from '../../utils/efficiencyCalculator';
 import { calculateWorkingMinutes } from '../../utils/workingTimeUtils';
 import AiPredictionView from './AiPredictionView';
 import { getDeliveryPlanningState, resolveDeliveryDate } from '../../utils/dateUtils';
 import { subscribeScopedEfficiencyHours } from '../../utils/efficiencyScopedReader';
-import { normalizeMachine } from '../../utils/hubHelpers.tsx';
+import { normalizeMachine } from '../../utils/hubHelpers';
+
+type HistoryEntry = {
+  action?: string;
+  timestamp?: unknown;
+};
+
+type DataRow = {
+  id?: string;
+  orderId?: string;
+  orderNumber?: string;
+  itemCode?: string;
+  item?: string;
+  machine?: string;
+  machineId?: string;
+  originMachine?: string;
+  currentStation?: string;
+  lastStation?: string;
+  department?: string;
+  departmentName?: string;
+  departmentId?: string;
+  deptId?: string;
+  status?: string;
+  quantity?: number | string;
+  plan?: number | string;
+  productId?: string;
+  totalActualHours?: number | string;
+  actualHours?: number | string;
+  spentProductionTime?: number | string;
+  hoursWorked?: number | string;
+  productionHours?: number | string;
+  actualMinutes?: number | string;
+  totalActualMinutes?: number | string;
+  spentMinutes?: number | string;
+  productionMinutes?: number | string;
+  productionTimeTotal?: number | string;
+  postProcessingTimeTotal?: number | string;
+  qcTimeTotal?: number | string;
+  standardTimeTotal?: number | string;
+  minutesPerUnit?: number | string;
+  plannedMinutesBH?: number | string;
+  plannedHoursBH?: number | string;
+  plannedMinutesNabewerken?: number | string;
+  plannedHoursNabewerken?: number | string;
+  plannedMinutesBM01?: number | string;
+  plannedHoursBM01?: number | string;
+  plannedDate?: unknown;
+  deliveryDate?: unknown;
+  plannedDeliveryDate?: unknown;
+  dueDate?: unknown;
+  deadline?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  startTime?: unknown;
+  startedAt?: unknown;
+  endTime?: unknown;
+  completedAt?: unknown;
+  timestamps?: Record<string, unknown>;
+  history?: HistoryEntry[];
+  [key: string]: unknown;
+};
+
+type FactoryDepartment = {
+  id?: string;
+  name?: string;
+};
+
+type FactoryConfig = {
+  departments: FactoryDepartment[];
+};
+
+type DashboardItem = DataRow & {
+  actualMinutes: number;
+  producedQty: number;
+  efficiency: number;
+  isOverrun: boolean;
+  logsCount: number;
+  aiPredictedTotal: number;
+  aiConfidence: number;
+  departmentId: string | null;
+  departmentName: string;
+  department: string;
+  machine: string;
+  inSelectedPeriod: boolean;
+  standardTimeTotal: number;
+  productionTimeTotal: number;
+  postProcessingTimeTotal: number;
+  qcTimeTotal: number;
+};
+
+const isDateValue = (value: Date | null): value is Date => value instanceof Date;
+
+const asDateLike = (value: unknown): string | number | Date | undefined => {
+  if (value instanceof Date || typeof value === 'string' || typeof value === 'number') return value;
+  return undefined;
+};
 
 const EfficiencyDashboard = () => {
   const { t } = useTranslation();
   const readPaths = PATHS;
-  const [scopedStandards, setScopedStandards] = useState([]);
-  const [rootStandards, setRootStandards] = useState([]);
-  const [tracking, setTracking] = useState([]);
-  const [planningOrders, setPlanningOrders] = useState([]);
+  const [scopedStandards, setScopedStandards] = useState<DataRow[]>([]);
+  const [rootStandards, setRootStandards] = useState<DataRow[]>([]);
+  const [tracking, setTracking] = useState<DataRow[]>([]);
+  const [planningOrders, setPlanningOrders] = useState<DataRow[]>([]);
   const [, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('all'); // 'active', 'all'
   const [departmentFilter, setDepartmentFilter] = useState('ALL'); // Nieuw: Afdeling filter
@@ -39,16 +134,17 @@ const EfficiencyDashboard = () => {
   const [periodMode, setPeriodMode] = useState('week');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [showAiAnalysis, setShowAiAnalysis] = useState(false);
-  const [factoryConfig, setFactoryConfig] = useState({ departments: [] });
+  const [factoryConfig, setFactoryConfig] = useState<FactoryConfig>({ departments: [] });
 
-  const toDateValue = (value) => {
+  const toDateValue = (value: unknown): Date | null => {
     if (!value) return null;
-    if (value?.toDate) return value.toDate();
+    if (typeof (value as { toDate?: () => Date }).toDate === 'function') return (value as { toDate: () => Date }).toDate();
+    if (!(value instanceof Date) && typeof value !== 'string' && typeof value !== 'number') return null;
     const d = value instanceof Date ? value : new Date(value);
     return Number.isNaN(d.getTime()) ? null : d;
   };
 
-  const getTrackingDurationMinutes = (log) => {
+  const getTrackingDurationMinutes = (log: DataRow) => {
     const contextMachine = log?.originMachine || log?.machine || log?.currentStation || log?.lastStation;
     const contextDepartment = log?.department || inferDepartmentFromMachine(contextMachine);
     const durationContext = {
@@ -80,7 +176,7 @@ const EfficiencyDashboard = () => {
     const ts = log?.timestamps || {};
     let total = 0;
 
-    const addRange = (startValue, endValue) => {
+    const addRange = (startValue: unknown, endValue: unknown) => {
       const s = toDateValue(startValue);
       const e = toDateValue(endValue);
       if (!s || !e) return;
@@ -108,7 +204,7 @@ const EfficiencyDashboard = () => {
     return total > 0 ? total : 0;
   };
 
-  const resolveDepartmentNameFromId = (departmentId) => {
+  const resolveDepartmentNameFromId = (departmentId: unknown) => {
     if (!departmentId) return '';
     const idLower = String(departmentId).trim().toLowerCase();
     const dept = (factoryConfig.departments || []).find(
@@ -117,14 +213,14 @@ const EfficiencyDashboard = () => {
     return dept?.name || '';
   };
 
-  const normalizeText = (value) => String(value || '').trim().toLowerCase();
+  const normalizeText = (value: unknown) => String(value || '').trim().toLowerCase();
 
-  const parseNumber = (value) => {
+  const parseNumber = (value: unknown) => {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : 0;
   };
 
-  const inferDepartmentFromMachine = (machine) => {
+  const inferDepartmentFromMachine = (machine: unknown) => {
     const m = normalizeMachine(machine || '');
     if (m.startsWith('BH')) return 'Fittings';
     if (m.startsWith('BA')) return 'Pipes';
@@ -132,7 +228,7 @@ const EfficiencyDashboard = () => {
     return '';
   };
 
-  const getOrderActualMinutes = (orderLike) => {
+  const getOrderActualMinutes = (orderLike?: DataRow | null) => {
     if (!orderLike) return 0;
 
     const hoursCandidates = [
@@ -163,7 +259,7 @@ const EfficiencyDashboard = () => {
     return 0;
   };
 
-  const getOrderSplitMinutes = (orderLike) => {
+  const getOrderSplitMinutes = (orderLike?: DataRow | null) => {
     if (!orderLike) {
       return {
         productionMinutes: 0,
@@ -183,10 +279,10 @@ const EfficiencyDashboard = () => {
     };
   };
 
-  const getLogActivityDates = (log) => {
+  const getLogActivityDates = (log: DataRow): Date[] => {
     const ts = log?.timestamps || {};
     const historyDates = Array.isArray(log?.history)
-      ? log.history.map((h) => toDateValue(h?.timestamp)).filter(Boolean)
+      ? log.history.map((h) => toDateValue(h?.timestamp)).filter(isDateValue)
       : [];
 
     return [
@@ -208,8 +304,15 @@ const EfficiencyDashboard = () => {
       ...historyDates,
     ]
       .map((value) => toDateValue(value))
-      .filter(Boolean);
+      .filter(isDateValue);
   };
+
+  const resolveOrderDelivery = (orderLike?: DataRow | null) => resolveDeliveryDate(
+    asDateLike(orderLike?.deliveryDate),
+    asDateLike(orderLike?.plannedDeliveryDate),
+    asDateLike(orderLike?.dueDate),
+    asDateLike(orderLike?.deadline)
+  );
 
   const getRangeForPeriod = () => {
     const dayStart = startOfDay(selectedDate);
@@ -247,16 +350,16 @@ const EfficiencyDashboard = () => {
   const jumpToToday = () => setSelectedDate(new Date());
 
   // Scoped docs zijn de nieuwe bron, maar root docs blijven fallback zolang migraties lopen.
-  const standards = useMemo(() => {
-    const merged = new Map();
+  const standards = useMemo<DataRow[]>(() => {
+    const merged = new Map<string, DataRow>();
 
-    rootStandards.forEach((row, idx) => {
+    rootStandards.forEach((row: DataRow, idx: number) => {
       const key = String(row.orderId || row.id || `root-${idx}`).trim();
       if (!key) return;
       merged.set(key, row);
     });
 
-    scopedStandards.forEach((row, idx) => {
+    scopedStandards.forEach((row: DataRow, idx: number) => {
       const key = String(row.orderId || row.id || `scoped-${idx}`).trim();
       if (!key) return;
       // Scoped record krijgt voorrang op root record.
@@ -266,7 +369,7 @@ const EfficiencyDashboard = () => {
     return Array.from(merged.values());
   }, [scopedStandards, rootStandards]);
 
-  const matchesDepartmentFilter = (row) => {
+  const matchesDepartmentFilter = (row: DataRow) => {
     if (departmentFilter === 'ALL') return true;
 
     const filter = normalizeText(departmentFilter);
@@ -285,7 +388,7 @@ const EfficiencyDashboard = () => {
     );
   };
 
-  const matchesMachineFilter = (row) => {
+  const matchesMachineFilter = (row: DataRow) => {
     if (machineFilter === 'ALL') return true;
 
     const filter = normalizeText(machineFilter);
@@ -298,9 +401,9 @@ const EfficiencyDashboard = () => {
   };
 
   const machineOptions = useMemo(() => {
-    const options = new Set();
+    const options = new Set<string>();
 
-    planningOrders.forEach((order) => {
+    planningOrders.forEach((order: DataRow) => {
       const machine = normalizeMachine(order.machine || '');
       if (!machine) return;
 
@@ -310,7 +413,7 @@ const EfficiencyDashboard = () => {
       options.add(machine);
     });
 
-    tracking.forEach((log) => {
+    tracking.forEach((log: DataRow) => {
       const machine = normalizeMachine(log.originMachine || log.machine || log.currentStation || log.lastStation || '');
       if (!machine) return;
 
@@ -320,7 +423,7 @@ const EfficiencyDashboard = () => {
       options.add(machine);
     });
 
-    scopedStandards.forEach((std) => {
+    scopedStandards.forEach((std: DataRow) => {
       const machine = normalizeMachine(std.machine || std.currentStation || std.machineId || '');
       if (!machine) return;
 
@@ -355,7 +458,7 @@ const EfficiencyDashboard = () => {
       db,
       mode: viewMode === 'active' ? 'active' : 'archive',
       year: selectedYear,
-      onData: (rows) => setScopedStandards(rows),
+      onData: (rows: DataRow[]) => setScopedStandards(rows),
       onError: (error) => {
         console.warn('Scoped efficiency listener failed:', error);
         setScopedStandards([]);
@@ -364,9 +467,9 @@ const EfficiencyDashboard = () => {
 
     // Fallback voor legacy/root efficiency docs
     const unsubRootStandards = onSnapshot(
-      collection(db, ...readPaths.EFFICIENCY_HOURS),
+      collection(db, getPathString(readPaths.EFFICIENCY_HOURS)),
       (snapshot) => {
-        const rows = snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+        const rows: DataRow[] = snapshot.docs.map((entry) => ({ id: entry.id, ...(entry.data() as Omit<DataRow, 'id'>) }));
         setRootStandards(rows);
       },
       (error) => {
@@ -377,9 +480,9 @@ const EfficiencyDashboard = () => {
 
     // 2. Haal de werkelijke tracking data op (Actuals van de vloer)
     // We gebruiken de tracking collectie waar operators hun start/stop tijden loggen
-    const trackingRef = collection(db, ...readPaths.TRACKING);
+    const trackingRef = collection(db, getPathString(readPaths.TRACKING));
     const unsubTracking = onSnapshot(trackingRef, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data: DataRow[] = snapshot.docs.map((entry) => ({ id: entry.id, ...(entry.data() as Omit<DataRow, 'id'>) }));
       setTracking(data);
     });
 
@@ -387,16 +490,16 @@ const EfficiencyDashboard = () => {
       ? readPaths.PLANNING
       : getPlanningArchivePath(selectedYear);
 
-    const planningRef = collection(db, ...planningCollectionPath);
+    const planningRef = collection(db, getPathString(planningCollectionPath));
     const unsubPlanning = onSnapshot(planningRef, (snapshot) => {
-      const data = snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+      const data: DataRow[] = snapshot.docs.map((entry) => ({ id: entry.id, ...(entry.data() as Omit<DataRow, 'id'>) }));
       setPlanningOrders(data);
     });
 
-    const configRef = doc(db, ...readPaths.FACTORY_CONFIG);
+    const configRef = doc(db, getPathString(readPaths.FACTORY_CONFIG));
     const unsubFactory = onSnapshot(configRef, (docSnap) => {
       if (docSnap.exists()) {
-        setFactoryConfig(docSnap.data() || { departments: [] });
+        setFactoryConfig((docSnap.data() as FactoryConfig) || { departments: [] });
       }
     });
 
@@ -412,8 +515,8 @@ const EfficiencyDashboard = () => {
   }, [viewMode, selectedYear, readPaths]);
 
   const dashboardData = useMemo(() => {
-    const orderById = new Map();
-    planningOrders.forEach((order) => {
+    const orderById = new Map<string, DataRow>();
+    planningOrders.forEach((order: DataRow) => {
       const orderId = String(order.orderId || '').trim();
       const docId = String(order.id || '').trim();
       if (orderId) orderById.set(orderId, order);
@@ -423,14 +526,15 @@ const EfficiencyDashboard = () => {
     const periodRange = getRangeForPeriod();
 
     // 1. AI Learning: Bouw een kennisbank op van historische tijden per product
-    const productKnowledgeBase = {};
+    const productKnowledgeBase: Record<string, { totalTime: number; count: number }> = {};
     
-    tracking.forEach(log => {
+    tracking.forEach((log: DataRow) => {
       if ((log.status === 'completed' || log.status === 'shipped') && (log.itemCode || log.item)) {
         const duration = getTrackingDurationMinutes(log);
         
         if (duration > 0) {
-          const key = log.itemCode || log.item;
+          const key = String(log.itemCode || log.item || '').trim();
+          if (!key) return;
           if (!productKnowledgeBase[key]) {
             productKnowledgeBase[key] = { totalTime: 0, count: 0 };
           }
@@ -441,13 +545,13 @@ const EfficiencyDashboard = () => {
     });
 
     // Combineer standaarden met werkelijke data
-    let processed = standards.map(std => {
+    let processed: DashboardItem[] = standards.map((std: DataRow) => {
       const itemCode = std.itemCode || std.productId || "Onbekend";
       const stdOrderId = String(std.orderId || std.id || '').trim();
       const planningOrder = orderById.get(stdOrderId);
       // Vind alle tracking records voor deze order
       // We matchen op orderId (string comparison voor veiligheid)
-      const relatedLogs = tracking.filter(t => 
+      const relatedLogs = tracking.filter((t: DataRow) => 
         String(t.orderId || t.orderNumber) === stdOrderId
       );
 
@@ -455,7 +559,7 @@ const EfficiencyDashboard = () => {
       let actualMinutes = 0;
       let producedQty = 0;
       
-      relatedLogs.forEach(log => {
+      relatedLogs.forEach((log: DataRow) => {
         actualMinutes += getTrackingDurationMinutes(log);
 
         // Aantal berekening (alleen voltooide items tellen)
@@ -505,12 +609,12 @@ const EfficiencyDashboard = () => {
       const isOverrun = actualMinutes > targetTotal;
       
       // AI Voorspelling ophalen
-      const history = productKnowledgeBase[itemCode];
+      const history = productKnowledgeBase[String(itemCode)];
       const aiAveragePerUnit = history ? (history.totalTime / history.count) : normPerUnit;
-      const aiPredictedTotal = aiAveragePerUnit * (std.quantity || 1);
-      const firstLog = relatedLogs[0] || {};
+      const aiPredictedTotal = aiAveragePerUnit * parseNumber(std.quantity || 1);
+      const firstLog: DataRow = relatedLogs[0] || {};
       const departmentId = std.departmentId || planningOrder?.departmentId || firstLog.departmentId || firstLog.deptId || null;
-      const machine = planningOrder?.machine || std.machine || firstLog.machine || firstLog.currentStation;
+      const machine = String(planningOrder?.machine || std.machine || firstLog.machine || firstLog.currentStation || '');
       const departmentName = std.department || std.departmentName || planningOrder?.department || firstLog.department || inferDepartmentFromMachine(machine) || resolveDepartmentNameFromId(departmentId) || 'Overig';
 
       const eventDates = [
@@ -519,21 +623,11 @@ const EfficiencyDashboard = () => {
         toDateValue(std?.updatedAt),
         toDateValue(planningOrder?.plannedDate),
         (() => {
-          const delivery = resolveDeliveryDate(
-            planningOrder?.deliveryDate,
-            planningOrder?.plannedDeliveryDate,
-            planningOrder?.dueDate,
-            planningOrder?.deadline
-          );
+          const delivery = resolveOrderDelivery(planningOrder);
           return delivery;
         })(),
         (() => {
-          const delivery = resolveDeliveryDate(
-            planningOrder?.deliveryDate,
-            planningOrder?.plannedDeliveryDate,
-            planningOrder?.dueDate,
-            planningOrder?.deadline
-          );
+          const delivery = resolveOrderDelivery(planningOrder);
           const planningState = getDeliveryPlanningState(delivery, {
             productionLeadDays: 21,
             finishBufferDays: 3,
@@ -541,12 +635,7 @@ const EfficiencyDashboard = () => {
           return planningState.productionStartDate;
         })(),
         (() => {
-          const delivery = resolveDeliveryDate(
-            planningOrder?.deliveryDate,
-            planningOrder?.plannedDeliveryDate,
-            planningOrder?.dueDate,
-            planningOrder?.deadline
-          );
+          const delivery = resolveOrderDelivery(planningOrder);
           const planningState = getDeliveryPlanningState(delivery, {
             productionLeadDays: 21,
             finishBufferDays: 3,
@@ -555,7 +644,7 @@ const EfficiencyDashboard = () => {
         })(),
         toDateValue(planningOrder?.createdAt),
         toDateValue(planningOrder?.updatedAt),
-      ].filter(Boolean);
+      ].filter(isDateValue);
 
       const inSelectedPeriod =
         viewMode === 'archive'
@@ -564,6 +653,12 @@ const EfficiencyDashboard = () => {
 
       return {
         ...std,
+        itemCode: String(std.itemCode || std.productId || 'Onbekend'),
+        item: String(std.item || std.itemCode || std.productId || 'Onbekend'),
+        quantity: parseNumber(std.quantity || planningOrder?.quantity || std.plan || 0),
+        status: String(std.status || planningOrder?.status || 'in_progress'),
+        minutesPerUnit: normPerUnit,
+        standardTimeTotal: targetTotal,
         actualMinutes,
         producedQty,
         efficiency,
@@ -575,11 +670,11 @@ const EfficiencyDashboard = () => {
         aiPredictedTotal, // De voorspelde tijd op basis van historie
         aiConfidence: history ? Math.min(100, history.count * 10) : 0, // Hoe zeker is de AI? (meer data = meer zekerheid)
         departmentId,
-        departmentName,
-        department: departmentName,
+        departmentName: String(departmentName || 'Overig'),
+        department: String(departmentName || 'Overig'),
         machine,
         inSelectedPeriod,
-      };
+      } as DashboardItem;
     });
 
     // Fallback: toon ook orders die wel tracking hebben maar (nog) geen efficiency import.
@@ -588,21 +683,21 @@ const EfficiencyDashboard = () => {
         .map((std) => String(std.orderId || std.id || '').trim())
         .filter(Boolean)
     );
-    const trackingByOrder = {};
+    const trackingByOrder: Record<string, DataRow[]> = {};
 
-    tracking.forEach((log) => {
+    tracking.forEach((log: DataRow) => {
       const orderId = String(log.orderId || log.orderNumber || '').trim();
       if (!orderId || knownOrderIds.has(orderId)) return;
       if (!trackingByOrder[orderId]) trackingByOrder[orderId] = [];
       trackingByOrder[orderId].push(log);
     });
 
-    const fallbackRows = Object.entries(trackingByOrder).map(([orderId, relatedLogs]) => {
+    const fallbackRows: DashboardItem[] = Object.entries(trackingByOrder).map(([orderId, relatedLogs]) => {
       let actualMinutes = 0;
       let producedQty = 0;
       const planningOrder = orderById.get(orderId);
 
-      relatedLogs.forEach((log) => {
+      relatedLogs.forEach((log: DataRow) => {
         actualMinutes += getTrackingDurationMinutes(log);
 
         if (log.status === 'completed' || log.status === 'shipped') {
@@ -614,9 +709,9 @@ const EfficiencyDashboard = () => {
         actualMinutes = getOrderActualMinutes(planningOrder);
       }
 
-      const first = relatedLogs[0] || {};
+      const first: DataRow = relatedLogs[0] || {};
       const departmentId = planningOrder?.departmentId || first.departmentId || first.deptId || null;
-      const machine = planningOrder?.machine || first.machine || first.currentStation;
+      const machine = String(planningOrder?.machine || first.machine || first.currentStation || '');
       const departmentName = planningOrder?.department || first.department || inferDepartmentFromMachine(machine) || resolveDepartmentNameFromId(departmentId) || 'Overig';
       const inferredMinutesPerUnit = producedQty > 0 && actualMinutes > 0
         ? actualMinutes / producedQty
@@ -626,21 +721,11 @@ const EfficiencyDashboard = () => {
         ...relatedLogs.flatMap((log) => getLogActivityDates(log)),
         toDateValue(planningOrder?.plannedDate),
         (() => {
-          const delivery = resolveDeliveryDate(
-            planningOrder?.deliveryDate,
-            planningOrder?.plannedDeliveryDate,
-            planningOrder?.dueDate,
-            planningOrder?.deadline
-          );
+          const delivery = resolveOrderDelivery(planningOrder);
           return delivery;
         })(),
         (() => {
-          const delivery = resolveDeliveryDate(
-            planningOrder?.deliveryDate,
-            planningOrder?.plannedDeliveryDate,
-            planningOrder?.dueDate,
-            planningOrder?.deadline
-          );
+          const delivery = resolveOrderDelivery(planningOrder);
           const planningState = getDeliveryPlanningState(delivery, {
             productionLeadDays: 21,
             finishBufferDays: 3,
@@ -648,12 +733,7 @@ const EfficiencyDashboard = () => {
           return planningState.productionStartDate;
         })(),
         (() => {
-          const delivery = resolveDeliveryDate(
-            planningOrder?.deliveryDate,
-            planningOrder?.plannedDeliveryDate,
-            planningOrder?.dueDate,
-            planningOrder?.deadline
-          );
+          const delivery = resolveOrderDelivery(planningOrder);
           const planningState = getDeliveryPlanningState(delivery, {
             productionLeadDays: 21,
             finishBufferDays: 3,
@@ -662,7 +742,7 @@ const EfficiencyDashboard = () => {
         })(),
         toDateValue(planningOrder?.createdAt),
         toDateValue(planningOrder?.updatedAt),
-      ].filter(Boolean);
+      ].filter(isDateValue);
 
       const inSelectedPeriod =
         viewMode === 'archive'
@@ -674,7 +754,7 @@ const EfficiencyDashboard = () => {
         orderId,
         itemCode: first.itemCode || first.item || 'Onbekend',
         item: first.item || first.itemCode || 'Tracking order',
-        quantity: planningOrder?.quantity || first.quantity || producedQty || 0,
+        quantity: parseNumber(planningOrder?.quantity || first.quantity || producedQty || 0),
         status: planningOrder?.status || first.status || 'in_progress',
         minutesPerUnit: inferredMinutesPerUnit,
         standardTimeTotal: actualMinutes,
@@ -689,11 +769,11 @@ const EfficiencyDashboard = () => {
         aiPredictedTotal: actualMinutes,
         aiConfidence: 0,
         departmentId,
-        departmentName,
-        department: departmentName,
+        departmentName: String(departmentName || 'Overig'),
+        department: String(departmentName || 'Overig'),
         machine,
         inSelectedPeriod,
-      };
+      } as DashboardItem;
     });
 
     processed = [...processed, ...fallbackRows];
@@ -939,7 +1019,7 @@ const EfficiencyDashboard = () => {
                 <div className="text-xs text-slate-500 flex flex-wrap gap-4 items-center">
                   <span>{t('efficiency_dashboard.qty')}: <b>{item.quantity}</b></span>
                   <span>{t('efficiency_dashboard.produced')}: <b>{item.producedQty}</b></span>
-                  <span>{t('efficiency_dashboard.norm')}: <b>{Math.round(item.minutesPerUnit * 10) / 10}m</b> / {t('efficiency_dashboard.per_piece')}</span>
+                  <span>{t('efficiency_dashboard.norm')}: <b>{Math.round(parseNumber(item.minutesPerUnit) * 10) / 10}m</b> / {t('efficiency_dashboard.per_piece')}</span>
                   <div className="flex flex-wrap gap-2 mt-1">
                     {item.productionTimeTotal > 0 && (
                       <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-bold border border-blue-100" title={t('efficiency_dashboard.prod_tooltip')}>

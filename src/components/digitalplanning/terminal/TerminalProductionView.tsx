@@ -1,36 +1,54 @@
-// @ts-nocheck
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Zap, ChevronRight, ChevronDown, ArrowLeft, ClipboardCheck, ScanBarcode, Trash2, FileText, AlertTriangle } from "lucide-react";
 import { useNotifications } from "../../../contexts/NotificationContext";
 
+type AnyRecord = Record<string, any>;
+
+type TerminalProductionViewProps = {
+  activeWikkelingen?: AnyRecord[];
+  lotConflictMeta?: Record<string, AnyRecord>;
+  selectedTrackedId?: string | null;
+  onSelectTracked?: (id: string | null) => void;
+  selectedWikkeling?: AnyRecord | null;
+  onReleaseProduct?: (...args: any[]) => void | Promise<void>;
+  onCancelProduction?: (...args: any[]) => void | Promise<void>;
+  scanInput?: string;
+  setScanInput?: (value: string) => void;
+  onScan?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  scanInputRef?: React.RefObject<HTMLInputElement>;
+  scannerMode?: boolean;
+  activeTab?: string;
+};
+
 const TerminalProductionView = ({
   activeWikkelingen = [],
   lotConflictMeta = {},
   selectedTrackedId,
-  onSelectTracked,
+  onSelectTracked = () => {},
   selectedWikkeling,
-  onReleaseProduct,
-  onCancelProduction,
+  onReleaseProduct = () => {},
+  onCancelProduction = () => {},
   scanInput = "",
   setScanInput = () => {},
   onScan = () => {},
   scanInputRef,
   scannerMode = true,
   activeTab = "wikkelen"
-}) => {
+}: TerminalProductionViewProps) => {
   const { t } = useTranslation();
   const { showConfirm } = useNotifications();
-  const itemRefs = useRef({});
-  const [collapsedGroups, setCollapsedGroups] = useState({});
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   const groupedSeries = useMemo(() => {
-    const grouped = new Map();
-    activeWikkelingen.forEach((item) => {
+    const grouped = new Map<string, AnyRecord[]>();
+    activeWikkelingen.forEach((item: AnyRecord) => {
       const groupId = item?.seriesGroupId;
       if (!groupId) return;
       if (!grouped.has(groupId)) grouped.set(groupId, []);
-      grouped.get(groupId).push(item);
+      const group = grouped.get(groupId);
+      if (group) group.push(item);
     });
     return grouped;
   }, [activeWikkelingen]);
@@ -53,10 +71,10 @@ const TerminalProductionView = ({
   }, [groupedSeries]);
 
   const displayRows = useMemo(() => {
-    const rendered = new Set();
-    const rows = [];
+    const rendered = new Set<string>();
+    const rows: AnyRecord[] = [];
 
-    activeWikkelingen.forEach((item) => {
+    activeWikkelingen.forEach((item: AnyRecord) => {
       const groupId = item?.seriesGroupId;
       const group = groupId ? groupedSeries.get(groupId) || [] : [];
       const isSeriesGroup = groupId && group.length > 1;
@@ -73,7 +91,7 @@ const TerminalProductionView = ({
         rendered.add(groupId);
       }
 
-      if (!isSeriesGroup || !collapsedGroups[groupId]) {
+      if (!isSeriesGroup || !collapsedGroups[String(groupId)]) {
         rows.push(item);
       }
     });
@@ -87,10 +105,10 @@ const TerminalProductionView = ({
     return group.length > 1 ? group : [];
   }, [selectedWikkeling, groupedSeries]);
 
-  const [selectedMultiLots, setSelectedMultiLots] = useState([]);
+  const [selectedMultiLots, setSelectedMultiLots] = useState<string[]>([]);
   const isMultiSelectMode = selectedMultiLots.length > 0;
 
-  const toggleMultiLot = (lotId) => {
+  const toggleMultiLot = (lotId: string) => {
     setSelectedMultiLots(prev => 
       prev.includes(lotId) ? prev.filter(id => id !== lotId) : [...prev, lotId]
     );
@@ -99,7 +117,7 @@ const TerminalProductionView = ({
   const handleBulkRelease = async () => {
     if (selectedMultiLots.length === 0) return;
     
-    const productsToRelease = activeWikkelingen.filter(p => selectedMultiLots.includes(p.id));
+    const productsToRelease = activeWikkelingen.filter((p: AnyRecord) => selectedMultiLots.includes(String(p.id || "")));
     if (productsToRelease.length === 0) return;
 
     const confirmed = await showConfirm({
@@ -117,7 +135,7 @@ const TerminalProductionView = ({
     }
   };
 
-  const handleSeriesRelease = async (mainProduct, seriesUnits) => {
+  const handleSeriesRelease = async (mainProduct: AnyRecord, seriesUnits: AnyRecord[]) => {
     const confirmed = await showConfirm({
       title: t("digitalplanning.terminal.series_release_title", "Hele serie gereedmelden"),
       message: t("digitalplanning.terminal.series_release_confirm_message", "Je staat op het punt om de hele serie van {{count}} producten gereed te melden. Weet je dit zeker?", { count: seriesUnits.length }),
@@ -133,15 +151,16 @@ const TerminalProductionView = ({
 
   // Keyboard navigation
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return;
 
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
 
         if (activeWikkelingen.length === 0) return;
 
-        const currentIndex = activeWikkelingen.findIndex(p => p.id === selectedTrackedId);
+        const currentIndex = activeWikkelingen.findIndex((p: AnyRecord) => String(p.id || "") === String(selectedTrackedId || ""));
 
         let nextIndex;
         if (e.key === 'ArrowDown') {
@@ -164,7 +183,7 @@ const TerminalProductionView = ({
   // Scroll selected item into view
   useEffect(() => {
     if (selectedTrackedId && itemRefs.current[selectedTrackedId]) {
-      itemRefs.current[selectedTrackedId].scrollIntoView({
+      itemRefs.current[String(selectedTrackedId)]?.scrollIntoView({
         behavior: 'smooth',
         block: 'nearest',
       });
@@ -178,10 +197,10 @@ const TerminalProductionView = ({
       scanInputRef?.current?.focus();
     };
 
-    const handleDocumentClick = (event) => {
+    const handleDocumentClick = (event: MouseEvent) => {
       const target = event?.target;
       if (!target) return;
-      if (target.closest?.('input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-scan-ignore]')) {
+      if ((target as HTMLElement).closest?.('input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-scan-ignore]')) {
         return;
       }
       focusScanner();
@@ -281,7 +300,7 @@ const TerminalProductionView = ({
           className="flex-1 overflow-y-auto space-y-3 custom-scrollbar text-left text-left pb-24"
           style={{ paddingBottom: "max(6rem, env(safe-area-inset-bottom))" }}
         >
-          {displayRows.map((prod) => {
+          {displayRows.map((prod: AnyRecord) => {
             if (prod.isSeriesHeader) {
               const isCollapsed = !!collapsedGroups[prod.seriesGroupId];
               const firstSeriesUnit = prod.seriesUnits?.[0] || null;
@@ -325,7 +344,7 @@ const TerminalProductionView = ({
             return (
               <div
                 key={prod.id}
-                ref={el => (itemRefs.current[prod.id] = el)}
+                ref={el => (itemRefs.current[String(prod.id || "")] = el)}
                 onClick={() => {
                   if (activeTab === "wikkelen" && (prod.currentStation === "BH18" || prod.machine === "BH18")) {
                     // BH18 Multi-select ondersteuning

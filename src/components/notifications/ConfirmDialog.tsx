@@ -1,22 +1,11 @@
 import React from "react";
 import { AlertTriangle, HelpCircle, XCircle } from "lucide-react";
-import { useNotifications } from "../../contexts/NotificationContext";
+import { useNotificationStore } from "../../contexts/NotificationContext";
 
-interface ConfirmDialogState {
-  tone?: "danger" | "info" | "warning" | string;
-  title?: string;
-  message?: string;
-  cancelText?: string;
-  confirmText?: string;
-}
-
-interface NotificationsContextValue {
-  confirmDialog: ConfirmDialogState | null;
-  resolveConfirm: (confirmed: boolean) => void;
-}
 
 const ConfirmDialog = () => {
-  const { confirmDialog, resolveConfirm } = useNotifications() as NotificationsContextValue;
+  const confirmDialog = useNotificationStore((state) => state.confirmDialog);
+  const resolveConfirm = useNotificationStore((state) => state.resolveConfirm);
 
   if (!confirmDialog) return null;
 

@@ -1,5 +1,4 @@
-// @ts-nocheck
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
 import { db } from '../../config/firebase';
@@ -7,13 +6,13 @@ import {
   collection, collectionGroup, onSnapshot, orderBy, query, doc,
   where, getDocs, limit, getDoc, documentId
 } from 'firebase/firestore';
-import { PATHS } from '../../config/dbPaths';
+import { PATHS, getPathString } from '../../config/dbPaths';
 import { formatDistanceToNow } from 'date-fns';
 import { nl } from 'date-fns/locale';
 import {
   Loader2, RefreshCw, Trash2, AlertTriangle, CheckCircle,
   Printer, Usb, Play, ArrowLeft, Zap, Search, Hash,
-  RotateCcw, Eye, X, Tag, ChevronDown
+  RotateCcw, Eye, X, Tag
 } from 'lucide-react';
 import { generatePrintData, generateLotBatchZPL } from '../../utils/zplHelper';
 import { getDriver } from '../../utils/printerDrivers';
@@ -26,15 +25,87 @@ import {
   queuePrintJob,
 } from '../../services/planningSecurityService';
 import { requestUsbDevice, printRawUsbToDevice, isUsbDirectSupported as usbDirectSupported } from '../../utils/usbPrintService';
-import AutoScaledLabelPreview from './AutoScaledLabelPreview.tsx';
+import AutoScaledLabelPreview from './AutoScaledLabelPreview';
 import { useNotifications } from '../../contexts/NotificationContext';
 
-const stationNameFromValue = (stationValue) => {
+type AnyRecord = Record<string, unknown>;
+
+type LabelTemplate = {
+  id: string;
+  name?: string;
+  width?: number;
+  height?: number;
+  tags?: string[];
+  elements?: unknown[];
+  [key: string]: unknown;
+};
+
+type PrinterConfig = {
+  id: string;
+  name?: string;
+  vendorId?: number | string;
+  productId?: number | string;
+  productName?: string;
+  dpi?: number | string;
+  darkness?: number | string;
+  isDefault?: boolean;
+  queueStations?: unknown[];
+  linkedStations?: unknown[];
+  [key: string]: unknown;
+};
+
+type DepartmentGroup = {
+  key: string;
+  label: string;
+  stations: string[];
+};
+
+type TempLabelItemProps = {
+  item: AnyRecord;
+  labelTemplates: LabelTemplate[];
+  labelRules: AnyRecord[];
+  printerDpi?: number;
+  handleTempLegacyPrint: (orderData: AnyRecord, template: any, processedData: any) => Promise<void>;
+};
+
+type TempLabelModalProps = {
+  onClose: () => void;
+  labelTemplates?: LabelTemplate[];
+  labelRules?: AnyRecord[];
+  printerDpi?: number;
+  usbDevice: USBDevice | null;
+  setUsbDevice: React.Dispatch<React.SetStateAction<USBDevice | null>>;
+  activeQueuePrinter: PrinterConfig | null;
+  selectedStation: string | null;
+};
+
+type LotPrintModalProps = {
+  onClose: () => void;
+  departmentGroups: DepartmentGroup[];
+  onPrintBatch: (batchData: string, lotCount: number) => Promise<void>;
+  printer: PrinterConfig | null;
+};
+
+type PrintJob = AnyRecord & {
+  id: string;
+  status?: string;
+  printerId?: string;
+  printData?: string;
+  zpl?: string;
+  labelZPL?: string;
+  createdAt?: { toDate?: () => Date } | Date;
+  error?: string;
+  metadata?: AnyRecord;
+  description?: string;
+};
+
+const stationNameFromValue = (stationValue: unknown): string => {
   if (!stationValue) return '';
   if (typeof stationValue === 'string') return stationValue.trim();
   if (typeof stationValue === 'object') {
+    const stationObj = stationValue as AnyRecord;
     return String(
-      stationValue.name || stationValue.station || stationValue.id || stationValue.code || ''
+      stationObj.name || stationObj.station || stationObj.id || stationObj.code || ''
     ).trim();
   }
   return String(stationValue).trim();
@@ -42,8 +113,24 @@ const stationNameFromValue = (stationValue) => {
 
 const PREVIEW_ROLL_WIDTH_MM = 90;
 
+// Normalisatie helpers voor order data
+const getOrderLabelOrder = (item: AnyRecord = {}): string =>
+  String(
+    item.orderId || item.orderNumber || item.Order || item.Productieorder || item.order || item.originalOrderId || item.id || "ONBEKEND"
+  );
+
+const getOrderLabelItemCode = (item: AnyRecord = {}): string =>
+  String(
+    item.itemCode || item.productCode || item.articleCode || item.productId || item.Item || item.Artikel || item.item || ""
+  );
+
+const getOrderLabelDescription = (item: AnyRecord = {}): string =>
+  String(
+    item.itemDescription || item.description || item.Description || item.Omschrijving || item.item || ""
+  );
+
 // Local Helper: StatusBadge
-const StatusBadge = ({ status }) => {
+const StatusBadge = ({ status }: { status?: string }) => {
   const config = {
     pending: { icon: <Loader2 className="animate-spin text-yellow-500" size={16} />, text: 'Wachtend', color: 'bg-yellow-100 text-yellow-800' },
     printing: { icon: <RefreshCw className="animate-spin text-blue-500" size={16} />, text: 'Printen', color: 'bg-blue-100 text-blue-800' },
@@ -51,7 +138,8 @@ const StatusBadge = ({ status }) => {
     error: { icon: <AlertTriangle className="text-red-500" size={16} />, text: 'Fout', color: 'bg-red-100 text-red-800' },
     processing: { icon: <RefreshCw className="animate-spin text-blue-500" size={16} />, text: 'Verwerken', color: 'bg-blue-100 text-blue-800' }
   };
-  const current = config[status] || config.pending;
+  const key = status && status in config ? (status as keyof typeof config) : 'pending';
+  const current = config[key];
   return (
     <span className={`inline-flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium ${current.color}`}>
       {current.icon}
@@ -63,11 +151,11 @@ const StatusBadge = ({ status }) => {
 // Local Helper: WebUSB logic
 const isUsbDirectSupported = () => usbDirectSupported();
 
-const printRawUsb = async (device, content) => {
+const printRawUsb = async (device: USBDevice, content: string) => {
   return printRawUsbToDevice({ device, content });
 };
 
-const normalizeQueuePrintPayload = (content, quantity) => {
+const normalizeQueuePrintPayload = (content: unknown, quantity: unknown) => {
   const base = String(content || "").trim();
   if (!base) return "";
   const qty = Number.isFinite(Number(quantity)) && Number(quantity) > 0
@@ -77,150 +165,112 @@ const normalizeQueuePrintPayload = (content, quantity) => {
 };
 
 // --- Helper voor Tijdelijke Labels ---
-const TempLabelItem = ({ item, labelTemplates, labelRules, isExpanded, onToggle, printerDpi = 300, handleTempLegacyPrint }) => {
-  const itemDisplay = item.item || item.description || item.Description || item.Omschrijving || item.itemCode || item.Item || item.Artikel || "";
+const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, handleTempLegacyPrint }: TempLabelItemProps) => {
+  const itemDisplay = getOrderLabelDescription(item) || getOrderLabelItemCode(item);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
   const topOptions = useMemo(() => {
     const normalizedProduct = {
-      itemCode: item.itemCode || item.Item || item.Artikel || item.item || '',
-      productId: item.productId || item.itemCode || item.Item || item.Artikel || item.item || '',
-      description: item.description || item.Description || item.Omschrijving || '',
-      item: item.item || item.description || item.Description || item.Omschrijving || '',
+      itemCode: getOrderLabelItemCode(item),
+      productId: item.productId || getOrderLabelItemCode(item),
+      description: getOrderLabelDescription(item),
+      item: item.item || getOrderLabelDescription(item),
       extraCode: item.extraCode || item.Code || ''
     };
-
-    return filterTempOrderLabelsByProduct(labelTemplates || [], normalizedProduct);
+    return filterTempOrderLabelsByProduct(labelTemplates || [], normalizedProduct as AnyRecord) as LabelTemplate[];
   }, [item, labelTemplates]);
 
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
-
   useEffect(() => {
-     if (topOptions.length > 0) {
-       const isValidSelection = topOptions.some(t => t.id === selectedTemplateId);
-       if (!selectedTemplateId || !isValidSelection) {
-         setSelectedTemplateId(topOptions[0]?.id || "");
-       }
-     } else if (selectedTemplateId) {
-       setSelectedTemplateId("");
-     }
-    }, [topOptions, selectedTemplateId]);
+    if (topOptions.length > 0) {
+      const isValidSelection = topOptions.some((t) => String(t.id) === selectedTemplateId);
+      if (!selectedTemplateId || !isValidSelection) {
+        setSelectedTemplateId(String(topOptions[0]?.id || ""));
+      }
+    } else if (selectedTemplateId) {
+      setSelectedTemplateId("");
+    }
+  }, [topOptions, selectedTemplateId]);
 
-    const selectedTemplate = topOptions.find(t => t.id === selectedTemplateId) || topOptions[0];
-  
+  const selectedTemplate = topOptions.find((t) => String(t.id) === selectedTemplateId) || topOptions[0];
+
   const previewData = useMemo(() => {
-    if (!isExpanded) return {};
-    const order = item.orderId || item.Order || item.Productieorder || item.id || "ONBEKEND";
-    const itemCode = item.itemCode || item.item || item.Item || item.Artikel || "";
+    const order = item.orderId || item.Order || item.Productieorder || item.order || item.id || "ONBEKEND";
+    const itemCode = item.itemCode || item.Item || item.Artikel || item.item || "";
     const desc = item.description || item.Description || item.Omschrijving || "";
-
-    const labelData = processLabelData({
-        ...item,
-        orderNumber: order,
-        productId: itemCode,
-        description: desc,
-        lotNumber: item.lotNumber || order
+    const base = processLabelData({
+      ...item,
+      orderNumber: order,
+      productId: itemCode,
+      description: desc,
+      lotNumber: String(item.lotNumber || order),
     });
-    return applyLabelLogic(labelData, labelRules || []);
-  }, [item, labelRules, isExpanded]);
+    return applyLabelLogic(base, labelRules || []);
+  }, [item, labelRules]);
 
   return (
-    <div className={`p-0 bg-white border-2 hover:border-emerald-300 rounded-[24px] transition-all shadow-sm hover:shadow-md group overflow-hidden ${isExpanded ? 'border-emerald-500' : 'border-slate-100'}`}>
-      <div 
-        className="p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 cursor-pointer"
-        onClick={onToggle}
-      >
-        <div className="flex-1">
-          <p className="text-xl font-black text-slate-800 tracking-tight leading-none mb-1">
-            {item.orderId || item.Order || item.Productieorder || item.id || "ONBEKEND"}
-          </p>
-          {itemDisplay && (
-            <p className="text-sm font-bold text-slate-600 tracking-wider mb-0.5 mt-2">
-              {itemDisplay}
-            </p>
+    <div className="w-full p-4 bg-white border border-slate-200 hover:border-amber-300 rounded-2xl transition-all">
+      <div className="flex flex-col lg:flex-row gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-black text-slate-800 truncate">{getOrderLabelOrder(item)}</p>
+          <p className="text-xs font-bold text-slate-500 truncate">{itemDisplay}</p>
+          <div className="mt-3">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Template</label>
+            {topOptions.length > 0 ? (
+              <select
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                value={selectedTemplateId}
+                onChange={(e) => setSelectedTemplateId(e.target.value)}
+              >
+                {topOptions.map((t) => (
+                  <option key={String(t.id)} value={String(t.id)}>{String(t.name || t.id)}</option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-xs italic text-amber-600">Geen passende tijdelijke template gevonden.</p>
+            )}
+          </div>
+          <button
+            onClick={() => handleTempLegacyPrint(item, selectedTemplate, previewData)}
+            disabled={!selectedTemplate || topOptions.length === 0}
+            className="mt-3 px-3 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-amber-600 disabled:opacity-50"
+          >
+            Print
+          </button>
+        </div>
+        <div className="w-full lg:w-64 h-36 bg-white border border-slate-200 rounded-xl p-2 flex items-center justify-center">
+          {selectedTemplate ? (
+            <AutoScaledLabelPreview label={selectedTemplate as any} data={previewData} maxScale={1} />
+          ) : (
+            <p className="text-xs text-slate-400 italic">Geen preview</p>
           )}
         </div>
-        <div className="shrink-0 w-full sm:w-auto flex justify-end">
-           <button 
-             className={`p-3 rounded-full transition-colors flex items-center justify-center ${isExpanded ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-50 text-slate-400 group-hover:bg-emerald-50 group-hover:text-emerald-600'}`}
-           >
-             <ChevronDown size={20} className={`transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
-           </button>
-        </div>
       </div>
-      
-      {isExpanded && (
-        <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex flex-col md:flex-row gap-6 animate-in slide-in-from-top-2">
-          <div className="flex-1 flex flex-col gap-4">
-            <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Label Formaat / Template</label>
-                {topOptions.length > 0 ? (
-                  <select 
-                    className="w-full p-4 border-2 border-slate-200 rounded-xl text-sm font-bold bg-white outline-none focus:border-emerald-500 transition-colors cursor-pointer"
-                    value={selectedTemplateId}
-                    onChange={e => setSelectedTemplateId(e.target.value)}
-                  >
-                    {topOptions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
-                ) : (
-                  <div className="text-xs text-orange-500 italic p-4 bg-orange-50 rounded-xl border border-orange-100">Geen tijdelijke labels met passende tags gevonden voor dit product.</div>
-                )}
-            </div>
-            
-            <button 
-              onClick={() => handleTempLegacyPrint(item, selectedTemplateId)} 
-              disabled={!selectedTemplateId || topOptions.length === 0}
-              className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg active:scale-95 disabled:opacity-50 mt-auto"
-            >
-              <Printer size={18} /> Etiket Printen
-            </button>
-          </div>
-          
-          <div className="w-full md:w-96 lg:w-[450px] shrink-0 flex flex-col items-center justify-center bg-white border-2 border-slate-200 p-4 rounded-3xl relative min-h-[250px] shadow-inner">
-             <span className="absolute top-4 left-4 text-[10px] font-black text-slate-400 uppercase tracking-widest z-10">Live Preview</span>
-             {selectedTemplate ? (
-                 <div className="w-full h-full flex items-center justify-center pt-8 pb-2">
-                    <AutoScaledLabelPreview label={selectedTemplate} data={previewData} printerDpi={printerDpi} />
-                 </div>
-             ) : (
-                 <span className="text-xs text-slate-400 italic">Selecteer een template</span>
-             )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
 // --- Modal: Tijdelijke Labels Zoeken ---
-const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printerDpi = 300, usbDevice, setUsbDevice, activeQueuePrinter, selectedStation }) => {
+const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printerDpi = 203, usbDevice, setUsbDevice, activeQueuePrinter, selectedStation }: TempLabelModalProps) => {
   const { t } = useTranslation();
   const { notify } = useNotifications();
 
   // Printfunctie nu binnen de modal zodat t altijd beschikbaar is
-  const handleTempLegacyPrint = async (orderData, templateId) => {
-    const template = labelTemplates.find(t => t.id === templateId);
+  const handleTempLegacyPrint = async (orderData: AnyRecord, template: any, processedData: any) => {
     const dpi = printerDpi;
     const dotsPerMm = dpi / 25.4;
     const darkness = 15; // of printerDarkness als beschikbaar
 
-    const order = orderData.orderId || orderData.Order || orderData.Productieorder || orderData.id || "ONBEKEND";
-    const item = orderData.itemCode || orderData.item || orderData.Item || orderData.Artikel || "";
-    const desc = orderData.description || orderData.Description || orderData.Omschrijving || "";
+    const order = getOrderLabelOrder(orderData);
+    const item = getOrderLabelItemCode(orderData);
+    const desc = getOrderLabelDescription(orderData);
 
     let zpl;
 
     if (template) {
-      const labelData = processLabelData({
-        ...orderData,
-        orderNumber: order,
-        productId: item,
-        description: desc,
-        lotNumber: orderData.lotNumber || order
-      });
-      const processedData = applyLabelLogic(labelData, labelRules);
-      zpl = await generatePrintData(template, processedData, dpi, resolveLabelContent, t);
+      zpl = await generatePrintData(template, processedData, dpi, resolveLabelContent as any, t);
     } else {
-      zpl = `^XA\n^PW${Math.round(90 * dotsPerMm)}\n~SD${darkness}\n^FO${Math.round(5 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^A0N,${Math.round(8 * dotsPerMm)},${Math.round(6 * dotsPerMm)}^FDOrder: ${order}^FS\n^FO${Math.round(5 * dotsPerMm)},${Math.round(15 * dotsPerMm)}^A0N,${Math.round(6 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^FDItem: ${item}^FS\n^FO${Math.round(5 * dotsPerMm)},${Math.round(25 * dotsPerMm)}^A0N,${Math.round(5 * dotsPerMm)},${Math.round(4 * dotsPerMm)}^FD${desc.substring(0, 40)}^FS\n^FO${Math.round(60 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^BQN,2,${Math.max(2, Math.round(4 * dpi / 203))}^FDQA,${order}^FS\n^XZ`;
+      const qrMag = Math.max(2, Math.round((8 * dotsPerMm) / 24));
+      zpl = `^XA\n^PW${Math.round(90 * dotsPerMm)}\n~SD${darkness}\n^FO${Math.round(5 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^A0N,${Math.round(8 * dotsPerMm)},${Math.round(6 * dotsPerMm)}^FDOrder: ${order}^FS\n^FO${Math.round(5 * dotsPerMm)},${Math.round(15 * dotsPerMm)}^A0N,${Math.round(6 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^FDItem: ${item}^FS\n^FO${Math.round(5 * dotsPerMm)},${Math.round(25 * dotsPerMm)}^A0N,${Math.round(5 * dotsPerMm)},${Math.round(4 * dotsPerMm)}^FD${String(desc).substring(0, 40)}^FS\n^FO${Math.round(60 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^BQN,2,${qrMag}^FDQA,${order}^FS\n^XZ`;
     }
 
     try {
@@ -247,8 +297,8 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
             lotNumber: orderData.lotNumber || order,
             stationId: selectedStation || 'PRINT_QUEUE_ADMIN',
             targetPrinterName: activeQueuePrinter.name,
-            width: parseInt(template?.width || 90, 10),
-            height: parseInt(template?.height || 40, 10),
+            width: parseInt(String(template?.width || 90), 10),
+            height: parseInt(String(template?.height || 40), 10),
             variables: {
               orderNumber: order,
               productId: item,
@@ -264,83 +314,72 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
 
       throw new Error('Geen directe USB printer gekoppeld en geen wachtrijprinter geconfigureerd.');
     } catch (e) {
-      notify(t("common.printErrorMessage", { message: e.message }));
+      const message = e instanceof Error ? e.message : String(e);
+      notify(t("common.printErrorMessage", { message }));
     }
   };
   const [orderStr, setOrderStr] = useState("");
-  const [results, setResults] = useState([]);
-  const [initialList, setInitialList] = useState([]);
+  const [results, setResults] = useState<AnyRecord[]>([]);
+  const [initialList, setInitialList] = useState<AnyRecord[]>([]);
   const [loadingInitialList, setLoadingInitialList] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [expandedItemId, setExpandedItemId] = useState(null);
+  const isMountedRef = useRef(true);
 
-  const normalizeText = (value) => String(value || "").toLowerCase().trim();
+  const refreshInitialList = useCallback(async () => {
+    setLoadingInitialList(true);
+    try {
+      const [tempSnap, planSnap, trackSnap, scopedOrdersSnap] = await Promise.all([
+        getDocs(query(collection(db, getPathString(PATHS.TEMP_PLANNING)), limit(120))),
+        getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(120))),
+        getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(120))),
+        getDocs(query(collectionGroup(db, 'orders'), limit(120))),
+      ]);
 
-  useEffect(() => {
-    let isMounted = true;
+      if (!isMountedRef.current) return;
 
-    const loadInitialList = async () => {
-      setLoadingInitialList(true);
-      try {
-        const [tempSnap, planSnap, trackSnap, scopedOrdersSnap] = await Promise.all([
-          getDocs(query(collection(db, ...PATHS.TEMP_PLANNING), limit(120))),
-          getDocs(query(collection(db, ...PATHS.PLANNING), limit(120))),
-          getDocs(query(collection(db, ...PATHS.TRACKING), limit(120))),
-          getDocs(query(collectionGroup(db, 'orders'), limit(120))),
-        ]);
+      const rows: AnyRecord[] = [];
+      const pushRows = (snap: any) => {
+        snap.docs.forEach((d: any) => rows.push({ id: d.id, ...(d.data() as AnyRecord) }));
+      };
 
-        if (!isMounted) return;
+      pushRows(tempSnap);
+      pushRows(planSnap);
+      pushRows(trackSnap);
+      pushRows(scopedOrdersSnap);
 
-        const rows = [];
-        const pushRows = (snap) => {
-          snap.docs.forEach((d) => rows.push({ id: d.id, ...d.data() }));
-        };
+      const dedup: AnyRecord[] = [];
+      const seen = new Set<string>();
+      rows.forEach((r) => {
+        const rowId = String(r.id || "");
+        if (!rowId || seen.has(rowId)) return;
+        seen.add(rowId);
+        dedup.push(r);
+      });
 
-        pushRows(tempSnap);
-        pushRows(planSnap);
-        pushRows(trackSnap);
-        pushRows(scopedOrdersSnap);
+      dedup.sort((a, b) =>
+        getOrderLabelOrder(a).localeCompare(getOrderLabelOrder(b), undefined, { numeric: true })
+      );
 
-        const dedup = [];
-        const seen = new Set();
-        rows.forEach((r) => {
-          if (seen.has(r.id)) return;
-          seen.add(r.id);
-          dedup.push(r);
-        });
-
-        dedup.sort((a, b) =>
-          String(a.orderId || a.Order || a.Productieorder || a.id).localeCompare(
-            String(b.orderId || b.Order || b.Productieorder || b.id),
-            undefined,
-            { numeric: true }
-          )
-        );
-
-        setInitialList(dedup);
-      } catch (err) {
-        console.error("Fout bij laden order labels lijst:", err);
-      } finally {
-        if (isMounted) setLoadingInitialList(false);
-      }
-    };
-
-    loadInitialList();
-
-    return () => {
-      isMounted = false;
-    };
+      setInitialList(dedup);
+    } catch (err) {
+      console.error("Fout bij laden order labels lijst:", err);
+    } finally {
+      if (isMountedRef.current) setLoadingInitialList(false);
+    }
   }, []);
 
-  const displayItems = orderStr.trim() ? results : initialList;
+  const normalizeText = (value: unknown) => String(value || "").toLowerCase().trim();
 
   useEffect(() => {
-    if (displayItems.length === 1) {
-        setExpandedItemId(displayItems[0].id || 0);
-    } else {
-        setExpandedItemId(null);
-    }
-  }, [displayItems]);
+    isMountedRef.current = true;
+    refreshInitialList();
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [refreshInitialList]);
+
+  const displayItems = orderStr.trim() ? results : [];
 
   const handleSearch = async () => {
     if (!orderStr.trim()) {
@@ -349,16 +388,41 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     }
     setLoading(true);
     setResults([]);
-    setExpandedItemId(null);
     try {
       let searchStr = orderStr.trim().toUpperCase();
       // Als de gebruiker per ongeluk een heel databasepad plakt, pak het laatste stuk (de ID)
       if (searchStr.includes('/')) {
-        searchStr = searchStr.split('/').filter(Boolean).pop();
+        searchStr = searchStr.split('/').filter(Boolean).pop() || searchStr;
+      }
+
+      // Short-circuit fallback for legacy/nood label flow on known BH18 Fittings paths.
+      if (searchStr.startsWith("N") && searchStr.length >= 6) {
+        const targetedPaths = [
+          `${getPathString(PATHS.PLANNING)}/Fittings/machines/40BH18/orders`,
+          `${getPathString(PATHS.PLANNING)}/Fittings/machines/BH18/orders`,
+        ];
+        const targetedResults: AnyRecord[] = [];
+        for (const path of targetedPaths) {
+          try {
+            const prefixSnap = await getDocs(
+              query(collection(db, path), orderBy(documentId()), where(documentId(), ">=", searchStr), where(documentId(), "<=", searchStr + "\uf8ff"), limit(300))
+            );
+            prefixSnap.docs.forEach((d) => {
+              targetedResults.push({ id: d.id, ...(d.data() as AnyRecord) });
+            });
+          } catch (err) {
+            console.warn("Targeted BH18 query failed for path:", path, err);
+          }
+        }
+        if (targetedResults.length > 0) {
+          setResults(targetedResults);
+          setLoading(false);
+          return;
+        }
       }
 
       // Genereer logische FPI voorvoegsels
-      let searchOptions = [searchStr];
+      let searchOptions: string[] = [searchStr];
       const digitsMatch = searchStr.match(/\d+/);
       if (digitsMatch) {
           const digits = digitsMatch[0];
@@ -375,14 +439,14 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       }
 
       const uniqueOptions = Array.from(new Set(searchOptions)).slice(0, 15);
-      const colRef = collection(db, ...PATHS.TEMP_PLANNING);
-      const planRef = collection(db, ...PATHS.PLANNING);
-        const trackRef = collection(db, ...PATHS.TRACKING);
+      const colRef = collection(db, getPathString(PATHS.TEMP_PLANNING));
+      const planRef = collection(db, getPathString(PATHS.PLANNING));
+      const trackRef = collection(db, getPathString(PATHS.TRACKING));
       
-      let foundDocs = new Map();
-      const addDocs = (snap) => {
+      const foundDocs = new Map<string, AnyRecord>();
+      const addDocs = (snap: any) => {
         if (snap && snap.docs) {
-          snap.docs.forEach(d => foundDocs.set(d.id, { id: d.id, ...d.data() }));
+          snap.docs.forEach((d: any) => foundDocs.set(d.id, { id: d.id, ...(d.data() as AnyRecord) }));
         }
       };
 
@@ -409,26 +473,24 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       }
 
       // 1. Direct op Document ID proberen
+      const directLookupPaths = [
+        getPathString(PATHS.TEMP_PLANNING),
+        getPathString(PATHS.PLANNING),
+        getPathString(PATHS.TRACKING),
+        `${getPathString(PATHS.PLANNING)}/Fittings/machines/40BH18/orders`,
+        `${getPathString(PATHS.PLANNING)}/Fittings/machines/BH18/orders`
+      ];
+
       for (const opt of uniqueOptions) {
+        for (const path of directLookupPaths) {
           try {
-              const docRef = doc(db, ...PATHS.TEMP_PLANNING, opt);
-              const docSnap = await getDoc(docRef);
-              if (docSnap.exists()) {
-                  foundDocs.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
-              }
-              const planDocRef = doc(db, ...PATHS.PLANNING, opt);
-              const planDocSnap = await getDoc(planDocRef);
-              if (planDocSnap.exists()) {
-                  foundDocs.set(planDocSnap.id, { id: planDocSnap.id, ...planDocSnap.data() });
-              }
-              const trackDocRef = doc(db, ...PATHS.TRACKING, opt);
-              const trackDocSnap = await getDoc(trackDocRef);
-              if (trackDocSnap.exists()) {
-                  foundDocs.set(trackDocSnap.id, { id: trackDocSnap.id, ...trackDocSnap.data() });
-              }
-              } catch {
-                continue;
-              }
+            const docRef = doc(db, `${path}/${opt}`);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) foundDocs.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as AnyRecord) });
+          } catch {
+            continue;
+          }
+        }
       }
 
       // 2. Parallelle exacte zoekopdrachten
@@ -470,7 +532,27 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       const exactSnaps = await Promise.all(exactQueries.map(p => p.catch(() => null)));
       exactSnaps.forEach(addDocs);
         
-      // 3. 'Begint met' zoekopdrachten (als we nog weinig of niks hebben)
+      // 3. Gedeeltelijke / part-match (als lengte >= 3 is) client-side op brede datasets
+      if (searchStr.length >= 3) {
+        const broadSnaps = await Promise.all([
+          getDocs(query(collectionGroup(db, 'orders'), limit(1500))).catch(() => null),
+          getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(500))).catch(() => null)
+        ]);
+        broadSnaps.forEach(snap => {
+          if (snap && snap.docs) {
+            snap.docs.forEach(d => {
+              const data = d.data() as AnyRecord;
+              const idTxt = d.id.toUpperCase();
+              const orderTxt = String(data.orderId || data.orderNumber || data.Order || '').toUpperCase();
+              if (idTxt.includes(searchStr) || orderTxt.includes(searchStr)) {
+                foundDocs.set(d.id, { id: d.id, ...data });
+              }
+            });
+          }
+        });
+      }
+
+      // 4. 'Begint met' zoekopdrachten (als we nog weinig of niks hebben)
       if (foundDocs.size < 5 && searchStr.length >= 3) {
         const startOptions = [searchStr];
         if (digitsMatch && digitsMatch[0].length >= 3) {
@@ -482,7 +564,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
             }
         }
         
-        const startsWithQueries = [];
+        const startsWithQueries: Array<Promise<any>> = [];
         Array.from(new Set(startOptions)).forEach(opt => {
             startsWithQueries.push(getDocs(query(colRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
             startsWithQueries.push(getDocs(query(colRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
@@ -520,15 +602,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       
       const queryText = normalizeText(orderStr);
       const clientMatches = initialList.filter((item) => {
-        const orderText = normalizeText([
-          item.orderId,
-          item.orderNumber,
-          item.Order,
-          item.Productieorder,
-          item.order,
-          item.originalOrderId,
-          item.id,
-        ].filter(Boolean).join(' '));
+        const orderText = normalizeText(getOrderLabelOrder(item));
         const productText = normalizeText([
           item.item,
           item.itemDescription,
@@ -544,15 +618,44 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
         return orderText.includes(queryText) || productText.includes(queryText);
       });
 
-      const merged = new Map();
-      Array.from(foundDocs.values()).forEach((item) => merged.set(item.id, item));
-      clientMatches.forEach((item) => merged.set(item.id, item));
-      setResults(Array.from(merged.values()));
+      const merged = new Map<string, AnyRecord>();
+      Array.from(foundDocs.values()).forEach((item) => merged.set(String(item.id || ""), item));
+      clientMatches.forEach((item) => merged.set(String(item.id || ""), item));
+      let finalResults = Array.from(merged.values());
+
+      if (finalResults.length === 0 && searchStr.length >= 3) {
+        const targetedPaths = [
+          `${getPathString(PATHS.PLANNING)}/Fittings/machines/BH18/orders`,
+          `${getPathString(PATHS.PLANNING)}/Fittings/machines/40BH18/orders`,
+        ];
+        const targetedQueries = targetedPaths.map((path) =>
+          getDocs(
+            query(collection(db, path), where(documentId(), ">=", searchStr), where(documentId(), "<=", searchStr + "\uf8ff"), limit(250))
+          ).catch(() => null)
+        );
+        const targetedSnaps = await Promise.all(targetedQueries);
+        const targetedMatches: AnyRecord[] = [];
+        targetedSnaps.forEach((snap) => {
+          if (!snap || !snap.docs) return;
+          snap.docs.forEach((d: any) => targetedMatches.push({ id: d.id, ...(d.data() as AnyRecord) }));
+        });
+        if (targetedMatches.length > 0) {
+          finalResults = targetedMatches;
+        }
+      }
+
+      setResults(finalResults);
     } catch (e) {
       console.error("Zoekfout temp labels:", e);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefresh = async () => {
+    setOrderStr("");
+    setResults([]);
+    await refreshInitialList();
   };
 
   return (
@@ -602,6 +705,15 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
             >
               {loading ? <Loader2 className="animate-spin" size={18} /> : t("common.search")}
             </button>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={loadingInitialList || loading}
+              className="px-4 py-4 bg-slate-50 border-2 border-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-100 hover:text-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Ververs lijst"
+            >
+              <RefreshCw size={18} className={loadingInitialList ? 'animate-spin' : ''} />
+            </button>
           </div>
 
           {/* Results Area */}
@@ -610,12 +722,10 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
               <div className="space-y-3">
                 {displayItems.map((item, idx) => (
                   <TempLabelItem 
-                    key={idx} 
+                    key={String(item.id || idx)} 
                     item={item} 
                     labelTemplates={labelTemplates} 
                     labelRules={labelRules}
-                    isExpanded={expandedItemId === (item.id || idx)}
-                    onToggle={() => setExpandedItemId(expandedItemId === (item.id || idx) ? null : (item.id || idx))}
                     printerDpi={printerDpi}
                     handleTempLegacyPrint={handleTempLegacyPrint}
                   />
@@ -623,10 +733,11 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
               </div>
             )}
             
-            {loadingInitialList && !orderStr.trim() && (
+            {!orderStr.trim() && (
               <div className="py-12 border-2 border-dashed border-slate-200 rounded-[30px] flex flex-col items-center justify-center text-center bg-slate-50/50">
-                <Loader2 className="animate-spin text-slate-400 mb-3" size={24} />
-                <p className="text-xs text-slate-400 font-medium">{t("common.loadingList")}</p>
+                <Search className="text-slate-400 mb-3" size={32} />
+                <p className="text-sm font-bold text-slate-600">Zoek een order of lotnummer</p>
+                <p className="text-xs text-slate-400 font-medium mt-1">Typ een referentie in de zoekbalk om labels te bekijken.</p>
               </div>
             )}
 
@@ -647,7 +758,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
 };
 
 // --- Modal: Lotnummers Printen ---
-const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }) => {
+const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: LotPrintModalProps) => {
   const { t } = useTranslation();
   const { notify } = useNotifications();
   const [departmentKey, setDepartmentKey] = useState(departmentGroups[0]?.key || "");
@@ -675,7 +786,7 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }) => 
     }
   }, [departmentGroups, departmentKey, availableStations, station]);
 
-  const handleGenerate = async (e) => {
+  const handleGenerate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!station) {
       notify(t("common.noStationAvailable"));
@@ -697,12 +808,12 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }) => 
         lots.push(`${baseLot}${currentNum}`);
       }
 
-      const parsedDpi = printer?.dpi ? parseInt(printer.dpi, 10) : NaN;
-      const fallbackDpi = getDriver(printer)?.nativeDpi;
-      const dpi = Number.isFinite(parsedDpi) && parsedDpi > 0
-        ? parsedDpi
-        : (Number.isFinite(fallbackDpi) && fallbackDpi > 0 ? fallbackDpi : 203);
-      const darkness = printer?.darkness ? parseInt(printer.darkness, 10) : 15;
+      const driverDpi = Number(getDriver(printer)?.nativeDpi);
+      const parsedDpi = printer?.dpi ? parseInt(String(printer.dpi), 10) : NaN;
+      const dpi = Number.isFinite(driverDpi) && driverDpi > 0
+        ? driverDpi
+        : (Number.isFinite(parsedDpi) && parsedDpi > 0 ? parsedDpi : 203);
+      const darkness = printer?.darkness ? parseInt(String(printer.darkness), 10) : 15;
       const zplBatch = generateLotBatchZPL({
         lots,
         printerDpi: dpi,
@@ -713,7 +824,8 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }) => 
       notify(t("common.lotsPrintedDirectUsb", { count: parsedCount }));
     } catch(err) {
       console.error(err);
-      notify(t("common.generationError", { message: err.message }));
+      const message = err instanceof Error ? err.message : String(err);
+      notify(t("common.generationError", { message }));
     } finally {
       setLoading(false);
     }
@@ -751,14 +863,14 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }) => 
               disabled={departmentGroups.length === 0}
             >
               {departmentGroups.length === 0 && <option value="">{t("common.noDepartmentsFound")}</option>}
-              {departmentGroups.map(group => <option key={group.key} value={group.key}>{group.label}</option>)}
+              {departmentGroups.map((group: DepartmentGroup) => <option key={group.key} value={group.key}>{group.label}</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">{t("common.stationMachine")}</label>
             <select value={station} onChange={e => setStation(e.target.value)} className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50" disabled={availableStations.length === 0}>
               {availableStations.length === 0 && <option value="">{t("common.noStationsFound")}</option>}
-              {availableStations.map(s => <option key={s} value={s}>{s}</option>)}
+              {availableStations.map((s: string) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
@@ -833,12 +945,12 @@ const PrintQueueAdminView = () => {
   const { role } = useAdminAuth();
   const { t } = useTranslation();
   const { showConfirm , notify} = useNotifications();
-  const canManage = ['admin', 'teamleader', 'planner'].includes(role);
+  const canManage = ['admin', 'teamleader', 'planner'].includes(String(role || ''));
 
-  const [printJobs, setPrintJobs] = useState([]);
+  const [printJobs, setPrintJobs] = useState<PrintJob[]>([]);
   const [loading, setLoading] = useState(true);
-  const [printers, setPrinters] = useState([]);
-  const [usbDevice, setUsbDevice] = useState(null);
+  const [printers, setPrinters] = useState<PrinterConfig[]>([]);
+  const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
   const [autoPrint, setAutoPrint] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
@@ -848,17 +960,17 @@ const PrintQueueAdminView = () => {
   
   // Nieuwe state voor navigatie en reprint
   const [viewMode, setViewMode] = useState('overview'); // 'overview' | 'station'
-  const [selectedStation, setSelectedStation] = useState(null);
+  const [selectedStation, setSelectedStation] = useState<string | null>(null);
   const [reprintSearch, setReprintSearch] = useState('');
-  const [reprintResult, setReprintResult] = useState(null);
-  const [labelTemplates, setLabelTemplates] = useState([]);
-  const [labelRules, setLabelRules] = useState([]);
+  const [reprintResult, setReprintResult] = useState<AnyRecord | null>(null);
+  const [labelTemplates, setLabelTemplates] = useState<LabelTemplate[]>([]);
+  const [labelRules, setLabelRules] = useState<AnyRecord[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedLabelId, setSelectedLabelId] = useState('');
-  const [previewJob, setPreviewJob] = useState(null);
+  const [previewJob, setPreviewJob] = useState<PrintJob | null>(null);
   const [previewSize, setPreviewSize] = useState("3.54x5.91");
   const [previewSizeLabel, setPreviewSizeLabel] = useState("90x150 mm");
-  const [factoryConfig, setFactoryConfig] = useState(null);
+  const [factoryConfig, setFactoryConfig] = useState<AnyRecord | null>(null);
 
   useEffect(() => {
     if (previewJob?.metadata?.width && previewJob?.metadata?.height) {
@@ -897,43 +1009,44 @@ const PrintQueueAdminView = () => {
     restoreUsbConnection();
 
     // Printers ophalen
-    const unsubPrinters = onSnapshot(collection(db, ...PATHS.PRINTERS), (snapshot) => {
-      setPrinters(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    const unsubPrinters = onSnapshot(collection(db, getPathString(PATHS.PRINTERS)), (snapshot) => {
+      setPrinters(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as AnyRecord) })));
     });
 
     // Haal label templates op voor reprint
-    const templatesRef = collection(db, ...PATHS.LABEL_TEMPLATES);
+    const templatesRef = collection(db, getPathString(PATHS.LABEL_TEMPLATES));
     const unsubTemplates = onSnapshot(templatesRef, (snap) => {
-      setLabelTemplates(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLabelTemplates(snap.docs.map((d) => ({ id: d.id, ...(d.data() as AnyRecord) })));
     });
 
     // Haal label logic op
-    const logicRef = collection(db, ...PATHS.LABEL_LOGIC);
+    const logicRef = collection(db, getPathString(PATHS.LABEL_LOGIC));
     const unsubLogic = onSnapshot(logicRef, (snap) => {
-      setLabelRules(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLabelRules(snap.docs.map((d) => ({ id: d.id, ...(d.data() as AnyRecord) })));
     });
 
-    let rootJobs = [];
-    let scopedJobs = [];
+    let rootJobs: PrintJob[] = [];
+    let scopedJobs: PrintJob[] = [];
 
-    const normalizeJob = (docSnap) => {
-      const data = docSnap.data() || {};
-      const isQueueJob = Boolean(data.printerId || data.zpl || data.status || data.metadata?.description);
+    const normalizeJob = (docSnap: any): PrintJob | null => {
+      const data = (docSnap.data() || {}) as AnyRecord;
+      const metadata = (data.metadata || {}) as AnyRecord;
+      const isQueueJob = Boolean(data.printerId || data.zpl || data.status || metadata.description);
       if (!isQueueJob) return null;
-      return { id: docSnap.id, ...data };
+      return { id: docSnap.id, ...data } as PrintJob;
     };
 
-    const tsToMillis = (ts) => {
+    const tsToMillis = (ts: unknown) => {
       if (!ts) return 0;
-      if (typeof ts.toDate === 'function') return ts.toDate().getTime();
-      const parsed = new Date(ts);
+      if (typeof (ts as any).toDate === 'function') return (ts as any).toDate().getTime();
+      const parsed = new Date(String(ts));
       return Number.isFinite(parsed.getTime()) ? parsed.getTime() : 0;
     };
 
     const printQueuePathFragment = `/${PATHS.PRINT_QUEUE.join('/')}/`;
 
     const mergeJobs = () => {
-      const byId = new Map();
+      const byId = new Map<string, PrintJob>();
       rootJobs.forEach((job) => {
         if (job?.id) byId.set(job.id, job);
       });
@@ -946,9 +1059,9 @@ const PrintQueueAdminView = () => {
       setLoading(false);
     };
 
-    const rootQ = query(collection(db, ...PATHS.PRINT_QUEUE), orderBy('createdAt', 'desc'));
+    const rootQ = query(collection(db, getPathString(PATHS.PRINT_QUEUE)), orderBy('createdAt', 'desc'));
     const unsubscribeRoot = onSnapshot(rootQ, (snapshot) => {
-      rootJobs = snapshot.docs.map(normalizeJob).filter(Boolean);
+      rootJobs = snapshot.docs.map(normalizeJob).filter((job): job is PrintJob => Boolean(job));
       mergeJobs();
     }, (err) => {
       console.error('Error fetching legacy print jobs:', err);
@@ -961,7 +1074,7 @@ const PrintQueueAdminView = () => {
       scopedJobs = snapshot.docs
         .filter((docSnap) => String(docSnap.ref?.path || '').includes(printQueuePathFragment))
         .map(normalizeJob)
-        .filter((job) => job && String(job._scopeType || 'print_queue').trim() === 'print_queue');
+        .filter((job): job is PrintJob => Boolean(job) && String((job as PrintJob)._scopeType || 'print_queue').trim() === 'print_queue');
       mergeJobs();
     }, (err) => {
       console.error('Error fetching scoped print jobs:', err);
@@ -979,7 +1092,7 @@ const PrintQueueAdminView = () => {
   }, []);
 
   useEffect(() => {
-    const unsubFactory = onSnapshot(doc(db, ...PATHS.FACTORY_CONFIG), (snap) => {
+    const unsubFactory = onSnapshot(doc(db, getPathString(PATHS.FACTORY_CONFIG)), (snap) => {
       setFactoryConfig(snap.exists() ? snap.data() : null);
     });
 
@@ -1012,7 +1125,8 @@ const PrintQueueAdminView = () => {
           } catch (e) {
             console.error(`Auto-print failed for ${job.id}:`, e);
             setAutoPrint(false);
-            setError(`Auto-print gestopt. Fout bij printen taak ${job.id}: ${e.message}`);
+            const message = e instanceof Error ? e.message : String(e);
+            setError(`Auto-print gestopt. Fout bij printen taak ${job.id}: ${message}`);
             break;
           }
         }
@@ -1038,8 +1152,8 @@ const PrintQueueAdminView = () => {
       jobs = jobs.filter(j => j.metadata?.stationId === selectedStation || j.metadata?.targetPrinterName === selectedStation);
     } else if (role !== 'admin') {
       // Standaard filter voor niet-admins
-      const allowedPrinterIds = printers.map(p => p.id);
-      jobs = jobs.filter(job => allowedPrinterIds.includes(job.printerId));
+      const allowedPrinterIds = printers.map((p) => p.id);
+      jobs = jobs.filter((job) => job.printerId ? allowedPrinterIds.includes(job.printerId) : false);
     }
     
     return jobs;
@@ -1061,24 +1175,24 @@ const PrintQueueAdminView = () => {
       ? activeQueuePrinter.queueStations
       : (activeQueuePrinter.linkedStations || []);
     return Array.from(new Set(stations.map(stationNameFromValue).filter(Boolean)))
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
   }, [activeQueuePrinter]);
 
-  const departmentGroups = useMemo(() => {
+  const departmentGroups = useMemo<DepartmentGroup[]>(() => {
     const departments = Array.isArray(factoryConfig?.departments) ? factoryConfig.departments : [];
-    const fromConfig = departments
+    const fromConfig = (departments as AnyRecord[])
       .map((dept, idx) => {
-        const stations = Array.from(new Set((dept?.stations || [])
+        const stations = Array.from(new Set((Array.isArray(dept?.stations) ? dept.stations : [])
           .map(stationNameFromValue)
-          .filter(Boolean)))
-          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+          .filter((name): name is string => Boolean(name))))
+          .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
         if (stations.length === 0) return null;
 
         const key = String(dept?.slug || dept?.id || `dept-${idx}`);
         const label = String(dept?.name || dept?.slug || dept?.id || `Afdeling ${idx + 1}`);
         return { key, label, stations };
       })
-      .filter(Boolean);
+      .filter((group): group is DepartmentGroup => group !== null);
 
     if (fromConfig.length > 0) return fromConfig;
 
@@ -1088,10 +1202,10 @@ const PrintQueueAdminView = () => {
   }, [factoryConfig, stationGroups]);
 
   const printerDpi = useMemo(() => {
-    const parsed = parseInt(activeQueuePrinter?.dpi, 10);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-    const fallback = getDriver(activeQueuePrinter)?.nativeDpi;
-    return Number.isFinite(fallback) && fallback > 0 ? fallback : 203;
+    const driverDpi = Number(getDriver(activeQueuePrinter)?.nativeDpi);
+    if (Number.isFinite(driverDpi) && driverDpi > 0) return driverDpi;
+    const parsed = parseInt(String(activeQueuePrinter?.dpi ?? ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 203;
   }, [activeQueuePrinter]);
 
   const handleConnectUsb = async () => {
@@ -1100,27 +1214,27 @@ const PrintQueueAdminView = () => {
       const device = await navigator.usb.requestDevice({ filters: [] });
       setUsbDevice(device);
       // Sla de printer op voor de volgende keer
-      localStorage.setItem('usb_printer_vendor', device.vendorId);
-      localStorage.setItem('usb_printer_product', device.productId);
+      localStorage.setItem('usb_printer_vendor', String(device.vendorId));
+      localStorage.setItem('usb_printer_product', String(device.productId));
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const handleDirectLotPrintBatch = async (batchData) => {
+  const handleDirectLotPrintBatch = async (batchData: string) => {
     let deviceToUse = usbDevice;
     if (!deviceToUse) {
       deviceToUse = await navigator.usb.requestDevice({ filters: [] });
       setUsbDevice(deviceToUse);
-      localStorage.setItem('usb_printer_vendor', deviceToUse.vendorId);
-      localStorage.setItem('usb_printer_product', deviceToUse.productId);
+      localStorage.setItem('usb_printer_vendor', String(deviceToUse.vendorId));
+      localStorage.setItem('usb_printer_product', String(deviceToUse.productId));
     }
 
     await printRawUsb(deviceToUse, batchData);
     setError('');
   };
 
-  const handlePrintJob = async (job) => {
+  const handlePrintJob = async (job: PrintJob) => {
     if (!usbDevice) throw new Error("Geen USB printer verbonden.");
     await transitionPrintQueueJobStatus({
       jobId: job.id,
@@ -1141,17 +1255,18 @@ const PrintQueueAdminView = () => {
         source: 'PrintQueueAdminView',
       });
     } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
       await transitionPrintQueueJobStatus({
         jobId: job.id,
         status: 'error',
-        error: e.message,
+        error: message,
         source: 'PrintQueueAdminView',
       });
       throw e;
     }
   };
 
-  const handleReprint = async (jobId) => {
+  const handleReprint = async (jobId: string) => {
     const confirmed = await showConfirm({
       title: 'Taak opnieuw printen',
       message: 'Weet u zeker dat u deze taak opnieuw wilt printen?',
@@ -1166,7 +1281,7 @@ const PrintQueueAdminView = () => {
     });
   };
 
-  const handleDelete = async (jobId) => {
+  const handleDelete = async (jobId: string) => {
     const confirmed = await showConfirm({
       title: 'Printtaak verwijderen',
       message: 'Weet u zeker dat u deze taak permanent wilt verwijderen?',
@@ -1181,13 +1296,13 @@ const PrintQueueAdminView = () => {
     });
   };
 
-  const getJobSizeLabel = (job) => {
+  const getJobSizeLabel = (job: PrintJob): string | null => {
     const height = Number(job?.metadata?.height);
     if (!height) return null;
     return `${PREVIEW_ROLL_WIDTH_MM}x${height} mm`;
   };
 
-  const getJobQuantity = (job) => {
+  const getJobQuantity = (job: PrintJob): number | null => {
     const quantity = Number(job?.metadata?.quantity);
     if (Number.isFinite(quantity) && quantity > 0) return quantity;
     const description = String(job?.metadata?.description || job?.description || '');
@@ -1195,7 +1310,7 @@ const PrintQueueAdminView = () => {
     return match ? Number(match[1]) : null;
   };
 
-  const handleSearchProduct = async (e) => {
+  const handleSearchProduct = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!reprintSearch.trim()) return;
     
@@ -1205,53 +1320,120 @@ const PrintQueueAdminView = () => {
 
     const searchStr = reprintSearch.trim().toUpperCase();
     try {
-      const trackingRef = collection(db, ...PATHS.TRACKING);
-      const q = query(trackingRef, where("lotNumber", "==", searchStr), limit(1));
-      const snap = await getDocs(q);
+      let foundDoc: AnyRecord | null = null;
 
-      if (!snap.empty) {
-        setReprintResult({ id: snap.docs[0].id, ...snap.docs[0].data(), source: 'active' });
-        if (!selectedLabelId && labelTemplates.length > 0) {
-            const defaultTpl = labelTemplates.find(t => t.name.toLowerCase().includes("standaard")) || labelTemplates[0];
-            setSelectedLabelId(defaultTpl.id);
-        }
-      } else {
-        const currentYear = new Date().getFullYear();
-        const archiveRef = collection(db, "future-factory", "production", "archive", String(currentYear), "items");
-        const qArch = query(archiveRef, where("lotNumber", "==", searchStr), limit(1));
-        const snapArch = await getDocs(qArch);
-        
-        if (!snapArch.empty) {
-          setReprintResult({ id: snapArch.docs[0].id, ...snapArch.docs[0].data(), source: 'archive' });
-          if (!selectedLabelId && labelTemplates.length > 0) {
-             setSelectedLabelId(labelTemplates[0].id);
+      // 1. Actieve productie (Lotnummer)
+      try {
+        const trackingRef = collection(db, getPathString(PATHS.TRACKING));
+        const snap = await getDocs(query(trackingRef, where("lotNumber", "==", searchStr), limit(1)));
+        if (!snap.empty) foundDoc = { id: snap.docs[0].id, ...snap.docs[0].data(), source: 'active' };
+      } catch (e) { console.warn(e); }
+
+      // 2. Archief (Lotnummer)
+      if (!foundDoc) {
+        try {
+          const currentYear = new Date().getFullYear();
+          const archiveRef = collection(db, "future-factory", "production", "archive", String(currentYear), "items");
+          const snapArch = await getDocs(query(archiveRef, where("lotNumber", "==", searchStr), limit(1)));
+          if (!snapArch.empty) foundDoc = { id: snapArch.docs[0].id, ...snapArch.docs[0].data(), source: 'archive' };
+        } catch (e) { console.warn(e); }
+      }
+
+      // 3. Fallback: Zoek in orders via collectionGroup
+      if (!foundDoc) {
+        try {
+          const orderQueries = [
+            getDocs(query(collectionGroup(db, 'orders'), where('orderId', '==', searchStr), limit(1))),
+            getDocs(query(collectionGroup(db, 'orders'), where('orderNumber', '==', searchStr), limit(1))),
+            getDocs(query(collectionGroup(db, 'orders'), where('Order', '==', searchStr), limit(1)))
+          ];
+          const snaps = await Promise.all(orderQueries.map(p => p.catch(() => null)));
+          for (const snap of snaps) {
+            if (snap && !snap.empty) {
+              foundDoc = { id: snap.docs[0].id, ...snap.docs[0].data(), source: 'orders' };
+              break;
+            }
           }
-        } else {
-          setError("Lotnummer niet gevonden.");
+        } catch (e) { console.warn(e); }
+      }
+
+      // 4. Fallback: Direct Document ID Lookup (Legacy BH18)
+      if (!foundDoc) {
+        const targetedPaths = [
+          `${getPathString(PATHS.PLANNING)}/Fittings/machines/40BH18/orders`,
+          `${getPathString(PATHS.PLANNING)}/Fittings/machines/BH18/orders`,
+          getPathString(PATHS.TEMP_PLANNING),
+          getPathString(PATHS.PLANNING)
+        ];
+        for (const path of targetedPaths) {
+          try {
+            const docRef = doc(db, path, searchStr);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+              foundDoc = { id: docSnap.id, ...docSnap.data(), source: 'legacy_path' };
+              break;
+            }
+          } catch (e) { console.warn(e); }
         }
+      }
+
+      if (foundDoc) {
+        setReprintResult(foundDoc);
+      } else {
+        setError(`Order of Lotnummer '${searchStr}' niet gevonden.`);
       }
     } catch (err) {
       console.error(err);
-      setError("Fout bij zoeken: " + err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      setError("Fout bij zoeken: " + message);
     } finally {
       setIsSearching(false);
     }
   };
 
+  const reprintOptions = useMemo(() => {
+    if (!reprintResult) return labelTemplates;
+    const normalizedProduct = {
+      itemCode: getOrderLabelItemCode(reprintResult),
+      productId: reprintResult.productId || getOrderLabelItemCode(reprintResult),
+      description: getOrderLabelDescription(reprintResult),
+      item: reprintResult.item || getOrderLabelDescription(reprintResult),
+      extraCode: reprintResult.extraCode || reprintResult.Code || ''
+    };
+    return filterTempOrderLabelsByProduct(labelTemplates || [], normalizedProduct as AnyRecord) as LabelTemplate[];
+  }, [reprintResult, labelTemplates]);
+
+  useEffect(() => {
+    if (reprintOptions.length > 0) {
+      const isValidSelection = reprintOptions.some((t) => String(t.id) === selectedLabelId);
+      if (!selectedLabelId || !isValidSelection) {
+        setSelectedLabelId(String(reprintOptions[0]?.id || ""));
+      }
+    }
+  }, [reprintOptions, selectedLabelId]);
+
+  const selectedReprintTemplate = reprintOptions.find(t => String(t.id) === selectedLabelId) || reprintOptions[0];
+
   const reprintPreviewData = useMemo(() => {
     if (!reprintResult) return {};
+    const order = getOrderLabelOrder(reprintResult);
+    const code = getOrderLabelItemCode(reprintResult);
+    const desc = getOrderLabelDescription(reprintResult);
+
     const baseData = processLabelData({
       ...reprintResult,
-      orderNumber: reprintResult.orderId,
-      productId: reprintResult.itemCode,
-      description: reprintResult.item
+      orderId: order,
+      orderNumber: order,
+      itemCode: code,
+      productId: code,
+      description: desc,
+      itemDescription: desc,
+      lotNumber: reprintResult.lotNumber || order
     });
     return applyLabelLogic(baseData, labelRules);
   }, [reprintResult, labelRules]);
 
-  const selectedLabelTemplate = useMemo(() => labelTemplates.find(t => t.id === selectedLabelId), [labelTemplates, selectedLabelId]);
-
-  const handleReprintLabel = async (type) => {
+  const handleReprintLabel = async (type: 'simple' | 'full') => {
     if (!reprintResult || !usbDevice) {
       setError("Geen product gevonden of geen printer verbonden.");
       return;
@@ -1261,29 +1443,21 @@ const PrintQueueAdminView = () => {
     try {
       let zpl = "";
       
+      const order = getOrderLabelOrder(reprintResult);
+      const item = getOrderLabelItemCode(reprintResult);
+      const desc = getOrderLabelDescription(reprintResult);
+      const lot = reprintResult.lotNumber || order;
+      
       if (type === 'simple') {
-        zpl = `^XA
-^FO50,50^BQN,2,6^FDQA,${reprintResult.lotNumber}^FS
-^FO50,200^A0N,50,50^FD${reprintResult.lotNumber}^FS
-^FO50,260^A0N,30,30^FD${reprintResult.itemCode || ""}^FS
-^XZ`;
+        zpl = `^XA\n^FO50,50^BQN,2,6^FDQA,${lot}^FS\n^FO50,200^A0N,50,50^FD${lot}^FS\n^FO50,260^A0N,30,30^FD${item}^FS\n^XZ`;
       } else if (reprintResult.labelZPL) {
-        zpl = reprintResult.labelZPL;
+        zpl = String(reprintResult.labelZPL);
         console.log("Herdruk via opgeslagen ZPL.");
       } else {
-        const template = selectedLabelTemplate || labelTemplates[0];
+        const template = selectedReprintTemplate || labelTemplates[0];
         if (!template) throw new Error("Geen label template beschikbaar.");
 
-        const labelData = processLabelData({
-          ...reprintResult,
-          orderNumber: reprintResult.orderId,
-          productId: reprintResult.itemCode,
-          description: reprintResult.item
-        });
-        
-        // Gebruik generatePrintData (consistent met rest van app)
-        const processedData = applyLabelLogic(labelData, labelRules);
-        zpl = await generatePrintData(template, processedData, printerDpi, resolveLabelContent, t);
+        zpl = await generatePrintData(template, reprintPreviewData, printerDpi, resolveLabelContent as any, t);
       }
 
       await printRawUsb(usbDevice, zpl);
@@ -1291,7 +1465,8 @@ const PrintQueueAdminView = () => {
       setReprintResult(null);
       notify("Label geprint!");
     } catch (err) {
-      setError("Print fout: " + err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      setError("Print fout: " + message);
     } finally {
       setIsProcessing(false);
     }
@@ -1462,28 +1637,28 @@ const PrintQueueAdminView = () => {
               <div className="mt-4 p-6 bg-white rounded-xl border border-blue-100 shadow-sm animate-in fade-in">
                 <div className="flex flex-col md:flex-row gap-6">
                     <div className="flex-1">
-                        <h4 className="font-black text-lg text-slate-800 mb-2">{reprintResult.lotNumber}</h4>
+                        <h4 className="font-black text-lg text-slate-800 mb-2">{String(reprintResult.lotNumber || '')}</h4>
                         <div className="space-y-1 text-sm text-slate-600">
-                            <p><span className="font-bold text-slate-400 w-20 inline-block">Item:</span> {reprintResult.item}</p>
-                            <p><span className="font-bold text-slate-400 w-20 inline-block">Code:</span> {reprintResult.itemCode}</p>
-                            <p><span className="font-bold text-slate-400 w-20 inline-block">Order:</span> {reprintResult.orderId}</p>
+                          <p><span className="font-bold text-slate-400 w-20 inline-block">Item:</span> {getOrderLabelDescription(reprintResult)}</p>
+                          <p><span className="font-bold text-slate-400 w-20 inline-block">Code:</span> {getOrderLabelItemCode(reprintResult)}</p>
+                          <p><span className="font-bold text-slate-400 w-20 inline-block">Order:</span> {getOrderLabelOrder(reprintResult)}</p>
                         </div>
                         
                         <div className="mt-4">
                             <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Template</label>
                             <select 
-                                value={selectedLabelId}
+                                value={selectedLabelId || String(selectedReprintTemplate?.id || '')}
                                 onChange={(e) => setSelectedLabelId(e.target.value)}
                                 className="w-full p-2 border rounded-lg text-sm"
                             >
-                                {labelTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                {reprintOptions.map((l) => <option key={String(l.id)} value={String(l.id)}>{String(l.name || l.id)} ({String(l.width || '-')}x{String(l.height || '-')}mm)</option>)}
                             </select>
                         </div>
                     </div>
                     
                     <div className="border-l border-slate-100 pl-6 flex flex-col items-center justify-center bg-slate-50/50 rounded-r-xl">
                         <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Preview</p>
-                        <AutoScaledLabelPreview label={selectedLabelTemplate} data={reprintPreviewData} className="w-64" printerDpi={printerDpi} />
+                        <AutoScaledLabelPreview label={selectedReprintTemplate as any} data={reprintPreviewData} className="w-64" printerDpi={printerDpi} maxScale={1} />
                     </div>
                 </div>
 
@@ -1523,30 +1698,30 @@ const PrintQueueAdminView = () => {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan="6" className="text-center p-8"><Loader2 className="animate-spin inline-block" /></td></tr>}
-            {!loading && filteredJobs.length === 0 && <tr><td colSpan="6" className="text-center p-8">De wachtrij voor uw stations is leeg.</td></tr>}
+            {loading && <tr><td colSpan={6} className="text-center p-8"><Loader2 className="animate-spin inline-block" /></td></tr>}
+            {!loading && filteredJobs.length === 0 && <tr><td colSpan={6} className="text-center p-8">De wachtrij voor uw stations is leeg.</td></tr>}
             {filteredJobs.map(job => (
               <tr key={job.id} className="bg-white border-b hover:bg-slate-50">
                 <td className="px-6 py-4">
                   <StatusBadge status={job.status} />
                 </td>
                 <td className="px-6 py-4 font-medium text-slate-900">
-                  {job.metadata?.description || job.description}
+                  {String(job.metadata?.description || job.description || '')}
                   <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {job.metadata?.stationId && <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold">{job.metadata.stationId}</span>}
+                    {Boolean(job.metadata?.stationId) && <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold">{String(job.metadata?.stationId)}</span>}
                     {getJobSizeLabel(job) && <span className="text-[10px] bg-blue-50 px-2 py-0.5 rounded text-blue-700 font-bold">{getJobSizeLabel(job)}</span>}
                     {getJobQuantity(job) && <span className="text-[10px] bg-emerald-50 px-2 py-0.5 rounded text-emerald-700 font-bold">Aantal: {getJobQuantity(job)}</span>}
                   </div>
-                  {job.status === 'error' && <p className="text-red-600 text-xs mt-1">{job.error}</p>}
+                  {job.status === 'error' && <p className="text-red-600 text-xs mt-1">{String(job.error || '')}</p>}
                 </td>
                 <td className="px-6 py-4">
                   <span className="font-bold text-slate-600 text-xs">
-                    {job.metadata?.targetPrinterName || job.printerId || 'Standaard'}
+                    {String(job.metadata?.targetPrinterName || job.printerId || 'Standaard')}
                   </span>
                 </td>
-                <td className="px-6 py-4">{job.metadata?.requesterEmail || job.createdBy}</td>
+                <td className="px-6 py-4">{String(job.metadata?.requesterEmail || job.createdBy || '')}</td>
                 <td className="px-6 py-4">
-                  {job.createdAt ? formatDistanceToNow(job.createdAt.toDate(), { addSuffix: true, locale: nl }) : '-'}
+                  {job.createdAt ? formatDistanceToNow((job.createdAt instanceof Date ? job.createdAt : job.createdAt.toDate?.()) || new Date(), { addSuffix: true, locale: nl }) : '-'}
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2">
@@ -1559,7 +1734,7 @@ const PrintQueueAdminView = () => {
                         onClick={async () => {
                           setIsProcessing(true);
                           try { await handlePrintJob(job); } 
-                          catch(e) { setError(e.message); }
+                          catch(e) { setError(e instanceof Error ? e.message : String(e)); }
                           finally { setIsProcessing(false); }
                         }} 
                         disabled={!usbDevice || isProcessing || !canManage} 
@@ -1601,15 +1776,16 @@ const PrintQueueAdminView = () => {
                 <div className="p-8 flex justify-center items-center bg-slate-100 min-h-[300px] overflow-hidden">
                     {(() => {
                         // Controleer of de job gekoppeld is aan een bekende interne template
-                        const template = labelTemplates.find(t => t.id === previewJob.metadata?.templateId);
+                        const template = labelTemplates.find((t) => t.id === previewJob.metadata?.templateId);
                         
                         if (template) {
                             return (
                                 <div className="w-full max-w-sm flex justify-center bg-white shadow-xl border border-slate-200 p-2 rounded-lg">
                                     <AutoScaledLabelPreview 
                                         label={template} 
-                                        data={previewJob.metadata?.variables || {}} 
+                                        data={(previewJob.metadata?.variables as Record<string, unknown>) || {}} 
                                       printerDpi={printerDpi}
+                                      maxScale={1}
                                     />
                                 </div>
                             );
@@ -1626,7 +1802,7 @@ const PrintQueueAdminView = () => {
                     })()}
                 </div>
                 <div className="p-4 text-center text-xs text-slate-400">
-                    {labelTemplates.some(t => t.id === previewJob.metadata?.templateId) 
+                    {labelTemplates.some((t) => t.id === previewJob.metadata?.templateId) 
                         ? "Interne Visual Preview (AutoScaled)" 
                         : "Gegenereerd via Labelary API"}
                 </div>

@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
+import { create } from 'zustand';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { PATHS } from '../config/dbPaths';
+import { getPathString, PATHS } from '../config/dbPaths';
 import { useAdminAuth } from '../hooks/useAdminAuth';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -46,7 +47,7 @@ type ConfirmOptions = {
   tone?: ConfirmTone;
 };
 
-type NotificationContextValue = {
+export type NotificationContextValue = {
   activeToast: ToastItem | null;
   queuedCount: number;
   toasts: ToastItem[];
@@ -80,8 +81,6 @@ declare global {
     __APP_ALERT__?: (message: string) => void;
   }
 }
-
-const NotificationContext = createContext<NotificationContextValue | undefined>(undefined);
 
 const TYPE_LABELS = {
   success: 'Succes',
@@ -147,52 +146,40 @@ const normalizeAlertPayload = (message: unknown): ToastPayload => {
   };
 };
 
-export const useNotifications = () => {
-  const context = useContext(NotificationContext);
-  if (!context) {
-    throw new Error('useNotifications must be used within NotificationProvider');
-  }
-  return context;
+type NotificationStoreState = {
+  activeToast: ToastItem | null;
+  toastQueue: ToastItem[];
+  confirmDialog: ConfirmDialog | null;
+  unreadCount: number;
+  hasPermission: boolean;
+  confirmResolverRef: { current: ((accepted: boolean) => void) | null };
+
+  showToast: (toast: ToastPayload | string) => number;
+  removeToast: (id: number) => void;
+  showConfirm: (options?: ConfirmOptions | string) => Promise<boolean>;
+  resolveConfirm: (accepted: boolean) => void;
+  setUnreadCount: (count: number) => void;
+  setHasPermission: (has: boolean) => void;
 };
 
-export const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
-  const { user } = useAdminAuth() as { user: AuthUser | null };
-  const [activeToast, setActiveToast] = useState<ToastItem | null>(null);
-  const [toastQueue, setToastQueue] = useState<ToastItem[]>([]);
-  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [hasPermission, setHasPermission] = useState(
-    typeof window !== 'undefined' && 'Notification' in window
-      ? Notification.permission === 'granted'
-      : false
-  );
-  const activeToastRef = useRef<ToastItem | null>(null);
-  const toastQueueRef = useRef<ToastItem[]>([]);
-  const originalAlertRef = useRef<((message?: unknown) => void) | null>(null);
-  const confirmResolverRef = useRef<((accepted: boolean) => void) | null>(null);
+export const useNotificationStore = create<NotificationStoreState>((set, get) => ({
+  activeToast: null,
+  toastQueue: [],
+  confirmDialog: null,
+  unreadCount: 0,
+  hasPermission: typeof window !== 'undefined' && 'Notification' in window
+    ? Notification.permission === 'granted'
+    : false,
+  confirmResolverRef: { current: null },
 
-  useEffect(() => {
-    if ('Notification' in window) {
-      setHasPermission(Notification.permission === 'granted');
-    }
-  }, []);
-
-  useEffect(() => {
-    activeToastRef.current = activeToast;
-  }, [activeToast]);
-
-  useEffect(() => {
-    toastQueueRef.current = toastQueue;
-  }, [toastQueue]);
-
-  const showToast = useCallback((toast: ToastPayload | string): number => {
+  showToast: (toast) => {
     const safeToast = typeof toast === 'string'
       ? normalizeAlertPayload(toast)
       : (toast || {} as ToastPayload);
 
     const nextToast: ToastItem = {
       id: Date.now() + Math.random(),
-      title: safeToast.title || TYPE_LABELS[safeToast.type] || TYPE_LABELS.info,
+      title: safeToast.title || (safeToast.type ? TYPE_LABELS[safeToast.type] : TYPE_LABELS.info),
       message: safeToast.message || '',
       type: safeToast.type || 'info',
       duration: safeToast.duration || getDefaultDuration(safeToast.type),
@@ -200,76 +187,129 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       createdAt: Date.now(),
     };
 
-    const currentToast = activeToastRef.current;
-    const queuedToasts = toastQueueRef.current;
+    const state = get();
+    const currentToast = state.activeToast;
+    const queuedToasts = state.toastQueue;
     const isLowPriority = nextToast.type === 'info' || nextToast.type === 'success';
 
     if (currentToast && isLowPriority && queuedToasts.length >= 2) {
-      setToastQueue((prev) => {
+      set((state) => {
+        const prev = state.toastQueue;
         const last = prev[prev.length - 1];
         if (last?.meta === 'summary') {
           const nextCount = (last.count || 1) + 1;
-          return [
-            ...prev.slice(0, -1),
-            {
-              ...last,
-              count: nextCount,
-              message: `${nextCount} extra meldingen gebundeld`,
-              createdAt: Date.now(),
-            },
-          ].slice(-4);
+          return {
+            toastQueue: [
+              ...prev.slice(0, -1),
+              {
+                ...last,
+                count: nextCount,
+                message: `${nextCount} extra meldingen gebundeld`,
+                createdAt: Date.now(),
+              } as ToastItem,
+            ].slice(-4)
+          };
         }
 
-        return [
-          ...prev.slice(0, 2),
-          {
-            id: Date.now() + Math.random(),
-            title: 'Meldingen',
-            message: '2 extra meldingen gebundeld',
-            type: 'info',
-            duration: 3600,
-            count: 2,
-            meta: 'summary',
-            createdAt: Date.now(),
-          },
-        ].slice(-4);
+        return {
+          toastQueue: [
+            ...prev.slice(0, 2),
+            {
+              id: Date.now() + Math.random(),
+              title: 'Meldingen',
+              message: '2 extra meldingen gebundeld',
+              type: 'info' as ToastType,
+              duration: 3600,
+              count: 2,
+              meta: 'summary',
+              createdAt: Date.now(),
+            } as ToastItem,
+          ].slice(-4)
+        };
       });
       return currentToast.id;
     }
 
     if (!currentToast) {
-      setActiveToast(nextToast);
+      set({ activeToast: nextToast });
       return nextToast.id;
     }
 
     if (isSameToast(currentToast, nextToast)) {
-      setActiveToast((prev) => (prev ? mergeToast(prev, nextToast) : nextToast));
+      set({ activeToast: mergeToast(currentToast, nextToast) });
       return currentToast.id;
     }
 
-    setToastQueue((prev) => {
+    set((state) => {
+      const prev = state.toastQueue;
       const lastQueuedToast = prev[prev.length - 1];
       if (isSameToast(lastQueuedToast, nextToast)) {
-        return [...prev.slice(0, -1), mergeToast(lastQueuedToast, nextToast)].slice(-4);
+        return { toastQueue: [...prev.slice(0, -1), mergeToast(lastQueuedToast, nextToast)].slice(-4) };
       }
-      return [...prev, nextToast].slice(-4);
+      return { toastQueue: [...prev, nextToast].slice(-4) };
     });
 
     return nextToast.id;
-  }, []);
+  },
 
-  const removeToast = useCallback((id: number) => {
-    if (activeToastRef.current?.id === id) {
-      setActiveToast(null);
+  removeToast: (id: number) => {
+    const state = get();
+    if (state.activeToast?.id === id) {
+      set({ activeToast: null });
       return;
     }
+    set({ toastQueue: state.toastQueue.filter((toast) => toast.id !== id) });
+  },
 
-    setToastQueue((prev) => prev.filter((toast) => toast.id !== id));
-  }, []);
+  showConfirm: (options: ConfirmOptions | string = {}) => {
+    const payload = typeof options === 'string' ? { message: options } : options;
+    return new Promise<boolean>((resolve) => {
+      get().confirmResolverRef.current = resolve;
+      set({
+        confirmDialog: {
+          title: payload.title || 'Bevestigen',
+          message: payload.message || '',
+          confirmText: payload.confirmText || 'Bevestigen',
+          cancelText: payload.cancelText || 'Annuleren',
+          tone: payload.tone || 'warning',
+        }
+      });
+    });
+  },
+
+  resolveConfirm: (accepted: boolean) => {
+    const resolver = get().confirmResolverRef.current;
+    get().confirmResolverRef.current = null;
+    set({ confirmDialog: null });
+    if (resolver) resolver(Boolean(accepted));
+  },
+
+  setUnreadCount: (count) => set({ unreadCount: count }),
+  setHasPermission: (has) => set({ hasPermission: has }),
+}));
+
+export const useNotifications = (): NotificationContextValue => {
+  const store = useNotificationStore();
+
+  const showSuccess = useCallback((message: string, title = 'Succes') => {
+    return store.showToast({ title, message, type: 'success' });
+  }, [store.showToast]);
+
+  const showError = useCallback((message: string, title = 'Fout') => {
+    return store.showToast({ title, message, type: 'error', duration: 6000 });
+  }, [store.showToast]);
+
+  const showInfo = useCallback((message: string, title = 'Info') => {
+    return store.showToast({ title, message, type: 'info' });
+  }, [store.showToast]);
+
+  const showWarning = useCallback((message: string, title = 'Waarschuwing') => {
+    return store.showToast({ title, message, type: 'warning' });
+  }, [store.showToast]);
 
   const requestBrowserPermission = useCallback(async () => {
     if (!('Notification' in window)) {
-      showToast({
+      store.showToast({
         title: 'Meldingen',
         message: 'Browsernotificaties zijn niet beschikbaar in deze browser.',
         type: 'warning',
@@ -278,8 +318,8 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     }
 
     if (Notification.permission === 'granted') {
-      setHasPermission(true);
-      showToast({
+      store.setHasPermission(true);
+      store.showToast({
         title: 'Meldingen',
         message: 'Browsernotificaties staan al aan.',
         type: 'info',
@@ -288,8 +328,8 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     }
 
     if (Notification.permission === 'denied') {
-      setHasPermission(false);
-      showToast({
+      store.setHasPermission(false);
+      store.showToast({
         title: 'Meldingen',
         message: 'Browsernotificaties zijn geblokkeerd. Pas dit aan in je browserinstellingen.',
         type: 'warning',
@@ -300,9 +340,9 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
 
     const permission = await Notification.requestPermission();
     const granted = permission === 'granted';
-    setHasPermission(granted);
+    store.setHasPermission(granted);
 
-    showToast({
+    store.showToast({
       title: 'Meldingen',
       message: granted
         ? 'Browsernotificaties zijn ingeschakeld.'
@@ -311,47 +351,61 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     });
 
     return granted;
-  }, [showToast]);
+  }, [store.setHasPermission, store.showToast]);
 
-  const showConfirm = useCallback((options: ConfirmOptions | string = {}) => {
-    const payload = typeof options === 'string' ? { message: options } : options;
+  return {
+    activeToast: store.activeToast,
+    queuedCount: store.toastQueue.length,
+    toasts: store.activeToast ? [store.activeToast, ...store.toastQueue] : store.toastQueue,
+    unreadCount: store.unreadCount,
+    hasPermission: store.hasPermission,
+    showToast: store.showToast,
+    showPopup: store.showToast,
+    notify: store.showToast,
+    confirmDialog: store.confirmDialog,
+    showConfirm: store.showConfirm,
+    confirm: store.showConfirm,
+    resolveConfirm: store.resolveConfirm,
+    removeToast: store.removeToast,
+    showSuccess,
+    showError,
+    showInfo,
+    showWarning,
+    requestBrowserPermission,
+  };
+};
 
-    return new Promise((resolve) => {
-      confirmResolverRef.current = resolve;
-      setConfirmDialog({
-        title: payload.title || 'Bevestigen',
-        message: payload.message || '',
-        confirmText: payload.confirmText || 'Bevestigen',
-        cancelText: payload.cancelText || 'Annuleren',
-        tone: payload.tone || 'warning',
-      });
-    });
-  }, []);
-
-  const resolveConfirm = useCallback((accepted: boolean) => {
-    const resolver = confirmResolverRef.current;
-    confirmResolverRef.current = null;
-    setConfirmDialog(null);
-    if (resolver) resolver(Boolean(accepted));
-  }, []);
-
-  useEffect(() => {
-    if (activeToast || toastQueue.length === 0) return;
-
-    const [nextToast] = toastQueue;
-    setActiveToast(nextToast);
-    setToastQueue((prev) => prev.slice(1));
-  }, [activeToast, toastQueue]);
+export const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
+  const { user } = useAdminAuth() as { user: AuthUser | null };
+  const store = useNotificationStore();
+  const originalAlertRef = useRef<((message?: unknown) => void) | null>(null);
 
   useEffect(() => {
-    if (!activeToast) return undefined;
+    if ('Notification' in window) {
+      store.setHasPermission(Notification.permission === 'granted');
+    }
+  }, [store.setHasPermission]);
+
+  // Process queue
+  useEffect(() => {
+    if (store.activeToast || store.toastQueue.length === 0) return;
+
+    const [nextToast, ...rest] = store.toastQueue;
+    useNotificationStore.setState({ activeToast: nextToast, toastQueue: rest });
+  }, [store.activeToast, store.toastQueue]);
+
+  // Timeout for active toast
+  useEffect(() => {
+    if (!store.activeToast) return undefined;
 
     const timeoutId = window.setTimeout(() => {
-      setActiveToast((current) => (current?.id === activeToast.id ? null : current));
-    }, activeToast.duration);
+      useNotificationStore.setState((state) => ({
+        activeToast: state.activeToast?.id === store.activeToast!.id ? null : state.activeToast
+      }));
+    }, store.activeToast.duration);
 
     return () => window.clearTimeout(timeoutId);
-  }, [activeToast?.id, activeToast?.duration, activeToast?.createdAt]);
+  }, [store.activeToast?.id, store.activeToast?.duration, store.activeToast?.createdAt]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -363,16 +417,12 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     const appAlertHandler = (message: string) => {
       const normalizedAlert = normalizeAlertPayload(message);
       if (!normalizedAlert.message) return;
-      showToast(normalizedAlert);
+      useNotificationStore.getState().showToast(normalizedAlert);
     };
 
-    // Preferred global API when hook context is not directly available.
     window.notify = appAlertHandler;
-    // Alias retained for existing callsites.
     window.appAlert = appAlertHandler;
-    // Backward compatibility alias.
     window.__APP_ALERT__ = appAlertHandler;
-    // Keep native alert bridge active for third-party or old code paths.
     window.alert = appAlertHandler;
 
     return () => {
@@ -383,13 +433,14 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
         window.alert = originalAlertRef.current;
       }
     };
-  }, [showToast]);
+  }, []);
 
   useEffect(() => {
     return () => {
-      if (confirmResolverRef.current) {
-        confirmResolverRef.current(false);
-        confirmResolverRef.current = null;
+      const resolver = useNotificationStore.getState().confirmResolverRef.current;
+      if (resolver) {
+        resolver(false);
+        useNotificationStore.getState().confirmResolverRef.current = null;
       }
     };
   }, []);
@@ -397,11 +448,11 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   // Listen to new messages
   useEffect(() => {
     if (!user?.email || user?.role === 'guest') {
-      setUnreadCount(0);
+      store.setUnreadCount(0);
       return;
     }
 
-    const messagesRef = collection(db, ...PATHS.MESSAGES);
+    const messagesRef = collection(db, getPathString(PATHS.MESSAGES));
     const q = query(
       messagesRef,
       where('to', 'in', [user.email.toLowerCase(), 'admin'])
@@ -410,11 +461,9 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        // Count unread messages
         const unread = snapshot.docs.filter((docSnap) => !docSnap.data().read).length;
-        setUnreadCount(unread);
+        store.setUnreadCount(unread);
 
-        // Show toast for new messages
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'added') {
             const data = change.doc.data();
@@ -422,17 +471,15 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
               ? (Date.now() - data.timestamp.toDate().getTime()) < 5000 
               : true;
             
-            // Don't show notification for messages sent by current user
             if (isNew && data.senderId !== user.uid) {
-              showToast({
+              store.showToast({
                 title: data.subject || 'Nieuw bericht',
                 message: data.body || data.message || '',
                 type: 'info',
                 duration: 5000,
               });
 
-              // Browser notification
-              if (hasPermission && document.hidden) {
+              if (store.hasPermission && document.hidden) {
                 new Notification(data.subject || 'Nieuw bericht', {
                   body: data.body || data.message || '',
                   icon: '/manifest.json',
@@ -446,58 +493,14 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       (err: unknown) => {
         const warningText = err instanceof Error ? err.message : String(err);
         console.warn('Notification messages listener blocked:', warningText);
-        setUnreadCount(0);
+        store.setUnreadCount(0);
       }
     );
 
     return () => unsubscribe();
-  }, [user, hasPermission, showToast]);
-
-  const showSuccess = useCallback((message: string, title = 'Succes') => {
-    return showToast({ title, message, type: 'success' });
-  }, [showToast]);
-
-  const showError = useCallback((message: string, title = 'Fout') => {
-    return showToast({ title, message, type: 'error', duration: 6000 });
-  }, [showToast]);
-
-  const showInfo = useCallback((message: string, title = 'Info') => {
-    return showToast({ title, message, type: 'info' });
-  }, [showToast]);
-
-  const showWarning = useCallback((message: string, title = 'Waarschuwing') => {
-    return showToast({ title, message, type: 'warning' });
-  }, [showToast]);
-
-  // Universele API alias voor in-app popups.
-  const showPopup = useCallback((payload: ToastPayload | string) => {
-    return showToast(payload);
-  }, [showToast]);
-
-  const value: NotificationContextValue = {
-    activeToast,
-    queuedCount: toastQueue.length,
-    toasts: activeToast ? [activeToast, ...toastQueue] : toastQueue,
-    unreadCount,
-    hasPermission,
-    showToast,
-    showPopup,
-    notify: showPopup,
-    confirmDialog,
-    showConfirm,
-    confirm: showConfirm,
-    resolveConfirm,
-    removeToast,
-    showSuccess,
-    showError,
-    showInfo,
-    showWarning,
-    requestBrowserPermission,
-  };
+  }, [user, store.hasPermission, store.showToast, store.setUnreadCount]);
 
   return (
-    <NotificationContext.Provider value={value}>
-      {children}
-    </NotificationContext.Provider>
+    <>{children}</>
   );
 };

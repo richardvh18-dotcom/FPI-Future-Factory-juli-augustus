@@ -98,7 +98,12 @@ const processDates = (rawDate: unknown, expectedWeekNumber: number | null = null
 
   const rawStr = String(rawDate || "").trim();
   const isLocalDate = /^\d{1,2}[/.-]\d{1,2}[/.-]\d{4}$/.test(rawStr);
-  const parsedDate = rawDate instanceof Date ? rawDate : new Date(rawDate);
+  const parsedDate =
+    rawDate instanceof Date
+      ? rawDate
+      : typeof rawDate === "string" || typeof rawDate === "number"
+      ? new Date(rawDate)
+      : null;
 
   let dateObj = null;
 
@@ -124,11 +129,11 @@ const processDates = (rawDate: unknown, expectedWeekNumber: number | null = null
     const candidates = [
       ...localFormats.map((fmt) => ({
         date: parse(rawStr, fmt, new Date()),
-        priority: "preferred",
+        priority: "preferred" as const,
       })),
       ...usFormats.map((fmt) => ({
         date: parse(rawStr, fmt, new Date()),
-        priority: "fallback",
+        priority: "fallback" as const,
       })),
     ];
 
@@ -149,7 +154,7 @@ const processDates = (rawDate: unknown, expectedWeekNumber: number | null = null
 
     const candidates = textFormats.map((fmt) => ({
       date: parse(rawStr.replace(/,/g, " "), fmt, new Date()),
-      priority: "fallback",
+      priority: "fallback" as const,
     }));
 
     dateObj = pickBestDateCandidate(candidates, expectedWeekNumber);
@@ -166,10 +171,11 @@ const processDates = (rawDate: unknown, expectedWeekNumber: number | null = null
 
   if (!isValid(dateObj)) return { delivery: null, planned: null };
 
-  const plannedDate = subWeeks(dateObj, 3);
+  const resolvedDate = dateObj as Date;
+  const plannedDate = subWeeks(resolvedDate, 3);
 
   return {
-    delivery: dateObj,
+    delivery: resolvedDate,
     planned: plannedDate,
   };
 };
@@ -207,7 +213,7 @@ const parseWorkbook = (arrayBuffer: ArrayBuffer): ParsedImportRow[] => {
   const wbMeta = XLSX.read(arrayBuffer, { type: "array", bookSheets: true });
   const sheetNames = wbMeta.SheetNames;
 
-  let allData = [];
+  let allData: ParsedImportRow[] = [];
   let sheetsFound = 0;
 
   // Relevante planning tabs; ondersteunt ook format-tabs uit LN exports.
@@ -220,7 +226,7 @@ const parseWorkbook = (arrayBuffer: ArrayBuffer): ParsedImportRow[] => {
     "Format mazak",
     "Format 40BM01",
   ];
-  const isAllowed = (name) =>
+  const isAllowed = (name: string) =>
     ALLOWED_SHEETS.some((a) => name.trim().toLowerCase() === a.toLowerCase());
 
   for (const sheetName of sheetNames) {
@@ -290,28 +296,28 @@ const parseWorkbook = (arrayBuffer: ArrayBuffer): ParsedImportRow[] => {
         const docId = buildImportDocId(orderId, manufacturedItem, itemDescription, machine);
 
         const rawDateVal = idxDatum !== -1 ? row[idxDatum] : null;
-        const expectedWeekNumber = idxWeek !== -1 ? parseInt(row[idxWeek], 10) || null : null;
+        const expectedWeekNumber = idxWeek !== -1 ? parseInt(String(row[idxWeek] ?? ""), 10) || null : null;
         const { delivery, planned } = processDates(rawDateVal, expectedWeekNumber);
 
         const rawPlan = idxPlan !== -1 ? row[idxPlan] : null;
         let quantity =
           typeof rawPlan === "string"
             ? parseFloat(rawPlan.replace(",", "."))
-            : parseFloat(rawPlan);
+            : parseFloat(String(rawPlan ?? ""));
         if (Number.isNaN(quantity)) quantity = 1;
 
         const rawEstimatedHours = idxEstimatedHours !== -1 ? row[idxEstimatedHours] : null;
         let totalPlannedHours =
           typeof rawEstimatedHours === "string"
             ? parseFloat(rawEstimatedHours.replace(",", "."))
-            : parseFloat(rawEstimatedHours);
+            : parseFloat(String(rawEstimatedHours ?? ""));
         if (Number.isNaN(totalPlannedHours)) totalPlannedHours = 0;
 
         const rawDelivered = idxDelivered !== -1 ? row[idxDelivered] : null;
-        let deliveredQty =
+        let deliveredQty: number | null =
           typeof rawDelivered === "string"
             ? parseFloat(rawDelivered.replace(",", "."))
-            : parseFloat(rawDelivered);
+            : parseFloat(String(rawDelivered ?? ""));
         if (Number.isNaN(deliveredQty)) deliveredQty = null;
 
         const machineKey = `started_${machine.replace(/[^a-zA-Z0-9]/g, "_")}`;
@@ -321,13 +327,15 @@ const parseWorkbook = (arrayBuffer: ArrayBuffer): ParsedImportRow[] => {
         let gewikkeldCount =
           typeof rawGewikkeld === "string"
             ? parseFloat(rawGewikkeld.replace(",", "."))
-            : parseFloat(rawGewikkeld);
+            : parseFloat(String(rawGewikkeld ?? ""));
         if (Number.isNaN(gewikkeldCount)) gewikkeldCount = 0;
 
         if (PIPE_MACHINES.includes(machine)) {
           quantity = quantity / 10;
           gewikkeldCount = gewikkeldCount / 10;
-          if (Number.isFinite(deliveredQty)) deliveredQty = deliveredQty / 10;
+          if (typeof deliveredQty === "number" && Number.isFinite(deliveredQty)) {
+            deliveredQty = deliveredQty / 10;
+          }
         }
 
         const result: ParsedImportRow = {
@@ -362,7 +370,7 @@ const parseWorkbook = (arrayBuffer: ArrayBuffer): ParsedImportRow[] => {
   if (sheetsFound === 0) return [];
 
   // Dedupe met sheet-prioriteit: bij gelijke id wint de meest relevante sheet.
-  const byId = new Map();
+  const byId = new Map<string, { priority: number; item: ParsedImportRow }>();
   allData.forEach((item) => {
     const existing = byId.get(item.id);
     const currentPriority = getSheetPriority(item.sourceSheet);

@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -44,13 +44,80 @@ import {
   subDays,
 } from "date-fns";
 import { nl } from "date-fns/locale";
-import { normalizeMachine } from "../../utils/hubHelpers.tsx";
-import { PATHS, isValidPath } from "../../config/dbPaths";
+import { normalizeMachine } from "../../utils/hubHelpers";
+import { PATHS, isValidPath, getPathString } from "../../config/dbPaths";
 import PersonnelOccupancyView from '../personnel/PersonnelOccupancyView';
 import PersonnelListView from '../personnel/PersonnelListView';
 import NFCTagRegistrationModal from './NFCTagRegistrationModal';
 import { DEFAULTS, SHIFT_COLORS } from "../../data/constants";
 import { useNotifications } from "../../contexts/NotificationContext";
+
+interface Department {
+  id: string;
+  name: string;
+  shifts?: { id: string; label: string; start: string; end: string }[];
+}
+
+interface Structure {
+  departments: Department[];
+}
+
+interface Person {
+  id?: string;
+  name: string;
+  employeeNumber: string;
+  departmentId: string;
+  linkedUserId?: string;
+  rotationType?: string;
+  shiftId?: string;
+  isActive?: boolean;
+  rotationSchedule?: {
+    enabled: boolean;
+    startWeek: number;
+    startYear: number;
+    shifts: string[];
+  };
+  loan?: {
+    active: boolean;
+    departmentId: string;
+    shiftId: string;
+    autoReturn: boolean;
+    returnDate: string;
+    followRotation: boolean;
+  };
+  [key: string]: any;
+}
+
+interface OccupancyRecord {
+  id: string;
+  machineId: string;
+  operatorNumber: string;
+  operatorName?: string;
+  departmentId: string;
+  date: string;
+  hoursWorked: number;
+  shift: string;
+  [key: string]: any;
+}
+
+interface User {
+  id: string;
+  name?: string;
+  email?: string;
+  [key: string]: any;
+}
+
+interface NfcMapping {
+  id: string;
+  employeeNumber: string;
+  tagId?: string;
+  [key: string]: any;
+}
+
+interface PersonnelManagerProps {
+  initialViewDate?: string | Date;
+  initialTab?: string;
+}
 
 /**
  * PersonnelManager V26.5 - Root Integrated Edition
@@ -59,14 +126,25 @@ import { useNotifications } from "../../contexts/NotificationContext";
  * - /future-factory/Users/Personnel (Stamdata)
  * - /future-factory/production/machine_occupancy (Bezetting)
  */
-const PersonnelManager = ({ initialViewDate, initialTab }) => {
+// Helper functions for Firestore paths
+const colPath = (path: string[]) => collection(db, getPathString(path));
+
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message?: unknown }).message || "onbekende fout");
+  }
+  return String(err || "onbekende fout");
+};
+
+const PersonnelManager: React.FC<PersonnelManagerProps> = ({ initialViewDate, initialTab }) => {
   const { t } = useTranslation();
   const { showConfirm , notify} = useNotifications();
-  const [personnel, setPersonnel] = useState([]);
-  const [occupancy, setOccupancy] = useState([]);
-  const [structure, setStructure] = useState({ departments: [] });
-  const [users, setUsers] = useState([]);
-  const [nfcMappings, setNfcMappings] = useState([]);
+  const [personnel, setPersonnel] = useState<Person[]>([]);
+  const [occupancy, setOccupancy] = useState<OccupancyRecord[]>([]);
+  const [structure, setStructure] = useState<Structure>({ departments: [] });
+  const [users, setUsers] = useState<User[]>([]);
+  const [nfcMappings, setNfcMappings] = useState<NfcMapping[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("assignment");
   const [viewDate, setViewDate] = useState(new Date());
@@ -74,12 +152,12 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
 
   const [isPersonModalOpen, setIsPersonModalOpen] = useState(false);
   const [showNFCModal, setShowNFCModal] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<{ type: string; msg: string } | null>(null);
   const [modalTab, setModalTab] = useState("profile");
-  const [listExpandedSections, setListExpandedSections] = useState({});
+  const [listExpandedSections, setListExpandedSections] = useState<Record<string, boolean>>({});
   const initialStateAppliedRef = useRef(false);
 
   const selectedDateStr = format(viewDate, "yyyy-MM-dd");
@@ -138,9 +216,9 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
   }, [personForm.employeeNumber, personnel, editingId]);
 
   const linkedTagEmployeeKeys = useMemo(() => {
-    const normalize = (value) => String(value || "").trim().toUpperCase();
-    const digits = (value) => String(value || "").replace(/\D/g, "").replace(/^0+/, "");
-    const keys = new Set();
+    const normalize = (value: string | number | undefined): string => String(value || "").trim().toUpperCase();
+    const digits = (value: string | number | undefined): string => String(value || "").replace(/\D/g, "").replace(/^0+/, "");
+    const keys = new Set<string>();
 
     nfcMappings.forEach((mapping) => {
       const normalized = normalize(mapping.employeeNumber);
@@ -165,47 +243,54 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     });
   }, [editingId, personForm.employeeNumber, nfcMappings]);
 
+  const personnelWithId = useMemo(
+    () => personnel.filter((p): p is Person & { id: string } => typeof p.id === "string" && p.id.length > 0),
+    [personnel]
+  );
+
   // 1. DATA SYNC MET DE ROOT
   useEffect(() => {
     if (!isValidPath("PERSONNEL") || !isValidPath("OCCUPANCY")) return;
 
     const unsubPersonnel = onSnapshot(
-      query(collection(db, ...PATHS.PERSONNEL), orderBy("name")),
+      query(colPath(PATHS.PERSONNEL), orderBy("name")),
       (snap) =>
-        setPersonnel(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })))
+        setPersonnel(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Person)))
     );
 
     const unsubOccupancy = onSnapshot(
-      collection(db, ...PATHS.OCCUPANCY),
+      colPath(PATHS.OCCUPANCY),
       (snap) =>
-        setOccupancy(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })))
+        setOccupancy(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as OccupancyRecord)))
     );
 
     const unsubStructure = onSnapshot(
-      doc(db, ...PATHS.FACTORY_CONFIG),
+      doc(db, getPathString(PATHS.FACTORY_CONFIG)),
       (docSnap) => {
         if (docSnap.exists()) {
-          const data = docSnap.data();
-          setStructure(data);
-          // Initialize expanded sections for list view
-          const initialExpanded = {};
-          (data.departments || []).forEach(d => { initialExpanded[d.id] = true; });
-          setListExpandedSections(prev => Object.keys(prev).length === 0 ? initialExpanded : prev);
+          const data = docSnap.data() as Structure | undefined;
+          if (data) {
+            setStructure(data);
+            // Initialize expanded sections for list view
+            const initialExpanded: Record<string, boolean> = {};
+            (data.departments || []).forEach((d: Department) => { initialExpanded[d.id] = true; });
+            setListExpandedSections(prev => Object.keys(prev).length === 0 ? initialExpanded : prev);
+          }
         }
         setLoading(false);
       }
     );
 
     const unsubUsers = onSnapshot(
-      collection(db, ...PATHS.USERS),
+      colPath(PATHS.USERS),
       (snap) =>
-        setUsers(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })))
+        setUsers(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as User)))
     );
 
     const unsubNfcMappings = onSnapshot(
-      collection(db, ...PATHS.NFC_TAG_MAPPINGS),
+      colPath(PATHS.NFC_TAG_MAPPINGS),
       (snap) =>
-        setNfcMappings(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })))
+        setNfcMappings(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() } as NfcMapping)))
     );
 
     return () => {
@@ -218,20 +303,20 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
   }, []);
 
   // --- HELPERS ---
-  const getShiftsForDept = (deptId) => {
+  const getShiftsForDept = (deptId: string) => {
     const dept = (structure.departments || []).find((d) => d.id === deptId);
     return dept && dept.shifts && dept.shifts.length > 0
       ? dept.shifts
       : [{ id: "DAG", label: t('personnel.dayShift', "Dagdienst"), start: "07:15", end: "16:00" }];
   };
 
-  const getDepartmentLabel = (deptId) => {
+  const getDepartmentLabel = (deptId: string) => {
     if (!deptId) return "Geen afdeling";
     const dept = (structure.departments || []).find((entry) => entry.id === deptId);
     return dept ? `${dept.name} (${dept.id})` : `Ongekoppelde afdeling (${deptId})`;
   };
 
-  const getShiftHours = (person, deptId, forDate = viewDate) => {
+  const getShiftHours = (person: Person, deptId: string, forDate = viewDate) => {
     const shifts = getShiftsForDept(deptId);
     let activeShift;
 
@@ -253,8 +338,8 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     }
 
     try {
-      const start = parse(activeShift.start, "HH:mm", new Date());
-      const end = parse(activeShift.end, "HH:mm", new Date());
+      const start = parse(activeShift.start, "HH:mm", new Date()).getTime();
+      const end = parse(activeShift.end, "HH:mm", new Date()).getTime();
       let diff = (end - start) / (1000 * 60 * 60);
       if (diff < 0) diff += 24;
       const deduction = DEFAULTS.BREAK_DEDUCTION; // Pauze correctie
@@ -271,20 +356,20 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
   const kpiData = useMemo(() => {
     const startWeek = startOfISOWeek(viewDate);
     const endWeek = endOfISOWeek(viewDate);
-    const stats = { global: { hours: 0, count: 0 }, byDept: {}, production: 0, support: 0, efficiency: 0 };
+    const stats: Record<string, any> = { global: { hours: 0, count: 0 }, byDept: {}, production: 0, support: 0, efficiency: 0 };
 
-    (structure.departments || []).forEach((d) => {
-      stats.byDept[d.id] = {
+    (structure.departments || []).forEach((d: Department) => {
+      (stats.byDept as Record<string, any>)[d.id] = {
         name: d.name,
         hours: 0,
         count: 0,
-        operators: new Set(),
+        operators: new Set<string>(),
       };
     });
 
-    const globalOperators = new Set();
+    const globalOperators = new Set<string>();
 
-    occupancy.forEach((occ) => {
+    occupancy.forEach((occ: OccupancyRecord) => {
       let match =
         timeMode === "DAY"
           ? occ.date === selectedDateStr
@@ -293,12 +378,13 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
               end: endWeek,
             });
       if (match) {
-        const netHours = parseFloat(occ.hoursWorked || 0);
+        const netHours = parseFloat(String(occ.hoursWorked || 0));
         stats.global.hours += netHours;
         globalOperators.add(occ.operatorNumber);
-        if (stats.byDept[occ.departmentId]) {
-          stats.byDept[occ.departmentId].hours += netHours;
-          stats.byDept[occ.departmentId].operators.add(occ.operatorNumber);
+        const deptStats = (stats.byDept as Record<string, any>)[occ.departmentId];
+        if (deptStats) {
+          deptStats.hours += netHours;
+          deptStats.operators.add(occ.operatorNumber);
         }
 
         // Productie vs Ondersteuning logica
@@ -314,8 +400,9 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
       }
     });
     stats.global.count = globalOperators.size;
-    Object.keys(stats.byDept).forEach((id) => {
-      stats.byDept[id].count = stats.byDept[id].operators.size;
+    Object.keys(stats.byDept).forEach((id: string) => {
+      const deptStats = (stats.byDept as Record<string, any>)[id];
+      deptStats.count = deptStats.operators.size;
     });
 
     if (stats.global.hours > 0) {
@@ -327,9 +414,8 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
 
 
   // --- HANDLERS ---
-  const handleAssign = async (machineId, operatorNumber, deptId) => {
+  const handleAssign = async (machineId: string, operatorNumber: string, deptId: string) => {
     try {
-      const colPath = PATHS.OCCUPANCY;
       if (!operatorNumber || operatorNumber === "") {
         const toDelete = occupancy.filter(
           (o) =>
@@ -337,11 +423,13 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
             o.date === selectedDateStr &&
             o.departmentId === deptId
         );
-        for (const docToDel of toDelete)
-          await deleteDoc(doc(db, ...colPath, docToDel.id));
+        for (const docToDel of toDelete) {
+          const docId: string = docToDel.id ?? "";
+          await deleteDoc(doc(db, getPathString(PATHS.OCCUPANCY) + "/" + docId));
+        }
         if (toDelete.length > 0) {
           await logActivity(
-            auth.currentUser?.uid,
+            auth.currentUser?.uid || "system",
             "OCCUPANCY_CLEAR",
             `Bezetting gewist op ${machineId} (${deptId}) voor ${selectedDateStr}: ${toDelete.length} record(s)`
           );
@@ -359,7 +447,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
       const shiftInfo = getShiftHours(person, deptId, parse(selectedDateStr, "yyyy-MM-dd", new Date()));
 
       await setDoc(
-        doc(db, ...colPath, assignmentId),
+        doc(db, getPathString(PATHS.OCCUPANCY) + "/" + (assignmentId as string)),
         {
           id: assignmentId,
           machineId,
@@ -375,7 +463,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
       );
 
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "OCCUPANCY_ASSIGN",
         `Operator ${person.employeeNumber} toegewezen aan ${machineId} (${deptId}) op ${selectedDateStr}`
       );
@@ -384,16 +472,17 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     }
   };
 
-  const handleRemoveAssignment = async (assignmentId) => {
-    await deleteDoc(doc(db, ...PATHS.OCCUPANCY, assignmentId));
+  const handleRemoveAssignment = async (assignmentId: string) => {
+    const docId: string = assignmentId;
+    await deleteDoc(doc(db, getPathString(PATHS.OCCUPANCY) + "/" + docId));
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "OCCUPANCY_DELETE",
       `Bezettingsrecord verwijderd: ${assignmentId}`
     );
   };
 
-  const handleCopyYesterday = async (targetDeptId = null) => {
+  const handleCopyYesterday = async (targetDeptId: string | null = null) => {
     // Als het maandag is (1), kopieer van vrijdag (3 dagen terug), anders gisteren (1 dag)
     const isMonday = viewDate.getDay() === 1;
     const daysBack = isMonday ? 3 : 1;
@@ -413,7 +502,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     setIsCopying(true);
     try {
       const batch = writeBatch(db);
-      sourceData.forEach((old) => {
+      sourceData.forEach((old: OccupancyRecord) => {
         // Zoek persoon op om rotatie te checken en shift te herberekenen voor VANDAAG
         const person = personnel.find(p => p.employeeNumber === old.operatorNumber);
         
@@ -433,7 +522,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
             "_"
           );
         batch.set(
-          doc(db, ...PATHS.OCCUPANCY, newId),
+          doc(db, getPathString(PATHS.OCCUPANCY) + "/" + (newId as string)),
           {
             ...old,
             id: newId,
@@ -447,7 +536,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
       });
       await batch.commit();
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "OCCUPANCY_COPY",
         `Bezetting gekopieerd van ${sourceDateStr} naar ${selectedDateStr}: ${sourceData.length} record(s)`
       );
@@ -457,13 +546,13 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
       });
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
-      notify(err.message);
+      notify(getErrorMessage(err));
     } finally {
       setIsCopying(false);
     }
   };
 
-  const handleSavePerson = async (e) => {
+  const handleSavePerson = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (duplicatePerson) {
@@ -475,7 +564,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     try {
       const docId = editingId || `P_${personForm.employeeNumber}`;
       await setDoc(
-        doc(db, ...PATHS.PERSONNEL, docId),
+        doc(db, getPathString(PATHS.PERSONNEL) + "/" + (docId as string)),
         {
           ...personForm,
           lastUpdated: serverTimestamp(),
@@ -485,7 +574,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
       );
 
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         editingId ? "PERSONNEL_UPDATE" : "PERSONNEL_CREATE",
         `${editingId ? "Personeel bijgewerkt" : "Personeel aangemaakt"}: ${personForm.name} (${personForm.employeeNumber})`
       );
@@ -495,15 +584,27 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
       setStatus({ type: "success", msg: t('personnel.saved', "Medewerker opgeslagen") });
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
-      notify(t('common.error', { message: err.message }));
+      notify(getErrorMessage(err));
     } finally {
       setSaving(false);
     }
   };
 
-  const openEditPerson = (person) => {
+  const openEditPerson = (person: Person) => {
     setPersonForm({
-      ...person,
+      name: person.name || "",
+      employeeNumber: person.employeeNumber || "",
+      departmentId: person.departmentId || "",
+      linkedUserId: person.linkedUserId || "",
+      rotationType: person.rotationType || "STATIC",
+      shiftId: person.shiftId || "DAG",
+      isActive: person.isActive ?? true,
+      rotationSchedule: person.rotationSchedule || {
+        enabled: false,
+        startWeek: 1,
+        startYear: new Date().getFullYear(),
+        shifts: ["DAG"],
+      },
       loan: person.loan || {
         active: false,
         departmentId: "",
@@ -512,14 +613,13 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
         returnDate: "",
         followRotation: false
       },
-      linkedUserId: person.linkedUserId || ""
     });
-    setEditingId(person.id);
+    setEditingId(person.id || null);
     setModalTab("profile");
     setIsPersonModalOpen(true);
   };
 
-  const handleAutoReturnToggle = (checked) => {
+  const handleAutoReturnToggle = (checked: boolean) => {
     const newLoan = { ...personForm.loan, autoReturn: checked };
     if (checked) {
       newLoan.returnDate = format(addDays(new Date(), 5), "yyyy-MM-dd");
@@ -530,7 +630,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     setIsPersonModalOpen(true);
   };
 
-  const handleRemovePersonNfcTag = async (mappingId, tagId) => {
+  const handleRemovePersonNfcTag = async (mappingId: string, tagId?: string) => {
     const confirmed = await showConfirm({
       title: "NFC-tag verwijderen",
       message: `Koppeling ${tagId || mappingId} verwijderen?`,
@@ -541,16 +641,16 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
     if (!confirmed) return;
 
     try {
-      await deleteDoc(doc(db, ...PATHS.NFC_TAG_MAPPINGS, mappingId));
+      await deleteDoc(doc(db, `${getPathString(PATHS.NFC_TAG_MAPPINGS)}/${mappingId}`));
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "NFC_TAG_UNLINK",
         `NFC tag ontkoppeld van ${personForm.name || personForm.employeeNumber}: ${tagId || mappingId}`
       );
       setStatus({ type: "success", msg: "NFC-tag verwijderd" });
       setTimeout(() => setStatus(null), 2500);
     } catch (err) {
-      notify(t("common.error", { message: err.message }));
+      notify(getErrorMessage(err));
     }
   };
 
@@ -742,7 +842,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
           </div>
 
           <button
-            onClick={handleCopyYesterday}
+            onClick={() => handleCopyYesterday()}
             disabled={isCopying}
             className={`w-full md:w-auto px-6 py-3 border-2 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 shadow-sm ${
               viewDate.getDay() === 1
@@ -814,27 +914,26 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
           {/* TAB 1: BEZETTING PER STATION */}
           {activeTab === "assignment" && (
             <PersonnelOccupancyView
+              scope="all"
               structure={structure}
               occupancy={occupancy}
-              personnel={personnel}
-              kpiData={kpiData}
-              users={users}
+              personnel={personnelWithId}
               selectedDateStr={selectedDateStr}
-              onAssign={handleAssign}
-              onRemoveAssignment={handleRemoveAssignment}
+              onCopyYesterday={handleCopyYesterday}
+              onClearToday={async () => {}}
             />
           )}
 
           {/* TAB 2: PERSONEELSLIJST (DATABASE) */}
           {activeTab === "personnel" && (
             <PersonnelListView
-              personnel={personnel}
+              personnel={personnelWithId}
               departments={structure.departments || []}
               linkedTagEmployeeKeys={linkedTagEmployeeKeys}
               expandedDepts={listExpandedSections}
               onToggleDept={(id) => setListExpandedSections(prev => ({...prev, [id]: !prev[id]}))}
-              onEdit={openEditPerson}
-              onDelete={async (id) => {
+              onEdit={(p) => openEditPerson(p as Person)}
+              onDelete={async (id: string) => {
                 const confirmed = await showConfirm({
                   title: t('personnel.deleteTitle', 'Medewerker verwijderen'),
                   message: t('common.deleteConfirm', "Verwijderen?"),
@@ -843,9 +942,9 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
                   tone: 'danger',
                 });
                 if (!confirmed) return;
-                await deleteDoc(doc(db, ...PATHS.PERSONNEL, id));
+                await deleteDoc(doc(db, `${getPathString(PATHS.PERSONNEL)}/${id}`));
                 await logActivity(
-                  auth.currentUser?.uid,
+                  auth.currentUser?.uid || "system",
                   "PERSONNEL_DELETE",
                   `Personeelsrecord verwijderd: ${id}`
                 );
@@ -1309,7 +1408,7 @@ const PersonnelManager = ({ initialViewDate, initialTab }) => {
       <NFCTagRegistrationModal 
         isOpen={showNFCModal} 
         onClose={() => setShowNFCModal(false)}
-        personnel={personnel}
+        personnel={personnelWithId}
         preselectedEmployeeNumber={personForm.employeeNumber || ""}
       />
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db, auth, logActivity } from '../../config/firebase';
-import { PATHS } from '../../config/dbPaths';
+import { PATHS, getPathString } from '../../config/dbPaths';
 import { User, Check, Save, X, Shield, Loader2, MapPin, Briefcase } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -56,7 +56,7 @@ const UserStationManager = () => {
     });
 
     // 2. Stations ophalen uit Factory Config
-    const unsubConfig = onSnapshot(doc(db, ...PATHS.FACTORY_CONFIG), (snap) => {
+    const unsubConfig = onSnapshot(doc(db, getPathString(PATHS.FACTORY_CONFIG)), (snap) => {
       if (snap.exists()) {
         const config = snap.data() as FactoryConfig;
         const stations: StationOption[] = [];
@@ -119,7 +119,7 @@ const UserStationManager = () => {
       await updateDoc(userRef, {
         allowedStations: tempAllowed
       });
-      await logActivity(auth.currentUser?.uid, "USER_UPDATE", `Station access updated for user: ${selectedUser.email}`);
+      await logActivity(auth.currentUser?.uid || "system", "USER_UPDATE", `Station access updated for user: ${selectedUser.email}`);
       setSelectedUser(null);
       // Optioneel: Toon succes melding
     } catch (error: unknown) {

@@ -2,22 +2,32 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { AlertOctagon } from "lucide-react";
 
+type RejectionProduct = {
+  currentStep?: string;
+  status?: string;
+  rejectionReason?: string;
+};
+
+type RejectionAnalysisTileProps = {
+  products?: RejectionProduct[];
+};
+
 /**
  * RejectionAnalysisTile
  * Toont een visuele analyse van de afkeurredenen op het dashboard.
  */
-const RejectionAnalysisTile = React.memo(({ products = [] }) => {
+const RejectionAnalysisTile = React.memo(({ products = [] }: RejectionAnalysisTileProps) => {
   const { t } = useTranslation();
 
   // 1. Filter alle afgekeurde producten (Veilige check op array)
   const rejected = Array.isArray(products)
     ? products.filter(
-        (p) => p.currentStep === "REJECTED" || p.status === "rejected" || p.status === "Afkeur" || p.status === "REJECTED"
+        (p: RejectionProduct) => p.currentStep === "REJECTED" || p.status === "rejected" || p.status === "Afkeur" || p.status === "REJECTED"
       )
     : [];
 
   // 2. Groepeer op reden
-  const reasons = rejected.reduce((acc, curr) => {
+  const reasons = rejected.reduce<Record<string, number>>((acc, curr) => {
     const reason = curr.rejectionReason || t('rejection.unknown');
     acc[reason] = (acc[reason] || 0) + 1;
     return acc;
@@ -25,7 +35,7 @@ const RejectionAnalysisTile = React.memo(({ products = [] }) => {
 
   // 3. Sorteer en pak top 3
   const sortedReasons = Object.entries(reasons)
-    .sort(([, a], [, b]) => b - a)
+    .sort(([, a], [, b]) => Number(b) - Number(a))
     .slice(0, 3);
 
   const totalRejected = rejected.length;
@@ -45,7 +55,7 @@ const RejectionAnalysisTile = React.memo(({ products = [] }) => {
         {sortedReasons.length > 0 ? (
           sortedReasons.map(([reason, count]) => {
             const percentage =
-              totalRejected > 0 ? Math.round((count / totalRejected) * 100) : 0;
+              totalRejected > 0 ? Math.round((Number(count) / totalRejected) * 100) : 0;
             return (
               <div key={reason}>
                 <div className="flex justify-between text-[10px] font-black uppercase mb-1.5">

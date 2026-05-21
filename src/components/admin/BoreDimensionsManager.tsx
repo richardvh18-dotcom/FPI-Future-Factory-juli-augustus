@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Plus,
@@ -22,9 +21,46 @@ import {
   deleteDoc,
   serverTimestamp,
   query,
+  type DocumentData,
 } from "firebase/firestore";
-import { db, auth, logActivity } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
+import { db, auth, logActivity } from "../../config/firebase";
+import { PATHS, getPathString } from "../../config/dbPaths";
+
+type BoreDimensionRecord = {
+  id: string;
+  type: string;
+  diameter: number;
+  BoltCircle: string;
+  Holes: string;
+  HoleDiameter: string;
+  Weight: string;
+};
+
+type FormState = {
+  type: string;
+  diameter: string;
+  BoltCircle: string;
+  Holes: string;
+  HoleDiameter: string;
+  Weight: string;
+};
+
+type StatusState = {
+  type: "success" | "error";
+  msg: string;
+};
+
+type SpecFieldKey = keyof Pick<FormState, "BoltCircle" | "Holes" | "HoleDiameter" | "Weight">;
+
+const docPath = (path: string[], id: string) => doc(db, `${getPathString(path)}/${id}`);
+const colPath = (path: string[]) => collection(db, getPathString(path));
+
+const getErrorCode = (error: unknown): string | undefined => {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    return String((error as { code?: unknown }).code || "");
+  }
+  return undefined;
+};
 
 /**
  * BoreDimensionsManager V4.0 - Root Integrated
@@ -32,14 +68,14 @@ import { PATHS } from "../../../config/dbPaths";
  * Locatie: /future-factory/production/dimensions/bore/records/
  */
 const BoreDimensionsManager = () => {
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState<BoreDimensionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<StatusState | null>(null);
 
   // Formulier state
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormState>({
     type: "", // Bijv. "ASA 150"
     diameter: "", // Bijv. "200"
     BoltCircle: "",
@@ -48,7 +84,7 @@ const BoreDimensionsManager = () => {
     Weight: "",
   });
 
-  const specFields = [
+  const specFields: Array<{ id: SpecFieldKey; label: string; unit: string }> = [
     { id: "BoltCircle", label: "PCD (Steekcirkel)", unit: "mm" },
     { id: "Holes", label: "Aantal Gaten", unit: "n" },
     { id: "HoleDiameter", label: "Gat Diameter", unit: "mm" },
@@ -57,12 +93,12 @@ const BoreDimensionsManager = () => {
 
   // 1. Live Sync met de Root BORE_DIMENSIONS collectie
   useEffect(() => {
-    const colRef = collection(db, ...PATHS.BORE_DIMENSIONS);
+    const colRef = colPath(PATHS.BORE_DIMENSIONS);
 
     const unsubscribe = onSnapshot(
       query(colRef),
       (snapshot) => {
-        const data = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as DocumentData) })) as BoreDimensionRecord[];
         // Sortering op ID (Type + Maat)
         setItems(
           data.sort((a, b) =>
@@ -71,10 +107,10 @@ const BoreDimensionsManager = () => {
         );
         setLoading(false);
       },
-      (err) => {
+      (err: unknown) => {
         console.error("Fout bij laden boringen:", err);
         // FIX: Voorkom foutmelding bij uitloggen
-        if (err.code === 'permission-denied') return;
+        if (getErrorCode(err) === "permission-denied") return;
         setStatus({ type: "error", msg: "Database toegang geweigerd." });
         setLoading(false);
       }
@@ -83,23 +119,23 @@ const BoreDimensionsManager = () => {
     return () => unsubscribe();
   }, []);
 
-  const handleInputChange = (key, value) => {
+  const handleInputChange = (key: keyof FormState, value: string) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm(`Boring ${id} definitief verwijderen uit de root?`))
       return;
     try {
-      await deleteDoc(doc(db, ...PATHS.BORE_DIMENSIONS, id));
-      await logActivity(auth.currentUser?.uid, "DRILL_DELETE", `Bore dimension deleted: ${id}`);
+      await deleteDoc(docPath(PATHS.BORE_DIMENSIONS, id));
+      await logActivity(auth.currentUser?.uid || "system", "DRILL_DELETE", `Bore dimension deleted: ${id}`);
       setStatus({ type: "success", msg: "Item verwijderd uit de root." });
     } catch {
       setStatus({ type: "error", msg: "Verwijderen mislukt." });
     }
   };
 
-  const handleSave = async (e) => {
+  const handleSave = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formData.type || !formData.diameter) {
       setStatus({ type: "error", msg: "Vul Type en Diameter in." });
@@ -114,7 +150,7 @@ const BoreDimensionsManager = () => {
     const docId = `${cleanType}_ID${formData.diameter}`;
 
     try {
-      const docRef = doc(db, ...PATHS.BORE_DIMENSIONS, docId);
+      const docRef = docPath(PATHS.BORE_DIMENSIONS, docId);
       await setDoc(
         docRef,
         {
@@ -127,7 +163,7 @@ const BoreDimensionsManager = () => {
         { merge: true }
       );
 
-      await logActivity(auth.currentUser?.uid, "DRILL_ADD", `Bore dimension saved: ${docId}`);
+      await logActivity(auth.currentUser?.uid || "system", "DRILL_ADD", `Bore dimension saved: ${docId}`);
 
       setStatus({
         type: "success",
@@ -142,7 +178,7 @@ const BoreDimensionsManager = () => {
         HoleDiameter: "",
         Weight: "",
       }));
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(error);
       setStatus({ type: "error", msg: "Opslaan mislukt." });
     } finally {
@@ -335,7 +371,7 @@ const BoreDimensionsManager = () => {
                   {filteredItems.length === 0 ? (
                     <tr>
                       <td
-                        colSpan="4"
+                        colSpan={4}
                         className="py-32 text-center opacity-30 italic"
                       >
                         <Database

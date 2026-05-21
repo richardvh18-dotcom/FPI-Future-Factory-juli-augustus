@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useMemo, useEffect } from "react";
 import {
   Calendar,
@@ -35,16 +34,18 @@ import { getDeliveryPlanningState, resolveDeliveryDate, toDateSafe } from "../..
 import StatusBadge from "../common/StatusBadge";
 import { syncMissingDrawings } from "../../../utils/planningSyncLogic";
 
-const parseDateSafe = (dateInput) => {
-  return toDateSafe(dateInput);
+type AnyRecord = Record<string, any>;
+
+const parseDateSafe = (dateInput: unknown) => {
+  return toDateSafe(dateInput as any);
 };
 
-const formatDateLabel = (dateInput, pattern, options = {}, fallback = "-") => {
+const formatDateLabel = (dateInput: unknown, pattern: string, options: any = {}, fallback = "-") => {
   const parsedDate = parseDateSafe(dateInput);
   return parsedDate ? format(parsedDate, pattern, options) : fallback;
 };
 
-const getOrderDeliveryDate = (order) =>
+const getOrderDeliveryDate = (order: AnyRecord) =>
   resolveDeliveryDate(
     order?.deliveryDate,
     order?.plannedDeliveryDate,
@@ -54,7 +55,7 @@ const getOrderDeliveryDate = (order) =>
   );
 
 // --- SUB-COMPONENT: DETAIL VIEW ---
-const OrderDetailPane = ({ order, onClose }) => {
+const OrderDetailPane = ({ order, onClose }: { order: AnyRecord | null; onClose: () => void }) => {
   if (!order) return null;
 
   return (
@@ -244,6 +245,12 @@ const PlanningListView = ({
   selectedOrder,
   activeTab,
   onTabChange,
+}: {
+  orders?: AnyRecord[];
+  onSelectOrder?: (order: AnyRecord | null) => void;
+  selectedOrder?: AnyRecord | null;
+  activeTab?: string;
+  onTabChange?: (tab: string) => void;
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
@@ -253,7 +260,7 @@ const PlanningListView = ({
   const selectedWeek = getISOWeek(referenceDate);
   const selectedYear = getISOWeekYear(referenceDate);
 
-  const appId = typeof __app_id !== "undefined" ? __app_id : "fittings-app-v1";
+  const appId = String((globalThis as any).__app_id || "fittings-app-v1");
 
   // --- AUTOMATISCHE FILTER LOGICA ONDERSTEUNING ---
   // Bij Wikkelen/Lossen springt het filter op 'Alle'
@@ -266,8 +273,8 @@ const PlanningListView = ({
     }
   }, [activeTab]);
 
-  const getUrgencyStyles = (deliveryDate) => {
-    const planningState = getDeliveryPlanningState(deliveryDate, {
+  const getUrgencyStyles = (deliveryDate: unknown) => {
+    const planningState = getDeliveryPlanningState(deliveryDate as any, {
       productionLeadDays: 21,
       finishBufferDays: 3,
     });
@@ -282,7 +289,7 @@ const PlanningListView = ({
     setIsSyncing(true);
     try {
       await syncMissingDrawings(appId);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
     } finally {
       setIsSyncing(false);
@@ -290,7 +297,7 @@ const PlanningListView = ({
   };
 
   const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
+    return orders.filter((order: AnyRecord) => {
       // DYNAMISCHE FILTER OP BASIS VAN TAB
       const targetStatus = activeTab === "planning" ? "pending" : "in_progress";
       if (order.status !== targetStatus) return false;
@@ -329,7 +336,7 @@ const PlanningListView = ({
         {/* TABS SELECTIE */}
         <div className="flex p-1 bg-slate-100/80 gap-1 border-b border-slate-200 shrink-0">
           <button
-            onClick={() => onTabChange("planning")}
+            onClick={() => onTabChange?.("planning")}
             className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
               activeTab === "planning"
                 ? "bg-white text-blue-600 shadow-sm border border-slate-200"
@@ -339,7 +346,7 @@ const PlanningListView = ({
             Te Doen
           </button>
           <button
-            onClick={() => onTabChange("actief")}
+            onClick={() => onTabChange?.("actief")}
             className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
               activeTab === "actief"
                 ? "bg-white text-emerald-600 shadow-sm border border-slate-200"
@@ -349,7 +356,7 @@ const PlanningListView = ({
             Wikkelen
           </button>
           <button
-            onClick={() => onTabChange("lossen")}
+            onClick={() => onTabChange?.("lossen")}
             className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${
               activeTab === "lossen"
                 ? "bg-white text-orange-600 shadow-sm border border-slate-200"
@@ -447,7 +454,7 @@ const PlanningListView = ({
               </p>
             </div>
           ) : (
-            filteredOrders.map((order) => (
+            filteredOrders.map((order: AnyRecord) => (
               <div
                 key={order.id}
                 onClick={() => onSelectOrder && onSelectOrder(order)}
@@ -528,8 +535,8 @@ const PlanningListView = ({
         }`}
       >
         <OrderDetailPane
-          order={selectedOrder}
-          onClose={() => onSelectOrder(null)}
+          order={selectedOrder || null}
+          onClose={() => onSelectOrder?.(null)}
         />
       </div>
 
@@ -538,7 +545,7 @@ const PlanningListView = ({
         <div className="fixed inset-0 z-[100] bg-white lg:hidden">
           <OrderDetailPane
             order={selectedOrder}
-            onClose={() => onSelectOrder(null)}
+            onClose={() => onSelectOrder?.(null)}
           />
         </div>
       )}

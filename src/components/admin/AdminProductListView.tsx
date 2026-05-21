@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import { useNotifications } from '../../contexts/NotificationContext';
 import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
@@ -18,27 +18,54 @@ import {
   Loader2,
 } from "lucide-react";
 import { verifyProduct } from "../../utils/productHelpers";
-import VerificationBadge from "./VerificationBadge.tsx";
+import VerificationBadge from "./VerificationBadge";
 import { VERIFICATION_STATUS } from "../../data/constants";
+
+type ProductRecord = {
+  id: string;
+  name?: string;
+  displayId?: string;
+  articleCode?: string;
+  extraCode?: string;
+  type?: string;
+  verificationStatus?: string;
+  verifiedBy?: string;
+  lastModifiedBy?: string;
+  dn?: string | number;
+  diameter?: string | number;
+  pn?: string | number;
+  pressure?: string | number;
+  couplingType?: string;
+  connection?: string;
+  [key: string]: unknown;
+};
+
+type ProductListProps = {
+  products?: ProductRecord[];
+  onDelete?: (productId: string) => void;
+  onEdit?: (product: ProductRecord) => void;
+  onRefresh?: () => Promise<void> | void;
+  user?: { uid?: string } | null;
+};
 
 /**
  * AdminProductListView V6.0 - Advanced Catalog Manager
  * Toont de productcatalogus uit de root: /future-factory/production/products/
  * Bevat gegroepeerde weergave en verificatie-workflow.
  */
-const AdminProductListView = ({ products = [], onDelete, onEdit, onRefresh, user }) => {
+const AdminProductListView = ({ products = [], onDelete, onEdit, onRefresh, user }: ProductListProps) => {
   const { t } = useTranslation();
   const { notify } = useNotifications();
-  const [processingId, setProcessingId] = useState(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("All");
-  const safeProducts = useMemo(
+  const safeProducts = useMemo<ProductRecord[]>(
     () => (Array.isArray(products) ? products.filter((p) => p && typeof p === "object") : []),
     [products]
   );
 
   // State voor open/dichtgeklapte groepen (Standaard: eerste groep open)
-  const [expandedGroups, setExpandedGroups] = useState({
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     "⚠️ Te Verifiëren": true,
   });
 
@@ -46,7 +73,7 @@ const AdminProductListView = ({ products = [], onDelete, onEdit, onRefresh, user
   const filteredProducts = useMemo(() => {
     if (!safeProducts.length) return [];
     const term = searchTerm.toLowerCase();
-    const includesTerm = (value) => String(value || "").toLowerCase().includes(term);
+    const includesTerm = (value: unknown) => String(value || "").toLowerCase().includes(term);
 
     return safeProducts.filter((product) => {
       const matchesSearch =
@@ -62,7 +89,7 @@ const AdminProductListView = ({ products = [], onDelete, onEdit, onRefresh, user
 
   // 2. GROUPING LOGIC
   const groupedData = useMemo(() => {
-    const groups = {};
+    const groups: Record<string, ProductRecord[]> = {};
     const PENDING_KEY = "⚠️ Te Verifiëren";
 
     filteredProducts.forEach((product) => {
@@ -84,45 +111,45 @@ const AdminProductListView = ({ products = [], onDelete, onEdit, onRefresh, user
     return { groups, sortedKeys, PENDING_KEY };
   }, [filteredProducts]);
 
-  const toggleGroup = (groupKey) => {
+  const toggleGroup = (groupKey: string) => {
     setExpandedGroups((prev) => ({ ...prev, [groupKey]: !prev[groupKey] }));
   };
 
-  const handleEditClick = (event, product) => {
+  const handleEditClick = (event: React.MouseEvent<HTMLButtonElement>, product: ProductRecord) => {
     event.stopPropagation();
     if (onEdit) onEdit(product);
   };
 
-  const handleDeleteClick = (event, productId) => {
+  const handleDeleteClick = (event: React.MouseEvent<HTMLButtonElement>, productId: string) => {
     event.stopPropagation();
     if (typeof onDelete === "function") {
       onDelete(productId);
     }
   };
 
-  const handleVerify = async (product) => {
+  const handleVerify = async (product: ProductRecord) => {
     if (!user) return;
     setProcessingId(product.id);
     try {
       // De helper 'verifyProduct' schrijft direct naar de nieuwe root
       const result = await verifyProduct(product.id, user, product);
       if (!result.success) {
-        notify(result.message);
+        notify(result.message || "Verificatie mislukt.");
       } else {
         if (typeof onRefresh === "function") {
           await onRefresh();
         }
         notify("Product succesvol geverifieerd.");
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Verificatie fout:", error);
-      notify(`Verificatie mislukt: ${error?.message || "Onbekende fout"}`);
+      notify(`Verificatie mislukt: ${error instanceof Error ? error.message : "Onbekende fout"}`);
     } finally {
       setProcessingId(null);
     }
   };
 
-  const canVerify = (product) => {
+  const canVerify = (product: ProductRecord) => {
     if (product.verificationStatus !== VERIFICATION_STATUS.PENDING)
       return false;
     // Blokkeer als de huidige gebruiker de laatste wijziging heeft gedaan (4-eyes principle)
@@ -132,7 +159,7 @@ const AdminProductListView = ({ products = [], onDelete, onEdit, onRefresh, user
   };
 
   const uniqueTypes = useMemo(
-    () => ["All", ...new Set(safeProducts.map((p) => p.type).filter(Boolean))].sort(),
+    () => ["All", ...new Set(safeProducts.map((p) => p.type).filter(Boolean) as string[])].sort(),
     [safeProducts]
   );
 
@@ -194,7 +221,7 @@ const AdminProductListView = ({ products = [], onDelete, onEdit, onRefresh, user
               <span className="text-sm font-black italic">
                 {
                   products.filter(
-                    (p) => p.verificationStatus === VERIFICATION_STATUS.PENDING
+                    (p: ProductRecord) => p.verificationStatus === VERIFICATION_STATUS.PENDING
                   ).length
                 }
               </span>
@@ -314,7 +341,11 @@ const AdminProductListView = ({ products = [], onDelete, onEdit, onRefresh, user
                             <td className="px-8 py-5">
                               <VerificationBadge
                                 status={p.verificationStatus}
-                                verifiedBy={p.verifiedBy}
+                                verifiedBy={
+                                  typeof p.verifiedBy === "string"
+                                    ? { name: p.verifiedBy }
+                                    : (p.verifiedBy as { name?: string } | null | undefined)
+                                }
                               />
                             </td>
                             <td className="px-8 py-5">

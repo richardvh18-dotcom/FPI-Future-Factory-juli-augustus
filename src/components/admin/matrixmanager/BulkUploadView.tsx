@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect } from "react";
 import {
   FileUp,
@@ -19,7 +18,43 @@ import {
 } from "lucide-react";
 import { doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
+import { PATHS, getPathString } from "../../../config/dbPaths";
+
+type XlsxUtils = {
+  aoa_to_sheet: (data: unknown[][]) => unknown;
+  book_new: () => unknown;
+  book_append_sheet: (workbook: unknown, worksheet: unknown, name: string) => void;
+  sheet_to_json: (sheet: unknown) => PreviewRow[];
+};
+
+type XlsxApi = {
+  utils: XlsxUtils;
+  writeFile: (workbook: unknown, fileName: string) => void;
+  read: (data: Uint8Array, options: { type: string }) => { Sheets: Record<string, unknown>; SheetNames: string[] };
+};
+
+declare global {
+  interface Window {
+    XLSX?: XlsxApi;
+  }
+}
+
+type TargetKey =
+  | "FITTING_SPECS"
+  | "SOCKET_SPECS"
+  | "CB_DIMENSIONS"
+  | "TB_DIMENSIONS"
+  | "BORE_DIMENSIONS";
+
+type StatusState = {
+  type: "success" | "error";
+  msg: string;
+};
+
+type PreviewCell = string | number;
+type PreviewRow = Record<string, PreviewCell>;
+
+const docPathWithId = (path: string[], id: string) => doc(db, `${getPathString(path)}/${id}`);
 
 /**
  * BulkUploadView V3.0 - Root Path Edition
@@ -28,16 +63,16 @@ import { PATHS } from "../../../config/dbPaths";
  */
 const BulkUploadView = () => {
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState(null);
-  const [targetKey, setTargetKey] = useState("FITTING_SPECS");
-  const [previewData, setPreviewData] = useState([]);
+  const [status, setStatus] = useState<StatusState | null>(null);
+  const [targetKey, setTargetKey] = useState<TargetKey>("FITTING_SPECS");
+  const [previewData, setPreviewData] = useState<PreviewRow[]>([]);
   const [pastedText, setPastedText] = useState("");
-  const [validationErrors, setValidationErrors] = useState([]);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isVerified, setIsVerified] = useState(false);
   const [xlsxReady, setXlsxReady] = useState(false);
 
   // Mapping van UI selectie naar PATHS keys
-  const COLLECTIONS = [
+  const COLLECTIONS: Array<{ id: TargetKey; label: string }> = [
     { id: "FITTING_SPECS", label: "Fitting Afmetingen (Basis - CB)" },
     { id: "SOCKET_SPECS", label: "Socket Afmetingen (*_Socket - CB)" },
     { id: "CB_DIMENSIONS", label: "Mof Afmetingen (CB)" },
@@ -46,7 +81,7 @@ const BulkUploadView = () => {
   ];
 
   // Header definities voor templates
-  const TEMPLATE_CONFIG = {
+  const TEMPLATE_CONFIG: Record<TargetKey, string[]> = {
     FITTING_SPECS: ["id", "TW", "L", "Lo", "R", "Weight", "articleCode"],
     SOCKET_SPECS: ["id", "TWcb", "BD", "W"],
     CB_DIMENSIONS: ["id", "B1", "B2", "BA", "A"],
@@ -89,7 +124,7 @@ const BulkUploadView = () => {
     }
   };
 
-  const parseRawData = (rows) => {
+  const parseRawData = (rows: PreviewRow[]) => {
     setIsVerified(false);
     setValidationErrors([]);
     const cleanRows = rows.filter((row) => {
@@ -99,21 +134,23 @@ const BulkUploadView = () => {
     setPreviewData(cleanRows);
   };
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file || !xlsxReady) return;
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !xlsxReady || !window.XLSX) return;
+    const xlsx = window.XLSX;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = (event: ProgressEvent<FileReader>) => {
+      if (!(event.target?.result instanceof ArrayBuffer)) return;
       const data = new Uint8Array(event.target.result);
-      const workbook = window.XLSX.read(data, { type: "array" });
+      const workbook = xlsx.read(data, { type: "array" });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = window.XLSX.utils.sheet_to_json(firstSheet);
+      const rows = xlsx.utils.sheet_to_json(firstSheet);
       parseRawData(rows);
     };
     reader.readAsArrayBuffer(file);
   };
 
-  const handlePaste = (e) => {
+  const handlePaste = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
     setPastedText(text);
     if (!text.trim()) return;
@@ -121,16 +158,16 @@ const BulkUploadView = () => {
     const rawHeaders = lines[0].split("\t").map((h) => h.trim());
     const headers = rawHeaders.filter((h) => h !== "");
 
-    const rows = lines.slice(1).map((line) => {
+    const rows: PreviewRow[] = lines.slice(1).map((line) => {
       const values = line.split("\t");
-      const obj = {};
+      const obj: PreviewRow = {};
       headers.forEach((h, i) => {
         if (!h) return;
-        let val = values[i]?.trim() || "";
+        let val: PreviewCell = values[i]?.trim() || "";
         const cleanHeader = h.toLowerCase();
         if (
           val !== "" &&
-          !isNaN(val) &&
+          !Number.isNaN(Number(val)) &&
           !["id", "articlecode", "drawing"].includes(cleanHeader)
         ) {
           val = Number(val);
@@ -143,7 +180,7 @@ const BulkUploadView = () => {
   };
 
   const validateData = () => {
-    const errors = [];
+    const errors: string[] = [];
     if (previewData.length === 0)
       errors.push("Geen data gevonden om te controleren.");
     previewData.forEach((row, index) => {
@@ -189,12 +226,12 @@ const BulkUploadView = () => {
 
       previewData.forEach((row) => {
         if (!row.id) return;
-        const cleanEntry = {};
+        const cleanEntry: PreviewRow = {};
         Object.entries(row).forEach(([k, v]) => {
           if (k.trim() !== "" && k !== "undefined") cleanEntry[k] = v;
         });
 
-        const docRef = doc(db, ...pathArray, String(row.id).trim());
+        const docRef = docPathWithId(pathArray, String(row.id).trim());
         batch.set(
           docRef,
           {
@@ -215,9 +252,10 @@ const BulkUploadView = () => {
       setPreviewData([]);
       setPastedText("");
       setIsVerified(false);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Batch Error:", error);
-      setStatus({ type: "error", msg: "Import error: " + error.message });
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus({ type: "error", msg: "Import error: " + message });
     } finally {
       setLoading(false);
     }

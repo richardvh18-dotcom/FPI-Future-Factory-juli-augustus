@@ -1,5 +1,19 @@
 import React, { useMemo } from 'react';
 
+type StationOption = {
+  id: string;
+  name: string;
+  department?: string;
+};
+
+type ProductMoveModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onMove: (destinationId: string) => void;
+  currentDepartment?: string;
+  allStations?: StationOption[];
+};
+
 /**
  * ProductMoveModal
  * 
@@ -12,26 +26,26 @@ const ProductMoveModal = ({
   onMove, 
   currentDepartment, 
   allStations = [] 
-}) => {
+}: ProductMoveModalProps) => {
   if (!isOpen) return null;
 
   const destinations = useMemo(() => {
     // Definieer de Inboxes die altijd beschikbaar moeten zijn als bestemming
     // (behalve als je er al bent, dat filteren we hieronder)
-    const targetInboxes = [
+    const targetInboxes: StationOption[] = [
       { id: 'FITTINGS_INBOX', name: '📥 Fittings Inbox', department: 'Fittings' },
       { id: 'PIPES_INBOX', name: '📥 Pipes Inbox', department: 'Pipes' },
       { id: 'SPOOLS_INBOX', name: '📥 Spools Inbox', department: 'Spools' }
     ];
 
     // 1. Filter stations van de huidige afdeling (exclusief inboxes om dubbelingen te voorkomen)
-    const localStations = allStations.filter(s => 
+    const localStations = allStations.filter((s) => 
       (s.department === currentDepartment || !s.department) && !s.id.includes('_INBOX')
     );
 
     // 2. Voeg Inboxes van ANDERE afdelingen toe
     // (Zodat je vanuit Fittings iets naar Spools kunt sturen)
-    const externalInboxes = targetInboxes.filter(inbox => inbox.department !== currentDepartment);
+    const externalInboxes = targetInboxes.filter((inbox) => inbox.department !== currentDepartment);
 
     // 3. Samenvoegen en alfabetisch sorteren op naam
     const options = [...localStations, ...externalInboxes];

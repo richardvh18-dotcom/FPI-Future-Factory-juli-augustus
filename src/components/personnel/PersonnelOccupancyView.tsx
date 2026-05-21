@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { 
@@ -12,19 +11,91 @@ import { db, auth, logActivity } from "../../config/firebase";
 import { 
   collection, onSnapshot, query, orderBy, doc
 } from "firebase/firestore";
-import { normalizeMachine } from "../../utils/hubHelpers.tsx";
-import { PATHS } from "../../config/dbPaths";
+import { normalizeMachine } from "../../utils/hubHelpers";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import LoanPersonnelModal from "../digitalplanning/modals/LoanPersonnelModal";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { savePersonnelRecord, saveOccupancyAssignment, deleteOccupancyAssignment } from "../../services/planningSecurityService";
 
+export interface Department {
+  id: string;
+  name: string;
+  slug?: string;
+  shifts?: { id: string; label: string; start?: string; end?: string }[];
+  stations?: { id: string; name: string }[];
+}
+
+export interface User {
+  id: string;
+  name?: string;
+  email?: string;
+}
+
+export interface Person {
+  id?: string;
+  name: string;
+  employeeNumber: string;
+  departmentId: string;
+  linkedUserId?: string;
+  shiftId?: string;
+  role?: string;
+  isActive?: boolean;
+  temporaryShiftOverride?: {
+    enabled: boolean;
+    shiftId: string;
+    startDate: string;
+    endDate: string;
+    note: string;
+  };
+  loan?: {
+    active: boolean;
+    departmentId: string;
+    shiftId: string;
+    autoReturn: boolean;
+    returnDate: string;
+    followRotation: boolean;
+  };
+  rotationSchedule?: {
+    enabled: boolean;
+    startWeek?: number;
+    shifts?: string[];
+  };
+  [key: string]: any;
+}
+
+export interface OccupancyRecord {
+  id?: string;
+  departmentId?: string;
+  machineId?: string;
+  operatorNumber?: string;
+  operatorName?: string;
+  date?: string;
+  hoursWorked?: number;
+  startTime?: any;
+  isPloeg?: boolean;
+  shift?: string;
+  isLoan?: boolean;
+  checkedOutAt?: any;
+  isActive?: boolean;
+  [key: string]: any;
+}
+
+interface AddEditPersonModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (data: Person) => void;
+  initialData: Person | null;
+  departments: Department[];
+  users?: User[];
+}
+
 /**
  * Add/Edit Modal Component (Intern)
  */
-const AddEditPersonModal = ({ isOpen, onClose, onSave, initialData, departments, users = [] }) => {
+const AddEditPersonModal: React.FC<AddEditPersonModalProps> = ({ isOpen, onClose, onSave, initialData, departments, users = [] }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("profile");
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<Person>({
     name: "",
     employeeNumber: "",
     departmentId: "",
@@ -112,13 +183,13 @@ const AddEditPersonModal = ({ isOpen, onClose, onSave, initialData, departments,
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(formData);
   };
 
-  const handleAutoReturnToggle = (checked) => {
-    const newLoan = { ...formData.loan, autoReturn: checked };
+  const handleAutoReturnToggle = (checked: boolean) => {
+    const newLoan = { ...(formData.loan || { active: false, departmentId: "", shiftId: "", autoReturn: false, returnDate: "", followRotation: false }), autoReturn: checked };
     if (checked) {
       newLoan.returnDate = format(addDays(new Date(), 5), "yyyy-MM-dd");
     } else {
@@ -325,7 +396,17 @@ const AddEditPersonModal = ({ isOpen, onClose, onSave, initialData, departments,
                   type="checkbox" 
                   className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500"
                   checked={formData.loan?.active || false}
-                  onChange={e => setFormData({...formData, loan: { ...formData.loan, active: e.target.checked }})}
+                  onChange={e => setFormData({
+                    ...formData,
+                    loan: {
+                      active: e.target.checked,
+                      departmentId: formData.loan?.departmentId || "",
+                      shiftId: formData.loan?.shiftId || "",
+                      autoReturn: formData.loan?.autoReturn || false,
+                      returnDate: formData.loan?.returnDate || "",
+                      followRotation: formData.loan?.followRotation || false,
+                    }
+                  })}
                 />
               </div>
 
@@ -336,7 +417,17 @@ const AddEditPersonModal = ({ isOpen, onClose, onSave, initialData, departments,
                     <select 
                       className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl font-bold outline-none focus:border-indigo-500"
                       value={formData.loan.departmentId}
-                      onChange={e => setFormData({...formData, loan: { ...formData.loan, departmentId: e.target.value }})}
+                      onChange={e => setFormData({
+                        ...formData,
+                        loan: {
+                          active: formData.loan?.active || false,
+                          departmentId: e.target.value,
+                          shiftId: formData.loan?.shiftId || "",
+                          autoReturn: formData.loan?.autoReturn || false,
+                          returnDate: formData.loan?.returnDate || "",
+                          followRotation: formData.loan?.followRotation || false,
+                        }
+                      })}
                     >
                       <option value="">{t("personnelOccupancy.placeholders.chooseDepartment")}</option>
                       {departments.filter(d => d.id !== formData.departmentId).map(d => (
@@ -350,7 +441,17 @@ const AddEditPersonModal = ({ isOpen, onClose, onSave, initialData, departments,
                     <select 
                       className="w-full p-3 bg-white border-2 border-slate-200 rounded-xl font-bold outline-none focus:border-indigo-500"
                       value={formData.loan.shiftId}
-                      onChange={e => setFormData({...formData, loan: { ...formData.loan, shiftId: e.target.value }})}
+                      onChange={e => setFormData({
+                        ...formData,
+                        loan: {
+                          active: formData.loan?.active || false,
+                          departmentId: formData.loan?.departmentId || "",
+                          shiftId: e.target.value,
+                          autoReturn: formData.loan?.autoReturn || false,
+                          returnDate: formData.loan?.returnDate || "",
+                          followRotation: formData.loan?.followRotation || false,
+                        }
+                      })}
                     >
                       <option value="">{t("personnelOccupancy.placeholders.chooseShift")}</option>
                       {loanShifts.map(s => (
@@ -365,7 +466,17 @@ const AddEditPersonModal = ({ isOpen, onClose, onSave, initialData, departments,
                         type="checkbox" 
                         className="w-4 h-4 rounded text-indigo-600"
                         checked={formData.loan.followRotation}
-                        onChange={e => setFormData({...formData, loan: { ...formData.loan, followRotation: e.target.checked }})}
+                        onChange={e => setFormData({
+                          ...formData,
+                          loan: {
+                            active: formData.loan?.active || false,
+                            departmentId: formData.loan?.departmentId || "",
+                            shiftId: formData.loan?.shiftId || "",
+                            autoReturn: formData.loan?.autoReturn || false,
+                            returnDate: formData.loan?.returnDate || "",
+                            followRotation: e.target.checked,
+                          }
+                        })}
                       />
                       <span className="text-xs font-bold text-slate-700">{t("personnelOccupancy.labels.followTargetRotation")}</span>
                     </label>
@@ -400,10 +511,24 @@ const AddEditPersonModal = ({ isOpen, onClose, onSave, initialData, departments,
   );
 };
 
+export interface PersonnelOccupancyViewProps {
+  scope?: string | null;
+  structure?: { departments?: Department[] };
+  occupancy?: OccupancyRecord[];
+  personnel?: Person[];
+  users?: User[];
+  selectedDateStr?: string;
+  editable?: boolean;
+  onCopyYesterday?: (deptId: string) => void;
+  isCopying?: boolean;
+  onClearToday?: (deptId: string) => void;
+  isClearing?: boolean;
+}
+
 /**
  * PersonnelOccupancyView - V40 (Uitleensysteem + Lijstbeheer)
  */
-const PersonnelOccupancyView = ({ 
+const PersonnelOccupancyView: React.FC<PersonnelOccupancyViewProps> = ({ 
   scope, 
   structure: propStructure, 
   occupancy: propOccupancy, 
@@ -418,9 +543,9 @@ const PersonnelOccupancyView = ({
 }) => {
   const { t } = useTranslation();
   const { notify } = useNotifications();
-  const [localPersonnel, setLocalPersonnel] = useState([]);
-  const [localOccupancy, setLocalOccupancy] = useState([]);
-  const [localStructure, setLocalStructure] = useState({ departments: [] });
+  const [localPersonnel, setLocalPersonnel] = useState<Person[]>([]);
+  const [localOccupancy, setLocalOccupancy] = useState<OccupancyRecord[]>([]);
+  const [localStructure, setLocalStructure] = useState<{ departments: Department[] }>({ departments: [] });
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(Date.now());
 
@@ -431,38 +556,38 @@ const PersonnelOccupancyView = ({
   }, []);
 
   // Berekent live uren op basis van startTime, valt terug op hoursWorked
-  const getDisplayHours = (occ) => {
+  const getDisplayHours = (occ: OccupancyRecord) => {
     if (occ.startTime) {
       const startMs = occ.startTime.toMillis ? occ.startTime.toMillis() : Number(occ.startTime);
       if (startMs > 0) {
         return ((tick - startMs) / 3_600_000); // milliseconden → uren
       }
     }
-    return occ.hoursWorked ?? 0;
+    return Number(occ.hoursWorked ?? 0);
   };
   
-  const [expandedSections, setExpandedSections] = useState({});
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
 
   // Modals
   const [loanModalOpen, setLoanModalOpen] = useState(false);
-  const [selectedPersonForLoan, setSelectedPersonForLoan] = useState(null);
-  const [selectedDepartmentForLoan, setSelectedDepartmentForLoan] = useState(null);
+  const [selectedPersonForLoan, setSelectedPersonForLoan] = useState<OccupancyRecord | Person | null>(null);
+  const [selectedDepartmentForLoan, setSelectedDepartmentForLoan] = useState<Department | null>(null);
   
   const [assignModalOpen, setAssignModalOpen] = useState(false);
-  const [selectedStation, setSelectedStation] = useState(null);
+  const [selectedStation, setSelectedStation] = useState<{ id: string; name: string } | null>(null);
   const [selectedPersonId, setSelectedPersonId] = useState("");
-  const [selectedDept, setSelectedDept] = useState(null);
+  const [selectedDept, setSelectedDept] = useState<Department | null>(null);
   const [assignShift, setAssignShift] = useState("");
   const [assignHours, setAssignHours] = useState("8.0");
 
   const [addEditModalOpen, setAddEditModalOpen] = useState(false);
-  const [editingPerson, setEditingPerson] = useState(null);
+  const [editingPerson, setEditingPerson] = useState<Person | null>(null);
 
   // Edit Assignment State
   const [editAssignmentModalOpen, setEditAssignmentModalOpen] = useState(false);
-  const [selectedAssignment, setSelectedAssignment] = useState(null);
+  const [selectedAssignment, setSelectedAssignment] = useState<OccupancyRecord | null>(null);
   const [closedHoursModalOpen, setClosedHoursModalOpen] = useState(false);
-  const [closedHoursDraft, setClosedHoursDraft] = useState({});
+  const [closedHoursDraft, setClosedHoursDraft] = useState<Record<string, number | string>>({});
 
   // Use props if available, otherwise local state (fallback)
   const structure = propStructure || localStructure;
@@ -488,28 +613,29 @@ const PersonnelOccupancyView = ({
     }
 
     const unsubPersonnel = onSnapshot(
-      query(collection(db, ...PATHS.PERSONNEL), orderBy("name")),
+      query(collection(db, getPathString(PATHS.PERSONNEL)), orderBy("name")),
       (snap) => {
-        setLocalPersonnel(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setLocalPersonnel(snap.docs.map(d => ({ id: d.id, ...d.data() } as Person)));
       },
       (error) => console.error("Personnel sync error:", error)
     );
     
     const unsubOccupancy = onSnapshot(
-      collection(db, ...PATHS.OCCUPANCY),
+      collection(db, getPathString(PATHS.OCCUPANCY)),
       (snap) => {
-        setLocalOccupancy(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setLocalOccupancy(snap.docs.map(d => ({ id: d.id, ...d.data() } as OccupancyRecord)));
       },
       (error) => console.error("Occupancy sync error:", error)
     );
     
     const unsubStructure = onSnapshot(
-      doc(db, ...PATHS.FACTORY_CONFIG),
+      doc(db, getPathString(PATHS.FACTORY_CONFIG)),
       (docSnap) => {
         if (docSnap.exists()) {
-            setLocalStructure(docSnap.data());
-            const initialExpanded = {};
-            (docSnap.data().departments || []).forEach(d => { initialExpanded[d.id] = true; });
+            const data = docSnap.data() as { departments: Department[] };
+            setLocalStructure(data);
+            const initialExpanded: Record<string, boolean> = {};
+            (data.departments || []).forEach(d => { initialExpanded[d.id] = true; });
             setExpandedSections(initialExpanded);
         }
         setLoading(false);
@@ -544,9 +670,9 @@ const PersonnelOccupancyView = ({
   }, [structure.departments, scope]);
 
   // 3. CRUD HANDLERS
-  const handleSavePerson = async (data) => {
+  const handleSavePerson = async (data: Person) => {
     try {
-      const rawOverride = data?.temporaryShiftOverride || {};
+      const rawOverride = (data?.temporaryShiftOverride || {}) as Record<string, unknown>;
       const normalizedOverride = {
         enabled: !!rawOverride.enabled,
         shiftId: String(rawOverride.shiftId || ""),
@@ -610,7 +736,7 @@ const PersonnelOccupancyView = ({
     }
   };
 
-  const handleDeleteOccupancy = async (occ) => {
+  const handleDeleteOccupancy = async (occ: OccupancyRecord) => {
     try {
       await deleteOccupancyAssignment({
         assignmentId: occ.id,
@@ -630,8 +756,8 @@ const PersonnelOccupancyView = ({
 
   if (loading) return <div className="p-20 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={48} /></div>;
 
-  const getPersonShiftForDate = (person, targetDateStr) => {
-    if (!person) return null;
+  const getPersonShiftForDate = (person: Person | null | undefined, targetDateStr: string) => {
+    if (!person) return undefined;
 
     let shiftId = person.shiftId || "DAGDIENST";
 
@@ -644,11 +770,11 @@ const PersonnelOccupancyView = ({
       }
     }
 
-    if (person.rotationSchedule?.enabled && person.rotationSchedule.shifts?.length > 0) {
+    const rotationShifts = person.rotationSchedule?.shifts || [];
+    if (person.rotationSchedule?.enabled && rotationShifts.length > 0) {
       const targetDate = parse(targetDateStr, "yyyy-MM-dd", new Date());
       const targetWeek = getISOWeek(targetDate);
       const startWeekNum = person.rotationSchedule.startWeek || 1;
-      const rotationShifts = person.rotationSchedule.shifts;
       const weeksSinceStart = targetWeek - startWeekNum;
       const shiftIndex = ((weeksSinceStart % rotationShifts.length) + rotationShifts.length) % rotationShifts.length;
       shiftId = rotationShifts[shiftIndex];
@@ -657,13 +783,13 @@ const PersonnelOccupancyView = ({
     return shiftId;
   };
 
-  const getShiftLabelFromDept = (dept, shiftId) => {
+  const getShiftLabelFromDept = (dept: Department | null | undefined, shiftId: string | undefined) => {
     if (!shiftId) return "?";
     const shiftObj = (dept?.shifts || []).find(s => s.id === shiftId);
     return shiftObj?.label || shiftId;
   };
   
-  const getShiftColor = (shiftLabel) => {
+  const getShiftColor = (shiftLabel: string | undefined) => {
     const label = (shiftLabel || "").toUpperCase();
     if (label.includes("OCHTEND") || label.includes("MORNING")) return { bg: "bg-amber-50", border: "border-amber-300", text: "text-amber-800", badge: "bg-amber-100 text-amber-700", ring: "ring-amber-100" };
     if (label.includes("AVOND") || label.includes("EVENING")) return { bg: "bg-indigo-50", border: "border-indigo-300", text: "text-indigo-800", badge: "bg-indigo-100 text-indigo-700", ring: "ring-indigo-100" };
@@ -678,9 +804,9 @@ const PersonnelOccupancyView = ({
             <div className="flex justify-end pr-2">
               <button
                 onClick={() => {
-                  const initialDraft = {};
+                  const initialDraft: Record<string, number | string> = {};
                   closedAssignmentsForDate.forEach((entry) => {
-                    initialDraft[entry.id] = entry.hoursWorked ?? 0;
+                    initialDraft[entry.id!] = entry.hoursWorked ?? 0;
                   });
                   setClosedHoursDraft(initialDraft);
                   setClosedHoursModalOpen(true);
@@ -743,7 +869,7 @@ const PersonnelOccupancyView = ({
                               return sameMachine && sameDate && sameDept && isActive;
                             });
                             const isBusy = stationOccupancy.length > 0;
-                            const byShift = {};
+                            const byShift: Record<string, OccupancyRecord[]> = {};
                             stationOccupancy.forEach(occ => {
                               const shiftKey = occ.shift || "DAGDIENST";
                               if (!byShift[shiftKey]) byShift[shiftKey] = [];
@@ -826,12 +952,21 @@ const PersonnelOccupancyView = ({
           ))}
 
       {/* MODALS */}
-      <LoanPersonnelModal
-        isOpen={loanModalOpen}
-        onClose={() => { setLoanModalOpen(false); setSelectedPersonForLoan(null); setSelectedDepartmentForLoan(null); }}
-        person={selectedPersonForLoan}
-        currentDepartment={selectedDepartmentForLoan}
-      />
+      {selectedDepartmentForLoan && (
+        <LoanPersonnelModal
+          isOpen={loanModalOpen}
+          onClose={() => { setLoanModalOpen(false); setSelectedPersonForLoan(null); setSelectedDepartmentForLoan(null); }}
+          person={selectedPersonForLoan
+            ? {
+                operatorNumber: String((selectedPersonForLoan as any).operatorNumber || (selectedPersonForLoan as any).employeeNumber || ""),
+                operatorName: String((selectedPersonForLoan as any).operatorName || (selectedPersonForLoan as any).name || ""),
+                machineId: String((selectedPersonForLoan as any).machineId || ""),
+                shift: String((selectedPersonForLoan as any).shift || (selectedPersonForLoan as any).shiftId || ""),
+              }
+            : undefined}
+          currentDepartment={selectedDepartmentForLoan}
+        />
+      )}
 
       <AddEditPersonModal 
         isOpen={addEditModalOpen}
@@ -1019,8 +1154,8 @@ const PersonnelOccupancyView = ({
                   type="number"
                   step="0.5"
                   className="w-full p-4 bg-white border-2 border-slate-200 rounded-2xl font-black text-xl outline-none focus:border-blue-500 transition-all text-slate-900"
-                  value={selectedAssignment.hoursWorked}
-                  onChange={(e) => setSelectedAssignment({...selectedAssignment, hoursWorked: e.target.value})}
+                  value={selectedAssignment.hoursWorked || 0}
+                  onChange={(e) => setSelectedAssignment({...selectedAssignment, hoursWorked: Number(e.target.value)})}
                   autoFocus
                 />
                 <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">{t("personnelOccupancy.labels.hourShort")}</span>
@@ -1031,8 +1166,8 @@ const PersonnelOccupancyView = ({
               {!selectedAssignment.isLoan && (
                 <button 
                   onClick={() => {
-                    const person = personnel.find(p => p.employeeNumber === selectedAssignment.operatorNumber || p.id === selectedAssignment.operatorNumber);
-                    const dept = structure.departments.find(d => d.id === selectedAssignment.departmentId);
+                    const person = personnel.find(p => p.employeeNumber === selectedAssignment.operatorNumber || p.id === selectedAssignment.operatorNumber) || null;
+                    const dept = (structure.departments || []).find(d => d.id === selectedAssignment.departmentId) || null;
                     
                     if (person) {
                       setSelectedPersonForLoan(person);
@@ -1055,7 +1190,7 @@ const PersonnelOccupancyView = ({
                     await saveOccupancyAssignment({
                       assignmentId: selectedAssignment.id,
                       data: {
-                        hoursWorked: parseFloat(selectedAssignment.hoursWorked) || 0,
+                        hoursWorked: Number(selectedAssignment.hoursWorked) || 0,
                         updatedAt: "__SERVER_TIMESTAMP__",
                       },
                       source: "PersonnelOccupancyView.editHours",
@@ -1123,11 +1258,11 @@ const PersonnelOccupancyView = ({
                         type="number"
                         step="0.25"
                         className="w-full p-2.5 bg-white border-2 border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-blue-500"
-                        value={closedHoursDraft[entry.id] ?? entry.hoursWorked ?? 0}
+                        value={closedHoursDraft[entry.id!] ?? entry.hoursWorked ?? 0}
                         onChange={(e) => {
                           setClosedHoursDraft((prev) => ({
                             ...prev,
-                            [entry.id]: e.target.value,
+                            [entry.id!]: e.target.value,
                           }));
                         }}
                       />
@@ -1136,7 +1271,7 @@ const PersonnelOccupancyView = ({
                     <button
                       onClick={async () => {
                         try {
-                          const manualHours = parseFloat(closedHoursDraft[entry.id]);
+                          const manualHours = parseFloat(String(closedHoursDraft[entry.id!]));
                           await saveOccupancyAssignment({
                             assignmentId: entry.id,
                             data: {

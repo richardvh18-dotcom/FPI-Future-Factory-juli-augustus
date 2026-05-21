@@ -3,8 +3,8 @@ import { getISOWeek, format, startOfISOWeek, endOfISOWeek, addWeeks } from "date
 import { X, Loader2, Factory, Link2 } from "lucide-react";
 import StationDetailModal from "./modals/StationDetailModal";
 import TraceModal from "./modals/TraceModal";
-import ProductDossierModal from './modals/ProductDossierModal';
-import { useTeamleaderModal } from "./TeamleaderModalContext.tsx";
+import ProductDossierModal from "./modals/ProductDossierModal";
+import { useTeamleaderModal, useTeamleaderModalStore } from "./modals/TeamleaderModalContext";
 
 /**
  * TeamleaderModals
@@ -18,50 +18,42 @@ import { useTeamleaderModal } from "./TeamleaderModalContext.tsx";
  * All state is consumed from TeamleaderModalContext — no props needed.
  */
 export const TeamleaderModals = () => {
+  const modal = useTeamleaderModal() as any;
+  const store = useTeamleaderModalStore();
+
   const {
-    // Add order modal
-    showAddOrderModal,
-    setShowAddOrderModal,
-    creatingOrder,
-    newOrderData,
-    setNewOrderData,
     handleCreateOrder,
-    // StationDetailModal
-    selectedStationDetail,
-    setSelectedStationDetail,
     dataStore,
     rawProducts,
     archivedProducts,
-    // TraceModal (KPI)
-    activeKpi,
-    setActiveKpi,
-    lastKpi,
-    setLastKpi,
-    kpiWeekOffset,
-    setKpiWeekOffset,
-    modalTitle,
     modalData,
     handleArchiveRejectedProduct,
     handleMoveLot,
-    setViewingDossier,
-    // ProductDossierModal
-    viewingDossier,
     rawOrders,
     targetSlug,
     effectiveStations,
-    // Overproduction modal
-    selectedOverproductionGroup,
-    setSelectedOverproductionGroup,
-    overproductionTargetOrderId,
-    setOverproductionTargetOrderId,
-    overproductionManualStation,
-    setOverproductionManualStation,
     overproductionTargetCandidates,
     resolveOverproductionRoute,
-    assigningOverproduction,
     handleAssignOverproduction,
     t,
-  } = useTeamleaderModal();
+  } = modal;
+
+  const {
+    showAddOrderModal, setShowAddOrderModal,
+    creatingOrder,
+    newOrderData, setNewOrderData,
+    selectedStationDetail, setSelectedStationDetail,
+    activeKpi, setActiveKpi,
+    lastKpi, setLastKpi,
+    kpiWeekOffset, setKpiWeekOffset,
+    modalTitle,
+    viewingDossier, setViewingDossier,
+    selectedOverproductionGroup, setSelectedOverproductionGroup,
+    overproductionTargetOrderId, setOverproductionTargetOrderId,
+    overproductionManualStation, setOverproductionManualStation,
+    assigningOverproduction
+  } = store;
+
   return (
     <>
       {showAddOrderModal && (
@@ -90,7 +82,7 @@ export const TeamleaderModals = () => {
                 <input
                   type="text"
                   value={newOrderData.orderId}
-                  onChange={(e) => setNewOrderData((prev) => ({ ...prev, orderId: e.target.value.toUpperCase() }))}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, orderId: e.target.value.toUpperCase() }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
                   placeholder="Bijv. N20030001"
                   required
@@ -102,7 +94,7 @@ export const TeamleaderModals = () => {
                 <input
                   type="text"
                   value={newOrderData.machine}
-                  onChange={(e) => setNewOrderData((prev) => ({ ...prev, machine: e.target.value }))}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, machine: e.target.value }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
                   placeholder="Bijv. 40BH18"
                   required
@@ -114,7 +106,7 @@ export const TeamleaderModals = () => {
                 <input
                   type="text"
                   value={newOrderData.item}
-                  onChange={(e) => setNewOrderData((prev) => ({ ...prev, item: e.target.value }))}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, item: e.target.value }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
                   placeholder="Product omschrijving"
                   required
@@ -128,7 +120,7 @@ export const TeamleaderModals = () => {
                   min="1"
                   step="1"
                   value={newOrderData.plan}
-                  onChange={(e) => setNewOrderData((prev) => ({ ...prev, plan: String(e.target.value || '').replace(/[^0-9]/g, '') }))}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, plan: String(e.target.value || '').replace(/[^0-9]/g, '') }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
                   placeholder="Bijv. 10"
                   required
@@ -185,14 +177,14 @@ export const TeamleaderModals = () => {
           activeKpi === "gereed" || activeKpi === "afkeur"
             ? {
                 label: `Week ${getISOWeek(addWeeks(new Date(), kpiWeekOffset))} (${format(startOfISOWeek(addWeeks(new Date(), kpiWeekOffset)), "dd-MM")} t/m ${format(endOfISOWeek(addWeeks(new Date(), kpiWeekOffset)), "dd-MM")})`,
-                onPrevious: () => setKpiWeekOffset((prev) => prev - 1),
-                onNext: () => setKpiWeekOffset((prev) => Math.min(prev + 1, 0)),
+                onPrevious: () => setKpiWeekOffset((prev: number) => prev - 1),
+                onNext: () => setKpiWeekOffset((prev: number) => Math.min(prev + 1, 0)),
                 canGoNext: kpiWeekOffset < 0,
                 onCurrentWeek: () => setKpiWeekOffset(0),
-              }
+              } as any
             : null
         }
-        onRowClick={(item) => {
+        onRowClick={(item: any) => {
           setLastKpi(activeKpi);
           setActiveKpi(null);
           setViewingDossier(item);
@@ -203,12 +195,12 @@ export const TeamleaderModals = () => {
         <div className="fixed z-[9999]">
           <ProductDossierModal
             isOpen={true}
-            product={viewingDossier}
+            product={viewingDossier as any}
             onClose={() => {
               setViewingDossier(null);
               if (lastKpi) setActiveKpi(lastKpi);
             }}
-            orders={rawOrders}
+            orders={rawOrders as any[]}
             onMoveLot={handleMoveLot}
             currentDepartment={targetSlug}
             allowedStations={effectiveStations}
@@ -245,7 +237,7 @@ export const TeamleaderModals = () => {
                   {t('bm01.lot_number', 'Lotnummer')}s
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {selectedOverproductionGroup.lotNumbers.map((lot) => (
+                  {selectedOverproductionGroup.lotNumbers.map((lot: string) => (
                     <span
                       key={lot}
                       className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-xs font-black text-slate-700"
@@ -268,7 +260,7 @@ export const TeamleaderModals = () => {
                   placeholder={t('teamleader.overproduction_order_placeholder', 'Bijv. 125874 of LN-NEW-001')}
                 />
                 <div className="mt-3 space-y-2 max-h-44 overflow-y-auto custom-scrollbar pr-1">
-                  {overproductionTargetCandidates.map((candidate) => (
+                  {overproductionTargetCandidates.map((candidate: any) => (
                     <button
                       key={candidate.id}
                       onClick={() => setOverproductionTargetOrderId(String(candidate.orderId || ""))}
@@ -290,7 +282,7 @@ export const TeamleaderModals = () => {
 
               {(() => {
                 const targetOrder = rawOrders.find(
-                  (order) =>
+                  (order: any) =>
                     String(order.orderId || "").trim().toUpperCase() ===
                     String(overproductionTargetOrderId || "").trim().toUpperCase()
                 );

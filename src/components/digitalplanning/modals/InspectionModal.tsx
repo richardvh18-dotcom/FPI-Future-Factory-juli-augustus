@@ -41,7 +41,7 @@ const InspectionModal = ({ isOpen, onClose, order, onInspect }: InspectionModalP
   const handleSubmit = async () => {
     // onInspect handles the database write in the parent component
     try {
-      await logActivity(auth.currentUser?.uid, "INSPECTION_COMPLETE", `Inspection completed for order ${order.id}. Status: ${status}`);
+      await logActivity(auth.currentUser?.uid || "system", "INSPECTION_COMPLETE", `Inspection completed for order ${order.id}. Status: ${status}`);
     } catch (error) {
       console.error("Log error", error);
     }

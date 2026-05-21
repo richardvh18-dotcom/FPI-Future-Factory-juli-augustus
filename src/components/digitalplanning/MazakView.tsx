@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -24,14 +23,14 @@ import {
   Search,
 } from "lucide-react";
 import { db, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
-import { normalizeMachine } from "../../utils/hubHelpers.tsx";
+import { getPathString, PATHS } from "../../config/dbPaths";
+import { normalizeMachine } from "../../utils/hubHelpers";
 import { rejectTrackedProductFinal, completeTrackedProduct, tempRejectTrackedProduct, markMazakLabelsPrinted, queuePrintJob } from "../../services/planningSecurityService";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import PostProcessingFinishModal from "./modals/PostProcessingFinishModal";
 import LabelVisualPreview from "../printer/LabelVisualPreview";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
-import AutoScaledLabelPreview from "../printer/AutoScaledLabelPreview.tsx";
+import AutoScaledLabelPreview from "../printer/AutoScaledLabelPreview";
 import StatusBadge from "./common/StatusBadge";
 import { getISOWeek, addWeeks, subWeeks } from "date-fns";
 import { filterLabelsByProduct, processLabelData, resolveLabelContent } from "../../utils/labelHelpers";
@@ -41,13 +40,112 @@ import { useNotifications } from '../../contexts/NotificationContext';
 const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
 const DEFAULT_MAZAK_DPI = 300;
 
-const isSeriesEligibleItem = (item) => {
+type TimestampLike = { toDate?: () => Date; seconds?: number };
+
+type ProductItem = {
+  id?: string;
+  orderId?: string;
+  lotNumber?: string;
+  item?: string;
+  itemCode?: string;
+  productId?: string;
+  extraCode?: string;
+  seriesGroupId?: string;
+  mazakLabelPrinted?: boolean;
+  status?: string;
+  currentStep?: string;
+  currentStation?: string;
+  machine?: string;
+  lastStation?: string;
+  inspection?: { status?: string };
+  createdAt?: TimestampLike | string | number | Date | null;
+  updatedAt?: TimestampLike | string | number | Date | null;
+  [key: string]: unknown;
+};
+
+type OccupancyEntry = {
+  station?: string;
+  machineId?: string;
+  date?: TimestampLike | string | number | Date | null;
+  shift?: string;
+  operatorNumber?: string;
+};
+
+type PlanningOrder = {
+  id?: string;
+  orderId?: string;
+  item?: string;
+  itemCode?: string;
+  machine?: string;
+  plan?: number | string;
+  productId?: string;
+  extraCode?: string;
+  lotNumber?: string;
+  status?: string;
+  week?: number | string;
+  weekNumber?: number | string;
+  year?: number | string;
+  weekYear?: number | string;
+  createdAt?: TimestampLike | string | number | Date | null;
+  [key: string]: unknown;
+};
+
+type LabelTemplate = {
+  id: string;
+  name?: string;
+  width?: number;
+  height?: number;
+  tags?: string[];
+  elements?: unknown[];
+  [key: string]: unknown;
+};
+
+type AdminUser = { uid?: string; email?: string | null };
+
+type MazakViewProps = {
+  stationId?: string;
+  products?: ProductItem[];
+};
+
+type SeriesHeaderRow = {
+  id: string;
+  isSeriesHeader: true;
+  seriesGroupId: string;
+  orderId: string;
+  seriesCount: number;
+  seriesUnits: ProductItem[];
+};
+
+type DisplayRow = ProductItem | SeriesHeaderRow;
+
+const isSeriesHeaderRow = (row: DisplayRow): row is SeriesHeaderRow =>
+  (row as SeriesHeaderRow).isSeriesHeader === true;
+
+const toMillisFromMixed = (value: unknown): number => {
+  if (!value) return 0;
+  if (typeof (value as TimestampLike).toDate === "function") {
+    const date = (value as TimestampLike).toDate?.();
+    return date ? date.getTime() : 0;
+  }
+  if (typeof (value as TimestampLike).seconds === "number") {
+    return Number((value as TimestampLike).seconds) * 1000;
+  }
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
+
+const isSeriesEligibleItem = (item: ProductItem) => {
   const statusUpper = String(item?.status || "").toUpperCase();
   const stepUpper = String(item?.currentStep || "").toUpperCase();
   return statusUpper !== "REJECTED" && stepUpper !== "REJECTED";
 };
 
-const getLotSeriesPrefix = (lotNumber) => {
+const getLotSeriesPrefix = (lotNumber: unknown) => {
   const raw = String(lotNumber || "").trim();
   if (!raw) return "";
   const match = raw.match(/^(.*?)(\d{3})$/);
@@ -55,36 +153,36 @@ const getLotSeriesPrefix = (lotNumber) => {
   return match[1];
 };
 
-const MazakView = ({ stationId = "Mazak", products = [] }) => {
+const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const { t } = useTranslation();
-  const { user } = useAdminAuth();
+  const { user } = useAdminAuth() as { user: AdminUser | null };
   const { notify } = useNotifications();
-  const [items, setItems] = useState([]);
-  const [occupancy, setOccupancy] = useState([]);
+  const [items, setItems] = useState<ProductItem[]>([]);
+  const [occupancy, setOccupancy] = useState<OccupancyEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null);
   const [showActionModal, setShowActionModal] = useState(false);
   const [scanInputInbox, setScanInputInbox] = useState("");
   const [scanInputProcess, setScanInputProcess] = useState("");
   const [scannerMode, setScannerMode] = useState(true);
-  const scanInputRef = useRef(null);
-  const selectedProductRef = useRef(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
+  const selectedProductRef = useRef<ProductItem | null>(null);
 
   const [activeTab, setActiveTab] = useState("inbox"); // 'inbox' of 'process'
-  const [collapsedGroups, setCollapsedGroups] = useState({});
-  const [bulkSeriesProducts, setBulkSeriesProducts] = useState([]);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [bulkSeriesProducts, setBulkSeriesProducts] = useState<ProductItem[]>([]);
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [availableLabels, setAvailableLabels] = useState([]);
+  const [availableLabels, setAvailableLabels] = useState<LabelTemplate[]>([]);
   const [selectedLabelId, setSelectedLabelId] = useState("");
   const [printing, setPrinting] = useState(false);
-  const [planningOrders, setPlanningOrders] = useState([]);
-  const [selectedPlanningOrder, setSelectedPlanningOrder] = useState(null);
+  const [planningOrders, setPlanningOrders] = useState<PlanningOrder[]>([]);
+  const [selectedPlanningOrder, setSelectedPlanningOrder] = useState<PlanningOrder | null>(null);
   const [planningSearch, setPlanningSearch] = useState("");
   const [showAllWeeks, setShowAllWeeks] = useState(true);
   const [referenceDate, setReferenceDate] = useState(new Date());
   const activeScanInput = activeTab === "process" ? scanInputProcess : scanInputInbox;
 
-  const setActiveScanInput = (value) => {
+  const setActiveScanInput = (value: string) => {
     if (activeTab === "process") {
       setScanInputProcess(value);
       return;
@@ -99,8 +197,10 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
   useEffect(() => {
     if (!scannerMode) return;
 
-    const handleClick = (event) => {
-      if (["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(event.target.tagName)) return;
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(target.tagName)) return;
       if (!showActionModal && activeTab !== "planning") {
         scanInputRef.current?.focus();
       }
@@ -112,13 +212,14 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
   }, [showActionModal, scannerMode]);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, ...PATHS.OCCUPANCY), (snap) => {
-      setOccupancy(snap.docs.map((docSnap) => docSnap.data()));
+    const unsub = onSnapshot(collection(db, getPathString(PATHS.OCCUPANCY)), (snap) => {
+      const data: OccupancyEntry[] = snap.docs.map((docSnap) => docSnap.data() as OccupancyEntry);
+      setOccupancy(data);
     });
     return () => unsub();
   }, []);
 
-  const isShiftActive = useCallback((shiftLabel) => {
+  const isShiftActive = useCallback((shiftLabel: unknown) => {
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
     const label = String(shiftLabel || "").toUpperCase();
@@ -138,32 +239,34 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
     return true;
   }, []);
 
-  const activeOperators = useMemo(() => {
+  const activeOperators = useMemo<string[]>(() => {
     if (!stationId || occupancy.length === 0) return [];
     const currentStation = normalizeMachine(stationId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     return occupancy
-      .filter((occ) => {
+      .filter((occ: OccupancyEntry) => {
         const occStation = normalizeMachine(occ.station || occ.machineId || "");
         if (occStation !== currentStation) return false;
-        const occDate = occ.date?.toDate ? occ.date.toDate() : new Date(occ.date);
+        const dateMillis = toMillisFromMixed(occ.date);
+        if (!dateMillis) return false;
+        const occDate = new Date(dateMillis);
         occDate.setHours(0, 0, 0, 0);
         return occDate.getTime() === today.getTime() && isShiftActive(occ.shift);
       })
-      .map((entry) => entry.operatorNumber)
-      .filter(Boolean);
-  }, [occupancy, stationId]);
+      .map((entry: OccupancyEntry) => entry.operatorNumber)
+      .filter((value): value is string => Boolean(value));
+  }, [occupancy, stationId, isShiftActive]);
 
   useEffect(() => {
     const planningQuery = query(
-      collection(db, ...PATHS.PLANNING),
+      collection(db, getPathString(PATHS.PLANNING)),
       where("status", "not-in", ["completed", "shipped", "deleted", "cancelled"])
     );
     const unsubPlanning = onSnapshot(planningQuery, (snap) => {
-      const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const flOrders = orders.filter(o => {
+      const orders: PlanningOrder[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PlanningOrder, "id">) }));
+      const flOrders = orders.filter((o: PlanningOrder) => {
          const itemStr = String(o.item || "").toUpperCase();
          const codeStr = String(o.itemCode || o.productId || o.extraCode || "").toUpperCase();
          return itemStr.includes("FL") || codeStr.includes("FL");
@@ -174,39 +277,39 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
   }, []);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, ...PATHS.LABEL_TEMPLATES), (snap) => {
-      const templates = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const unsub = onSnapshot(collection(db, getPathString(PATHS.LABEL_TEMPLATES)), (snap) => {
+      const templates: LabelTemplate[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LabelTemplate, "id">) }));
       setAvailableLabels(templates);
     });
     return () => unsub();
   }, []);
 
-  const filteredLabels = useMemo(() => {
+  const filteredLabels = useMemo<LabelTemplate[]>(() => {
     if (!selectedProduct) return availableLabels;
-    return filterLabelsByProduct(availableLabels, selectedProduct, { excludeTempOrderLabels: true });
+    return filterLabelsByProduct(availableLabels as any, selectedProduct as any, { excludeTempOrderLabels: true }) as LabelTemplate[];
   }, [availableLabels, selectedProduct]);
 
   useEffect(() => {
     if (showPrintModal && filteredLabels.length > 0) {
       // Kies bij voorkeur een flens, code of klein label als standaard
-      const preferred = filteredLabels.find(t => 
+      const preferred = filteredLabels.find((t: LabelTemplate) => 
         t.tags?.includes("FLENZEN") ||
         t.tags?.includes("FLENS") ||
         t.tags?.includes("FLANGE") ||
         t.tags?.includes("CODE") || 
         t.name?.toLowerCase().includes("klein")
       );
-      if (preferred) setSelectedLabelId(preferred.id);
-      else setSelectedLabelId(filteredLabels[0].id);
+      if (preferred) setSelectedLabelId(String(preferred.id || ""));
+      else setSelectedLabelId(String(filteredLabels[0]?.id || ""));
     }
   }, [showPrintModal, filteredLabels]);
 
   useEffect(() => {
     if (!stationId) return;
 
-    const processData = (sourceData) => {
+    const processData = (sourceData: ProductItem[]) => {
       const filtered = sourceData
-        .filter((item) => {
+        .filter((item: ProductItem) => {
           const stepUpper = String(item.currentStep || "").toUpperCase().trim();
           const statusUpper = String(item.status || "").toUpperCase().trim();
           const inspectionStatus = String(item.inspection?.status || "").toUpperCase().trim();
@@ -233,8 +336,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
           );
         })
         .sort((a, b) => {
-          const timeA = a.updatedAt?.seconds || a.createdAt?.seconds || 0;
-          const timeB = b.updatedAt?.seconds || b.createdAt?.seconds || 0;
+          const timeA = toMillisFromMixed(a.updatedAt || a.createdAt || 0);
+          const timeB = toMillisFromMixed(b.updatedAt || b.createdAt || 0);
           return timeB - timeA;
         });
 
@@ -249,8 +352,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
       const unsub = subscribeTrackedProducts({
         db,
         statusExclusions: ["completed", "shipped", "deleted"],
-        onData: (items) => {
-          processData(items);
+        onData: (nextItems: ProductItem[]) => {
+          processData(nextItems);
         },
         onError: () => setLoading(false),
       });
@@ -260,16 +363,16 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
     const unsub = subscribeTrackedProducts({
       db,
       statusExclusions: ["completed", "shipped", "deleted"],
-      onData: (items) => {
-        processData(items);
+      onData: (nextItems: ProductItem[]) => {
+        processData(nextItems);
       },
       onError: () => setLoading(false),
     });
     return () => unsub();
   }, [stationId, products]);
 
-  const inboxItems = useMemo(() => items.filter(i => !i.mazakLabelPrinted), [items]);
-  const processItems = useMemo(() => items.filter(i => i.mazakLabelPrinted), [items]);
+  const inboxItems = useMemo(() => items.filter((i: ProductItem) => !i.mazakLabelPrinted), [items]);
+  const processItems = useMemo(() => items.filter((i: ProductItem) => i.mazakLabelPrinted), [items]);
   const isBulkInboxMode = activeTab === "inbox" && bulkSeriesProducts.length > 1;
 
   useEffect(() => {
@@ -279,12 +382,13 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
   }, [activeTab, bulkSeriesProducts.length]);
 
   const groupedSeries = useMemo(() => {
-    const grouped = new Map();
-    inboxItems.forEach((item) => {
+    const grouped = new Map<string, ProductItem[]>();
+    inboxItems.forEach((item: ProductItem) => {
       const groupId = item?.seriesGroupId;
       if (!groupId) return;
-      if (!grouped.has(groupId)) grouped.set(groupId, []);
-      grouped.get(groupId).push(item);
+      const current = grouped.get(groupId) || [];
+      current.push(item);
+      grouped.set(groupId, current);
     });
     return grouped;
   }, [inboxItems]);
@@ -292,7 +396,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
   useEffect(() => {
     setCollapsedGroups((prev) => {
       const next = { ...prev };
-      groupedSeries.forEach((group, groupId) => {
+      groupedSeries.forEach((group: ProductItem[], groupId: string) => {
         if (group.length <= 1) return;
         if (!(groupId in next)) next[groupId] = true;
       });
@@ -305,10 +409,10 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
   }, [groupedSeries]);
 
   const displayRows = useMemo(() => {
-    const rendered = new Set();
-    const rows = [];
+    const rendered = new Set<string>();
+    const rows: Array<ProductItem | { id: string; isSeriesHeader: boolean; seriesGroupId: string; orderId: string; seriesCount: number; seriesUnits: ProductItem[] }> = [];
 
-    inboxItems.forEach((item) => {
+    inboxItems.forEach((item: ProductItem) => {
       const groupId = item?.seriesGroupId;
       const group = groupId ? groupedSeries.get(groupId) || [] : [];
       const isSeriesGroup = groupId && group.length > 1;
@@ -334,12 +438,12 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
   }, [inboxItems, groupedSeries, collapsedGroups]);
 
   const filteredPlanningOrders = useMemo(() => {
-    let result = [...planningOrders];
+    let result: PlanningOrder[] = [...planningOrders];
 
     if (!showAllWeeks) {
       const targetWeek = getISOWeek(referenceDate);
       const targetYear = referenceDate.getFullYear();
-      result = result.filter(o => {
+      result = result.filter((o: PlanningOrder) => {
          const orderWeek = Number(o.week || o.weekNumber);
          const orderYear = Number(o.year || o.weekYear || targetYear);
          return orderWeek === targetWeek && orderYear === targetYear;
@@ -348,7 +452,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
 
     if (planningSearch) {
       const term = planningSearch.toLowerCase().trim();
-      result = result.filter(o => {
+      result = result.filter((o: PlanningOrder) => {
          const searchStr = `${o.orderId || ''} ${o.item || ''} ${o.itemCode || ''} ${o.lotNumber || ''}`.toLowerCase();
          return searchStr.includes(term);
       });
@@ -368,14 +472,14 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
       const weekB = Number(b.week || b.weekNumber || 0);
       if (weekA !== weekB) return weekA - weekB;
 
-      return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+      return toMillisFromMixed(b.createdAt || 0) - toMillisFromMixed(a.createdAt || 0);
     });
 
     return result;
   }, [planningOrders, showAllWeeks, referenceDate, planningSearch]);
 
-  const handleItemClick = (item) => {
-    let sameSeries = [];
+  const handleItemClick = (item: ProductItem) => {
+    let sameSeries: ProductItem[] = [];
 
     if (activeTab === "inbox" && item.seriesGroupId) {
       sameSeries = inboxItems.filter(
@@ -391,7 +495,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
       const itemCodeKey = String(item?.itemCode || "").trim().toUpperCase();
 
       if (lotPrefix) {
-        sameSeries = inboxItems.filter((seriesItem) => {
+        sameSeries = inboxItems.filter((seriesItem: ProductItem) => {
           if (!isSeriesEligibleItem(seriesItem)) return false;
 
           const candidatePrefix = getLotSeriesPrefix(seriesItem?.lotNumber);
@@ -443,7 +547,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
               templateToUse,
               processedData,
               DEFAULT_MAZAK_DPI,
-              resolveLabelContent,
+              resolveLabelContent as any,
               t
             );
           }
@@ -545,7 +649,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
     }
   };
 
-  const handlePostProcessingFinish = async (status, data, productOverride = null) => {
+  const handlePostProcessingFinish = async (status: string, data: { note?: string; reasons?: string[] }, productOverride: ProductItem | null = null) => {
     const product = productOverride || selectedProduct;
     if (!product) return;
     const productId = product.id || product.lotNumber;
@@ -610,7 +714,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
     }
   };
 
-  const handleScan = async (event) => {
+  const handleScan = async (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== "Enter") return;
 
     const code = activeScanInput.trim().toUpperCase();
@@ -666,7 +770,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
     );
   }
 
-  const renderItem = (item) => (
+  const renderItem = (item: ProductItem) => (
     <div
       key={item.id}
       onClick={() => handleItemClick(item)}
@@ -759,9 +863,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
           <PostProcessingFinishModal
             product={selectedProduct}
             onClose={handleCloseModal}
-            onConfirm={handlePostProcessingFinish}
+            onConfirm={(status, payload) => handlePostProcessingFinish(status, payload, selectedProduct)}
             currentStation={stationId}
-            autoFocus={!scannerMode}
           />
         </div>
       )}
@@ -790,8 +893,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
                      className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500"
                    >
                      <option value="">{t("mazak.select_template", "- Selecteer een template -")}</option>
-                     {filteredLabels.map(l => (
-                       <option key={l.id} value={l.id}>{l.name} ({l.width}x{l.height}mm)</option>
+                     {filteredLabels.map((l: LabelTemplate) => (
+                       <option key={String(l.id)} value={String(l.id)}>{String(l.name || "-")} ({String(l.width || "-")}x{String(l.height || "-")}mm)</option>
                      ))}
                    </select>
                  </div>
@@ -953,8 +1056,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
                   )}
                 </div>
                 {(() => {
-                  let lastWeekLabel = null;
-                  return filteredPlanningOrders.map(order => {
+                  let lastWeekLabel: string | null = null;
+                  return filteredPlanningOrders.map((order: PlanningOrder) => {
                     const isActive = order.status === 'in_progress' || order.status === 'In Production';
                     const weekLabel = isActive ? t("status.in_production", "In Productie") : `Week ${order.week || order.weekNumber || "?"}`;
                     
@@ -964,7 +1067,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
                     }
 
                     return (
-                      <React.Fragment key={order.id}>
+                      <React.Fragment key={String(order.id || order.orderId || "") }>
                         {showDivider && (
                           <div className="flex items-center gap-4 my-6 first:mt-2 ml-2 mr-2">
                             <div className="h-px bg-slate-200 flex-1"></div>
@@ -982,10 +1085,10 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
                                 {t("mazak.order_number", "Ordernummer")}
                               </span>
                               <span className="font-black text-slate-900 text-lg tracking-tighter italic">
-                                {order.orderId}
+                                {String(order.orderId || "-")}
                               </span>
                               <p className="text-xs font-bold text-slate-600 mt-1">
-                                {order.item}
+                                {String(order.item || "-")}
                               </p>
                             </div>
                             <div>
@@ -998,7 +1101,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
                                 {t("mazak.winding_machine", "Wikkelmachine")}
                               </p>
                               <p className="text-xs font-mono font-bold text-slate-700 truncate">
-                                {order.machine || t("common.unknown", "Onbekend")}
+                                {String(order.machine || t("common.unknown", "Onbekend"))}
                               </p>
                             </div>
                             <div className="text-right">
@@ -1006,7 +1109,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
                                 {t("mazak.quantity", "Aantal")}
                               </p>
                               <p className="text-xs font-mono font-black text-blue-600">
-                                {order.plan} {t("digitalplanning.terminal.piece", "st.")}
+                                {String(order.plan || "-")} {t("digitalplanning.terminal.piece", "st.")}
                               </p>
                             </div>
                           </div>
@@ -1018,7 +1121,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }) => {
               </>
             ) : activeTab === "inbox" ? (
               displayRows.map((item) => {
-              if (item.isSeriesHeader) {
+              if (isSeriesHeaderRow(item)) {
                 const isCollapsed = !!collapsedGroups[item.seriesGroupId];
                 return (
                   <div

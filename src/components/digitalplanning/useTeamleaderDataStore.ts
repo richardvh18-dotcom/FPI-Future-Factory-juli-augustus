@@ -80,7 +80,7 @@ export const useTeamleaderDataStore = ({
   getLotFromTrackedRecord,
 }: UseTeamleaderDataStoreArgs) => {
   const safeScope = (fixedScope || "all").toLowerCase();
-  const scopeMap = {
+  const scopeMap: Record<string, string> = {
     fittings: "fittings",
     pipes: "pipes",
     spools: "spools",
@@ -90,8 +90,9 @@ export const useTeamleaderDataStore = ({
 
   // 1. Determine effective stations for this scope
   const effectiveStations = useMemo(() => {
-    let stations;
-    let deptStations = [];
+    let stations: FactoryStation[] = [];
+    let deptStations: FactoryStation[] = [];
+    const departmentFilterValue = String(departmentFilter || "ALL");
 
     if (factoryConfig && factoryConfig.departments && safeScope !== "all") {
       const dept = factoryConfig.departments.find(
@@ -102,8 +103,8 @@ export const useTeamleaderDataStore = ({
       );
       deptStations = dept ? dept.stations || [] : [];
     } else if (factoryConfig && factoryConfig.departments) {
-      if (departmentFilter !== "ALL") {
-        const filterSlug = departmentFilter.toLowerCase();
+      if (departmentFilterValue !== "ALL") {
+        const filterSlug = departmentFilterValue.toLowerCase();
         const dept = factoryConfig.departments.find(
           (d) =>
             d.slug === filterSlug ||
@@ -124,7 +125,7 @@ export const useTeamleaderDataStore = ({
           );
           return found || null;
         })
-        .filter(Boolean);
+        .filter((s): s is FactoryStation => Boolean(s));
     } else {
       stations = deptStations;
     }
@@ -303,7 +304,9 @@ export const useTeamleaderDataStore = ({
 
           const hasStartedInScope = effectiveAllowedNorms.some((stationNorm) => {
             const startedField = getStartedCounterField(stationNorm);
-            return startedField ? Number(o?.[startedField] || 0) > 0 : false;
+            return startedField
+              ? Number((o as Record<string, unknown>)?.[startedField] || 0) > 0
+              : false;
           });
           if (hasStartedInScope) return true;
 

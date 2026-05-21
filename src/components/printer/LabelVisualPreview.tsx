@@ -154,15 +154,19 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
         const displayContent = String(resolved?.content ?? '');
         const rotation = ((Number(el.rotation) || 0) % 360 + 360) % 360;
         const isVerticalRotation = rotation === 90 || rotation === 270;
-        const baseStyle = {
+        const x = Number(el.x) || 0;
+        const y = Number(el.y) || 0;
+        const widthMm = Number(el.width) || 0;
+        const heightMm = Number(el.height) || 0;
+        const baseStyle: React.CSSProperties = {
           position: "absolute",
-          left: `${el.x * pixelsPerMm * zoom}px`,
-          top: `${el.y * pixelsPerMm * zoom}px`,
-          width: el.width
-            ? `${el.width * pixelsPerMm * zoom}px`
+          left: `${x * pixelsPerMm * zoom}px`,
+          top: `${y * pixelsPerMm * zoom}px`,
+          width: widthMm
+            ? `${widthMm * pixelsPerMm * zoom}px`
             : "auto",
-          height: el.height
-            ? `${el.height * pixelsPerMm * zoom}px`
+          height: heightMm
+            ? `${heightMm * pixelsPerMm * zoom}px`
             : "auto",
           color: "black",
           transform: `rotate(${rotation}deg)`,
@@ -180,17 +184,19 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
               style={{
                 ...baseStyle,
                 width: isVerticalRotation
-                  ? `${(el.height || el.width || 1) * pixelsPerMm * zoom}px`
-                  : `${el.width * pixelsPerMm * zoom}px`,
+                  ? `${(heightMm || widthMm || 1) * pixelsPerMm * zoom}px`
+                  : `${widthMm * pixelsPerMm * zoom}px`,
                 height: isVerticalRotation
-                  ? `${(el.width || el.height || 1) * pixelsPerMm * zoom}px`
-                  : (el.height
-                    ? `${el.height * pixelsPerMm * zoom}px`
+                  ? `${(widthMm || heightMm || 1) * pixelsPerMm * zoom}px`
+                  : (heightMm
+                    ? `${heightMm * pixelsPerMm * zoom}px`
                     : "auto"),
                 fontSize: `${textStyle.fontSize}px`,
                 lineHeight: textStyle.lineHeight,
                 fontWeight: el.isBold ? "900" : "normal",
-                fontFamily: el.fontFamily || PRINTER_PREVIEW_FONT_STACK,
+                fontFamily: !el.fontFamily || el.fontFamily === "Arial"
+                  ? PRINTER_PREVIEW_FONT_STACK
+                  : el.fontFamily,
                 textAlign: el.align || "left",
                 whiteSpace: "pre-wrap",
                 overflowWrap: "anywhere",
@@ -209,8 +215,8 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
               key={index}
               style={{
                 ...baseStyle,
-                width: `${el.width * pixelsPerMm * zoom}px`,
-                height: `${el.height * pixelsPerMm * zoom}px`,
+                width: `${widthMm * pixelsPerMm * zoom}px`,
+                height: `${heightMm * pixelsPerMm * zoom}px`,
                 backgroundColor: "black",
               }}
             />
@@ -222,8 +228,8 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
               key={index}
               style={{
                 ...baseStyle,
-                width: `${el.width * pixelsPerMm * zoom}px`,
-                height: `${el.height * pixelsPerMm * zoom}px`,
+                width: `${widthMm * pixelsPerMm * zoom}px`,
+                height: `${heightMm * pixelsPerMm * zoom}px`,
                 border: `${(el.thickness || 1) * pixelsPerMm * zoom}px solid black`,
                 boxSizing: "border-box",
               }}
@@ -246,10 +252,10 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
                     <img 
                         src={getBarcodeUrl(displayContent)} 
                         alt="code" 
-                        style={{ width: "80%", height: "80%", objectFit: "contain" }} 
+                        style={{ width: "100%", height: "100%", objectFit: "contain" }} 
                     />
                 ) : (
-                  <InternalQrImage value={displayContent} size={160} alt="code" className="w-[80%] h-[80%] object-contain" />
+                  <InternalQrImage value={displayContent} size={160} alt="code" className="w-full h-full object-contain" />
                 )}
              </div>
           );

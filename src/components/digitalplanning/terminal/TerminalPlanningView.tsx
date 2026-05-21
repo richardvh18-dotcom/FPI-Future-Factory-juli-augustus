@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -21,13 +20,39 @@ import {
 } from "lucide-react";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../../config/firebase";
-import { getArchiveItemsPath } from "../../../config/dbPaths";
+import { getArchiveItemsPath, getPathString } from "../../../config/dbPaths";
 import { manualSyncDrawings } from "../../../utils/manualSyncDrawings";
 import { format, differenceInDays, startOfDay, getISOWeek } from "date-fns";
 import { nl } from "date-fns/locale";
 import { toDateSafe } from "../../../utils/dateUtils";
 import StatusBadge from "../common/StatusBadge";
 import { useNotifications } from '../../../contexts/NotificationContext';
+
+type AnyRecord = Record<string, any>;
+
+type TerminalPlanningViewProps = {
+  orders?: AnyRecord[];
+  selectedOrderId: string | null;
+  onSelectOrder: (id: string | null | undefined) => void;
+  searchTerm: string;
+  onSearchChange: React.Dispatch<React.SetStateAction<string>>;
+  onDateChange: (direction: 'reset' | 'prev' | 'next') => void;
+  showAllWeeks: boolean;
+  onToggleAllWeeks: () => void;
+  targetWeekNum: number;
+  productionProgressMap?: Record<string, number>;
+  rejectedCountMap?: Record<string, number>;
+  readyForReturnMap?: Record<string, number>;
+  isBM01?: boolean;
+  onStartProduction?: (() => void) | undefined;
+  selectedOrder?: AnyRecord;
+  trackedProducts?: AnyRecord[];
+  onViewDrawing?: ((arg: any) => void) | undefined;
+  repairItems?: AnyRecord[];
+  onRepair?: ((arg: any) => void | Promise<void>) | undefined;
+  optimizationPanel?: React.ReactNode;
+  referenceDate?: Date;
+};
 
 const TerminalPlanningView = ({
   orders = [],
@@ -46,17 +71,20 @@ const TerminalPlanningView = ({
   selectedOrder,
   trackedProducts = [],
   onViewDrawing,
+  repairItems = [],
+  onRepair,
   optimizationPanel,
-}) => {
-  const itemRefs = useRef({});
+  referenceDate,
+}: TerminalPlanningViewProps) => {
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const { t } = useTranslation();
 
   // --- Helpers ---
-  const parseDateSafe = (dateInput) => {
-    return toDateSafe(dateInput);
+  const parseDateSafe = (dateInput: unknown) => {
+    return toDateSafe(dateInput as any);
   };
 
-  const getUrgencyColor = (dateInput) => {
+  const getUrgencyColor = (dateInput: unknown) => {
     const d = parseDateSafe(dateInput);
     if (!d) return "text-slate-400";
 
@@ -69,21 +97,21 @@ const TerminalPlanningView = ({
     return "text-slate-600 font-bold"; // > 2 weken: Standaard
   };
 
-  const formatDateWithWeek = (dateInput, fallback = "--") => {
+  const formatDateWithWeek = (dateInput: unknown, fallback = "--") => {
     const parsedDate = parseDateSafe(dateInput);
     if (!parsedDate) return fallback;
     const week = String(getISOWeek(parsedDate)).padStart(2, "0");
     return `W${week}  ${format(parsedDate, "dd MMM yyyy", { locale: nl })}`;
   };
 
-  const getOrderDisplayName = (order) => {
+  const getOrderDisplayName = (order: AnyRecord) => {
     // Geef voorkeur aan de Omschrijving (AH) uit LN
     return (
       order?.itemDescription || order?.item || order?.itemCode || t("digitalplanning.terminal.unknown_product", "Onbekend product")
     );
   };
 
-  const getPriorityLevel = (order) => {
+  const getPriorityLevel = (order: AnyRecord) => {
     const rawPriority = order?.priority;
     const normalizedPriority =
       rawPriority === true
@@ -97,7 +125,7 @@ const TerminalPlanningView = ({
     return "normal";
   };
 
-  const getPriorityRank = (order) => {
+  const getPriorityRank = (order: AnyRecord) => {
     const level = getPriorityLevel(order);
     if (level === "immediate") return 3;
     if (level === "urgent") return 2;
@@ -105,7 +133,7 @@ const TerminalPlanningView = ({
     return 0;
   };
 
-  const getPriorityBadgeStyles = (order) => {
+  const getPriorityBadgeStyles = (order: AnyRecord) => {
     const level = getPriorityLevel(order);
     if (level === "immediate") {
       return {
@@ -129,7 +157,7 @@ const TerminalPlanningView = ({
     return null;
   };
 
-  const hasLinkedDrawing = (order) => {
+  const hasLinkedDrawing = (order: AnyRecord) => {
     const drawingValue = String(order?.drawing || "").trim();
     const drawingUrlValue = String(order?.drawingUrl || "").trim();
 
@@ -139,7 +167,7 @@ const TerminalPlanningView = ({
     );
   };
 
-  const getOrderTileTintClass = (order) => {
+  const getOrderTileTintClass = (order: AnyRecord) => {
     const matchText = [order?.itemCode, order?.item, order?.itemDescription, order?.extraCode]
       .filter(Boolean)
       .join(" ")
@@ -156,7 +184,7 @@ const TerminalPlanningView = ({
     return "border-slate-100 bg-white hover:border-slate-200";
   };
 
-  const getOrderTypeBadge = (order) => {
+  const getOrderTypeBadge = (order: AnyRecord) => {
     const matchText = [order?.itemCode, order?.item, order?.itemDescription, order?.extraCode]
       .filter(Boolean)
       .join(" ")
@@ -191,7 +219,7 @@ const TerminalPlanningView = ({
       const dateA = parseDateSafe(a.plannedDeliveryDate || a.deliveryDate || a.plannedDate);
       const dateB = parseDateSafe(b.plannedDeliveryDate || b.deliveryDate || b.plannedDate);
 
-      if (dateA && dateB) return dateA - dateB;
+      if (dateA && dateB) return dateA.getTime() - dateB.getTime();
       return 0;
     });
   }, [orders]);
@@ -200,7 +228,7 @@ const TerminalPlanningView = ({
 
   const [isSyncing, setIsSyncing] = React.useState(false);
   const [syncProgress, setSyncProgress] = React.useState(0);
-  const [missingItems, setMissingItems] = React.useState([]);
+  const [missingItems, setMissingItems] = React.useState<string[]>([]);
   const [showMissingModal, setShowMissingModal] = React.useState(false);
 
   const handleSyncDrawings = async () => {
@@ -243,11 +271,11 @@ const TerminalPlanningView = ({
           missingCount: notFoundCodes.length,
         })
       );
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Sync tekeningen mislukt:", error);
       notify(
         t("digitalplanning.terminal.sync_failed", "Sync mislukt: {{message}}", {
-          message: error?.message || t("common.unknown", "Onbekend"),
+          message: (error instanceof Error ? error.message : String(error)) || t("common.unknown", "Onbekend"),
         })
       );
     } finally {
@@ -256,7 +284,7 @@ const TerminalPlanningView = ({
     }
   };
 
-  const getOrderTotalPlan = (order) => {
+  const getOrderTotalPlan = (order: AnyRecord) => {
     const quantity = Number(order?.quantity);
     const plan = Number(order?.plan);
     const toDoQty = Number(order?.toDoQty);
@@ -271,10 +299,10 @@ const TerminalPlanningView = ({
     const now = new Date();
     const nowWeek = getISOWeek(now);
     const nowYear = now.getFullYear();
-    const seenWeeks = new Set();
-    const items = [];
+    const seenWeeks = new Set<string>();
+    const items: React.ReactNode[] = [];
 
-    sortedOrders.forEach((order) => {
+    sortedOrders.forEach((order: AnyRecord) => {
       const produced = Math.max(
         productionProgressMap[String(order.orderId || "").trim()] || 0,
         Number(order.trackedFinishedCount) || 0,
@@ -468,6 +496,9 @@ const TerminalPlanningView = ({
   const selectedOrderRejected = selectedOrder
     ? rejectedCountMap[String(selectedOrder.orderId || "").trim()] || 0
     : 0;
+  const selectedOrderPriorityBadge = selectedOrder
+    ? getPriorityBadgeStyles(selectedOrder)
+    : null;
   const selectedOrderTypeBadge = selectedOrder
     ? getOrderTypeBadge(selectedOrder)
     : null;
@@ -486,7 +517,7 @@ const TerminalPlanningView = ({
     ).sort((a, b) => a.localeCompare(b));
   }, [trackedProducts, selectedOrder?.orderId]);
 
-  const [archivedSelectedOrderLots, setArchivedSelectedOrderLots] = React.useState([]);
+  const [archivedSelectedOrderLots, setArchivedSelectedOrderLots] = React.useState<string[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -500,13 +531,13 @@ const TerminalPlanningView = ({
 
       const currentYear = new Date().getFullYear();
       const yearsToCheck = [currentYear, currentYear - 1, currentYear - 2, currentYear - 3, currentYear - 4, currentYear - 5];
-      const lots = new Set();
+      const lots = new Set<string>();
 
       await Promise.all(
         yearsToCheck.map(async (year) => {
           try {
             const snap = await getDocs(
-              query(collection(db, ...getArchiveItemsPath(year)), where("orderId", "==", orderId))
+              query(collection(db, getPathString(getArchiveItemsPath(year))), where("orderId", "==", orderId))
             );
             snap.docs.forEach((docSnap) => {
               const data = docSnap.data() || {};
@@ -684,9 +715,9 @@ const TerminalPlanningView = ({
                     {selectedOrder.itemCode || "-"}
                   </p>
                   <div className="flex items-center gap-3 flex-wrap">
-                    {getPriorityBadgeStyles(selectedOrder) && (
-                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide ${getPriorityBadgeStyles(selectedOrder).className}`}>
-                        {getPriorityBadgeStyles(selectedOrder).label}
+                    {selectedOrderPriorityBadge && (
+                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide ${selectedOrderPriorityBadge.className}`}>
+                        {selectedOrderPriorityBadge.label}
                       </span>
                     )}
                     {selectedOrderTypeBadge && (
@@ -823,7 +854,7 @@ const TerminalPlanningView = ({
                   </div>
                 ) : (
                   <button
-                    onClick={() => onStartProduction(true)}
+                    onClick={() => onStartProduction()}
                     className="w-full py-6 bg-blue-600 text-white rounded-[1.5rem] font-black uppercase text-lg shadow-xl shadow-blue-200 hover:bg-blue-700 hover:-translate-y-1 active:translate-y-0 transition-all flex items-center justify-center gap-4"
                   >
                     <PlayCircle size={28} /> {t("digitalplanning.order_detail.start_production", "Start Productie")}

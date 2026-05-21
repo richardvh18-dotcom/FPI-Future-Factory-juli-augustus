@@ -18,30 +18,41 @@ import {
 } from "../../../utils/workstationLogic";
 import { formatDateTimeSafe, toDateSafe } from "../../../utils/dateUtils";
 
+type AnyRecord = Record<string, any>;
+
+type ActiveProductionViewProps = {
+  activeUnits?: AnyRecord[];
+  smartSuggestions?: AnyRecord[];
+  selectedStation?: string;
+  onProcessUnit: (...args: any[]) => void;
+  onClickUnit: (unit: AnyRecord) => void;
+};
+
 const ActiveProductionView = ({
-  activeUnits,
-  smartSuggestions,
+  activeUnits = [],
+  smartSuggestions = [],
   selectedStation,
   onProcessUnit,
   onClickUnit,
-}) => {
+}: ActiveProductionViewProps) => {
   const { t } = useTranslation();
   const isMazakStation =
     String(selectedStation || "").toUpperCase().replace(/\s/g, "") === "MAZAK";
 
   const groupedSeries = React.useMemo(() => {
-    if (isMazakStation) return new Map();
-    const grouped = new Map();
-    (activeUnits || []).forEach((unit) => {
+    if (isMazakStation) return new Map<string, AnyRecord[]>();
+    const grouped = new Map<string, AnyRecord[]>();
+    (activeUnits || []).forEach((unit: AnyRecord) => {
       const groupId = unit?.seriesGroupId;
       if (!groupId) return;
       if (!grouped.has(groupId)) grouped.set(groupId, []);
-      grouped.get(groupId).push(unit);
+      const group = grouped.get(groupId);
+      if (group) group.push(unit);
     });
     return grouped;
   }, [activeUnits, isMazakStation]);
 
-  const [collapsedGroups, setCollapsedGroups] = React.useState({});
+  const [collapsedGroups, setCollapsedGroups] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
     setCollapsedGroups((prev) => {
@@ -52,7 +63,7 @@ const ActiveProductionView = ({
       });
 
       Object.keys(next).forEach((groupId) => {
-        if (!groupedSeries.has(groupId) || groupedSeries.get(groupId).length <= 1) {
+        if (!groupedSeries.has(groupId) || (groupedSeries.get(groupId)?.length || 0) <= 1) {
           delete next[groupId];
         }
       });
@@ -64,10 +75,10 @@ const ActiveProductionView = ({
   const displayUnits = React.useMemo(() => {
     if (!Array.isArray(activeUnits) || activeUnits.length === 0) return [];
 
-    const renderedHeaders = new Set();
-    const rows = [];
+    const renderedHeaders = new Set<string>();
+    const rows: AnyRecord[] = [];
 
-    activeUnits.forEach((unit) => {
+    activeUnits.forEach((unit: AnyRecord) => {
       const groupId = unit?.seriesGroupId;
       const group = groupId ? groupedSeries.get(groupId) || [] : [];
       const isSeriesGroup = groupId && group.length > 1;
@@ -87,7 +98,7 @@ const ActiveProductionView = ({
         renderedHeaders.add(groupId);
       }
 
-      if (!isSeriesGroup || !collapsedGroups[groupId]) {
+      if (!isSeriesGroup || !collapsedGroups[String(groupId)]) {
         rows.push(unit);
       }
     });
@@ -95,7 +106,7 @@ const ActiveProductionView = ({
     return rows;
   }, [activeUnits, groupedSeries, collapsedGroups]);
 
-  const formatTimeLabel = (value) => {
+  const formatTimeLabel = (value: any) => {
     const date = toDateSafe(value);
     if (!date) return "";
 
@@ -123,12 +134,12 @@ const ActiveProductionView = ({
         <div className="p-2 pb-6 md:pb-8">
           {activeUnits.length > 0 ? (
             <div className="space-y-2">
-              {displayUnits.map((unit) => {
+              {displayUnits.map((unit: AnyRecord) => {
                 if (unit.isSeriesHeader) {
                   const groupUnits = unit.seriesUnits || [];
                   const isCollapsed = !!collapsedGroups[unit.seriesGroupId];
                   const processableUnits = groupUnits.filter(
-                    (groupUnit) => !["Finished", "REJECTED"].includes(groupUnit?.currentStep)
+                    (groupUnit: AnyRecord) => !["Finished", "REJECTED"].includes(groupUnit?.currentStep)
                   );
 
                   return (
@@ -176,7 +187,7 @@ const ActiveProductionView = ({
                   );
                 }
 
-                const matInfo = getMaterialInfo(unit.item);
+                const matInfo = getMaterialInfo(unit.item) as any;
                 const isTempReject =
                   unit.inspection?.status === "Tijdelijke afkeur";
                 const isOverdue =
@@ -304,7 +315,7 @@ const ActiveProductionView = ({
             </h3>
           </div>
           <div className="p-3 space-y-3">
-            {smartSuggestions.map((sug, idx) => (
+            {smartSuggestions.map((sug: AnyRecord, idx: number) => (
               <div
                 key={idx}
                 className="bg-purple-50 rounded-xl p-3 border border-purple-100"
@@ -325,7 +336,7 @@ const ActiveProductionView = ({
                       })}
                     </p>
                     <div className="flex flex-wrap gap-1">
-                      {sug.orders.map((o) => (
+                      {sug.orders.map((o: AnyRecord) => (
                         <span
                           key={o.orderId}
                           className="px-1.5 py-0.5 bg-white rounded text-[9px] font-mono font-bold text-purple-500 border border-purple-100"

@@ -86,7 +86,7 @@ const AiTrainingView = () => {
         verifiedAt: serverTimestamp(),
       });
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "AI_TRAINING_VERIFY",
         `AI kennisitem geverifieerd: ${id}${correctedText ? " (met correctie)" : ""}`
       );
@@ -105,7 +105,7 @@ const AiTrainingView = () => {
         doc(db, "artifacts", appId, "public", "data", "ai_knowledge_base", id)
       );
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "AI_TRAINING_DELETE",
         `AI kennisitem verwijderd: ${id}`
       );
@@ -162,7 +162,7 @@ const AiTrainingView = () => {
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-2 text-[10px] font-black uppercase text-slate-400">
                       <Clock size={12} />{" "}
-                      {log.timestamp?.toDate().toLocaleString() || "Zojuist"}
+                      {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleString() : "Zojuist"}
                     </div>
                     <button
                       onClick={() => handleDelete(log.id)}
@@ -258,7 +258,7 @@ const AiTrainingView = () => {
                     </span>
                   )}
                   <span className="text-[9px] font-bold text-slate-300 italic">
-                    {log.timestamp?.toDate().toLocaleTimeString() || "Log"}
+                    {log.timestamp?.toDate ? log.timestamp.toDate().toLocaleTimeString() : "Log"}
                   </span>
                 </div>
                 <p className="text-xs font-black text-slate-700 truncate">

@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, Suspense, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -37,8 +37,33 @@ import {
   FileText,
   QrCode,
   Mail,
+  ClipboardCheck,
 } from "lucide-react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
+
+type DashboardUser = {
+  permissions?: Record<string, string[]>;
+  modules?: string[];
+};
+
+type DashboardItem = {
+  id: string;
+  title: string;
+  desc: string;
+  icon: React.ReactNode;
+  color: string;
+  roles: string[];
+  component: React.ComponentType<any> | React.LazyExoticComponent<any>;
+  requiredModule?: string;
+};
+
+type DashboardCategory = {
+  id: string;
+  title: string;
+  icon: React.ReactNode;
+  color: string;
+  items: DashboardItem[];
+};
 
 // --- LAZY LOAD IMPORTS ---
 const RoadmapViewer = React.lazy(() => import("./RoadmapViewer"));
@@ -79,11 +104,12 @@ const ShopFloorMobileApp = React.lazy(() => import("../planning/ShopFloorMobileA
 const ScenarioPlanningView = React.lazy(() => import("../planning/ScenarioPlanningView"));
 // Reports & Analytics
 const AdminReportsView = React.lazy(() => import("./AdminReportsView"));
+const FloorControlReportsView = React.lazy(() => import("./FloorControlReportsView"));
 const QsheVirtualLotsView = React.lazy(() => import("./QsheVirtualLotsView"));
 // LN Stamdata import
 const ReferenceOpsImportModal = React.lazy(() => import("../digitalplanning/modals/ReferenceOpsImportModal"));
 
-const AdminRefOpsImportScreen = ({ onNavigate }) => (
+const AdminRefOpsImportScreen = ({ onNavigate }: { onNavigate?: (screen: string | null) => void }) => (
   <ReferenceOpsImportModal
     isOpen={true}
     onClose={() => onNavigate?.(null)}
@@ -130,33 +156,38 @@ const AdminDashboard = () => {
   const { t } = useTranslation();
   const { role, user } = useAdminAuth();
   const location = useLocation();
-  const [activeScreen, setActiveScreen] = useState(null);
+  const [activeScreen, setActiveScreen] = useState<string | null>(null);
+  const locationState = (location.state || {}) as {
+    openScreen?: string;
+    personnelDate?: unknown;
+    personnelTab?: unknown;
+  };
 
   // Reset naar dashboard overzicht als er op de sidebar knop wordt geklikt (geen state)
   useEffect(() => {
-    if (location.state?.openScreen) {
-      setActiveScreen(location.state.openScreen);
+    if (locationState.openScreen) {
+      setActiveScreen(locationState.openScreen);
       return;
     }
 
     if (!location.state) {
       setActiveScreen(null);
     }
-  }, [location]);
+  }, [location, locationState.openScreen]);
 
-  const [expandedCategories, setExpandedCategories] = useState([]); // All categories collapsed by default
+  const [expandedCategories, setExpandedCategories] = useState<string[]>([]); // All categories collapsed by default
 
   // Toggle category expansion
-  const toggleCategory = (categoryId) => {
-    setExpandedCategories(prev => 
+  const toggleCategory = (categoryId: string) => {
+    setExpandedCategories((prev) =>
       prev.includes(categoryId) 
-        ? prev.filter(c => c !== categoryId)
+        ? prev.filter((c) => c !== categoryId)
         : [...prev, categoryId]
     );
   };
 
   // Grouped menu structure
-  const menuCategories = [
+  const menuCategories: DashboardCategory[] = [
     {
       id: "planning",
       title: "Planning & Productie",
@@ -229,6 +260,15 @@ const AdminDashboard = () => {
           color: "bg-cyan-50 border-cyan-100",
           roles: ["admin", "engineer", "teamleader"],
           component: AdminReportsView,
+        },
+        {
+          id: "floor_control_reports",
+          title: "Vloercontrole Rapporten",
+          desc: "Gebundelde resultaten van controlerondes op de werkvloer.",
+          icon: <ClipboardCheck size={24} className="text-cyan-600" />,
+          color: "bg-cyan-50 border-cyan-100",
+          roles: ["admin", "engineer", "teamleader", "qc"],
+          component: FloorControlReportsView,
         },
       ]
     },
@@ -528,26 +568,26 @@ const AdminDashboard = () => {
   ];
 
   // Flatten for routing compatibility
-  const allMenuItems = menuCategories.flatMap(cat => cat.items);
+  const allMenuItems: DashboardItem[] = menuCategories.flatMap((cat) => cat.items);
 
   // Filter categories based on current user role
   const currentRole = (role || "").toLowerCase();
   
-  const filteredCategories = menuCategories.map(category => ({
+  const filteredCategories: DashboardCategory[] = menuCategories.map((category) => ({
     ...category,
-    items: category.items.filter(item => {
-      const hasRole = item.roles.some(r => r.toLowerCase() === currentRole);
+    items: category.items.filter((item) => {
+      const hasRole = item.roles.some((r) => r.toLowerCase() === currentRole);
 
       // Admins hebben altijd volledige toegang
       if (currentRole === 'admin') return hasRole;
 
       if (item.requiredModule) {
         // Nieuw systeem: check permissions object (moduleId → [featureIds])
-        const perms = user?.permissions || {};
+        const perms = ((user as DashboardUser | null)?.permissions || {}) as Record<string, string[]>;
         const modulePerms = perms[item.requiredModule] || [];
         const hasViaPermissions = modulePerms.length > 0;
         // Fallback: oud modules-array systeem
-        const hasViaModules = (user?.modules || []).includes(item.requiredModule);
+        const hasViaModules = ((user as DashboardUser | null)?.modules || []).includes(item.requiredModule);
         return hasRole && (hasViaPermissions || hasViaModules);
       }
 
@@ -562,8 +602,8 @@ const AdminDashboard = () => {
     const componentProps =
       activeItem?.id === "personnel"
         ? {
-            initialViewDate: location.state?.personnelDate,
-            initialTab: location.state?.personnelTab,
+            initialViewDate: locationState.personnelDate,
+            initialTab: locationState.personnelTab,
           }
         : {};
 

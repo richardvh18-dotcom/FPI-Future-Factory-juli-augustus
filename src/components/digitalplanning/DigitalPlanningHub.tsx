@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { getPathString, PATHS } from "../../config/dbPaths";
 import {
   ArrowLeft,
   Activity,
@@ -63,7 +63,7 @@ const DigitalPlanningHub = () => {
 
   // Laad factory config voor station-afdeling mapping
   useEffect(() => {
-    const docRef = doc(db, ...PATHS.FACTORY_CONFIG);
+    const docRef = doc(db, getPathString(PATHS.FACTORY_CONFIG));
     const unsubscribe = onSnapshot(docRef, (snap) => {
       if (snap.exists()) {
         setFactoryConfig(snap.data() as FactoryConfig);
@@ -210,7 +210,7 @@ const DigitalPlanningHub = () => {
           </div>
         }
       >
-        <TeamleaderHub onBack={() => setActiveDept(null)} />
+      <TeamleaderHub onBack={() => setActiveDept(null)} />
       </Suspense>
     );
   }
@@ -229,7 +229,7 @@ const DigitalPlanningHub = () => {
           key={activeDept}
           department={activeDept}
           onBack={() => setActiveDept(null)}
-          searchOrder={searchOrderNumber}
+          searchOrder={searchOrderNumber || undefined}
         />
       </Suspense>
     );

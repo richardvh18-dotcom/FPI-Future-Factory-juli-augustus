@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Database, RefreshCw, Trash2, Layers, Table, SearchCode, Fingerprint, Activity, Terminal, FileText, Loader2, Folder, File, ArrowUp, Bot, Send, X } from "lucide-react";
@@ -16,6 +16,45 @@ import { PATHS, isValidPath } from "../../config/dbPaths";
 import { ref, listAll, getDownloadURL } from "firebase/storage";
 import { aiService } from "../../services/aiService";
 import { useNotifications } from '../../contexts/NotificationContext';
+import { getPathString } from "../../config/dbPaths";
+
+type DbDocument = {
+  id: string;
+  _isSingleDoc?: boolean;
+  [key: string]: unknown;
+};
+
+type ContextMenuState = {
+  visible: boolean;
+  x: number;
+  y: number;
+  doc: DbDocument | null;
+};
+
+type ModuleItem = {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+};
+
+type StorageFolderEntry = {
+  name: string;
+  isFolder: true;
+  fullPath: string;
+};
+
+type StorageFileEntry = {
+  name: string;
+  url: string;
+  isFolder: false;
+};
+
+type StorageEntry = StorageFolderEntry | StorageFileEntry;
+
+type ChatMessage = {
+  role: "ai" | "user";
+  content: string;
+};
 
 /**
  * AdminDatabaseView V4.1 - Root-Ready Forensic Edition
@@ -27,23 +66,23 @@ const AdminDatabaseView = () => {
   const { t } = useTranslation();
   const { notify } = useNotifications();
   const [selectedKey, setSelectedKey] = useState("PRODUCTS");
-  const [documents, setDocuments] = useState([]);
+  const [documents, setDocuments] = useState<DbDocument[]>([]);
   const [loading, setLoading] = useState(false);
   const [activePath, setActivePath] = useState("");
-  const [selectedDoc, setSelectedDoc] = useState(null);
-  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, doc: null });
-  const contextMenuRef = useRef();
+  const [selectedDoc, setSelectedDoc] = useState<DbDocument | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({ visible: false, x: 0, y: 0, doc: null });
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
 
   // Close context menu on click outside or escape
   useEffect(() => {
     if (!contextMenu.visible) return;
-    const handleClick = (e) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target)) {
-        setContextMenu({ ...contextMenu, visible: false });
+    const handleClick = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu((prev) => ({ ...prev, visible: false }));
       }
     };
-    const handleEsc = (e) => {
-      if (e.key === "Escape") setContextMenu({ ...contextMenu, visible: false });
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu((prev) => ({ ...prev, visible: false }));
     };
     document.addEventListener("mousedown", handleClick);
     document.addEventListener("keydown", handleEsc);
@@ -54,7 +93,7 @@ const AdminDatabaseView = () => {
   }, [contextMenu]);
 
   // Lijst van modules gebaseerd op dbPaths.js
-  const MODULES = [
+  const MODULES: ModuleItem[] = [
     { key: "PRODUCTS", label: t('adminDatabaseView.modules.products'), icon: <Layers size={16} /> },
     {
       key: "PLANNING",
@@ -90,19 +129,21 @@ const AdminDatabaseView = () => {
   ];
 
   const [viewMode, setViewMode] = useState("database"); // "database" of "storage"
-  const [storageFiles, setStorageFiles] = useState([]);
+  const [storageFiles, setStorageFiles] = useState<StorageEntry[]>([]);
   const [storageLoading, setStorageLoading] = useState(false);
   const [storagePath, setStoragePath] = useState("");
 
   // AI Chat State
   const [showAiChat, setShowAiChat] = useState(false);
   const [aiQuery, setAiQuery] = useState("");
-  const [aiMessages, setAiMessages] = useState(() => {
+  const [aiMessages, setAiMessages] = useState<ChatMessage[]>(() => {
     const saved = localStorage.getItem("admin_db_ai_chat");
-    return saved ? JSON.parse(saved) : [{ role: 'ai', content: "Hallo! Ik ben de Database Assistent. Ik heb toegang tot de volledige structuur van de database. Wat wil je weten?" }];
+    return saved
+      ? (JSON.parse(saved) as ChatMessage[])
+      : [{ role: 'ai', content: "Hallo! Ik ben de Database Assistent. Ik heb toegang tot de volledige structuur van de database. Wat wil je weten?" }];
   });
   const [aiLoading, setAiLoading] = useState(false);
-  const chatEndRef = useRef(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (showAiChat) {
@@ -125,12 +166,12 @@ const AdminDatabaseView = () => {
     return context;
   };
 
-  const handleAskAi = async (e) => {
+  const handleAskAi = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!aiQuery.trim()) return;
 
     const userQ = aiQuery;
-    setAiMessages(prev => [...prev, { role: 'user', content: userQ }]);
+    setAiMessages((prev) => [...prev, { role: 'user', content: userQ }]);
     setAiQuery("");
     setAiLoading(true);
 
@@ -138,11 +179,11 @@ const AdminDatabaseView = () => {
       const systemPrompt = generateDbContext();
       const response = await aiService.chat(
         [{ role: "user", content: userQ }],
-        systemPrompt
+        systemPrompt as never
       );
-      setAiMessages(prev => [...prev, { role: 'ai', content: response }]);
+      setAiMessages((prev) => [...prev, { role: 'ai', content: String(response || "") }]);
     } catch {
-      setAiMessages(prev => [...prev, { role: 'ai', content: "Fout bij verbinden met AI service." }]);
+      setAiMessages((prev) => [...prev, { role: 'ai', content: "Fout bij verbinden met AI service." }]);
     } finally {
       setAiLoading(false);
     }
@@ -150,7 +191,7 @@ const AdminDatabaseView = () => {
 
   const handleClearChat = () => {
     if(window.confirm("Gespreksgeschiedenis wissen?")) {
-        const initial = [{ role: 'ai', content: "Hallo! Ik ben de Database Assistent. Ik heb toegang tot de volledige structuur van de database. Wat wil je weten?" }];
+        const initial: ChatMessage[] = [{ role: 'ai', content: "Hallo! Ik ben de Database Assistent. Ik heb toegang tot de volledige structuur van de database. Wat wil je weten?" }];
         setAiMessages(initial);
     }
   };
@@ -162,24 +203,28 @@ const AdminDatabaseView = () => {
     setLoading(true);
     setDocuments([]);
     const pathArray = PATHS[selectedKey];
+    if (!Array.isArray(pathArray)) {
+      setLoading(false);
+      return;
+    }
     const pathStr = pathArray.join("/");
     setActivePath(pathStr);
 
     try {
       // Als pad-lengte even is, is het een document. Als het oneven is, een collectie.
       if (pathArray.length % 2 !== 0) {
-        const colRef = collection(db, ...pathArray);
+        const colRef = collection(db, getPathString(pathArray));
         const snapshot = await getDocs(query(colRef, limit(50)));
-        setDocuments(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setDocuments(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<DbDocument, "id">) })));
       } else {
         // Het is een document (bijv. settings/main)
-        const docRef = doc(db, ...pathArray);
+        const docRef = doc(db, getPathString(pathArray));
         const snap = await getDoc(docRef);
         if (snap.exists()) {
-          setDocuments([{ id: snap.id, ...snap.data(), _isSingleDoc: true }]);
+          setDocuments([{ id: snap.id, ...(snap.data() as Omit<DbDocument, "id">), _isSingleDoc: true }]);
         }
       }
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Fetch error:", e);
     } finally {
       setLoading(false);
@@ -196,17 +241,17 @@ const AdminDatabaseView = () => {
       // Combineer folders en bestanden
       const folders = res.prefixes.map((folderRef) => ({
         name: folderRef.name,
-        isFolder: true,
+        isFolder: true as const,
         fullPath: folderRef.fullPath,
       }));
       const files = await Promise.all(
         res.items.map(async (itemRef) => {
           const url = await getDownloadURL(itemRef);
-          return { name: itemRef.name, url, isFolder: false };
+          return { name: itemRef.name, url, isFolder: false as const };
         })
       );
       setStorageFiles([...folders, ...files]);
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Storage fetch error:", e);
       setStorageFiles([]);
     } finally {
@@ -224,19 +269,20 @@ const AdminDatabaseView = () => {
     }
   }, [viewMode, storagePath]);
 
-  const handleDeleteDoc = async (docId) => {
+  const handleDeleteDoc = async (docId: string) => {
     if (!window.confirm(t('common.confirmDeleteDoc'))) return;
     try {
-      const docRef = doc(db, ...activePath.split("/"), docId);
+      const docRef = doc(db, `${activePath}/${docId}`);
       await deleteDoc(docRef);
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "DATABASE_DOC_DELETE",
         `Document verwijderd via AdminDatabaseView: ${activePath}/${docId}`
       );
       setDocuments((prev) => prev.filter((d) => d.id !== docId));
-    } catch (error) {
-      notify(t('common.deleteFailed') + ': ' + error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error || "Onbekende fout");
+      notify(`${t('common.deleteFailed')}: ${message}`);
     }
   };
 
@@ -383,7 +429,7 @@ const AdminDatabaseView = () => {
                           key={docItem.id}
                           className="flex items-center px-4 py-2 group hover:bg-blue-50 transition-all cursor-pointer relative"
                           onClick={() => setSelectedDoc(docItem)}
-                          onContextMenu={e => {
+                          onContextMenu={(e: React.MouseEvent<HTMLDivElement>) => {
                             e.preventDefault();
                             setContextMenu({ visible: true, x: e.clientX, y: e.clientY, doc: docItem });
                           }}
@@ -396,7 +442,7 @@ const AdminDatabaseView = () => {
                           </div>
                           <div className="w-32 flex items-center justify-end gap-2">
                             <button
-                              onClick={e => { e.stopPropagation(); handleDeleteDoc(docItem.id); }}
+                              onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.stopPropagation(); handleDeleteDoc(docItem.id); }}
                               className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-all"
                               title={t('common.delete')}
                             >
@@ -519,7 +565,7 @@ const AdminDatabaseView = () => {
                 </div>
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 custom-scrollbar">
-                    {aiMessages.map((msg, idx) => (
+                    {aiMessages.map((msg: ChatMessage, idx: number) => (
                         <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                             <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed ${
                                 msg.role === 'user' 
@@ -546,7 +592,7 @@ const AdminDatabaseView = () => {
                             className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10 transition-all"
                             placeholder="Vraag over collecties of paden..."
                             value={aiQuery}
-                            onChange={e => setAiQuery(e.target.value)}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAiQuery(e.target.value)}
                         />
                         <button 
                             type="submit" 
@@ -573,7 +619,7 @@ const AdminDatabaseView = () => {
             className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-all"
             onClick={() => {
               setSelectedDoc(contextMenu.doc);
-              setContextMenu({ ...contextMenu, visible: false });
+              setContextMenu((prev) => ({ ...prev, visible: false }));
             }}
           >
             📄 {t('common.view')}
@@ -581,8 +627,8 @@ const AdminDatabaseView = () => {
           <button
             className="w-full text-left px-4 py-2 hover:bg-rose-50 text-rose-600 transition-all"
             onClick={() => {
-              handleDeleteDoc(contextMenu.doc.id);
-              setContextMenu({ ...contextMenu, visible: false });
+              if (contextMenu.doc) handleDeleteDoc(contextMenu.doc.id);
+              setContextMenu((prev) => ({ ...prev, visible: false }));
             }}
           >
             🗑️ {t('common.delete')}
@@ -591,7 +637,7 @@ const AdminDatabaseView = () => {
             className="w-full text-left px-4 py-2 hover:bg-slate-50 transition-all"
             onClick={() => {
               fetchPathData();
-              setContextMenu({ ...contextMenu, visible: false });
+              setContextMenu((prev) => ({ ...prev, visible: false }));
             }}
           >
             🔄 {t('common.refresh')}

@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -10,16 +10,115 @@ import { db, auth, logActivity } from "../../config/firebase";
 import { aiService } from "../../services/aiService";
 import { createAiDocumentRecord } from "../../services/planningSecurityService";
 import { useNotifications } from "../../contexts/NotificationContext";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { getLivePlanningContext } from "../../services/planningContext";
 import { useTranslation } from "react-i18next";
 import { extractTextFromPdf } from "../../utils/pdfUtils";
 import AiMessage from "./AiMessage";
 import { fetchScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
 
-const logRejectedAnswer = async ({ content, userInput, context, userId }) => {
+type ChatMessage = {
+  role: "assistant" | "user";
+  content: string;
+};
+
+type SavedConversationMessage = ChatMessage & {
+  sessionId?: string;
+  timestamp?: { toDate?: () => Date } | string;
+};
+
+type SavedConversation = {
+  messages?: SavedConversationMessage[];
+  sessionId?: string;
+  lastUpdated?: { toDate?: () => Date } | null;
+};
+
+type FactoryStation = {
+  id?: string;
+  name?: string;
+  [key: string]: unknown;
+};
+
+type FactoryDepartment = {
+  id: string;
+  name: string;
+  shifts?: string | number;
+  stations?: FactoryStation[];
+  [key: string]: unknown;
+};
+
+type FactoryStructure = {
+  departments?: FactoryDepartment[];
+  [key: string]: unknown;
+};
+
+type RejectedAnswerPayload = {
+  content: string;
+  userInput: string;
+  context: string;
+  userId: string | null;
+};
+
+type TrackingTimestamp = {
+  toDate?: () => Date;
+};
+
+type TrackingRecord = {
+  orderId?: string;
+  orderNumber?: string;
+  timestamps?: {
+    station_start?: TrackingTimestamp | string;
+    completed?: TrackingTimestamp | string;
+    finished?: TrackingTimestamp | string;
+  };
+  status?: string;
+  currentStep?: string;
+  currentStation?: string;
+};
+
+type EfficiencyRow = {
+  orderId?: string;
+  minutesPerUnit?: number;
+  quantity?: string | number;
+  standardTimeTotal?: number;
+};
+
+type AiDocumentAnalysis = {
+  title?: string;
+  summary?: string;
+  tags?: string[];
+  keyFacts?: string[];
+  fullContext?: string;
+};
+
+type AiDocumentRecord = {
+  fileName?: string;
+  analysis?: AiDocumentAnalysis;
+};
+
+type AIServiceLike = {
+  chat: (messages: ChatMessage[], systemPrompt?: string | null, options?: { signal?: AbortSignal }) => Promise<string>;
+  chatWithContext: (messages: ChatMessage[], systemPrompt?: string | null, includeContext?: boolean, options?: { signal?: AbortSignal }) => Promise<string>;
+  loadRecentConversation: (userId: string) => Promise<SavedConversation | null>;
+  saveConversation: (payload: { userId: string; sessionId: string; messages: ChatMessage[] }) => Promise<void>;
+  saveMemory: (payload: { topic: string; content: string; sourceQuestion: string; sourceAnswer: string; userId: string | null; category: string }) => Promise<void>;
+  isConfigured: () => boolean;
+};
+
+const ai = aiService as unknown as AIServiceLike;
+
+const colPath = (path: string[]) => collection(db, getPathString(path));
+const docPath = (path: string[]) => doc(db, getPathString(path));
+const asDate = (value: TrackingTimestamp | string | undefined): Date => {
+  if (!value) return new Date();
+  if (typeof value === "string") return new Date(value);
+  if (value.toDate) return value.toDate();
+  return new Date();
+};
+
+const logRejectedAnswer = async ({ content, userInput, context, userId }: RejectedAnswerPayload) => {
   try {
-    const colRef = collection(db, ...(PATHS?.AI_KNOWLEDGE_BASE || ['future-factory', 'settings', 'ai_knowledge_base']));
+    const colRef = colPath(PATHS.AI_KNOWLEDGE_BASE);
     await addDoc(colRef, {
       type: "rejected",
       feedback: "negative",
@@ -35,7 +134,8 @@ const logRejectedAnswer = async ({ content, userInput, context, userId }) => {
   }
 };
 
-const getWelcomeMessage = (lang, t) => {
+const getWelcomeMessage = (lang: string, t?: (key: string) => string) => {
+  void lang;
   return t ? t('ai.chat.welcome') : "Hallo! Ik ben je AI assistent. Hoe kan ik je helpen?";
 };
 
@@ -48,11 +148,11 @@ const AiChatView = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const messagesEndRef = useRef(null);
-  const abortControllerRef = useRef(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const sessionId = useRef(Date.now().toString());
 
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
       content: getWelcomeMessage(i18n.language, t),
@@ -60,7 +160,7 @@ const AiChatView = () => {
   ]);
   const [input, setInput] = useState("");
   const [systemContext, setSystemContext] = useState("");
-  const [factoryStructure, setFactoryStructure] = useState(null);
+  const [factoryStructure, setFactoryStructure] = useState<FactoryStructure | null>(null);
 
   // Update welcome message when language changes (only if chat hasn't started)
   useEffect(() => {
@@ -95,13 +195,13 @@ const AiChatView = () => {
   useEffect(() => {
     const fetchContext = async () => {
       try {
-        const factoryRef = doc(db, ...(PATHS?.FACTORY_CONFIG || ['future-factory', 'settings', 'factory_config', 'main']));
+        const factoryRef = docPath(PATHS.FACTORY_CONFIG);
         const factorySnap = await getDoc(factoryRef);
         if (factorySnap.exists()) {
-          setFactoryStructure(factorySnap.data());
+          setFactoryStructure(factorySnap.data() as FactoryStructure);
         }
 
-        const docRef = doc(db, ...(PATHS?.AI_CONFIG || ['future-factory', 'settings', 'ai_config', 'main']));
+        const docRef = docPath(PATHS.AI_CONFIG);
         const docSnap = await getDoc(docRef);
         
         if (docSnap.exists() && docSnap.data().systemPrompt) {
@@ -114,13 +214,14 @@ const AiChatView = () => {
         try {
           const uid = auth.currentUser?.uid;
           if (uid) {
-            const saved = await aiService.loadRecentConversation(uid);
-            if (saved?.messages?.length > 1) {
+            const saved = await ai.loadRecentConversation(uid);
+            const savedMessages = saved?.messages;
+            if (saved && savedMessages && savedMessages.length > 1) {
               const lastUpdated = saved.lastUpdated?.toDate?.() || null;
               const within24h = lastUpdated && (Date.now() - lastUpdated.getTime()) < 86400000;
               if (within24h) {
                 sessionId.current = saved.sessionId || sessionId.current;
-                setMessages(saved.messages.map(m => ({ role: m.role, content: m.content })));
+                setMessages(savedMessages.map((m: SavedConversationMessage): ChatMessage => ({ role: m.role, content: m.content })));
               }
             }
           }
@@ -139,7 +240,7 @@ const AiChatView = () => {
 
   // Document Analyse
   const MAX_DOC_CHARS = 50000;
-  const extractJson = (text) => {
+  const extractJson = (text: string) => {
     if (!text) return null;
     let cleaned = text.trim().replace(/```json/gi, '').replace(/```/g, '').trim();
     if (cleaned.startsWith("{") && cleaned.endsWith("}")) return cleaned;
@@ -153,21 +254,22 @@ const AiChatView = () => {
     return null;
   };
 
-  const analyzeDocument = async (text, fileName) => {
+  const analyzeDocument = async (text: string, fileName: string) => {
     const systemPrompt = `Je bent een AI die bedrijfsdocumenten analyseert voor een MES omgeving. RETURN ONLY VALID JSON.`;
     try {
-      const response = await aiService.chat([{ role: "user", content: `Bestandsnaam: ${fileName}\n\nDocument inhoud:\n${text}` }], systemPrompt);
+      const response = await ai.chat([{ role: "user", content: `Bestandsnaam: ${fileName}\n\nDocument inhoud:\n${text}` }], systemPrompt);
       const jsonText = extractJson(response);
       if (!jsonText) return { parsed: false, analysis: { title: fileName, summary: response.substring(0, 1000), tags: ["niet-geparsed"], fullContext: response.substring(0, 10000) } };
       const analysis = JSON.parse(jsonText);
       return { parsed: true, analysis };
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Analyse fout:", err);
-      return { parsed: false, analysis: { title: fileName, summary: `Fout: ${err.message}`, tags: ["error"], fullContext: text.substring(0, 5000) } };
+      const message = err instanceof Error ? err.message : String(err);
+      return { parsed: false, analysis: { title: fileName, summary: `Fout: ${message}`, tags: ["error"], fullContext: text.substring(0, 5000) } };
     }
   };
 
-  const handleChatFileUpload = async (e) => {
+  const handleChatFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const allowed = ["application/pdf", "text/plain", "text/markdown", "text/csv", "application/json"];
@@ -182,7 +284,7 @@ const AiChatView = () => {
       if (file.type === "application/pdf") text = await extractTextFromPdf(file);
       else text = await new Promise((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload = () => resolve(reader.result || "");
+        reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
         reader.onerror = reject;
         reader.readAsText(file);
       });
@@ -213,7 +315,7 @@ const AiChatView = () => {
     }
   };
 
-  const handleSendChat = async (e, queryOverride = null) => {
+  const handleSendChat = async (e: React.FormEvent<HTMLFormElement> | null, queryOverride: string | null = null) => {
     if (e) e.preventDefault();
     const messageText = queryOverride || input;
     if (!messageText.trim() || isLoading) return;
@@ -221,26 +323,26 @@ const AiChatView = () => {
     if (abortControllerRef.current) abortControllerRef.current.abort();
     abortControllerRef.current = new AbortController();
 
-    const userMsg = { role: "user", content: messageText };
+    const userMsg: ChatMessage = { role: "user", content: messageText };
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setIsLoading(true);
 
-    await logActivity(auth.currentUser?.uid, 'AI_CHAT', `Query: ${messageText.substring(0, 50)}...`);
+    await logActivity(auth.currentUser?.uid || 'system', 'AI_CHAT', `Query: ${messageText.substring(0, 50)}...`);
 
     try {
-      if (!aiService.isConfigured()) throw new Error('Google AI API key niet gevonden.');
+      if (!ai.isConfigured()) throw new Error('Google AI API key niet gevonden.');
       
-      const chatHistory = messages
+      const chatHistory: ChatMessage[] = messages
         .filter(msg => msg.role !== "assistant" || msg.content !== messages[0].content)
-        .map(msg => ({ role: msg.role, content: msg.content }));
+        .map((msg): ChatMessage => ({ role: msg.role, content: msg.content }));
       chatHistory.push(userMsg);
 
       let currentSystemContext = systemContext || DEFAULT_CONTEXT;
       
       // Dynamische taal instructie
       const currentLang = i18n.language?.split('-')[0] || 'nl';
-      const langMap = {
+      const langMap: Record<string, string> = {
         nl: "Dutch",
         en: "English",
         de: "German",
@@ -253,22 +355,22 @@ const AiChatView = () => {
       // Context verrijking (Fabriek, Bezetting, Efficiency)
       if (factoryStructure) {
         let structureContext = "\n\n## ACTUELE FABRIEKSSTRUCTUUR (LIVE DATABASE):\n";
-        factoryStructure.departments?.forEach(dept => {
+        factoryStructure.departments?.forEach((dept: FactoryDepartment) => {
           structureContext += `### Afdeling: ${dept.name}\n`;
           if (dept.shifts) {
             const shifts = Number(dept.shifts) || 0;
             structureContext += `**Rooster:** ${shifts} ploegen (${shifts * 8} uur capaciteit per dag).\n`;
           }
-          structureContext += dept.stations?.length > 0 ? `Machines: ${dept.stations.map(s => s.name).join(", ")}\n` : "Machines: Geen machines.\n";
+          structureContext += dept.stations?.length ? `Machines: ${dept.stations.map((s: FactoryStation) => s.name).join(", ")}\n` : "Machines: Geen machines.\n";
         });
         currentSystemContext += structureContext;
       }
 
       try {
-        const occupancyRef = collection(db, ...(PATHS?.OCCUPANCY || ['future-factory', 'production', 'occupancy']));
+        const occupancyRef = colPath(PATHS.OCCUPANCY);
         const occupancySnap = await getDocs(occupancyRef);
         const today = new Date().toISOString().slice(0, 10);
-        const activeOperators = occupancySnap.docs.map(d => d.data()).filter(d => d.date === today);
+        const activeOperators = occupancySnap.docs.map(d => d.data() as Record<string, unknown>).filter(d => d.date === today);
         if (activeOperators.length > 0) {
           let occupancyContext = "\n\n## ACTUELE PERSONEELSBEZETTING (VANDAAG):\n";
           activeOperators.forEach(op => {
@@ -279,23 +381,23 @@ const AiChatView = () => {
       } catch (err) { console.error("Kon bezetting niet ophalen:", err); }
 
       try {
-        const efficiencyRows = await fetchScopedEfficiencyHours({ db, mode: "active", maxDocs: 50 });
+        const efficiencyRows = await fetchScopedEfficiencyHours({ db, mode: "active", maxDocs: 50 }) as EfficiencyRow[];
         // Haal tracking op zonder orderBy zodat er geen samengestelde index nodig is
-        const trackingRef = collection(db, ...(PATHS?.TRACKING || ['future-factory', 'production', 'tracked_products']));
+        const trackingRef = colPath(PATHS.TRACKING);
         const trackingSnap = await getDocs(query(trackingRef, limit(500)));
-        const trackingData = trackingSnap.docs.map(d => d.data());
+        const trackingData = trackingSnap.docs.map(d => d.data() as TrackingRecord);
 
         if (efficiencyRows.length > 0) {
           let efficiencyContext = "\n\n## CAPACITEITSNORMEN & PLANNING STATUS:\n";
           efficiencyRows.forEach(std => {
              if (std.orderId) {
-                const relatedLogs = trackingData.filter(t => String(t.orderId || t.orderNumber) === String(std.orderId));
+                 const relatedLogs = trackingData.filter((t: TrackingRecord) => String(t.orderId || t.orderNumber) === String(std.orderId));
                 let actualMinutes = 0, producedQty = 0;
-                relatedLogs.forEach(log => {
+                 relatedLogs.forEach((log: TrackingRecord) => {
                    if (log.timestamps?.station_start) {
-                      const start = log.timestamps.station_start.toDate ? log.timestamps.station_start.toDate() : new Date(log.timestamps.station_start);
-                      const end = log.timestamps.completed?.toDate ? log.timestamps.completed.toDate() : (log.timestamps.finished?.toDate ? log.timestamps.finished.toDate() : new Date());
-                      if (end - start > 0) actualMinutes += (end - start) / 60000;
+                      const start = asDate(log.timestamps.station_start);
+                      const end = log.timestamps.completed ? asDate(log.timestamps.completed) : (log.timestamps.finished ? asDate(log.timestamps.finished) : new Date());
+                     if (end.getTime() - start.getTime() > 0) actualMinutes += (end.getTime() - start.getTime()) / 60000;
                    }
                    if (log.status === 'completed' || log.currentStep === 'Finished' || log.currentStation === 'GEREED') producedQty++;
                 });
@@ -333,14 +435,14 @@ const AiChatView = () => {
 
       // Kennisbank documenten toevoegen (Context Search)
       try {
-        const docsRef = collection(db, ...(PATHS?.AI_DOCUMENTS || ['future-factory', 'settings', 'ai_documents', 'knowledge', 'records']));
+        const docsRef = colPath(PATHS.AI_DOCUMENTS);
         // Haal de 5 meest recente documenten op voor context
         const docsSnap = await getDocs(query(docsRef, orderBy("uploadedAt", "desc"), limit(5)));
         
         if (!docsSnap.empty) {
           let docContext = "\n\n## KENNISBANK DOCUMENTEN (RECENT):\n";
           docsSnap.forEach(doc => {
-            const data = doc.data();
+            const data = doc.data() as AiDocumentRecord;
             if (data.analysis) {
               docContext += `### ${data.fileName}\n`;
               docContext += `Samenvatting: ${data.analysis.summary}\n`;
@@ -348,7 +450,7 @@ const AiChatView = () => {
                 docContext += `Feiten: ${data.analysis.keyFacts.join(", ")}\n`;
               }
               // Als de vraag specifiek over dit document gaat (naam match), voeg meer details toe
-              if (messageText.toLowerCase().includes(data.fileName.toLowerCase()) && data.analysis.fullContext) {
+                if (data.fileName && messageText.toLowerCase().includes(data.fileName.toLowerCase()) && data.analysis.fullContext) {
                  docContext += `Details: ${data.analysis.fullContext}\n`;
               }
               docContext += "\n";
@@ -358,22 +460,23 @@ const AiChatView = () => {
         }
       } catch (err) { console.error("Kon documenten niet ophalen:", err); }
 
-      const response = await aiService.chatWithContext(chatHistory, currentSystemContext, true, { signal: abortControllerRef.current.signal });
-      setMessages((prev) => [...prev, { role: "assistant", content: response }]);
+      const response = await ai.chatWithContext(chatHistory, currentSystemContext, true, { signal: abortControllerRef.current?.signal });
+      setMessages((prev) => [...prev, { role: "assistant", content: response } as ChatMessage]);
       showSuccess('Antwoord ontvangen!');
 
       // Gesprek opslaan in Firestore (fire-and-forget)
       if (auth.currentUser?.uid) {
-        const toSave = [...messages, userMsg, { role: "assistant", content: response }];
-        aiService.saveConversation({ userId: auth.currentUser.uid, sessionId: sessionId.current, messages: toSave });
+        const toSave: ChatMessage[] = [...messages, userMsg, { role: "assistant", content: response }];
+        ai.saveConversation({ userId: auth.currentUser.uid, sessionId: sessionId.current, messages: toSave });
       }
-    } catch (error) {
-      if (error?.name === 'AbortError') {
+    } catch (error: unknown) {
+      if (error instanceof Error && error.name === 'AbortError') {
         setMessages((prev) => [...prev, { role: "assistant", content: "⏹️ Antwoord gestopt op verzoek." }]);
         return;
       }
       console.error("AI Chat Error:", error);
-      showError("AI verbinding mislukt: " + error.message);
+      const message = error instanceof Error ? error.message : String(error);
+      showError("AI verbinding mislukt: " + message);
       setMessages((prev) => [...prev, { role: "assistant", content: "⚠️ Er is een fout opgetreden bij het verbinden met de AI." }]);
     } finally {
       setIsLoading(false);
@@ -417,14 +520,14 @@ const AiChatView = () => {
           <AiMessage 
             key={idx} 
             message={msg} 
-            factoryStructure={factoryStructure}
+            factoryStructure={factoryStructure as React.ComponentProps<typeof AiMessage>["factoryStructure"]}
             onNavigate={navigate}
             onQuery={(text) => handleSendChat(null, text)}
             onLike={msg.role === "assistant" && idx > 0 ? async () => {
               const questionMsg = messages[idx - 1];
               if (!questionMsg) return;
               try {
-                await aiService.saveMemory({
+                await ai.saveMemory({
                   topic: questionMsg.content.substring(0, 80),
                   content: msg.content.substring(0, 1000),
                   sourceQuestion: questionMsg.content,

@@ -3,6 +3,7 @@ import {
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
+  CACHE_SIZE_UNLIMITED,
   getFirestore,
   collection,
   addDoc,
@@ -11,6 +12,7 @@ import {
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions";
+import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 import { PATHS, getPathString } from "./dbPaths";
 
 const getErrorCode = (error: unknown): string => {
@@ -46,6 +48,7 @@ const createFirestoreInstance = () => {
     return initializeFirestore(app, {
       localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager(),
+        cacheSizeBytes: CACHE_SIZE_UNLIMITED,
       }),
     });
   } catch (error) {
@@ -69,6 +72,25 @@ export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app, 'europe-west1');
 export const appId = firebaseConfig.projectId;
+
+let appCheckInitialized = false;
+
+export const initializeOptionalAppCheck = (): void => {
+  if (appCheckInitialized || typeof window === "undefined") return;
+
+  const siteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY;
+  if (!siteKey) return;
+
+  try {
+    initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(siteKey),
+      isTokenAutoRefreshEnabled: true,
+    });
+    appCheckInitialized = true;
+  } catch (error) {
+    console.warn("App Check init overgeslagen:", error);
+  }
+};
 
 /**
  * logActivity - Gecorrigeerd om gebruik te maken van de centrale PATHS

@@ -43,7 +43,7 @@ export default function ManualSyncDrawings() {
       console.log("Sync resultaat:", res);
       setResult(res);
       setProgress({ current: res.length, total: res.length });
-      await logActivity(auth.currentUser?.uid, "MASTER_SYNC", `Manual sync executed. Matches: ${res.filter(r => r.found).length}`);
+      await logActivity(auth.currentUser?.uid || "system", "MASTER_SYNC", `Manual sync executed. Matches: ${res.filter(r => r.found).length}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err || "");
       setError(message || t('manualSync.unknownError', "Onbekende fout"));
@@ -165,7 +165,7 @@ export default function ManualSyncDrawings() {
                     <td className="py-4 px-8 text-slate-500 truncate max-w-[300px]">
                       {r.found ? (
                         <button 
-                          onClick={() => setSelectedProduct(r.fullProduct)}
+                          onClick={() => r.fullProduct && setSelectedProduct(r.fullProduct)}
                           className="font-bold text-blue-600 text-xs hover:underline text-left flex items-center gap-2 hover:text-blue-700 transition-colors"
                         >
                           {r.product}

@@ -227,6 +227,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /future-factory/settings/factory_configs/main {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     match /future-factory/settings/{document=**} {
       allow read: if hasUserRecord();
       allow write: if isAdmin();

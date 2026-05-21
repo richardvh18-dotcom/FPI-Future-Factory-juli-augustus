@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect } from "react";
 import {
   Loader2,
@@ -26,26 +26,70 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
+import { PATHS, getPathString } from "../../../config/dbPaths";
 import { useNotifications } from "../../../contexts/NotificationContext";
+
+type ActiveMode = "bell" | "fitting" | "bore";
+type BellSubType = "cb" | "tb";
+type PathKey = "BORE_DIMENSIONS" | "CB_DIMENSIONS" | "TB_DIMENSIONS" | "SOCKET_SPECS" | "FITTING_SPECS";
+
+type LibraryData = {
+  pns?: Array<string | number>;
+  diameters?: Array<string | number>;
+  product_names?: string[];
+  borings?: string[];
+};
+
+type BlueprintEntry = {
+  fields?: string[];
+};
+
+type DimRecord = {
+  id: string;
+  pressure?: number;
+  diameter?: number;
+  drilling?: string;
+  lastUpdated?: unknown;
+  [key: string]: string | number | undefined | unknown;
+};
+
+type ProductRangeEntry = Record<string, number[] | Record<string, number[]>>;
+type ProductRange = Record<string, ProductRangeEntry>;
+
+type DimensionsViewProps = {
+  libraryData?: LibraryData;
+  blueprints?: Record<string, BlueprintEntry>;
+  productRange?: ProductRange;
+};
+
+type DimFilters = {
+  pn: string;
+  id: string;
+  extraCode: string;
+  type: string;
+  drilling: string;
+};
+
+const colPath = (path: string[]) => collection(db, getPathString(path));
+const docPathWithId = (path: string[], id: string) => doc(db, `${getPathString(path)}/${id}`);
 
 /**
  * DimensionsView V7.1 - Vite Fix Edition
  * Beheert Boringen, Mof-maten (CB/TB) en Fitting specificaties in de nieuwe root.
  * FIX: Import van AdminToleranceView verwijderd om build-error op te lossen.
  */
-const DimensionsView = ({ libraryData, blueprints, productRange }) => {
+const DimensionsView = ({ libraryData, blueprints, productRange }: DimensionsViewProps) => {
   const { showConfirm , notify} = useNotifications();
-  const [activeMode, setActiveMode] = useState("bell"); // bell, fitting, bore
-  const [bellSubType, setBellSubType] = useState("cb"); // cb, tb
-  const [dimData, setDimData] = useState([]);
-  const [editingDim, setEditingDim] = useState(null);
+  const [activeMode, setActiveMode] = useState<ActiveMode>("bell"); // bell, fitting, bore
+  const [bellSubType, setBellSubType] = useState<BellSubType>("cb"); // cb, tb
+  const [dimData, setDimData] = useState<DimRecord[]>([]);
+  const [editingDim, setEditingDim] = useState<DimRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [listSearch, setListSearch] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Filters voor nieuwe items
-  const [dimFilters, setDimFilters] = useState({
+  const [dimFilters, setDimFilters] = useState<DimFilters>({
     pn: "",
     id: "",
     extraCode: "",
@@ -54,7 +98,7 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
   });
 
   // --- CONFIGURATIE ---
-  const VIEW_MODES = [
+  const VIEW_MODES: Array<{ id: ActiveMode; label: string; icon: React.ReactNode }> = [
     { id: "bell", label: "Bell (Mof)", icon: <Layout size={18} /> },
     { id: "fitting", label: "Fitting", icon: <Ruler size={18} /> },
     { id: "bore", label: "Bore", icon: <Target size={18} /> },
@@ -87,7 +131,7 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
   const FITTING_ORDER = ["TW", "L", "Lo", "R", "Weight"];
   const DEFAULT_BORE_FIELDS = ["k", "d", "n", "b"];
 
-  const getPathKey = () => {
+  const getPathKey = (): PathKey | null => {
     if (activeMode === "bore") return "BORE_DIMENSIONS";
     if (activeMode === "bell")
       return bellSubType === "cb" ? "CB_DIMENSIONS" : "TB_DIMENSIONS";
@@ -105,12 +149,12 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
     if (!pathKey) return;
 
     setLoading(true);
-    const colRef = collection(db, ...PATHS[pathKey]);
+    const colRef = colPath(PATHS[pathKey]);
 
     const unsubscribe = onSnapshot(
       query(colRef),
       (snap) => {
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data: DimRecord[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<DimRecord, "id">) }));
         setDimData(
           data.sort((a, b) =>
             a.id.localeCompare(b.id, undefined, { numeric: true })
@@ -154,15 +198,18 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
 
     if (matrixEntry && matrixEntry[pnKey]) {
       const pnData = matrixEntry[pnKey];
-      if (activeMode === "fitting" && dimFilters.type) {
+      if (!Array.isArray(pnData) && activeMode === "fitting" && dimFilters.type) {
         return (pnData[dimFilters.type] || pnData["Algemeen"] || []).sort(
-          (a, b) => a - b
+          (a: number, b: number) => a - b
         );
+      } else if (Array.isArray(pnData)) {
+        return [...pnData].sort((a, b) => a - b);
       } else {
-        const allIds = new Set();
-        Object.values(pnData).forEach((ids) =>
-          ids.forEach((id) => allIds.add(Number(id)))
-        );
+        const allIds = new Set<number>();
+        Object.values(pnData).forEach((ids) => {
+          if (!Array.isArray(ids)) return;
+          ids.forEach((id: number) => allIds.add(Number(id)));
+        });
         return Array.from(allIds).sort((a, b) => a - b);
       }
     }
@@ -174,8 +221,8 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
     const pathKey = getPathKey();
     if (!pathKey) return;
 
-    let id;
-    let baseData = {
+    let id = "";
+    let baseData: Omit<DimRecord, "id"> = {
       pressure: Number(dimFilters.pn),
       diameter: Number(dimFilters.id),
     };
@@ -210,8 +257,10 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
       blueprints?.[blueprintKey]?.fields ||
       (activeMode === "bore" ? DEFAULT_BORE_FIELDS : FITTING_ORDER);
 
-    const newDoc = { id, ...baseData };
-    fields.forEach((f) => (newDoc[f] = ""));
+    const newDoc: DimRecord = { id, ...baseData };
+    fields.forEach((f: string) => {
+      newDoc[f] = "";
+    });
     setEditingDim(newDoc);
   };
 
@@ -220,7 +269,8 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
     setSaving(true);
     try {
       const pathKey = getPathKey();
-      const docRef = doc(db, ...PATHS[pathKey], editingDim.id);
+      if (!pathKey) return;
+      const docRef = docPathWithId(PATHS[pathKey], editingDim.id);
       await setDoc(
         docRef,
         {
@@ -231,20 +281,21 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
       );
 
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "DIMENSION_SAVE",
         `Maatvoering opgeslagen: ${editingDim.id} (${pathKey})`
       );
 
       setEditingDim(null);
-    } catch (e) {
-      notify("Fout bij opslaan: " + e.message);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      notify("Fout bij opslaan: " + message);
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: string) => {
     const confirmed = await showConfirm({
       title: 'Item verwijderen',
       message: `Item ${id} definitief verwijderen?`,
@@ -255,18 +306,19 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
     if (!confirmed) return;
     try {
       const pathKey = getPathKey();
-      await deleteDoc(doc(db, ...PATHS[pathKey], id));
+      if (!pathKey) return;
+      await deleteDoc(docPathWithId(PATHS[pathKey], id));
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "DIMENSION_DELETE",
         `Maatvoering verwijderd: ${id} (${pathKey})`
       );
-    } catch (e) {
-      notify(e.message);
+    } catch (e: unknown) {
+      notify(e instanceof Error ? e.message : String(e));
     }
   };
 
-  const getSortedFields = (docItem) => {
+  const getSortedFields = (docItem: DimRecord) => {
     const keys = Object.keys(docItem).filter(
       (k) =>
         !["id", "pressure", "diameter", "drilling", "lastUpdated"].includes(k)
@@ -281,6 +333,8 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
       return indexA - indexB;
     });
   };
+
+  const currentPathKey = getPathKey();
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 w-full max-w-7xl mx-auto h-[calc(100vh-140px)] flex flex-col text-left">
@@ -506,12 +560,12 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
                 {getSortedFields(editingDim).map((key) => (
                   <div key={key} className="space-y-1.5 text-left">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                      {DIMENSION_LABELS[key] || key}
+                      {DIMENSION_LABELS[key as keyof typeof DIMENSION_LABELS] || key}
                     </label>
                     <div className="relative">
                       <input
                         className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-sm font-black focus:bg-white focus:border-blue-500 outline-none transition-all shadow-inner"
-                        value={editingDim[key] || ""}
+                        value={typeof editingDim[key] === "string" || typeof editingDim[key] === "number" ? editingDim[key] : ""}
                         onChange={(e) =>
                           setEditingDim({
                             ...editingDim,
@@ -542,7 +596,7 @@ const DimensionsView = ({ libraryData, blueprints, productRange }) => {
                   Alle wijzigingen worden direct weggeschreven naar de
                   beveiligde productieomgeving onder{" "}
                   <span className="text-blue-400 italic">
-                    /{PATHS[getPathKey()]?.join("/")}
+                    /{currentPathKey ? PATHS[currentPathKey]?.join("/") : ""}
                   </span>
                   .
                 </div>

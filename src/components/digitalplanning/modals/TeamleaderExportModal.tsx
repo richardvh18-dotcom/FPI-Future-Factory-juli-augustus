@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { X, FileSpreadsheet, FileText, Download, Info, CheckCircle2, Factory, CalendarRange, ListTodo, Search, Loader2 } from "lucide-react";
 import * as XLSX from "xlsx";
@@ -10,7 +9,7 @@ import { httpsCallable } from "firebase/functions";
 import { functions } from "../../../config/firebase";
 import { useBackgroundTasks } from "../../../contexts/BackgroundTaskContext";
 
-const safeToDate = (value) => {
+const safeToDate = (value: any) => {
   if (!value) return null;
 
   if (typeof value?.toDate === "function") {
@@ -27,10 +26,22 @@ const safeToDate = (value) => {
   return Number.isFinite(converted.getTime()) ? converted : null;
 };
 
-const safeFormatDate = (value, pattern, fallback = "") => {
+const safeFormatDate = (value: any, pattern: string, fallback = "") => {
   const dateObj = safeToDate(value);
   if (!dateObj) return fallback;
   return format(dateObj, pattern);
+};
+
+type TeamleaderExportModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  rawOrders?: any[];
+  rawProducts?: any[];
+  archivedProducts?: any[];
+  initialExportType?: string;
+  lockExportType?: boolean;
+  onTaskCreated?: (taskId: string) => void;
+  preloadedTask?: any;
 };
 
 export default function TeamleaderExportModal({
@@ -41,13 +52,13 @@ export default function TeamleaderExportModal({
   archivedProducts = [],
   initialExportType = "planning",
   lockExportType = false,
-  onTaskCreated = null,
-  preloadedTask = null,
-}) {
+  onTaskCreated,
+  preloadedTask,
+}: TeamleaderExportModalProps) {
   const [exportType, setExportType] = useState("planning"); // 'planning', 'lotnummers' of 'ln_compare'
   const [selectedMachine, setSelectedMachine] = useState("Alle machines");
   const [isRequestingExport, setIsRequestingExport] = useState(false);
-  const [activeTaskId, setActiveTaskId] = useState(null);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const { tasks, downloadTaskResult } = useBackgroundTasks();
 
   // Planning Filters (Origineel)
@@ -70,17 +81,17 @@ export default function TeamleaderExportModal({
 
   // Haal actieve taak op uit de task lijst
   const activeTask = preloadedTask ||
-    (activeTaskId ? tasks.find(t => t.id === activeTaskId) : null);
+    (activeTaskId ? (tasks as any[]).find((t: any) => t.id === activeTaskId) : null);
 
   // 1. Ontdubbelen en meest definitieve staat bepalen voor lotnummers
   const allProducts = useMemo(() => {
     const unique = new Map();
 
-    [...rawProducts, ...archivedProducts].forEach(p => {
+    [...rawProducts, ...archivedProducts].forEach((p: any) => {
       const lot = String(p.lotNumber || p.id || "").trim().toUpperCase();
       if (!lot) return;
 
-      const getScore = (item) => {
+      const getScore = (item: any) => {
         const isArchived = !!(item.archived || item._archived || item.archivedAt);
         const statusUpper = String(item.status || "").toUpperCase();
         const stepUpper = String(item.currentStep || "").toUpperCase();
@@ -116,11 +127,11 @@ export default function TeamleaderExportModal({
   const allOrders = useMemo(() => {
     const map = new Map();
     
-    rawOrders.forEach(o => {
+    rawOrders.forEach((o: any) => {
       if (o.orderId) map.set(String(o.orderId).trim().toUpperCase(), o);
     });
 
-    allProducts.forEach(p => {
+    allProducts.forEach((p: any) => {
       const orderId = String(p.orderId || "").trim().toUpperCase();
       if (!orderId) return;
 
@@ -141,7 +152,7 @@ export default function TeamleaderExportModal({
 
   // 3. Alleen actieve lotnummers (Voor Lotnummer Export)
   const activeProducts = useMemo(() => {
-    return allProducts.filter(p => {
+    return allProducts.filter((p: any) => {
       const isArchived = !!(p.archived || p._archived || p.archivedAt);
       const statusUpper = String(p.status || "").toUpperCase();
       const stepUpper = String(p.currentStep || "").toUpperCase();
@@ -162,15 +173,15 @@ export default function TeamleaderExportModal({
 
   // 4. Beschikbare machines uit orders én lotnummers
   const availableMachines = useMemo(() => {
-    const machines = new Set();
-    allOrders.forEach(o => {
+    const machines = new Set<string>();
+    allOrders.forEach((o: any) => {
       if (o.machine) {
         let m = String(o.machine).toUpperCase().replace(/\s/g, "");
         if (m.startsWith("40")) m = m.slice(2);
         if (m) machines.add(m);
       }
     });
-    activeProducts.forEach(p => {
+    activeProducts.forEach((p: any) => {
       const m = p.currentStation || p.machine || p.originMachine || "";
       if (m) {
         let cleanM = String(m).toUpperCase().replace(/\s/g, "");
@@ -184,8 +195,8 @@ export default function TeamleaderExportModal({
   // Filter voor dropdown: toon in Lotnummer export alleen BH machines
   const displayedMachines = useMemo(() => {
     if (exportType === "lotnummers") {
-      const locs = new Set();
-      activeProducts.forEach(p => {
+      const locs = new Set<string>();
+      activeProducts.forEach((p: any) => {
         const loc = p.currentStation || p.currentStep || "Onbekend";
         if (loc) locs.add(String(loc).trim());
       });
@@ -200,12 +211,12 @@ export default function TeamleaderExportModal({
 
   // 5. Data Planning Export (Originele logica)
   const planningExportData = useMemo(() => {
-    const getDeliveryDate = (order) => {
+    const getDeliveryDate = (order: any) => {
       const d = order.deliveryDate || order.plannedDeliveryDate || order.dueDate || order.dateObj;
       return safeToDate(d);
     };
 
-    const machineOrders = allOrders.filter(o => {
+    const machineOrders = allOrders.filter((o: any) => {
       if (selectedMachine === "Alle machines") return true;
       let orderMachine = String(o.machine || "").toUpperCase().replace(/\s/g, "");
       if (orderMachine.startsWith("40")) orderMachine = orderMachine.slice(2);
@@ -216,15 +227,15 @@ export default function TeamleaderExportModal({
       return orderMachine === filterMachine;
     });
 
-    return machineOrders.map(order => {
+    return machineOrders.map((order: any) => {
       const orderId = String(order.orderId || "").trim().toUpperCase();
-      const orderProducts = allProducts.filter(p => String(p.orderId || "").trim().toUpperCase() === orderId);
+      const orderProducts = allProducts.filter((p: any) => String(p.orderId || "").trim().toUpperCase() === orderId);
 
       let inBehandelingCount = 0;
       let gereedCount = 0;
       const actieveStappen = new Set();
 
-      orderProducts.forEach(p => {
+      orderProducts.forEach((p: any) => {
         const stepUpper = String(p.currentStep || "").toUpperCase();
         const statusUpper = String(p.status || "").toUpperCase();
         const isArchived = !!(p.archived || p._archived || p.archivedAt);
@@ -275,7 +286,7 @@ export default function TeamleaderExportModal({
         datumLabel,
         huidigeStap
       };
-    }).filter(order => {
+    }).filter((order: any) => {
       if (orderStatusFilter === "gereed" && !order.isGeheelGereed) return false;
       if (orderStatusFilter === "lopend" && order.isGeheelGereed) return false;
 
@@ -291,7 +302,7 @@ export default function TeamleaderExportModal({
         if (d < startDate || d > endDate) return false;
       }
       return true;
-    }).sort((a, b) => {
+    }).sort((a: any, b: any) => {
         const weekA = Number(a.weekNumber || a.week || 0);
         const weekB = Number(b.weekNumber || b.week || 0);
         if (weekA !== weekB) return weekA - weekB;
@@ -304,7 +315,7 @@ export default function TeamleaderExportModal({
 
   // 6. Data Lotnummer Export
   const lotnummerExportData = useMemo(() => {
-    const getDwellTime = (product) => {
+    const getDwellTime = (product: any) => {
       let startTime = new Date();
       if (product.updatedAt) {
         startTime = typeof product.updatedAt.toDate === 'function' ? product.updatedAt.toDate() : new Date(product.updatedAt);
@@ -316,14 +327,14 @@ export default function TeamleaderExportModal({
       return formatDistanceStrict(startTime, new Date(), { locale: nl });
     };
 
-    return activeProducts.filter(p => {
+    return activeProducts.filter((p: any) => {
       if (selectedMachine === "Alle machines") {
         return true; 
       }
       
       const pLoc = String(p.currentStation || p.currentStep || "Onbekend").trim();
       return pLoc.toLowerCase() === selectedMachine.toLowerCase();
-    }).map(product => {
+    }).map((product: any) => {
       return {
         "Lotnummer": product.lotNumber || "Onbekend",
         "Ordernummer": product.orderId || product.orderNumber || "Onbekend",
@@ -333,7 +344,7 @@ export default function TeamleaderExportModal({
         "Status": product.status || product.currentStep || "Onbekend",
         "Verblijftijd": getDwellTime(product)
       };
-    }).sort((a, b) => {
+    }).sort((a: any, b: any) => {
       const locCompare = a["Huidig Station"].localeCompare(b["Huidig Station"]);
       if (locCompare !== 0) return locCompare;
       return a.Lotnummer.localeCompare(b.Lotnummer);
@@ -347,19 +358,19 @@ export default function TeamleaderExportModal({
     
     // LN Vergelijking Export (Nieuw)
     // We maken een platte lijst die lijkt op de LN export tisfc140101200
-    const filteredOrders = allOrders.filter(o => {
+    const filteredOrders = allOrders.filter((o: any) => {
         if (selectedMachine === "Alle machines") return true;
         let m = String(o.machine || "").toUpperCase().replace(/\s/g, "");
         if (m.startsWith("40")) m = m.slice(2);
         return m === selectedMachine;
     });
 
-    return filteredOrders.map(order => {
+    return filteredOrders.map((order: any) => {
         const orderId = String(order.orderId || "").trim().toUpperCase();
-        const orderProducts = allProducts.filter(p => String(p.orderId || "").trim().toUpperCase() === orderId);
+        const orderProducts = allProducts.filter((p: any) => String(p.orderId || "").trim().toUpperCase() === orderId);
         const rawDate = order.deliveryDate ?? order.dateObj;
         
-        const gereedCount = orderProducts.filter(p => {
+        const gereedCount = orderProducts.filter((p: any) => {
             const stepUpper = String(p.currentStep || "").toUpperCase();
             const statusUpper = String(p.status || "").toUpperCase();
             const isArchived = !!(p.archived || p._archived || p.archivedAt);
@@ -386,7 +397,7 @@ export default function TeamleaderExportModal({
     setIsRequestingExport(true);
     try {
       const requestExportTask = httpsCallable(functions, 'requestExportTask');
-      const result = await requestExportTask({
+      const result: any = await requestExportTask({
         exportType,
         taskName: `Export ${exportType} voor ${selectedMachine}`,
         filter: {
@@ -398,7 +409,7 @@ export default function TeamleaderExportModal({
           endDate
         }
       });
-      const taskId = result?.data?.taskId;
+      const taskId = String(result?.data?.taskId || "").trim();
       if (taskId) {
         setActiveTaskId(taskId);
         if (onTaskCreated) onTaskCreated(taskId);
@@ -406,7 +417,7 @@ export default function TeamleaderExportModal({
         // Geen taskId → fallback
         handleExportExcel();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Cloud export error:", err);
       alert("Cloud export niet beschikbaar. We starten direct lokale export.");
       handleExportExcel();
@@ -417,10 +428,10 @@ export default function TeamleaderExportModal({
 
   const handleExportExcel = () => {
     if (exportType === "planning") {
-      const excelData = [];
-      let currentWeek = null;
+      const excelData: any[] = [];
+      let currentWeek: any = null;
 
-      planningExportData.forEach(order => {
+      planningExportData.forEach((order: any) => {
         const orderWeek = order.weekNumber || order.week || '?';
         if (currentWeek !== orderWeek) {
           excelData.push({
@@ -447,10 +458,10 @@ export default function TeamleaderExportModal({
       XLSX.utils.book_append_sheet(wb, ws, "Planning");
       XLSX.writeFile(wb, `Planning_Export_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
     } else if (exportType === "lotnummers") {
-      const excelData = [];
-      let currentLoc = null;
-      lotnummerExportData.forEach(row => {
-        const rowLoc = row["Huidig Station"];
+      const excelData: any[] = [];
+      let currentLoc: any = null;
+      lotnummerExportData.forEach((row: any) => {
+        const rowLoc = row["Huidig Station" as keyof typeof row];
         if (currentLoc !== rowLoc) {
           excelData.push({
             'Lotnummer': `=== Locatie: ${rowLoc} ===`,
@@ -490,10 +501,10 @@ export default function TeamleaderExportModal({
       doc.setFontSize(10);
       doc.text(`Datum gegenereerd: ${format(new Date(), 'dd-MM-yyyy HH:mm')} | ${dateFilterText}`, 14, 22);
 
-      const tableData = [];
-      let currentWeek = null;
+      const tableData: any[] = [];
+      let currentWeek: any = null;
 
-      planningExportData.forEach(order => {
+      planningExportData.forEach((order: any) => {
         const orderWeek = order.weekNumber || order.week || '?';
         if (currentWeek !== orderWeek) {
           tableData.push([
@@ -507,7 +518,7 @@ export default function TeamleaderExportModal({
         ]);
       });
 
-      doc.autoTable({
+      (doc as any).autoTable({
         startY: 28,
         head: [['Leverdatum', 'Week', 'Manufactured Item', 'Item Desc', 'Huidige Stap', 'Plan', 'Gewikkeld', 'Te doen', 'Gereed']],
         body: tableData,
@@ -523,10 +534,10 @@ export default function TeamleaderExportModal({
       doc.setFontSize(10);
       doc.text(`Datum gegenereerd: ${format(new Date(), 'dd-MM-yyyy HH:mm')}`, 14, 22);
 
-      const tableData = [];
-      let currentLoc = null;
-      lotnummerExportData.forEach(row => {
-        const rowLoc = row["Huidig Station"];
+      const tableData: any[] = [];
+      let currentLoc: any = null;
+      lotnummerExportData.forEach((row: any) => {
+        const rowLoc = row["Huidig Station" as keyof typeof row];
         if (currentLoc !== rowLoc) {
           tableData.push([
             { content: `=== Locatie: ${rowLoc} ===`, colSpan: 7, styles: { halign: 'center', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' } }
@@ -544,7 +555,7 @@ export default function TeamleaderExportModal({
         ]);
       });
 
-      doc.autoTable({
+      (doc as any).autoTable({
         startY: 28,
         head: [['Lotnummer', 'Ordernummer', 'Product', 'Oorsprong', 'Huidig Station', 'Status', 'Verblijftijd']],
         body: tableData,
@@ -597,9 +608,9 @@ export default function TeamleaderExportModal({
               <Factory size={14} /> {exportType === "lotnummers" ? "Selecteer Locatie" : "Selecteer Machine"}
             </label>
             <div className="relative">
-              <select value={selectedMachine} onChange={(e) => setSelectedMachine(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors cursor-pointer appearance-none shadow-sm">
+              <select value={selectedMachine} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedMachine(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors cursor-pointer appearance-none shadow-sm">
                 <option value="Alle machines">{exportType === "lotnummers" ? "Alle locaties" : "Alle machines"}</option>
-                {displayedMachines.map(m => <option key={m} value={m}>{m}</option>)}
+                {displayedMachines.map((m: string) => <option key={m} value={m}>{m}</option>)}
               </select>
               <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">
                 ▼
@@ -627,14 +638,14 @@ export default function TeamleaderExportModal({
                 </div>
                 
                 {dateFilterType === "single" && (
-                  <input type="date" value={singleDate} onChange={e => setSingleDate(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
+                  <input type="date" value={singleDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSingleDate(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
                 )}
                 
                 {dateFilterType === "range" && (
                   <div className="flex gap-2 items-center">
-                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="flex-1 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
+                    <input type="date" value={startDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)} className="flex-1 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
                     <span className="text-sm font-black text-slate-300">-</span>
-                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="flex-1 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
+                    <input type="date" value={endDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)} className="flex-1 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
                   </div>
                 )}
               </div>
