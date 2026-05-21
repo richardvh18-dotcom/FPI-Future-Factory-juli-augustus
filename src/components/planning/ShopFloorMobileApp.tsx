@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { 
@@ -24,13 +23,13 @@ import {
 } from "lucide-react";
 import { collection, onSnapshot, doc } from "firebase/firestore";
 import { db, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { format } from "date-fns";
 import { nl } from "date-fns/locale";
 import MobileScanner from "../digitalplanning/MobileScanner";
 import ProductMoveModal from "../digitalplanning/ProductMoveModal";
-import { normalizeMachine } from "../../utils/hubHelpers.tsx";
+import { normalizeMachine } from "../../utils/hubHelpers";
 import StatusBadge from "../digitalplanning/common/StatusBadge";
 import {
   moveTrackedProductManual,
@@ -41,6 +40,35 @@ import {
 } from "../../services/planningSecurityService";
 import { useNotifications } from '../../contexts/NotificationContext';
 
+type AnyRecord = Record<string, any>;
+type FactoryStation = { id?: string; name?: string; departmentName?: string };
+type MachineStat = {
+  machine?: string;
+  id?: string;
+  department?: string;
+  operatorName: string;
+  activeOrder?: AnyRecord;
+  ordersCount: number;
+  downtimeCount: number;
+  defectCount: number;
+  activeProductsCount: number;
+  hasIssues: boolean;
+  isActive: boolean;
+  status: string;
+  hoursPerWeek?: number;
+};
+type OrderWithProducts = AnyRecord & {
+  products: AnyRecord[];
+  activeProductsCount?: number;
+  defectCount?: number;
+};
+type ScanResult = {
+  type: 'product' | 'order' | 'personnel' | 'unknown';
+  code: string;
+  data: AnyRecord;
+  onClick?: () => void;
+};
+
 /**
  * Mobile Inspector - Floor manager companion app
  * Voor teamleaders, QC en planners die rondlopen op de werkvloer
@@ -50,54 +78,58 @@ const ShopFloorMobileApp = () => {
   const { t } = useTranslation();
   const { user, role } = useAdminAuth();
   const { notify } = useNotifications();
-  const [machines, setMachines] = useState([]);
-  const [allOrders, setAllOrders] = useState([]);
-  const [downtimeReports, setDowntimeReports] = useState([]);
-  const [allPersonnel, setAllPersonnel] = useState([]);
-  const [defectReports, setDefectReports] = useState([]);
-  const [allTracked, setAllTracked] = useState([]);
+  const roleKey = String(role || "");
+  const userUid = typeof user?.uid === "string" ? user.uid : "unknown";
+  const userEmail = typeof user?.email === "string" ? user.email : "Mobile User";
+  const userDisplayName = typeof user?.displayName === "string" ? user.displayName : "";
+  const [machines, setMachines] = useState<AnyRecord[]>([]);
+  const [allOrders, setAllOrders] = useState<AnyRecord[]>([]);
+  const [downtimeReports, setDowntimeReports] = useState<AnyRecord[]>([]);
+  const [allPersonnel, setAllPersonnel] = useState<AnyRecord[]>([]);
+  const [defectReports, setDefectReports] = useState<AnyRecord[]>([]);
+  const [allTracked, setAllTracked] = useState<AnyRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all"); // all | active | issues
   const [activeView, setActiveView] = useState("planning"); // planning | overview | downtime | quality | orders | scanner
   const [showScanner, setShowScanner] = useState(false);
-  const [scanResult, setScanResult] = useState(null);
-  const [factoryStations, setFactoryStations] = useState([]);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [departments, setDepartments] = useState(["ALLES"]);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [factoryStations, setFactoryStations] = useState<FactoryStation[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<AnyRecord | null>(null);
+  const [departments, setDepartments] = useState<string[]>(["ALLES"]);
   const [selectedDepartment, setSelectedDepartment] = useState("ALLES");
   const [operatorCode, setOperatorCode] = useState("");
   const [showIssueModal, setShowIssueModal] = useState(false);
-  const [issueType, setIssueType] = useState(null);
+  const [issueType, setIssueType] = useState<string | null>(null);
   const [issueDescription, setIssueDescription] = useState("");
-  const [productToMove, setProductToMove] = useState(null);
-  const [selectedMachineFilter, setSelectedMachineFilter] = useState(null);
-  const [selectedMachineDetail, setSelectedMachineDetail] = useState(null); // For Teamleader: detailed machine view
-  const [selectedProduct, setSelectedProduct] = useState(null); // For product dossier
-  const [repairMode, setRepairMode] = useState(null); // null | productId
+  const [productToMove, setProductToMove] = useState<AnyRecord | null>(null);
+  const [selectedMachineFilter, setSelectedMachineFilter] = useState<string | null>(null);
+  const [selectedMachineDetail, setSelectedMachineDetail] = useState<AnyRecord | null>(null); // For Teamleader: detailed machine view
+  const [selectedProduct, setSelectedProduct] = useState<AnyRecord | null>(null); // For product dossier
+  const [repairMode, setRepairMode] = useState<string | null>(null); // null | productId
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
-  const scrollContainerRef = useRef(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   
   // Planning Dashboard filters
   const [planningSearchTerm, setPlanningSearchTerm] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState("all"); // all | active | completed | defect | temp_reject
-  const [readyForNextStepMode, setReadyForNextStepMode] = useState(null); // null | productId (voor snelle scan)
+  const [readyForNextStepMode, setReadyForNextStepMode] = useState<string | null>(null); // null | productId (voor snelle scan)
 
   useEffect(() => {
     if (!PATHS || !PATHS.FACTORY_CONFIG) return;
 
     // Load factory config for full machine list
     const unsubConfig = onSnapshot(
-      doc(db, ...PATHS.FACTORY_CONFIG),
+      doc(db, getPathString(PATHS.FACTORY_CONFIG)),
       (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();
-          const stations = [];
-          const depts = ["ALLES"];
+          const stations: FactoryStation[] = [];
+          const depts: string[] = ["ALLES"];
           if (data.departments) {
-            data.departments.forEach(dept => {
+            data.departments.forEach((dept: AnyRecord) => {
               if (dept.isActive !== false) depts.push(dept.name);
               if (dept.stations) {
-                dept.stations.forEach(station => {
+                dept.stations.forEach((station: AnyRecord) => {
                   stations.push({
                     ...station,
                     departmentName: dept.name
@@ -114,11 +146,11 @@ const ShopFloorMobileApp = () => {
 
     // Load all machines/occupancy
     const unsubOccupancy = onSnapshot(
-      collection(db, ...PATHS.OCCUPANCY),
+      collection(db, getPathString(PATHS.OCCUPANCY)),
       (snapshot) => {
-        const occData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const occData = snapshot.docs.map((entry) => ({
+          id: entry.id,
+          ...entry.data()
         }));
         setMachines(occData);
       }
@@ -126,11 +158,11 @@ const ShopFloorMobileApp = () => {
 
     // Load all orders
     const unsubPlanning = onSnapshot(
-      collection(db, ...PATHS.PLANNING),
+      collection(db, getPathString(PATHS.PLANNING)),
       (snapshot) => {
-        const orders = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const orders = snapshot.docs.map((entry) => ({
+          id: entry.id,
+          ...entry.data()
         }));
         setAllOrders(orders);
       }
@@ -138,11 +170,11 @@ const ShopFloorMobileApp = () => {
 
     // Load tracked products
     const unsubTracked = onSnapshot(
-      collection(db, ...PATHS.TRACKING),
+      collection(db, getPathString(PATHS.TRACKING)),
       (snapshot) => {
-        const tracked = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const tracked = snapshot.docs.map((entry) => ({
+          id: entry.id,
+          ...entry.data()
         }));
         setAllTracked(tracked);
       }
@@ -150,11 +182,11 @@ const ShopFloorMobileApp = () => {
 
     // Load downtime reports
     const unsubDowntime = onSnapshot(
-      collection(db, ...PATHS.DOWNTIME),
+      collection(db, getPathString(PATHS.DOWNTIME)),
       (snapshot) => {
-        const reports = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const reports = snapshot.docs.map((entry) => ({
+          id: entry.id,
+          ...entry.data()
         }));
         setDowntimeReports(reports);
       }
@@ -162,11 +194,11 @@ const ShopFloorMobileApp = () => {
 
     // Load defect reports
     const unsubDefects = onSnapshot(
-      collection(db, ...PATHS.DEFECTS),
+      collection(db, getPathString(PATHS.DEFECTS)),
       (snapshot) => {
-        const reports = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const reports = snapshot.docs.map((entry) => ({
+          id: entry.id,
+          ...entry.data()
         }));
         setDefectReports(reports);
       }
@@ -174,9 +206,9 @@ const ShopFloorMobileApp = () => {
 
     // Load personnel
     const unsubPersonnel = onSnapshot(
-      collection(db, ...PATHS.PERSONNEL),
+      collection(db, getPathString(PATHS.PERSONNEL)),
       (snapshot) => {
-        const people = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const people = snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
         setAllPersonnel(people);
       }
     );
@@ -194,30 +226,31 @@ const ShopFloorMobileApp = () => {
 
   // Auto-select department for team leaders & planners
   useEffect(() => {
-    if (role === "teamleader" && user?.department) {
+    const userDepartment = typeof user?.department === "string" ? user.department : "";
+    if (role === "teamleader" && typeof user?.department === "string") {
       // Case-insensitive match
-      const match = departments.find(d => d.toLowerCase() === user.department.toLowerCase());
+      const match = departments.find((d) => d.toLowerCase() === userDepartment.toLowerCase());
       if (match) {
         setSelectedDepartment(match);
-      } else if (user.department.toUpperCase() !== "ALLES") {
-        setSelectedDepartment(user.department);
+      } else if (userDepartment.toUpperCase() !== "ALLES") {
+        setSelectedDepartment(userDepartment);
       }
-    } else if (["planner", "admin", "manager"].includes(role)) {
+    } else if (["planner", "admin", "manager"].includes(roleKey)) {
       setSelectedDepartment("ALLES");
     }
-  }, [role, user, departments]);
+  }, [roleKey, user, departments]);
 
-  const handleContainerScroll = (event) => {
+  const handleContainerScroll = (event: React.UIEvent<HTMLDivElement>) => {
     setIsHeaderCollapsed(event.currentTarget.scrollTop > 20);
   };
 
-  const normalizeDepartmentLabel = (value) => String(value || "")
+  const normalizeDepartmentLabel = (value: unknown) => String(value || "")
     .trim()
     .toLowerCase()
     .replace(/^productie\s*-\s*/i, "")
     .replace(/\s+/g, " ");
 
-  const inferDepartmentFromMachineCode = (value) => {
+  const inferDepartmentFromMachineCode = (value: unknown): string => {
     const machine = normalizeMachine(String(value || "").trim()).toUpperCase();
     if (machine.startsWith("BH")) return "fittings";
     if (machine.startsWith("BA")) return "pipes";
@@ -225,7 +258,7 @@ const ShopFloorMobileApp = () => {
     return "";
   };
 
-  const matchesDepartmentId = (departmentId, selectedDept) => {
+  const matchesDepartmentId = (departmentId: unknown, selectedDept: string) => {
     if (!departmentId || !selectedDept) return false;
 
     const id = String(departmentId).trim().toLowerCase();
@@ -241,7 +274,7 @@ const ShopFloorMobileApp = () => {
     return false;
   };
 
-  const findStationForMachine = (machineCode) => {
+  const findStationForMachine = (machineCode: string) => {
     const normalizedMachine = normalizeMachine(machineCode || "");
     return factoryStations.find((station) => {
       const stationName = normalizeMachine(station.name || station.id || "");
@@ -249,7 +282,7 @@ const ShopFloorMobileApp = () => {
     });
   };
 
-  const matchesOrderDepartment = (order) => {
+  const matchesOrderDepartment = (order: AnyRecord) => {
     if (selectedDepartment === "ALLES") return true;
 
     const station = findStationForMachine(order.machine);
@@ -260,7 +293,7 @@ const ShopFloorMobileApp = () => {
     return false;
   };
 
-  const matchesSelectedDepartment = (selectedDept, stationDepartmentName, machineCode) => {
+  const matchesSelectedDepartment = (selectedDept: string, stationDepartmentName: unknown, machineCode: unknown) => {
     if (!selectedDept || normalizeDepartmentLabel(selectedDept) === "alles") return true;
 
     const filter = normalizeDepartmentLabel(selectedDept);
@@ -278,24 +311,24 @@ const ShopFloorMobileApp = () => {
   };
 
   // Calculate machine statistics
-  const machineStats = useMemo(() => {
+  const machineStats = useMemo<MachineStat[]>(() => {
     // Use factory config as base, fallback to occupancy data if config not loaded
     const baseList = factoryStations.length > 0
-      ? factoryStations.map(s => ({ 
+      ? factoryStations.map((s) => ({ 
         machine: s.name, 
         id: s.id, 
         department: s.departmentName 
       }))
-      : [...new Set(machines.map(m => m.machine || m.machineId).filter(Boolean))]
-          .map(name => ({ machine: name, id: name }));
+      : [...new Set(machines.map((m) => m.machine || m.machineId).filter(Boolean))]
+          .map((name) => ({ machine: name, id: name }));
 
     const todayStr = new Date().toISOString().split('T')[0];
 
-    return baseList.map(baseMachine => {
+    return baseList.map((baseMachine): MachineStat => {
       const name = baseMachine.machine;
       
       // Find active occupancy for TODAY
-      const activeOccupancy = machines.filter(m => {
+      const activeOccupancy = machines.filter((m) => {
         const mName = m.machine || m.machineId || m.station;
         const normMName = (mName || "").toUpperCase().replace(/\s/g, "");
         const normName = (name || "").toUpperCase().replace(/\s/g, "");
@@ -307,14 +340,14 @@ const ShopFloorMobileApp = () => {
         return isMatch && mDate === todayStr && m.operatorName;
       });
 
-      const operatorNames = [...new Set(activeOccupancy.map(o => o.operatorName))].join(", ");
+      const operatorNames = [...new Set(activeOccupancy.map((o) => o.operatorName))].join(", ");
 
-      const machineOrders = allOrders.filter(o => o.machine === name);
-      const activeOrder = machineOrders.find(o => o.status === "in_production" || o.status === "in_progress");
-      const machineDowntime = downtimeReports.filter(d => d.machine === name && d.status === "active");
-      const machineDefects = defectReports.filter(d => d.machine === name && d.status === "open");
+      const machineOrders = allOrders.filter((o) => o.machine === name);
+      const activeOrder = machineOrders.find((o) => o.status === "in_production" || o.status === "in_progress");
+      const machineDowntime = downtimeReports.filter((d) => d.machine === name && d.status === "active");
+      const machineDefects = defectReports.filter((d) => d.machine === name && d.status === "open");
       
-      const activeProducts = allTracked.filter(p => 
+      const activeProducts = allTracked.filter((p) => 
         (p.machine === name || p.currentStation === name) && 
         (p.status === "In Production" || p.status === "in_progress")
       ).length;
@@ -338,7 +371,7 @@ const ShopFloorMobileApp = () => {
   }, [factoryStations, machines, allOrders, downtimeReports, defectReports, allTracked]);
 
   // Filter machines
-  const filteredMachines = useMemo(() => {
+  const filteredMachines = useMemo<MachineStat[]>(() => {
     let filtered = machineStats;
     
     // Filter by Department
@@ -388,24 +421,24 @@ const ShopFloorMobileApp = () => {
   }, [allOrders, selectedDepartment, factoryStations, selectedMachineFilter]);
 
   // Get products for selected order
-  const selectedOrderProducts = useMemo(() => {
+  const selectedOrderProducts = useMemo<AnyRecord[]>(() => {
     if (!selectedOrder) return [];
     return allTracked.filter(p => p.orderId === selectedOrder.orderId);
   }, [selectedOrder, allTracked]);
 
   // Handle moving a product
-  const handleMoveLot = async (lotNumber, newStation) => {
+  const handleMoveLot = async (lotNumber: string, newStation: string) => {
     if (!lotNumber || !newStation) return;
     try {
       await moveTrackedProductManual({
         productOrLotId: lotNumber,
         newStation,
         source: "ShopFloorMobile",
-        actorLabel: user?.email || "Mobile User",
+        actorLabel: userEmail,
       });
 
       await logActivity(
-        user?.uid,
+        userUid,
         "MOBILE_LOT_MOVE",
         `Lot ${lotNumber} handmatig verplaatst naar ${newStation}`
       );
@@ -414,7 +447,8 @@ const ShopFloorMobileApp = () => {
       notify(`Product ${lotNumber} verplaatst naar ${newStation}`);
     } catch (err) {
       console.error("Fout bij verplaatsen:", err);
-      notify("Fout bij verplaatsen: " + err.message);
+      const message = err instanceof Error ? err.message : String(err);
+      notify("Fout bij verplaatsen: " + message);
     }
   };
 
@@ -435,7 +469,7 @@ const ShopFloorMobileApp = () => {
   }, [allTracked, selectedDepartment, factoryStations]);
 
   // Get detailed order + product data for a specific machine (for TeamLeader view)
-  const getOrdersForMachine = (machineName) => {
+  const getOrdersForMachine = (machineName: string): OrderWithProducts[] => {
     const machineOrders = allOrders.filter(o => o.machine === machineName);
     return machineOrders.map(order => ({
       ...order,
@@ -443,14 +477,14 @@ const ShopFloorMobileApp = () => {
     }));
   };
 
-  const isTemporaryRejectedProduct = (product) => {
+  const isTemporaryRejectedProduct = (product: AnyRecord) => {
     const status = String(product?.status || "").trim().toLowerCase();
     const inspectionStatus = String(product?.inspection?.status || "").trim().toLowerCase();
     return ["temp_reject", "temp_rejected", "tijdelijke afkeur", "tijdelijk_afkeur"].includes(status)
       || inspectionStatus === "tijdelijke afkeur";
   };
 
-  const isFinalRejectedProduct = (product) => {
+  const isFinalRejectedProduct = (product: AnyRecord) => {
     const status = String(product?.status || "").trim().toLowerCase();
     const step = String(product?.currentStep || "").trim().toUpperCase();
     const inspectionStatus = String(product?.inspection?.status || "").trim().toLowerCase();
@@ -463,8 +497,8 @@ const ShopFloorMobileApp = () => {
       || archiveReason === "rejected";
   };
 
-  const ordersForKpis = useMemo(() => {
-    let orders = allOrders.map((order) => ({
+  const ordersForKpis = useMemo<OrderWithProducts[]>(() => {
+    let orders: OrderWithProducts[] = allOrders.map((order) => ({
       ...order,
       products: allTracked.filter((product) => product.orderId === order.orderId),
     }));
@@ -475,19 +509,19 @@ const ShopFloorMobileApp = () => {
 
     if (selectedMachineFilter) {
       const filterNorm = normalizeMachine(selectedMachineFilter);
-      orders = orders.filter((order) => normalizeMachine(order.machine) === filterNorm);
+      orders = orders.filter((order) => normalizeMachine(String(order.machine || "")) === filterNorm);
     }
 
     return orders;
   }, [allOrders, allTracked, selectedDepartment, selectedMachineFilter]);
 
   // Get all orders with products for planning dashboard
-  const getDashboardOrders = useMemo(() => {
-    let orders = allOrders.map(order => ({
+  const getDashboardOrders = useMemo<OrderWithProducts[]>(() => {
+    let orders: OrderWithProducts[] = allOrders.map((order) => ({
       ...order,
-      products: allTracked.filter(p => p.orderId === order.orderId),
-      activeProductsCount: allTracked.filter(p => p.orderId === order.orderId && ['In Production', 'in_progress'].includes(p.status)).length,
-      defectCount: defectReports.filter(d => d.orderId === order.orderId && d.status === 'open').length,
+      products: allTracked.filter((p) => p.orderId === order.orderId),
+      activeProductsCount: allTracked.filter((p) => p.orderId === order.orderId && ['In Production', 'in_progress'].includes(String(p.status || ''))).length,
+      defectCount: defectReports.filter((d) => d.orderId === order.orderId && d.status === 'open').length,
     }));
 
     // Department filter
@@ -497,11 +531,12 @@ const ShopFloorMobileApp = () => {
 
     // Status filter
     if (orderStatusFilter !== "all") {
-      orders = orders.filter(o => {
-        if (orderStatusFilter === "active") return ['in_production', 'in_progress'].includes(o.status);
+      orders = orders.filter((o) => {
+        const status = String(o.status || "");
+        if (orderStatusFilter === "active") return ['in_production', 'in_progress'].includes(status);
         if (orderStatusFilter === "completed") return o.status === 'completed';
-        if (orderStatusFilter === "defect") return o.defectCount > 0;
-        if (orderStatusFilter === "temp_reject") return o.status === 'temp_reject' || o.status === 'rejected';
+          if (orderStatusFilter === "defect") return Number(o.defectCount || 0) > 0;
+        if (orderStatusFilter === "temp_reject") return status === 'temp_reject' || status === 'rejected';
         return true;
       });
     }
@@ -509,18 +544,18 @@ const ShopFloorMobileApp = () => {
     // Search filter
     if (planningSearchTerm) {
       const term = planningSearchTerm.toLowerCase();
-      orders = orders.filter(o => 
-        o.orderId?.toLowerCase().includes(term) ||
-        o.item?.toLowerCase().includes(term) ||
-        o.itemCode?.toLowerCase().includes(term) ||
-        o.machine?.toLowerCase().includes(term)
+      orders = orders.filter((o) => 
+        String(o.orderId || '').toLowerCase().includes(term) ||
+        String(o.item || '').toLowerCase().includes(term) ||
+        String(o.itemCode || '').toLowerCase().includes(term) ||
+        String(o.machine || '').toLowerCase().includes(term)
       );
     }
 
     return orders.sort((a, b) => {
       // Prioritize active orders
-      const aActive = ['in_production', 'in_progress'].includes(a.status);
-      const bActive = ['in_production', 'in_progress'].includes(b.status);
+      const aActive = ['in_production', 'in_progress'].includes(String(a.status || ''));
+      const bActive = ['in_production', 'in_progress'].includes(String(b.status || ''));
       if (aActive && !bActive) return -1;
       if (!aActive && bActive) return 1;
       // Then by date
@@ -552,34 +587,34 @@ const ShopFloorMobileApp = () => {
   }), [ordersForKpis]);
 
   // Resolve downtime
-  const resolveDowntime = async (downtimeId) => {
+  const resolveDowntime = async (downtimeId: string) => {
     await resolveShopFloorIssue({
       type: "downtime",
       issueId: downtimeId,
     });
 
     await logActivity(
-      user?.uid,
+      userUid,
       "DOWNTIME_RESOLVE",
       `Downtime melding opgelost via mobile app: ${downtimeId}`
     );
   };
 
   // Resolve defect
-  const resolveDefect = async (defectId) => {
+  const resolveDefect = async (defectId: string) => {
     await resolveShopFloorIssue({
       type: "defect",
       issueId: defectId,
     });
 
     await logActivity(
-      user?.uid,
+      userUid,
       "DEFECT_RESOLVE",
       `Defect melding opgelost via mobile app: ${defectId}`
     );
   };
 
-  const handleScan = (rawCode) => {
+  const handleScan = (rawCode: string) => {
     if (!rawCode) return;
     const scannedCode = rawCode.trim();
     const lowerCode = scannedCode.toLowerCase();
@@ -628,13 +663,14 @@ const ShopFloorMobileApp = () => {
     } else {
       setScanResult({
         type: "unknown",
-        code: scannedCode
+        code: scannedCode,
+        data: {},
       });
     }
   };
 
   // Mark product as ready for next step
-  const markReadyForNextStep = async (product) => {
+  const markReadyForNextStep = async (product: AnyRecord) => {
     if (!product || !product.id) return;
     try {
       await markReadyForNextStepCallable({
@@ -642,9 +678,9 @@ const ShopFloorMobileApp = () => {
       });
 
       await logActivity(
-        user?.uid,
+        userUid,
         "READY_FOR_NEXT_STEP",
-        `Product ${product.lotNumber} gereed voor volgende stap gemarkeerd door ${user?.displayName || 'Inspector'}`
+        `Product ${product.lotNumber} gereed voor volgende stap gemarkeerd door ${userDisplayName || 'Inspector'}`
       );
 
       notify(`✅ ${product.lotNumber} gereed voor volgende stap`);
@@ -687,7 +723,7 @@ const ShopFloorMobileApp = () => {
       });
 
       await logActivity(
-        user?.uid,
+        userUid,
         "MESSAGE_SEND",
         `Teamleader-alert verzonden vanuit mobile app (${issueType}) voor machine ${scanResult.data.machine || t("planning.shopFloor.unknown", "Onbekend")}`
       );
@@ -718,7 +754,7 @@ const ShopFloorMobileApp = () => {
              </div>
            </div>
            <div className="bg-slate-100 px-3 py-1 rounded-full text-xs font-bold text-slate-600">
-             {user?.displayName?.split(' ')[0] || t("planning.shopFloor.operatorShort", "Op")}
+             {userDisplayName.split(' ')[0] || t("planning.shopFloor.operatorShort", "Op")}
            </div>
         </div>
 
@@ -1136,7 +1172,7 @@ const ShopFloorMobileApp = () => {
               <ScanLine className="text-white" size={isHeaderCollapsed ? 18 : 24} />
             </button>
             <div className={`bg-white/20 px-4 py-2 rounded-xl transition-all duration-300 overflow-hidden ${isHeaderCollapsed ? "max-w-0 opacity-0 px-0 py-0" : "max-w-32 opacity-100"}`}>
-              <div className="text-white text-xs font-bold">{user?.displayName?.split(' ')[0] || 'Inspector'}</div>
+              <div className="text-white text-xs font-bold">{userDisplayName.split(' ')[0] || 'Inspector'}</div>
             </div>
           </div>
         </div>
@@ -1385,11 +1421,11 @@ const ShopFloorMobileApp = () => {
                   key={machine.id}
                   onClick={() => {
                     // Teamleaders/Planners: open detailed machine view
-                    if (['teamleader', 'planner', 'admin'].includes(role)) {
+                    if (['teamleader', 'planner', 'admin'].includes(roleKey)) {
                       setSelectedMachineDetail(machine);
                     } else {
                       // Fallback for others
-                      setSelectedMachineFilter(machine.machine);
+                      setSelectedMachineFilter(String(machine.machine || ""));
                       setActiveView("orders");
                     }
                   }}
@@ -1432,7 +1468,7 @@ const ShopFloorMobileApp = () => {
                       className="bg-blue-50 rounded-xl p-3 mb-3 cursor-pointer hover:bg-blue-100 transition-colors"
                       onClick={(e) => {
                         e.stopPropagation(); // Voorkom dat de kaart-klik ook afgaat
-                        setSelectedOrder(machine.activeOrder);
+                          if (machine.activeOrder) setSelectedOrder(machine.activeOrder);
                       }}
                     >
                       <div className="flex items-center gap-2 mb-1">
@@ -1472,7 +1508,7 @@ const ShopFloorMobileApp = () => {
                   <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100">
                     <button 
                       onClick={() => {
-                        setSelectedMachineFilter(machine.machine);
+                        setSelectedMachineFilter(String(machine.machine || ""));
                         setActiveView("orders");
                       }}
                       className="flex items-center gap-1 text-slate-600 hover:text-blue-600 transition-colors"
@@ -1725,16 +1761,19 @@ const ShopFloorMobileApp = () => {
       {/* Product Move Modal */}
       {productToMove && (
         <ProductMoveModal
-          product={productToMove}
+          product={{
+            lotNumber: String(productToMove.lotNumber || ""),
+            currentStation: String(productToMove.currentStation || ""),
+          }}
           onClose={() => setProductToMove(null)}
           onMove={handleMoveLot}
-          allowedStations={factoryStations}
-          currentDepartment={selectedDepartment !== "ALLES" ? selectedDepartment : null}
+          allowedStations={factoryStations.filter((s) => s.id).map((s) => ({ id: String(s.id), name: s.name }))}
+          currentDepartment={selectedDepartment !== "ALLES" ? selectedDepartment : undefined}
         />
       )}
 
       {/* Teamleader: Machine Detail Modal */}
-      {selectedMachineDetail && ['teamleader', 'planner', 'admin'].includes(role) && (
+      {selectedMachineDetail && ['teamleader', 'planner', 'admin'].includes(roleKey) && (
         <MachineDetailModal
           machine={selectedMachineDetail}
           orders={getOrdersForMachine(selectedMachineDetail.machine)}
@@ -1771,16 +1810,16 @@ const ShopFloorMobileApp = () => {
           productId={repairMode}
           product={allTracked.find(p => p.id === repairMode)}
           onClose={() => setRepairMode(null)}
-          onSubmit={async (repairData) => {
+          onSubmit={async (repairData: { reason: string }) => {
             try {
               await startTrackedProductRepair({
                 productId: repairMode,
                 repairReason: repairData.reason,
               });
               await logActivity(
-                user?.uid,
+                userUid,
                 "REPAIR_START",
-                `Reparatie gestart voor product ${repairMode} door ${user?.displayName || 'TeamLeader'}`
+                `Reparatie gestart voor product ${repairMode} door ${userDisplayName || 'TeamLeader'}`
               );
               notify("Reparatie gestart");
               setRepairMode(null);
@@ -1811,9 +1850,9 @@ const ShopFloorMobileApp = () => {
 // ============================================
 // Teamleader Machine Detail Modal
 // ============================================
-const MachineDetailModal = ({ machine, orders, onClose, onProductSelect, onProductMove, onRepairMode, logActivity, user, t }) => {
-  const activeOrders = orders.filter(o => ['in_production', 'in_progress'].includes(o.status));
-  const plannedOrders = orders.filter(o => ['planned', 'pending'].includes(o.status));
+const MachineDetailModal = ({ machine, orders, onClose, onProductSelect, onProductMove, onRepairMode, logActivity, user, t }: any) => {
+  const activeOrders = orders.filter((o: AnyRecord) => ['in_production', 'in_progress'].includes(String(o.status || '')));
+  const plannedOrders = orders.filter((o: AnyRecord) => ['planned', 'pending'].includes(String(o.status || '')));
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in">
@@ -1876,7 +1915,7 @@ const MachineDetailModal = ({ machine, orders, onClose, onProductSelect, onProdu
               <div className="text-sm font-bold">Geen orders in productie</div>
             </div>
           ) : (
-            activeOrders.map(order => (
+            activeOrders.map((order: AnyRecord) => (
               <OrderDetailCard
                 key={order.id}
                 order={order}
@@ -1894,7 +1933,7 @@ const MachineDetailModal = ({ machine, orders, onClose, onProductSelect, onProdu
             <div className="pt-4 border-t border-slate-200">
               <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">📋 Geplande Orders</h3>
               <div className="space-y-2">
-                {plannedOrders.map(order => (
+                  {plannedOrders.map((order: AnyRecord) => (
                   <div key={order.id} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
                     <div className="flex justify-between items-start mb-1">
                       <div className="font-bold text-sm text-slate-800">{order.orderId || order.item}</div>
@@ -1923,7 +1962,7 @@ const MachineDetailModal = ({ machine, orders, onClose, onProductSelect, onProdu
 };
 
 // Order Detail Card Component
-const OrderDetailCard = ({ order, products, onProductSelect, onProductMove, onRepairMode, t }) => {
+const OrderDetailCard = ({ order, products, onProductSelect, onProductMove, onRepairMode, t }: any) => {
   return (
     <div className="bg-white rounded-xl border-2 border-blue-100 overflow-hidden">
       
@@ -1951,7 +1990,7 @@ const OrderDetailCard = ({ order, products, onProductSelect, onProductMove, onRe
         {products.length === 0 ? (
           <div className="text-sm text-slate-500 italic">Geen producten getrackt voor deze order</div>
         ) : (
-          products.map(product => (
+          products.map((product: AnyRecord) => (
             <div key={product.id} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-center justify-between">
               <div className="flex-1">
                 <div className="font-bold text-sm text-slate-800">{product.lotNumber}</div>
@@ -1997,7 +2036,7 @@ const OrderDetailCard = ({ order, products, onProductSelect, onProductMove, onRe
 // ============================================
 // Product Dossier Modal
 // ============================================
-const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }) => {
+const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }: any) => {
   return (
     <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in">
       <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95">
@@ -2041,7 +2080,7 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }) => {
             <div>
               <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">📍 Geschiedenis</h3>
               <div className="space-y-2 text-sm">
-                {product.history.slice(-5).reverse().map((entry, i) => (
+                {product.history.slice(-5).reverse().map((entry: AnyRecord, i: number) => (
                   <div key={i} className="flex gap-2 text-slate-600">
                     <div className="font-bold text-blue-600 min-w-[80px]">
                       {entry.station || entry.step || "N/A"}
@@ -2058,7 +2097,7 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }) => {
             <div className="bg-red-50 p-4 rounded-xl border border-red-100">
               <h3 className="text-xs font-black text-red-700 uppercase mb-2">🚩 Geregistreerde Defecten</h3>
               <div className="space-y-2">
-                {product.defects.map((defect, i) => (
+                {product.defects.map((defect: AnyRecord, i: number) => (
                   <div key={i} className="text-sm text-red-800">
                     • {defect.description || defect.type}
                   </div>
@@ -2088,7 +2127,7 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }) => {
 // ============================================
 // Repair Modal
 // ============================================
-const RepairModal = ({ productId, product, onClose, onSubmit, t }) => {
+const RepairModal = ({ productId, product, onClose, onSubmit, t }: any) => {
   const [reason, setReason] = useState("");
 
   return (
@@ -2108,7 +2147,7 @@ const RepairModal = ({ productId, product, onClose, onSubmit, t }) => {
               onChange={(e) => setReason(e.target.value)}
               placeholder="Beschrijf het probleem..."
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:border-orange-500 outline-none resize-none"
-              rows="4"
+              rows={4}
             />
           </div>
         </div>
@@ -2135,8 +2174,8 @@ const RepairModal = ({ productId, product, onClose, onSubmit, t }) => {
 // ============================================
 // Planning Order Card Component
 // ============================================
-const PlanningOrderCard = ({ order, onSelectOrder, onScanReady, t }) => {
-  const getStatusColor = (status) => {
+const PlanningOrderCard = ({ order, onSelectOrder, onScanReady, t }: any) => {
+  const getStatusColor = (status: string) => {
     if (['in_production', 'in_progress'].includes(status)) return "bg-emerald-50 border-emerald-200";
     if (['planned', 'pending'].includes(status)) return "bg-blue-50 border-blue-200";
     if (status === 'completed') return "bg-slate-50 border-slate-200";
@@ -2144,7 +2183,7 @@ const PlanningOrderCard = ({ order, onSelectOrder, onScanReady, t }) => {
     return "bg-slate-50 border-slate-200";
   };
 
-  const getStatusLabel = (status) => {
+  const getStatusLabel = (status: string) => {
     if (['in_production', 'in_progress'].includes(status)) return "🟢 In Productie";
     if (['planned', 'pending'].includes(status)) return "📋 Gepland";
     if (status === 'completed') return "✅ Gereed";
@@ -2223,8 +2262,8 @@ const PlanningOrderCard = ({ order, onSelectOrder, onScanReady, t }) => {
 // ============================================
 // Ready for Next Step Modal
 // ============================================
-const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady, t }) => {
-  const [selectedProduct, setSelectedProduct] = useState(null);
+const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady, t }: any) => {
+  const [selectedProduct, setSelectedProduct] = useState<AnyRecord | null>(null);
   const [markMode, setMarkMode] = useState(false); // false = select | true = confirm
 
   if (markMode && selectedProduct) {
@@ -2294,7 +2333,7 @@ const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady,
               <div className="text-sm font-bold">Geen producten in deze order</div>
             </div>
           ) : (
-            products.map(product => (
+            products.map((product: AnyRecord) => (
               <button
                 key={product.id}
                 onClick={() => {

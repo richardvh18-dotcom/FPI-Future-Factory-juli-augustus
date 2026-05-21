@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo } from "react";
 import { 
   Clock, 
@@ -12,19 +11,148 @@ import {
 } from "lucide-react";
 import { collection, collectionGroup, onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../config/firebase";
-import { getArchiveItemsPath, PATHS } from "../../config/dbPaths";
+import { getArchiveItemsPath, PATHS, getPathString } from "../../config/dbPaths";
 import { format, getISOWeek, startOfWeek, endOfWeek, startOfDay, endOfDay, startOfMonth, endOfMonth, isWithinInterval, isValid, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths } from "date-fns";
 import { calculateDuration } from "../../utils/efficiencyCalculator";
 import { calculateWorkingMinutes } from "../../utils/workingTimeUtils";
 import { subscribeScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
-import { normalizeMachine } from "../../utils/hubHelpers.tsx";
+import { normalizeMachine } from "../../utils/hubHelpers";
 
-const toEpochMs = (value) => {
+type AnyRecord = Record<string, unknown>;
+
+type TimestampLike = {
+  toMillis?: () => number;
+  toDate?: () => Date;
+  seconds?: number;
+};
+
+type DepartmentConfig = {
+  id?: string;
+  name?: string;
+  isActive?: boolean;
+};
+
+type FactoryConfig = {
+  departments: DepartmentConfig[];
+};
+
+type EfficiencyRow = {
+  id?: string;
+  orderId?: string;
+  quantity?: string | number;
+  productionTimeTotal?: string | number;
+  postProcessingTimeTotal?: string | number;
+  qcTimeTotal?: string | number;
+  minutesPerUnit?: string | number;
+  [key: string]: unknown;
+};
+
+type PlanningOrder = AnyRecord & {
+  id?: string;
+  orderId?: string;
+  item?: string;
+  itemCode?: string;
+  extraCode?: string;
+  quantity?: string | number;
+  plan?: string | number;
+  totalPlannedHours?: string | number;
+  estimatedHours?: string | number;
+  machine?: string;
+  currentStation?: string;
+  originMachine?: string;
+  lastStation?: string;
+  department?: string;
+  departmentId?: string;
+  deptId?: string;
+  operations?: Record<string, { planned?: unknown; wc?: unknown }>;
+};
+
+type TrackingLog = AnyRecord & {
+  id?: string;
+  lotNumber?: string;
+  orderId?: string;
+  orderNumber?: string;
+  originalOrderId?: string;
+  productionOrderId?: string;
+  item?: string;
+  itemCode?: string;
+  machine?: string;
+  stationLabel?: string;
+  currentStation?: string;
+  lastStation?: string;
+  originMachine?: string;
+  department?: string;
+  departmentId?: string;
+  deptId?: string;
+  status?: string;
+  timestamps?: Record<string, unknown>;
+  history?: Array<Record<string, unknown>>;
+  _archived?: boolean;
+};
+
+type OrderMetric = PlanningOrder & {
+  planned: number;
+  actual: number;
+  variance: number;
+  variancePercent: number;
+  status: "on_track" | "over" | "under";
+  hasEfficiency: boolean;
+  lotCount: number;
+  lotDetails: Array<LotMetric>;
+  stationMetrics: {
+    wikkelenHours: number;
+    lossenHours: number;
+    nabewerkingHours: number;
+    bm01Hours: number;
+    repairHours: number;
+  };
+  plannedStationMetrics: {
+    wikkelenHours: number;
+    lossenHours: number;
+    nabewerkingHours: number;
+    bm01Hours: number;
+    repairHours: number;
+  };
+};
+
+type StationMetrics = {
+  wikkelenHours: number;
+  lossenHours: number;
+  nabewerkingHours: number;
+  bm01Hours: number;
+  repairHours: number;
+};
+
+type TimeBounds = {
+  wikkelenStart: Date | null;
+  wikkelenEnd: Date | null;
+  lossenStart: Date | null;
+  lossenEnd: Date | null;
+  nabewerkingStart: Date | null;
+  nabewerkingEnd: Date | null;
+  repairStart: Date | null;
+  repairEnd: Date | null;
+  bm01Start: Date | null;
+  bm01End: Date | null;
+};
+
+type LotMetric = {
+  id?: string;
+  lotNumber: string;
+  machine: string;
+  status: string;
+  currentStation: string;
+  actualHours: number;
+  stationMetrics: StationMetrics;
+  timeBounds: TimeBounds;
+};
+
+const toEpochMs = (value: unknown): number => {
   if (!value) return 0;
-  if (typeof value?.toMillis === "function") return value.toMillis();
-  if (typeof value?.toDate === "function") return value.toDate().getTime();
-  if (typeof value?.seconds === "number") return value.seconds * 1000;
-  const d = new Date(value);
+  if (typeof (value as TimestampLike)?.toMillis === "function") return (value as TimestampLike).toMillis?.() || 0;
+  if (typeof (value as TimestampLike)?.toDate === "function") return (value as TimestampLike).toDate?.().getTime() || 0;
+  if (typeof (value as TimestampLike)?.seconds === "number") return ((value as TimestampLike).seconds || 0) * 1000;
+  const d = new Date(value as any);
   return Number.isFinite(d.getTime()) ? d.getTime() : 0;
 };
 
@@ -34,29 +162,29 @@ const toEpochMs = (value) => {
  */
 const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
   const readPaths = PATHS;
-  const [orders, setOrders] = useState([]);
-  const [, setOccupancy] = useState([]);
+  const [orders, setOrders] = useState<PlanningOrder[]>([]);
+  const [, setOccupancy] = useState<AnyRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [efficiencyData, setEfficiencyData] = useState({});
-  const [trackingLogs, setTrackingLogs] = useState([]);
+  const [efficiencyData, setEfficiencyData] = useState<Record<string, EfficiencyRow>>({});
+  const [trackingLogs, setTrackingLogs] = useState<TrackingLog[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [periodMode, setPeriodMode] = useState("week");
   const [filterStatus, setFilterStatus] = useState("all");
   const [selectedDepartment, setSelectedDepartment] = useState(initialDepartment || "ALLES");
   const [selectedMachine, setSelectedMachine] = useState("ALLES");
-  const [departments, setDepartments] = useState(["ALLES"]);
-  const [factoryConfig, setFactoryConfig] = useState({ departments: [] });
-  const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
-  const [refOpsConfig, setRefOpsConfig] = useState({}); // { "1020": { type: "qc", ... }, ... }
+  const [departments, setDepartments] = useState<string[]>(["ALLES"]);
+  const [factoryConfig, setFactoryConfig] = useState<FactoryConfig>({ departments: [] });
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState<OrderMetric | null>(null);
+  const [refOpsConfig, setRefOpsConfig] = useState<Record<string, AnyRecord>>({}); // { "1020": { type: "qc", ... }, ... }
 
   useEffect(() => {
     if (!readPaths) return;
 
-    let rootOrders = [];
-    let scopedOrders = [];
+    let rootOrders: PlanningOrder[] = [];
+    let scopedOrders: PlanningOrder[] = [];
 
     const mergeOrders = () => {
-      const merged = new Map();
+      const merged = new Map<string, PlanningOrder>();
       [...rootOrders, ...scopedOrders].forEach((order, idx) => {
         const key = String(order.orderId || order.id || `order-${idx}`).trim();
         if (!key) return;
@@ -67,9 +195,9 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     };
 
     const unsubRootOrders = onSnapshot(
-      collection(db, ...readPaths.PLANNING),
+      collection(db, getPathString(readPaths.PLANNING)),
       (snapshot) => {
-        rootOrders = snapshot.docs.map((docSnap) => ({ id: docSnap.id, __docPath: docSnap.ref.path, ...docSnap.data() }));
+        rootOrders = snapshot.docs.map((docSnap): PlanningOrder => ({ id: docSnap.id, __docPath: docSnap.ref.path, ...(docSnap.data() as AnyRecord) }));
         mergeOrders();
       },
       () => {
@@ -100,11 +228,11 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     );
 
     const unsubOccupancy = onSnapshot(
-      collection(db, ...readPaths.OCCUPANCY),
+      collection(db, getPathString(readPaths.OCCUPANCY)),
       (snapshot) => {
-        const occData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const occData = snapshot.docs.map((docEntry): AnyRecord => ({
+          id: docEntry.id,
+          ...(docEntry.data() as AnyRecord)
         }));
         setOccupancy(occData);
       }
@@ -114,12 +242,12 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     const unsubEfficiency = subscribeScopedEfficiencyHours({
       db,
       mode: "active",
-      onData: (rows) => {
-        const data = {};
+      onData: (rows: Array<Record<string, unknown>>) => {
+        const data: Record<string, EfficiencyRow> = {};
         rows.forEach((row) => {
           const key = String(row.orderId || row.id || "").trim();
           if (!key) return;
-          data[key] = row;
+          data[key] = row as EfficiencyRow;
         });
         setEfficiencyData(data);
       },
@@ -131,11 +259,11 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
 
     // Laad LN Reference Operations stamdata voor DB-gestuurde uren-classificatie
     const unsubRefOps = onSnapshot(
-      collection(db, ...readPaths.REFERENCE_OPERATIONS),
+      collection(db, getPathString(readPaths.REFERENCE_OPERATIONS)),
       (snapshot) => {
-        const map = {};
+        const map: Record<string, AnyRecord> = {};
         snapshot.docs.forEach((docSnap) => {
-          map[docSnap.id] = docSnap.data();
+          map[docSnap.id] = docSnap.data() as AnyRecord;
         });
         setRefOpsConfig(map);
       },
@@ -143,8 +271,8 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     );
 
     // Load tracking logs for actuals calculation
-    const mergeTrackingRows = (activeRows, archivedRows) => {
-      const mergedByLot = new Map();
+    const mergeTrackingRows = (activeRows: TrackingLog[], archivedRows: TrackingLog[]) => {
+      const mergedByLot = new Map<string, TrackingLog>();
 
       [...activeRows, ...archivedRows].forEach((row) => {
         const lotKey = String(row.lotNumber || row.id || `${row.orderId || ""}-${row.itemCode || ""}`).trim();
@@ -175,18 +303,18 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       setTrackingLogs(Array.from(mergedByLot.values()));
     };
 
-    let rootTrackingRows = [];
-    let scopedTrackingRows = [];
-    let archivedTrackingRows = [];
+    let rootTrackingRows: TrackingLog[] = [];
+    let scopedTrackingRows: TrackingLog[] = [];
+    let archivedTrackingRows: TrackingLog[] = [];
 
     const mergeAllTrackingRows = () => {
       mergeTrackingRows([...rootTrackingRows, ...scopedTrackingRows], archivedTrackingRows);
     };
 
     const unsubRootTracking = onSnapshot(
-      collection(db, ...readPaths.TRACKING),
+      collection(db, getPathString(readPaths.TRACKING)),
       (snapshot) => {
-        rootTrackingRows = snapshot.docs.map(doc => ({ id: doc.id, __docPath: doc.ref.path, ...doc.data() }));
+        rootTrackingRows = snapshot.docs.map((docEntry): TrackingLog => ({ id: docEntry.id, __docPath: docEntry.ref.path, ...(docEntry.data() as AnyRecord) }));
         mergeAllTrackingRows();
       },
       () => {
@@ -214,22 +342,27 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
 
     const archiveYear = selectedDate.getFullYear();
     const unsubArchiveTracking = onSnapshot(
-      collection(db, ...getArchiveItemsPath(archiveYear)),
+      collection(db, getPathString(getArchiveItemsPath(archiveYear))),
       (snapshot) => {
-        archivedTrackingRows = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), _archived: true, _archiveYear: archiveYear }));
+        archivedTrackingRows = snapshot.docs.map((docEntry): TrackingLog => ({ id: docEntry.id, ...(docEntry.data() as AnyRecord), _archived: true, _archiveYear: archiveYear }));
         mergeAllTrackingRows();
       }
     );
 
     // Load departments from factory structure
     const unsubConfig = onSnapshot(
-      doc(db, ...readPaths.FACTORY_CONFIG),
+      doc(db, getPathString(readPaths.FACTORY_CONFIG)),
       (docSnap) => {
         if (docSnap.exists()) {
-          const data = docSnap.data();
+          const raw = docSnap.data() as AnyRecord;
+          const data: FactoryConfig = {
+            departments: Array.isArray(raw.departments)
+              ? (raw.departments as DepartmentConfig[])
+              : [],
+          };
           setFactoryConfig(data);
           const depts = Array.isArray(data.departments) 
-            ? data.departments.filter(d => d.isActive !== false).map(d => d.name)
+            ? data.departments.filter((d) => d.isActive !== false).map((d) => String(d.name || "")).filter(Boolean)
             : [];
           setDepartments(["ALLES", ...depts]);
         }
@@ -271,15 +404,15 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     setSelectedDepartment(match || target);
   }, [initialDepartment, departments]);
 
-  const toDateValue = (value) => {
+  const toDateValue = (value: unknown): Date | null => {
     if (!value) return null;
-    if (value?.toDate) return value.toDate();
-    if (value?.seconds) return new Date(value.seconds * 1000);
-    const d = value instanceof Date ? value : new Date(value);
+    if (typeof (value as TimestampLike)?.toDate === "function") return (value as TimestampLike).toDate?.() || null;
+    if (typeof (value as TimestampLike)?.seconds === "number") return new Date(((value as TimestampLike).seconds || 0) * 1000);
+    const d = value instanceof Date ? value : new Date(value as any);
     return isValid(d) ? d : null;
   };
 
-  const inferDepartmentFromMachine = (machine) => {
+  const inferDepartmentFromMachine = (machine: unknown): string => {
     const m = normalizeMachine(machine || "");
     if (m.startsWith("BH")) return "Fittings";
     if (m.startsWith("BA")) return "Pipes";
@@ -287,9 +420,9 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return "";
   };
 
-  const normalizeText = (value) => String(value || "").trim().toLowerCase();
+  const normalizeText = (value: unknown): string => String(value || "").trim().toLowerCase();
 
-  const resolveDepartmentNameFromId = (departmentId) => {
+  const resolveDepartmentNameFromId = (departmentId: unknown): string => {
     if (!departmentId) return "";
     const idLower = String(departmentId).trim().toLowerCase();
     const dept = (factoryConfig.departments || []).find(
@@ -298,12 +431,12 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return dept?.name || "";
   };
 
-  const parseNumber = (value) => {
+  const parseNumber = (value: unknown): number => {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? numeric : 0;
   };
 
-  const normalizeStatus = (value) =>
+  const normalizeStatus = (value: unknown) =>
     String(value || "")
       .trim()
       .toLowerCase()
@@ -319,14 +452,14 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     "archived_completed",
   ]);
 
-  const isCompletedLikeStatus = (value) => {
+  const isCompletedLikeStatus = (value: unknown) => {
     const normalized = normalizeStatus(value);
     if (!normalized) return false;
     if (COMPLETED_STATUSES.has(normalized)) return true;
     return normalized.includes("gereed") || normalized.includes("finish") || normalized.includes("complet");
   };
 
-  const isInProgressLikeStatus = (value) => {
+  const isInProgressLikeStatus = (value: unknown) => {
     const normalized = normalizeStatus(value);
     if (!normalized) return false;
     if (isCompletedLikeStatus(normalized)) return false;
@@ -347,7 +480,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     ].some((token) => normalized.includes(token));
   };
 
-  const matchesStatusFilter = (order, relatedLogs) => {
+  const matchesStatusFilter = (order: PlanningOrder, relatedLogs: TrackingLog[]) => {
     if (filterStatus === "all") return true;
 
     const statusCandidates = [
@@ -378,24 +511,24 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return true;
   };
 
-  const classifyByWc = (wc) => {
+  const classifyByWc = (wc: unknown) => {
     const upper = String(wc || "").toUpperCase();
     if (upper.includes("BM01") || upper.includes("BA01")) return "qc";
     if (upper.includes("NABEWERK") || upper.includes("NABEW")) return "post";
     return null;
   };
 
-  const classifyReferenceOperation = (refOp, wc) => {
+  const classifyReferenceOperation = (refOp: unknown, wc: unknown) => {
     // 1. Database-gestuurde lookup
     if (refOpsConfig && refOp) {
       const entry = refOpsConfig[String(refOp).trim()];
-      if (entry?.type) return entry.type;
+      if (entry?.type) return String(entry.type);
     }
     // 2. WC-fallback
     const wcBucket = classifyByWc(wc);
     if (wcBucket) return wcBucket;
     // 3. Bekende hardcoded codes
-    const knownTypes = { "1020": "qc", "1715": "production", "1740": "post", "1115": "post" };
+    const knownTypes: Record<string, string> = { "1020": "qc", "1715": "production", "1740": "post", "1115": "post" };
     if (knownTypes[String(refOp).trim()]) return knownTypes[String(refOp).trim()];
     // 4. Modulo-heuristiek als laatste fallback
     const digits = parseInt(String(refOp || "").replace(/\D/g, ""), 10);
@@ -406,9 +539,9 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return "production";
   };
 
-  const getSplitPlannedHours = (operations, fallbackTotalHours = 0) => {
+  const getSplitPlannedHours = (operations: Record<string, { planned?: unknown; wc?: unknown }> | undefined, fallbackTotalHours = 0) => {
     const split = { productionHours: 0, postHours: 0, qcHours: 0 };
-    const entries = Object.entries(operations || {});
+    const entries = Object.entries(operations || {}) as Array<[string, { planned?: unknown; wc?: unknown }]>;
 
     if (!entries.length) {
       return {
@@ -434,7 +567,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     };
   };
 
-  const getOrderActualHours = (orderLike) => {
+  const getOrderActualHours = (orderLike: AnyRecord | null | undefined) => {
     if (!orderLike) return 0;
 
     const hourCandidates = [
@@ -465,13 +598,13 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return 0;
   };
 
-  const getHistoryTimestampBy = (log, matcher) => {
+  const getHistoryTimestampBy = (log: TrackingLog, matcher: (h: Record<string, unknown>) => boolean) => {
     if (!Array.isArray(log?.history)) return null;
     const row = log.history.find((h) => matcher(h || {}));
     return toDateValue(row?.timestamp);
   };
 
-  const getLatestHistoryTimestampBy = (log, matcher) => {
+  const getLatestHistoryTimestampBy = (log: TrackingLog, matcher: (h: Record<string, unknown>) => boolean) => {
     if (!Array.isArray(log?.history)) return null;
     for (let i = log.history.length - 1; i >= 0; i -= 1) {
       const row = log.history[i] || {};
@@ -482,7 +615,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return null;
   };
 
-  const getTimestampFromObject = (timestamps, keys = []) => {
+  const getTimestampFromObject = (timestamps: Record<string, unknown> | undefined, keys: string[] = []) => {
     for (const key of keys) {
       const value = timestamps?.[key];
       const date = toDateValue(value);
@@ -491,7 +624,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return null;
   };
 
-  const getLogProcessBounds = (log) => {
+  const getLogProcessBounds = (log: TrackingLog) => {
     const ts = log?.timestamps || {};
 
     const wikkelenStart =
@@ -553,7 +686,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     };
   };
 
-  const getRangeDurationMinutes = (startValue, endValue, context = {}) => {
+  const getRangeDurationMinutes = (startValue: unknown, endValue: unknown, context: Record<string, unknown> = {}) => {
     const start = toDateValue(startValue);
     const end = toDateValue(endValue);
     if (!start || !end) return 0;
@@ -561,7 +694,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return Number.isFinite(duration) && duration > 0 ? duration : 0;
   };
 
-  const getLotMetrics = (log) => {
+  const getLotMetrics = (log: TrackingLog): LotMetric => {
     const bounds = getLogProcessBounds(log);
     const contextMachine = log?.originMachine || log?.machine || log?.currentStation || log?.lastStation;
     const contextDepartment = log?.department || inferDepartmentFromMachine(contextMachine);
@@ -608,19 +741,19 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     };
   };
 
-  const formatDateTime = (value) => {
+  const formatDateTime = (value: unknown) => {
     const date = toDateValue(value);
     return date ? format(date, "dd/MM/yy HH:mm") : "-";
   };
 
-  const formatDateRange = (startValue, endValue) => {
+  const formatDateRange = (startValue: unknown, endValue: unknown) => {
     const start = formatDateTime(startValue);
     const end = formatDateTime(endValue);
     if (start === "-" && end === "-") return "-";
     return `${start} -> ${end}`;
   };
 
-  const getLogActivityDate = (log) => {
+  const getLogActivityDate = (log: TrackingLog) => {
     const ts = log?.timestamps || {};
     return (
       toDateValue(ts.wikkelen_start) ||
@@ -643,7 +776,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     );
   };
 
-  const getLogActivityDates = (log) => {
+  const getLogActivityDates = (log: TrackingLog) => {
     const ts = log?.timestamps || {};
     return [
       ts.wikkelen_start,
@@ -671,7 +804,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       .filter(Boolean);
   };
 
-  const getTrackingGroupKey = (log) => {
+  const getTrackingGroupKey = (log: TrackingLog) => {
     const directOrderKey = String(
       log?.orderId ||
       log?.orderNumber ||
@@ -688,28 +821,28 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
   };
 
   const trackingByOrder = useMemo(() => {
-    const grouped = new Map();
-    trackingLogs.forEach((log) => {
+    const grouped = new Map<string, TrackingLog[]>();
+    trackingLogs.forEach((log: TrackingLog) => {
       const groupKey = getTrackingGroupKey(log);
       if (!groupKey) return;
       if (!grouped.has(groupKey)) grouped.set(groupKey, []);
-      grouped.get(groupKey).push(log);
+      grouped.get(groupKey)?.push(log);
     });
     return grouped;
   }, [trackingLogs]);
 
   const mergedOrders = useMemo(() => {
-    const byOrderId = new Map();
+    const byOrderId = new Map<string, PlanningOrder>();
 
-    orders.forEach((order) => {
+    orders.forEach((order: PlanningOrder) => {
       const orderId = String(order?.orderId || order?.id || "").trim();
       if (!orderId) return;
-      byOrderId.set(orderId, { ...order, orderId, _trackingGroupKey: orderId });
+      byOrderId.set(orderId, { ...order, orderId, _trackingGroupKey: orderId } as PlanningOrder);
     });
 
     trackingByOrder.forEach((logs, groupKey) => {
       if (byOrderId.has(groupKey)) return;
-      const sample = logs[0] || {};
+      const sample = (logs[0] || {}) as TrackingLog;
       const lotFallback = String(sample.lotNumber || sample.id || "").trim();
       const displayOrderId = String(sample.orderId || sample.orderNumber || sample.originalOrderId || "").trim() || (lotFallback ? `LOT ${lotFallback}` : groupKey);
       byOrderId.set(groupKey, {
@@ -731,10 +864,10 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
   }, [orders, trackingByOrder]);
 
   const machineOptions = useMemo(() => {
-    const options = new Set();
+    const options = new Set<string>();
     const deptFilter = normalizeText(selectedDepartment);
 
-    const matchesDeptForMachine = (departmentCandidate, machine) => {
+    const matchesDeptForMachine = (departmentCandidate: unknown, machine: unknown) => {
       if (selectedDepartment === "ALLES") return true;
       const inferred = normalizeText(inferDepartmentFromMachine(machine));
       const candidate = normalizeText(departmentCandidate);
@@ -748,7 +881,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       );
     };
 
-    mergedOrders.forEach((order) => {
+    mergedOrders.forEach((order: PlanningOrder) => {
       const machine = normalizeMachine(order?.machine || "");
       if (!machine) return;
       const departmentCandidate =
@@ -759,7 +892,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       options.add(machine);
     });
 
-    trackingLogs.forEach((log) => {
+    trackingLogs.forEach((log: TrackingLog) => {
       const machine = normalizeMachine(log?.machine || log?.originMachine || log?.currentStation || log?.lastStation || "");
       if (!machine) return;
       const departmentCandidate =
@@ -781,7 +914,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
   }, [selectedMachine, machineOptions]);
 
   // Helper functie voor department matching
-  const matchesDepartment = (order, filterDepartmentName) => {
+  const matchesDepartment = (order: PlanningOrder, filterDepartmentName: string) => {
     if (filterDepartmentName === "ALLES") return true;
 
     const departmentId = order?.departmentId;
@@ -806,7 +939,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     );
     if (!dept) return false;
     
-    const deptName = dept.name.toLowerCase().trim();
+    const deptName = String(dept.name || "").toLowerCase().trim();
     
     if (deptName === filter) return true;
     if (deptName.includes(filter)) return true;
@@ -815,7 +948,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return false;
   };
 
-  const matchesMachine = (order, filterMachineName) => {
+  const matchesMachine = (order: PlanningOrder | TrackingLog, filterMachineName: string) => {
     if (filterMachineName === "ALLES") return true;
     const filter = normalizeText(filterMachineName);
 
@@ -848,13 +981,13 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
         ? { start: monthStart, end: monthEnd }
         : { start: weekStart, end: weekEnd };
 
-    return mergedOrders.filter(order => {
+    return mergedOrders.filter((order: PlanningOrder) => {
       const orderKey = String(order._trackingGroupKey || order.orderId || order.id || "").trim();
       const relatedLogs = trackingByOrder.get(orderKey) || [];
       const hasTrackingData = relatedLogs.length > 0;
-      const hasActivityInRange = relatedLogs.some((log) => {
+      const hasActivityInRange = relatedLogs.some((log: TrackingLog) => {
         const eventDates = getLogActivityDates(log);
-        return eventDates.some((eventDate) => isWithinInterval(eventDate, range));
+        return eventDates.some((eventDate) => isWithinInterval(eventDate as Date, range));
       });
 
       // Time Tracking toont alleen orders met echte trackingdata binnen de gekozen periode.
@@ -903,13 +1036,13 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     return `${year}-W${week}`;
   })();
 
-  const handleDayChange = (value) => {
+  const handleDayChange = (value: string) => {
     if (!value) return;
     const parsed = new Date(`${value}T00:00:00`);
     if (isValid(parsed)) setSelectedDate(parsed);
   };
 
-  const handleMonthChange = (value) => {
+  const handleMonthChange = (value: string) => {
     if (!value) return;
     const [year, month] = value.split("-").map((x) => Number(x));
     if (!Number.isFinite(year) || !Number.isFinite(month)) return;
@@ -917,7 +1050,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
     if (isValid(parsed)) setSelectedDate(parsed);
   };
 
-  const handleWeekChange = (value) => {
+  const handleWeekChange = (value: string) => {
     if (!value) return;
     const match = String(value).match(/^(\d{4})-W(\d{2})$/);
     if (!match) return;
@@ -931,25 +1064,25 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
   };
 
   // Calculate time metrics per order
-  const orderMetrics = useMemo(() => {
-    return weekOrders.map(order => {
+  const orderMetrics = useMemo<OrderMetric[]>(() => {
+    return weekOrders.map((order: PlanningOrder): OrderMetric => {
       const currentOrderId = String(order._trackingGroupKey || order.orderId || order.id || "").trim();
       const relatedLogs = trackingByOrder.get(currentOrderId) || [];
-      const lotDetails = relatedLogs.map((log) => getLotMetrics(log));
-      const planCount = parseInt(order.quantity) || parseInt(order.plan) || 0;
+      const lotDetails: LotMetric[] = relatedLogs.map((log: TrackingLog) => getLotMetrics(log));
+      const planCount = parseNumber(order.quantity) || parseNumber(order.plan) || 0;
 
-      const splitFromReferenceOps = getSplitPlannedHours(order.operations, parseFloat(order.totalPlannedHours) || 0);
+      const splitFromReferenceOps = getSplitPlannedHours(order.operations, parseNumber(order.totalPlannedHours) || 0);
       let plannedProductionHours = splitFromReferenceOps.productionHours;
       let plannedPostHours = splitFromReferenceOps.postHours;
       let plannedQcHours = splitFromReferenceOps.qcHours;
 
       let planned = splitFromReferenceOps.hasReferenceOps
         ? splitFromReferenceOps.totalHours
-        : parseFloat(order.totalPlannedHours) || parseFloat(order.estimatedHours) || 0;
+        : parseNumber(order.totalPlannedHours) || parseNumber(order.estimatedHours) || 0;
       let hasEfficiency = false;
 
       // Use imported efficiency data if available (Infor LN)
-      const importedInfo = efficiencyData[order.orderId];
+      const importedInfo = efficiencyData[String(order.orderId || "")];
       if (importedInfo) {
         const effQty = parseNumber(importedInfo.quantity) || 1;
         const safePlanCount = planCount > 0 ? planCount : effQty;
@@ -980,7 +1113,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       let bm01Minutes = 0;
       let repairMinutes = 0;
       
-      lotDetails.forEach((lot) => {
+      lotDetails.forEach((lot: LotMetric) => {
         calculatedActualMinutes += lot.actualHours * 60;
         wikkelenMinutes += (lot.stationMetrics?.wikkelenHours || 0) * 60;
         lossenMinutes += (lot.stationMetrics?.lossenHours || 0) * 60;
@@ -1067,7 +1200,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
   }, [orderMetrics]);
 
   // Get status icon
-  const getStatusIcon = (status) => {
+  const getStatusIcon = (status: string) => {
     if (status === "on_track") return <CheckCircle className="text-emerald-600" size={20} />;
     if (status === "over") return <TrendingUp className="text-red-600" size={20} />;
     return <TrendingDown className="text-blue-600" size={20} />;
@@ -1315,12 +1448,12 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
             <tbody>
               {orderMetrics.length === 0 ? (
                 <tr>
-                  <td colSpan="12" className="px-4 py-12 text-center text-slate-400">
+                  <td colSpan={12} className="px-4 py-12 text-center text-slate-400">
                     Geen orders in geselecteerde {periodMode === "day" ? "dag" : periodMode === "month" ? "maand" : "week"}
                   </td>
                 </tr>
               ) : (
-                orderMetrics.map(order => (
+                orderMetrics.map((order: OrderMetric) => (
                   <tr key={order.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3">
                       <div className="font-bold text-sm text-slate-800">{order.orderId || order.item}</div>
@@ -1444,7 +1577,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedOrderDetail.lotDetails?.map((lot) => (
+                  {selectedOrderDetail.lotDetails?.map((lot: LotMetric) => (
                     <tr key={lot.id || lot.lotNumber} className="border-b border-slate-100 align-top">
                       <td
                         className="px-3 py-3 text-sm font-bold text-slate-800 whitespace-nowrap"

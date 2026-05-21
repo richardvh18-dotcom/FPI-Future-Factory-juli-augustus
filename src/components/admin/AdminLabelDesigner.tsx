@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -47,7 +47,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 
 // Importeer de logica en constanten uit het hulpbestand
 import {
@@ -66,6 +66,7 @@ import { useNotifications } from '../../contexts/NotificationContext';
 const CSS_PIXELS_PER_POINT = 96 / 72;
 const SNAP_THRESHOLD_MM = 1.5;
 const DEFAULT_PRINTER_DPI = 203;
+const PRINTER_PREVIEW_FONT_STACK = '"Lucida Console", "Courier New", monospace';
 
 /**
  * Berekent PIXELS_PER_MM voor gegeven printer-DPI
@@ -76,12 +77,89 @@ const getPixelsPerMm = (printerDpi = DEFAULT_PRINTER_DPI) => {
 };
 const PIXELS_PER_MM = getPixelsPerMm(DEFAULT_PRINTER_DPI);
 
-const getLongestPreviewLineLength = (value) => {
+type LabelSizeKey = keyof typeof LABEL_SIZES;
+
+type LabelVariable = {
+  name?: string;
+};
+
+type LabelElement = {
+  id: string;
+  type?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  fontSize?: number;
+  maxLines?: number;
+  variable?: string;
+  thickness?: number | null;
+  content?: string;
+  align?: "left" | "center" | "right";
+  fontFamily?: string;
+  isBold?: boolean;
+  isInverse?: boolean;
+  rotation?: number;
+};
+
+type SavedLabel = {
+  id: string;
+  name?: string;
+  width?: number;
+  height?: number;
+  sizeKey?: LabelSizeKey;
+  department?: string;
+  tags?: string[];
+  folder?: string;
+  elements?: LabelElement[];
+  productCode?: string;
+  variables?: LabelVariable[];
+  stations?: string[];
+};
+
+type LabelLogicRule = {
+  id: string;
+  productCode?: string;
+  variables?: LabelVariable[];
+};
+
+type Department = {
+  id?: string;
+  name?: string;
+  stations?: Array<{ name?: string }>;
+};
+
+type HistoryEntry = {
+  elements: LabelElement[];
+  labelWidth: number;
+  labelHeight: number;
+  selectedSizeKey: LabelSizeKey | "Custom";
+  assignedDepartment: string;
+  labelTags: string[];
+  labelFolder: string;
+};
+
+type Guideline = {
+  type: "vertical" | "horizontal";
+  pos: number;
+};
+
+type OrderRecord = {
+  id: string;
+  isDefault?: boolean;
+  orderId?: string;
+  status?: string;
+  item?: string;
+  itemCode?: string;
+  lotNumber?: string;
+};
+
+const getLongestPreviewLineLength = (value: unknown) => {
   const lines = String(value || "").split(/\r?\n/);
   return lines.reduce((maxLen, line) => Math.max(maxLen, line.length), 0);
 };
 
-const getResolvedPreviewMaxLines = (element, baseFontPx, rotation = 0, zoom = 1, pixelsPerMm = 8.0) => {
+const getResolvedPreviewMaxLines = (element: LabelElement, baseFontPx: number, rotation = 0, zoom = 1, pixelsPerMm = 8.0) => {
   const explicitMaxLines = Number(element.maxLines);
   if (Number.isFinite(explicitMaxLines) && explicitMaxLines > 0) {
     return Math.max(1, Math.floor(explicitMaxLines));
@@ -100,7 +178,7 @@ const getResolvedPreviewMaxLines = (element, baseFontPx, rotation = 0, zoom = 1,
   return Math.max(1, Math.floor((blockHeightPx * 0.92) / estimatedLineHeightPx));
 };
 
-const getPreviewTextStyle = (element, content, zoom, rotation = 0, pixelsPerMm = 8.0) => {
+const getPreviewTextStyle = (element: LabelElement, content: unknown, zoom: number, rotation = 0, pixelsPerMm = 8.0) => {
   const normalizedRotation = ((Number(rotation) || 0) % 360 + 360) % 360;
   const isVerticalRotation = normalizedRotation === 90 || normalizedRotation === 270;
   const baseFontPx = (element.fontSize || 10) * CSS_PIXELS_PER_POINT * zoom;
@@ -173,51 +251,51 @@ const LABEL_FOLDER_OPTIONS = [
  * Beheert labelontwerpen in de root: /future-factory/settings/label_templates/records/
  * Verplaatst van matrixmanager naar hoofd admin map.
  */
-const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
+const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => void; openLabelId?: string | null }) => {
   const { t } = useTranslation();
   const { notify } = useNotifications();
   const [labelName, setLabelName] = useState(t('adminLabelDesigner.newLabel'));
-  const [selectedSizeKey, setSelectedSizeKey] = useState("Standard");
+  const [selectedSizeKey, setSelectedSizeKey] = useState<LabelSizeKey | "Custom">("Standard");
   const [labelWidth, setLabelWidth] = useState(LABEL_SIZES.Standard.width);
   const [labelHeight, setLabelHeight] = useState(LABEL_SIZES.Standard.height);
-  const [labelTags, setLabelTags] = useState([]);
+  const [labelTags, setLabelTags] = useState<string[]>([]);
   const [labelFolder, setLabelFolder] = useState("");
   const [showTagManager, setShowTagManager] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
 
-  const [elements, setElements] = useState([]);
-  const [selectedElementIds, setSelectedElementIds] = useState([]);
+  const [elements, setElements] = useState<LabelElement[]>([]);
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
   const [zoom, setZoom] = useState(1.2);
   const [showGrid, setShowGrid] = useState(true);
-  const [guidelines, setGuidelines] = useState([]);
+  const [guidelines, setGuidelines] = useState<Guideline[]>([]);
 
-  const [previewData, setPreviewData] = useState(null);
+  const [previewData, setPreviewData] = useState<Record<string, unknown> | null>(null);
   const [showDataModal, setShowDataModal] = useState(false);
-  const [availableOrders, setAvailableOrders] = useState([]);
+  const [availableOrders, setAvailableOrders] = useState<OrderRecord[]>([]);
 
-  const [savedLabels, setSavedLabels] = useState([]);
+  const [savedLabels, setSavedLabels] = useState<SavedLabel[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [labelLogicRules, setLabelLogicRules] = useState([]);
+  const [labelLogicRules, setLabelLogicRules] = useState<LabelLogicRule[]>([]);
   const [selectedLogicCode, setSelectedLogicCode] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Nieuwe state voor afdelingen
-  const [departments, setDepartments] = useState([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [assignedDepartment, setAssignedDepartment] = useState("All");
-  const [history, setHistory] = useState([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [stationFilter, setStationFilter] = useState("");
 
-  const canvasRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const lastOpenedFromPropRef = useRef(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const lastOpenedFromPropRef = useRef<string | null>(null);
 
   // 1. Live Sync met de Root
   useEffect(() => {
-    const colRef = collection(db, ...PATHS.LABEL_TEMPLATES);
+    const colRef = collection(db, getPathString(PATHS.LABEL_TEMPLATES));
     const unsub = onSnapshot(
       colRef,
       (snap) => {
-        setSavedLabels(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setSavedLabels(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SavedLabel, "id">) })));
       },
       (err) => console.error("Sync Error:", err)
     );
@@ -227,9 +305,9 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
 
   // 1b. Fetch Label Logic Rules
   useEffect(() => {
-    const logicRef = collection(db, ...PATHS.LABEL_LOGIC);
+    const logicRef = collection(db, getPathString(PATHS.LABEL_LOGIC));
     const unsub = onSnapshot(logicRef, (snap) => {
-        const rules = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const rules = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LabelLogicRule, "id">) }));
         setLabelLogicRules(rules);
     });
     return () => unsub();
@@ -239,10 +317,10 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
   useEffect(() => {
     const fetchDepartments = async () => {
       try {
-        const docRef = doc(db, ...PATHS.FACTORY_CONFIG);
+        const docRef = doc(db, getPathString(PATHS.FACTORY_CONFIG));
         const snap = await getDoc(docRef);
         if (snap.exists()) {
-          setDepartments(snap.data().departments || []);
+          setDepartments(((snap.data().departments as Department[] | undefined) || []));
         }
       } catch (e) {
         console.error("Error fetching departments:", e);
@@ -252,10 +330,12 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
   }, []);
 
   const allStations = useMemo(() => {
-    const stations = new Set();
-    departments.forEach(dept => {
+    const stations = new Set<string>();
+    departments.forEach((dept) => {
       if (dept.stations) {
-        dept.stations.forEach(s => stations.add(s.name));
+        dept.stations.forEach((s) => {
+          if (s.name) stations.add(s.name);
+        });
       }
     });
     return Array.from(stations).sort();
@@ -267,13 +347,13 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     return window.confirm(t('adminLabelDesigner.overwriteConfirm', 'Je hebt niet-opgeslagen wijzigingen. Wil je deze negeren en doorgaan zonder op te slaan?'));
   };
 
-  const loadLabelIntoDesigner = (label) => {
+  const loadLabelIntoDesigner = (label: SavedLabel | undefined) => {
     if (!label) return;
     if (!confirmDiscardChanges()) return;
 
-    setLabelName(label.name);
-    setLabelWidth(label.width);
-    setLabelHeight(label.height);
+    setLabelName(label.name || t('adminLabelDesigner.newLabel'));
+    setLabelWidth(label.width || LABEL_SIZES.Standard.width);
+    setLabelHeight(label.height || LABEL_SIZES.Standard.height);
     if (label.sizeKey) setSelectedSizeKey(label.sizeKey);
     setAssignedDepartment(label.department || "All");
     setLabelTags(label.tags || []);
@@ -288,7 +368,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     if (lastOpenedFromPropRef.current === openLabelId) return;
     if (!savedLabels || savedLabels.length === 0) return;
 
-    const targetLabel = savedLabels.find(l => l.id === openLabelId);
+    const targetLabel = savedLabels.find((l) => l.id === openLabelId);
     if (!targetLabel) return;
 
     loadLabelIntoDesigner(targetLabel);
@@ -297,7 +377,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
 
   const handleBack = () => {
     if (confirmDiscardChanges()) {
-      onBack();
+      onBack?.();
     }
   };
 
@@ -305,15 +385,15 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
 
   const filteredVariables = useMemo(() => {
       // Start with a set of all possible dynamic variables from all logic rules.
-      const allVars = new Set();
-      labelLogicRules.forEach(r => {
-          r.variables?.forEach(v => { if(v.name) allVars.add(v.name); });
+      const allVars = new Set<string>();
+        labelLogicRules.forEach((r) => {
+          r.variables?.forEach((v) => { if (v.name) allVars.add(v.name); });
       });
 
       // If a specific product code is selected to filter the list
       if (selectedLogicCode) {
-          const rule = labelLogicRules.find(r => r.productCode === selectedLogicCode);
-          const ruleVars = new Set(rule?.variables?.map(v => v.name) || []);
+          const rule = labelLogicRules.find((r) => r.productCode === selectedLogicCode);
+          const ruleVars = new Set((rule?.variables?.map((v) => v.name).filter(Boolean) as string[]) || []);
           
           // Always add the currently selected element's variable to the list,
           // so it's visible even if it doesn't belong to the filtered rule.
@@ -341,17 +421,17 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
 
   // Helper om alle unieke tags te verzamelen
   const allUniqueTags = useMemo(() => {
-    const tags = new Set();
-    savedLabels.forEach(l => {
+    const tags = new Set<string>();
+    savedLabels.forEach((l) => {
       if (l.tags && Array.isArray(l.tags)) {
-        l.tags.forEach(t => tags.add(t));
+        l.tags.forEach((t) => tags.add(t));
       }
     });
     return Array.from(tags).sort();
   }, [savedLabels]);
 
-  const inferFolderFromTags = (tags = []) => {
-    const upperTags = tags.map(t => String(t).toUpperCase());
+  const inferFolderFromTags = (tags: string[] = []) => {
+    const upperTags = tags.map((t) => String(t).toUpperCase());
     const isTemp = upperTags.includes("TIJDELIJK") || upperTags.includes("TEMP");
     const hasWavi = upperTags.includes("WAVISTRONG");
     const hasFiber = upperTags.includes("FIBERMAR");
@@ -368,7 +448,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     return "";
   };
 
-  const deleteTagGlobally = async (tagToDelete) => {
+  const deleteTagGlobally = async (tagToDelete: string) => {
     if (!window.confirm(t('adminLabelDesigner.confirmGlobalTagDelete', `Weet je zeker dat je de tag '${tagToDelete}' overal wilt verwijderen? Dit past ${savedLabels.filter(l => l.tags?.includes(tagToDelete)).length} templates aan.`))) return;
     
     setIsLoading(true);
@@ -376,10 +456,10 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
       const batch = writeBatch(db);
       let count = 0;
       
-      savedLabels.forEach(label => {
+      savedLabels.forEach((label) => {
         if (label.tags && label.tags.includes(tagToDelete)) {
-          const newTags = label.tags.filter(t => t !== tagToDelete);
-          const docRef = doc(db, ...PATHS.LABEL_TEMPLATES, label.id);
+          const newTags = label.tags.filter((t) => t !== tagToDelete);
+          const docRef = doc(db, `${getPathString(PATHS.LABEL_TEMPLATES)}/${label.id}`);
           batch.update(docRef, { tags: newTags, lastUpdated: serverTimestamp() });
           count++;
         }
@@ -392,9 +472,9 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
         }
         notify(`Tag '${tagToDelete}' is verwijderd van ${count} templates.`);
       }
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Tag delete error:", e);
-      notify("Fout bij verwijderen tag: " + e.message);
+      notify("Fout bij verwijderen tag: " + (e instanceof Error ? e.message : String(e || "Onbekende fout")));
     } finally {
       setIsLoading(false);
     }
@@ -405,9 +485,9 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     setStationFilter("");
     setIsLoading(true);
     try {
-      const q = query(collection(db, ...PATHS.PLANNING), limit(15));
+      const q = query(collection(db, getPathString(PATHS.PLANNING)), limit(15));
       const snapshot = await getDocs(q);
-      setAvailableOrders(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setAvailableOrders(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderRecord, "id">) })));
       setShowDataModal(true);
     } catch (e) {
       console.error("Fout bij ophalen orders:", e);
@@ -416,18 +496,18 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     }
   };
 
-  const handleStationFilterChange = async (station) => {
+  const handleStationFilterChange = async (station: string) => {
     setStationFilter(station);
     setIsLoading(true);
     try {
       let q;
       if (station) {
-        q = query(collection(db, ...PATHS.PLANNING), where("machine", "==", station), limit(500));
+        q = query(collection(db, getPathString(PATHS.PLANNING)), where("machine", "==", station), limit(500));
       } else {
-        q = query(collection(db, ...PATHS.PLANNING), limit(15));
+        q = query(collection(db, getPathString(PATHS.PLANNING)), limit(15));
       }
       const snapshot = await getDocs(q);
-      setAvailableOrders(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setAvailableOrders(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderRecord, "id">) })));
     } catch (e) {
       console.error("Filter fout:", e);
     } finally {
@@ -435,7 +515,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     }
   };
 
-  const handleSearchOrder = async (queryText) => {
+  const handleSearchOrder = async (queryText: string) => {
     if (!queryText) {
         handleStationFilterChange(stationFilter); // Reset naar huidig filter
         return;
@@ -444,9 +524,9 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     try {
       const term = queryText.trim();
       // Zoek op orderId (start met...)
-      const q = query(collection(db, ...PATHS.PLANNING), where("orderId", ">=", term), where("orderId", "<=", term + "\uf8ff"), limit(20));
+      const q = query(collection(db, getPathString(PATHS.PLANNING)), where("orderId", ">=", term), where("orderId", "<=", term + "\uf8ff"), limit(20));
       const snapshot = await getDocs(q);
-      setAvailableOrders(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setAvailableOrders(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderRecord, "id">) })));
     } catch (e) {
       console.error("Zoekfout:", e);
     } finally {
@@ -454,7 +534,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     }
   };
 
-  const selectOrderForPreview = (order) => {
+  const selectOrderForPreview = (order: OrderRecord) => {
     setPreviewData(processLabelData(order));
     setShowDataModal(false);
   };
@@ -477,8 +557,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
 
     let resolvedDpi = 203;
     try {
-      const printerSnap = await getDocs(collection(db, ...PATHS.PRINTERS));
-      const printers = printerSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const printerSnap = await getDocs(collection(db, getPathString(PATHS.PRINTERS)));
+      const printers: OrderRecord[] = printerSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderRecord, "id">) }));
       const targetPrinter = printers.find((p) => p.isDefault) || printers[0] || null;
       const driver = getDriver(targetPrinter);
       if (Number.isFinite(driver?.nativeDpi) && driver.nativeDpi > 0) {
@@ -488,12 +568,12 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
       console.warn("Kon printer-DPI niet bepalen, fallback naar 203 DPI:", e);
     }
 
-    const printData = await generatePrintData(labelConfig, data, resolvedDpi, resolveLabelContent, t);
+    const printData = await generatePrintData(labelConfig, data, resolvedDpi, resolveLabelContent as never, t);
     downloadZPL(printData, `${labelName.replace(/\s+/g, "_")}_preview.zpl`);
   };
 
   const addToHistory = () => {
-    setHistory(prev => [...prev, { 
+    setHistory((prev) => [...prev, {
       elements: [...elements],
       labelWidth,
       labelHeight,
@@ -514,11 +594,11 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     setAssignedDepartment(previous.assignedDepartment);
     setLabelTags(previous.labelTags || []);
     setLabelFolder(previous.labelFolder || "");
-    setHistory(prev => prev.slice(0, -1));
+    setHistory((prev) => prev.slice(0, -1));
   };
 
-  const handleCopyFrom = (sourceId) => {
-    const sourceLabel = savedLabels.find(l => l.id === sourceId);
+  const handleCopyFrom = (sourceId: string) => {
+    const sourceLabel = savedLabels.find((l) => l.id === sourceId);
     if (!sourceLabel) return;
 
     if (!confirmDiscardChanges()) {
@@ -527,8 +607,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
 
     addToHistory();
 
-    setLabelWidth(sourceLabel.width);
-    setLabelHeight(sourceLabel.height);
+    setLabelWidth(sourceLabel.width || LABEL_SIZES.Standard.width);
+    setLabelHeight(sourceLabel.height || LABEL_SIZES.Standard.height);
     if (sourceLabel.sizeKey) setSelectedSizeKey(sourceLabel.sizeKey);
     setAssignedDepartment(sourceLabel.department || "All");
     setLabelTags([]); // Reset tags bij kopiëren van ontwerp om vervuiling te voorkomen
@@ -561,8 +641,9 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
 
   // 6. Keyboard Navigation (Pijltjestoetsen voor precisie)
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
       if (selectedElementIds.length === 0) return;
 
       const isArrowKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
@@ -586,10 +667,10 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
         case 'ArrowRight': dx = step; break;
       }
 
-      setElements(prev => prev.map(el => {
+      setElements((prev) => prev.map((el) => {
         if (selectedElementIds.includes(el.id)) {
-          const newX = Math.round((el.x + dx) * 100) / 100;
-          const newY = Math.round((el.y + dy) * 100) / 100;
+          const newX = Math.round(((el.x || 0) + dx) * 100) / 100;
+          const newY = Math.round(((el.y || 0) + dy) * 100) / 100;
           return { ...el, x: Math.max(0, newX), y: Math.max(0, newY) };
         }
         return el;
@@ -602,9 +683,9 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
   }, [selectedElementIds, elements, labelWidth, labelHeight, selectedSizeKey, assignedDepartment, labelTags, labelFolder]);
 
   // 3. Designer Acties
-  const addElement = (type) => {
+  const addElement = (type: string) => {
     addToHistory();
-    const newElement = {
+    const newElement: LabelElement = {
       id: Date.now().toString(),
       type,
       x: 5,
@@ -622,7 +703,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
           : type === "image" ? "" : "QR_DATA",
       fontSize: 10,
       align: "left",
-      fontFamily: "Arial",
+      fontFamily: PRINTER_PREVIEW_FONT_STACK,
       isBold: false,
       rotation: 0,
       variable: "",
@@ -632,7 +713,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     setHasUnsavedChanges(true);
   };
 
-  const updateElement = (id, updates) => {
+  const updateElement = (id: string, updates: Partial<LabelElement>) => {
     setElements(
       elements.map((el) => (selectedElementIds.includes(el.id) ? { ...el, ...updates } : el))
     );
@@ -650,10 +731,10 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     if (selectedElementIds.length === 0) return;
     addToHistory();
     
-    const newElements = [];
-    const newSelection = [];
+    const newElements: LabelElement[] = [];
+    const newSelection: string[] = [];
 
-    elements.forEach(el => {
+    elements.forEach((el) => {
         if (selectedElementIds.includes(el.id)) {
             const copy = {
                 ...el,
@@ -671,12 +752,12 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     setHasUnsavedChanges(true);
   };
 
-  const alignCenter = (axis) => {
+  const alignCenter = (axis: "x" | "y") => {
     if (selectedElementIds.length === 0) return;
     addToHistory();
     setElements(elements.map((el) => {
         if (selectedElementIds.includes(el.id)) {
-            const updates = {};
+            const updates: Partial<LabelElement> = {};
             if (axis === "x") updates.x = (labelWidth - (el.width || 0)) / 2;
             else if (axis === "y") updates.y = (labelHeight - (el.height || 0)) / 2;
             return { ...el, ...updates };
@@ -686,7 +767,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
   };
 
   // 4. Drag Engine met Snapping
-  const handleMouseDown = (e, id) => {
+  const handleMouseDown = (e: React.MouseEvent<HTMLElement>, id: string) => {
     e.stopPropagation();
     addToHistory();
     
@@ -709,23 +790,23 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
     const startX = e.clientX;
     const startY = e.clientY;
     
-    const initialPositions = {};
-    newSelection.forEach(sid => {
-        const el = elements.find(e => e.id === sid);
-        if (el) initialPositions[sid] = { x: el.x, y: el.y };
+    const initialPositions: Record<string, { x: number; y: number }> = {};
+    newSelection.forEach((sid) => {
+      const el = elements.find((element) => element.id === sid);
+      if (el) initialPositions[sid] = { x: el.x || 0, y: el.y || 0 };
     });
 
-    const handleMouseMove = (moveEvent) => {
+    const handleMouseMove = (moveEvent: MouseEvent) => {
       const pixelsPerMm = getPixelsPerMm(DEFAULT_PRINTER_DPI);
       const deltaX = (moveEvent.clientX - startX) / zoom / pixelsPerMm;
       const deltaY = (moveEvent.clientY - startY) / zoom / pixelsPerMm;
 
-      const primaryEl = elements.find(e => e.id === id);
+      const primaryEl = elements.find((element) => element.id === id);
       const initialPrimary = initialPositions[id];
       
       let snapDeltaX = 0;
       let snapDeltaY = 0;
-      const activeGuidelines = [];
+      const activeGuidelines: Guideline[] = [];
 
       if (primaryEl && initialPrimary) {
           const primaryNewX = Math.max(0, initialPrimary.x + deltaX);
@@ -779,18 +860,18 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
   };
 
   // 5. Opslaan
-  const saveLabel = async (nameOverride = null, tagsOverride = null) => {
+  const saveLabel = async (nameOverride: string | null = null, tagsOverride: string[] | null = null) => {
     const nameToUse = nameOverride || labelName;
     if (!nameToUse.trim()) return notify(t('adminLabelDesigner.enterLabelName'));
     setIsLoading(true);
     try {
       const labelId = nameToUse.trim().replace(/[^a-zA-Z0-9-_]/g, "_").toLowerCase();
-      const docRef = doc(db, ...PATHS.LABEL_TEMPLATES, labelId);
+      const docRef = doc(db, `${getPathString(PATHS.LABEL_TEMPLATES)}/${labelId}`);
 
       // Sanitize elements to ensure no undefined values (Firestore rejects undefined)
-      const sanitizedElements = elements.map(el => {
-        const cleanEl = { ...el };
-        Object.keys(cleanEl).forEach(key => {
+      const sanitizedElements = elements.map((el) => {
+        const cleanEl: Record<string, unknown> = { ...el };
+        Object.keys(cleanEl).forEach((key) => {
           if (cleanEl[key] === undefined) {
             cleanEl[key] = null;
           }
@@ -812,7 +893,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
         lastUpdated: serverTimestamp(),
         updatedBy: "Admin Designer",
       });
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Label template saved: ${nameToUse}`);
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Label template saved: ${nameToUse}`);
       setHasUnsavedChanges(false);
       
       if (nameOverride) {
@@ -822,9 +903,9 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
       } else {
           notify(t('adminLabelDesigner.labelSaved'));
       }
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("Save error:", e);
-      notify(t('adminLabelDesigner.saveError') + e.message);
+      notify(t('adminLabelDesigner.saveError') + (e instanceof Error ? e.message : String(e)));
     } finally {
       setIsLoading(false);
     }
@@ -914,10 +995,10 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
           <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1">
             <select
               value={selectedSizeKey}
-              onChange={(e) => { setSelectedSizeKey(e.target.value); setHasUnsavedChanges(true); }}
+              onChange={(e) => { setSelectedSizeKey(e.target.value as LabelSizeKey | "Custom"); setHasUnsavedChanges(true); }}
               className="bg-transparent text-[10px] font-black uppercase outline-none px-4 py-2 cursor-pointer"
             >
-              {Object.keys(LABEL_SIZES).map((s) => (
+              {(Object.keys(LABEL_SIZES) as LabelSizeKey[]).map((s) => (
                 <option key={s} value={s}>
                   {LABEL_SIZES[s].name}
                 </option>
@@ -954,8 +1035,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
               className="bg-transparent text-[10px] font-black uppercase outline-none px-4 py-2 cursor-pointer max-w-[150px]"
             >
               <option value="All">{t('adminUsers.allDepartments', 'Alle Afdelingen')}</option>
-              {departments.map(d => (
-                <option key={d.id} value={d.id}>{d.name}</option>
+              {departments.map((d) => (
+                <option key={d.id || d.name || 'unknown-department'} value={d.id || d.name || 'unknown-department'}>{d.name || d.id || 'Onbekend'}</option>
               ))}
             </select>
           </div>
@@ -1109,8 +1190,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                   onMouseDown={(e) => handleMouseDown(e, el.id)}
                   className="absolute cursor-move group select-none"
                   style={{
-                    left: `${el.x * PIXELS_PER_MM * zoom}px`,
-                    top: `${el.y * PIXELS_PER_MM * zoom}px`,
+                    left: `${(el.x || 0) * PIXELS_PER_MM * zoom}px`,
+                    top: `${(el.y || 0) * PIXELS_PER_MM * zoom}px`,
                     transform: `rotate(${el.rotation || 0}deg)`,
                     transformOrigin: "top left",
                   }}
@@ -1123,7 +1204,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                     } p-0.5`}
                   >
                     {el.type === "text" && (() => {
-                      const { content } = resolveLabelContent(el, previewData);
+                      const { content } = (resolveLabelContent(el, previewData) as { content?: string | number | null });
                       const hasContent = content !== null && content !== undefined && String(content).trim() !== "";
                       const normalizedRotation = ((Number(el.rotation) || 0) % 360 + 360) % 360;
                       const isVerticalRotation = normalizedRotation === 90 || normalizedRotation === 270;
@@ -1134,10 +1215,12 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                           style={{
                             ...previewTextStyle,
                             fontWeight: el.isBold ? "900" : "normal",
-                            fontFamily: el.fontFamily,
+                            fontFamily: !el.fontFamily || el.fontFamily === "Arial"
+                              ? PRINTER_PREVIEW_FONT_STACK
+                              : el.fontFamily,
                             width: isVerticalRotation
                               ? `${(el.height || el.width || 1) * PIXELS_PER_MM * zoom}px`
-                              : `${el.width * PIXELS_PER_MM * zoom}px`,
+                              : `${(el.width || 1) * PIXELS_PER_MM * zoom}px`,
                             height: isVerticalRotation
                               ? `${(el.width || el.height || 1) * PIXELS_PER_MM * zoom}px`
                               : (el.height
@@ -1159,8 +1242,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                     {el.type === "line" && (
                       <div
                         style={{
-                          width: `${el.width * PIXELS_PER_MM * zoom}px`,
-                          height: `${el.height * PIXELS_PER_MM * zoom}px`,
+                          width: `${(el.width || 0) * PIXELS_PER_MM * zoom}px`,
+                          height: `${(el.height || 0) * PIXELS_PER_MM * zoom}px`,
                           backgroundColor: "black",
                         }}
                       />
@@ -1168,8 +1251,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                     {el.type === "box" && (
                       <div
                         style={{
-                          width: `${el.width * PIXELS_PER_MM * zoom}px`,
-                          height: `${el.height * PIXELS_PER_MM * zoom}px`,
+                          width: `${(el.width || 0) * PIXELS_PER_MM * zoom}px`,
+                          height: `${(el.height || 0) * PIXELS_PER_MM * zoom}px`,
                           border: `${
                             (el.thickness || 1) * PIXELS_PER_MM * zoom
                           }px solid black`,
@@ -1274,10 +1357,10 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                       type="text" 
                       placeholder={t('adminLabelDesigner.tagPlaceholder', 'bv. Wavistrong, EMT, EST')}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 transition-all"
-                      onBlur={(e) => {
+                      onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
                         const val = e.target.value;
                         if (val) {
-                          const newTags = val.split(',').map(t => t.trim().toUpperCase()).filter(t => t);
+                          const newTags = val.split(',').map((t: string) => t.trim().toUpperCase()).filter((t: string) => t);
                           const uniqueNewTags = [...new Set(newTags)].filter(t => !labelTags.includes(t));
                           if (uniqueNewTags.length > 0) {
                             addToHistory();
@@ -1287,18 +1370,18 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                           e.target.value = '';
                         }
                       }}
-                      onKeyDown={(e) => {
+                      onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                         if (e.key === 'Enter') {
-                          const val = e.target.value;
+                          const val = e.currentTarget.value;
                           if (val) {
-                            const newTags = val.split(',').map(t => t.trim().toUpperCase()).filter(t => t);
-                            const uniqueNewTags = [...new Set(newTags)].filter(t => !labelTags.includes(t));
+                            const newTags = val.split(',').map((t: string) => t.trim().toUpperCase()).filter((t: string) => t);
+                            const uniqueNewTags = [...new Set<string>(newTags)].filter((t: string) => !labelTags.includes(t));
                             if (uniqueNewTags.length > 0) {
                               addToHistory();
                               setLabelTags([...labelTags, ...uniqueNewTags]);
                               setHasUnsavedChanges(true);
                             }
-                            e.target.value = '';
+                            e.currentTarget.value = '';
                           }
                         }
                       }}
@@ -1345,12 +1428,12 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                           ref={fileInputRef} 
                           className="hidden" 
                           accept="image/*"
-                          onChange={(e) => {
-                             const file = e.target.files[0];
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                              const file = e.target.files?.[0];
                              if(file) {
                                const reader = new FileReader();
                                reader.onload = (ev) => {
-                                  updateElement(selectedElement.id, { content: ev.target.result });
+                                 updateElement(selectedElement.id, { content: typeof ev.target?.result === 'string' ? ev.target.result : '' });
                                };
                                reader.readAsDataURL(file);
                              }
@@ -1367,8 +1450,11 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none text-slate-600"
                           >
                               <option value="">{t('allVariables')}</option>
-                              {labelLogicRules.sort((a,b) => a.productCode.localeCompare(b.productCode)).map(r => (
-                                  <option key={r.id} value={r.productCode}>{r.productCode}</option>
+                              {labelLogicRules
+                                .slice()
+                                .sort((a, b) => (a.productCode || '').localeCompare(b.productCode || ''))
+                                .map((r) => (
+                                  <option key={r.id} value={r.productCode || ''}>{r.productCode || 'Onbekend'}</option>
                               ))}
                           </select>
                       </div>
@@ -1537,7 +1623,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                     </label>
                     <input
                       type="number"
-                      value={Math.round(selectedElement.width)}
+                      value={Math.round(selectedElement.width || 0)}
                       onChange={(e) =>
                         updateElement(selectedElement.id, {
                           width: Number(e.target.value),
@@ -1605,9 +1691,9 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                         type="text" 
                         placeholder={t('searchOrderPlaceholder')} 
                         className="w-full pl-12 pr-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-sm outline-none focus:border-blue-500 transition-all"
-                        onKeyDown={(e) => {
+                        onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                             if (e.key === 'Enter') {
-                                handleSearchOrder(e.target.value);
+                            handleSearchOrder(e.currentTarget.value);
                             }
                         }}
                     />
@@ -1680,7 +1766,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }) => {
                   type="text" 
                   placeholder={t('adminLabelDesigner.searchTags', 'Zoek tags...')}
                   value={tagSearch}
-                  onChange={(e) => setTagSearch(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTagSearch(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
                   autoFocus
                 />

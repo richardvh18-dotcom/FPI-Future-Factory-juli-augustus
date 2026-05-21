@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { Grid } from "react-window";
 import { Search, UserCircle, Edit3, Trash2, Plus, ChevronDown, ChevronUp, Layers, Filter, RotateCcw, ArrowRight, Nfc } from "lucide-react";
 import { getISOWeek } from "date-fns";
 
@@ -66,7 +65,7 @@ const PersonnelListView = React.memo(({
   // Initialize expanded states when departments change (only if not controlled)
   useEffect(() => {
     if (!isControlled && departments.length > 0) {
-      const initialDepts = {};
+      const initialDepts: Record<string, boolean> = {};
       departments.forEach(d => initialDepts[d.id] = true);
       setLocalExpandedDepts(initialDepts);
     }
@@ -89,15 +88,15 @@ const PersonnelListView = React.memo(({
 
   const knownDepartmentIds = new Set(departments.map((dept) => dept.id));
   const unmatchedPersonnel = filteredPersonnel.filter(
-    (person) => !knownDepartmentIds.has(person.departmentId)
+    (person) => !knownDepartmentIds.has(String(person.departmentId || ""))
   );
 
   const isGrouped = departments.length > 0;
 
   const getEffectiveShift = (p: PersonnelPerson): string | undefined => {
-    if (p.rotationSchedule?.enabled && p.rotationSchedule.shifts?.length > 0) {
+    const rotationShifts = p.rotationSchedule?.shifts || [];
+    if (p.rotationSchedule?.enabled && rotationShifts.length > 0) {
       const startWeekNum = p.rotationSchedule.startWeek || 1;
-      const rotationShifts = p.rotationSchedule.shifts;
       const weeksSinceStart = currentWeek - startWeekNum;
       const shiftIndex = ((weeksSinceStart % rotationShifts.length) + rotationShifts.length) % rotationShifts.length;
       return rotationShifts[shiftIndex];
@@ -359,24 +358,8 @@ const PersonnelListView = React.memo(({
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            {/* @ts-ignore react-window v1 children API, incompatible with v2 types */}
-            <Grid
-              columnCount={4}
-              rowCount={Math.ceil(filteredPersonnel.length / 4)}
-              columnWidth={320}
-              rowHeight={260}
-              width={1320}
-              height={800}
-              className="mx-auto"
-            >
-              {({ columnIndex, rowIndex, style }) => {
-                const idx = rowIndex * 4 + columnIndex;
-                if (idx >= filteredPersonnel.length) return null;
-                const p = filteredPersonnel[idx];
-                return <div style={style}>{renderCard(p)}</div>;
-              }}
-            </Grid>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 pb-4">
+            {filteredPersonnel.map((p) => renderCard(p))}
           </div>
         )
       }

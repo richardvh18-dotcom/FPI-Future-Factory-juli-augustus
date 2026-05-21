@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Save,
@@ -22,7 +21,71 @@ import {
   setDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { PATHS } from "../../../config/dbPaths";
+import { PATHS, getPathString } from "../../../config/dbPaths";
+
+type ParsedSpec = {
+  id: string;
+  sourceKind: "fitting" | "socket";
+  typeKey: string;
+  typeLabel: string;
+  angle: string;
+  connection: string;
+  pressure: string;
+  diameter: string;
+  extraCode: string;
+};
+
+type SpecRecord = {
+  id: string;
+  __parsed: ParsedSpec;
+  [key: string]: unknown;
+};
+
+type ToleranceField = {
+  enabled: boolean;
+  tolerance: string;
+};
+
+type ToleranceConfigItem = {
+  sourceId: string;
+  sourceDisplayName: string;
+  fittingId: string;
+  socketId: string;
+  connection: string;
+  typeKey: string;
+  typeLabel: string;
+  angle: string;
+  pressure: string;
+  diameter: string;
+  extraCode: string;
+  tolerances: Record<string, ToleranceField>;
+  updatedAt: string;
+};
+
+type MatrixConfig = {
+  toleranceItems: ToleranceConfigItem[];
+  ranges: unknown[];
+  [key: string]: unknown;
+};
+
+type StatusState = {
+  type: "success" | "error";
+  msg: string;
+};
+
+type SelectOption = {
+  value: string;
+  label: string;
+};
+
+type SelectedField = {
+  key: string;
+  source: "Fitting" | "Mof";
+  value: unknown;
+};
+
+const colPath = (path: string[]) => collection(db, getPathString(path));
+const docPath = (path: string[]) => doc(db, getPathString(path));
 
 const META_KEYS = new Set([
   "id",
@@ -39,14 +102,14 @@ const FITTING_FIELD_ORDER = ["TW", "L", "Lo", "R", "Weight"];
 const SOCKET_FIELD_ORDER = ["B1", "B2", "BA", "A", "TWcb", "TWtb", "BD", "W"];
 const CONNECTION_PRIORITY = ["CB", "TB", "AB", "AM", "FL", "FB", "CF", "CS"];
 
-const prettifyType = (typeKey) =>
+const prettifyType = (typeKey: string) =>
   String(typeKey || "")
     .replace(/_+/g, " ")
     .trim();
 
-const normalizeValue = (value) => String(value || "").trim().toUpperCase();
+const normalizeValue = (value: unknown) => String(value || "").trim().toUpperCase();
 
-const parseSpecId = (rawId, isSocket = false) => {
+const parseSpecId = (rawId: unknown, isSocket = false): ParsedSpec | null => {
   const id = normalizeValue(rawId);
   if (!id) return null;
 
@@ -89,7 +152,7 @@ const parseSpecId = (rawId, isSocket = false) => {
   };
 };
 
-const buildLookupKey = (parsed) => {
+const buildLookupKey = (parsed: ParsedSpec | null) => {
   if (!parsed) return "";
   return [
     normalizeValue(parsed.typeKey),
@@ -100,7 +163,7 @@ const buildLookupKey = (parsed) => {
   ].join("|");
 };
 
-const sortByPreferredOrder = (fields) => {
+const sortByPreferredOrder = (fields: string[]) => {
   const order = [...FITTING_FIELD_ORDER, ...SOCKET_FIELD_ORDER];
   return [...fields].sort((a, b) => {
     const indexA = order.indexOf(a);
@@ -112,10 +175,14 @@ const sortByPreferredOrder = (fields) => {
   });
 };
 
-const getRecordFields = (record) =>
-  Object.keys(record || {}).filter((key) => !META_KEYS.has(key) && record[key] !== "" && record[key] !== undefined && record[key] !== null);
+const getRecordFields = (record: SpecRecord | null) => {
+  if (!record) return [];
+  return Object.keys(record).filter(
+    (key) => !META_KEYS.has(key) && record[key] !== "" && record[key] !== undefined && record[key] !== null
+  );
+};
 
-const getDisplayName = (parsed) => {
+const getDisplayName = (parsed: ParsedSpec | null) => {
   if (!parsed) return "Onbekende tekening";
   const angleText = parsed.angle ? ` ${parsed.angle}°` : "";
   const extraText = parsed.extraCode ? ` ${parsed.extraCode}` : "";
@@ -123,27 +190,27 @@ const getDisplayName = (parsed) => {
 };
 
 const MatrixRangesView = () => {
-  const [config, setConfig] = useState({ toleranceItems: [], ranges: [] });
-  const [fittingRecords, setFittingRecords] = useState([]);
-  const [socketRecords, setSocketRecords] = useState([]);
+  const [config, setConfig] = useState<MatrixConfig>({ toleranceItems: [], ranges: [] });
+  const [fittingRecords, setFittingRecords] = useState<SpecRecord[]>([]);
+  const [socketRecords, setSocketRecords] = useState<SpecRecord[]>([]);
   const [loadingConfig, setLoadingConfig] = useState(true);
   const [loadingSpecs, setLoadingSpecs] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<StatusState | null>(null);
   const [search, setSearch] = useState("");
   const [selectedConnection, setSelectedConnection] = useState("CB");
   const [selectedTypeKey, setSelectedTypeKey] = useState("");
   const [selectedAngle, setSelectedAngle] = useState("");
   const [selectedSourceId, setSelectedSourceId] = useState("");
-  const [draftTolerances, setDraftTolerances] = useState({});
+  const [draftTolerances, setDraftTolerances] = useState<Record<string, ToleranceField>>({});
 
   useEffect(() => {
-    const docRef = doc(db, ...PATHS.MATRIX_CONFIG);
+    const docRef = docPath(PATHS.MATRIX_CONFIG);
     const unsub = onSnapshot(
       docRef,
       (snap) => {
         if (snap.exists()) {
-          const data = snap.data() || {};
+          const data = (snap.data() || {}) as MatrixConfig;
           setConfig({
             ...data,
             ranges: Array.isArray(data.ranges) ? data.ranges : [],
@@ -171,15 +238,15 @@ const MatrixRangesView = () => {
     };
 
     const fittingUnsub = onSnapshot(
-      query(collection(db, ...PATHS.FITTING_SPECS)),
+      query(colPath(PATHS.FITTING_SPECS)),
       (snap) => {
         setFittingRecords(
           snap.docs
             .map((d) => {
               const parsed = parseSpecId(d.id, false);
-              return parsed ? { id: d.id, ...d.data(), __parsed: parsed } : null;
+              return parsed ? ({ id: d.id, ...(d.data() as Record<string, unknown>), __parsed: parsed } as SpecRecord) : null;
             })
-            .filter(Boolean)
+            .filter((record): record is SpecRecord => Boolean(record))
             .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }))
         );
         finish();
@@ -191,15 +258,15 @@ const MatrixRangesView = () => {
     );
 
     const socketUnsub = onSnapshot(
-      query(collection(db, ...PATHS.SOCKET_SPECS)),
+      query(colPath(PATHS.SOCKET_SPECS)),
       (snap) => {
         setSocketRecords(
           snap.docs
             .map((d) => {
               const parsed = parseSpecId(d.id, true);
-              return parsed ? { id: d.id, ...d.data(), __parsed: parsed } : null;
+              return parsed ? ({ id: d.id, ...(d.data() as Record<string, unknown>), __parsed: parsed } as SpecRecord) : null;
             })
-            .filter(Boolean)
+            .filter((record): record is SpecRecord => Boolean(record))
             .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }))
         );
         finish();
@@ -217,7 +284,7 @@ const MatrixRangesView = () => {
   }, []);
 
   const socketLookup = useMemo(() => {
-    const map = new Map();
+    const map = new Map<string, SpecRecord>();
     socketRecords.forEach((record) => {
       map.set(buildLookupKey(record.__parsed), record);
     });
@@ -240,12 +307,12 @@ const MatrixRangesView = () => {
     const filtered = fittingRecords.filter(
       (record) => !selectedConnection || record.__parsed.connection === selectedConnection
     );
-    const map = new Map();
+    const map = new Map<string, string>();
     filtered.forEach((record) => {
       map.set(record.__parsed.typeKey, record.__parsed.typeLabel);
     });
     return Array.from(map.entries())
-      .map(([value, label]) => ({ value, label }))
+      .map(([value, label]): SelectOption => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [fittingRecords, selectedConnection]);
 
@@ -256,7 +323,7 @@ const MatrixRangesView = () => {
         (!selectedTypeKey || record.__parsed.typeKey === selectedTypeKey)
     );
     const values = Array.from(new Set(filtered.map((record) => record.__parsed.angle).filter(Boolean)));
-    return values.sort((a, b) => Number(a) - Number(b));
+    return values.sort((a: string, b: string) => Number(a) - Number(b));
   }, [fittingRecords, selectedConnection, selectedTypeKey]);
 
   const matchingFittings = useMemo(() => {
@@ -285,13 +352,13 @@ const MatrixRangesView = () => {
   }, [selectedFitting, socketLookup]);
 
   const selectedFields = useMemo(() => {
-    if (!selectedFitting) return [];
-    const fittingFields = getRecordFields(selectedFitting).map((key) => ({
+    if (!selectedFitting) return [] as SelectedField[];
+    const fittingFields: SelectedField[] = getRecordFields(selectedFitting).map((key) => ({
       key,
       source: "Fitting",
       value: selectedFitting[key],
     }));
-    const socketFields = selectedSocket
+    const socketFields: SelectedField[] = selectedSocket
       ? getRecordFields(selectedSocket).map((key) => ({
           key,
           source: "Mof",
@@ -299,11 +366,13 @@ const MatrixRangesView = () => {
         }))
       : [];
 
-    return sortByPreferredOrder([...new Set([...fittingFields.map((f) => f.key), ...socketFields.map((f) => f.key)])]).map((key) => {
-      const fittingField = fittingFields.find((field) => field.key === key);
-      const socketField = socketFields.find((field) => field.key === key);
-      return fittingField || socketField;
-    });
+    return sortByPreferredOrder([...new Set([...fittingFields.map((f) => f.key), ...socketFields.map((f) => f.key)])])
+      .map((key) => {
+        const fittingField = fittingFields.find((field) => field.key === key);
+        const socketField = socketFields.find((field) => field.key === key);
+        return fittingField || socketField;
+      })
+      .filter((field): field is SelectedField => Boolean(field));
   }, [selectedFitting, selectedSocket]);
 
   const existingConfigIndex = useMemo(() => {
@@ -318,7 +387,7 @@ const MatrixRangesView = () => {
     }
 
     const existing = existingConfigIndex >= 0 ? config.toleranceItems[existingConfigIndex] : null;
-    const nextDraft = {};
+    const nextDraft: Record<string, ToleranceField> = {};
 
     selectedFields.forEach((field) => {
       const current = existing?.tolerances?.[field.key];
@@ -352,7 +421,7 @@ const MatrixRangesView = () => {
     }
   }, [angleOptions, selectedAngle]);
 
-  const handleToggleField = (fieldKey) => {
+  const handleToggleField = (fieldKey: string) => {
     setDraftTolerances((prev) => ({
       ...prev,
       [fieldKey]: {
@@ -362,7 +431,7 @@ const MatrixRangesView = () => {
     }));
   };
 
-  const handleToleranceChange = (fieldKey, value) => {
+  const handleToleranceChange = (fieldKey: string, value: string) => {
     setDraftTolerances((prev) => ({
       ...prev,
       [fieldKey]: {
@@ -407,7 +476,7 @@ const MatrixRangesView = () => {
     setTimeout(() => setStatus(null), 2500);
   };
 
-  const handleRemoveTolerance = (sourceId) => {
+  const handleRemoveTolerance = (sourceId: string) => {
     setConfig((prev) => ({
       ...prev,
       toleranceItems: (prev.toleranceItems || []).filter((item) => item.sourceId !== sourceId),
@@ -418,7 +487,7 @@ const MatrixRangesView = () => {
     setSaving(true);
     setStatus(null);
     try {
-      const docRef = doc(db, ...PATHS.MATRIX_CONFIG);
+      const docRef = docPath(PATHS.MATRIX_CONFIG);
       await setDoc(
         docRef,
         {
@@ -431,16 +500,17 @@ const MatrixRangesView = () => {
       );
 
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "MATRIX_TOLERANCE_SAVE",
         `Tolerantie manager opgeslagen (${(config.toleranceItems || []).length} items)`
       );
 
       setStatus({ type: "success", msg: "Tolerantie Manager succesvol gepubliceerd." });
       setTimeout(() => setStatus(null), 3000);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Save error:", err);
-      setStatus({ type: "error", msg: `Opslaan mislukt: ${err.message}` });
+      const message = err instanceof Error ? err.message : String(err);
+      setStatus({ type: "error", msg: `Opslaan mislukt: ${message}` });
     } finally {
       setSaving(false);
     }

@@ -1,7 +1,5 @@
-// @ts-nocheck
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { List } from "react-window";
 import {
   Search,
   ChevronRight,
@@ -21,16 +19,55 @@ import { getArchiveItemsPath } from "../../config/dbPaths";
 import { endOfISOWeek, format, getISOWeek, isSameDay, isWithinInterval, startOfISOWeek, isValid } from "date-fns";
 import { getEffectivePlanQty, getOrderFinishedUnits, getOrderIdentity, getTrackedRecordOrderId } from "../../utils/planningProgress";
 
-const FixedSizeList = List;
+type SidebarRecord = {
+  id: string;
+  orderId?: string;
+  machine?: string;
+  originMachine?: string;
+  item?: string;
+  itemDescription?: string;
+  itemCode?: string;
+  status?: string;
+  currentStep?: string;
+  currentStation?: string;
+  lastStation?: string;
+  lotNumber?: string;
+  lotNumbers?: string[];
+  lotNumbersText?: string;
+  activeLot?: string;
+  archivedAt?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  completedAt?: Date | unknown;
+  rejectDate?: unknown;
+  timestamps?: { finished?: unknown; started?: unknown };
+  inspection?: { status?: string; timestamp?: unknown; reasons?: string[] };
+  isArchivedOrder?: boolean;
+  isTrackingDerivedOrder?: boolean;
+  isCompletedInspectionEntry?: boolean;
+  weekNumber?: number;
+  weekYear?: number;
+  [key: string]: any;
+};
 
-const formatDateInputValue = (date) => format(date, "yyyy-MM-dd");
+type PlanningSidebarProps = {
+  orders?: SidebarRecord[];
+  selectedOrderId?: string;
+  onSelect: (order: SidebarRecord) => void;
+  trackedProducts?: SidebarRecord[];
+  archivedProducts?: SidebarRecord[];
+  archivedHistoryProducts?: SidebarRecord[];
+  enableRejectionScopes?: boolean;
+};
 
-const parseDateInputValue = (value) => {
+const formatDateInputValue = (date: Date) => format(date, "yyyy-MM-dd");
+
+const parseDateInputValue = (value: string) => {
   const parsed = new Date(`${String(value || "").trim()}T00:00:00`);
   return Number.isFinite(parsed.getTime()) ? parsed : new Date();
 };
 
-const toEntryDate = (entry) => {
+const toEntryDate = (entry: SidebarRecord) => {
   const candidates = [
     entry?.completedAt,
     entry?.timestamps?.finished,
@@ -42,8 +79,8 @@ const toEntryDate = (entry) => {
 
   for (const value of candidates) {
     if (!value) continue;
-    if (typeof value?.toDate === "function") {
-      const converted = value.toDate();
+    if (typeof (value as any)?.toDate === "function") {
+      const converted = (value as any).toDate();
       if (Number.isFinite(converted?.getTime?.())) return converted;
     }
 
@@ -51,34 +88,11 @@ const toEntryDate = (entry) => {
       return value;
     }
 
-    const parsed = new Date(value);
+    const parsed = new Date(value as any);
     if (Number.isFinite(parsed.getTime())) return parsed;
   }
 
   return null;
-};
-
-// Lokale AutoSizer implementatie om import problemen te voorkomen
-const AutoSizer = ({ children }) => {
-  const parentRef = useRef(null);
-  const [size, setSize] = useState({ width: 0, height: 0 });
-
-  useEffect(() => {
-    if (!parentRef.current) return;
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (let entry of entries) {
-        setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
-      }
-    });
-    resizeObserver.observe(parentRef.current);
-    return () => resizeObserver.disconnect();
-  }, []);
-
-  return (
-    <div ref={parentRef} style={{ width: "100%", height: "100%", overflow: "hidden" }}>
-      {size.width > 0 && size.height > 0 && children(size)}
-    </div>
-  );
 };
 
 /**
@@ -92,7 +106,7 @@ const PlanningSidebar = ({
   archivedProducts = [],
   archivedHistoryProducts = [],
   enableRejectionScopes = false,
-}) => {
+}: PlanningSidebarProps) => {
   const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedMachine, setSelectedMachine] = useState("ALL");
@@ -101,7 +115,7 @@ const PlanningSidebar = ({
   const [rejectPeriod, setRejectPeriod] = useState("this_week");
   const [completedRangeMode, setCompletedRangeMode] = useState("day");
   const [completedDateValue, setCompletedDateValue] = useState(formatDateInputValue(new Date()));
-  const [archivedOrders, setArchivedOrders] = useState([]);
+  const [archivedOrders, setArchivedOrders] = useState<SidebarRecord[]>([]);
   const [loadingArchive, setLoadingArchive] = useState(false);
 
   const currentWeek = getISOWeek(new Date());
@@ -128,7 +142,7 @@ const PlanningSidebar = ({
   const isRejectScope = dataScope === "temp_reject" || dataScope === "definitive_reject";
   const isCompletedScope = dataScope === "completed_inspection";
 
-  const getLotFromRecord = (record) => {
+  const getLotFromRecord = (record: SidebarRecord) => {
     const directLot = String(record?.lotNumber || record?.activeLot || "").trim();
     if (directLot) return directLot;
 
@@ -139,13 +153,13 @@ const PlanningSidebar = ({
     return lotFromId ? lotFromId[1] : "";
   };
 
-  const getOrderIdFromRecord = (record) => {
+  const getOrderIdFromRecord = (record: SidebarRecord) => {
     return getTrackedRecordOrderId(record);
   };
 
-  const getTrackedStatus = (product) => String(product?.status || "").trim().toLowerCase();
-  const getTrackedStep = (product) => String(product?.currentStep || "").trim().toLowerCase();
-  const isInactiveTrackedProduct = (product) => {
+  const getTrackedStatus = (product: SidebarRecord) => String(product?.status || "").trim().toLowerCase();
+  const getTrackedStep = (product: SidebarRecord) => String(product?.currentStep || "").trim().toLowerCase();
+  const isInactiveTrackedProduct = (product: SidebarRecord) => {
     const status = getTrackedStatus(product);
     const step = getTrackedStep(product);
     const inspectionStatus = String(product?.inspection?.status || "").trim().toLowerCase();
@@ -157,14 +171,14 @@ const PlanningSidebar = ({
     );
   };
 
-  const getEntryPriority = (entry) => {
+  const getEntryPriority = (entry: SidebarRecord | undefined) => {
     if (!entry) return 0;
     if (entry?.isArchivedOrder) return 1;
     if (entry?.isTrackingDerivedOrder) return 2;
     return 3;
   };
 
-  const mergeOrderEntries = (existing, incoming) => {
+  const mergeOrderEntries = (existing: SidebarRecord | undefined, incoming: SidebarRecord) => {
     if (!existing) return incoming;
 
     const existingLots = Array.isArray(existing?.lotNumbers) ? existing.lotNumbers : [];
@@ -192,13 +206,13 @@ const PlanningSidebar = ({
     };
   };
 
-  const normalizeOrderStatus = (status) =>
+  const normalizeOrderStatus = (status: unknown) =>
     String(status || "")
       .trim()
       .toLowerCase()
       .replace(/[\s-]+/g, "_");
 
-  const normalizeStationFilter = (value) => {
+  const normalizeStationFilter = (value: unknown) => {
     const raw = String(value || "").trim().toUpperCase().replace(/\s+/g, " ");
     if (!raw) return "";
     if (raw === "STATION BM01") return "BM01";
@@ -210,7 +224,7 @@ const PlanningSidebar = ({
     return raw;
   };
 
-  const getStationLabel = (value) => {
+  const getStationLabel = (value: unknown) => {
     const normalized = normalizeStationFilter(value);
     if (normalized === "NABEWERKEN") return "Nabewerken";
     if (normalized === "MAZAK") return "Mazak";
@@ -219,7 +233,7 @@ const PlanningSidebar = ({
     return normalized || String(value || "").trim();
   };
 
-  const isOpenOrRunningStatus = (status) => {
+  const isOpenOrRunningStatus = (status: unknown) => {
     const normalized = normalizeOrderStatus(status);
     // Geen status = toon altijd (import orders hebben soms geen status)
     if (!normalized) return true;
@@ -263,7 +277,7 @@ const PlanningSidebar = ({
             years.map((year) =>
               getDocs(
                 query(
-                  collection(db, ...getArchiveItemsPath(year)),
+                  collection(db, getArchiveItemsPath(year).join("/")),
                   limit(800)
                 )
               )
@@ -273,17 +287,17 @@ const PlanningSidebar = ({
           const data = snapshots.flatMap((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() })));
 
           // Dedupliceren op orderId en tegelijk lotnummers aggregeren
-          const uniqueMap = new Map();
-          data.forEach(item => {
+          const uniqueMap = new Map<string, SidebarRecord>();
+          data.forEach((item: SidebarRecord) => {
             const parsedOrderIdFromId = String(item?.id || "").trim().replace(/_\d{6,}$/, "");
             const orderId = String(item?.orderId || parsedOrderIdFromId || "").trim();
             if (!orderId) return;
 
             const lot = getLotFromRecord(item);
             const finishedAt =
-              (typeof item?.timestamps?.finished?.toMillis === "function" && item.timestamps.finished.toMillis()) ||
-              (item?.timestamps?.finished ? new Date(item.timestamps.finished).getTime() : 0) ||
-              (item?.updatedAt?.toMillis ? item.updatedAt.toMillis() : new Date(item?.updatedAt || 0).getTime()) ||
+              (typeof (item?.timestamps?.finished as any)?.toMillis === "function" && (item?.timestamps?.finished as any).toMillis()) ||
+              (item?.timestamps?.finished ? new Date(item.timestamps.finished as any).getTime() : 0) ||
+              (typeof (item?.updatedAt as any)?.toMillis === "function" ? (item.updatedAt as any).toMillis() : new Date(item?.updatedAt as any || 0).getTime()) ||
               0;
 
             if (!uniqueMap.has(orderId)) {
@@ -303,6 +317,7 @@ const PlanningSidebar = ({
             }
 
             const existing = uniqueMap.get(orderId);
+            if (!existing) return;
             const nextLots = lot ? Array.from(new Set([...(existing.lotNumbers || []), lot])) : (existing.lotNumbers || []);
             const keepCurrent = finishedAt <= (existing.lastFinishedAt || 0);
             const merged = {
@@ -334,9 +349,9 @@ const PlanningSidebar = ({
   }, [isHistoryScope, archivedOrders.length, searchTerm]);
 
   const trackingDerivedOrders = useMemo(() => {
-    const byOrder = new Map();
+    const byOrder = new Map<string, SidebarRecord>();
 
-    trackedProducts.forEach((product) => {
+    trackedProducts.forEach((product: SidebarRecord) => {
       if (isInactiveTrackedProduct(product)) return;
 
       const orderId = getOrderIdFromRecord(product);
@@ -380,9 +395,9 @@ const PlanningSidebar = ({
 
   const completedInspectionEntries = useMemo(() => {
     const combinedProducts = [...trackedProducts, ...archivedProducts, ...archivedHistoryProducts];
-    const uniqueEntries = new Map();
+    const uniqueEntries = new Map<string, SidebarRecord>();
 
-    combinedProducts.forEach((product) => {
+    combinedProducts.forEach((product: SidebarRecord) => {
       const completedAt = toEntryDate(product);
       if (!completedAt) return;
 
@@ -459,9 +474,9 @@ const PlanningSidebar = ({
             p?.startTime ||
             null;
           const rejectDate =
-            typeof rejectDateRaw?.toDate === "function"
-              ? rejectDateRaw.toDate()
-              : new Date(rejectDateRaw || Date.now());
+            typeof (rejectDateRaw as any)?.toDate === "function"
+              ? (rejectDateRaw as any).toDate()
+              : new Date((rejectDateRaw as any) || Date.now());
 
           const weekNumber = Number.isFinite(getISOWeek(rejectDate)) ? getISOWeek(rejectDate) : currentWeek;
           const weekYear = Number.isFinite(rejectDate.getFullYear()) ? rejectDate.getFullYear() : currentYear;
@@ -523,7 +538,7 @@ const PlanningSidebar = ({
   }, [dataScope, orders, archivedOrders, trackingDerivedOrders, trackedProducts, currentWeek, currentYear, completedInspectionEntries]);
 
   // Helper om te bepalen of een order nieuw is (< 48 uur na aanmaak/import)
-  const isOrderNew = (order) => {
+  const isOrderNew = (order: SidebarRecord) => {
     const fortyEightHoursAgo = Date.now() - 48 * 60 * 60 * 1000;
     const val = order.createdAt || order.importDate;
     if (!val) return false;
@@ -532,7 +547,7 @@ const PlanningSidebar = ({
   };
 
   const orderStationMap = useMemo(() => {
-    const byOrder = new Map();
+    const byOrder = new Map<string, Set<string>>();
 
     // Include both active and archived products
     const allProducts = [...trackedProducts, ...archivedProducts, ...archivedHistoryProducts];
@@ -541,7 +556,7 @@ const PlanningSidebar = ({
       const orderKey = getOrderIdFromRecord(product);
       if (!orderKey) return;
 
-      const set = byOrder.get(orderKey) || new Set();
+      const set = byOrder.get(orderKey) || new Set<string>();
       const candidates = [
         product?.currentStation,
         product?.currentStep,
@@ -550,7 +565,7 @@ const PlanningSidebar = ({
         product?.machine,
       ];
 
-      candidates.forEach((candidate) => {
+      candidates.forEach((candidate: unknown) => {
         const normalized = normalizeStationFilter(candidate);
         if (normalized) set.add(normalized);
       });
@@ -563,14 +578,14 @@ const PlanningSidebar = ({
 
   // Lot-nummers per orderId ophalen vanuit trackedProducts en archivedProducts
   const orderLotMap = useMemo(() => {
-    const byOrder = new Map();
+    const byOrder = new Map<string, Set<string>>();
     const allProducts = [...trackedProducts, ...archivedProducts, ...archivedHistoryProducts];
     allProducts.forEach((product) => {
       const orderKey = getOrderIdFromRecord(product);
       if (!orderKey) return;
       const lot = getLotFromRecord(product) || String(product?.id || "").trim();
       if (!lot) return;
-      const set = byOrder.get(orderKey) || new Set();
+      const set = byOrder.get(orderKey) || new Set<string>();
       set.add(lot.toLowerCase());
       byOrder.set(orderKey, set);
     });
@@ -579,7 +594,7 @@ const PlanningSidebar = ({
 
   // Unieke machines ophalen voor filter
   const machines = useMemo(() => {
-    const options = new Map();
+    const options = new Map<string, { value: string; label: string }>();
     options.set("ALL", { value: "ALL", label: "Alle Machines / Stations" });
     const downstreamStations = new Set(["BM01", "MAZAK", "NABEWERKEN", "LOSSEN"]);
 
@@ -593,7 +608,7 @@ const PlanningSidebar = ({
       if (!orderKey) return;
       const relatedStations = orderStationMap.get(orderKey);
       if (!relatedStations) return;
-      relatedStations.forEach((stationValue) => {
+      relatedStations.forEach((stationValue: string) => {
         if (!stationValue || !downstreamStations.has(stationValue)) return;
         if (!options.has(stationValue)) {
           options.set(stationValue, { value: stationValue, label: getStationLabel(stationValue) });
@@ -604,7 +619,7 @@ const PlanningSidebar = ({
     // Ook downstream stations tonen die alleen in tracking voorkomen
     // (bijv. wanneer de gekoppelde order niet meer in de actieve sourceData zit).
     orderStationMap.forEach((stationSet) => {
-      stationSet.forEach((stationValue) => {
+      stationSet.forEach((stationValue: string) => {
         if (!stationValue || !downstreamStations.has(stationValue)) return;
         if (!options.has(stationValue)) {
           options.set(stationValue, { value: stationValue, label: getStationLabel(stationValue) });
@@ -633,12 +648,12 @@ const PlanningSidebar = ({
   ];
 
   // ── Helpers voor gereed-berekening (moeten vóór filteredOrders staan) ──────
-  const getNumeric = (value) => {
+  const getNumeric = (value: unknown) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
-  const normalizeOrderKey = (value) => String(value || "").trim().toUpperCase();
+  const normalizeOrderKey = (value: unknown) => String(value || "").trim().toUpperCase();
 
   const trackedFinishedByOrder = useMemo(() => {
     const lotsByOrder = new Map();
@@ -721,7 +736,7 @@ const PlanningSidebar = ({
     return countMap;
   }, [trackedProducts]);
 
-  const getFinishedUnitsForOrder = (order) => {
+  const getFinishedUnitsForOrder = (order: SidebarRecord) => {
     const baseFinished = getOrderFinishedUnits(order);
     const orderKey = normalizeOrderKey(getOrderIdentity(order));
     const trackedFinished = getNumeric(trackedFinishedByOrder.get(orderKey));
@@ -730,7 +745,7 @@ const PlanningSidebar = ({
   // ─────────────────────────────────────────────────────────────────────────
 
   const filteredOrders = useMemo(() => {
-    const getPriorityLevel = (order) => {
+    const getPriorityLevel = (order: SidebarRecord) => {
       const rawPriority = order?.priority;
       const normalizedPriority =
         rawPriority === true
@@ -745,7 +760,7 @@ const PlanningSidebar = ({
       return "normal";
     };
 
-    const getPriorityRank = (order) => {
+    const getPriorityRank = (order: SidebarRecord) => {
       const level = getPriorityLevel(order);
       if (level === "immediate") return 3;
       if (level === "urgent") return 2;
@@ -753,7 +768,7 @@ const PlanningSidebar = ({
       return 0;
     };
 
-    const getOrderDateMs = (order) => {
+    const getOrderDateMs = (order: SidebarRecord) => {
       const candidates = [
         order?.completedAt,
         order?.timestamps?.finished,
@@ -767,22 +782,22 @@ const PlanningSidebar = ({
 
       for (const value of candidates) {
         if (!value) continue;
-        if (typeof value?.toMillis === "function") {
-          const ms = value.toMillis();
+        if (typeof (value as any)?.toMillis === "function") {
+          const ms = (value as any).toMillis();
           if (Number.isFinite(ms)) return ms;
         }
         if (value instanceof Date) {
           const ms = value.getTime();
           if (Number.isFinite(ms)) return ms;
         }
-        const ms = new Date(value).getTime();
+        const ms = new Date(value as any).getTime();
         if (Number.isFinite(ms)) return ms;
       }
 
       return Number.MAX_SAFE_INTEGER;
     };
 
-    const isInProgress = (order) => {
+    const isInProgress = (order: SidebarRecord) => {
       const status = String(order?.status || "").toLowerCase().trim();
       return ["in_progress", "in progress", "in-behandeling", "in behandeling", "active", "processing"].includes(status);
     };
@@ -833,7 +848,7 @@ const PlanningSidebar = ({
       const previousWeek = getISOWeek(previousWeekDate);
       const previousWeekYear = previousWeekDate.getFullYear();
 
-      result = result.filter((entry) => {
+      result = result.filter((entry: SidebarRecord) => {
         const entryWeek = Number(entry.weekNumber || entry.week || 0);
         const entryYear = Number(entry.weekYear || entry.year || thisYear);
         const entryDateRaw =
@@ -843,9 +858,9 @@ const PlanningSidebar = ({
           entry?.createdAt ||
           null;
         const entryDate =
-          typeof entryDateRaw?.toDate === "function"
-            ? entryDateRaw.toDate()
-            : new Date(entryDateRaw || 0);
+          typeof (entryDateRaw as any)?.toDate === "function"
+            ? (entryDateRaw as any).toDate()
+            : new Date((entryDateRaw as any) || 0);
         if (rejectPeriod === "this_week") return entryWeek === thisWeek && entryYear === thisYear;
         if (rejectPeriod === "previous_week") return entryWeek === previousWeek && entryYear === previousWeekYear;
         if (rejectPeriod === "this_month") {
@@ -860,7 +875,7 @@ const PlanningSidebar = ({
     const term = (searchTerm || "").toLowerCase().trim();
     if (term) {
       const terms = term.split(/\s+/).filter(Boolean);
-      result = result.filter((order) => {
+      result = result.filter((order: SidebarRecord) => {
       const searchableFields = [
         order?.orderId,
         order?.item,
@@ -901,7 +916,7 @@ const PlanningSidebar = ({
       const orderKey = String(order?.orderId || order?.id || "").trim();
       const trackedLots = orderLotMap.get(orderKey);
       if (trackedLots) {
-        trackedLots.forEach((lot) => searchableFields.push(lot));
+        trackedLots.forEach((lot: string) => searchableFields.push(lot));
       }
 
       return terms.every((part) =>
@@ -912,7 +927,7 @@ const PlanningSidebar = ({
       // Als scope 'active' is, voeg ook archiefmatches toe op basis van zoekterm
       if (dataScope === "active" && archivedOrders.length > 0) {
         const existingIds = new Set(result.map((o) => String(o?.orderId || o?.id || "").trim()));
-        const archiveMatches = archivedOrders.filter((order) => {
+        const archiveMatches = archivedOrders.filter((order: SidebarRecord) => {
           const key = String(order?.orderId || order?.id || "").trim();
           if (existingIds.has(key)) return false;
           const fields = [
@@ -1158,11 +1173,11 @@ const PlanningSidebar = ({
   }, [trackedProducts]);
 
   const predictedScheduleByOrder = useMemo(() => {
-    const grouped = new Map();
+    const grouped = new Map<string, SidebarRecord[]>();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const getSortDate = (order) => {
+    const getSortDate = (order: SidebarRecord) => {
       const candidates = [
         order?.plannedDate,
         order?.deliveryDate,
@@ -1173,13 +1188,13 @@ const PlanningSidebar = ({
       ];
       for (const value of candidates) {
         if (!value) continue;
-        const parsed = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
+        const parsed = typeof (value as any)?.toDate === "function" ? (value as any).toDate() : new Date(value as any);
         if (Number.isFinite(parsed.getTime())) return parsed;
       }
       return new Date(today);
     };
 
-    const getDeliveryDate = (order) => {
+    const getDeliveryDate = (order: SidebarRecord) => {
       const candidates = [
         order?.rejectDate,
         order?.plannedDeliveryDate,
@@ -1189,13 +1204,18 @@ const PlanningSidebar = ({
       ];
       for (const value of candidates) {
         if (!value) continue;
-        const parsed = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
+        const parsed = typeof (value as any)?.toDate === "function" ? (value as any).toDate() : new Date(value as any);
         if (Number.isFinite(parsed.getTime())) {
           parsed.setHours(0, 0, 0, 0);
           return parsed;
         }
       }
       return null;
+    };
+
+    const isOrderInProgress = (order: SidebarRecord) => {
+      const status = String(order?.status || "").toLowerCase().trim();
+      return ["in_progress", "in progress", "in-behandeling", "in behandeling", "active", "processing", "running", "lopend"].includes(status);
     };
 
     sourceData.forEach((order) => {
@@ -1212,9 +1232,15 @@ const PlanningSidebar = ({
 
     grouped.forEach((machineOrders, machine) => {
       const unitsPerDay = machineThroughputPerDay.get(machine) || 1;
-      const sorted = [...machineOrders].sort((a, b) => getSortDate(a).getTime() - getSortDate(b).getTime());
+      const sorted = [...machineOrders].sort((a, b) => {
+        const aInProgress = isOrderInProgress(a);
+        const bInProgress = isOrderInProgress(b);
+        if (aInProgress && !bInProgress) return -1;
+        if (!aInProgress && bInProgress) return 1;
+        return getSortDate(a).getTime() - getSortDate(b).getTime();
+      });
 
-      let queueAhead = 0;
+      let accumulatedDays = 0;
 
       sorted.forEach((order) => {
         const orderId = getOrderIdentity(order);
@@ -1222,32 +1248,74 @@ const PlanningSidebar = ({
         const produced = getFinishedUnitsForOrder(order);
         const remaining = Math.max(0, planned - produced);
 
-        const requiredDays = queueAhead + remaining > 0
-          ? Math.ceil((queueAhead + remaining) / Math.max(0.5, unitsPerDay))
-          : 0;
+        let currentSpeed = Math.max(0.5, unitsPerDay);
+
+        if (isOrderInProgress(order) && produced > 0) {
+          const orderStartCandidates = [
+            order?.timestamps?.station_start,
+            order?.timestamps?.started,
+            order?.timestamps?.wikkelen_start,
+            order?.startedAt,
+            order?.startTime,
+            order?.createdAt
+          ];
+
+          let earliestStart = new Date();
+          for (const val of orderStartCandidates) {
+            if (!val) continue;
+            const parsed = typeof (val as any)?.toDate === "function" ? (val as any).toDate() : new Date(val as any);
+            if (Number.isFinite(parsed.getTime()) && parsed < earliestStart) {
+              earliestStart = parsed;
+            }
+          }
+
+          const daysWorking = Math.max(0.1, (Date.now() - earliestStart.getTime()) / (1000 * 60 * 60 * 24));
+          const specificSpeed = produced / daysWorking;
+          
+          if (specificSpeed > 0) {
+            currentSpeed = Math.max(0.1, specificSpeed);
+          }
+        }
+
+        const requiredDaysForOrder = remaining / currentSpeed;
+
         const predictedReadyDate = new Date(today);
-        predictedReadyDate.setDate(today.getDate() + Math.max(0, requiredDays - 1));
+        predictedReadyDate.setDate(today.getDate() + Math.max(0, Math.ceil(accumulatedDays + requiredDaysForOrder) - 1));
 
         const deliveryDate = getDeliveryDate(order);
-        const slipDays = deliveryDate
+        let slipDays: number | null = deliveryDate
           ? Math.round((predictedReadyDate.getTime() - deliveryDate.getTime()) / (24 * 60 * 60 * 1000))
-          : 0;
+          : null;
 
-        const scheduleStatus = !deliveryDate
+        let scheduleStatus = !deliveryDate
           ? "unknown"
-          : slipDays > 0
+          : slipDays !== null && slipDays > 0
             ? "behind"
-            : slipDays < 0
+            : slipDays !== null && slipDays < 0
               ? "ahead"
               : "on_time";
 
+        const hasStarted = isOrderInProgress(order) || produced > 0;
+        let finalPredictedReadyDate: Date | null = predictedReadyDate;
+
+        if (!hasStarted) {
+          finalPredictedReadyDate = null;
+          if (deliveryDate && deliveryDate.getTime() <= today.getTime()) {
+             slipDays = Math.round((today.getTime() - deliveryDate.getTime()) / (24 * 60 * 60 * 1000));
+             scheduleStatus = slipDays > 0 ? "behind" : "on_time";
+          } else {
+             slipDays = null;
+             scheduleStatus = "unknown";
+          }
+        }
+
         result.set(orderId, {
-          predictedReadyDate,
+          predictedReadyDate: finalPredictedReadyDate,
           scheduleStatus,
           slipDays,
         });
 
-        queueAhead += remaining;
+        accumulatedDays += requiredDaysForOrder;
       });
     });
 
@@ -1257,7 +1325,7 @@ const PlanningSidebar = ({
   const handleExportCurrentList = () => {
     if (!filteredOrders.length) return;
 
-    const rows = filteredOrders.map((order) => {
+    const rows: Array<Record<string, string | number>> = filteredOrders.map((order: SidebarRecord) => {
       const prediction = predictedScheduleByOrder.get(getOrderIdentity(order));
       const predictionDateStr = prediction?.predictedReadyDate ? format(prediction.predictedReadyDate, "yyyy-MM-dd") : "";
       return {
@@ -1270,13 +1338,13 @@ const PlanningSidebar = ({
       year: order.weekYear || order.year || "",
       rejectType: order.rejectKind === "temp_reject" ? "Tijdelijke afkeur" : order.rejectKind === "definitive_reject" ? "Definitieve afkeur" : "",
       rejectReason: order.inspection?.reasons ? order.inspection.reasons.join(" | ") : "",
-      updatedAt: order.updatedAt?.toDate ? order.updatedAt.toDate().toISOString() : (order.updatedAt || ""),
+      updatedAt: typeof (order.updatedAt as any)?.toDate === "function" ? (order.updatedAt as any).toDate().toISOString() : String(order.updatedAt || ""),
       predictedReadyDate: predictionDateStr,
       };
     });
 
     const headers = Object.keys(rows[0]);
-    const escapeCsv = (value) => {
+    const escapeCsv = (value: unknown) => {
       const text = String(value ?? "");
       if (text.includes('"') || text.includes(",") || text.includes("\n")) {
         return `"${text.replace(/"/g, '""')}"`;
@@ -1286,7 +1354,7 @@ const PlanningSidebar = ({
 
     const csv = [
       headers.join(","),
-      ...rows.map((row) => headers.map((h) => escapeCsv(row[h])).join(",")),
+      ...rows.map((row) => headers.map((h) => escapeCsv(row[h as keyof typeof row])).join(",")),
     ].join("\n");
 
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -1308,7 +1376,7 @@ const PlanningSidebar = ({
       filteredOrders.map((order) => [String(order?.orderId || order?.id || "").trim(), order])
     );
 
-    const rows = [];
+    const rows: Array<Record<string, string>> = [];
     const seen = new Set();
 
     // Combineer actieve en alle soorten gearchiveerde producten voor een compleet overzicht
@@ -1353,7 +1421,7 @@ const PlanningSidebar = ({
     if (rows.length > 0) return rows;
 
     // Fallback: als er geen tracked products zijn, exporteer minimale orderregels.
-    return filteredOrders.map((order) => {
+    return filteredOrders.map((order: SidebarRecord) => {
       const prediction = predictedScheduleByOrder.get(getOrderIdentity(order));
       const predictionDateStr = prediction?.predictedReadyDate ? format(prediction.predictedReadyDate, "dd-MM-yyyy") : "-";
       return {
@@ -1421,7 +1489,7 @@ const PlanningSidebar = ({
     doc.save(`planning_productlijst_${String(selectedMachine || "all").toLowerCase()}_${datePart}.pdf`);
   };
 
-  const getOrderDisplayName = (order) => {
+  const getOrderDisplayName = (order: SidebarRecord) => {
     return (
       order?.item ||
       order?.itemDescription ||
@@ -1431,7 +1499,7 @@ const PlanningSidebar = ({
     );
   };
 
-  const formatDeliveryDate = (order) => {
+  const formatDeliveryDate = (order: SidebarRecord) => {
     const candidates = [
       order?.rejectDate,
       order?.plannedDeliveryDate,
@@ -1445,8 +1513,8 @@ const PlanningSidebar = ({
       if (!value) continue;
       const date =
         typeof value?.toDate === "function"
-          ? value.toDate()
-          : new Date(value);
+          ? (value as any).toDate()
+          : new Date(value as any);
       if (Number.isFinite(date.getTime())) {
         const dateStr = date.toLocaleDateString("nl-NL", {
           day: "2-digit",
@@ -1461,8 +1529,8 @@ const PlanningSidebar = ({
     return "--";
   };
 
-  const formatDateWithWeek = (dateInput) => {
-    const date = typeof dateInput?.toDate === "function" ? dateInput.toDate() : new Date(dateInput);
+  const formatDateWithWeek = (dateInput: unknown) => {
+    const date = typeof (dateInput as any)?.toDate === "function" ? (dateInput as any).toDate() : new Date(dateInput as any);
     if (!Number.isFinite(date.getTime())) return "--";
     const dateStr = date.toLocaleDateString("nl-NL", {
       day: "2-digit",
@@ -1473,7 +1541,7 @@ const PlanningSidebar = ({
     return `${dateStr}  W${week}`;
   };
 
-  const getOrderTileTintClass = (order) => {
+  const getOrderTileTintClass = (order: SidebarRecord) => {
     const orderKey = normalizeOrderKey(getOrderIdentity(order));
     if (virtualLotsByOrder.has(orderKey)) {
       return "border-orange-200 bg-orange-50 hover:border-orange-300";
@@ -1495,7 +1563,7 @@ const PlanningSidebar = ({
     return "border-slate-50 bg-white hover:border-slate-200 hover:bg-slate-50";
   };
 
-  const getOrderTypeBadge = (order) => {
+  const getOrderTypeBadge = (order: SidebarRecord) => {
     const matchText = [order?.itemCode, order?.item, order?.itemDescription, order?.extraCode]
       .filter(Boolean)
       .join(" ")
@@ -1518,8 +1586,7 @@ const PlanningSidebar = ({
     return null;
   };
 
-  const Row = ({ index, style }) => {
-    const order = filteredOrders[index];
+  const Row = ({ order }: { order: SidebarRecord }) => {
     if (!order) return null;
     const isSelected =
       selectedOrderId === order.id || selectedOrderId === order.orderId;
@@ -1571,12 +1638,18 @@ const PlanningSidebar = ({
         : prediction?.scheduleStatus === "ahead"
           ? "text-emerald-700"
           : "text-amber-700";
+    const orderWithPrediction = {
+      ...order,
+      predictedReadyDate: prediction?.predictedReadyDate || null,
+      scheduleStatus: prediction?.scheduleStatus || "unknown",
+      slipDays: prediction?.slipDays,
+    };
 
     return (
-      <div style={style} className="px-2 py-1">
+      <div className="px-3 py-1.5">
         <button
-          onClick={() => onSelect(order)}
-          className={`w-full h-full p-3 rounded-2xl border-2 text-left transition-all duration-200 group relative overflow-hidden block
+          onClick={() => onSelect(orderWithPrediction)}
+          className={`w-full p-4 rounded-[28px] border-2 text-left transition-all duration-200 group relative overflow-hidden block
             ${
               isSelected
                 ? "bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-100"
@@ -1606,9 +1679,9 @@ const PlanningSidebar = ({
             />
           )}
 
-          <div className="flex justify-between items-start mb-1">
-            <div className="flex flex-col overflow-hidden w-[70%]">
-              <div className="flex items-center gap-2 mb-0.5">
+          <div className="flex justify-between items-start gap-2 mb-1.5">
+            <div className="flex flex-col overflow-hidden min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 mb-0.5">
                 <span
                   className={`font-black text-sm tracking-tighter truncate ${
                     isSelected ? "text-emerald-800" : "text-slate-900"
@@ -1616,7 +1689,7 @@ const PlanningSidebar = ({
                 >
                   {order.orderId || t("digitalplanning.sidebar.no_id")}
                 </span>
-                <span className="text-[10px] font-bold text-slate-400 truncate">
+                <span className="text-[9px] font-bold text-slate-400 truncate">
                   {order.itemCode || order.productId || "-"}
                 </span>
               </div>
@@ -1630,9 +1703,11 @@ const PlanningSidebar = ({
               </span>
 
               {((order.extraCode && order.extraCode !== "-") || orderTypeBadge || order.project || priorityBadge || isDelegated) && (
-                <div className="flex flex-wrap items-center gap-1 mt-1">
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                   {isDelegated && (
-                    <Factory size={10} className="text-purple-500" title={`Gedelegeerd aan ${order.delegatedTo}`} />
+                    <span title={`Gedelegeerd aan ${order.delegatedTo}`}>
+                      <Factory size={10} className="text-purple-500" />
+                    </span>
                   )}
                   {priorityBadge && (
                     <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wide ${priorityBadge.className}`}>
@@ -1670,10 +1745,10 @@ const PlanningSidebar = ({
           </div>
 
           {/* Totaal Gereed & Leverdata Blok */}
-          <div className="mb-2 rounded-xl border border-slate-100 bg-slate-50/50 p-2 space-y-1.5">
+          <div className="mb-1 rounded-xl border border-slate-100 bg-slate-50/70 p-2 space-y-1">
             <div className="flex items-center justify-between">
-              <p className="text-[9px] font-black uppercase tracking-wide text-blue-600">Totaal Gereed</p>
-              <p className="text-[10px] font-black text-blue-900 bg-blue-100/50 px-1.5 py-0.5 rounded">
+              <p className="text-[8px] font-black uppercase tracking-tighter text-blue-600">Totaal Gereed</p>
+              <p className="text-[8px] font-black text-blue-900 bg-blue-100/50 px-1 py-0 rounded">
                 {getFinishedUnitsForOrder(order)} / {Math.max(0, getEffectivePlanQty(order))}
               </p>
             </div>
@@ -1681,26 +1756,26 @@ const PlanningSidebar = ({
             <div className="h-px bg-slate-200 w-full opacity-50" />
 
             <div className="flex flex-col gap-1">
-              <div className="flex items-center justify-between text-[9px] font-bold text-slate-500">
+              <div className="flex items-start justify-between gap-2 text-slate-500">
                 <div className="flex items-center gap-1.5">
-                  <Calendar size={10} className="text-slate-400" />
-                  <span className="uppercase text-slate-400">Leverdatum:</span>
+                  <Calendar size={10} className="mt-0.5 text-slate-400 shrink-0" />
+                  <span className="uppercase text-slate-400 text-[7px] font-bold">Lever:</span>
                 </div>
-                <span className="text-slate-700">{formatDeliveryDate(order)}</span>
+                <span className="text-right text-[7px] font-black text-slate-700 ml-1">{formatDeliveryDate(order)}</span>
               </div>
 
-              <div className="flex items-center justify-between text-[9px] font-bold text-slate-500">
+              <div className="flex items-start justify-between gap-2 text-slate-500">
                 <div className="flex items-center gap-1.5">
-                  <Calendar size={10} className="text-slate-400" />
-                  <span className="uppercase text-slate-400 truncate max-w-[80px]" title={t("digitalplanning.sidebar.predicted_ready", "Voorspelde gereeddatum")}>
-                    Voorspeld:
+                  <Calendar size={10} className="mt-0.5 text-slate-400 shrink-0" />
+                  <span className="uppercase text-slate-400 text-[7px] font-bold truncate max-w-[90px]" title={t("digitalplanning.sidebar.predicted_ready", "Voorspelde gereeddatum")}>
+                    Voorspr:
                   </span>
                 </div>
-                <div className="text-right truncate">
-                  <span className="text-slate-700">
+                <div className="min-w-0 text-right">
+                  <span className="block text-[7px] font-black text-slate-700">
                     {prediction?.predictedReadyDate ? formatDateWithWeek(prediction.predictedReadyDate) : "--"}
                   </span>
-                  <span className={`ml-1 ${predictionClass}`}>
+                  <span className={`block text-[7px] font-bold ${predictionClass}`}>
                     {predictionLabel}
                     {Number.isFinite(prediction?.slipDays)
                       ? ` (${prediction.slipDays > 0 ? "+" : ""}${prediction.slipDays}d)`
@@ -1711,9 +1786,9 @@ const PlanningSidebar = ({
             </div>
           </div>
 
-          <div className="absolute bottom-3 right-3">
+          <div className="absolute bottom-4 right-4">
             <ChevronRight
-              size={14}
+              size={16}
               className={`transition-transform duration-300 ${
                 isSelected
                   ? "text-emerald-500 translate-x-1"
@@ -1833,7 +1908,7 @@ const PlanningSidebar = ({
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden p-1">
+      <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
         {filteredOrders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center opacity-40 w-full">
             {loadingArchive && isHistoryScope ? (
@@ -1848,20 +1923,51 @@ const PlanningSidebar = ({
             )}
           </div>
         ) : (
-          <AutoSizer>
-            {({ height, width }) => (
-              <FixedSizeList
-                className="custom-scrollbar"
-                rowCount={filteredOrders.length}
-                rowHeight={148}
-                height={height}
-                width={width}
-                rowComponent={Row}
-                rowProps={{}}
-              >
-              </FixedSizeList>
-            )}
-          </AutoSizer>
+          <div className="space-y-0.5 pb-4">
+            {(() => {
+              let lastLabel: string | null = null;
+              return filteredOrders.map((order, index) => {
+                let currentLabel: string | null = null;
+
+                if (sortMode === "week_backlog") {
+                  const w = Number(order.weekNumber || order.week);
+                  const y = Number(order.weekYear || order.year || currentYear);
+                  const absW = y * 52 + w;
+                  const absC = currentYear * 52 + currentWeek;
+                  
+                  if (absW < absC) {
+                    currentLabel = "Backlog";
+                  } else if (Number.isFinite(w) && w !== 999 && w !== 0) {
+                    currentLabel = y !== currentYear ? `Week ${w} (${y})` : `Week ${w}`;
+                  } else {
+                    currentLabel = "Onbekend";
+                  }
+                } else if (sortMode === "in_progress_first") {
+                  const status = String(order?.status || "").toLowerCase().trim();
+                  const inProgress = ["in_progress", "in progress", "in-behandeling", "in behandeling", "active", "processing", "running", "lopend"].includes(status);
+                  currentLabel = inProgress ? "In behandeling" : "Gepland";
+                }
+
+                const showDivider = (sortMode === "week_backlog" || sortMode === "in_progress_first") && currentLabel !== lastLabel;
+                if (showDivider) {
+                  lastLabel = currentLabel;
+                }
+
+                return (
+                  <React.Fragment key={String(order?.id || order?.orderId || index)}>
+                    {showDivider && currentLabel && (
+                      <div className="flex items-center gap-3 mt-5 mb-2.5 px-4 first:mt-2">
+                        <div className="h-px bg-slate-200 flex-1"></div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">{currentLabel}</span>
+                        <div className="h-px bg-slate-200 flex-1"></div>
+                      </div>
+                    )}
+                    <Row order={order} />
+                  </React.Fragment>
+                );
+              });
+            })()}
+          </div>
         )}
       </div>
     </div>

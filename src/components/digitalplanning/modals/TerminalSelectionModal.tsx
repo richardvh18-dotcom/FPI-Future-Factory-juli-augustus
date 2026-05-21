@@ -1,12 +1,16 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { X, Layers, Monitor, Clock, Tv } from "lucide-react";
-import { FITTING_MACHINES, PIPE_MACHINES } from "../../../utils/hubHelpers.tsx";
+import { FITTING_MACHINES, PIPE_MACHINES } from "../../../utils/hubHelpers";
 
-const TerminalSelectionModal = ({ onClose }) => {
+type TerminalSelectionModalProps = {
+  onClose: () => void;
+};
+
+const TerminalSelectionModal = ({ onClose }: TerminalSelectionModalProps) => {
   const navigate = useNavigate();
 
-  const handleSelect = (machine) => {
+  const handleSelect = (machine: string) => {
     navigate(`/terminal/${machine}`);
     onClose();
   };

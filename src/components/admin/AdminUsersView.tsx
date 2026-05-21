@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -42,10 +42,86 @@ import {
   serverTimestamp,
   setDoc,
   writeBatch,
+  type DocumentData,
 } from "firebase/firestore";
-import { PATHS, isValidPath } from "../../config/dbPaths";
+import { PATHS, isValidPath, getPathString } from "../../config/dbPaths";
 import { createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
 import { useNotifications } from "../../contexts/NotificationContext";
+
+type RoleRecord = {
+  id: string;
+  label: string;
+  color: string;
+};
+
+type StationRecord = {
+  id: string;
+  name: string;
+  department: string;
+  country: string;
+};
+
+type UserRecord = {
+  id: string;
+  name?: string;
+  email?: string;
+  role?: string;
+  department?: string;
+  country?: string;
+  modules?: string[];
+  permissions?: Record<string, string[]>;
+  allowedStations?: string[];
+  defaultRoute?: string;
+  defaultStation?: string;
+  canVerify?: boolean;
+  receivesCrashReports?: boolean;
+  signature?: string;
+  [key: string]: unknown;
+};
+
+type AccountRequestRecord = {
+  id: string;
+  status?: string;
+  name?: string;
+  email?: string;
+  country?: string;
+  department?: string;
+  [key: string]: unknown;
+};
+
+type StatusState = {
+  type: "success" | "error" | "warning" | "info";
+  message?: string;
+  msg?: string;
+};
+
+type NewUserState = {
+  name: string;
+  email: string;
+  country: string;
+  department: string;
+  role: string;
+  tempPassword: string;
+  requirePasswordChange: boolean;
+};
+
+const colPath = (path: string[]) => collection(db, getPathString(path));
+const docPath = (path: string[], id?: string) => (id ? doc(db, `${getPathString(path)}/${id}`) : doc(db, getPathString(path)));
+
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message?: unknown }).message || "onbekende fout");
+  }
+  return String(err || "onbekende fout");
+};
+
+const getErrorCode = (err: unknown): string | undefined => {
+  if (typeof err === "object" && err !== null && "code" in err) {
+    return String((err as { code?: unknown }).code || "");
+  }
+  return undefined;
+};
 
 /**
  * AdminUsersView V7.0 - Dynamic Role & Access Controller
@@ -56,32 +132,32 @@ import { useNotifications } from "../../contexts/NotificationContext";
 const AdminUsersView = () => {
   const { t } = useTranslation();
   const { showConfirm , notify} = useNotifications();
-  const [users, setUsers] = useState([]);
-  const [accountRequests, setAccountRequests] = useState([]);
+  const [users, setUsers] = useState<UserRecord[]>([]);
+  const [accountRequests, setAccountRequests] = useState<AccountRequestRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [selectedRole, setSelectedRole] = useState("");
-  const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<StatusState | null>(null);
   const [editModalTab, setEditModalTab] = useState("profile");
   const [activeTab, setActiveTab] = useState("users"); // 'users' of 'requests'
   const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [expandedCountries, setExpandedCountries] = useState({}); // State voor inklapbare groepen
-  const [expandedModules, setExpandedModules] = useState({}); // State voor uitgevouwen modules in permissions
-  const [allStations, setAllStations] = useState([]);
+  const [expandedCountries, setExpandedCountries] = useState<Record<string, boolean>>({}); // State voor inklapbare groepen
+  const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({}); // State voor uitgevouwen modules in permissions
+  const [allStations, setAllStations] = useState<StationRecord[]>([]);
   const [stationFilterCountry, setStationFilterCountry] = useState("All");
   const [stationFilterDept, setStationFilterDept] = useState("All");
 
   // Roles State
-  const [roles, setRoles] = useState([]);
+  const [roles, setRoles] = useState<RoleRecord[]>([]);
   const [, setLoadingRoles] = useState(true);
   const [isUsingDefaults, setIsUsingDefaults] = useState(false);
   const [newRole, setNewRole] = useState({ id: "", label: "", color: "bg-slate-400" });
 
-  const [newUser, setNewUser] = useState({
+  const [newUser, setNewUser] = useState<NewUserState>({
     name: "",
     email: "",
     country: "",
@@ -220,6 +296,9 @@ const AdminUsersView = () => {
     },
   };
 
+  type ModuleId = keyof typeof MODULE_FEATURES;
+  const moduleEntries = Object.entries(MODULE_FEATURES) as Array<[ModuleId, (typeof MODULE_FEATURES)[ModuleId]]>;
+
   // Admin tool IDs die gemigreerd worden uit het oude modules-systeem
   const LEGACY_ADMIN_TOOL_IDS = ["admin_products", "admin_factory", "admin_settings", "admin_logs"];
 
@@ -228,13 +307,13 @@ const AdminUsersView = () => {
     if (!isValidPath("USERS")) return;
 
     setLoading(true);
-    const usersRef = collection(db, ...PATHS.USERS);
+    const usersRef = colPath(PATHS.USERS);
     const q = query(usersRef, orderBy("name", "asc"));
 
     const unsubUsers = onSnapshot(
       q,
       (snapshot) => {
-        setUsers(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        setUsers(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as DocumentData) } as UserRecord)));
         setLoading(false);
       },
       (err) => {
@@ -248,12 +327,12 @@ const AdminUsersView = () => {
 
   // 1b. Live Sync met Roles
   useEffect(() => {
-    const rolesRef = collection(db, "future-factory", "settings", "roles");
+    const rolesRef = collection(db, "future-factory/settings/roles");
     const q = query(rolesRef, orderBy("label", "asc"));
     
     const unsub = onSnapshot(q, (snap) => {
         if (!snap.empty) {
-            setRoles(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setRoles(snap.docs.map((d) => ({ id: d.id, ...(d.data() as DocumentData) } as RoleRecord)));
             setIsUsingDefaults(false);
         } else {
             // Fallback defaults als DB leeg is
@@ -273,7 +352,7 @@ const AdminUsersView = () => {
 
   // Filtering en Grouping
   const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
+    return users.filter((u: UserRecord) => {
       const matchesSearch =
         u.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         u.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -289,8 +368,8 @@ const AdminUsersView = () => {
 
   // Groepeer gebruikers per land
   const usersByCountry = useMemo(() => {
-    const grouped = {};
-    filteredUsers.forEach(user => {
+    const grouped: Record<string, UserRecord[]> = {};
+    filteredUsers.forEach((user) => {
       const country = user.country || "Onbekend";
       if (!grouped[country]) {
         grouped[country] = [];
@@ -304,13 +383,13 @@ const AdminUsersView = () => {
   useEffect(() => {
     if (!isValidPath("USERS")) return;
 
-    const requestsRef = collection(db, ...PATHS.ACCOUNT_REQUESTS);
+    const requestsRef = colPath(PATHS.ACCOUNT_REQUESTS);
     const q = query(requestsRef, orderBy("createdAt", "desc"));
 
     const unsubRequests = onSnapshot(
       q,
       (snapshot) => {
-        setAccountRequests(snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        setAccountRequests(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as DocumentData) } as AccountRequestRecord)));
       },
       (err) => {
         console.error("Account Requests Error:", err);
@@ -322,18 +401,18 @@ const AdminUsersView = () => {
 
   // 3. Stations ophalen uit Factory Config voor selectie
   useEffect(() => {
-    const unsubConfig = onSnapshot(doc(db, ...PATHS.FACTORY_CONFIG), (snap) => {
+    const unsubConfig = onSnapshot(docPath(PATHS.FACTORY_CONFIG), (snap) => {
       if (snap.exists()) {
-        const config = snap.data();
-        const stations = [];
+        const config = (snap.data() || {}) as { departments?: Array<{ title?: string; name?: string; country?: string; stations?: Array<{ name?: string }> }> };
+        const stations: StationRecord[] = [];
         
         if (config.departments) {
-          config.departments.forEach(dept => {
+          config.departments.forEach((dept) => {
             if (dept.stations) {
-              dept.stations.forEach(st => {
+              dept.stations.forEach((st) => {
                 stations.push({
-                  id: st.name,
-                  name: st.name,
+                  id: String(st.name || ""),
+                  name: String(st.name || ""),
                   department: dept.title || dept.name || "Overig",
                   country: dept.country || "Overig"
                 });
@@ -364,7 +443,7 @@ const AdminUsersView = () => {
     const passwordToUse = newUser.tempPassword || generateTempPassword();
 
     let secondaryApp = null; 
-    let selectedUid;
+    let selectedUid = "";
     let isExistingUser = false;
 
     try {
@@ -396,8 +475,8 @@ const AdminUsersView = () => {
         // Log de nieuwe user direct weer uit op de secondary app
         await signOut(secondaryAuth);
 
-      } catch (authError) {
-        if (authError.code === "auth/email-already-in-use") {
+      } catch (authError: unknown) {
+        if (getErrorCode(authError) === "auth/email-already-in-use") {
           // Gebruiker bestaat al in Auth
           isExistingUser = true;
           
@@ -456,8 +535,12 @@ const AdminUsersView = () => {
         }
       }
 
+      if (!selectedUid) {
+        throw new Error("Kon geen UID bepalen voor nieuwe gebruiker.");
+      }
+
       // Voeg gebruiker toe aan Firestore (gebruikmakend van de MAIN app db)
-      await setDoc(doc(db, ...PATHS.USERS, selectedUid), {
+      await setDoc(docPath(PATHS.USERS, selectedUid), {
         name: newUser.name,
         email: newUser.email,
         country: newUser.country || "Nederland",
@@ -471,7 +554,7 @@ const AdminUsersView = () => {
         importedAt: isExistingUser ? serverTimestamp() : null,
       });
 
-      await logActivity(auth.currentUser?.uid, "USER_CREATE", `User created: ${newUser.email} (${newUser.role})`);
+      await logActivity(auth.currentUser?.uid || "system", "USER_CREATE", `User created: ${newUser.email} (${newUser.role})`);
 
       setStatus({
         type: "success",
@@ -491,15 +574,16 @@ const AdminUsersView = () => {
         requirePasswordChange: true 
       });
 
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Fout bij toevoegen gebruiker:", err);
-      const errorMessage = err.code === "auth/invalid-email"
+      const errorCode = getErrorCode(err);
+      const errorMessage = errorCode === "auth/invalid-email"
         ? "Ongeldig email-adres"
-        : err.code === "auth/weak-password"
+        : errorCode === "auth/weak-password"
           ? "Wachtwoord is te zwak (minimaal 6 karakters)"
-          : err.code === "auth/email-already-in-use"
+          : errorCode === "auth/email-already-in-use"
             ? "E-mailadres is al in gebruik (en import geannuleerd)."
-            : err.message;
+            : getErrorMessage(err);
       
       setStatus({
         type: "error",
@@ -529,7 +613,7 @@ const AdminUsersView = () => {
       }
   };
 
-  const handleDeleteRole = async (roleId) => {
+  const handleDeleteRole = async (roleId: string) => {
       const confirmed = await showConfirm({
         title: "Rol verwijderen",
         message: "Rol verwijderen?",
@@ -555,7 +639,7 @@ const AdminUsersView = () => {
   };
 
   // 3. Handlers
-  const handleEdit = (user) => {
+  const handleEdit = (user: UserRecord) => {
     setSelectedUser({ 
       ...user, 
       modules: user.modules || [],
@@ -570,7 +654,7 @@ const AdminUsersView = () => {
   };
 
   // Reset wachtwoord voor gebruiker (via Firebase Auth Admin SDK zou beter zijn, maar we gebruiken email reset)
-  const handleResetPassword = async (userEmail) => {
+  const handleResetPassword = async (userEmail: string) => {
     const confirmed = await showConfirm({
       title: "Wachtwoord reset",
       message: `Wachtwoord reset link sturen naar ${userEmail}?`,
@@ -589,11 +673,11 @@ const AdminUsersView = () => {
         type: "success",
         message: `Reset link verzonden naar ${userEmail}. Gebruiker kan via email een nieuw wachtwoord instellen.`,
       });
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Reset fout:", err);
       setStatus({
         type: "error",
-        message: `Fout bij versturen reset link: ${err.message}`,
+        message: `Fout bij versturen reset link: ${getErrorMessage(err)}`,
       });
     }
   };
@@ -609,12 +693,16 @@ const AdminUsersView = () => {
   };
 
   // Accepteer account aanvraag
-  const handleAcceptRequest = async (request) => {
+  const handleAcceptRequest = async (request: AccountRequestRecord) => {
     if (saving) return;
     setSaving(true);
     setStatus(null);
 
     try {
+      if (!request.email) {
+        throw new Error("Aanvraag bevat geen e-mailadres.");
+      }
+
       const tempPassword = generateTempPassword();
       
       // Maak gebruiker aan in Firebase Auth
@@ -625,7 +713,7 @@ const AdminUsersView = () => {
       );
 
       // Voeg gebruiker toe aan Firestore
-      await setDoc(doc(db, ...PATHS.USERS, userCredential.user.uid), {
+      await setDoc(docPath(PATHS.USERS, userCredential.user.uid), {
         name: request.name,
         email: request.email,
         country: request.country,
@@ -639,10 +727,10 @@ const AdminUsersView = () => {
         approvedAt: serverTimestamp(),
       });
 
-      await logActivity(auth.currentUser?.uid, "USER_CREATE", `User request approved: ${request.email}`);
+      await logActivity(auth.currentUser?.uid || "system", "USER_CREATE", `User request approved: ${request.email}`);
 
       // Update de request status
-      await updateDoc(doc(db, ...PATHS.ACCOUNT_REQUESTS, request.id), {
+      await updateDoc(docPath(PATHS.ACCOUNT_REQUESTS, request.id), {
         status: "approved",
         processedAt: serverTimestamp(),
         processedBy: auth.currentUser?.email || "Admin",
@@ -652,11 +740,11 @@ const AdminUsersView = () => {
         type: "success",
         message: `Account aangemaakt! Tijdelijk wachtwoord: ${tempPassword} (deel dit met de gebruiker)`,
       });
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Fout bij accepteren aanvraag:", err);
       setStatus({
         type: "error",
-        message: `Fout: ${err.message}`,
+        message: `Fout: ${getErrorMessage(err)}`,
       });
     } finally {
       setSaving(false);
@@ -664,22 +752,22 @@ const AdminUsersView = () => {
   };
 
   // Weiger account aanvraag
-  const handleRejectRequest = async (requestId) => {
+  const handleRejectRequest = async (requestId: string) => {
     if (saving) return;
     setSaving(true);
 
     try {
-      await updateDoc(doc(db, ...PATHS.ACCOUNT_REQUESTS, requestId), {
+      await updateDoc(docPath(PATHS.ACCOUNT_REQUESTS, requestId), {
         status: "rejected",
         processedAt: serverTimestamp(),
         processedBy: auth.currentUser?.email || "Admin",
       });
 
-      await logActivity(auth.currentUser?.uid, "USER_REJECT", `Account request rejected: ${requestId}`);
+      await logActivity(auth.currentUser?.uid || "system", "USER_REJECT", `Account request rejected: ${requestId}`);
       setStatus({ type: "success", message: "Aanvraag geweigerd" });
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Fout bij weigeren:", err);
-      setStatus({ type: "error", message: "Fout bij weigeren aanvraag" });
+      setStatus({ type: "error", message: `Fout bij weigeren aanvraag: ${getErrorMessage(err)}` });
     } finally {
       setSaving(false);
     }
@@ -689,14 +777,14 @@ const AdminUsersView = () => {
     if (!selectedUser || saving) return;
     setSaving(true);
     try {
-      const userRef = doc(db, ...PATHS.USERS, selectedUser.id);
+      const userRef = docPath(PATHS.USERS, selectedUser.id);
       await updateDoc(userRef, {
         name: selectedUser.name,
         role: selectedUser.role,
         country: selectedUser.country,
         department: selectedUser.department,
         // Migreer: verwijder legacy admin tool IDs uit modules-array (vervangen door rolsysteem)
-        modules: (selectedUser.modules || []).filter(m => !LEGACY_ADMIN_TOOL_IDS.includes(m)),
+        modules: (selectedUser.modules || []).filter((m) => !LEGACY_ADMIN_TOOL_IDS.includes(m)),
         permissions: selectedUser.permissions || {}, // Granulaire module/feature permissions
         allowedStations: selectedUser.allowedStations || [],
         defaultRoute: selectedUser.defaultRoute || "",
@@ -708,19 +796,19 @@ const AdminUsersView = () => {
         updatedBy: auth.currentUser?.email || "Master Admin",
       });
 
-      await logActivity(auth.currentUser?.uid, "USER_ROLE_CHANGE", `User updated: ${selectedUser.email}. Role: ${selectedUser.role}`);
+      await logActivity(auth.currentUser?.uid || "system", "USER_ROLE_CHANGE", `User updated: ${selectedUser.email}. Role: ${selectedUser.role}`);
 
-      setStatus({ type: "success", msg: "Gebruikersprofiel bijgewerkt" });
+      setStatus({ type: "success", message: "Gebruikersprofiel bijgewerkt" });
       setTimeout(() => setStatus(null), 3000);
       setIsEditing(false);
-    } catch (err) {
-      notify("Update mislukt: " + err.message);
+    } catch (err: unknown) {
+      notify("Update mislukt: " + getErrorMessage(err));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async (userId) => {
+  const handleDelete = async (userId: string) => {
     const confirmed = await showConfirm({
       title: "Gebruiker verwijderen",
       message: "Account permanent verwijderen uit de root? Dit blokkeert direct alle toegang.",
@@ -730,24 +818,24 @@ const AdminUsersView = () => {
     });
     if (!confirmed) return;
     try {
-      const userRef = doc(db, ...PATHS.USERS, userId);
+      const userRef = docPath(PATHS.USERS, userId);
       await deleteDoc(userRef);
-      await logActivity(auth.currentUser?.uid, "USER_DELETE", `User deleted: ${userId}`);
-      setStatus({ type: "success", msg: "Gebruiker verwijderd" });
+      await logActivity(auth.currentUser?.uid || "system", "USER_DELETE", `User deleted: ${userId}`);
+      setStatus({ type: "success", message: "Gebruiker verwijderd" });
       setTimeout(() => setStatus(null), 3000);
-    } catch (err) {
-      notify(err.message);
+    } catch (err: unknown) {
+      notify(getErrorMessage(err));
     }
   };
 
   // Helper functies voor granulaire module permissions
-  const toggleFeature = (moduleId, featureId) => {
+  const toggleFeature = (moduleId: ModuleId, featureId: string) => {
     if (!selectedUser) return;
     const currentPermissions = selectedUser.permissions || {};
     const modulePerms = currentPermissions[moduleId] || [];
     
     const newModulePerms = modulePerms.includes(featureId)
-      ? modulePerms.filter(f => f !== featureId)
+      ? modulePerms.filter((f) => f !== featureId)
       : [...modulePerms, featureId];
     
     setSelectedUser({
@@ -759,13 +847,13 @@ const AdminUsersView = () => {
     });
   };
 
-  const toggleModuleAll = (moduleId, enable) => {
+  const toggleModuleAll = (moduleId: ModuleId, enable: boolean) => {
     if (!selectedUser) return;
     const module = MODULE_FEATURES[moduleId];
     if (!module) return;
     
     const currentPermissions = selectedUser.permissions || {};
-    const featureIds = module.features.map(f => f.id);
+    const featureIds = module.features.map((f) => f.id);
     
     setSelectedUser({
       ...selectedUser,
@@ -776,13 +864,13 @@ const AdminUsersView = () => {
     });
   };
 
-  const hasModule = (moduleId) => {
+  const hasModule = (moduleId: ModuleId) => {
     const perms = selectedUser?.permissions || {};
     const modulePerms = perms[moduleId] || [];
     return modulePerms.length > 0;
   };
 
-  const getModuleFeatureCount = (moduleId) => {
+  const getModuleFeatureCount = (moduleId: ModuleId) => {
     const perms = selectedUser?.permissions || {};
     const modulePerms = perms[moduleId] || [];
     return modulePerms.length;
@@ -790,15 +878,15 @@ const AdminUsersView = () => {
 
   // Filter logica voor stations
   const filteredStations = useMemo(() => {
-    return allStations.filter(s => {
+    return allStations.filter((s) => {
       if (stationFilterCountry !== "All" && s.country !== stationFilterCountry) return false;
       if (stationFilterDept !== "All" && s.department !== stationFilterDept) return false;
       return true;
     });
   }, [allStations, stationFilterCountry, stationFilterDept]);
 
-  const uniqueCountries = useMemo(() => ["All", ...new Set(allStations.map(s => s.country))].sort(), [allStations]);
-  const uniqueDepts = useMemo(() => ["All", ...new Set(allStations.filter(s => stationFilterCountry === "All" || s.country === stationFilterCountry).map(s => s.department))].sort(), [allStations, stationFilterCountry]);
+  const uniqueCountries = useMemo(() => ["All", ...new Set(allStations.map((s) => s.country))].sort(), [allStations]);
+  const uniqueDepts = useMemo(() => ["All", ...new Set(allStations.filter((s) => stationFilterCountry === "All" || s.country === stationFilterCountry).map((s) => s.department))].sort(), [allStations, stationFilterCountry]);
 
   if (loading)
     return (
@@ -1044,7 +1132,8 @@ const AdminUsersView = () => {
 
                               <div className="mt-8 pt-6 border-t border-slate-50 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
                                 <button
-                                  onClick={() => handleResetPassword(u.email)}
+                                  onClick={() => u.email && handleResetPassword(u.email)}
+                                  disabled={!u.email}
                                   className="p-3 bg-slate-50 text-slate-400 hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-all"
                                   title={t('adminUsers.resetPassword', "Wachtwoord Resetten")}
                                 >
@@ -1546,7 +1635,7 @@ const AdminUsersView = () => {
                     <p className="text-[9px] text-slate-500 italic ml-2">Schakel in per gebruiker. Per module kun je per sub-onderdeel verdere toegang bepalen.</p>
                     
                     <div className="space-y-3">
-                      {Object.entries(MODULE_FEATURES).map(([moduleId, module]) => {
+                      {moduleEntries.map(([moduleId, module]) => {
                         const isExpanded = expandedModules[moduleId];
                         const featureCount = getModuleFeatureCount(moduleId);
                         const hasAccess = hasModule(moduleId);

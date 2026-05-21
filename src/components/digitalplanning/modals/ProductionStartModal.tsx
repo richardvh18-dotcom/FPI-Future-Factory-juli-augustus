@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -20,20 +19,20 @@ import {
 import { collection, collectionGroup, getDocs, query, where, onSnapshot, doc, getDoc, setDoc, deleteDoc, serverTimestamp, runTransaction, limit } from "firebase/firestore";
 
 import { db, auth, logActivity } from "../../../config/firebase"; 
-import { PATHS, getArchiveItemsPath } from "../../../config/dbPaths";
+import { PATHS, getArchiveItemsPath, getPathString } from "../../../config/dbPaths";
 import {
   filterLabelsByProduct,
 } from "../../../utils/labelHelpers";
 import { getFlangeSeriesInfo } from "../../../utils/flangeSeriesHelper";
 import { lookupProductByManufacturedId } from "../../../utils/conversionLogic";
 import { useNotifications } from "../../../contexts/NotificationContext";
-import { useProgressOperations } from "../../../contexts/ProgressOperationContext.tsx";
+import { useProgressOperationsStore } from "../../../contexts/ProgressOperationContext";
 import { generatePrintData, generateLotBatchZPL } from "../../../utils/zplHelper";
 import { getDriver } from "../../../utils/printerDrivers";
 import { queuePrintJob } from "../../../services/printService";
 import LabelVisualPreview from "../../printer/LabelVisualPreview";
 import { useLabelPreview } from "../../../hooks/useLabelPreview";
-import InternalQrImage from "../../../utils/InternalQrImage.tsx";
+import InternalQrImage from "../../../utils/InternalQrImage";
 
 /**
  * DPI-aware PIXELS_PER_MM for print preview parity
@@ -46,29 +45,42 @@ const getPixelsPerMm = (printerDpi = 203) => {
 const DEFAULT_PRINTER_DPI = 203;
 const LOT_ARCHIVE_LOOKBACK_YEARS = 6;
 
-const isPermissionDeniedError = (error) => {
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  return String(error);
+};
+
+type LabelOption = {
+  id: string;
+  name?: string;
+  width?: number | string;
+  height?: number | string;
+  tags?: string[];
+};
+
+const isPermissionDeniedError = (error: any) => {
   const code = String(error?.code || "").toLowerCase();
   const message = String(error?.message || "").toLowerCase();
   return code.includes("permission-denied") || message.includes("insufficient permissions");
 };
 
 // Functie om ISO week en bijbehorend ISO jaar te berekenen
-const getIsoWeekAndYear = (d) => {
+const getIsoWeekAndYear = (d: Date) => {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
   const year = date.getUTCFullYear();
   const yearStart = new Date(Date.UTC(year, 0, 1));
-  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  const weekNo = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   return { week: String(weekNo).padStart(2, '0'), year: String(year) };
 };
 
 // Machine naar FPI code mapping
-const getMachineCode = (station) => {
+const getMachineCode = (station: string | null | undefined) => {
   if (!station) return "999";
   const normalized = String(station).toUpperCase().trim();
   const baseStation = normalized.startsWith('40') ? normalized.substring(2) : normalized;
   
-  const map = {
+  const map: Record<string, string> = {
     'BH11': '411',
     'BH12': '412',
     'BH15': '415',
@@ -94,39 +106,51 @@ const getMachineCode = (station) => {
   return `4${digits.slice(-2).padStart(2, "0")}`;
 };
 
-const getNormalizedPrinterDpi = (printer, fallback = 203) => {
+const getNormalizedPrinterDpi = (printer: any, fallback = 203) => {
+  const driverDpi = Number(getDriver(printer)?.nativeDpi);
+  if (Number.isFinite(driverDpi) && driverDpi > 0) return driverDpi;
   const parsed = Number.parseInt(printer?.dpi, 10);
   if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  const resolved = getDriver(printer);
-  return Number.isFinite(resolved?.nativeDpi) && resolved.nativeDpi > 0
-    ? resolved.nativeDpi
-    : fallback;
+  return fallback;
 };
 
 const ProductionStartModal = ({
   order,
   isOpen,
   onClose,
+  onStartInitiated,
   onStart,
+  onOpenProductInfo,
   stationId = "",
   existingProducts = [],
+}: {
+  order: any;
+  isOpen: boolean;
+  onClose: () => void;
+  onStartInitiated?: () => void;
+  onStart: (...args: any[]) => void | Promise<void>;
+  onOpenProductInfo?: (...args: any[]) => void;
+  stationId?: string;
+  existingProducts?: any[];
 }) => {
   const { t } = useTranslation();
   const { showSuccess, showError , notify} = useNotifications();
-  const { addOperation, updateOperation, removeOperation } = useProgressOperations();
+  const addOperation = useProgressOperationsStore((state) => state.addOperation);
+  const updateOperation = useProgressOperationsStore((state) => state.updateOperation);
+  const removeOperation = useProgressOperationsStore((state) => state.removeOperation);
   const [mode, setMode] = useState("manual"); // Standaard manueel voor pilot
   const [lotNumber, setLotNumber] = useState("");
   const [stringCount, setStringCount] = useState("1");
   const [labelCount, setLabelCount] = useState("1");
   const [manualLotInput, setManualLotInput] = useState("");
   const [manualOrderInput, setManualOrderInput] = useState("");
-  const [assignedOperators, setAssignedOperators] = useState([]);
+  const [assignedOperators, setAssignedOperators] = useState<Array<{ number: string; name: string }>>([]);
   const [operatorInput, setOperatorInput] = useState("");
   
   // Refs voor autofocus bij barcode scanning
-  const orderInputRef = useRef(null);
-  const lotInputRef = useRef(null);
-  const manualLotAutoStartTimeoutRef = useRef(null);
+  const orderInputRef = useRef<HTMLInputElement>(null);
+  const lotInputRef = useRef<HTMLInputElement>(null);
+  const manualLotAutoStartTimeoutRef = useRef<any>(null);
   const lastLotInputAtRef = useRef(0);
   const previousLotInputRef = useRef("");
   const scannerLikeLotInputRef = useRef(false);
@@ -138,18 +162,18 @@ const ProductionStartModal = ({
   const [previewZoom, setPreviewZoom] = useState(1);
   const location = useLocation();
   
-  const [savedPrinters, setSavedPrinters] = useState([]);
-  const [generalSettings, setGeneralSettings] = useState({ flangeSeriesRules: [] });
-  const [toolingMolds, setToolingMolds] = useState([]);
-  const [relatedItemCodes, setRelatedItemCodes] = useState([]);
+  const [savedPrinters, setSavedPrinters] = useState<any[]>([]);
+  const [generalSettings, setGeneralSettings] = useState<any>({ flangeSeriesRules: [] });
+  const [toolingMolds, setToolingMolds] = useState<any[]>([]);
+  const [relatedItemCodes, setRelatedItemCodes] = useState<string[]>([]);
   const [printConfig, setPrintConfig] = useState({
     mode: "queue", 
     printerIp: "",
     printerId: ""
   });
 
-  const containerRef = useRef(null);
-  const previewAreaRef = useRef(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const previewAreaRef = useRef<HTMLDivElement>(null);
   const counterPermissionWarnedRef = useRef(false);
 
   const [isCheckingLot, setIsCheckingLot] = useState(false);
@@ -186,26 +210,26 @@ const ProductionStartModal = ({
   );
   const shouldUseFlangeLabelFlow = isFlangeOrder || (isBh11OrBh15Station && hasFlInArticle);
 
-  const sanitizePositiveIntInput = (value) => {
+  const sanitizePositiveIntInput = (value: any) => {
     const digitsOnly = String(value ?? "").replace(/\D/g, "");
     return digitsOnly;
   };
 
-  const normalizePositiveIntInput = (value, fallback = 1) => {
+  const normalizePositiveIntInput = (value: any, fallback = 1) => {
     const parsed = parseInt(String(value || ""), 10);
     return String(Number.isFinite(parsed) && parsed > 0 ? parsed : fallback);
   };
 
-  const printerHasStation = (printer, station) => {
+  const printerHasStation = (printer: any, station: string) => {
     if (!printer || !station) return false;
     const linked = Array.isArray(printer.linkedStations) ? printer.linkedStations : [];
     const queue = Array.isArray(printer.queueStations) ? printer.queueStations : [];
     return [...linked, ...queue].includes(station);
   };
 
-  const resolveTargetPrinter = (printerList, station) => {
-    const globalDefault = (printerList || []).find((p) => p.isDefault);
-    const stationPrinter = (printerList || []).find((p) => printerHasStation(p, station));
+  const resolveTargetPrinter = (printerList: any[], station: string) => {
+    const globalDefault = (printerList || []).find((p: any) => p.isDefault);
+    const stationPrinter = (printerList || []).find((p: any) => printerHasStation(p, station));
     // Prioriteit: expliciete standaardprinter > station-mapping
     // Dit voorkomt dat oude stationkoppelingen (bijv. Lighthouse) de nieuwe standaard (ZM400) overrulen.
     return globalDefault || stationPrinter || null;
@@ -216,18 +240,18 @@ const ProductionStartModal = ({
     if (currentResolved) return currentResolved;
 
     const currentById = printConfig.printerId
-      ? savedPrinters.find((p) => p.id === printConfig.printerId)
+      ? savedPrinters.find((p: any) => p.id === printConfig.printerId)
       : null;
     if (currentById) return currentById;
 
     const prnPaths = PATHS?.PRINTERS || ['future-factory', 'settings', 'printers'];
-    const snap = await getDocs(collection(db, ...prnPaths));
-    const fetchedPrinters = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const snap = await getDocs(collection(db, getPathString(prnPaths as string[])));
+    const fetchedPrinters = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
     const fetchedResolved = resolveTargetPrinter(fetchedPrinters, stationId);
     if (fetchedResolved) return fetchedResolved;
 
     const fetchedById = printConfig.printerId
-      ? fetchedPrinters.find((p) => p.id === printConfig.printerId)
+      ? fetchedPrinters.find((p: any) => p.id === printConfig.printerId)
       : null;
     return fetchedById || null;
   };
@@ -270,10 +294,10 @@ const ProductionStartModal = ({
   useEffect(() => {
     if (!isOpen) return;
     const unsub = onSnapshot(
-      doc(db, ...PATHS.GENERAL_SETTINGS),
+      doc(db, getPathString(PATHS.GENERAL_SETTINGS as string[])),
       (snap) => {
         if (snap.exists()) {
-          setGeneralSettings((prev) => ({ ...prev, ...(snap.data() || {}) }));
+          setGeneralSettings((prev: Record<string, unknown>) => ({ ...prev, ...(snap.data() || {}) }));
         }
       },
       (err) => {
@@ -296,14 +320,15 @@ const ProductionStartModal = ({
     const loadConversionCodes = async () => {
       try {
         const conversion = await lookupProductByManufacturedId(null, sourceCode);
+        const conversionAny = conversion as Record<string, unknown> | null;
         if (!active) return;
         const candidates = Array.from(
           new Set(
             [
               sourceCode,
-              conversion?.manufacturedId,
-              conversion?.targetProductId,
-              conversion?.id,
+              conversionAny?.manufacturedId,
+              conversionAny?.targetProductId,
+              conversionAny?.id,
             ]
               .map((value) => String(value || "").trim())
               .filter(Boolean)
@@ -325,12 +350,12 @@ const ProductionStartModal = ({
   useEffect(() => {
     if (!isOpen) return;
     const unsub = onSnapshot(
-      collection(db, ...PATHS.TOOLING_MOLDS),
+      collection(db, getPathString(PATHS.TOOLING_MOLDS as string[])),
       (snap) => {
-        const rows = snap.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+        const rows = snap.docs.map((entry: any) => ({ id: entry.id, ...entry.data() }));
         setToolingMolds(rows);
       },
-      (err) => {
+      (err: any) => {
         console.error("Kon gereedschap/mallen niet laden:", err);
         setToolingMolds([]);
       }
@@ -349,13 +374,13 @@ const ProductionStartModal = ({
 
   const availableLabels = useMemo(() => {
     if (!allLabels || allLabels.length === 0) return [];
-    let filteredLabels = filterLabelsByProduct(allLabels, order, { excludeTempOrderLabels: true });
+    let filteredLabels = filterLabelsByProduct(allLabels, order, { excludeTempOrderLabels: true }) as LabelOption[];
     
     // Sortering voor BH18: Grote labels eerst
     if (stationId === 'BH18') {
         filteredLabels.sort((a, b) => {
-            const aLarge = a.height >= 45 || a.name?.toLowerCase().includes("groot") || a.name?.toLowerCase().includes("standard");
-            const bLarge = b.height >= 45 || b.name?.toLowerCase().includes("groot") || b.name?.toLowerCase().includes("standard");
+          const aLarge = Number(a.height) >= 45 || String(a.name || "").toLowerCase().includes("groot") || String(a.name || "").toLowerCase().includes("standard");
+          const bLarge = Number(b.height) >= 45 || String(b.name || "").toLowerCase().includes("groot") || String(b.name || "").toLowerCase().includes("standard");
             if (aLarge && !bLarge) return -1;
             if (!aLarge && bLarge) return 1;
             return 0;
@@ -389,8 +414,8 @@ const ProductionStartModal = ({
 
           if (isFlange) {
             // Zoek eerst naar labels met de tag FLANGE, FLENS of FLENZEN
-            let flangeLabels = availableLabels.filter(l =>
-              Array.isArray(l.tags) && l.tags.some(tag => /^(FLANGE|FLENS|FLENZEN)$/i.test(tag))
+            let flangeLabels = availableLabels.filter((l: LabelOption) =>
+              Array.isArray(l.tags) && l.tags.some((tag: string) => /^(FLANGE|FLENS|FLENZEN)$/i.test(tag))
             );
 
             // Als er geen specifiek FLANGE label is, gebruik dan alle labels als fallback
@@ -402,28 +427,28 @@ const ProductionStartModal = ({
             let flangeLabelToSelect = null;
 
             // Zoek naar specifieke materiaal tags in de labels (CST, EST, ETW/EWT, EMT)
-            const hasMaterialTagOrName = (label, materialVariants) => {
-               return (Array.isArray(label.tags) && label.tags.some(tag => materialVariants.includes(tag.toUpperCase()))) ||
-                      materialVariants.some(v => label.name?.toUpperCase().includes(v));
+            const hasMaterialTagOrName = (label: LabelOption, materialVariants: string[]) => {
+              return (Array.isArray(label.tags) && label.tags.some((tag: string) => materialVariants.includes(tag.toUpperCase()))) ||
+                   materialVariants.some((v: string) => String(label.name || "").toUpperCase().includes(v));
             };
 
             if (itemIdentifier.includes("EMT")) {
-              flangeLabelToSelect = flangeLabels.find(l => hasMaterialTagOrName(l, ["EMT", "FIBERMAR"]));
+              flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["EMT", "FIBERMAR"]));
             } else if (itemIdentifier.includes("CST")) {
-              flangeLabelToSelect = flangeLabels.find(l => hasMaterialTagOrName(l, ["CST", "WAVISTRONG"]));
+              flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["CST", "WAVISTRONG"]));
             } else if (itemIdentifier.includes("ETW") || itemIdentifier.includes("EWT")) {
-              flangeLabelToSelect = flangeLabels.find(l => hasMaterialTagOrName(l, ["ETW", "EWT", "WAVISTRONG"]));
+              flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["ETW", "EWT", "WAVISTRONG"]));
             } else if (itemIdentifier.includes("EST")) {
-              flangeLabelToSelect = flangeLabels.find(l => hasMaterialTagOrName(l, ["EST", "WAVISTRONG"]));
+              flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["EST", "WAVISTRONG"]));
             }
 
             // Fallback
             if (!flangeLabelToSelect) {
                 // Als het een van de Wavistrong varianten is, pak dan eventueel een EST label als fallback
                 if (itemIdentifier.includes("CST") || itemIdentifier.includes("EWT") || itemIdentifier.includes("ETW") || itemIdentifier.includes("EST")) {
-                     flangeLabelToSelect = flangeLabels.find(l => hasMaterialTagOrName(l, ["EST"])) || flangeLabels[0];
+                     flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["EST"])) || flangeLabels[0];
                 } else if (itemIdentifier.includes("EMT")) {
-                     flangeLabelToSelect = flangeLabels.find(l => hasMaterialTagOrName(l, ["EMT"])) || flangeLabels[0];
+                     flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["EMT"])) || flangeLabels[0];
                 } else {
                      flangeLabelToSelect = flangeLabels[0];
                 }
@@ -436,8 +461,8 @@ const ProductionStartModal = ({
           }
 
           // NIEUW: Kies bij voorkeur een code label
-          const preferred = availableLabels.find(t => 
-            t.tags?.includes("CODE")
+          const preferred = availableLabels.find((t: LabelOption) => 
+            Array.isArray(t.tags) && t.tags.includes("CODE")
           );
 
           if (preferred) {
@@ -458,11 +483,11 @@ const ProductionStartModal = ({
           }
           
           let defaultLabel = preferLarge ? availableLabels.find(
-            (l) => (l.height >= 45 && !l.name?.toLowerCase().includes("smal")) || 
-                   l.name?.toLowerCase().includes("groot") || 
-                   l.name?.toLowerCase().includes("standard")
+                 (l: LabelOption) => (Number(l.height) >= 45 && !String(l.name || "").toLowerCase().includes("smal")) || 
+                   String(l.name || "").toLowerCase().includes("groot") || 
+                   String(l.name || "").toLowerCase().includes("standard")
           ) : availableLabels.find(
-            (l) => l.name?.toLowerCase().includes("smal") || l.height < 45
+                 (l: LabelOption) => String(l.name || "").toLowerCase().includes("smal") || Number(l.height) < 45
           );
 
           const labelToSelect = defaultLabel?.id || availableLabels[0]?.id;
@@ -486,12 +511,12 @@ const ProductionStartModal = ({
       try {
         const occPaths = PATHS?.OCCUPANCY || ['future-factory', 'personnel', 'occupancy'];
         const q = query(
-          collection(db, ...occPaths),
+          collection(db, getPathString(occPaths as string[])),
           where("machineId", "==", stationId),
           where("date", "==", today)
         );
         const snapshot = await getDocs(q);
-        const operators = snapshot.docs.map(doc => ({
+        const operators = snapshot.docs.map((doc: any) => ({
           number: doc.data().operatorNumber,
           name: doc.data().operatorName
         }));
@@ -501,7 +526,7 @@ const ProductionStartModal = ({
         } else {
           setOperatorInput("");
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Kon operators niet ophalen", err);
       }
     };
@@ -513,16 +538,16 @@ const ProductionStartModal = ({
     if(!isOpen) return;
     try {
         const prnPaths = PATHS?.PRINTERS || ['future-factory', 'settings', 'printers'];
-        const printersRef = collection(db, ...prnPaths);
+        const printersRef = collection(db, getPathString(prnPaths as string[]));
         const unsub = onSnapshot(printersRef, (snap) => {
-          const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
           setSavedPrinters(list);
           const targetPrinter = resolveTargetPrinter(list, stationId);
 
           if (targetPrinter) {
             // Default naar 'queue' als er een printer is geconfigureerd voor dit station.
             // De gebruiker kan dit handmatig aanpassen met de print-mode knoppen.
-            setPrintConfig(prev => ({
+            setPrintConfig((prev) => ({
               ...prev,
               mode: 'queue',
               printerId: prev.printerId || targetPrinter.id
@@ -530,21 +555,21 @@ const ProductionStartModal = ({
           }
         });
         return () => unsub();
-    } catch(e) {
+    } catch(e: any) {
         console.error("Kon printers niet laden", e);
     }
   }, [stationId, isOpen]);
 
   // --- SLIMME LOTNUMMER GENERATOR (FPI STANDAARD) ---
 
-  const checkLotNumberExists = async (lotToCheck) => {
+  const checkLotNumberExists = async (lotToCheck: string) => {
     if (!lotToCheck) return false;
     try {
       const normalizedLot = String(lotToCheck || "").trim().toUpperCase();
       if (!normalizedLot) return false;
 
       // 1) Lokale context check (realtime meegegeven producten in de modal)
-      const localExists = (existingProducts || []).some((p) => {
+      const localExists = (existingProducts || []).some((p: any) => {
         const lot = String(p?.lotNumber || "").trim().toUpperCase();
         const activeLot = String(p?.activeLot || "").trim().toUpperCase();
         return lot === normalizedLot || activeLot === normalizedLot;
@@ -552,7 +577,7 @@ const ProductionStartModal = ({
       if (localExists) return true;
 
       // 2) Actieve tracking check (root pad)
-      const trackingRef = collection(db, ...PATHS.TRACKING);
+      const trackingRef = collection(db, getPathString(PATHS.TRACKING as string[]));
       const trackingByLotSnap = await getDocs(query(trackingRef, where("lotNumber", "==", normalizedLot), limit(1)));
       if (!trackingByLotSnap.empty) return true;
 
@@ -567,14 +592,14 @@ const ProductionStartModal = ({
           return path.startsWith(trackingPathPrefix);
         });
         if (scopedExists) return true;
-      } catch (scopedErr) {
+      } catch (scopedErr: any) {
         // Niet blokkeren op index/permissie issues; overige checks blijven actief.
-        console.debug("Scoped lot-check overgeslagen:", scopedErr?.message || scopedErr);
+        console.debug("Scoped lot-check overgeslagen:", getErrorMessage(scopedErr));
       }
 
       // 3) Legacy active production check (orders met activeLot)
       const actPaths = PATHS?.ACTIVE_PRODUCTION || ["future-factory", "production", "active"];
-      const activeRef = collection(db, ...actPaths);
+      const activeRef = collection(db, getPathString(actPaths as string[]));
       const activeLotSnap = await getDocs(query(activeRef, where("activeLot", "==", normalizedLot), limit(1)));
       if (!activeLotSnap.empty) return true;
 
@@ -583,19 +608,19 @@ const ProductionStartModal = ({
       const yearsToCheck = Array.from({ length: LOT_ARCHIVE_LOOKBACK_YEARS }, (_, idx) => currentYear - idx);
 
       for (const year of yearsToCheck) {
-        const archiveRef = collection(db, ...getArchiveItemsPath(year));
+        const archiveRef = collection(db, getPathString(getArchiveItemsPath(year)));
         const archiveSnap = await getDocs(query(archiveRef, where("lotNumber", "==", normalizedLot), limit(1)));
         if (!archiveSnap.empty) return true;
       }
 
       return false;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Fout bij lot validatie:", error);
       return false;
     }
   };
 
-  const getHighestSequenceForBaseLot = async (baseLotStr, stationId, weekSuffix) => {
+  const getHighestSequenceForBaseLot = async (baseLotStr: string, stationId: string, weekSuffix: string) => {
     let maxSeq = 0;
     
     const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -607,40 +632,40 @@ const ProductionStartModal = ({
         if (counterSnap.exists()) {
             return counterSnap.data().lastSequence || 0;
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error("Fout bij lezen counter:", e);
     }
 
-    const extractSeq = (lot) => {
+    const extractSeq = (lot: string) => {
         if (!lot || !lot.startsWith(baseLotStr)) return 0;
         const seqStr = lot.substring(baseLotStr.length).replace(/[^0-9]/g, '');
         const seq = parseInt(seqStr, 10);
         return isNaN(seq) ? 0 : seq;
     };
 
-    existingProducts?.forEach(p => {
+    existingProducts?.forEach((p: any) => {
         const seq = extractSeq(p.lotNumber || p.activeLot);
         if (seq > maxSeq) maxSeq = seq;
     });
 
     try {
         const activePath = PATHS?.ACTIVE_PRODUCTION || ['future-factory', 'production', 'active'];
-        const activeRef = collection(db, ...activePath);
+        const activeRef = collection(db, getPathString(activePath as string[]));
         const activeSnap = await getDocs(activeRef);
-        activeSnap.forEach(doc => {
+        activeSnap.forEach((doc: any) => {
             const data = doc.data();
             const seq = extractSeq(data.lotNumber || data.activeLot);
             if (seq > maxSeq) maxSeq = seq;
         });
 
-        const archiveRef = collection(db, ...getArchiveItemsPath(new Date().getFullYear()));
+        const archiveRef = collection(db, getPathString(getArchiveItemsPath(new Date().getFullYear())));
         const q = query(
             archiveRef, 
             where("lotNumber", ">=", baseLotStr),
             where("lotNumber", "<=", baseLotStr + '\uf8ff')
         );
         const archiveSnap = await getDocs(q);
-        archiveSnap.forEach(doc => {
+        archiveSnap.forEach((doc: any) => {
             const seq = extractSeq(doc.data().lotNumber);
             if (seq > maxSeq) maxSeq = seq;
         });
@@ -654,23 +679,23 @@ const ProductionStartModal = ({
             where("lotNumber", "<=", `${baseLotStr}\uf8ff`)
           );
           const scopedTrackingSnap = await getDocs(scopedTrackingQuery);
-          scopedTrackingSnap.forEach((docSnap) => {
+          scopedTrackingSnap.forEach((docSnap: any) => {
             const path = String(docSnap.ref?.path || "");
             if (!path.startsWith(trackingPathPrefix)) return;
             const seq = extractSeq(docSnap.data()?.lotNumber);
             if (seq > maxSeq) maxSeq = seq;
           });
-        } catch (scopedErr) {
-          console.debug("Scoped sequence lookup overgeslagen:", scopedErr?.message || scopedErr);
+        } catch (scopedErr: any) {
+          console.debug("Scoped sequence lookup overgeslagen:", getErrorMessage(scopedErr));
         }
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Fout bij ophalen max sequence:", error);
     }
 
     try {
         await setDoc(counterRef, { lastSequence: maxSeq, updatedAt: serverTimestamp() }, { merge: true });
-    } catch (e) {
+    } catch (e: any) {
       if (isPermissionDeniedError(e)) {
         if (!counterPermissionWarnedRef.current) {
           counterPermissionWarnedRef.current = true;
@@ -684,7 +709,7 @@ const ProductionStartModal = ({
     return maxSeq;
   };
 
-  const consumeRecycledSequence = async (baseLot, station, weekSuffix) => {
+  const consumeRecycledSequence = async (baseLot: string, station: string, weekSuffix: string) => {
     const safeStationId = (station || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const counterDocId = `${safeStationId}_${weekSuffix}`;
     const counterRef = doc(db, "future-factory", "production", "counters", counterDocId);
@@ -694,8 +719,8 @@ const ProductionStartModal = ({
     const data = counterSnap.data() || {};
     const recycled = Array.isArray(data.recycledSequences)
       ? data.recycledSequences
-          .map((n) => Number(n))
-          .filter((n) => Number.isFinite(n) && n > 0)
+          .map((n: any) => Number(n))
+          .filter((n: number) => Number.isFinite(n) && n > 0)
           .sort((a, b) => a - b)
       : [];
 
@@ -703,8 +728,8 @@ const ProductionStartModal = ({
       const candidate = `${baseLot}${String(seq).padStart(4, '0')}`;
       const exists = await checkLotNumberExists(candidate);
       if (!exists) {
-        const nextRecycled = recycled.filter((n) => n !== seq);
-        await setDoc(counterRef, { recycledSequences: nextRecycled, updatedAt: serverTimestamp() }, { merge: true }).catch((e) => {
+        const nextRecycled = recycled.filter((n: number) => n !== seq);
+        await setDoc(counterRef, { recycledSequences: nextRecycled, updatedAt: serverTimestamp() }, { merge: true }).catch((e: any) => {
           if (!isPermissionDeniedError(e)) {
             throw e;
           }
@@ -720,7 +745,7 @@ const ProductionStartModal = ({
     return null;
   };
 
-  const claimAutoLotRange = async (count = 1) => {
+  const claimAutoLotRange = async (count: number | string = 1) => {
     const quantity = Math.max(1, parseInt(String(count || 1), 10) || 1);
     const d = new Date();
     const iso = getIsoWeekAndYear(d);
@@ -746,9 +771,9 @@ const ProductionStartModal = ({
 
       const recycled = Array.isArray(counterData.recycledSequences)
         ? Array.from(new Set(counterData.recycledSequences
-            .map((n) => Number(n))
-            .filter((n) => Number.isFinite(n) && n > 0)))
-            .sort((a, b) => a - b)
+            .map((n: any) => Number(n))
+            .filter((n: number) => Number.isFinite(n) && n > 0)))
+            .sort((a: number, b: number) => a - b)
         : [];
 
       const maxAttempts = 250;
@@ -769,7 +794,7 @@ const ProductionStartModal = ({
           for (let i = 0; i < quantity; i++) {
             const seq = sequenceToTry + i;
             const candidateLot = `${baseLot}${String(seq).padStart(4, "0")}`;
-            const candidateRef = doc(db, ...PATHS.TRACKING, candidateLot);
+            const candidateRef = doc(db, `${getPathString(PATHS.TRACKING as string[])}/${candidateLot}`);
             const candidateSnap = await tx.get(candidateRef);
             if (candidateSnap.exists()) {
               hasCollision = true;
@@ -780,7 +805,7 @@ const ProductionStartModal = ({
 
         if (!hasCollision) {
           const nextRecycled = usingRecycled
-            ? recycled.filter((n) => n !== sequenceToTry)
+            ? recycled.filter((n: number) => n !== sequenceToTry)
             : recycled;
           const newLast = Math.max(lastSequence, sequenceToTry + quantity - 1);
 
@@ -809,7 +834,7 @@ const ProductionStartModal = ({
     });
   };
 
-  const claimAutoLotRangeWithoutCounter = async (count = 1) => {
+  const claimAutoLotRangeWithoutCounter = async (count: number | string = 1) => {
     const quantity = Math.max(1, parseInt(String(count || 1), 10) || 1);
     const d = new Date();
     const iso = getIsoWeekAndYear(d);
@@ -898,7 +923,7 @@ const ProductionStartModal = ({
             setLotNumber(newLotNumber);
             setLotError("");
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error setting lot number", error);
         if (isMounted) setLotError("Waarschuwing: Kan uniciteit niet garanderen.");
       } finally {
@@ -933,7 +958,7 @@ const ProductionStartModal = ({
     return () => { isMounted = false; };
   }, [isOpen, order, mode, stationId, isFlangeOrder, hasFlInArticle, normalizedStationNoPrefix]);
 
-  const updateCounterOnStart = async (usedLotNumber, count) => {
+  const updateCounterOnStart = async (usedLotNumber: string, count: number) => {
       if (!usedLotNumber || mode !== "auto") return;
       try {
           const d = new Date();
@@ -950,9 +975,9 @@ const ProductionStartModal = ({
           const counterSnap = await getDoc(counterRef);
           const counterData = counterSnap.exists() ? (counterSnap.data() || {}) : {};
           const recycled = Array.isArray(counterData.recycledSequences)
-            ? counterData.recycledSequences.map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+            ? counterData.recycledSequences.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
             : [];
-          const nextRecycled = recycled.filter((n) => n !== currentSeq);
+          const nextRecycled = recycled.filter((n: number) => n !== currentSeq);
 
           await setDoc(counterRef, { lastSequence: newMax, recycledSequences: nextRecycled, updatedAt: serverTimestamp() }, { merge: true });
 
@@ -963,7 +988,7 @@ const ProductionStartModal = ({
           
           await deleteDoc(doc(db, "future-factory", "production", "counters", oldDocId)).catch(() => {});
 
-      } catch (e) {
+      } catch (e: any) {
         if (isPermissionDeniedError(e)) {
           if (!counterPermissionWarnedRef.current) {
             counterPermissionWarnedRef.current = true;
@@ -1022,7 +1047,7 @@ const ProductionStartModal = ({
     };
   }, [selectedLabel, selectedLabelId, isOpen, mode]);
 
-  const handleManualOrderChange = async (e) => {
+  const handleManualOrderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.toUpperCase();
     setManualOrderInput(value);
     setOrderError("");
@@ -1045,7 +1070,7 @@ const ProductionStartModal = ({
 
   // Stations waar lotnummers van andere machines verwacht worden (reparatie, nabewerking, etc.).
   // Op deze stations wordt de machinecode in het lotnummer NIET gevalideerd.
-  const isLotMachineValidationExempt = (station) => {
+  const isLotMachineValidationExempt = (station: string) => {
     if (!station) return false;
     const s = String(station).toUpperCase().replace(/\s/g, "");
     const base = s.startsWith("40") ? s.slice(2) : s;
@@ -1060,7 +1085,7 @@ const ProductionStartModal = ({
     );
   };
 
-  const validateLotMachineCode = (lotValue) => {
+  const validateLotMachineCode = (lotValue: string) => {
     if (!stationId) return "";
     // Reparatie en downstream stations: geen machinecode-controle — ze verwerken lots van andere machines.
     if (isLotMachineValidationExempt(stationId)) return "";
@@ -1085,7 +1110,7 @@ const ProductionStartModal = ({
     return "";
   };
 
-  const handleManualLotChange = async (e) => {
+  const handleManualLotChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.toUpperCase();
     
     // Alleen cijfers toestaan en beperken tot 15 tekens
@@ -1146,7 +1171,7 @@ const ProductionStartModal = ({
       const labelsToPrint = isFlangeOrder ? 0 : Math.max(1, parseInt(labelCount, 10) || 1);
       const normalizedRunStationId = String(stationId || "").toUpperCase();
       const shouldPrintStringLotBatch = (normalizedRunStationId === "BH11" || normalizedRunStationId === "BH12") && totalToProduce > 1;
-      let lotBatchLots = [];
+      let lotBatchLots: string[] = [];
       const seriesGroupId = totalToProduce > 1
         ? `${String(order?.orderId || "ORDER").replace(/[^a-zA-Z0-9]/g, "_")}_${Date.now()}`
         : null;
@@ -1155,7 +1180,7 @@ const ProductionStartModal = ({
         targetPrinter = await resolveTargetPrinterAsync();
         try {
           effectiveLotNumber = await claimAutoLotRange(totalToProduce);
-        } catch (counterErr) {
+        } catch (counterErr: any) {
           if (!isPermissionDeniedError(counterErr)) {
             throw counterErr;
           }
@@ -1241,7 +1266,7 @@ const ProductionStartModal = ({
             targetPrinter = await resolveTargetPrinterAsync();
           }
           const lotBatchDpi = getNormalizedPrinterDpi(targetPrinter, 203);
-          const lotBatchDarkness = Number.parseInt(targetPrinter?.darkness, 10);
+          const lotBatchDarkness = Number.parseInt(String(targetPrinter?.darkness || "15"), 10);
           lotBatchPrintData = generateLotBatchZPL({
             lots: lotBatchLots,
             orderNumber: isManualMode ? (manualOrderInput || order.orderId) : order.orderId,
@@ -1254,14 +1279,14 @@ const ProductionStartModal = ({
       if (!counterClaimed) {
         await updateCounterOnStart(effectiveLotNumber, totalToProduce);
       }
-      await logActivity(auth.currentUser?.uid, "ORDER_RELEASE", `Order started: ${order.orderId}, Lot: ${effectiveLotNumber}`);
+      await logActivity(auth.currentUser?.uid || "system", "ORDER_RELEASE", `Order started: ${order.orderId}, Lot: ${effectiveLotNumber}`);
 
       updateOperation(startOpId, "Bezig met starten...");
       await onStart(
         order,
         effectiveLotNumber,
         totalToProduce,
-        isManualMode ? manualOrderInput : order.orderId,
+        isManualMode ? manualOrderInput : String(order.orderId || ""),
         operatorInput,
         selectedOperatorName,
         printData,
@@ -1288,8 +1313,8 @@ const ProductionStartModal = ({
                 lotNumber: effectiveLotNumber,
                 stationId: stationId || t("common.unknown"),
                 targetPrinterName: targetPrinter.name,
-                width: parseInt(selectedLabel.width),
-                height: parseInt(selectedLabel.height),
+                width: parseInt(String((selectedLabel as any).width || 0), 10),
+                height: parseInt(String((selectedLabel as any).height || 0), 10),
                 variables: previewData,
                 templateId: selectedLabel.id
               }
@@ -1299,10 +1324,11 @@ const ProductionStartModal = ({
           } else {
             showError(t("productionStartModal.errors.noPrinterConfigured", { stationId }));
           }
-        } catch (printError) {
+        } catch (printError: unknown) {
           console.error(printError);
-          notify(t("productionStartModal.errors.printFailed", { message: printError.message }));
-          showError(t("productionStartModal.errors.printFailed", { message: printError.message }));
+          const printMessage = getErrorMessage(printError);
+          notify(t("productionStartModal.errors.printFailed", { message: printMessage }));
+          showError(t("productionStartModal.errors.printFailed", { message: printMessage }));
         }
       }
 
@@ -1329,13 +1355,14 @@ const ProductionStartModal = ({
           } else {
             showError(t("productionStartModal.errors.noPrinterConfigured", { stationId }));
           }
-        } catch (printError) {
+        } catch (printError: unknown) {
           console.error(printError);
-          notify(t("productionStartModal.errors.stringLotPrintFailed", { message: printError.message }));
-          showError(t("productionStartModal.errors.stringLotPrintFailed", { message: printError.message }));
+          const printMessage = getErrorMessage(printError);
+          notify(t("productionStartModal.errors.stringLotPrintFailed", { message: printMessage }));
+          showError(t("productionStartModal.errors.stringLotPrintFailed", { message: printMessage }));
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
       updateOperation(startOpId, "Fout");
       setTimeout(() => removeOperation(startOpId), 4000);
@@ -1345,7 +1372,7 @@ const ProductionStartModal = ({
     }
   };
 
-  const handleManualLotKeyDown = async (e) => {
+  const handleManualLotKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if ((e.key === "Enter" || e.key === "Tab") && canStartManual) {
       e.preventDefault();
       await handleStartProduction();
@@ -1572,10 +1599,12 @@ const ProductionStartModal = ({
                   </div>
                   {isFlangeOrder && (
                     <p className="text-[10px] font-bold text-emerald-700 mt-1 ml-1">
-                      {t("productionStartModal.labels.flangeSeriesHelper", {
-                        tooling: flangeSeriesInfo?.matchedTooling?.name || flangeSeriesInfo?.matchedTooling?.itemCode || flangeSeriesInfo?.matchedRule?.matcher || t("productionStartModal.labels.defaultTooling"),
-                        count: stringCount,
-                      })}
+                      {`Mal ${String(
+                        flangeSeriesInfo?.matchedTooling?.name ||
+                        flangeSeriesInfo?.matchedTooling?.itemCode ||
+                        flangeSeriesInfo?.matchedRule?.matcher ||
+                        t("productionStartModal.labels.defaultTooling")
+                      )} • ${String(stringCount)} stuks`}
                     </p>
                   )}
                 </div>
@@ -1722,8 +1751,8 @@ const ProductionStartModal = ({
                     className="w-full p-3 bg-white border-2 border-slate-100 rounded-xl text-xs font-black text-slate-700 outline-none focus:border-blue-600 shadow-sm appearance-none cursor-pointer group-hover:border-slate-300"
                   >
                     {availableLabels.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name} ({l.width}x{l.height}mm)
+                      <option key={String(l.id)} value={String(l.id)}>
+                        {String(l.name || "Label")} ({String(l.width || "?")}x{String(l.height || "?")}mm)
                       </option>
                     ))}
                   </select>
@@ -1779,7 +1808,7 @@ const ProductionStartModal = ({
             ) : (
               selectedLabel ? (
                 <LabelVisualPreview
-                  label={selectedLabel}
+                  label={selectedLabel as any}
                   data={previewData}
                   zoom={previewZoom}
                   className="shadow-[0_0_100px_rgba(0,0,0,0.8)] relative transition-all duration-500 origin-center border-2 border-white/10"

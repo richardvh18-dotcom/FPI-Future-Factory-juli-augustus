@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import {
@@ -13,7 +12,7 @@ import {
   orderBy,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
+import { PATHS, getPathString } from "../../../config/dbPaths";
 import { useNotifications } from "../../../contexts/NotificationContext";
 import {
   Ruler,
@@ -34,6 +33,37 @@ import {
   STANDARD_PRESSURES,
 } from "../../../data/constants";
 
+type DrillingRecord = {
+  id: string;
+  dn: string;
+  pn: string;
+  pcd: string;
+  holes: string;
+  holeSize?: string;
+  thread: string;
+  [key: string]: unknown;
+};
+
+type DrillingFormData = {
+  dn: string;
+  pn: string;
+  pcd: string;
+  holes: string;
+  holeSize: string;
+  thread: string;
+};
+
+const colPath = (path: string[]) => collection(db, getPathString(path));
+const docPath = (path: string[], id: string) => doc(db, `${getPathString(path)}/${id}`);
+
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message?: unknown }).message || "onbekende fout");
+  }
+  return String(err || "onbekende fout");
+};
+
 /**
  * AdminDrillingView V4.0 - Root Path Sync
  * Beheert boorpatronen en steekcirkels (PCD) in de nieuwe root.
@@ -42,15 +72,15 @@ import {
 const AdminDrillingView = () => {
   const { t } = useTranslation();
   const { showConfirm , notify} = useNotifications();
-  const [drillData, setDrillData] = useState([]);
+  const [drillData, setDrillData] = useState<DrillingRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [editData, setEditData] = useState({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editData, setEditData] = useState<Partial<DrillingRecord>>({});
   const [searchTerm, setSearchTerm] = useState("");
 
   // Form voor nieuwe dimensie
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<DrillingFormData>({
     dn: "100",
     pn: "10",
     pcd: "",
@@ -61,15 +91,15 @@ const AdminDrillingView = () => {
 
   // 1. Live Sync met de Root BORE_DIMENSIONS collectie
   useEffect(() => {
-    const colRef = collection(db, ...PATHS.BORE_DIMENSIONS);
+    const colRef = colPath(PATHS.BORE_DIMENSIONS);
     const q = query(colRef, orderBy("dn", "asc"));
 
     const unsub = onSnapshot(
       q,
       (snap) => {
-        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const data: DrillingRecord[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<DrillingRecord, "id">) } as DrillingRecord));
         // Handmatige sortering op DN (numeriek)
-        setDrillData(data.sort((a, b) => parseInt(a.dn) - parseInt(b.dn)));
+        setDrillData(data.sort((a, b) => parseInt(String(a.dn || "0"), 10) - parseInt(String(b.dn || "0"), 10)));
         setLoading(false);
       },
       (err) => {
@@ -81,14 +111,14 @@ const AdminDrillingView = () => {
     return () => unsub();
   }, []);
 
-  const handleAdd = async (e) => {
+  const handleAdd = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setSaving(true);
     // Maak een uniek ID op basis van DN en PN (bijv: ID100_PN10)
     const docId = `ID${formData.dn}_PN${formData.pn}`;
 
     try {
-      const docRef = doc(db, ...PATHS.BORE_DIMENSIONS, docId);
+      const docRef = docPath(PATHS.BORE_DIMENSIONS, docId);
       await setDoc(
         docRef,
         {
@@ -101,7 +131,7 @@ const AdminDrillingView = () => {
       );
 
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "DRILLING_PATTERN_CREATE",
         `Boorpatroon aangemaakt: ${docId}`
       );
@@ -114,31 +144,31 @@ const AdminDrillingView = () => {
         thread: "M16",
       });
     } catch (err) {
-      notify("Opslaan mislukt: " + err.message);
+      notify("Opslaan mislukt: " + getErrorMessage(err));
     } finally {
       setSaving(false);
     }
   };
 
-  const saveEdit = async (id) => {
+  const saveEdit = async (id: string) => {
     try {
-      const docRef = doc(db, ...PATHS.BORE_DIMENSIONS, id);
+      const docRef = docPath(PATHS.BORE_DIMENSIONS, id);
       await updateDoc(docRef, {
         ...editData,
         lastUpdated: serverTimestamp(),
       });
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "DRILLING_PATTERN_UPDATE",
         `Boorpatroon bijgewerkt: ${id}`
       );
       setEditingId(null);
     } catch (err) {
-      notify(err.message);
+      notify(getErrorMessage(err));
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: string) => {
     const confirmed = await showConfirm({
       title: t('adminDrilling.deleteTitle', 'Boorpatroon verwijderen'),
       message: `Boorpatroon ${id} definitief verwijderen uit de root?`,
@@ -148,19 +178,19 @@ const AdminDrillingView = () => {
     });
     if (!confirmed) return;
     try {
-      await deleteDoc(doc(db, ...PATHS.BORE_DIMENSIONS, id));
+      await deleteDoc(docPath(PATHS.BORE_DIMENSIONS, id));
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "DRILLING_PATTERN_DELETE",
         `Boorpatroon verwijderd: ${id}`
       );
     } catch (err) {
-      notify(err.message);
+      notify(getErrorMessage(err));
     }
   };
 
   const filteredData = drillData.filter(
-    (d) =>
+    (d: DrillingRecord) =>
       String(d.dn).includes(searchTerm) || String(d.pn).includes(searchTerm)
   );
 

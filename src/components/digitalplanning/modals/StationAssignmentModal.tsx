@@ -16,7 +16,7 @@ import {
 } from "firebase/firestore";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { db } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
+import { getPathString, PATHS } from "../../../config/dbPaths";
 import { useNotifications } from "../../../contexts/NotificationContext";
 import { assignPersonnelToStation, removePersonnelAssignment } from "../../../services/planningSecurityService";
 
@@ -86,7 +86,7 @@ const StationAssignmentModal = ({ stationId, onClose, department }: StationAssig
     const loadData = async () => {
       try {
         // Load personeel
-        const personelSnapshot = await getDocs(collection(db, ...PATHS.PERSONNEL));
+        const personelSnapshot = await getDocs(collection(db, getPathString(PATHS.PERSONNEL as string[])));
         const personnelItems = personelSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })) as PersonnelItem[];
         if (isMounted) {
           setPersonnel(personnelItems);
@@ -95,7 +95,7 @@ const StationAssignmentModal = ({ stationId, onClose, department }: StationAssig
         // Load huidige toewijzingen voor dit station vandaag
         const today = new Date().toISOString().split('T')[0];
         const assignQuery = query(
-          collection(db, ...PATHS.OCCUPANCY),
+          collection(db, getPathString(PATHS.OCCUPANCY as string[])),
           where("machineId", "==", stationId),
           where("date", "==", today)
         );
@@ -145,8 +145,8 @@ const StationAssignmentModal = ({ stationId, onClose, department }: StationAssig
         ...assignments,
         {
           id: `${stationId}-${selectedOperator}-${today}`,
-          operatorNumber: operator.employeeNumber || selectedOperator,
-          operatorName: operator.name,
+          operatorNumber: operator?.employeeNumber || selectedOperator,
+          operatorName: operator?.name,
           machineId: stationId,
           date: today,
           hoursWorked: 8,

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo } from "react";
 import { 
   TrendingUp, 
@@ -11,7 +10,7 @@ import {
 } from "lucide-react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { 
   format, 
   startOfWeek, 
@@ -22,29 +21,102 @@ import {
 } from "date-fns";
 import { nl } from "date-fns/locale";
 
+type DateLike =
+  | Date
+  | string
+  | number
+  | { seconds?: number; _seconds?: number; toDate?: () => Date }
+  | null
+  | undefined;
+
+type OccupancyRow = {
+  id: string;
+  machine?: string;
+  machineName?: string;
+  machineId?: string;
+  date?: DateLike;
+  week?: number;
+  year?: number;
+  hoursWorked?: string | number;
+  hours?: string | number;
+  productionHours?: string | number;
+  operatorName?: string;
+  shift?: string;
+  [key: string]: unknown;
+};
+
+type PlanningRow = {
+  id: string;
+  machine?: string;
+  plannedDate?: DateLike;
+  estimatedHours?: string | number;
+  plan?: string | number;
+  orderId?: string;
+  item?: string;
+  itemCode?: string;
+  status?: string;
+  [key: string]: unknown;
+};
+
+type SelectedCell = {
+  machine: string;
+  week: Date;
+  occupancy: OccupancyRow[];
+  planning: PlanningRow[];
+};
+
+type StationStyle = {
+  color: string;
+  icon: React.ReactNode;
+};
+
+const toNumber = (value: unknown): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const toDateSafe = (value: DateLike): Date | null => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value === "number") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === "string") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  if (typeof value === "object") {
+    if (typeof value.toDate === "function") return value.toDate();
+    const sec = typeof value.seconds === "number" ? value.seconds : value._seconds;
+    if (typeof sec === "number") return new Date(sec * 1000);
+  }
+  return null;
+};
+
 /**
  * WorkloadHeatmapView - Visual capacity/workload overview
  * Shows machine/operator workload with color-coded intensity
  */
 const WorkloadHeatmapView = () => {
-  const [occupancy, setOccupancy] = useState([]);
-  const [planning, setPlanning] = useState([]);
-  const [machines, setMachines] = useState([]);
+  const [occupancy, setOccupancy] = useState<OccupancyRow[]>([]);
+  const [planning, setPlanning] = useState<PlanningRow[]>([]);
+  const [machines, setMachines] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("machine"); // machine | operator
   const [weekRange, setWeekRange] = useState(8); // number of weeks to show
-  const [selectedCell, setSelectedCell] = useState(null);
+  const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null);
 
   const viewStart = startOfWeek(new Date(), { weekStartsOn: 1 });
 
   useEffect(() => {
     // Load occupancy data
     const unsubOccupancy = onSnapshot(
-      collection(db, ...PATHS.OCCUPANCY),
+      collection(db, getPathString(PATHS.OCCUPANCY)),
       (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const data: OccupancyRow[] = snapshot.docs.map((docEntry) => ({
+          id: docEntry.id,
+          ...(docEntry.data() as Record<string, unknown>)
         }));
         setOccupancy(data);
       }
@@ -52,16 +124,16 @@ const WorkloadHeatmapView = () => {
 
     // Load planning data
     const unsubPlanning = onSnapshot(
-      collection(db, ...PATHS.PLANNING),
+      collection(db, getPathString(PATHS.PLANNING)),
       (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const data: PlanningRow[] = snapshot.docs.map((docEntry) => ({
+          id: docEntry.id,
+          ...(docEntry.data() as Record<string, unknown>)
         }));
         setPlanning(data);
         
         // Extract unique machines
-        const uniqueMachines = [...new Set(data.map(o => o.machine).filter(Boolean))];
+        const uniqueMachines = [...new Set(data.map((o) => String(o.machine || "")).filter(Boolean))];
         setMachines(uniqueMachines.sort());
         setLoading(false);
       }
@@ -82,7 +154,7 @@ const WorkloadHeatmapView = () => {
   }, [viewStart, weekRange]);
 
   // Station icon/kleur mapping
-  const stationStyles = {
+  const stationStyles: Record<string, StationStyle> = {
     'Teamleade hub': {
       color: 'bg-yellow-400 text-black border-black',
       icon: <Users size={20} className="text-black" />
@@ -118,15 +190,17 @@ const WorkloadHeatmapView = () => {
   };
 
   // Calculate workload for a machine in a week
-  const getMachineWorkload = (machine, weekStart) => {
+  const getMachineWorkload = (machine: string, weekStart: Date) => {
     // Get capacity (occupancy)
     const capacity = occupancy
-      .filter(o => {
+      .filter((o) => {
         const occMachine = o.machine || o.machineName || o.machineId;
         if (occMachine !== machine) return false;
         
         if (o.date) {
-          return isSameWeek(new Date(o.date), weekStart, { weekStartsOn: 1 });
+          const occDate = toDateSafe(o.date);
+          if (!occDate) return false;
+          return isSameWeek(occDate, weekStart, { weekStartsOn: 1 });
         }
         // Fallback legacy
         const weekNum = getISOWeek(weekStart);
@@ -134,36 +208,41 @@ const WorkloadHeatmapView = () => {
         return o.week === weekNum && o.year === year;
       })
       .reduce((sum, o) => {
-        let baseHours = parseFloat(o.hoursWorked || o.hours || o.productionHours || 0);
+        let baseHours = toNumber(o.hoursWorked || o.hours || o.productionHours || 0);
         if (!baseHours || baseHours === 8) baseHours = 7;
         return sum + (baseHours * 0.85);
       }, 0);
 
     // Get demand (planning)
     const demand = planning
-      .filter(p => {
+      .filter((p) => {
         if (p.machine !== machine || !p.plannedDate) return false;
-        const planDate = new Date(p.plannedDate.seconds * 1000);
+        const planDate = toDateSafe(p.plannedDate);
+        if (!planDate) return false;
         return isSameWeek(planDate, weekStart, { weekStartsOn: 1 });
       })
-      .reduce((sum, p) => sum + (p.estimatedHours || p.plan / 10 || 0), 0);
+      .reduce((sum, p) => sum + (toNumber(p.estimatedHours) || toNumber(p.plan) / 10 || 0), 0);
 
     return { capacity, demand, utilization: capacity > 0 ? (demand / capacity) * 100 : 0 };
   };
 
-  const handleCellClick = (machine, week) => {
+  const handleCellClick = (machine: string, week: Date) => {
     // Filter occupancy details
-    const cellOccupancy = occupancy.filter(o => {
+    const cellOccupancy = occupancy.filter((o) => {
       const occMachine = o.machine || o.machineName || o.machineId;
       if (occMachine !== machine) return false;
-      if (o.date) return isSameWeek(new Date(o.date), week, { weekStartsOn: 1 });
+      if (o.date) {
+        const occDate = toDateSafe(o.date);
+        return occDate ? isSameWeek(occDate, week, { weekStartsOn: 1 }) : false;
+      }
       return false;
     });
 
     // Filter planning details
-    const cellPlanning = planning.filter(p => {
+    const cellPlanning = planning.filter((p) => {
       if (p.machine !== machine || !p.plannedDate) return false;
-      const planDate = new Date(p.plannedDate.seconds * 1000);
+      const planDate = toDateSafe(p.plannedDate);
+      if (!planDate) return false;
       return isSameWeek(planDate, week, { weekStartsOn: 1 });
     });
 
@@ -176,7 +255,7 @@ const WorkloadHeatmapView = () => {
   };
 
   // Get color based on utilization %
-  const getHeatmapColor = (utilization) => {
+  const getHeatmapColor = (utilization: number) => {
     if (utilization === 0) return "bg-slate-100 text-slate-400";
     if (utilization < 50) return "bg-emerald-200 text-emerald-800";
     if (utilization < 75) return "bg-green-300 text-green-900";
@@ -186,7 +265,7 @@ const WorkloadHeatmapView = () => {
   };
 
   // Get status icon
-  const getStatusIcon = (utilization) => {
+  const getStatusIcon = (utilization: number) => {
     if (utilization < 75) return <CheckCircle size={16} className="opacity-70" />;
     if (utilization < 110) return <TrendingUp size={16} className="opacity-70" />;
     return <AlertTriangle size={16} />;
@@ -323,7 +402,7 @@ const WorkloadHeatmapView = () => {
                   {weeks.map((week, weekIdx) => {
                     const workload = getMachineWorkload(machine, week);
                     // Station specifieke kleur/icon
-                    const stationStyle = stationStyles[machine] || {};
+                    const stationStyle: Partial<StationStyle> = stationStyles[machine] || {};
                     const color = stationStyle.color || getHeatmapColor(workload.utilization);
                     const icon = stationStyle.icon || getStatusIcon(workload.utilization);
 
@@ -374,7 +453,7 @@ const WorkloadHeatmapView = () => {
             { range: "75-90%", label: "Hoge bezetting", color: "bg-yellow-300 text-yellow-900" },
             { range: "90-110%", label: "Bijna vol", color: "bg-orange-400 text-orange-900" },
             { range: "> 110%", label: "Overbelast", color: "bg-red-500 text-white" }
-          ].map(item => (
+          ].map((item) => (
             <div key={item.range} className="flex items-center gap-2">
               <div className={`w-12 h-6 ${item.color} rounded text-xs font-bold flex items-center justify-center`}>
                 {item.range}
@@ -410,7 +489,7 @@ const WorkloadHeatmapView = () => {
           },
           {
             label: "Overbelaste Machines",
-            value: machines.filter(m => {
+            value: machines.filter((m) => {
               const avgUtil = weeks.reduce((sum, w) => {
                 const wl = getMachineWorkload(m, w);
                 return sum + wl.utilization;
@@ -422,7 +501,7 @@ const WorkloadHeatmapView = () => {
           },
           {
             label: "Gezonde Bezetting",
-            value: machines.filter(m => {
+            value: machines.filter((m) => {
               const avgUtil = weeks.reduce((sum, w) => {
                 const wl = getMachineWorkload(m, w);
                 return sum + wl.utilization;
@@ -473,7 +552,7 @@ const WorkloadHeatmapView = () => {
                   <h4 className="text-sm font-black text-emerald-600 uppercase tracking-widest mb-4 flex items-center gap-2">
                     <Users size={18} /> Capaciteit ({
                       Math.round(selectedCell.occupancy.reduce((sum, o) => {
-                        let baseHours = parseFloat(o.hoursWorked || o.hours || 0);
+                        let baseHours = toNumber(o.hoursWorked || o.hours || 0);
                         if (!baseHours || baseHours === 8) baseHours = 7;
                         return sum + (baseHours * 0.85);
                       }, 0) * 10) / 10
@@ -491,12 +570,12 @@ const WorkloadHeatmapView = () => {
                           </div>
                           <div className="font-black text-emerald-700 text-right">
                             {(() => {
-                              let base = parseFloat(occ.hoursWorked || occ.hours || 0);
+                              let base = toNumber(occ.hoursWorked || occ.hours || 0);
                               if (!base || base === 8) base = 7;
                               return (Math.round(base * 0.85 * 10) / 10);
                             })()}u
                             <div className="text-[9px] text-emerald-500 font-normal">
-                              ({parseFloat(occ.hoursWorked || occ.hours || 8)}u bruto)
+                              ({toNumber(occ.hoursWorked || occ.hours || 8)}u bruto)
                             </div>
                           </div>
                         </div>
@@ -508,7 +587,7 @@ const WorkloadHeatmapView = () => {
                 {/* Demand Column */}
                 <div>
                   <h4 className="text-sm font-black text-blue-600 uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <TrendingUp size={18} /> Vraag ({Math.round(selectedCell.planning.reduce((sum, p) => sum + (p.estimatedHours || 0), 0))}u)
+                    <TrendingUp size={18} /> Vraag ({Math.round(selectedCell.planning.reduce((sum, p) => sum + toNumber(p.estimatedHours || 0), 0))}u)
                   </h4>
                   <div className="space-y-3">
                     {selectedCell.planning.length === 0 ? (
@@ -518,7 +597,7 @@ const WorkloadHeatmapView = () => {
                         <div key={idx} className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">
                           <div className="flex justify-between items-start mb-1">
                             <div className="font-bold text-slate-700 text-sm">{order.orderId || order.item}</div>
-                            <div className="font-black text-blue-700">{Math.round(order.estimatedHours || 0)}u</div>
+                            <div className="font-black text-blue-700">{Math.round(toNumber(order.estimatedHours || 0))}u</div>
                           </div>
                           <div className="text-xs text-slate-500 truncate">{order.itemCode}</div>
                           <div className="flex justify-between items-center mt-2">

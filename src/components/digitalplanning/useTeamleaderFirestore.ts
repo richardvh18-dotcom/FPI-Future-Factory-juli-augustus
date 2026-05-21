@@ -3,7 +3,7 @@ import { collection, collectionGroup, query, onSnapshot, doc, where } from "fire
 import { getAuth } from "firebase/auth";
 import { db } from "../../config/firebase";
 import { subDays } from "date-fns";
-import { PATHS, getArchiveItemsPath, getArchiveRejectedItemsPath } from "../../config/dbPaths";
+import { PATHS, getArchiveItemsPath, getArchiveRejectedItemsPath, getPathString } from "../../config/dbPaths";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 import { normalizeMachine } from "../../utils/hubHelpers";
 
@@ -34,6 +34,26 @@ type FirestoreTrackedProduct = {
 
 type FactoryConfig = Record<string, unknown> | null;
 
+type AnyRecord = Record<string, any>;
+
+const toMillisSafe = (value: unknown): number => {
+  if (!value) return 0;
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string") {
+    const ms = new Date(value).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  if (typeof value === "object") {
+    const maybeToMillis = (value as { toMillis?: () => number }).toMillis;
+    if (typeof maybeToMillis === "function") {
+      const ms = maybeToMillis();
+      return Number.isFinite(ms) ? ms : 0;
+    }
+  }
+  return 0;
+};
+
 /**
  * useTeamleaderFirestore
  *
@@ -56,7 +76,7 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
     if (!user) return;
 
     let isMounted = true;
-    const unsubs = [];
+    const unsubs: Array<() => void> = [];
     let loadedCount = 0;
 
     const markStreamReady = () => {
@@ -124,7 +144,7 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
       };
 
       const unsubRootOrders = onSnapshot(
-        collection(db, ...PATHS.PLANNING),
+        collection(db, getPathString(PATHS.PLANNING)),
         (snap) => {
           rootOrders = snap.docs
             .map(mapOrderDoc)
@@ -132,10 +152,10 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
           mergeOrders();
           markStreamReady();
         },
-        (err: { code?: string }) => {
+        (err: unknown) => {
           if (!isMounted) return;
           console.error("Planning Root Sync Error:", err);
-          setDbError(err.code || "permission-denied");
+          setDbError((err as { code?: string })?.code || "permission-denied");
           markStreamReady();
         }
       );
@@ -168,13 +188,14 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
       // LISTENER 2: Products
       const unsubProds = subscribeTrackedProducts({
         db,
-        onData: (items: FirestoreTrackedProduct[]) => {
+        onData: (items: AnyRecord[]) => {
           if (!isMounted) return;
-          setRawProducts(items);
+          setRawProducts(items as FirestoreTrackedProduct[]);
         },
-        onError: (err: { code?: string }) => {
-          if (err.code === "permission-denied") return;
-          console.warn("Tracked Products Sync Error:", err.code);
+        onError: (err: unknown) => {
+          const code = (err as { code?: string })?.code;
+          if (code === "permission-denied") return;
+          console.warn("Tracked Products Sync Error:", code);
           markStreamReady();
         },
       });
@@ -183,7 +204,7 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
 
       // LISTENER 3: Occupancy
       const unsubOcc = onSnapshot(
-        collection(db, ...PATHS.OCCUPANCY),
+        collection(db, getPathString(PATHS.OCCUPANCY)),
         (snap) => {
           isMounted && setBezetting(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         },
@@ -196,7 +217,7 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
 
       // LISTENER 4: Factory Config
       const unsubConfig = onSnapshot(
-        doc(db, ...PATHS.FACTORY_CONFIG),
+        doc(db, getPathString(PATHS.FACTORY_CONFIG)),
         (snap) => {
           if (isMounted && snap.exists()) setFactoryConfig(snap.data());
         },
@@ -218,13 +239,11 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
           .sort((a, b) => {
             const aMs =
               a?.timestamps?.finished?.toMillis?.() ||
-              a?.updatedAt?.toMillis?.() ||
-              new Date(a?.updatedAt || 0).getTime() ||
+              toMillisSafe(a?.updatedAt) ||
               0;
             const bMs =
               b?.timestamps?.finished?.toMillis?.() ||
-              b?.updatedAt?.toMillis?.() ||
-              new Date(b?.updatedAt || 0).getTime() ||
+              toMillisSafe(b?.updatedAt) ||
               0;
             return bMs - aMs;
           });
@@ -235,7 +254,7 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
       [now.getFullYear(), now.getFullYear() - 1].forEach((historyYear) => {
         const unsubArchiveYear = onSnapshot(
           query(
-            collection(db, ...getArchiveItemsPath(historyYear)),
+            collection(db, getPathString(getArchiveItemsPath(historyYear))),
             where("timestamps.finished", ">=", minArchiveDate)
           ),
           (snap) => {
@@ -255,7 +274,7 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
         unsubs.push(unsubArchiveYear);
 
         const unsubRejectedYear = onSnapshot(
-          collection(db, ...getArchiveRejectedItemsPath(historyYear)),
+          collection(db, getPathString(getArchiveRejectedItemsPath(historyYear))),
           (snap) => {
             if (!isMounted) return;
             const items = snap.docs.map((d) => ({

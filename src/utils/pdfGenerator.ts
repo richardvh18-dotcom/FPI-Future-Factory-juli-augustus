@@ -174,12 +174,12 @@ export const generateProductPDF = async (product: ProductRecord, role = "operato
     ]],
     body: tableData,
     theme: "grid",
-    headStyles: { fill: headerColor, fontStyle: "bold" },
+    headStyles: { fillColor: headerColor as any, fontStyle: "bold" },
     styles: { font: "helvetica", fontSize: 10, cellPadding: 4 },
     columnStyles: {
-      0: { fontStyle: "bold", width: 40 },
-      1: { width: 60 },
-      2: { italic: true, textColor: [150, 150, 150] },
+      0: { fontStyle: "bold", cellWidth: 40 },
+      1: { cellWidth: 60 },
+      2: { fontStyle: "italic", textColor: [150, 150, 150] },
     },
   });
 

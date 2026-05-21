@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { serverTimestamp, addDoc, collection } from "firebase/firestore";
 import { db, auth, logActivity } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
+import { PATHS, getPathString } from "../../../config/dbPaths";
 import { REJECTION_REASONS } from "../../../utils/workstationLogic";
 import { useNotifications } from "../../../contexts/NotificationContext";
 import { useTranslation } from "react-i18next";
@@ -85,7 +85,7 @@ const PostProcessingFinishModal = ({
     // Stuur notificatie naar teamleider bij afkeur
     if (status === "rejected" || status === "temp_reject") {
       try {
-        await addDoc(collection(db, ...PATHS.MESSAGES), {
+        await addDoc(collection(db, getPathString(PATHS.MESSAGES)), {
           to: "FITTINGS_TEAM",
           subject: status === "rejected" ? "Definitieve Afkeur Melding" : "Tijdelijke Afkeur Melding",
           content: `Product ${product?.lotNumber} is ${status === "rejected" ? "afgekeurd" : "tijdelijk afgekeurd"} op station ${currentStation}. Reden: ${selectedReasons.map((r) => getReasonLabel(r)).join(", ")}`,

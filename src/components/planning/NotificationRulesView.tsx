@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect } from "react";
 import { 
   Bell, 
@@ -11,8 +10,10 @@ import {
 } from "lucide-react";
 import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { useNotifications } from "../../contexts/NotificationContext";
+
+type AnyRecord = Record<string, any>;
 
 /**
  * NotificationRulesView - Configure automated notifications
@@ -20,10 +21,10 @@ import { useNotifications } from "../../contexts/NotificationContext";
  */
 const NotificationRulesView = () => {
   const { showConfirm , notify} = useNotifications();
-  const [rules, setRules] = useState([]);
-  const [notifications, setNotifications] = useState([]);
-  const [occupancy, setOccupancy] = useState([]);
-  const [planning, setPlanning] = useState([]);
+  const [rules, setRules] = useState<AnyRecord[]>([]);
+  const [notifications, setNotifications] = useState<AnyRecord[]>([]);
+  const [occupancy, setOccupancy] = useState<AnyRecord[]>([]);
+  const [planning, setPlanning] = useState<AnyRecord[]>([]);
   const [showAddRule, setShowAddRule] = useState(false);
   const [newRule, setNewRule] = useState({
     name: "",
@@ -36,11 +37,11 @@ const NotificationRulesView = () => {
   useEffect(() => {
     // Load notification rules
     const unsubRules = onSnapshot(
-      collection(db, ...PATHS.NOTIFICATION_RULES),
+      collection(db, getPathString(PATHS.NOTIFICATION_RULES)),
       (snapshot) => {
-        const rulesData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const rulesData = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data()
         }));
         setRules(rulesData);
       }
@@ -48,11 +49,11 @@ const NotificationRulesView = () => {
 
     // Load recent notifications
     const unsubNotifications = onSnapshot(
-      collection(db, ...PATHS.NOTIFICATION_LOGS),
+      collection(db, getPathString(PATHS.NOTIFICATION_LOGS)),
       (snapshot) => {
-        const notifData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const notifData = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data()
         }));
         setNotifications(notifData.slice(0, 50)); // Last 50
       }
@@ -60,17 +61,17 @@ const NotificationRulesView = () => {
 
     // Load occupancy for monitoring
     const unsubOccupancy = onSnapshot(
-      collection(db, ...PATHS.OCCUPANCY),
+      collection(db, getPathString(PATHS.OCCUPANCY)),
       (snapshot) => {
-        setOccupancy(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setOccupancy(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
       }
     );
 
     // Load planning for monitoring
     const unsubPlanning = onSnapshot(
-      collection(db, ...PATHS.PLANNING),
+      collection(db, getPathString(PATHS.PLANNING)),
       (snapshot) => {
-        setPlanning(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setPlanning(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })));
       }
     );
 
@@ -86,7 +87,7 @@ const NotificationRulesView = () => {
   useEffect(() => {
     if (rules.length === 0) return;
 
-    rules.forEach(rule => {
+    rules.forEach((rule: AnyRecord) => {
       if (!rule.enabled) return;
 
       checkRule(rule);
@@ -94,7 +95,7 @@ const NotificationRulesView = () => {
   }, [occupancy, planning, rules]);
 
   // Check if rule conditions are met
-  const checkRule = async (rule) => {
+  const checkRule = async (rule: AnyRecord) => {
     let shouldTrigger = false;
     let message = "";
     let severity = "info";
@@ -132,7 +133,7 @@ const NotificationRulesView = () => {
       case "order_delay": {
         // Check for orders past planned date
         const now = new Date();
-        const delayedOrders = planning.filter(p => {
+        const delayedOrders = planning.filter((p: AnyRecord) => {
           if (!p.plannedDate || p.status === "shipped") return false;
           const planDate = new Date(p.plannedDate.seconds * 1000);
           return planDate < now;
@@ -148,7 +149,7 @@ const NotificationRulesView = () => {
 
       case "missing_operator": {
         // Check for machines without operators
-        const machinesWithoutOperators = occupancy.filter(o => 
+        const machinesWithoutOperators = occupancy.filter((o: AnyRecord) => 
           !o.operatorName || o.operatorName === ""
         );
 
@@ -162,10 +163,10 @@ const NotificationRulesView = () => {
 
       case "dependency_blocked": {
         // Check for orders blocked by dependencies
-        const blockedOrders = planning.filter(p => {
+        const blockedOrders = planning.filter((p: AnyRecord) => {
           if (!p.dependencies || p.dependencies.length === 0) return false;
-          const allDepsComplete = p.dependencies.every(depId => {
-            const dep = planning.find(o => o.id === depId);
+          const allDepsComplete = p.dependencies.every((depId: string) => {
+            const dep = planning.find((o: AnyRecord) => o.id === depId);
             return dep && dep.status === "shipped";
           });
           return !allDepsComplete && p.status !== "shipped";
@@ -182,7 +183,7 @@ const NotificationRulesView = () => {
 
     if (shouldTrigger) {
       // Check if we already sent this notification recently (debounce)
-      const recentSimilar = notifications.find(n => 
+      const recentSimilar = notifications.find((n: AnyRecord) => 
         n.ruleId === rule.id && 
         n.createdAt && 
         (Date.now() - new Date(n.createdAt.seconds * 1000).getTime()) < 3600000 // 1 hour
@@ -201,15 +202,15 @@ const NotificationRulesView = () => {
   };
 
   // Send notification
-  const sendNotification = async (notification) => {
-    await addDoc(collection(db, ...PATHS.NOTIFICATION_LOGS), {
+  const sendNotification = async (notification: AnyRecord) => {
+    await addDoc(collection(db, getPathString(PATHS.NOTIFICATION_LOGS)), {
       ...notification,
       createdAt: serverTimestamp(),
       read: false
     });
 
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "NOTIFICATION_CREATE",
       `Automatische notificatie aangemaakt via regel ${notification.ruleName || notification.ruleId || "onbekend"}`
     );
@@ -222,13 +223,13 @@ const NotificationRulesView = () => {
       return;
     }
 
-    await addDoc(collection(db, ...PATHS.NOTIFICATION_RULES), {
+    await addDoc(collection(db, getPathString(PATHS.NOTIFICATION_RULES)), {
       ...newRule,
       createdAt: serverTimestamp()
     });
 
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "NOTIFICATION_RULE_CREATE",
       `Notificatieregel aangemaakt: ${newRule.name} (${newRule.trigger})`
     );
@@ -244,7 +245,7 @@ const NotificationRulesView = () => {
   };
 
   // Delete rule
-  const deleteRule = async (ruleId) => {
+  const deleteRule = async (ruleId: string) => {
     const confirmed = await showConfirm({
       title: "Notificatieregel verwijderen",
       message: "Weet je zeker dat je deze regel wilt verwijderen?",
@@ -254,42 +255,42 @@ const NotificationRulesView = () => {
     });
     if (!confirmed) return;
 
-    await deleteDoc(doc(db, ...PATHS.NOTIFICATION_RULES, ruleId));
+    await deleteDoc(doc(db, `${getPathString(PATHS.NOTIFICATION_RULES)}/${ruleId}`));
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "NOTIFICATION_RULE_DELETE",
       `Notificatieregel verwijderd: ${ruleId}`
     );
   };
 
   // Toggle rule
-  const toggleRule = async (ruleId, currentState) => {
-    await updateDoc(doc(db, ...PATHS.NOTIFICATION_RULES, ruleId), {
+  const toggleRule = async (ruleId: string, currentState: boolean) => {
+    await updateDoc(doc(db, `${getPathString(PATHS.NOTIFICATION_RULES)}/${ruleId}`), {
       enabled: !currentState
     });
 
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "NOTIFICATION_RULE_TOGGLE",
       `Notificatieregel ${ruleId} ${!currentState ? "ingeschakeld" : "uitgeschakeld"}`
     );
   };
 
   // Mark notification as read
-  const markAsRead = async (notifId) => {
-    await updateDoc(doc(db, ...PATHS.NOTIFICATION_LOGS, notifId), {
+  const markAsRead = async (notifId: string) => {
+    await updateDoc(doc(db, `${getPathString(PATHS.NOTIFICATION_LOGS)}/${notifId}`), {
       read: true
     });
 
     await logActivity(
-      auth.currentUser?.uid,
+      auth.currentUser?.uid || "system",
       "NOTIFICATION_READ",
       `Notificatie gemarkeerd als gelezen: ${notifId}`
     );
   };
 
-  const getTriggerLabel = (trigger) => {
-    const labels = {
+  const getTriggerLabel = (trigger: string) => {
+    const labels: Record<string, string> = {
       capacity_shortage: "Capaciteitstekort",
       low_efficiency: "Lage Efficiency",
       order_delay: "Order Vertraging",
@@ -299,8 +300,8 @@ const NotificationRulesView = () => {
     return labels[trigger] || trigger;
   };
 
-  const getSeverityColor = (severity) => {
-    const colors = {
+  const getSeverityColor = (severity: string) => {
+    const colors: Record<string, string> = {
       info: "bg-blue-50 border-blue-200 text-blue-800",
       warning: "bg-amber-50 border-amber-200 text-amber-800",
       critical: "bg-red-50 border-red-200 text-red-800"

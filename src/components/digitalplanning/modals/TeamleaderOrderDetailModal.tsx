@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo } from "react";
 import {
   X,
@@ -20,8 +19,8 @@ import {
 } from "lucide-react";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db, auth, logActivity } from "../../../config/firebase";
-import { PATHS, getArchiveItemsPath } from "../../../config/dbPaths";
-import { FITTING_MACHINES, PIPE_MACHINES } from "../../../utils/hubHelpers.tsx";
+import { PATHS, getArchiveItemsPath, getPathString } from "../../../config/dbPaths";
+import { FITTING_MACHINES, PIPE_MACHINES } from "../../../utils/hubHelpers";
 import { useAdminAuth } from "../../../hooks/useAdminAuth";
 import { formatDateTimeSafe } from "../../../utils/dateUtils";
 import { resolvePostLossenStation } from "../../../utils/workstationLogic";
@@ -33,14 +32,21 @@ import {
 import StatusBadge from '../common/StatusBadge';
 import CancelOrderModal from "./CancelOrderModal";
 
-const getAppId = () => {
+type AnyRecord = Record<string, any>;
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  return String(error);
+};
+
+const getAppId = (): string => {
   if (typeof window !== "undefined" && window.__app_id) return window.__app_id;
   return "fittings-app-v1";
 };
 
 // Helper voor datum weergave
-const formatDate = (timestamp) => {
-  return formatDateTimeSafe(timestamp, "nl-NL", {
+const formatDate = (timestamp: unknown): string => {
+  return formatDateTimeSafe(timestamp as any, "nl-NL", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -49,8 +55,13 @@ const formatDate = (timestamp) => {
   });
 };
 
-const TeamleaderOrderDetailModal = ({ order, onClose }) => {
-  const [units, setUnits] = useState([]);
+type TeamleaderOrderDetailModalProps = {
+  order: AnyRecord;
+  onClose: () => void;
+};
+
+const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailModalProps) => {
+  const [units, setUnits] = useState<AnyRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showOnlyRejects, setShowOnlyRejects] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -58,11 +69,11 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
   const { role } = useAdminAuth();
 
   // Alleen Admins en Teamleiders mogen prioriteit aanpassen (Planners niet)
-  const canEditPriority = ["admin", "teamleader"].includes(role);
+  const canEditPriority = ["admin", "teamleader"].includes(String(role || "").toLowerCase());
 
   // Bepaal materiaal type voor badges
-  const getMaterialInfo = (itemString) => {
-    const upperItem = (itemString || "").toUpperCase();
+  const getMaterialInfo = (itemString: unknown) => {
+    const upperItem = String(itemString || "").toUpperCase();
     if (upperItem.includes("CST")) return { type: "CST", icon: <Zap size={14} />, color: "orange" };
     if (upperItem.includes("EWT")) return { type: "EWT", icon: <Droplets size={14} />, color: "cyan" };
     return { type: "EST", icon: null, color: "slate" };
@@ -115,7 +126,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
     return Math.max(orderProduced, completedUnits);
   }, [order?.produced, completedUnits]);
 
-  const handleToggleSyncExclusion = async (exclude) => {
+  const handleToggleSyncExclusion = async (exclude: boolean) => {
     const orderDocId = order.__docPath || order.id;
     if (!orderDocId) return;
 
@@ -127,16 +138,16 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
           smartSyncIncluded: !exclude
         },
         source: "TeamleaderOrderDetailModal",
-        actorLabel: auth.currentUser?.email,
+        actorLabel: auth.currentUser?.email || "system",
       });
 
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "ORDER_SYNC_TOGGLE",
         `Order ${order.orderId} sync status gewijzigd naar: ${exclude ? "Uitgesloten" : "Opgenomen"}`
       );
-    } catch (e) {
-      console.error("Fout bij wijzigen sync status:", e);
+    } catch (e: unknown) {
+      console.error("Fout bij wijzigen sync status:", getErrorMessage(e));
     }
   };
 
@@ -148,16 +159,16 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
       const orderId = order.orderId;
       const currentYear = new Date().getFullYear();
       const years = [currentYear, currentYear - 1];
-      const collected = [];
+      const collected: AnyRecord[] = [];
 
       // 1. Actieve root-items (future-factory/production/tracked_products)
       try {
         const snap = await getDocs(
-          query(collection(db, ...PATHS.TRACKING), where("orderId", "==", orderId))
+          query(collection(db, getPathString(PATHS.TRACKING as string[])), where("orderId", "==", orderId))
         );
-        snap.docs.forEach(doc => collected.push({ id: doc.id, ...doc.data() }));
-      } catch (err) {
-        console.warn("fetchUnits: root query mislukt:", err.code || err.message);
+        snap.docs.forEach((docSnap) => collected.push({ id: docSnap.id, ...docSnap.data() }));
+      } catch (err: unknown) {
+        console.warn("fetchUnits: root query mislukt:", getErrorMessage(err));
       }
 
       // 2. Actieve scoped items via bekende machine-paden
@@ -165,19 +176,19 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
         { dept: "Fittings", machines: FITTING_MACHINES },
         { dept: "Pipes",    machines: PIPE_MACHINES },
       ];
-      const toScopedMachine = (m) => {
+      const toScopedMachine = (m: unknown) => {
         const n = String(m).trim().toUpperCase();
         return /^(BH|BM|BA)\d+$/.test(n) ? `40${n}` : n;
       };
       const scopedQueries = DEPT_MACHINE_MAP.flatMap(({ dept, machines }) =>
-        machines.map(machine => {
+        machines.map((machine) => {
           const scopedMachine = toScopedMachine(machine);
           return getDocs(
             query(
-              collection(db, ...PATHS.TRACKING, dept, "machines", scopedMachine, "items"),
+              collection(db, `${getPathString(PATHS.TRACKING as string[])}/${dept}/machines/${scopedMachine}/items`),
               where("orderId", "==", orderId)
             )
-          ).then(snap => snap.docs.forEach(doc => collected.push({ id: doc.id, ...doc.data() })))
+          ).then((snap) => snap.docs.forEach((docSnap) => collected.push({ id: docSnap.id, ...docSnap.data() })))
            .catch(() => {}); // stille fout per machine pad
         })
       );
@@ -187,22 +198,22 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
       for (const year of years) {
         try {
           const snap = await getDocs(
-            query(collection(db, ...getArchiveItemsPath(year)), where("orderId", "==", orderId))
+            query(collection(db, getPathString(getArchiveItemsPath(year))), where("orderId", "==", orderId))
           );
-          snap.docs.forEach(doc => collected.push({ id: doc.id, ...doc.data(), _archived: true }));
-        } catch (err) {
-          console.warn(`fetchUnits: archief ${year} query mislukt:`, err.code || err.message);
+          snap.docs.forEach((docSnap) => collected.push({ id: docSnap.id, ...docSnap.data(), _archived: true }));
+        } catch (err: unknown) {
+          console.warn(`fetchUnits: archief ${year} query mislukt:`, getErrorMessage(err));
         }
       }
 
       // Dedupliceren op id, sorteren op lotnummer
       const seen = new Set();
-      const allUnits = collected.filter(u => {
+      const allUnits = collected.filter((u: AnyRecord) => {
         if (seen.has(u.id)) return false;
         seen.add(u.id);
         return true;
       });
-      allUnits.sort((a, b) => String(a.lotNumber || "").localeCompare(String(b.lotNumber || "")));
+      allUnits.sort((a: AnyRecord, b: AnyRecord) => String(a.lotNumber || "").localeCompare(String(b.lotNumber || "")));
       setUnits(allUnits);
       setLoading(false);
     };
@@ -210,7 +221,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
     fetchUnits();
   }, [order]);
 
-  const handleSetPriority = async (level) => {
+  const handleSetPriority = async (level: string) => {
     const orderDocId = order.__docPath || order.id;
     if (!orderDocId) return;
     // Toggle logic: als huidige priority gelijk is aan gekozen level, zet uit (false)
@@ -222,33 +233,33 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
         orderDocId,
         priority: newPriority,
         source: "TeamleaderOrderDetailModal",
-        actorLabel: auth.currentUser?.email,
+        actorLabel: auth.currentUser?.email || "system",
       });
-    } catch (e) {
-      console.error("Fout bij wijzigen prioriteit:", e);
+    } catch (e: unknown) {
+      console.error("Fout bij wijzigen prioriteit:", getErrorMessage(e));
     }
   };
 
-  const handleCancelOrder = async (reason) => {
+  const handleCancelOrder = async (reason: string) => {
     const orderDocId = order.__docPath || order.id;
     try {
       await cancelPlanningOrder({
         orderDocId,
         reason,
         source: "TeamleaderOrderDetailModal",
-        actorLabel: auth.currentUser?.email,
+        actorLabel: auth.currentUser?.email || "system",
       });
 
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "ORDER_CANCELLED", 
         `Order ${order.orderId} geannuleerd. Reden: ${reason}`
       );
 
       setShowCancelModal(false);
       onClose();
-    } catch (error) {
-      console.error("Fout bij annuleren:", error);
+    } catch (error: unknown) {
+      console.error("Fout bij annuleren:", getErrorMessage(error));
     }
   };
 
@@ -520,7 +531,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
                   <tbody className="divide-y divide-gray-100 bg-white">
                     {units.filter(u => !showOnlyRejects || ['rejected', 'Rejected'].includes(u.status)).length === 0 && showOnlyRejects && (
                       <tr>
-                        <td colSpan="5" className="p-8 text-center text-slate-400 text-xs italic">
+                        <td colSpan={5} className="p-8 text-center text-slate-400 text-xs italic">
                           Geen afgekeurde producten gevonden in deze order.
                         </td>
                       </tr>
@@ -574,7 +585,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
         {/* Footer Actions */}
         <div className="bg-gray-50 p-4 border-t border-gray-200 flex justify-end gap-3 shrink-0">
           {/* Cancel Button - Alleen voor bevoegde rollen */}
-          {['admin', 'teamleader', 'planner'].includes(role) && (
+          {['admin', 'teamleader', 'planner'].includes(String(role || '').toLowerCase()) && (
              <button
                onClick={() => setShowCancelModal(true)}
                className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 rounded-lg font-bold text-sm transition-colors mr-auto"
@@ -594,7 +605,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }) => {
             isOpen={showCancelModal}
             onClose={() => setShowCancelModal(false)}
             onConfirm={handleCancelOrder}
-            orderId={order?.orderId}
+            orderId={String(order?.orderId || "")}
         />
       </div>
     </div>

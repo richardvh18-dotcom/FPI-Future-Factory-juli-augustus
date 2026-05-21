@@ -7,7 +7,7 @@
  *
  * Ondersteunde modellen:
  *  - zebra-zm400-203  : Zebra ZM400 203 DPI (8 dots/mm)
- *  - zebra-zm400-300  : Zebra ZM400 300 DPI (12 dots/mm)  ← standaard
+ *  - zebra-zm400-300  : Zebra ZM400 300 DPI (12 dots/mm)
  *  - zebra-epl2-203   : Zebra EPL2 Label Printer 203 DPI
  *  - lighthouse-cjpro2: Lighthouse CJ-PRO II 300 DPI, TSPL/Windows-driver
  */
@@ -98,7 +98,7 @@ export const PRINTER_DRIVERS: Record<string, PrinterDriver> = {
 };
 
 /** Standaard driver als geen profiel beschikbaar is. */
-export const DEFAULT_DRIVER_ID = 'zebra-zm400-300';
+export const DEFAULT_DRIVER_ID = 'zebra-zm400-203';
 
 const isDriverId = (value: unknown): value is keyof typeof PRINTER_DRIVERS =>
   typeof value === 'string' && value in PRINTER_DRIVERS;
@@ -141,9 +141,12 @@ export const getDriver = (printerProfile: PrinterProfile | null): PrinterDriver 
   }
   if (hint.includes('ZM400') || hint.includes('ZEBRA')) {
     const dpi = Number.parseInt(String(printerProfile.dpi ?? ''), 10);
+    // ZM400 in productie is standaard 203 DPI tenzij expliciet 300 is opgeslagen.
     return dpi === 203
       ? PRINTER_DRIVERS['zebra-zm400-203']
-      : PRINTER_DRIVERS['zebra-zm400-300'];
+      : dpi === 300
+        ? PRINTER_DRIVERS['zebra-zm400-300']
+        : PRINTER_DRIVERS['zebra-zm400-203'];
   }
 
   // 3. Numerieke DPI als fallback (onbekend merk)

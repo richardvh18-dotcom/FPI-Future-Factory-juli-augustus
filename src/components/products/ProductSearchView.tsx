@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useMemo, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { useProductsData } from "../../hooks/useProductsData";
 import ProductFilterSidebar from "./ProductFilterSidebar";
@@ -7,8 +6,34 @@ import ProductDetailModal from "./ProductDetailModal";
 import { Search, ChevronDown, Layers, Box, Filter } from "lucide-react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 
+type ProductRecord = {
+  id?: string;
+  productCode?: string;
+  type?: string;
+  description?: string;
+  diameter?: string | number;
+  pressure?: string | number;
+  connection?: string;
+  angle?: string | number;
+  radius?: string | number;
+  boring?: string;
+  productLabel?: string;
+  [key: string]: unknown;
+};
+
+type ProductFilters = {
+  type: string;
+  diameter: string;
+  pressure: string;
+  connection: string;
+  angle: string;
+  radius: string;
+  boring: string;
+  productLabel: string;
+};
+
 // Simple AutoSizer implementation to avoid external dependency issues
-const AutoSizer = ({ children }) => {
+const AutoSizer = ({ children }: { children: (size: { width: number; height: number }) => React.ReactNode }) => {
   const ref = useRef(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
 
@@ -32,7 +57,15 @@ const AutoSizer = ({ children }) => {
 };
 
 // Simple List implementation to replace react-window and avoid import issues
-const List = forwardRef(({ height, width, itemCount, itemSize, children: Row, itemData }, ref) => {
+type ListProps = {
+  height: number;
+  width: number;
+  itemCount: number;
+  itemSize: (index: number) => number;
+  children: React.FC<any>;
+  itemData: any;
+};
+const List = forwardRef<any, ListProps>(({ height, width, itemCount, itemSize, children: Row, itemData }, ref) => {
   useImperativeHandle(ref, () => ({
     resetAfterIndex: () => {},
     scrollTo: () => {},
@@ -50,15 +83,15 @@ const List = forwardRef(({ height, width, itemCount, itemSize, children: Row, it
   );
 });
 
-const ProductSearchView = ({ showFilters, setShowFilters }) => {
+const ProductSearchView = ({ showFilters, setShowFilters }: { showFilters: boolean; setShowFilters: (v: boolean) => void }) => {
   const { user } = useAdminAuth();
-  const { products, loading, error } = useProductsData(user);
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const { products, loading, error } = useProductsData(user as any);
+  const [selectedProduct, setSelectedProduct] = useState<ProductRecord | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [expandedGroups, setExpandedGroups] = useState({});
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   // Standaard filters
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<ProductFilters>({
     type: "-",
     diameter: "-",
     pressure: "-",
@@ -70,12 +103,12 @@ const ProductSearchView = ({ showFilters, setShowFilters }) => {
   });
 
   // --- 1. Unieke waardes berekenen ---
-  const getUniqueValues = (key) => {
+  const getUniqueValues = (key: string): string[] => {
     if (!products) return [];
-    return products
-      .map((p) => p[key])
-      .filter((v) => v !== undefined && v !== null && v !== "")
-      .filter((value, index, self) => self.indexOf(value) === index)
+    return (products as ProductRecord[])
+      .map((p) => String(p[key] || ""))
+      .filter((v: string) => v !== undefined && v !== null && v !== "")
+      .filter((value: string, index: number, self: string[]) => self.indexOf(value) === index)
       .sort();
   };
 
@@ -104,7 +137,7 @@ const ProductSearchView = ({ showFilters, setShowFilters }) => {
   const filteredProducts = useMemo(() => {
     if (!products) return [];
 
-    return products.filter((product) => {
+    return (products as ProductRecord[]).filter((product) => {
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch =
         !searchTerm ||
@@ -150,8 +183,8 @@ const ProductSearchView = ({ showFilters, setShowFilters }) => {
 
   // --- 3. Groeperings Logica ---
   const groupedProducts = useMemo(() => {
-    const groups = {};
-    filteredProducts.forEach((p) => {
+    const groups: Record<string, ProductRecord[]> = {};
+    filteredProducts.forEach((p: ProductRecord) => {
       const typeStr = p.type || "Overig";
       const angleStr = p.angle ? `${p.angle}°` : "";
       const connStr = p.connection || "";
@@ -168,10 +201,10 @@ const ProductSearchView = ({ showFilters, setShowFilters }) => {
       .reduce((acc, key) => {
         acc[key] = groups[key];
         return acc;
-      }, {});
+      }, {} as Record<string, ProductRecord[]>);
   }, [filteredProducts]);
 
-  const toggleGroup = (groupName) => {
+  const toggleGroup = (groupName: string) => {
     setExpandedGroups((prev) => ({
       ...prev,
       [groupName]: !prev[groupName],
@@ -179,7 +212,15 @@ const ProductSearchView = ({ showFilters, setShowFilters }) => {
   };
 
   // --- 4. Virtualized List Component ---
-  const VirtualizedProductList = ({ width, height, groupedProducts, expandedGroups, toggleGroup, onSelectProduct }) => {
+  type VirtualizedProductListProps = {
+    width: number;
+    height: number;
+    groupedProducts: Record<string, any[]>;
+    expandedGroups: Record<string, boolean>;
+    toggleGroup: (groupName: string) => void;
+    onSelectProduct: (product: ProductRecord) => void;
+  };
+  const VirtualizedProductList = ({ width, height, groupedProducts, expandedGroups, toggleGroup, onSelectProduct }: VirtualizedProductListProps) => {
     const columnCount = useMemo(() => {
       if (width >= 1280) return 5;
       if (width >= 1024) return 4;
@@ -189,7 +230,7 @@ const ProductSearchView = ({ showFilters, setShowFilters }) => {
     }, [width]);
 
     const flattenedItems = useMemo(() => {
-      const items = [];
+      const items: any[] = [];
       Object.entries(groupedProducts).forEach(([groupName, products]) => {
         items.push({ type: 'header', groupName, count: products.length });
         if (expandedGroups[groupName]) {
@@ -205,7 +246,7 @@ const ProductSearchView = ({ showFilters, setShowFilters }) => {
       return items;
     }, [groupedProducts, expandedGroups, columnCount]);
 
-    const listRef = useRef(null);
+    const listRef = useRef<any>(null);
 
     useEffect(() => {
       if (listRef.current) {
@@ -213,12 +254,12 @@ const ProductSearchView = ({ showFilters, setShowFilters }) => {
       }
     }, [flattenedItems]);
 
-    const getItemSize = (index) => {
+    const getItemSize = (index: number) => {
       const item = flattenedItems[index];
       return item.type === 'header' ? 100 : 450;
     };
 
-    const Row = ({ index, style, data }) => {
+    const Row = ({ index, style, data }: { index: number; style: React.CSSProperties; data: any }) => {
       const { items, toggleGroup, expandedGroups, onSelectProduct, columnCount } = data;
       const item = items[index];
 
@@ -275,11 +316,10 @@ const ProductSearchView = ({ showFilters, setShowFilters }) => {
       return (
         <div style={style} className="px-4 md:px-8">
           <div className="grid gap-6" style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))` }}>
-            {item.products.map(product => (
+            {item.products.map((product: ProductRecord) => (
               <ProductCard
                 key={product.id || product.productCode}
                 product={product}
-                onSelect={() => onSelectProduct(product)}
                 onClick={() => onSelectProduct(product)}
               />
             ))}
@@ -337,6 +377,7 @@ const ProductSearchView = ({ showFilters, setShowFilters }) => {
         <ProductDetailModal
           product={selectedProduct}
           onClose={() => setSelectedProduct(null)}
+          userRole={user?.role || 'guest'}
         />
       )}
 

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { 
@@ -12,7 +11,7 @@ import {
 } from "lucide-react";
 import { collection, collectionGroup, onSnapshot, doc } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { updateOrderPlannedDate } from "../../services/planningSecurityService";
 import { 
   format, 
@@ -33,23 +32,32 @@ import { nl } from "date-fns/locale";
 import { getDeliveryPlanningState, resolveDeliveryDate, toDateSafe } from "../../utils/dateUtils";
 import { getOrderFinishedUnits } from "../../utils/planningProgress";
 import { subscribeScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
-import { normalizeMachine } from "../../utils/hubHelpers.tsx";
+import { normalizeMachine } from "../../utils/hubHelpers";
+
+type AnyRecord = Record<string, any>;
+type OrderBar = {
+  order: AnyRecord;
+  style: AnyRecord;
+  leftPx: number;
+  widthPx: number;
+};
+type OrderBarWithLane = OrderBar & { lane: number };
 
 /**
  * GanttChartView - Timeline visualization for order planning
  * Shows orders on a timeline per machine/department
  */
-const GanttChartView = (props = {}) => {
+const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedProducts?: AnyRecord[] | null } = {}) => {
   const {
     planningOrders = null,
     trackedProducts = null,
   } = props || {};
   const { t } = useTranslation();
   const readPaths = PATHS;
-  const [liveOrders, setLiveOrders] = useState([]);
-  const [liveTrackedProducts, setLiveTrackedProducts] = useState([]);
+  const [liveOrders, setLiveOrders] = useState<AnyRecord[]>([]);
+  const [liveTrackedProducts, setLiveTrackedProducts] = useState<AnyRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [efficiencyData, setEfficiencyData] = useState({});
+  const [efficiencyData, setEfficiencyData] = useState<Record<string, AnyRecord>>({});
   const [viewStart, setViewStart] = useState(startOfMonth(new Date()));
   const [viewRange, setViewRange] = useState(30); // days
   const [viewMode, setViewMode] = useState("preset"); // preset | all
@@ -59,16 +67,16 @@ const GanttChartView = (props = {}) => {
   const [selectedStatus, setSelectedStatus] = useState("all");
   const [orderSearchTerm, setOrderSearchTerm] = useState("");
   const [dragUnlocked, setDragUnlocked] = useState(false);
-  const [factoryConfig, setFactoryConfig] = useState(null);
+  const [factoryConfig, setFactoryConfig] = useState<AnyRecord | null>(null);
   const [departments, setDepartments] = useState(["ALLES"]);
-  const [collapsedMachines, setCollapsedMachines] = useState(new Set());
+  const [collapsedMachines, setCollapsedMachines] = useState<Set<string>>(new Set());
   const [expandedLaneMode, setExpandedLaneMode] = useState(false);
-  const [selectedOrderBarId, setSelectedOrderBarId] = useState(null);
-  const [selectedOrderPopup, setSelectedOrderPopup] = useState(null);
-  const timelineScrollRef = useRef(null);
+  const [selectedOrderBarId, setSelectedOrderBarId] = useState<string | null>(null);
+  const [selectedOrderPopup, setSelectedOrderPopup] = useState<AnyRecord | null>(null);
+  const timelineScrollRef = useRef<HTMLDivElement | null>(null);
   const isAutoExtendingRef = useRef(false);
   const pendingPrependOffsetRef = useRef(0);
-  const pendingScrollToDayRef = useRef(null);
+  const pendingScrollToDayRef = useRef<Date | null>(null);
   const headerPanRef = useRef({ active: false, startX: 0, startScrollLeft: 0 });
   const headerPanCooldownUntilRef = useRef(0);
   const edgeExtendLockRef = useRef({ left: false, right: false });
@@ -98,21 +106,21 @@ const GanttChartView = (props = {}) => {
   });
 
   // Helper voor robuuste datum parsing
-  const parseDate = (dateInput) => {
-    return toDateSafe(dateInput);
+  const parseDate = (dateInput: unknown) => {
+    return toDateSafe(dateInput as any);
   };
 
   useEffect(() => {
     if (!readPaths) return;
 
     // Load factory config for departments
-    const docRef = doc(db, ...readPaths.FACTORY_CONFIG);
+    const docRef = doc(db, getPathString(readPaths.FACTORY_CONFIG));
     const unsub = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setFactoryConfig(data);
-        const depts = Array.isArray(data.departments) 
-          ? data.departments.filter(d => d.isActive !== false).map(d => d.name)
+        const depts = Array.isArray(data.departments)
+          ? data.departments.filter((d: AnyRecord) => d.isActive !== false).map((d: AnyRecord) => d.name)
           : [];
         setDepartments(["ALLES", ...depts]);
       }
@@ -128,11 +136,11 @@ const GanttChartView = (props = {}) => {
       return undefined;
     }
 
-    let rootOrders = [];
-    let scopedOrders = [];
+    let rootOrders: AnyRecord[] = [];
+    let scopedOrders: AnyRecord[] = [];
 
     const mergeOrders = () => {
-      const merged = new Map();
+      const merged = new Map<string, AnyRecord>();
       [...rootOrders, ...scopedOrders].forEach((order, idx) => {
         const key = String(order.orderId || order.id || `order-${idx}`).trim();
         if (!key) return;
@@ -143,7 +151,7 @@ const GanttChartView = (props = {}) => {
     };
 
     const unsubRootOrders = onSnapshot(
-      collection(db, ...readPaths.PLANNING),
+      collection(db, getPathString(readPaths.PLANNING)),
       (snapshot) => {
         rootOrders = snapshot.docs.map((docSnap) => ({ id: docSnap.id, __docPath: docSnap.ref.path, ...docSnap.data() }));
         mergeOrders();
@@ -184,11 +192,11 @@ const GanttChartView = (props = {}) => {
   useEffect(() => {
     if (!readPaths || useProvidedTrackedProducts) return undefined;
 
-    let rootTracked = [];
-    let scopedTracked = [];
+    let rootTracked: AnyRecord[] = [];
+    let scopedTracked: AnyRecord[] = [];
 
     const mergeTracked = () => {
-      const merged = new Map();
+      const merged = new Map<string, AnyRecord>();
       [...rootTracked, ...scopedTracked].forEach((row, idx) => {
         const key = String(row.__docPath || row.id || `tracked-${idx}`).trim();
         if (!key) return;
@@ -198,7 +206,7 @@ const GanttChartView = (props = {}) => {
     };
 
     const unsubRootTracking = onSnapshot(
-      collection(db, ...readPaths.TRACKING),
+      collection(db, getPathString(readPaths.TRACKING)),
       (snapshot) => {
         rootTracked = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
@@ -247,9 +255,9 @@ const GanttChartView = (props = {}) => {
     const unsubEfficiency = subscribeScopedEfficiencyHours({
       db,
       mode: "active",
-      onData: (rows) => {
-        const data = {};
-        rows.forEach((row) => {
+      onData: (rows: AnyRecord[]) => {
+        const data: Record<string, AnyRecord> = {};
+        rows.forEach((row: AnyRecord) => {
           const key = String(row.orderId || row.id || "").trim();
           if (!key) return;
           data[key] = row;
@@ -265,7 +273,7 @@ const GanttChartView = (props = {}) => {
   }, [readPaths]);
 
   const machines = useMemo(() => {
-    const uniqueMachines = [...new Set(orders.map((o) => normalizeMachine(o.machine)).filter(Boolean))];
+    const uniqueMachines = [...new Set(orders.map((o: AnyRecord) => normalizeMachine(o.machine)).filter(Boolean))] as string[];
     return uniqueMachines.sort();
   }, [orders]);
 
@@ -274,10 +282,10 @@ const GanttChartView = (props = {}) => {
     let filtered = machines;
 
     if (selectedDepartment !== "ALLES" && factoryConfig) {
-      const dept = factoryConfig.departments.find(d => d.name === selectedDepartment);
+      const dept = factoryConfig.departments.find((d: AnyRecord) => d.name === selectedDepartment);
       if (!dept) return [];
     
-      const deptStationNames = (dept.stations || []).map(s => normalizeMachine(s.name));
+      const deptStationNames = (dept.stations || []).map((s: AnyRecord) => normalizeMachine(s.name));
       filtered = machines.filter(m => deptStationNames.includes(normalizeMachine(m)));
     }
 
@@ -295,20 +303,20 @@ const GanttChartView = (props = {}) => {
     }
   }, [machines, selectedMachine]);
 
-  const normalizeMachineKey = (value) =>
+  const normalizeMachineKey = (value: unknown) =>
     normalizeMachine(value);
 
-  const getOrderIdentity = (order) =>
+  const getOrderIdentity = (order: AnyRecord) =>
     String(order?.orderId || order?.id || "").trim();
 
-  const getOrderBarIdentity = (order) => {
+  const getOrderBarIdentity = (order: AnyRecord) => {
     const idPart = String(order?.id || "").trim();
     const orderPart = String(order?.orderId || "").trim();
     const machinePart = normalizeMachine(order?.machine || "");
     return [idPart, orderPart, machinePart].join("|");
   };
 
-  const getPopupPosition = (clientX, clientY) => {
+  const getPopupPosition = (clientX: number, clientY: number) => {
     const popupWidth = 320;
     const popupHeight = 260;
     const margin = 16;
@@ -321,23 +329,23 @@ const GanttChartView = (props = {}) => {
     };
   };
 
-  const getNumeric = (value) => {
+  const getNumeric = (value: unknown) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
-  const getPlannedUnits = (order) => {
+  const getPlannedUnits = (order: AnyRecord) => {
     return Math.max(
       0,
       getNumeric(order?.plan || order?.plannedQuantity || order?.quantity || order?.qty)
     );
   };
 
-  const getProducedUnits = (order, trackedFinishedCountByOrder) => {
+  const getProducedUnits = (order: AnyRecord, trackedFinishedCountByOrder: Map<string, number>) => {
     return getOrderFinishedUnits(order, { trackedFinishedCountByOrder });
   };
 
-  const hasOrderStartedForPrediction = (order, trackedFinishedCountByOrder) => {
+  const hasOrderStartedForPrediction = (order: AnyRecord, trackedFinishedCountByOrder: Map<string, number>) => {
     const status = String(order?.status || "").toLowerCase();
     const productionStatus =
       status.includes("in_progress") ||
@@ -357,7 +365,7 @@ const GanttChartView = (props = {}) => {
     return productionStatus || hasActualStart || produced > 0 || hasStartedCounter;
   };
 
-  const getDeliveryDay = (order) => {
+  const getDeliveryDay = (order: AnyRecord) => {
     const delivery = resolveDeliveryDate(
       order?.deliveryDate,
       order?.plannedDeliveryDate,
@@ -371,7 +379,7 @@ const GanttChartView = (props = {}) => {
   const trackedFinishedByOrder = useMemo(() => {
     const byOrder = new Map();
 
-    tracking.forEach((product) => {
+    tracking.forEach((product: AnyRecord) => {
       const orderId = String(product?.orderId || "").trim();
       if (!orderId) return;
 
@@ -390,7 +398,7 @@ const GanttChartView = (props = {}) => {
     return byOrder;
   }, [tracking]);
 
-  const getCompletedTrackedItemsForOrder = (order) => {
+  const getCompletedTrackedItemsForOrder = (order: AnyRecord) => {
     const orderId = getOrderIdentity(order);
     if (!orderId) return [];
 
@@ -409,13 +417,13 @@ const GanttChartView = (props = {}) => {
     });
   };
 
-  const getOrderProductionProfile = (order) => {
+  const getOrderProductionProfile = (order: AnyRecord) => {
     const completedItems = getCompletedTrackedItemsForOrder(order);
     if (completedItems.length === 0) return null;
 
     const dayMap = new Map();
 
-    completedItems.forEach((item) => {
+    completedItems.forEach((item: AnyRecord) => {
       const eventDate =
         parseDate(item?.timestamps?.finished) ||
         parseDate(item?.completedAt) ||
@@ -457,7 +465,7 @@ const GanttChartView = (props = {}) => {
     const windowStart = subDays(now, 21);
     const machineStats = new Map();
 
-    tracking.forEach((product) => {
+    tracking.forEach((product: AnyRecord) => {
       const machineKey = normalizeMachineKey(
         product?.machine || product?.originMachine || product?.currentStation || product?.lastStation
       );
@@ -509,11 +517,11 @@ const GanttChartView = (props = {}) => {
 
     const predictions = new Map();
 
-    groupedByMachine.forEach((machineOrders, machineKey) => {
+    groupedByMachine.forEach((machineOrders: AnyRecord[], machineKey: string) => {
       const unitsPerDay = machineThroughputPerDay.get(machineKey);
       if (!unitsPerDay) return; // geen trackingdata voor deze machine → geen voorspelling
 
-      const sorted = [...machineOrders].sort((a, b) => {
+      const sorted = [...machineOrders].sort((a: AnyRecord, b: AnyRecord) => {
         const aBounds = getOrderTimeBounds(a);
         const bBounds = getOrderTimeBounds(b);
         const aDate = aBounds?.startDay || getDeliveryDay(a) || today;
@@ -523,7 +531,7 @@ const GanttChartView = (props = {}) => {
 
       let queueAheadUnits = 0;
 
-      sorted.forEach((order) => {
+      sorted.forEach((order: AnyRecord) => {
         if (!hasOrderStartedForPrediction(order, trackedFinishedByOrder)) {
           return;
         }
@@ -581,9 +589,9 @@ const GanttChartView = (props = {}) => {
   }, [orders, machineThroughputPerDay, trackedFinishedByOrder, tracking]);
 
   // Bereken werkelijke doorlooptijd o.b.v. tracked producten
-  function getActualOrderDuration(order, trackedItems) {
+  function getActualOrderDuration(order: AnyRecord, trackedItems: AnyRecord[]) {
     const orderId = getOrderIdentity(order);
-    const orderTracked = trackedItems.filter(t => {
+    const orderTracked = trackedItems.filter((t: AnyRecord) => {
       const tOrderId = String(t?.orderId || "").trim();
       return tOrderId === orderId;
     });
@@ -592,7 +600,7 @@ const GanttChartView = (props = {}) => {
 
     // Groepeer per dag
     const dayMap = new Map();
-    orderTracked.forEach(item => {
+    orderTracked.forEach((item: AnyRecord) => {
       const eventDate =
         parseDate(item?.timestamps?.finished) ||
         parseDate(item?.createdAt) ||
@@ -627,7 +635,7 @@ const GanttChartView = (props = {}) => {
     };
   }
 
-  function getOrderTimeBounds(order) {
+  function getOrderTimeBounds(order: AnyRecord) {
     const deliveryDate = resolveDeliveryDate(
       order?.deliveryDate,
       order?.plannedDeliveryDate,
@@ -648,7 +656,7 @@ const GanttChartView = (props = {}) => {
     if (!startDate) return null;
 
     let totalHours;
-    const importedInfo = efficiencyData[order.orderId];
+    const importedInfo = efficiencyData[String(order.orderId || "")];
     const isEfficiencyBased = Boolean(importedInfo && importedInfo.minutesPerUnit);
 
     if (isEfficiencyBased) {
@@ -683,8 +691,8 @@ const GanttChartView = (props = {}) => {
   }
 
   const allViewBounds = useMemo(() => {
-    let minStart = null;
-    let maxEnd = null;
+    let minStart: Date | null = null;
+    let maxEnd: Date | null = null;
 
     orders.forEach((order) => {
       const bounds = getOrderTimeBounds(order);
@@ -722,7 +730,7 @@ const GanttChartView = (props = {}) => {
 
   useEffect(() => {
     setCollapsedMachines((prev) => {
-      const next = new Set();
+      const next = new Set<string>();
       visibleMachines.forEach((machine) => {
         if (prev.has(machine)) next.add(machine);
       });
@@ -766,7 +774,7 @@ const GanttChartView = (props = {}) => {
   useEffect(() => {
     if (!timelineScrollRef.current) return;
 
-    if (pendingScrollToDayRef.current instanceof Date) {
+    if (pendingScrollToDayRef.current) {
       const targetDay = startOfDay(pendingScrollToDayRef.current);
       const dayIndex = differenceInCalendarDays(targetDay, activeViewStart);
       const left = Math.max(0, dayIndex * effectiveDayWidth - effectiveDayWidth * 2);
@@ -794,10 +802,10 @@ const GanttChartView = (props = {}) => {
   }, []);
 
   // Get orders for a machine
-  const getOrdersForMachine = (machine) => {
+  const getOrdersForMachine = (machine: string) => {
     const term = String(orderSearchTerm || "").trim().toLowerCase();
 
-    return orders.filter(order => {
+    return orders.filter((order: AnyRecord) => {
       const machineMatch = normalizeMachine(order.machine) === normalizeMachine(machine);
       const hasTimeBounds = Boolean(getOrderTimeBounds(order));
       const normalizedStatus = String(order?.status || "").toLowerCase();
@@ -836,22 +844,24 @@ const GanttChartView = (props = {}) => {
     });
   };
 
-  const getMachineLayout = (machineOrders) => {
-    const bars = machineOrders
-      .map((order) => {
+  const getMachineLayout = (machineOrders: AnyRecord[]) => {
+    const rawBars = machineOrders
+      .map((order: AnyRecord) => {
         const style = getOrderStyle(order);
         if (!style) return null;
         const leftPx = Number(style.leftPx || 0);
         const widthPx = Number(style.widthPx || 0);
         return { order, style, leftPx, widthPx };
       })
-      .filter(Boolean)
-      .sort((a, b) => a.leftPx - b.leftPx || a.widthPx - b.widthPx);
+      .filter((bar) => Boolean(bar));
 
-    const laidOutBars = expandedLaneMode
+    const bars = rawBars as OrderBar[];
+    bars.sort((a, b) => a.leftPx - b.leftPx || b.widthPx - a.widthPx);
+
+    const laidOutBars: OrderBarWithLane[] = expandedLaneMode
       ? bars.map((bar, idx) => ({ ...bar, lane: idx }))
       : (() => {
-          const laneEndPositions = [];
+          const laneEndPositions: number[] = [];
           return bars.map((bar) => {
             let lane = laneEndPositions.findIndex((end) => bar.leftPx >= end + 4);
             if (lane === -1) {
@@ -869,7 +879,7 @@ const GanttChartView = (props = {}) => {
   };
 
   // Handle Drag Start
-  const handleDragStart = (e, order) => {
+  const handleDragStart = (e: React.MouseEvent, order: AnyRecord) => {
     if (useProvidedOrders || !dragUnlocked) return;
 
     e.preventDefault();
@@ -894,12 +904,12 @@ const GanttChartView = (props = {}) => {
 
   // Global Drag Listeners
   useEffect(() => {
-    const handleMouseMove = (e) => {
+    const handleMouseMove = (e: MouseEvent) => {
       if (!dragState.isDragging) return;
       setDragState(prev => ({ ...prev, currentX: e.clientX }));
     };
 
-    const handleMouseUp = async (e) => {
+    const handleMouseUp = async (e: MouseEvent) => {
       if (!dragState.isDragging) return;
 
       const deltaX = e.clientX - dragState.startX;
@@ -918,7 +928,7 @@ const GanttChartView = (props = {}) => {
               plannedDate: newDate,
             });
             await logActivity(
-              auth.currentUser?.uid,
+              auth.currentUser?.uid || "system",
               "ORDER_DATE_MOVE",
               `Gantt geplande datum aangepast voor order ${dragState.orderId} naar ${newDate.toISOString().slice(0, 10)}`
             );
@@ -943,7 +953,7 @@ const GanttChartView = (props = {}) => {
   }, [dragState, activeViewStart, effectiveDayWidth, useProvidedOrders]);
 
   useEffect(() => {
-    const handleHeaderPanMove = (e) => {
+    const handleHeaderPanMove = (e: MouseEvent) => {
       if (!headerPanRef.current.active || !timelineScrollRef.current) return;
       const deltaX = e.clientX - headerPanRef.current.startX;
       const PAN_SENSITIVITY = 0.9;
@@ -967,7 +977,7 @@ const GanttChartView = (props = {}) => {
     };
   }, []);
 
-  const handleHeaderPanStart = (e) => {
+  const handleHeaderPanStart = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     if (!timelineScrollRef.current) return;
 
@@ -980,7 +990,7 @@ const GanttChartView = (props = {}) => {
     document.body.style.userSelect = "none";
   };
 
-  const handleTimelineScroll = (e) => {
+  const handleTimelineScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     if (!el) return;
     if (viewMode !== "preset") return;
@@ -1025,9 +1035,9 @@ const GanttChartView = (props = {}) => {
     }
   };
 
-  const toggleMachineCollapsed = (machine) => {
+  const toggleMachineCollapsed = (machine: string) => {
     setCollapsedMachines((prev) => {
-      const next = new Set(prev);
+      const next = new Set<string>(prev);
       if (next.has(machine)) next.delete(machine);
       else next.add(machine);
       return next;
@@ -1038,7 +1048,7 @@ const GanttChartView = (props = {}) => {
   const expandAllMachines = () => setCollapsedMachines(new Set());
 
   // Calculate order position and width
-  const getOrderStyle = (order) => {
+  const getOrderStyle = (order: AnyRecord) => {
     const bounds = getOrderTimeBounds(order);
     if (!bounds) return null;
     const { startDay, endDay: safeEndDay, totalHours, isEfficiencyBased, leadWeeks } = bounds;
@@ -1086,7 +1096,7 @@ const GanttChartView = (props = {}) => {
   };
 
   // Get order color based on status
-  const getOrderColor = (order) => {
+  const getOrderColor = (order: AnyRecord) => {
     const status = (order.status || "pending").toLowerCase();
     
     if (status.includes("plan") || status.includes("pending") || status.includes("open")) return "bg-blue-500";
@@ -1103,7 +1113,7 @@ const GanttChartView = (props = {}) => {
   const goToNextWeek = () => setViewStart(prev => addDays(prev, 7));
   const goToPreviousMonth = () => setViewStart(prev => subMonths(prev, 1));
   const goToNextMonth = () => setViewStart(prev => addMonths(prev, 1));
-  const applyPresetViewFromToday = (days) => {
+  const applyPresetViewFromToday = (days: number) => {
     const today = startOfDay(new Date());
     setViewMode("preset");
     setViewRange(days);
@@ -1126,9 +1136,9 @@ const GanttChartView = (props = {}) => {
 
   const dayInputValue = format(viewStart, "yyyy-MM-dd");
   const monthInputValue = format(viewStart, "yyyy-MM");
-  const weekInputValue = `${format(startOfWeek(viewStart, { weekStartsOn: 1 }), "yyyy")}-W${String(differenceInCalendarWeeks(startOfWeek(viewStart, { weekStartsOn: 1 }), startOfWeek(new Date(format(viewStart, 'yyyy'), 0, 4), { weekStartsOn: 1 }), { weekStartsOn: 1 }) + 1).padStart(2, "0")}`;
+  const weekInputValue = `${format(startOfWeek(viewStart, { weekStartsOn: 1 }), "yyyy")}-W${String(differenceInCalendarWeeks(startOfWeek(viewStart, { weekStartsOn: 1 }), startOfWeek(new Date(Number(format(viewStart, 'yyyy')), 0, 4), { weekStartsOn: 1 }), { weekStartsOn: 1 }) + 1).padStart(2, "0")}`;
 
-  const handleDayJump = (value) => {
+  const handleDayJump = (value: string) => {
     if (!value) return;
     const next = startOfDay(new Date(`${value}T00:00:00`));
     if (!Number.isNaN(next.getTime())) {
@@ -1138,7 +1148,7 @@ const GanttChartView = (props = {}) => {
     }
   };
 
-  const handleMonthJump = (value) => {
+  const handleMonthJump = (value: string) => {
     if (!value) return;
     const [year, month] = value.split("-").map(Number);
     const next = startOfMonth(new Date(year, month - 1, 1));
@@ -1149,7 +1159,7 @@ const GanttChartView = (props = {}) => {
     }
   };
 
-  const handleWeekJump = (value) => {
+  const handleWeekJump = (value: string) => {
     const match = String(value || "").match(/^(\d{4})-W(\d{2})$/);
     if (!match) return;
     const year = Number(match[1]);
@@ -1597,7 +1607,7 @@ const GanttChartView = (props = {}) => {
                                     ? "ring-2 ring-emerald-300"
                                     : ""
                               } ${isSelectedBar ? "ring-2 ring-blue-300" : ""}`}
-                              style={{ ...cssStyle, width: `${widthPx}px`, cursor: dragUnlocked ? cssStyle.cursor : 'pointer' }}
+                              style={{ ...cssStyle, width: `${widthPx}px`, cursor: dragUnlocked ? String((restStyle as AnyRecord).cursor || "grab") : 'pointer' }}
                             >
                               <div className="text-white text-xs font-bold truncate">
                                 {orderWithProductLabel}

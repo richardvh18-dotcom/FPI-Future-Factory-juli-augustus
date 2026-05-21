@@ -1,9 +1,8 @@
-// @ts-nocheck
 import { useCallback } from "react";
 import { format, subDays } from "date-fns";
 import { collection, getDocs, query, where, limit } from "firebase/firestore";
 import { db, logActivity } from "../../config/firebase";
-import { getArchiveItemsPath } from "../../config/dbPaths";
+import { getArchiveItemsPath, getPathString } from "../../config/dbPaths";
 import { normalizeMachine } from "../../utils/hubHelpers";
 import { runBatchDrawingSync } from "../../utils/drawingLinker";
 import { archiveOrder } from "../../utils/archiveService";
@@ -16,7 +15,49 @@ import {
   saveOccupancyAssignments,
   deleteOccupancyAssignments,
 } from "../../services/planningSecurityService";
+import { useTeamleaderModalStore } from "./modals/TeamleaderModalContext";
 import * as XLSX from "xlsx";
+
+type AnyRecord = Record<string, any>;
+
+const getErrorMessage = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err || "Onbekende fout");
+
+export type UseTeamleaderEventHandlersArgs = {
+  user: any;
+  navigate: any;
+  t: any;
+  todayStr: string;
+  setActiveTab: (val: string) => void;
+  setIsMobileMenuOpen: (val: boolean) => void;
+  setShowAiPrediction: (val: boolean) => void;
+  setIsSyncingDrawings: (val: boolean) => void;
+  setSelectedSidebarEntry: (val: any) => void;
+  setSelectedOrderId: (val: string | null) => void;
+  setIsCopying: (val: boolean) => void;
+  setIsClearing: (val: boolean) => void;
+  setIsArchivingLegacyRejected: (val: boolean) => void;
+  showSuccess: (msg: string) => void;
+  showInfo: (msg: string) => void;
+  showWarning: (msg: string) => void;
+  showConfirm: (opts: any) => Promise<boolean>;
+  notify: (msg: string) => void;
+  dataStore: any[];
+  rawOrders: any[];
+  rawProducts: any[];
+  bezetting: any[];
+  selectedSidebarEntry: any;
+  legacyRejectedOrders: any[];
+  getOrderIdFromTrackedRecord: (record: any) => string;
+  getOrderProgressMeta: (order: any) => any;
+  getFinishedQtyForOrder: (order: any) => number;
+  resolveOverproductionRoute: (order: any, group: any, station: string) => any;
+  isInAllowedScope: (record: any) => boolean;
+  fixedScope: string;
+  targetSlug: string;
+  departmentFilter: string;
+  effectiveAllowedNorms: string[];
+};
 
 /**
  * useTeamleaderEventHandlers - Extract all event handlers from TeamleaderHub
@@ -42,23 +83,10 @@ export const useTeamleaderEventHandlers = ({
   setIsMobileMenuOpen,
   setShowAiPrediction,
   setIsSyncingDrawings,
-  setModalTitle,
-  setKpiWeekOffset,
-  setActiveKpi,
-  setLastKpi,
   setSelectedSidebarEntry,
   setSelectedOrderId,
-  setViewingDossier,
-  setSelectedStationDetail,
-  setSelectedOverproductionGroup,
-  setOverproductionTargetOrderId,
-  setOverproductionManualStation,
-  setAssigningOverproduction,
   setIsCopying,
   setIsClearing,
-  setShowAddOrderModal,
-  setCreatingOrder,
-  setNewOrderData,
   setIsArchivingLegacyRejected,
   
   // Notifications
@@ -73,11 +101,7 @@ export const useTeamleaderEventHandlers = ({
   rawOrders,
   rawProducts,
   bezetting,
-  selectedOverproductionGroup,
-  overproductionTargetOrderId,
-  overproductionManualStation,
   selectedSidebarEntry,
-  newOrderData,
   legacyRejectedOrders,
   
   // Helpers
@@ -90,7 +114,7 @@ export const useTeamleaderEventHandlers = ({
   targetSlug,
   departmentFilter,
   effectiveAllowedNorms = [],
-}) => {
+}: UseTeamleaderEventHandlersArgs) => {
   // Navigation handler
   const handleOpenExtendedPersonnel = useCallback(() => {
     const targetState = {
@@ -115,13 +139,25 @@ export const useTeamleaderEventHandlers = ({
   }, [navigate, todayStr]);
 
   // Overproduction handlers
-  const handleOpenOverproductionGroup = useCallback((group) => {
-    setSelectedOverproductionGroup(group);
-    setOverproductionTargetOrderId("");
-    setOverproductionManualStation("");
-  }, [setSelectedOverproductionGroup, setOverproductionTargetOrderId, setOverproductionManualStation]);
+  const handleOpenOverproductionGroup = useCallback((group: any) => {
+    const store = useTeamleaderModalStore.getState();
+    store.setSelectedOverproductionGroup(group);
+    store.setOverproductionTargetOrderId("");
+    store.setOverproductionManualStation("");
+  }, []);
 
   const handleAssignOverproduction = useCallback(async () => {
+    const store = useTeamleaderModalStore.getState();
+    const {
+      selectedOverproductionGroup,
+      overproductionTargetOrderId,
+      overproductionManualStation,
+      setAssigningOverproduction,
+      setSelectedOverproductionGroup,
+      setOverproductionTargetOrderId,
+      setOverproductionManualStation,
+    } = store;
+
     if (!selectedOverproductionGroup) return;
 
     const targetOrderId = String(overproductionTargetOrderId || "").trim();
@@ -160,7 +196,7 @@ export const useTeamleaderEventHandlers = ({
       await assignOverproduction({
         targetOrderDocId,
         targetOrderId: targetOrder.orderId,
-        productIds: selectedOverproductionGroup.products.map((product) => product.id),
+        productIds: selectedOverproductionGroup.products.map((product: AnyRecord) => product.id),
         routeStation: route.station,
         sourceOrderId: selectedOverproductionGroup.originalOrderId,
         originMachine: selectedOverproductionGroup.originMachine,
@@ -194,36 +230,31 @@ export const useTeamleaderEventHandlers = ({
       setSelectedOverproductionGroup(null);
       setOverproductionTargetOrderId("");
       setOverproductionManualStation("");
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(
         t('teamleader.overproduction_link_error', 'Error linking overproduction:'),
         err
       );
       showWarning(
         t('teamleader.overproduction_link_failed', 'Linking failed: {{message}}', {
-          message: err.message,
+          message: getErrorMessage(err),
         })
       );
     } finally {
       setAssigningOverproduction(false);
     }
   }, [
-    selectedOverproductionGroup,
     rawOrders,
     resolveOverproductionRoute,
     showWarning,
     showSuccess,
-    setAssigningOverproduction,
-    setSelectedOverproductionGroup,
-    setOverproductionTargetOrderId,
-    setOverproductionManualStation,
     user,
     t,
   ]);
 
   // Sidebar selection handler
   const handleSidebarSelect = useCallback(
-    async (entry) => {
+    async (entry: any) => {
       if (!entry) {
         setSelectedOrderId(null);
         setSelectedSidebarEntry(null);
@@ -262,7 +293,7 @@ export const useTeamleaderEventHandlers = ({
             years.map((year) =>
               getDocs(
                 query(
-                  collection(db, ...getArchiveItemsPath(year)),
+                  collection(db, getPathString(getArchiveItemsPath(year))),
                   where("orderId", "==", entryOrderId),
                   limit(100)
                 )
@@ -271,7 +302,7 @@ export const useTeamleaderEventHandlers = ({
           );
 
           const candidates = snapshots.flatMap((snap) =>
-            snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+            snap.docs.map((d) => ({ id: d.id, ...d.data() } as AnyRecord))
           );
           const best = candidates
             .sort((a, b) => {
@@ -327,22 +358,22 @@ export const useTeamleaderEventHandlers = ({
 
   // Archived lot dossier handler
   const handleOpenArchivedLotDossier = useCallback(
-    async (lotNumber) => {
+    async (lotNumber: string) => {
       if (!selectedSidebarEntry?.isArchivedOrder) return;
 
       const lot = String(lotNumber || "").trim();
-      const localCandidates = Array.isArray(selectedSidebarEntry.archivedCandidates)
+      const localCandidates: AnyRecord[] = Array.isArray(selectedSidebarEntry.archivedCandidates)
         ? selectedSidebarEntry.archivedCandidates
         : [];
 
-      let best = null;
+      let best: AnyRecord | null = null;
 
       if (localCandidates.length > 0) {
         const scoped = lot
-          ? localCandidates.filter((c) => String(c.lotNumber || c.activeLot || "").trim() === lot)
+          ? localCandidates.filter((c: AnyRecord) => String(c.lotNumber || c.activeLot || "").trim() === lot)
           : localCandidates;
 
-        best = scoped.sort((a, b) => {
+        best = scoped.sort((a: AnyRecord, b: AnyRecord) => {
           const ta = a?.timestamps?.finished?.toMillis
             ? a.timestamps.finished.toMillis()
             : new Date(a?.timestamps?.finished || a?.updatedAt || 0).getTime();
@@ -364,7 +395,7 @@ export const useTeamleaderEventHandlers = ({
             years.map((year) =>
               getDocs(
                 query(
-                  collection(db, ...getArchiveItemsPath(year)),
+                  collection(db, getPathString(getArchiveItemsPath(year))),
                   where("orderId", "==", orderId),
                   limit(150)
                 )
@@ -373,7 +404,7 @@ export const useTeamleaderEventHandlers = ({
           );
 
           const candidates = snaps
-            .flatMap((s) => s.docs.map((d) => ({ id: d.id, ...d.data() })))
+            .flatMap((s) => s.docs.map((d) => ({ id: d.id, ...d.data() } as AnyRecord)))
             .filter((c) => {
               if (!lot) return true;
               return String(c.lotNumber || c.activeLot || "").trim() === lot;
@@ -394,7 +425,7 @@ export const useTeamleaderEventHandlers = ({
       }
 
       if (best) {
-        setViewingDossier({
+        useTeamleaderModalStore.getState().setViewingDossier({
           ...best,
           status: "completed",
           archived: true,
@@ -403,18 +434,18 @@ export const useTeamleaderEventHandlers = ({
         return;
       }
 
-      setViewingDossier({
+      useTeamleaderModalStore.getState().setViewingDossier({
         ...selectedSidebarEntry,
         status: "completed",
         archived: true,
         lotNumber: lot || selectedSidebarEntry.lotNumber,
       });
     },
-    [selectedSidebarEntry, setViewingDossier]
+    [selectedSidebarEntry]
   );
 
   const handleReopenArchivedOrderWithIncrease = useCallback(
-    async ({ entry, increaseBy }) => {
+    async ({ entry, increaseBy }: { entry?: any; increaseBy: string | number }) => {
       const targetEntry = entry || selectedSidebarEntry;
       if (!targetEntry?.isArchivedOrder) {
         notify("Selecteer eerst een gearchiveerde order.");
@@ -454,7 +485,7 @@ export const useTeamleaderEventHandlers = ({
       }
 
       try {
-        const result = await updatePlanningOrderDetails({
+        const result: AnyRecord = await updatePlanningOrderDetails({
           orderDocId: orderRef,
           planDelta: safeIncrease,
           source: "ArchivedOrderDetailPanel",
@@ -472,9 +503,9 @@ export const useTeamleaderEventHandlers = ({
         setSelectedOrderId(result?.orderId || orderLabel);
         showSuccess(`Order ${orderLabel} is opgehoogd en teruggezet naar planning.`);
         return { ok: true, result };
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("Heropenen archieforder mislukt:", error);
-        notify("Heropenen mislukt: " + (error?.message || "Onbekende fout"));
+        notify("Heropenen mislukt: " + getErrorMessage(error));
         return { ok: false, error };
       }
     },
@@ -492,12 +523,13 @@ export const useTeamleaderEventHandlers = ({
 
   // KPI modal handler
   const handleKpiClick = useCallback(
-    (kpiId, label) => {
-      setModalTitle(label);
-      setKpiWeekOffset(0);
-      setActiveKpi(kpiId);
+    (kpiId: string, label: string) => {
+      const store = useTeamleaderModalStore.getState();
+      store.setModalTitle(label);
+      store.setKpiWeekOffset(0);
+      store.setActiveKpi(kpiId);
     },
-    [setModalTitle, setKpiWeekOffset, setActiveKpi]
+    []
   );
 
   // Drawing sync handler
@@ -580,7 +612,7 @@ export const useTeamleaderEventHandlers = ({
       return;
     }
 
-    const formatMachineForPlanner = (machine) => {
+    const formatMachineForPlanner = (machine: unknown) => {
       const raw = String(machine || "").trim().toUpperCase();
       if (!raw) return "ONBEKEND";
       if (raw.startsWith("40")) return raw;
@@ -588,7 +620,7 @@ export const useTeamleaderEventHandlers = ({
       return raw;
     };
 
-    const getOrderDate = (order) => {
+    const getOrderDate = (order: AnyRecord) => {
       const value =
         order?.plannedDate || order?.date || order?.deliveryDate || null;
       if (!value) return null;
@@ -597,7 +629,7 @@ export const useTeamleaderEventHandlers = ({
       return Number.isFinite(parsed.getTime()) ? parsed : null;
     };
 
-    const byMachine = filtered.reduce((acc, order) => {
+    const byMachine = filtered.reduce<Record<string, AnyRecord[]>>((acc, order: AnyRecord) => {
       const machineKey = formatMachineForPlanner(order.machine || "ONBEKEND");
       if (!acc[machineKey]) acc[machineKey] = [];
       acc[machineKey].push(order);
@@ -632,13 +664,13 @@ export const useTeamleaderEventHandlers = ({
 
         orders
           .slice()
-          .sort((a, b) => {
+          .sort((a: AnyRecord, b: AnyRecord) => {
             const ad = getOrderDate(a)?.getTime() || 0;
             const bd = getOrderDate(b)?.getTime() || 0;
             if (ad !== bd) return ad - bd;
             return String(a.orderId || "").localeCompare(String(b.orderId || ""));
           })
-          .forEach((o) => {
+          .forEach((o: AnyRecord) => {
             const date = getOrderDate(o);
             const week = o.weekNumber || 0;
             const plan = parseInt(o.plan || o.quantity || 0, 10) || 0;
@@ -693,7 +725,7 @@ export const useTeamleaderEventHandlers = ({
 
   // Occupancy copy yesterday handler
   const handleCopyYesterday = useCallback(
-    async (targetDeptId) => {
+    async (targetDeptId: string) => {
       const yesterdayStr = format(subDays(new Date(), 1), "yyyy-MM-dd");
       const currentDayStr = format(new Date(), "yyyy-MM-dd");
       const yesterdayData = bezetting.filter(
@@ -741,9 +773,9 @@ export const useTeamleaderEventHandlers = ({
           "OCCUPANCY_COPY_YESTERDAY",
           `Bezetting gekopieerd van gisteren: afdeling ${targetDeptId}, aantal ${yesterdayData.length}`
         );
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("Fout bij kopiëren:", err);
-        notify("Fout bij kopiëren: " + err.message);
+        notify("Fout bij kopiëren: " + getErrorMessage(err));
       } finally {
         setIsCopying(false);
       }
@@ -753,7 +785,7 @@ export const useTeamleaderEventHandlers = ({
 
   // Occupancy clear today handler
   const handleClearToday = useCallback(
-    async (targetDeptId) => {
+    async (targetDeptId: string) => {
       const currentDayStr = format(new Date(), "yyyy-MM-dd");
       const todayData = bezetting.filter(
         (o) => o.date === currentDayStr && o.departmentId === targetDeptId
@@ -784,9 +816,9 @@ export const useTeamleaderEventHandlers = ({
           "OCCUPANCY_CLEAR_TODAY",
           `Bezetting gewist voor vandaag: afdeling ${targetDeptId}, aantal ${todayData.length}`
         );
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("Fout bij wissen:", err);
-        notify("Fout bij wissen: " + err.message);
+        notify("Fout bij wissen: " + getErrorMessage(err));
       } finally {
         setIsClearing(false);
       }
@@ -796,7 +828,7 @@ export const useTeamleaderEventHandlers = ({
 
   // Lot movement handler
   const handleMoveLot = useCallback(
-    async (lotNumber, newStation, options = {}) => {
+    async (lotNumber: string, newStation: string, options: any = {}) => {
       if (!lotNumber || !newStation) return;
       try {
         const isRepairMove = Boolean(options?.isRepairMove);
@@ -821,9 +853,9 @@ export const useTeamleaderEventHandlers = ({
         notify(
           `${isRepairMove ? "Reparatie" : "Product"} ${lotNumber} verplaatst naar ${newStation}`
         );
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("Fout bij verplaatsen:", err);
-        notify("Fout bij verplaatsen: " + err.message);
+        notify("Fout bij verplaatsen: " + getErrorMessage(err));
       }
     },
     [user, notify]
@@ -831,7 +863,7 @@ export const useTeamleaderEventHandlers = ({
 
   // Rejected product archival handler
   const handleArchiveRejectedProduct = useCallback(
-    async (product) => {
+    async (product: any) => {
       const productId = String(product?.id || product?.lotNumber || "").trim();
       if (!productId) return;
 
@@ -860,9 +892,9 @@ export const useTeamleaderEventHandlers = ({
         );
 
         showSuccess(`Afkeur ${product?.lotNumber || productId} afgesloten.`);
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("Fout bij afsluiten afkeur:", error);
-        notify("Fout bij afsluiten afkeur: " + error.message);
+        notify("Fout bij afsluiten afkeur: " + getErrorMessage(error));
       }
     },
     [user, showConfirm, showSuccess, notify]
@@ -870,8 +902,11 @@ export const useTeamleaderEventHandlers = ({
 
   // Order creation handler
   const handleCreateOrder = useCallback(
-    async (e) => {
+    async (e: React.FormEvent) => {
       e.preventDefault();
+      const store = useTeamleaderModalStore.getState();
+      const { newOrderData, setCreatingOrder, setShowAddOrderModal, setNewOrderData } = store;
+
       if (
         !newOrderData.orderId ||
         !newOrderData.item ||
@@ -896,14 +931,14 @@ export const useTeamleaderEventHandlers = ({
         );
         setShowAddOrderModal(false);
         setNewOrderData({ orderId: "", item: "", machine: "", plan: "" });
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("Error creating order:", error);
-        notify("Fout bij aanmaken order: " + error.message);
+        notify("Fout bij aanmaken order: " + getErrorMessage(error));
       } finally {
         setCreatingOrder(false);
       }
     },
-    [newOrderData, user, notify, setCreatingOrder, setShowAddOrderModal, setNewOrderData]
+    [user, notify]
   );
 
   // Legacy rejected orders archival handler
@@ -956,9 +991,9 @@ export const useTeamleaderEventHandlers = ({
           } order(s) konden niet gearchiveerd worden.`
         );
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Archiveren mislukt:", err);
-      notify("Fout bij archiveren: " + err.message);
+      notify("Fout bij archiveren: " + getErrorMessage(err));
     } finally {
       setIsArchivingLegacyRejected(false);
     }

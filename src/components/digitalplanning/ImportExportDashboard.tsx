@@ -1,11 +1,90 @@
-// @ts-nocheck
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FileSpreadsheet, Download, Upload, Database, FileText, ArrowRight, Plus, Calendar, Printer, X } from "lucide-react";
+import { FileSpreadsheet, Download, Upload, Database, FileText, ArrowRight, Plus, Calendar, Printer, X, ClipboardCheck } from "lucide-react";
 import { endOfISOWeek, format, getISOWeek, isSameDay, isWithinInterval, startOfISOWeek } from "date-fns";
 import PlanningImportModal from "./modals/PlanningImportModal";
+import InventoryCheckModal from "./modals/InventoryCheckModal";
 
-const toEntryDate = (entry) => {
+type TimestampLike = { toDate?: () => Date };
+
+type MetaEntry = {
+  bucket?: unknown;
+  plannedHours?: unknown;
+};
+
+type EntryRecord = {
+  id?: string;
+  orderId?: string;
+  item?: string;
+  itemCode?: string;
+  itemDescription?: string;
+  lotNumber?: string;
+  activeLot?: string;
+  machine?: string;
+  originMachine?: string;
+  currentStation?: string;
+  lastStation?: string;
+  status?: string;
+  currentStep?: string;
+  archivedAt?: unknown;
+  updatedAt?: unknown;
+  createdAt?: unknown;
+  referenceOperationTimes?: Record<string, MetaEntry>;
+  operations?: Record<string, unknown>;
+  timestamps?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+type CompletedInspectionRow = {
+  id: string;
+  readyDate: string;
+  readyTime: string;
+  orderId: string;
+  lotNumber: string;
+  item: string;
+  itemCode: string;
+  originStation: string;
+  inspectionStation: string;
+  status: string;
+};
+
+type LnReadyGroupedRow = {
+  id: string;
+  station: string;
+  orderId: string;
+  item: string;
+  refOpsText: string;
+  count: number;
+};
+
+type LnReadyQrRow = LnReadyGroupedRow & {
+  orderQr: string;
+  refQr: string;
+  countQr: string;
+};
+
+type ImportExportDashboardProps = {
+  currentDepartment?: string;
+  onCreateOrder?: () => void;
+  trackedProducts?: EntryRecord[];
+  archivedHistoryProducts?: EntryRecord[];
+  effectiveAllowedNorms?: string[];
+  planningOrders?: EntryRecord[];
+  onOpenMachineExport?: (mode: string) => void;
+};
+
+const toDateCandidate = (value: unknown): Date | null => {
+  if (!value) return null;
+  if (typeof (value as TimestampLike).toDate === "function") {
+    const converted = (value as TimestampLike).toDate?.();
+    if (converted && Number.isFinite(converted.getTime())) return converted;
+  }
+  if (!(value instanceof Date) && typeof value !== "string" && typeof value !== "number") return null;
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+};
+
+const toEntryDate = (entry: EntryRecord): Date | null => {
   const candidates = [
     entry?.timestamps?.finished,
     entry?.archivedAt,
@@ -14,20 +93,14 @@ const toEntryDate = (entry) => {
   ];
 
   for (const value of candidates) {
-    if (!value) continue;
-    if (typeof value?.toDate === "function") {
-      const converted = value.toDate();
-      if (Number.isFinite(converted?.getTime?.())) return converted;
-    }
-
-    const parsed = new Date(value);
-    if (Number.isFinite(parsed.getTime())) return parsed;
+    const date = toDateCandidate(value);
+    if (date) return date;
   }
 
   return null;
 };
 
-const toWikkelenStartDate = (entry) => {
+const toWikkelenStartDate = (entry: EntryRecord): Date | null => {
   const candidates = [
     entry?.timestamps?.wikkelen_start,
     entry?.timestamps?.station_start,
@@ -36,20 +109,14 @@ const toWikkelenStartDate = (entry) => {
   ];
 
   for (const value of candidates) {
-    if (!value) continue;
-    if (typeof value?.toDate === "function") {
-      const converted = value.toDate();
-      if (Number.isFinite(converted?.getTime?.())) return converted;
-    }
-
-    const parsed = new Date(value);
-    if (Number.isFinite(parsed.getTime())) return parsed;
+    const date = toDateCandidate(value);
+    if (date) return date;
   }
 
   return null;
 };
 
-const toWikkelenCompletionDate = (entry) => {
+const toWikkelenCompletionDate = (entry: EntryRecord): Date | null => {
   const candidates = [
     entry?.timestamps?.wikkelen_end,
     entry?.timestamps?.lossen_start,
@@ -60,22 +127,16 @@ const toWikkelenCompletionDate = (entry) => {
   ];
 
   for (const value of candidates) {
-    if (!value) continue;
-    if (typeof value?.toDate === "function") {
-      const converted = value.toDate();
-      if (Number.isFinite(converted?.getTime?.())) return converted;
-    }
-
-    const parsed = new Date(value);
-    if (Number.isFinite(parsed.getTime())) return parsed;
+    const date = toDateCandidate(value);
+    if (date) return date;
   }
 
   return null;
 };
 
-const normalizeStation = (value = "") => String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+const normalizeStation = (value: unknown = "") => String(value || "").trim().toUpperCase().replace(/\s+/g, "");
 
-const toLnReferenceCode = (value) => {
+const toLnReferenceCode = (value: unknown) => {
   const raw = String(value || "").trim();
   if (!raw) return "";
 
@@ -83,24 +144,23 @@ const toLnReferenceCode = (value) => {
   return digits || raw;
 };
 
-const selectPrimaryLnReferenceOperation = (order) => {
+const selectPrimaryLnReferenceOperation = (order: EntryRecord) => {
   if (!order || typeof order !== "object") return "";
 
   const referenceMap = order.referenceOperationTimes || {};
-  const mapCandidates = Object.entries(referenceMap)
-    .map(([refOp, meta]) => {
+  const mapCandidates = Object.entries(referenceMap).reduce<Array<{ code: string; bucketPriority: number; plannedHours: number }>>((acc, [refOp, meta]) => {
       const code = toLnReferenceCode(refOp);
-      if (!code) return null;
-      const bucket = String(meta?.bucket || "").toLowerCase();
-      const plannedHours = Number(meta?.plannedHours || 0);
+      if (!code) return acc;
+      const bucket = String((meta as MetaEntry)?.bucket || "").toLowerCase();
+      const plannedHours = Number((meta as MetaEntry)?.plannedHours || 0);
       const bucketPriority = bucket === "production" ? 0 : bucket === "post" ? 1 : bucket === "qc" ? 2 : 3;
-      return {
+      acc.push({
         code,
         bucketPriority,
         plannedHours: Number.isFinite(plannedHours) ? plannedHours : 0,
-      };
-    })
-    .filter(Boolean);
+      });
+      return acc;
+    }, []);
 
   if (mapCandidates.length > 0) {
     mapCandidates.sort((a, b) => {
@@ -119,16 +179,16 @@ const selectPrimaryLnReferenceOperation = (order) => {
   return operationCodes[0] || "";
 };
 
-const formatDateInputValue = (date) => format(date, "yyyy-MM-dd");
+const formatDateInputValue = (date: Date) => format(date, "yyyy-MM-dd");
 
-const formatWeekInputValue = (date) => `${date.getFullYear()}-W${String(getISOWeek(date)).padStart(2, "0")}`;
+const formatWeekInputValue = (date: Date) => `${date.getFullYear()}-W${String(getISOWeek(date)).padStart(2, "0")}`;
 
-const parseDateInputValue = (value) => {
+const parseDateInputValue = (value: unknown): Date => {
   const parsed = new Date(`${String(value || "").trim()}T00:00:00`);
   return Number.isFinite(parsed.getTime()) ? parsed : new Date();
 };
 
-const parseWeekInputValue = (value) => {
+const parseWeekInputValue = (value: unknown): Date => {
   const match = String(value || "").trim().match(/^(\d{4})-W(\d{2})$/i);
   if (!match) return new Date();
 
@@ -144,12 +204,12 @@ const parseWeekInputValue = (value) => {
   return monday;
 };
 
-const buildFullWidthColumnStyles = (doc, ratios = [], horizontalMargin = 10) => {
+const buildFullWidthColumnStyles = (doc: any, ratios: number[] = [], horizontalMargin = 10): Record<number, { cellWidth: number }> => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const availableWidth = pageWidth - horizontalMargin * 2;
   const totalRatio = ratios.reduce((sum, value) => sum + value, 0) || 1;
 
-  return ratios.reduce((styles, ratio, index) => {
+  return ratios.reduce<Record<number, { cellWidth: number }>>((styles, ratio, index) => {
     styles[index] = {
       cellWidth: Number(((availableWidth * ratio) / totalRatio).toFixed(2)),
     };
@@ -165,12 +225,13 @@ const ImportExportDashboard = ({
   effectiveAllowedNorms = [],
   planningOrders = [],
   onOpenMachineExport,
-}) => {
+}: ImportExportDashboardProps) => {
   const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState("import"); // 'import', 'export'
   const [showLegacyModal, setShowLegacyModal] = useState(false);
   const [showCompletedExportModal, setShowCompletedExportModal] = useState(false);
   const [showLnReadyExportModal, setShowLnReadyExportModal] = useState(false);
+  const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [completedRangeMode, setCompletedRangeMode] = useState("day");
   const [completedDateValue, setCompletedDateValue] = useState(formatDateInputValue(new Date()));
   const [completedWeekValue, setCompletedWeekValue] = useState(formatWeekInputValue(new Date()));
@@ -182,9 +243,9 @@ const ImportExportDashboard = ({
 
   const completedInspectionRows = useMemo(() => {
     const combinedProducts = [...trackedProducts, ...archivedHistoryProducts];
-    const uniqueEntries = new Map();
+    const uniqueEntries = new Map<string, CompletedInspectionRow>();
 
-    combinedProducts.forEach((product) => {
+    combinedProducts.forEach((product: EntryRecord) => {
       const completedAt = toEntryDate(product);
       if (!completedAt) return;
 
@@ -246,8 +307,8 @@ const ImportExportDashboard = ({
   }, [completedRangeMode, selectedCompletedDate]);
 
   const planningOrdersByOrderId = useMemo(() => {
-    const map = new Map();
-    planningOrders.forEach((order) => {
+    const map = new Map<string, EntryRecord>();
+    planningOrders.forEach((order: EntryRecord) => {
       const key = String(order?.orderId || order?.id || "").trim();
       if (!key || map.has(key)) return;
       map.set(key, order);
@@ -257,10 +318,10 @@ const ImportExportDashboard = ({
 
   const lnReadyQrRows = useMemo(() => {
     const combinedProducts = [...trackedProducts, ...archivedHistoryProducts];
-    const groupedRows = new Map();
+    const groupedRows = new Map<string, LnReadyGroupedRow>();
     const cutoff = new Date(Date.now() - 5 * 60 * 1000); // 5 minuten pauze
 
-    combinedProducts.forEach((product) => {
+    combinedProducts.forEach((product: EntryRecord) => {
       const originStation = normalizeStation(product?.originMachine || product?.machine || "");
       if (!originStation.startsWith("BH") && !originStation.startsWith("BA") && !originStation.startsWith("BM")) return;
 
@@ -292,7 +353,7 @@ const ImportExportDashboard = ({
       const order = planningOrdersByOrderId.get(orderId);
       const refOpsText = "20"; // Vast ingesteld op referentiecode 20
       const rowKey = `${originStation}__${orderId}`;
-      const current = groupedRows.get(rowKey) || {
+      const current: LnReadyGroupedRow = groupedRows.get(rowKey) || {
         id: rowKey,
         station: originStation,
         orderId,
@@ -314,7 +375,7 @@ const ImportExportDashboard = ({
         if (a.station !== b.station) return a.station.localeCompare(b.station);
         return a.orderId.localeCompare(b.orderId);
       })
-      .map((row) => ({
+      .map((row): LnReadyQrRow => ({
         ...row,
         orderQr: `ORDER:${row.orderId}`,
         refQr: `REFOPS:${row.refOpsText}`,
@@ -482,7 +543,7 @@ const ImportExportDashboard = ({
         }
         activeStation = row.station;
         doc.setFontSize(11);
-        doc.setFont(undefined, "bold");
+        doc.setFont("helvetica", "bold");
         doc.text(`Station ${activeStation}`, 12, y);
         y += 6;
       }
@@ -491,7 +552,7 @@ const ImportExportDashboard = ({
         doc.addPage();
         y = 14;
         doc.setFontSize(11);
-        doc.setFont(undefined, "bold");
+        doc.setFont("helvetica", "bold");
         doc.text(`Station ${activeStation}`, 12, y);
         y += 6;
       }
@@ -506,9 +567,9 @@ const ImportExportDashboard = ({
       doc.roundedRect(10, y - 2, 190, blockHeight - 2, 2, 2);
 
       doc.setFontSize(10);
-      doc.setFont(undefined, "bold");
+      doc.setFont("helvetica", "bold");
       doc.text(`Order ${row.orderId}`, 12, y + 3);
-      doc.setFont(undefined, "normal");
+      doc.setFont("helvetica", "normal");
       doc.text(`RefOps: ${row.refOpsText}`, 12, y + 8);
       doc.text(`Aantal: ${row.count}`, 12, y + 13);
 
@@ -682,15 +743,15 @@ const ImportExportDashboard = ({
 
                    <button
                      type="button"
-                     onClick={() => onOpenMachineExport?.("ln_compare")}
-                     className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 hover:border-blue-300 hover:bg-blue-50 transition-all text-left group"
+                     onClick={() => setShowInventoryModal(true)}
+                     className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 hover:border-purple-300 hover:bg-purple-50 transition-all text-left group"
                    >
                      <div className="flex justify-between items-start mb-4">
-                       <Download size={24} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
-                       <ArrowRight size={20} className="text-slate-300 group-hover:text-blue-500 transform group-hover:translate-x-1 transition-all" />
+                       <ClipboardCheck size={24} className="text-slate-400 group-hover:text-purple-500 transition-colors" />
+                       <ArrowRight size={20} className="text-slate-300 group-hover:text-purple-500 transform group-hover:translate-x-1 transition-all" />
                      </div>
-                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Machine Export - LN Vergelijking</h4>
-                     <p className="text-[10px] text-slate-500 font-medium">Open vergelijkingsexport voor plan versus gemaakt aantallen</p>
+                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Vloercontrole (Ronde)</h4>
+                     <p className="text-[10px] text-slate-500 font-medium">Controleer fysieke lotnummers per station via tablet/scanner</p>
                    </button>
                  </div>
               </div>
@@ -703,6 +764,7 @@ const ImportExportDashboard = ({
         <PlanningImportModal
           isOpen={true}
           onClose={() => setShowLegacyModal(false)}
+          onSuccess={() => setShowLegacyModal(false)}
           currentDepartment={currentDepartment}
         />
       )}
@@ -935,6 +997,14 @@ const ImportExportDashboard = ({
             </div>
           </div>
         </div>
+      )}
+
+      {showInventoryModal && (
+        <InventoryCheckModal
+          isOpen={showInventoryModal}
+          onClose={() => setShowInventoryModal(false)}
+          trackedProducts={trackedProducts as any[]}
+        />
       )}
     </div>
   );

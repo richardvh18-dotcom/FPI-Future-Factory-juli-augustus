@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -28,6 +27,7 @@ import { collection, collectionGroup, onSnapshot, doc, getDocs, query, limit } f
 import { db } from "../../config/firebase";
 import {
   getPlanningArchivePath,
+  getPathString,
   PATHS,
 } from "../../config/dbPaths";
 import { getISOWeek, startOfISOWeek, endOfISOWeek, format, subWeeks, addWeeks, startOfYear, endOfYear } from "date-fns";
@@ -37,43 +37,138 @@ import EfficiencyDashboard from "../digitalplanning/EfficiencyDashboard";
 import GanttChartView from "./GanttChartView";
 import TimeTrackingView from "./TimeTrackingView";
 import WorkloadHeatmapView from "./WorkloadHeatmapView";
-import { normalizeMachine } from "../../utils/hubHelpers.tsx";
+import { normalizeMachine } from "../../utils/hubHelpers";
 import { getDeliveryPlanningState, resolveDeliveryDate, toDateSafe } from "../../utils/dateUtils";
 import { subscribeScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
+
+type CapacityPlanningViewProps = {
+  initialDepartment?: string;
+  lockDepartment?: boolean;
+  onNavigate?: (...args: unknown[]) => void;
+};
+
+type DepartmentConfig = {
+  id?: string;
+  name?: string;
+  isActive?: boolean;
+};
+
+type FactoryConfig = {
+  departments: DepartmentConfig[];
+};
+
+type DateLikeInput =
+  | Date
+  | string
+  | number
+  | {
+      toDate?: () => Date;
+      toMillis?: () => number;
+      seconds?: number;
+      _seconds?: number;
+      nanoseconds?: number;
+      _nanoseconds?: number;
+    }
+  | null
+  | undefined;
+
+type OccupancyRow = {
+  id: string;
+  date?: DateLikeInput;
+  departmentId?: string;
+  hoursWorked?: string | number;
+  hours?: string | number;
+  machineId?: string;
+  machineName?: string;
+  operatorNumber?: string | number;
+  [key: string]: unknown;
+};
+
+type PlanningOrder = {
+  id: string;
+  orderId?: string;
+  machine?: string;
+  item?: string;
+  itemCode?: string;
+  plan?: string | number;
+  quantity?: string | number;
+  plannedDate?: DateLikeInput;
+  date?: DateLikeInput;
+  deliveryDate?: DateLikeInput;
+  plannedDeliveryDate?: DateLikeInput;
+  dueDate?: DateLikeInput;
+  deadline?: DateLikeInput;
+  status?: string;
+  departmentId?: string;
+  plannedHours?: string | number;
+  plannedHoursBH?: string | number;
+  plannedHoursNabewerken?: string | number;
+  plannedHoursBM01?: string | number;
+  [key: string]: unknown;
+};
+
+type TimeStandardRow = {
+  id: string;
+  itemCode?: string;
+  machine?: string;
+  standardMinutes?: string | number;
+  [key: string]: unknown;
+};
+
+type EfficiencyRow = {
+  id?: string;
+  orderId?: string;
+  minutesPerUnit?: number;
+  quantity?: number;
+  qcTimeTotal?: number;
+  productionTimeTotal?: number;
+  postProcessingTimeTotal?: number;
+  [key: string]: unknown;
+};
+
+type PlanningBuckets = {
+  root: PlanningOrder[];
+  scoped: PlanningOrder[];
+};
 
 /**
  * CapacityPlanningView
  * Vergelijkt beschikbare productie-uren met geplande uren
  * Toont het verschil tussen capaciteit en demand
  */
-const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNavigate }) => {
+const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNavigate }: CapacityPlanningViewProps) => {
   const { t } = useTranslation();
   const { user, role, isAdmin } = useAdminAuth();
   const readDb = db;
   const readPaths = PATHS;
   const [loading, setLoading] = useState(true);
-  const [occupancy, setOccupancy] = useState([]);
-  const [planningOrders, setPlanningOrders] = useState([]);
-  const [activePlanningOrders, setActivePlanningOrders] = useState([]);
-  const [archivedPlanningOrders, setArchivedPlanningOrders] = useState([]);
-  const [timeStandards, setTimeStandards] = useState([]);
-  const [efficiencyData, setEfficiencyData] = useState({});
+  const [occupancy, setOccupancy] = useState<OccupancyRow[]>([]);
+  const [planningOrders, setPlanningOrders] = useState<PlanningOrder[]>([]);
+  const [activePlanningOrders, setActivePlanningOrders] = useState<PlanningOrder[]>([]);
+  const [archivedPlanningOrders, setArchivedPlanningOrders] = useState<PlanningOrder[]>([]);
+  const [timeStandards, setTimeStandards] = useState<TimeStandardRow[]>([]);
+  const [efficiencyData, setEfficiencyData] = useState<Record<string, EfficiencyRow>>({});
   const [selectedWeek, setSelectedWeek] = useState(new Date());
   const [selectedDepartment, setSelectedDepartment] = useState(initialDepartment || "ALLES");
-  const [departments, setDepartments] = useState(["ALLES"]);
-  const [factoryConfig, setFactoryConfig] = useState({ departments: [] });
+  const [departments, setDepartments] = useState<string[]>(["ALLES"]);
+  const [factoryConfig, setFactoryConfig] = useState<FactoryConfig>({ departments: [] });
   const [timePeriod, setTimePeriod] = useState("week"); // "week", "ytd", "year", "future", "yoy"
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [comparisonYear, setComparisonYear] = useState(new Date().getFullYear() - 1);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showMissingStandards, setShowMissingStandards] = useState(false);
   const [activeTab, setActiveTab] = useState("capacity");
-  const planningBucketsRef = useRef({});
+  const planningBucketsRef = useRef<PlanningBuckets>({ root: [], scoped: [] });
 
   // Auto-filter voor teamleaders
   const isTeamleader = role === "teamleader";
-  const userDepartment = user?.department;
+  const userDepartment = String(user?.department || "");
   const canChangeFilter = !lockDepartment && (isAdmin || role === "engineer" || !isTeamleader);
+
+  const toNumber = (value: unknown): number => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
 
   const currentWeek = getISOWeek(selectedWeek);
   const weekStart = startOfISOWeek(selectedWeek);
@@ -126,12 +221,12 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
   }, [selectedYear, comparisonYear]);
 
   // Helper functie voor department matching via departmentId
-  const matchesDepartment = (departmentId, filterDepartmentName) => {
+  const matchesDepartment = (departmentId: unknown, filterDepartmentName: string) => {
     if (!filterDepartmentName || filterDepartmentName.trim().toLowerCase() === "alles") return true;
     if (!departmentId) return false;
 
     // Zoek department in factory config via id (case-insensitive)
-    const dept = factoryConfig.departments?.find(d => {
+    const dept = factoryConfig.departments?.find((d) => {
       if (!d.id || !departmentId) return false;
       return String(d.id).trim().toLowerCase() === String(departmentId).trim().toLowerCase();
     });
@@ -156,13 +251,19 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
   useEffect(() => {
     if (!readPaths || !readPaths.FACTORY_CONFIG) return;
 
-    const docRef = doc(readDb, ...readPaths.FACTORY_CONFIG);
+    const factoryConfigPath = getPathString(readPaths.FACTORY_CONFIG);
+    const docRef = doc(readDb, factoryConfigPath);
     const unsub = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
-        const data = docSnap.data();
+        const rawData = docSnap.data() as Record<string, unknown>;
+        const data: FactoryConfig = {
+          departments: Array.isArray(rawData.departments)
+            ? (rawData.departments as DepartmentConfig[])
+            : [],
+        };
         setFactoryConfig(data);
         const depts = Array.isArray(data.departments) 
-          ? data.departments.filter(d => d.isActive).map(d => d.name)
+          ? data.departments.filter((d) => d.isActive).map((d) => String(d.name || "")).filter(Boolean)
           : [];
         setDepartments(["ALLES", ...depts]);
       }
@@ -216,14 +317,19 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
 
     // Load occupancy data
     const unsubOcc = onSnapshot(
-      collection(readDb, ...readPaths.OCCUPANCY),
+      collection(readDb, getPathString(readPaths.OCCUPANCY)),
       (snapshot) => {
-        setOccupancy(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setOccupancy(
+          snapshot.docs.map((docEntry): OccupancyRow => ({
+            id: docEntry.id,
+            ...(docEntry.data() as Record<string, unknown>),
+          }))
+        );
       }
     );
 
     const mergePlanningBuckets = () => {
-      const mergedMap = new Map();
+      const mergedMap = new Map<string, PlanningOrder>();
       Object.values(planningBucketsRef.current).forEach((rows) => {
         (rows || []).forEach((row, idx) => {
           const key = String(row.orderId || row.id || `${row.machine || ""}-${row.item || ""}-${idx}`).trim();
@@ -235,12 +341,12 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     };
 
     const unsubRootPlanning = onSnapshot(
-      collection(readDb, ...readPaths.PLANNING),
+      collection(readDb, getPathString(readPaths.PLANNING)),
       (snapshot) => {
-        planningBucketsRef.current.root = snapshot.docs.map((docEntry) => ({
+        planningBucketsRef.current.root = snapshot.docs.map((docEntry): PlanningOrder => ({
           id: docEntry.id,
           __docPath: docEntry.ref.path,
-          ...docEntry.data(),
+          ...(docEntry.data() as Record<string, unknown>),
         }));
         mergePlanningBuckets();
         setLoading(false);
@@ -265,7 +371,11 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
               path.includes("/orders/")
             );
           })
-          .map((docEntry) => ({ id: docEntry.id, __docPath: docEntry.ref.path, ...docEntry.data() }));
+          .map((docEntry): PlanningOrder => ({
+            id: docEntry.id,
+            __docPath: docEntry.ref.path,
+            ...(docEntry.data() as Record<string, unknown>),
+          }));
         mergePlanningBuckets();
         setLoading(false);
       },
@@ -279,9 +389,14 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
 
     // Load time standards
     const unsubStandards = onSnapshot(
-      collection(readDb, ...readPaths.PRODUCTION_STANDARDS),
+      collection(readDb, getPathString(readPaths.PRODUCTION_STANDARDS)),
       (snapshot) => {
-        setTimeStandards(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setTimeStandards(
+          snapshot.docs.map((docEntry): TimeStandardRow => ({
+            id: docEntry.id,
+            ...(docEntry.data() as Record<string, unknown>),
+          }))
+        );
       }
     );
 
@@ -301,7 +416,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         const archiveBuckets = await Promise.all(
           archivePlanningYears.map(async (year) => {
             const snapshot = await getDocs(
-              query(collection(readDb, ...getPlanningArchivePath(year)), limit(8000))
+              query(collection(readDb, getPathString(getPlanningArchivePath(year))), limit(8000))
             );
             return { year, snapshot };
           })
@@ -310,9 +425,9 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         if (cancelled) return;
 
         const rows = archiveBuckets.flatMap(({ year, snapshot }) =>
-          snapshot.docs.map((entry) => ({
+          snapshot.docs.map((entry): PlanningOrder => ({
             id: entry.id,
-            ...entry.data(),
+            ...(entry.data() as Record<string, unknown>),
             _archiveYear: year,
             _archived: true,
           }))
@@ -333,7 +448,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
   }, [readDb, archivePlanningYears]);
 
   useEffect(() => {
-    const deduped = new Map();
+    const deduped = new Map<string, PlanningOrder>();
 
     // First archived, then active so active records win on key collisions.
     [...archivedPlanningOrders, ...activePlanningOrders].forEach((order, index) => {
@@ -353,12 +468,13 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     const unsubEfficiency = subscribeScopedEfficiencyHours({
       db: readDb,
       mode: "active",
-      onData: (rows) => {
-        const data = {};
+      onData: (rows: Array<Record<string, unknown>>) => {
+        const data: Record<string, EfficiencyRow> = {};
         rows.forEach((row) => {
-          const key = String(row.orderId || row.id || "").trim();
+          const efficiencyRow = row as EfficiencyRow;
+          const key = String(efficiencyRow.orderId || efficiencyRow.id || "").trim();
           if (!key) return;
-          data[key] = row;
+          data[key] = efficiencyRow;
         });
         setEfficiencyData(data);
       },
@@ -374,7 +490,8 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
   const capacityMetrics = useMemo(() => {
     // Filter occupancy voor de geselecteerde periode
     let periodOccupancy = occupancy.filter(occ => {
-      const occDate = new Date(occ.date);
+      const occDate = toDateSafe(occ.date);
+      if (!occDate) return false;
       return occDate >= periodStart && occDate <= periodEnd;
     });
 
@@ -404,7 +521,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     let supportHours = 0;
     
     periodOccupancy.forEach(occ => {
-      let baseHours = parseFloat(occ.hoursWorked || occ.hours || 0);
+      let baseHours = toNumber(occ.hoursWorked || occ.hours || 0);
       
       // Future Factory regel: standaard werkdag is 7 netto uren (8u min 1u pauze)
       if (!baseHours || baseHours === 8) {
@@ -455,7 +572,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     };
   }, [occupancy, periodStart, periodEnd, selectedDepartment, factoryConfig, timePeriod]);
 
-  const getOrderPlanningStartDate = (order) => {
+  const getOrderPlanningStartDate = (order: PlanningOrder) => {
     const planned = toDateSafe(order?.plannedDate);
     if (planned) return planned;
 
@@ -474,10 +591,10 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
 
   // Bereken geplande uren op basis van orders en standaard tijden
   const demandMetrics = useMemo(() => {
-    const getSplitHours = (order) => {
-      const bh = parseFloat(order.plannedHoursBH || 0) || 0;
-      const nab = parseFloat(order.plannedHoursNabewerken || 0) || 0;
-      const bm01 = parseFloat(order.plannedHoursBM01 || 0) || 0;
+    const getSplitHours = (order: PlanningOrder) => {
+      const bh = toNumber(order.plannedHoursBH || 0);
+      const nab = toNumber(order.plannedHoursNabewerken || 0);
+      const bm01 = toNumber(order.plannedHoursBM01 || 0);
       return { bh, nab, bm01, total: bh + nab + bm01 };
     };
 
@@ -531,19 +648,20 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     let ordersWithoutStandards = 0;
     let hoursFromEfficiency = 0;
     let ordersWithEfficiency = 0;
-    let missingStandardsList = [];
+    const missingStandardsList: PlanningOrder[] = [];
 
     periodOrders.forEach(order => {
-      const planCount = parseInt(order.plan || order.quantity || 0);
+      const planCount = toNumber(order.plan || order.quantity || 0);
       totalPlannedUnits += planCount;
-      const importedPlannedHours = parseFloat(order.plannedHours || 0) || 0;
+      const importedPlannedHours = toNumber(order.plannedHours || 0);
       const splitHours = getSplitHours(order);
 
       // 1. Check eerst of er specifieke uren zijn geïmporteerd (Infor LN) - case-insensitive match
-      let importedInfo = efficiencyData[order.orderId];
-      if (!importedInfo && order.orderId) {
+      const orderIdKey = String(order.orderId || "");
+      let importedInfo = orderIdKey ? efficiencyData[orderIdKey] : undefined;
+      if (!importedInfo && orderIdKey) {
         // Probeer case-insensitive match
-        const key = Object.keys(efficiencyData).find(k => k.toLowerCase() === order.orderId.toLowerCase());
+        const key = Object.keys(efficiencyData).find((k) => k.toLowerCase() === orderIdKey.toLowerCase());
         if (key) importedInfo = efficiencyData[key];
       }
 
@@ -573,7 +691,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         );
 
         if (standard && planCount > 0) {
-          const hoursNeeded = (standard.standardMinutes * planCount) / 60;
+          const hoursNeeded = (toNumber(standard.standardMinutes) * planCount) / 60;
           estimatedHours += hoursNeeded;
           ordersWithStandards++;
         } else if (planCount > 0) {
@@ -597,18 +715,18 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
 
   // Bereken balans per machine (Vraag vs Aanbod)
   const machineBreakdown = useMemo(() => {
-    const breakdown = {};
+    const breakdown: Record<string, { capacity: number; demand: number }> = {};
 
     // Geeft het QC/Eindinspectie station terug op basis van hoofdmachine
-    const getQcStation = (machineName) => {
+    const getQcStation = (machineName: string) => {
       if (machineName.startsWith("BH")) return "BM01";
       if (machineName.startsWith("BA")) return "BA01";
       return "BM01"; // Default fallback
     };
 
-    const addDemandToMachine = (machineName, hours) => {
+    const addDemandToMachine = (machineName: string, hours: unknown) => {
       const normalizedMachine = normalizeMachine(machineName || "");
-      const safeHours = parseFloat(hours || 0) || 0;
+      const safeHours = toNumber(hours || 0);
       if (!normalizedMachine || safeHours <= 0) return;
 
       if (!breakdown[normalizedMachine]) breakdown[normalizedMachine] = { capacity: 0, demand: 0 };
@@ -617,7 +735,8 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
 
     // 1. Capaciteit per machine (Occupancy)
     occupancy.forEach(occ => {
-      const occDate = new Date(occ.date);
+      const occDate = toDateSafe(occ.date);
+      if (!occDate) return;
       if (occDate < periodStart || occDate > periodEnd) return;
       
       // Filter by department
@@ -629,7 +748,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
       if (!breakdown[machine]) breakdown[machine] = { capacity: 0, demand: 0 };
       
       // Toepassen van de Future Factory Capaciteitsmatrix regel (7 netto uren, 85% efficiency)
-      let baseHours = parseFloat(occ.hoursWorked || occ.hours || 0);
+      let baseHours = toNumber(occ.hoursWorked || occ.hours || 0);
       if (!baseHours || baseHours === 8) {
         baseHours = 7;
       }
@@ -664,9 +783,9 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
 
       if (!breakdown[machine]) breakdown[machine] = { capacity: 0, demand: 0 };
 
-      const splitBH = parseFloat(order.plannedHoursBH || 0) || 0;
-      const splitNabewerken = parseFloat(order.plannedHoursNabewerken || 0) || 0;
-      const splitBM01 = parseFloat(order.plannedHoursBM01 || 0) || 0;
+      const splitBH = toNumber(order.plannedHoursBH || 0);
+      const splitNabewerken = toNumber(order.plannedHoursNabewerken || 0);
+      const splitBM01 = toNumber(order.plannedHoursBM01 || 0);
       const hasSplitHours = splitBH > 0 || splitNabewerken > 0 || splitBM01 > 0;
 
       if (hasSplitHours) {
@@ -680,13 +799,14 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
 
       let hoursNeeded = 0;
       // Case-insensitive efficiencyData lookup
-      let importedInfo = efficiencyData[order.orderId];
-      if (!importedInfo && order.orderId) {
-        const key = Object.keys(efficiencyData).find(k => k.toLowerCase() === order.orderId.toLowerCase());
+      const orderIdKey = String(order.orderId || "");
+      let importedInfo = orderIdKey ? efficiencyData[orderIdKey] : undefined;
+      if (!importedInfo && orderIdKey) {
+        const key = Object.keys(efficiencyData).find((k) => k.toLowerCase() === orderIdKey.toLowerCase());
         if (key) importedInfo = efficiencyData[key];
       }
-      const planCount = parseInt(order.plan || order.quantity || 0);
-      const importedPlannedHours = parseFloat(order.plannedHours || 0) || 0;
+      const planCount = toNumber(order.plan || order.quantity || 0);
+      const importedPlannedHours = toNumber(order.plannedHours || 0);
 
       if (importedInfo) {
         // Check of we gesplitste data hebben (Productie vs Nabewerking)
@@ -729,7 +849,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
           std.machine === order.machine
         );
         if (standard) {
-           hoursNeeded = (standard.standardMinutes * planCount) / 60;
+           hoursNeeded = (toNumber(standard.standardMinutes) * planCount) / 60;
         }
       }
 
@@ -783,7 +903,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         // 2. Specifieke volgorde voor overige
         const priorityOrder = ["ALGEMEEN", "NABEWERK", "BM01", "BA01", "MAZAK", "LOSSEN"];
         
-        const getPriority = (name) => {
+        const getPriority = (name: string) => {
           const idx = priorityOrder.findIndex(k => name.includes(k));
           return idx !== -1 ? idx : 999;
         };
@@ -895,6 +1015,10 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     ]);
 
     const doc = new jsPDF();
+    const pdfDoc = doc as typeof doc & {
+      autoTable: (options: unknown) => void;
+      lastAutoTable?: { finalY: number };
+    };
     const pageWidth = doc.internal.pageSize.width;
     
     // Titel
@@ -910,7 +1034,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     doc.setFontSize(14);
     doc.text("Beschikbare Capaciteit", 14, 45);
     
-    doc.autoTable({
+    pdfDoc.autoTable({
       startY: 50,
       head: [['Metric', 'Waarde']],
       body: [
@@ -925,11 +1049,11 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     });
     
     // Vraag sectie
-    const yPos = doc.lastAutoTable.finalY + 10;
+    const yPos = (pdfDoc.lastAutoTable?.finalY || 50) + 10;
     doc.setFontSize(14);
     doc.text("Geplande Vraag", 14, yPos);
     
-    doc.autoTable({
+    pdfDoc.autoTable({
       startY: yPos + 5,
       head: [['Metric', 'Waarde']],
       body: [
@@ -942,11 +1066,11 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     });
     
     // Gap analyse
-    const yPos2 = doc.lastAutoTable.finalY + 10;
+    const yPos2 = (pdfDoc.lastAutoTable?.finalY || yPos + 20) + 10;
     doc.setFontSize(14);
     doc.text("Gap Analyse", 14, yPos2);
     
-    doc.autoTable({
+    pdfDoc.autoTable({
       startY: yPos2 + 5,
       head: [['Metric', 'Waarde']],
       body: [
@@ -959,11 +1083,11 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     
     // Knelpunten
     if (bottlenecks.length > 0) {
-      const yPos3 = doc.lastAutoTable.finalY + 10;
+      const yPos3 = (pdfDoc.lastAutoTable?.finalY || yPos2 + 20) + 10;
       doc.setFontSize(14);
       doc.text("Knelpunten", 14, yPos3);
       
-      doc.autoTable({
+      pdfDoc.autoTable({
         startY: yPos3 + 5,
         head: [['Type', 'Beschrijving', 'Prioriteit']],
         body: bottlenecks.map(b => [b.title, b.description, b.severity.toUpperCase()]),

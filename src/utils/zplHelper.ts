@@ -139,40 +139,21 @@ const wrapTextContent = (value: unknown, maxCharsPerLine = 1, maxLines = 1): str
     return wrapped.slice(0, safeMaxLines);
 };
 
-const getResolvedTextMaxLines = (el: ZplElement, requestedHeight: number, rot: ZplRotation = "N"): number => {
-    const explicitMaxLines = Number(el.maxLines);
-    if (Number.isFinite(explicitMaxLines) && explicitMaxLines > 0) {
-        return Math.max(1, Math.floor(explicitMaxLines));
-    }
-
-    const lineBudgetMm = (rot === 'R' || rot === 'B')
-        ? (Number(el.width) || Number(el.height) || 0)
-        : (Number(el.height) || 0);
-    if (!lineBudgetMm || !requestedHeight) return 1;
-
-    const lineBudgetDots = mmToDots(lineBudgetMm);
-    const estimatedLineHeightDots = Math.max(1, Math.round(requestedHeight * 1.05));
-    return Math.max(1, Math.floor((lineBudgetDots * 0.92) / estimatedLineHeightDots));
-};
+const PRINT_TEXT_SCALE = 0.88;
 
 const getTextMetrics = (el: ZplElement, content: string, rot: ZplRotation = "N") => {
-    // CALIBRATION FIX: CSS fontSize (pt) -> Zebra dots
-    // CSS uses 96 DPI = 13.33 px/pt, but Zebra ZPL height is dots at printer DPI
-    // Correction: 10pt CSS ≈ 26 dots @ 203DPI, so divide by 2.834 (not 2.8)
-    const CSS_PT_TO_DOTS = 2.834; // Precise calibration factor
-    const requestedHeight = mmToDots((el.fontSize || 10) / CSS_PT_TO_DOTS);
-    const maxLines = getResolvedTextMaxLines(el, requestedHeight, rot);
+    const requestedHeight = Math.max(1, Math.floor(mmToDots((el.fontSize || 10) / 2.8) * PRINT_TEXT_SCALE));
     const hasExplicitWidth = Number.isFinite(Number(el.fontWidth));
     const explicitWidth = hasExplicitWidth
-        ? mmToDots((el.fontWidth || 12) / CSS_PT_TO_DOTS)
+        ? mmToDots((el.fontWidth || 12) / 2.8)
         : 0;
-    // Character width is ~52% of height for monospace fonts
-    const naturalWidth = explicitWidth || Math.max(1, Math.round(requestedHeight * 0.52));
+    const naturalWidth = explicitWidth || Math.max(1, Math.round(requestedHeight * 0.48));
 
     if (!el.width) {
+        const fallbackWidth = Math.max(1, Math.round(requestedHeight * 0.44));
         return {
             fontHeight: requestedHeight,
-            fontWidth: explicitWidth,
+            fontWidth: hasExplicitWidth ? explicitWidth : fallbackWidth,
             widthDots: null,
         };
     }
@@ -184,6 +165,7 @@ const getTextMetrics = (el: ZplElement, content: string, rot: ZplRotation = "N")
         : Number(el.width);
     const rawWidthDots = mmToDots(wrapWidthMm);
     const innerWidthDots = Math.max(1, rawWidthDots - mmToDots(0.8));
+    const maxLines = Math.max(1, Number(el.maxLines) || 1);
     // Het beschikbare regelbudget staat bij verticale tekst op de X-as (element.width).
     const lineBudgetMm = (rot === 'R' || rot === 'B')
         ? (Number(el.width) || Number(el.height) || 0)
@@ -192,22 +174,22 @@ const getTextMetrics = (el: ZplElement, content: string, rot: ZplRotation = "N")
         ? Math.max(1, Math.floor(mmToDots(lineBudgetMm) / maxLines))
         : requestedHeight;
     const longestLineLength = Math.max(1, getLongestLineLength(content));
-    const estimatedLongestWrappedLine = Math.max(1, Math.ceil(longestLineLength / maxLines));
-    const maxCharWidth = Math.max(1, Math.floor((innerWidthDots * 0.98) / estimatedLongestWrappedLine));
+    const maxCharWidth = Math.max(1, Math.floor((innerWidthDots * 0.98) / longestLineLength));
     const fittedWidth = Math.min(naturalWidth, maxCharWidth);
-    const fittedHeight = Math.max(1, Math.min(heightLimitDots, requestedHeight));
-    // Monospace character width ratio: 52% of height (not 48%)
-    const estimatedCharWidthDots = Math.max(1, hasExplicitWidth ? fittedWidth : Math.round(fittedHeight * 0.52));
-    const charsPerLine = Math.max(1, Math.floor((innerWidthDots * 0.98) / estimatedCharWidthDots));
+    // Houd de glyph-ratio stabiel: als de beschikbare breedte kleiner wordt,
+    // schaal de hoogte mee om overlap in kopregels te voorkomen.
+    const widthRatio = hasExplicitWidth
+        ? (fittedWidth / Math.max(1, explicitWidth))
+        : 1;
+    const widthConstrainedHeight = hasExplicitWidth
+        ? Math.max(1, Math.floor(requestedHeight * Math.min(1, widthRatio)))
+        : Math.max(1, Math.floor(fittedWidth / 0.48));
+    const fittedHeight = Math.max(1, Math.min(heightLimitDots, requestedHeight, widthConstrainedHeight));
 
     return {
         fontHeight: fittedHeight,
-        // Laat ZPL de natuurlijke karakterbreedte gebruiken als er geen expliciete fontWidth is.
-        // Dit voorkomt dat tekst in print te dun wordt t.o.v. de visuele preview.
-        fontWidth: hasExplicitWidth ? fittedWidth : 0,
+        fontWidth: hasExplicitWidth ? fittedWidth : Math.max(1, Math.round(fittedHeight * 0.44)),
         widthDots: innerWidthDots,
-        maxLines,
-        charsPerLine,
     };
 };
 
@@ -301,7 +283,6 @@ export const generatePrintData = (
         const normalizedRotation: 0 | 90 | 180 | 270 =
             rotationValue === 90 || rotationValue === 180 || rotationValue === 270 ? rotationValue : 0;
         const rot = rotationMap[normalizedRotation];
-        const rawRotation = Number(el.rotation) || 0;
 
         // Correctie voor verticale objecten zodat print overeenkomt met preview
         // Preview gebruikt altijd linksboven vóór rotatie als referentie
@@ -316,7 +297,7 @@ export const generatePrintData = (
 
         // TYPE: TEXT
         if (el.type === 'text') {
-            let { fontHeight, fontWidth, widthDots, maxLines, charsPerLine } = getTextMetrics(el, content, rot);
+            let { fontHeight, fontWidth, widthDots } = getTextMetrics(el, content, rot);
             const printableMinX = mmToDots(1);
             const printableMaxX = mmToDots(width) - mmToDots(1);
             const printableMinY = mmToDots(1);
@@ -325,66 +306,41 @@ export const generatePrintData = (
             let x = baseX;
             let y = baseY;
 
+            // Voor 90/270 graden gebruikt ZPL een ander origin-ankerpunt dan de preview.
+            // Corrigeer dit met elementafmetingen zodat beide zij-kolommen zichtbaar blijven.
+            if (normalizedRotation === 270) {
+                y -= mmToDots(Number(el.width || 0));
+            }
 
-            const isVerticalRotation = rot === 'R' || rot === 'B';
+            if (normalizedRotation === 90) {
+                const inwardNudge = mmToDots(Number(el.width || 0));
+                x -= inwardNudge;
+            }
+
             x = Math.max(printableMinX, Math.min(x, printableMaxX));
             y = Math.max(printableMinY, Math.min(y, printableMaxY));
 
-            // Field Block voor tekst wrapping en uitlijning.
-            // Let op: op ZM400 geeft ^FB in combinatie met ^A0R/^A0B instabiele output,
-            // dus voor verticale tekst bewust uitschakelen.
-            if (!isVerticalRotation) {
-                zpl += `^FO${x},${y}`;
-                // ^A0 = built-in font family (monospace), rotation, height (dots), width (dots)
-                // Ensure fontHeight > 0 to prevent rendering issues
-                const safeFontHeight = Math.max(6, Math.min(fontHeight, 500)); // Valid range: 6-500 dots
-                zpl += `^A0${rot},${safeFontHeight},${fontWidth}`;
-            }
+            zpl += `^FO${x},${y}`;
+            const safeFontHeight = Math.max(6, Math.min(fontHeight, 500));
+            zpl += `^A0${rot},${safeFontHeight},${fontWidth}`;
 
-            if (widthDots && !isVerticalRotation) {
+            if (widthDots) {
                 const alignMap = { 'left': 'L', 'center': 'C', 'right': 'R', 'justify': 'J' };
                 const alignKey: ZplTextAlign =
                     el.align === 'center' || el.align === 'right' || el.align === 'justify'
                         ? el.align
                         : 'left';
                 const align = alignMap[alignKey] || 'L';
+                const maxLines = Math.max(1, Number(el.maxLines || 1));
                 zpl += `^FB${widthDots},${maxLines},0,${align},0`;
             }
 
             // Inverted text (wit op zwart)
-            if (el.inverted && !isVerticalRotation) {
+            if (el.inverted) {
                 zpl += `^FR`;
             }
 
-            if (isVerticalRotation && widthDots) {
-                const wrappedLines = wrapTextContent(content, charsPerLine, maxLines);
-                const lineAdvanceDots = Math.max(1, Math.round(fontHeight * 1.05));
-                const startX = x;
-
-                wrappedLines.forEach((line, lineIndex) => {
-                    const lineX = rot === 'R'
-                        ? startX - (lineIndex * lineAdvanceDots)
-                        : startX + (lineIndex * lineAdvanceDots);
-                    zpl += `^FO${lineX},${y}`;
-                    const safeFontHeight = Math.max(6, Math.min(fontHeight, 500));
-                    zpl += `^A0${rot},${safeFontHeight},${fontWidth}`;
-                    if (el.inverted) {
-                        zpl += `^FR`;
-                    }
-                    zpl += `^FD${line}^FS`;
-                });
-            } else if (isVerticalRotation) {
-                // Vertical without wrapping
-                zpl += `^FO${x},${y}`;
-                const safeFontHeight = Math.max(6, Math.min(fontHeight, 500));
-                zpl += `^A0${rot},${safeFontHeight},${fontWidth}`;
-                if (el.inverted) {
-                    zpl += `^FR`;
-                }
-                zpl += `^FD${content}^FS`;
-            } else {
-                zpl += `^FD${content}^FS`;
-            }
+            zpl += `^FD${content}^FS`;
         }
 
         // TYPE: BARCODE (Code 128)
@@ -402,11 +358,29 @@ export const generatePrintData = (
 
         // TYPE: QR CODE
         else if (el.type === 'qr') {
-            const x = baseX;
-            const y = baseY;
+            let x = baseX;
+            let y = baseY;
+
+            // QR in ZPL gebruikt discrete moduleschaal (magnification), terwijl de editor
+            // in mm werkt. Bereken daarom een schaal op basis van element width/height.
+            const targetQrMm = Math.max(Number(el.width || 0), Number(el.height || 0));
+            const targetQrDots = targetQrMm > 0 ? mmToDots(targetQrMm) : 0;
+            const autoMag = targetQrDots > 0 ? Math.max(2, Math.round(targetQrDots / 24)) : 4;
+            const rawMag = targetQrDots > 0
+                ? autoMag
+                : Number(el.magnification || 4);
+            const mag = Math.max(1, Math.min(10, Math.round(rawMag)));
+
+            // Center de effectieve QR-bitmap binnen het gewenste elementvak.
+            if (targetQrDots > 0) {
+                const renderedQrDots = mag * 24;
+                const delta = Math.round((targetQrDots - renderedQrDots) / 2);
+                x += delta;
+                y += delta;
+            }
+
             zpl += `^FO${x},${y}`;
             // ^BQ orientation, model, magnification, error correction, mask
-            const mag = Number(el.magnification || 4); // Grootte (1-10)
             zpl += `^BQN,2,${mag},Q,7`;
             zpl += `^FDQA,${content}^FS`;
         }

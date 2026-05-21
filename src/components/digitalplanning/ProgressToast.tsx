@@ -1,21 +1,14 @@
 import React from "react";
 import { Loader, CheckCircle } from "lucide-react";
+import { useProgressOperationsStore } from "../../contexts/ProgressOperationContext";
 
-interface Operation {
-  id: string;
-  status: string;
-  lotNumber: string;
-}
+const ProgressToast: React.FC = () => {
+  const operationsMap = useProgressOperationsStore((state) => state.operations);
+  const operations = Object.entries(operationsMap).map(([id, op]) => ({ id, ...op }));
+  const operationCount = operations.length;
 
-interface Props {
-  operationCount: number;
-  getOperations: () => Operation[];
-}
-
-const ProgressToast: React.FC<Props> = ({ operationCount, getOperations }) => {
   if (operationCount === 0) return null;
 
-  const operations = getOperations();
   const isAnyBusy = operations.some(
     (operation) => !operation.status.includes("Klaar") && !operation.status.includes("Fout")
   );

@@ -1,39 +1,32 @@
 import React from "react";
-import { useBackgroundTasks } from "../../contexts/BackgroundTaskContext";
-import { Download, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { useBackgroundTaskStore } from "../../contexts/BackgroundTaskContext";
+import { Download, Loader2, CheckCircle, AlertCircle, X } from "lucide-react";
 import { format } from "date-fns";
-
-interface BackgroundTaskTimestamp {
-  toDate?: () => Date;
-}
-
-interface BackgroundTask {
-  id: string;
-  status?: string;
-  taskName?: string;
-  createdAt?: BackgroundTaskTimestamp | null;
-  error?: string;
-  result?: string;
-  fileName?: string;
-}
-
-interface BackgroundTasksContextValue {
-  tasks: BackgroundTask[];
-  downloadTaskResult: (task: BackgroundTask) => void;
-}
+import { doc, deleteDoc } from "firebase/firestore";
+import { db } from "../../config/firebase";
 
 export default function BackgroundTaskOverlay() {
-  const { tasks, downloadTaskResult } = useBackgroundTasks() as BackgroundTasksContextValue;
+  const tasks = useBackgroundTaskStore((state) => state.tasks);
+  const downloadTaskResult = useBackgroundTaskStore((state) => state.downloadTaskResult);
+
   const visibleTasks = tasks.slice(0, 3);
 
   if (visibleTasks.length === 0) return null;
+
+  const clearTask = async (taskId: string) => {
+    try {
+      await deleteDoc(doc(db, "future-factory/exports/tasks", taskId));
+    } catch (error) {
+      console.error("Kon export taak niet wissen:", error);
+    }
+  };
 
   return (
     <div className="fixed bottom-20 right-4 z-[9999] flex flex-col gap-2 w-72 pointer-events-none">
       {visibleTasks.map((task) => (
         <div
           key={task.id}
-          className={`pointer-events-auto bg-white border-2 rounded-2xl shadow-xl overflow-hidden transition-all duration-300 ${
+          className={`pointer-events-auto relative bg-white border-2 rounded-2xl shadow-xl overflow-hidden transition-all duration-300 ${
             task.status === "completed"
               ? "border-emerald-100"
               : task.status === "failed"
@@ -41,13 +34,21 @@ export default function BackgroundTaskOverlay() {
                 : "border-blue-100"
           }`}
         >
+          <button 
+            onClick={() => clearTask(task.id)}
+            className="absolute top-2 right-2 p-1 text-slate-400 hover:text-rose-500 transition-colors rounded-full z-10"
+            title="Melding sluiten"
+          >
+            <X size={14} />
+          </button>
+
           <div className="p-3">
             <div className="flex items-center gap-3 mb-2">
               {task.status === "processing" && <Loader2 className="animate-spin text-blue-500" size={18} />}
               {task.status === "completed" && <CheckCircle className="text-emerald-500" size={18} />}
               {task.status === "failed" && <AlertCircle className="text-rose-500" size={18} />}
 
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 pr-4">
                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest truncate">
                   {task.taskName || "Export"}
                 </p>

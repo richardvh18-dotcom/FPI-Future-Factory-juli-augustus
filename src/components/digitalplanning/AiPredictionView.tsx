@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   BrainCircuit, 
@@ -16,51 +16,149 @@ import {
 import { collection, onSnapshot } from 'firebase/firestore';
 import { useTranslation } from 'react-i18next';
 import { db } from '../../config/firebase';
-import { getArchiveItemsPath, PATHS } from '../../config/dbPaths';
+import { getArchiveItemsPath, PATHS, getPathString } from '../../config/dbPaths';
 import { calculateDuration, formatMinutes } from '../../utils/efficiencyCalculator';
 import { subscribeScopedEfficiencyHours } from '../../utils/efficiencyScopedReader';
+
+type AiPredictionViewProps = {
+  onClose: () => void;
+};
+
+type TimestampLike = {
+  toDate?: () => Date;
+  seconds?: number;
+};
+
+type HistoryEntry = {
+  action?: string;
+  details?: string;
+  station?: string;
+  timestamp?: TimestampLike | string | Date | null;
+};
+
+type LogRecord = {
+  id: string;
+  _archived?: boolean;
+  _archiveYear?: number;
+  history?: HistoryEntry[];
+  timestamps?: Record<string, TimestampLike | string | Date | null | undefined>;
+  status?: string;
+  currentStep?: string;
+  currentStation?: string;
+  itemCode?: string;
+  productId?: string;
+  item?: string;
+  productCode?: string;
+  partNumber?: string;
+  description?: string;
+  operator?: string;
+  processedBy?: string;
+  user?: string;
+  createdAt?: TimestampLike | string | Date | null;
+  startTime?: TimestampLike | string | Date | null;
+  startedAt?: TimestampLike | string | Date | null;
+  endTime?: TimestampLike | string | Date | null;
+  completedAt?: TimestampLike | string | Date | null;
+  updatedAt?: TimestampLike | string | Date | null;
+};
+
+type ScopedEfficiencyRowLike = {
+  itemCode?: string;
+  productId?: string;
+  standardTimeTotal?: number;
+  standardMinutes?: number;
+};
+
+type CandidateResult =
+  | { included: false; reason: string; productKey?: string; duration?: number }
+  | { included: true; productKey: string; duration: number; start: Date; itemName: string; operator: string };
+
+type ProductLogEntry = {
+  date: Date;
+  duration: number;
+  operator: string;
+};
+
+type ProductGroup = {
+  logs: ProductLogEntry[];
+  item: string;
+};
+
+type AnalysisItem = {
+  itemCode: string;
+  itemName: string;
+  count: number;
+  avgDuration: number;
+  recentAvg: number;
+  targetTime: number;
+  deviation: number;
+  trendDiff: number;
+  stabilityScore: number;
+  recommendation: 'maintain' | 'increase_target' | 'decrease_target';
+  confidence: 'low' | 'medium' | 'high';
+  logs: ProductLogEntry[];
+};
+
+type IngestionStats = {
+  mode: string;
+  tracking: number;
+  archived: number;
+  standards: number;
+  totalCandidates: number;
+  withProductKey: number;
+  completedLike: number;
+  validDuration: number;
+  missingProductKey: number;
+  missingCompletion: number;
+  tooShortDuration: number;
+  tooLongDuration: number;
+  analyzedProducts: number;
+};
+
+const colPath = (path: string[]) => collection(db, getPathString(path));
 
 /**
  * AiPredictionView
  * Analyseert historische productiedata om trends, afwijkingen en nieuwe standaardtijden te voorspellen.
  */
-const AiPredictionView = ({ onClose }) => {
+const AiPredictionView = ({ onClose }: AiPredictionViewProps) => {
   const usePilotReadData = false;
   const { t } = useTranslation();
   const readPaths = PATHS;
   const MIN_VALID_DURATION = 1;
   const MAX_VALID_DURATION = 10080;
   const [loading, setLoading] = useState(true);
-  const [trackingData, setTrackingData] = useState([]);
-  const [archivedData, setArchivedData] = useState([]);
-  const [standards, setStandards] = useState([]);
+  const [trackingData, setTrackingData] = useState<LogRecord[]>([]);
+  const [archivedData, setArchivedData] = useState<LogRecord[]>([]);
+  const [standards, setStandards] = useState<ScopedEfficiencyRowLike[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedProduct, setSelectedProduct] = useState<AnalysisItem | null>(null);
 
-  const toDateValue = (value) => {
+  const toDateValue = (value: TimestampLike | string | Date | null | undefined) => {
     if (!value) return null;
-    if (value?.toDate) return value.toDate();
-    if (value?.seconds) return new Date(value.seconds * 1000);
+    if (typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') return value.toDate();
+    if (typeof value === 'object' && 'seconds' in value && typeof value.seconds === 'number') return new Date(value.seconds * 1000);
+    if (typeof value !== 'string' && !(value instanceof Date)) return null;
     const d = value instanceof Date ? value : new Date(value);
     return Number.isNaN(d.getTime()) ? null : d;
   };
 
-  const getHistoryTimestampBy = (log, matcher) => {
+  const getHistoryTimestampBy = (log: LogRecord, matcher: (entry: HistoryEntry) => boolean) => {
     if (!Array.isArray(log?.history)) return null;
     const row = log.history.find((h) => matcher(h || {}));
     return toDateValue(row?.timestamp);
   };
 
-  const hasHistoryMatch = (log, matcher) => {
+  const hasHistoryMatch = (log: LogRecord, matcher: (entry: HistoryEntry) => boolean) => {
     if (!Array.isArray(log?.history)) return false;
     return log.history.some((h) => matcher(h || {}));
   };
 
-  const getProductKey = (log) => {
+  const getProductKey = (log: LogRecord) => {
     return log.itemCode || log.productId || log.item || log.productCode || log.partNumber || '';
   };
 
-  const isCompletedLike = (log) => {
+  const isCompletedLike = (log: LogRecord) => {
     const statusText = String(log?.status || '').toLowerCase();
     const stepText = String(log?.currentStep || log?.currentStation || '').toLowerCase();
     const hasFinishTimestamp = Boolean(log?.timestamps?.finished || log?.timestamps?.completed);
@@ -93,7 +191,7 @@ const AiPredictionView = ({ onClose }) => {
     );
   };
 
-  const getLogStartDate = (log) => {
+  const getLogStartDate = (log: LogRecord) => {
     return (
       toDateValue(log?.timestamps?.wikkelen_start) ||
       toDateValue(log?.timestamps?.station_start) ||
@@ -106,7 +204,7 @@ const AiPredictionView = ({ onClose }) => {
     );
   };
 
-  const getLogDuration = (log) => {
+  const getLogDuration = (log: LogRecord) => {
     const ts = log?.timestamps || {};
 
     const stationStart = toDateValue(ts.station_start || ts.started || log?.startTime || log?.startedAt);
@@ -142,7 +240,7 @@ const AiPredictionView = ({ onClose }) => {
       toDateValue(ts.completed) ||
       toDateValue(log?.updatedAt);
 
-    const addDuration = (startValue, endValue) => {
+    const addDuration = (startValue: TimestampLike | string | Date | null | undefined, endValue: TimestampLike | string | Date | null | undefined) => {
       const start = toDateValue(startValue);
       const end = toDateValue(endValue);
       if (!start || !end) return 0;
@@ -182,7 +280,7 @@ const AiPredictionView = ({ onClose }) => {
     return 0;
   };
 
-  const getAnalysisCandidate = (log) => {
+  const getAnalysisCandidate = (log: LogRecord): CandidateResult => {
     const productKey = getProductKey(log);
     if (!productKey) {
       return { included: false, reason: 'missingProductKey' };
@@ -216,18 +314,18 @@ const AiPredictionView = ({ onClose }) => {
 
     setLoading(true);
 
-    const unsubTracking = onSnapshot(collection(db, ...readPaths.TRACKING), (snap) => {
-      setTrackingData(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsubTracking = onSnapshot(colPath(readPaths.TRACKING), (snap) => {
+      setTrackingData(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LogRecord, 'id'>) })));
     });
 
     // Neem meerdere archiefjaren mee voor bruikbare AI trenddata.
     const currentYear = new Date().getFullYear();
     const archiveYears = [currentYear, currentYear - 1, currentYear - 2];
-    const archiveBuckets = {};
+    const archiveBuckets: Record<number, LogRecord[]> = {};
 
     const archiveUnsubs = archiveYears.map((year) =>
-      onSnapshot(collection(db, ...getArchiveItemsPath(year)), (snap) => {
-        archiveBuckets[year] = snap.docs.map(d => ({ id: d.id, ...d.data(), _archived: true, _archiveYear: year }));
+      onSnapshot(colPath(getArchiveItemsPath(year)), (snap) => {
+        archiveBuckets[year] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LogRecord, 'id'>), _archived: true, _archiveYear: year }));
         const merged = Object.values(archiveBuckets).flat();
         setArchivedData(merged);
       })
@@ -236,7 +334,7 @@ const AiPredictionView = ({ onClose }) => {
     const unsubStandards = subscribeScopedEfficiencyHours({
       db,
       mode: 'active',
-      onData: (rows) => setStandards(rows),
+      onData: (rows) => setStandards(rows as ScopedEfficiencyRowLike[]),
       onError: (error) => {
         console.warn('Scoped efficiency listener failed:', error);
         setStandards([]);
@@ -253,11 +351,11 @@ const AiPredictionView = ({ onClose }) => {
 
   const analysis = useMemo(() => {
     const allData = [...trackingData, ...archivedData];
-    if (!allData.length) return [];
+    if (!allData.length) return [] as AnalysisItem[];
 
-    const productGroups = {};
+    const productGroups: Record<string, ProductGroup> = {};
 
-    allData.forEach(log => {
+    allData.forEach((log: LogRecord) => {
       const candidate = getAnalysisCandidate(log);
       if (!candidate.included) return;
 
@@ -276,7 +374,7 @@ const AiPredictionView = ({ onClose }) => {
     });
 
     return Object.entries(productGroups).map(([code, data]) => {
-      const logs = data.logs.sort((a, b) => a.date - b.date);
+      const logs = [...data.logs].sort((a, b) => a.date.getTime() - b.date.getTime());
       const count = logs.length;
       
       if (count === 0) return null;
@@ -284,7 +382,7 @@ const AiPredictionView = ({ onClose }) => {
       const totalDuration = logs.reduce((sum, l) => sum + l.duration, 0);
       const avgDuration = totalDuration / count;
 
-      const std = standards.find(s => s.itemCode === code || s.productId === code);
+      const std = standards.find((s) => s.itemCode === code || s.productId === code);
       const targetTime = std ? (std.standardTimeTotal || std.standardMinutes || 0) : avgDuration;
 
       const recentLogs = logs.slice(-5);
@@ -320,7 +418,7 @@ const AiPredictionView = ({ onClose }) => {
         confidence,
         logs: logs
       };
-    }).filter(Boolean).sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
+    }).filter((item): item is AnalysisItem => Boolean(item)).sort((a, b) => Math.abs(b.deviation) - Math.abs(a.deviation));
 
   }, [trackingData, archivedData, standards]);
 
@@ -335,7 +433,7 @@ const AiPredictionView = ({ onClose }) => {
     let tooShortDuration = 0;
     let tooLongDuration = 0;
 
-    allData.forEach((log) => {
+    allData.forEach((log: LogRecord) => {
       const productKey = getProductKey(log);
       if (!productKey) {
         missingProductKey += 1;
@@ -383,7 +481,7 @@ const AiPredictionView = ({ onClose }) => {
   const filteredAnalysis = useMemo(() => {
     if (!searchTerm) return analysis;
     const lower = searchTerm.toLowerCase();
-    return analysis.filter(a => 
+    return analysis.filter((a: AnalysisItem) => 
       a.itemCode.toLowerCase().includes(lower) || 
       a.itemName.toLowerCase().includes(lower)
     );

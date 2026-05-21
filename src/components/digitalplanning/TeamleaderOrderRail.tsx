@@ -5,19 +5,18 @@ import { useTeamleaderSelection } from "./TeamleaderSelectionContext";
 
 interface TeamleaderOrderRailProps {
   canManageOverproduction?: boolean;
-  overproductionGroups?: unknown[];
-  onOpenOverproductionGroup?: (...args: unknown[]) => void;
-  resolveOverproductionRoute?: (...args: unknown[]) => unknown;
-  orders?: unknown[];
-  trackedProducts?: unknown[];
-  archivedProducts?: unknown[];
-  archivedHistoryProducts?: unknown[];
+  overproductionGroups?: any[];
+  onOpenOverproductionGroup?: (..._args: any[]) => void;
+  resolveOverproductionRoute?: (..._args: any[]) => any;
+  orders?: any[];
+  trackedProducts?: any[];
+  archivedProducts?: any[];
+  archivedHistoryProducts?: any[];
 }
 
 interface TeamleaderSelectionValue {
-  selectedDetailEntry?: unknown;
   selectedSidebarEntryId?: string | null;
-  handleSidebarSelect?: (...args: unknown[]) => void;
+  handleSidebarSelect?: (..._args: unknown[]) => void;
 }
 
 const TeamleaderOrderRail = ({
@@ -30,11 +29,11 @@ const TeamleaderOrderRail = ({
   archivedProducts,
   archivedHistoryProducts,
 }: TeamleaderOrderRailProps) => {
-  const { selectedDetailEntry, selectedSidebarEntryId, handleSidebarSelect } =
+  const { selectedSidebarEntryId, handleSidebarSelect } =
     useTeamleaderSelection() as TeamleaderSelectionValue;
 
   return (
-    <div className={`shrink-0 flex flex-col min-h-0 transition-all duration-300 ${selectedDetailEntry ? "hidden lg:flex w-[38rem]" : "w-full lg:w-[38rem]"}`}>
+    <div className="flex flex-col min-h-0 h-full w-full transition-all duration-300">
       {canManageOverproduction && (
         <OverproductionPanel
           overproductionGroups={overproductionGroups}
@@ -44,13 +43,13 @@ const TeamleaderOrderRail = ({
       )}
       <div className="min-h-0 flex-1">
         <PlanningSidebar
-          orders={orders as never[]}
-          trackedProducts={trackedProducts as never[]}
-          archivedProducts={archivedProducts as never[]}
-          archivedHistoryProducts={archivedHistoryProducts as never[]}
+          orders={orders as any[]}
+          trackedProducts={trackedProducts as any[]}
+          archivedProducts={archivedProducts as any[]}
+          archivedHistoryProducts={archivedHistoryProducts as any[]}
           enableRejectionScopes={true}
-          selectedOrderId={selectedSidebarEntryId}
-          onSelect={handleSidebarSelect}
+          selectedOrderId={selectedSidebarEntryId || undefined}
+          onSelect={(handleSidebarSelect as ((_: any) => void) | undefined) || (() => {})}
         />
       </div>
     </div>

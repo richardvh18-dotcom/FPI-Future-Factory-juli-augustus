@@ -21,6 +21,40 @@ import StatusBadge from "../common/StatusBadge";
 import { formatDateTimeSafe } from "../../../utils/dateUtils";
 import { useNotifications } from "../../../contexts/NotificationContext";
 
+type DrillDownItem = {
+  id?: string;
+  lotNumber?: string;
+  orderId?: string;
+  item?: string;
+  operator?: string;
+  currentStep?: string;
+  status?: string;
+  drawing?: string;
+  plan?: number;
+  machine?: string;
+  startTime?: unknown;
+  lossenTime?: unknown;
+  nabewerkenTime?: unknown;
+  inspectieTime?: unknown;
+  [key: string]: unknown;
+};
+
+type DrillDownOrder = {
+  drawing?: string;
+  plan?: number;
+  liveFinish?: number;
+};
+
+type DrillDownModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  items?: DrillDownItem[];
+  ordersMap?: Record<string, DrillDownOrder>;
+  isManager?: boolean;
+  onDeleteLot?: (lotNumber: string) => void | Promise<void>;
+};
+
 /**
  * DrillDownModal V2.0 - Industrial Performance Edition
  * Beheert diepe inkijk in lotnummer-data met O(1) lookup en render-limiting.
@@ -33,9 +67,9 @@ const DrillDownModal = React.memo(({
   ordersMap = {},
   isManager,
   onDeleteLot,
-}) => {
+}: DrillDownModalProps) => {
   const { showConfirm } = useNotifications();
-  const [expandedId, setExpandedId] = useState(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [internalSearch, setInternalSearch] = useState("");
   const [visibleLimit, setVisibleLimit] = useState(40);
   const location = useLocation();
@@ -45,7 +79,7 @@ const DrillDownModal = React.memo(({
     const q = internalSearch.toLowerCase().trim();
     if (!q) return items;
     return items.filter(
-      (item) =>
+      (item: DrillDownItem) =>
         (item.lotNumber || "").toLowerCase().includes(q) ||
         (item.orderId || "").toLowerCase().includes(q) ||
         (item.item || "").toLowerCase().includes(q)
@@ -110,10 +144,10 @@ const DrillDownModal = React.memo(({
               Geen matches gevonden
             </div>
           ) : (
-            filteredItems.slice(0, visibleLimit).map((item) => {
-              const itemId = item.id || item.lotNumber;
+            filteredItems.slice(0, visibleLimit).map((item: DrillDownItem) => {
+              const itemId = item.id || item.lotNumber || item.orderId || "unknown-item";
               const isExpanded = expandedId === itemId;
-              const linkedOrder = ordersMap[item.orderId] || {};
+              const linkedOrder = item.orderId ? (ordersMap[item.orderId] || {}) : {};
 
               return (
                 <div
@@ -170,6 +204,8 @@ const DrillDownModal = React.memo(({
                         <button
                           onClick={async (e) => {
                             e.stopPropagation();
+                            const lotNumber = item.lotNumber;
+                            if (!lotNumber) return;
                             const confirmed = await showConfirm({
                               title: "Record verwijderen",
                               message: "Dit record permanent wissen?",
@@ -178,7 +214,7 @@ const DrillDownModal = React.memo(({
                               tone: "danger",
                             });
                             if (!confirmed) return;
-                            onDeleteLot?.(item.lotNumber);
+                            onDeleteLot?.(lotNumber);
                           }}
                           className="p-3 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all"
                         >

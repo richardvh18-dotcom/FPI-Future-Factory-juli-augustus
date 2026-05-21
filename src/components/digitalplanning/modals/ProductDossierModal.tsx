@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { updatePlanningOrderPriority } from "../../../services/planningSecurityService";
 import React, { useState, useMemo, useRef, useEffect as useResizeEffect } from "react";
 import {
@@ -27,12 +26,12 @@ import { format } from "date-fns";
 import { findDrawingForOrder, syncOrderDrawing } from "../../../utils/drawingLinker";
 import { collection, query, where, getDocs, getDoc, doc, arrayUnion, limit } from "firebase/firestore";
 import { db, logActivity } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
+import { PATHS, getPathString } from "../../../config/dbPaths";
 import { useAdminAuth } from "../../../hooks/useAdminAuth";
 import ProductDetailModal from "../../products/ProductDetailModal";
 import LabelVisualPreview from "../../printer/LabelVisualPreview";
 import { useLabelPreview } from "../../../hooks/useLabelPreview";
-import ConfirmationModal from "./ConfirmationModal.tsx";
+import ConfirmationModal from "./ConfirmationModal";
 import { formatDateTimeSafe, toDateSafe } from "../../../utils/dateUtils";
 import { useNotifications } from '../../../contexts/NotificationContext';
 import {
@@ -41,10 +40,132 @@ import {
   restoreArchivedTrackedProduct,
 } from "../../../services/planningSecurityService";
 
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  return String(error);
+};
+
+type DateLikeInput =
+  | Date
+  | string
+  | number
+  | {
+      toDate?: () => Date;
+      toMillis?: () => number;
+      seconds?: number;
+      _seconds?: number;
+      nanoseconds?: number;
+      _nanoseconds?: number;
+    }
+  | null
+  | undefined;
+
 /**
  * ProductDossierModal: Toont proces-stappen, kwaliteitsmetingen en order-info.
  * Ondersteunt nu ook het toevoegen van QC rapporten/klachten en het verplaatsen van producten.
  */
+type DossierProduct = {
+  id: string;
+  lotNumber?: string;
+  orderId?: string;
+  order?: string;
+  orderNumber?: string;
+  orderNr?: string;
+  parentOrderId?: string;
+  item?: string;
+  itemCode?: string;
+  labelZPL?: string;
+  labelTemplateId?: string | null;
+  archived?: boolean;
+  isArchivedOrder?: boolean;
+  archivedAt?: DateLikeInput;
+  inspection?: { 
+    status?: string;
+    reasons?: string[];
+  };
+  note?: string;
+  qcNotes?: Array<{ user?: string; timestamp?: DateLikeInput; text?: string }>;
+  measurements?: Record<string, string | number>;
+  history?: HistoryEntry[];
+  currentStep?: string;
+  currentStation?: string;
+  machine?: string;
+  originMachine?: string;
+  extraCode?: string;
+  startTime?: DateLikeInput;
+  createdAt?: DateLikeInput;
+  sourceDataId?: string;
+  sourcePath?: string;
+  __docPath?: string;
+  archiveDocId?: string;
+};
+
+type DossierOrder = {
+  id?: string;
+  orderId?: string;
+  order?: string;
+  orderNumber?: string;
+  orderNr?: string;
+  drawing?: string;
+  priority?: string | boolean;
+  __docPath?: string;
+  item?: string;
+  itemCode?: string;
+  productId?: string;
+  manufacturedId?: string;
+  articleCode?: string;
+  customer?: string;
+  project?: string;
+  deliveryDate?: DateLikeInput;
+  notes?: string;
+  extraCode?: string;
+  plan?: number;
+  liveFinish?: number;
+  isMoved?: boolean;
+};
+
+type CatalogProduct = {
+  id: string;
+  itemCode?: string;
+  [key: string]: unknown;
+};
+
+type HistoryEntry = {
+  id?: string;
+  action?: string;
+  details?: string;
+  station?: string;
+  timestamp?: DateLikeInput;
+  time?: DateLikeInput;
+  user?: string;
+  operator?: string;
+  operatorName?: string;
+  operatorNumber?: string;
+};
+
+type PrintQueueJob = {
+  id: string;
+  zpl?: string;
+  printData?: string;
+  createdAt?: { toMillis?: () => number };
+  metadata?: { 
+    templateId?: string | null;
+    lotNumber?: string;
+    orderId?: string;
+  };
+};
+
+type ProductDossierModalProps = {
+  isOpen: boolean;
+  product: DossierProduct | null;
+  onClose: () => void;
+  orders?: DossierOrder[];
+  onAddNote?: (productId: string, note: string) => void | Promise<void>;
+  onMoveLot?: (productId: string, targetStation: string, options?: Record<string, unknown>) => void | Promise<void>;
+  currentDepartment?: string;
+  allowedStations?: { id: string; name: string }[];
+};
+
 const ProductDossierModal = ({
   isOpen,
   product,
@@ -52,7 +173,9 @@ const ProductDossierModal = ({
   orders = [],
   onAddNote,
   onMoveLot,
-}) => {
+  currentDepartment,
+  allowedStations = [],
+}: ProductDossierModalProps) => {
   const { notify } = useNotifications();
   const [newNote, setNewNote] = useState("");
   const [isAdding, setIsAdding] = useState(false);
@@ -62,24 +185,26 @@ const ProductDossierModal = ({
   const [overrideLoading, setOverrideLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [catalogProduct, setCatalogProduct] = useState(null);
+  const [catalogProduct, setCatalogProduct] = useState<CatalogProduct | null>(null);
   const [loadingCatalog, setLoadingCatalog] = useState(false);
-  const [historyWithOperators, setHistoryWithOperators] = useState([]);
+  const [historyWithOperators, setHistoryWithOperators] = useState<HistoryEntry[]>([]);
   const [isReprinting, setIsReprinting] = useState(false);
   const [reprintQuantity, setReprintQuantity] = useState("1");
   const [showLabelPreview, setShowLabelPreview] = useState(false);
   const [resolvedLabelZPL, setResolvedLabelZPL] = useState("");
-  const [resolvedLabelTemplateId, setResolvedLabelTemplateId] = useState(null);
+  const [resolvedLabelTemplateId, setResolvedLabelTemplateId] = useState<string | null>(null);
   const [isResolvingLabel, setIsResolvingLabel] = useState(false);
-  const { role, user } = useAdminAuth();
-  const canEditPriority = ["admin", "teamleader"].includes(role);
+  const { role, user } = useAdminAuth() as { role?: string | null; user?: { uid: string; email: string } | null };
+  const canEditPriority = ["admin", "teamleader"].includes(String(role || "").toLowerCase());
   const [showConfirmMove, setShowConfirmMove] = useState(false);
   const [showConfirmReject, setShowConfirmReject] = useState(false);
   const [rejectLoading, setRejectLoading] = useState(false);
-  const [rejectReasons, setRejectReasons] = useState([]);
+  const [rejectReasons, setRejectReasons] = useState<string[]>([]);
   const [rejectNote, setRejectNote] = useState("");
   const [previewZoom, setPreviewZoom] = useState(1);
-  const previewContainerRef = useRef(null);
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const notifyAny = notify as (message: string) => void;
 
   const _DOSSIER_PPM = 3.78;
   const labelProductData = useMemo(() => product ? {
@@ -88,7 +213,10 @@ const ProductDossierModal = ({
     lotNumber: product.lotNumber,
     item: product.item,
   } : {}, [product]);
-  const { selectedLabel: dossierLabel, previewData: dossierPreviewData } = useLabelPreview(labelProductData, resolvedLabelTemplateId);
+  const { selectedLabel: dossierLabel, previewData: dossierPreviewData } = useLabelPreview(labelProductData, resolvedLabelTemplateId || undefined) as {
+    selectedLabel?: { width?: number; height?: number } | null;
+    previewData?: Record<string, unknown>;
+  };
 
   useResizeEffect(() => {
     const el = previewContainerRef.current;
@@ -96,8 +224,8 @@ const ProductDossierModal = ({
     const recalc = () => {
       const W = el.clientWidth - 24;
       const H = Math.max(el.clientHeight - 24, 120);
-      const lW = dossierLabel.width * _DOSSIER_PPM;
-      const lH = dossierLabel.height * _DOSSIER_PPM;
+      const lW = Number(dossierLabel?.width || 0) * _DOSSIER_PPM;
+      const lH = Number(dossierLabel?.height || 0) * _DOSSIER_PPM;
       if (lW > 0 && lH > 0) setPreviewZoom(Math.min(2, W / lW, H / lH));
     };
     recalc();
@@ -109,7 +237,7 @@ const ProductDossierModal = ({
   const isTijdelijkeAfkeur = product?.inspection?.status === "Tijdelijke afkeur";
   const isArchivedProduct = Boolean(product?.archived || product?.isArchivedOrder || product?.archivedAt);
 
-  const REJECTION_REASON_LABELS = {
+  const REJECTION_REASON_LABELS: Record<string, string> = {
     "rejection.surfaceDamage": "Oppervlakteschade",
     "rejection.dimensionDeviation": "Maatafwijking (TW/TF/W)",
     "rejection.qualityInsufficient": "Kwaliteit onvoldoende",
@@ -118,7 +246,7 @@ const ProductDossierModal = ({
     "rejection.other": "Overig",
   };
 
-  const toggleRejectReason = (reason) => {
+  const toggleRejectReason = (reason: string) => {
     setRejectReasons((prev) =>
       prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
     );
@@ -130,14 +258,16 @@ const ProductDossierModal = ({
     setIsSyncing(true);
     const drawing = await findDrawingForOrder(parentOrder);
     if (drawing) {
-      await syncOrderDrawing(parentOrder.id, drawing);
+      if (parentOrder.id) {
+        await syncOrderDrawing(parentOrder.id, drawing);
+      }
     } else {
       console.warn("[Dossier Sync] Geen tekening gevonden voor order:", parentOrder.id, { itemCode: parentOrder.itemCode, item: parentOrder.item, productId: parentOrder.productId });
     }
     setIsSyncing(false);
   };
 
-  const handleSetPriority = async (level) => {
+  const handleSetPriority = async (level: string) => {
     const parentOrderDocId = parentOrder.__docPath || parentOrder.id;
     if (!parentOrderDocId) return;
     // Toggle logic: als huidge priority gelijk is aan gekozen level, zet uit (false)
@@ -151,7 +281,7 @@ const ProductDossierModal = ({
       await updatePlanningOrderPriority({
         orderDocId: parentOrderDocId,
         priority: newPriority,
-        productDocId: product.id || "",
+        productDocId: product?.id || "",
         source: "ProductDossierModal",
         actorLabel: user?.email || role || "Admin",
       });
@@ -161,8 +291,8 @@ const ProductDossierModal = ({
         "ORDER_PRIORITY_UPDATE",
         `Dossier prioriteit gewijzigd: order ${parentOrder.id || displayOrderId}, naar ${newPriority || "normaal"}`
       );
-    } catch (e) {
-      console.error("Fout bij wijzigen prioriteit:", e);
+    } catch (e: unknown) {
+      console.error("Fout bij wijzigen prioriteit:", getErrorMessage(e));
     }
   };
 
@@ -176,14 +306,13 @@ const ProductDossierModal = ({
     product.parentOrderId ||
     "";
 
-  const parentOrder =
+  const parentOrder: DossierOrder =
     orders.find((o) => {
       const orderKeys = [o.orderId, o.order, o.orderNumber, o.orderNr, o.id]
         .filter(Boolean)
         .map((v) => String(v));
       return orderKeys.includes(String(productOrderId));
-    }) ||
-    {};
+    }) || ({} as DossierOrder);
 
   const displayOrderId =
     productOrderId ||
@@ -222,16 +351,16 @@ const ProductDossierModal = ({
 
       setIsResolvingLabel(true);
       try {
-        const queuePath = PATHS?.PRINT_QUEUE || ["future-factory", "production", "print_queue"];
-        const queueRef = collection(db, ...queuePath);
-        const calls = [];
+        const queuePath: string[] = (PATHS?.PRINT_QUEUE as string[]) || ["future-factory", "production", "print_queue"];
+        const queueRef = collection(db, getPathString(queuePath as string[]));
+        const calls: Array<Promise<import("firebase/firestore").QuerySnapshot>> = [];
 
         if (lot) calls.push(getDocs(query(queueRef, where("metadata.lotNumber", "==", lot), limit(20))));
         if (order) calls.push(getDocs(query(queueRef, where("metadata.orderId", "==", order), limit(20))));
 
         const snaps = await Promise.all(calls);
-        const candidates = snaps.flatMap((snap) =>
-          snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        const candidates: PrintQueueJob[] = snaps.flatMap((snap) =>
+          snap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) } as PrintQueueJob))
         );
 
         const uniqueById = new Map(candidates.map((c) => [c.id, c]));
@@ -245,8 +374,8 @@ const ProductDossierModal = ({
 
         setResolvedLabelZPL(String(best?.zpl || best?.printData || "").trim());
         setResolvedLabelTemplateId(best?.metadata?.templateId || null);
-      } catch (e) {
-        console.warn("Kon labeldata niet uit print queue ophalen:", e);
+      } catch (e: unknown) {
+        console.warn("Kon labeldata niet uit print queue ophalen:", getErrorMessage(e));
         setResolvedLabelZPL("");
         setResolvedLabelTemplateId(null);
       } finally {
@@ -267,11 +396,12 @@ const ProductDossierModal = ({
     
     setLoadingCatalog(true);
     try {
-      const productsRef = collection(db, ...PATHS.PRODUCTS);
+      const productsRef = collection(db, getPathString(PATHS.PRODUCTS as string[]));
       const drawingId = parentOrder.drawing;
+      if (!drawingId) return;
       
       // Eerst probeer direct op document ID (manualSyncDrawings slaat product ID op)
-      const directRef = doc(db, ...PATHS.PRODUCTS, drawingId);
+      const directRef = doc(db, `${getPathString(PATHS.PRODUCTS as string[])}/${drawingId}`);
       const directSnap = await getDoc(directRef);
       
       if (directSnap.exists()) {
@@ -307,8 +437,8 @@ const ProductDossierModal = ({
           }
         }
       }
-    } catch (e) {
-      console.error("Fout bij openen product detail:", e);
+    } catch (e: unknown) {
+      console.error("Fout bij openen product detail:", getErrorMessage(e));
     } finally {
       setLoadingCatalog(false);
     }
@@ -319,27 +449,27 @@ const ProductDossierModal = ({
     const stations = [...WORKSTATIONS];
     
     // Check of BH31 ontbreekt en voeg toe
-    if (!stations.find(s => s.id === "BH31")) {
-      stations.push({ id: "BH31", name: "BH31" });
+    if (!stations.find((s: any) => s.id === "BH31")) {
+      stations.push({ id: "BH31", name: "BH31" } as any);
     }
 
     // Filter "Station BM01" en duplicaten
-    const uniqueStations = stations.filter((s, index, self) => 
-      index === self.findIndex((t) => t.id === s.id) && 
+    const uniqueStations = stations.filter((s: any, index: number, self: any[]) => 
+      index === self.findIndex((t: any) => t.id === s.id) && 
       s.id !== "Station BM01" && s.name !== "Station BM01"
     );
 
-    return uniqueStations.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    return uniqueStations.sort((a: any, b: any) => a.id.localeCompare(b.id, undefined, { numeric: true }));
   }, []);
 
   const moveStations = useMemo(() => {
     if (isArchivedProduct) {
       const allowed = new Set(["BH31", "Nabewerking", "BM01"]);
-      return sortedStations.filter((s) => allowed.has(s.id));
+      return sortedStations.filter((s: any) => allowed.has(s.id));
     }
     if (!isTijdelijkeAfkeur) return sortedStations;
     const allowed = new Set(["BH31", "Nabewerking", "LOSSEN"]);
-    return sortedStations.filter((s) => allowed.has(s.id));
+    return sortedStations.filter((s: any) => allowed.has(s.id));
   }, [isArchivedProduct, isTijdelijkeAfkeur, sortedStations]);
 
   // Effect: Verrijk historie met operator data uit occupancy als deze ontbreekt
@@ -350,7 +480,7 @@ const ProductDossierModal = ({
         return;
       }
 
-      const enriched = await Promise.all(product.history.map(async (entry) => {
+      const enriched = await Promise.all((product.history || []).map(async (entry: HistoryEntry) => {
         // Als operator al bekend is in de entry, gebruik die
         if (entry.operator || entry.operatorNumber || entry.operatorName) return entry;
         
@@ -358,7 +488,7 @@ const ProductDossierModal = ({
         if (!entry.station || (!entry.timestamp && !entry.time)) return entry;
 
         try {
-          const ts = toDateSafe(entry.timestamp || entry.time);
+          const ts = toDateSafe((entry.timestamp || entry.time) as any);
           if (!ts || isNaN(ts.getTime())) return entry;
           
           const dateStr = ts.toISOString().split('T')[0];
@@ -366,14 +496,14 @@ const ProductDossierModal = ({
 
           // Zoek in occupancy (eerst exact, dan uppercase)
           let q = query(
-            collection(db, ...PATHS.OCCUPANCY),
+            collection(db, getPathString(PATHS.OCCUPANCY as string[])),
             where("date", "==", dateStr),
             where("machineId", "==", station)
           );
           let snap = await getDocs(q);
 
           if (snap.empty) {
-             q = query(collection(db, ...PATHS.OCCUPANCY), where("date", "==", dateStr), where("machineId", "==", station.toUpperCase()));
+             q = query(collection(db, getPathString(PATHS.OCCUPANCY as string[])), where("date", "==", dateStr), where("machineId", "==", station.toUpperCase()));
              snap = await getDocs(q);
           }
 
@@ -381,8 +511,8 @@ const ProductDossierModal = ({
             const opData = snap.docs[0].data();
             return { ...entry, operatorName: opData.operatorName, operatorNumber: opData.operatorNumber };
           }
-        } catch (e) {
-          console.warn("Kon historie niet verrijken:", e);
+        } catch (e: unknown) {
+          console.warn("Kon historie niet verrijken:", getErrorMessage(e));
         }
         return entry;
       }));
@@ -391,10 +521,10 @@ const ProductDossierModal = ({
     enrichHistory();
   }, [product, isOpen]);
 
-  const formatDeadline = (val) => {
-    const date = toDateSafe(val);
+  const formatDeadline = (val: unknown) => {
+    const date = toDateSafe(val as any);
     if (date) return format(date, "dd-MM-yyyy");
-    return String(val);
+    return String(val || "-");
   };
 
   const handleDefinitiveRejection = async () => {
@@ -415,8 +545,8 @@ const ProductDossierModal = ({
         "QUALITY_REJECT_FINAL",
         `Definitieve afkeur: lot ${product.lotNumber || product.id}, order ${displayOrderId}, redenen: ${reasonLabels}${rejectNote ? `; opmerking: ${rejectNote}` : ""}`
       );
-    } catch (err) {
-      console.error("Fout bij definitieve afkeur:", err);
+    } catch (err: unknown) {
+      console.error("Fout bij definitieve afkeur:", getErrorMessage(err));
     } finally {
       setRejectLoading(false);
       setShowConfirmReject(false);
@@ -436,7 +566,7 @@ const ProductDossierModal = ({
     ).trim();
     if (!productMoveIdentifier) return;
 
-    const restoreRouteMap = {
+    const restoreRouteMap: Record<string, string> = {
       BH31: "BH31",
       NABEWERKING: "NABEWERKING",
       BM01: "BM01",
@@ -457,10 +587,12 @@ const ProductDossierModal = ({
           sourceContext: "TEAMLEADER_FULL_LIST",
         });
       } else {
-        await onMoveLot(productMoveIdentifier, targetStation, {
-          isRepairMove: isTijdelijkeAfkeur,
-          repairInstruction: repairInstruction.trim(),
-        });
+        if (onMoveLot) {
+          await onMoveLot(productMoveIdentifier, targetStation, {
+            isRepairMove: isTijdelijkeAfkeur,
+            repairInstruction: repairInstruction.trim(),
+          });
+        }
       }
 
       // Planning order machine/week updates lopen nu server-side via moveTrackedProductManual callable.
@@ -479,7 +611,7 @@ const ProductDossierModal = ({
     }
   };
 
-  const printerHasStation = (printer, station) => {
+  const printerHasStation = (printer: Record<string, unknown>, station: string) => {
     if (!printer || !station) return false;
     const linked = Array.isArray(printer.linkedStations) ? printer.linkedStations : [];
     const queue = Array.isArray(printer.queueStations) ? printer.queueStations : [];
@@ -497,12 +629,12 @@ const ProductDossierModal = ({
     try {
       const BM01_STATION = "BM01";
       const quantity = Math.max(1, parseInt(reprintQuantity, 10) || 1);
-      const prnPaths = PATHS?.PRINTERS || ["future-factory", "settings", "printers"];
-      const snap = await getDocs(collection(db, ...prnPaths));
-      const printers = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const prnPaths: string[] = (PATHS?.PRINTERS as string[]) || ["future-factory", "settings", "printers"];
+      const snap = await getDocs(collection(db, getPathString(prnPaths as string[])));
+      const printers = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
 
       const stationPrinter = printers.find((p) => printerHasStation(p, BM01_STATION));
-      const fallbackDefault = printers.find((p) => p.isDefault);
+      const fallbackDefault = printers.find((p: any) => p.isDefault);
       const targetPrinter = stationPrinter || fallbackDefault || null;
 
       if (!targetPrinter) {
@@ -516,7 +648,7 @@ const ProductDossierModal = ({
         lotNumber: product.lotNumber || product.id || null,
         stationId: BM01_STATION,
         templateId: product.labelTemplateId || resolvedLabelTemplateId || null,
-        targetPrinterName: targetPrinter.name || targetPrinter.id,
+        targetPrinterName: String((targetPrinter as Record<string, unknown>).name || targetPrinter.id),
         source: "product_dossier_reprint",
       });
 
@@ -526,10 +658,11 @@ const ProductDossierModal = ({
         `Herprint aangevraagd: order ${displayOrderId}, lot ${product.lotNumber || product.id || "-"}, printer ${targetPrinter.id}, aantal ${quantity}`
       );
 
-      notify(`${quantity} herprint(s) naar wachtrij gestuurd (${targetPrinter.name || targetPrinter.id}) via station BM01.`);
-    } catch (e) {
-      console.error("Herprint mislukt:", e);
-      notify(`Herprint mislukt: ${e.message}`);
+      notify(`${quantity} herprint(s) naar wachtrij gestuurd (${String((targetPrinter as Record<string, unknown>).name || targetPrinter.id)}) via station BM01.`);
+    } catch (e: unknown) {
+      const msg = getErrorMessage(e);
+      console.error("Herprint mislukt:", msg);
+      notify(`Herprint mislukt: ${msg}`);
     } finally {
       setIsReprinting(false);
     }
@@ -725,7 +858,7 @@ const ProductDossierModal = ({
                     <div className="bg-white/60 rounded-lg p-3 border border-blue-100/50 flex flex-wrap items-center gap-2">
                         <select
                           value={reprintQuantity}
-                          onChange={(e) => setReprintQuantity(e.target.value)}
+                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setReprintQuantity(e.target.value)}
                           disabled={isReprinting}
                           className="text-[10px] font-bold text-slate-700 bg-white/90 border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-300 disabled:opacity-50"
                           title="Aantal herprints"
@@ -761,7 +894,7 @@ const ProductDossierModal = ({
                       >
                         {dossierLabel ? (
                           <LabelVisualPreview
-                            label={dossierLabel}
+                            label={dossierLabel as any}
                             data={dossierPreviewData}
                             zoom={previewZoom}
                             className="shadow-md"
@@ -918,14 +1051,14 @@ const ProductDossierModal = ({
                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-rose-500 min-h-[100px] mb-3"
                         placeholder="Beschrijf de klacht, oorzaak en actie..."
                         value={newNote}
-                        onChange={(e) => setNewNote(e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewNote(e.target.value)}
                         autoFocus
                       />
                       <div className="flex gap-3">
                         <button
                           onClick={() => {
-                            if (newNote.trim()) {
-                              onAddNote(newNote);
+                            if (newNote.trim() && onAddNote) {
+                              onAddNote(product.id, newNote);
                               setNewNote("");
                               setIsAdding(false);
                             }
@@ -959,7 +1092,7 @@ const ProductDossierModal = ({
                 <History className="text-blue-500" /> Volledige Proces Historie
               </h4>
               <div className="space-y-3">
-                {(historyWithOperators.length > 0 ? historyWithOperators : product.history)?.map((entry, idx) => (
+                {(historyWithOperators.length > 0 ? historyWithOperators : (product.history || []))?.map((entry: HistoryEntry, idx: number) => (
                   <div key={idx} className="flex gap-4 items-start">
                     <div className="w-10 h-10 rounded-full bg-slate-100 border-2 border-white shadow-sm flex items-center justify-center shrink-0">
                       <div className="w-2 h-2 rounded-full bg-blue-500" />
@@ -1003,11 +1136,11 @@ const ProductDossierModal = ({
                 <div className="flex items-center gap-2 animate-in slide-in-from-right-2">
                   <select
                     value={targetStation}
-                    onChange={(e) => setTargetStation(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTargetStation(e.target.value)}
                     className="px-4 py-4 bg-white border-2 border-slate-200 rounded-2xl font-bold text-xs text-slate-700 outline-none focus:border-blue-500"
                   >
                     <option value="">Kies station...</option>
-                    {moveStations.map((s) => (
+                    {moveStations.map((s: any) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>
@@ -1016,7 +1149,7 @@ const ProductDossierModal = ({
                   {isTijdelijkeAfkeur && (
                     <textarea
                       value={repairInstruction}
-                      onChange={(e) => setRepairInstruction(e.target.value)}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRepairInstruction(e.target.value)}
                       className="px-4 py-3 bg-white border-2 border-slate-200 rounded-2xl font-medium text-xs text-slate-700 outline-none focus:border-blue-500 min-w-[260px] min-h-[92px]"
                       placeholder="Wat moet de operator repareren?"
                     />
@@ -1077,6 +1210,7 @@ const ProductDossierModal = ({
         <ProductDetailModal
           product={catalogProduct}
           onClose={() => setShowDetailModal(false)}
+          userRole={role || "viewer"}
         />
       )}
 
@@ -1152,7 +1286,7 @@ const ProductDossierModal = ({
                 </label>
                 <textarea
                   value={rejectNote}
-                  onChange={(e) => setRejectNote(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRejectNote(e.target.value)}
                   className="w-full p-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500 outline-none"
                   placeholder="Bijv. kras op flensvlak, niet herstelbaar..."
                   rows={3}

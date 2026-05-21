@@ -1,7 +1,31 @@
-// @ts-nocheck
 import { useMemo } from "react";
 import { getISOWeek, startOfISOWeek } from "date-fns";
 import { normalizeMachine, getStartedCounterField } from "../../utils/hubHelpers";
+
+export type UseTeamleaderMetricsArgs = {
+  loading: boolean;
+  dataStore: any[];
+  rawProducts: any[];
+  bezetting: any[];
+  archivedHistoryProducts: any[];
+  archivedRejectedProducts: any[];
+  effectiveAllowedNorms: string[];
+  effectiveStations: any[];
+  safeScope: string;
+  todayStr: string;
+  currentWeek: number;
+  currentYear: number;
+  getOrderIdFromTrackedRecord: (record: any) => string;
+  getOrderProgressMeta: (order: any) => any;
+  getOrderRemainingQueueQty: (order: any) => number;
+  getDeliveredQtyForOrder: (order: any) => number;
+  getInspectionApprovedQtyForOrder: (order: any) => number;
+  isEventInCurrentWeek: (date: any, info: any) => boolean;
+  isInAllowedScope: (record: any) => boolean;
+  isInactiveTrackedProduct: (record: any) => boolean;
+  isRejectedProduct: (record: any) => boolean;
+  isPriorityOrder: (order: any) => boolean;
+};
 
 export const useTeamleaderMetrics = ({
   loading,
@@ -26,7 +50,7 @@ export const useTeamleaderMetrics = ({
   isInactiveTrackedProduct,
   isRejectedProduct,
   isPriorityOrder,
-}) => {
+}: UseTeamleaderMetricsArgs) => {
   return useMemo(() => {
     if (loading)
       return {
@@ -137,7 +161,7 @@ export const useTeamleaderMetrics = ({
         });
         plannedHours = stationPlanHours;
 
-        const checkActive = (p) => {
+        const checkActive = (p: any) => {
           const pStation = (p.currentStation || "").toUpperCase().replace(/\s/g, "");
           const pStep = (p.currentStep || "").toUpperCase().replace(/\s/g, "");
 
@@ -164,7 +188,7 @@ export const useTeamleaderMetrics = ({
         };
         active = rawProducts.filter(checkActive).length;
 
-        const checkFinished = (p) => {
+        const checkFinished = (p: any) => {
           const pStatus = (p.status || "").toUpperCase();
           const pStep = (p.currentStep || "").toUpperCase();
           const isFinishedItem = ["COMPLETED", "FINISHED", "GEREED"].includes(pStatus) || pStep === "FINISHED";
@@ -335,7 +359,7 @@ export const useTeamleaderMetrics = ({
         return acc + getOrderRemainingQueueQty(o) + activeFlowQty;
       }, 0),
 
-      activeCount: rawProducts.filter((p) => {
+      activeCount: rawProducts.filter((p: any) => {
         const linkedToVisibleOrder = validOrderIds.has(getOrderIdFromTrackedRecord(p));
         const inAllowedScope = isInAllowedScope(p);
         if (!linkedToVisibleOrder && !inAllowedScope) return false;
@@ -345,7 +369,7 @@ export const useTeamleaderMetrics = ({
       }).length,
 
       finishedCount: (() => {
-        const getFinishedEventDate = (p) => {
+        const getFinishedEventDate = (p: any) => {
           const candidates = [
             p?.timestamps?.finished,
             p?.timestamps?.completed,

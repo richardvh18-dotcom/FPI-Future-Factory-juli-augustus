@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -14,6 +13,7 @@ import {
   Send,
   Mail,
   Archive,
+  type LucideIcon,
 } from "lucide-react";
 import {
   collection,
@@ -27,9 +27,57 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { useNotifications } from "../../contexts/NotificationContext";
+
+type ActiveTab = "groups" | "settings" | "notifications";
+type NotificationTargetType = "group" | "user" | "all";
+type NotificationPriority = "low" | "normal" | "high" | "urgent";
+
+type StatusMessage = {
+  type: "success" | "error";
+  msg: string;
+};
+
+type MessageGroup = {
+  id: string;
+  name: string;
+  description?: string;
+  members?: string[];
+  color?: string;
+  createdBy?: string;
+};
+
+type GroupFormState = {
+  name: string;
+  description: string;
+  members: string[];
+  color: string;
+};
+
+type MessageSettings = {
+  maxMessageSize: number;
+  enableGroupMessages: boolean;
+  enableSystemNotifications: boolean;
+  defaultRetentionDays: number;
+  enableEmailNotifications: boolean;
+};
+
+type NotificationFormState = {
+  targetType: NotificationTargetType;
+  targetId: string;
+  subject: string;
+  content: string;
+  priority: NotificationPriority;
+};
+
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return String(err);
+};
 
 /**
  * AdminMessagesManagement V1.0
@@ -39,15 +87,15 @@ const AdminMessagesManagement = () => {
   const { t } = useTranslation();
   const { user } = useAdminAuth();
   const { showConfirm } = useNotifications();
-  const [activeTab, setActiveTab] = useState("groups"); // 'groups', 'settings', 'notifications'
-  const [groups, setGroups] = useState([]);
+  const [activeTab, setActiveTab] = useState<ActiveTab>("groups"); // 'groups', 'settings', 'notifications'
+  const [groups, setGroups] = useState<MessageGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<StatusMessage | null>(null);
 
   // Group Management State
   const [showNewGroupForm, setShowNewGroupForm] = useState(false);
-  const [newGroup, setNewGroup] = useState({
+  const [newGroup, setNewGroup] = useState<GroupFormState>({
     name: "",
     description: "",
     members: [],
@@ -55,7 +103,7 @@ const AdminMessagesManagement = () => {
   });
 
   // Settings State
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<MessageSettings>({
     maxMessageSize: 5000,
     enableGroupMessages: true,
     enableSystemNotifications: true,
@@ -64,7 +112,7 @@ const AdminMessagesManagement = () => {
   });
 
   // Notification Form State
-  const [notificationForm, setNotificationForm] = useState({
+  const [notificationForm, setNotificationForm] = useState<NotificationFormState>({
     targetType: "group", // group, user, all
     targetId: "",
     subject: "",
@@ -77,18 +125,18 @@ const AdminMessagesManagement = () => {
     // Firestore collectie path voor berichten groepen
     // PATHS.MESSAGES = ["future-factory", "production", "messages"] (3 segmenten)
     // We voegen een document en collection toe: messages/config/groups
-    const groupsRef = collection(
-      db,
-      ...PATHS.MESSAGES,
-      "config",
-      "groups"
-    );
+    const groupsRef = collection(db, `${getPathString(PATHS.MESSAGES)}/config/groups`);
     const q = query(groupsRef, orderBy("createdAt", "desc"));
 
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
-        setGroups(snap.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+        setGroups(
+          snap.docs.map((groupDoc) => ({
+            id: groupDoc.id,
+            ...(groupDoc.data() as Omit<MessageGroup, "id">),
+          }))
+        );
         setLoading(false);
       },
       (err) => {
@@ -101,7 +149,7 @@ const AdminMessagesManagement = () => {
   }, []);
 
   // Create New Group
-  const handleCreateGroup = async (e) => {
+  const handleCreateGroup = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!newGroup.name.trim()) {
       setStatus({ type: "error", msg: t('adminMessages.groupNameRequired') });
@@ -111,7 +159,7 @@ const AdminMessagesManagement = () => {
     setSaving(true);
     try {
       await addDoc(
-        collection(db, ...PATHS.MESSAGES, "config", "groups"),
+        collection(db, `${getPathString(PATHS.MESSAGES)}/config/groups`),
         {
         name: newGroup.name,
         description: newGroup.description,
@@ -121,7 +169,7 @@ const AdminMessagesManagement = () => {
         createdBy: user?.email || "Admin",
       });
 
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Message group created: ${newGroup.name}`);
+      await logActivity(auth.currentUser?.uid ?? "system", "SETTINGS_UPDATE", `Message group created: ${newGroup.name}`);
 
       setNewGroup({ name: "", description: "", members: [], color: "bg-blue-500" });
       setShowNewGroupForm(false);
@@ -136,7 +184,7 @@ const AdminMessagesManagement = () => {
   };
 
   // Delete Group
-  const handleDeleteGroup = async (groupId) => {
+  const handleDeleteGroup = async (groupId: string) => {
     const confirmed = await showConfirm({
       title: t('adminMessages.deleteGroupTitle', 'Groep verwijderen'),
       message: t('adminMessages.deleteGroupConfirm'),
@@ -148,8 +196,8 @@ const AdminMessagesManagement = () => {
 
     setSaving(true);
     try {
-      await deleteDoc(doc(db, ...PATHS.MESSAGES, "config", "groups", groupId));
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Message group deleted: ${groupId}`);
+      await deleteDoc(doc(db, `${getPathString(PATHS.MESSAGES)}/config/groups/${groupId}`));
+      await logActivity(auth.currentUser?.uid ?? "system", "SETTINGS_UPDATE", `Message group deleted: ${groupId}`);
       setStatus({ type: "success", msg: t('adminMessages.groupDeleted') });
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
@@ -165,13 +213,13 @@ const AdminMessagesManagement = () => {
     setSaving(true);
     try {
       // Sla instellingen op in Firebase
-      await setDoc(doc(db, ...PATHS.MESSAGES, "config", "settings"), {
+      await setDoc(doc(db, `${getPathString(PATHS.MESSAGES)}/config/settings`), {
         ...settings,
         updatedAt: serverTimestamp(),
         updatedBy: user?.email || "Admin",
       }, { merge: true });
 
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", "Message settings updated");
+      await logActivity(auth.currentUser?.uid ?? "system", "SETTINGS_UPDATE", "Message settings updated");
 
       setStatus({ type: "success", msg: t('adminMessages.settingsSaved') });
       setTimeout(() => setStatus(null), 3000);
@@ -184,7 +232,7 @@ const AdminMessagesManagement = () => {
   };
 
   // Send System Notification
-  const handleSendNotification = async (e) => {
+  const handleSendNotification = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!notificationForm.subject || !notificationForm.content) {
         setStatus({ type: "error", msg: "Onderwerp en inhoud zijn verplicht" });
@@ -197,7 +245,7 @@ const AdminMessagesManagement = () => {
         if (notificationForm.targetType === "group") to = notificationForm.targetId;
         if (notificationForm.targetType === "user") to = notificationForm.targetId;
 
-        await addDoc(collection(db, ...PATHS.MESSAGES), {
+        await addDoc(collection(db, getPathString(PATHS.MESSAGES)), {
             to: to,
             from: "SYSTEM",
             senderId: user?.uid || "admin",
@@ -213,11 +261,11 @@ const AdminMessagesManagement = () => {
         });
 
         setStatus({ type: "success", msg: "Systeemnotificatie verzonden!" });
-        setNotificationForm(prev => ({ ...prev, subject: "", content: "" }));
+        setNotificationForm((prev) => ({ ...prev, subject: "", content: "" }));
         setTimeout(() => setStatus(null), 3000);
     } catch (err) {
         console.error(err);
-        setStatus({ type: "error", msg: "Kon bericht niet versturen: " + err.message });
+        setStatus({ type: "error", msg: "Kon bericht niet versturen: " + getErrorMessage(err) });
     } finally {
         setSaving(false);
     }
@@ -231,6 +279,12 @@ const AdminMessagesManagement = () => {
     { name: t('adminMessages.colors.red'), value: "bg-red-500" },
     { name: t('adminMessages.colors.cyan'), value: "bg-cyan-500" },
     { name: t('adminMessages.colors.fuchsia'), value: "bg-fuchsia-500" },
+  ];
+
+  const tabs: Array<{ id: ActiveTab; label: string; icon: LucideIcon }> = [
+    { id: "groups", label: t('adminMessages.tabs.groups'), icon: Users },
+    { id: "settings", label: t('adminMessages.tabs.settings'), icon: Settings },
+    { id: "notifications", label: t('adminMessages.tabs.notifications'), icon: Bell },
   ];
 
   return (
@@ -268,11 +322,7 @@ const AdminMessagesManagement = () => {
 
       {/* Tab Navigation */}
       <div className="flex gap-2 border-b border-slate-200">
-        {[
-          { id: "groups", label: t('adminMessages.tabs.groups'), icon: Users },
-          { id: "settings", label: t('adminMessages.tabs.settings'), icon: Settings },
-          { id: "notifications", label: t('adminMessages.tabs.notifications'), icon: Bell },
-        ].map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
@@ -571,7 +621,12 @@ const AdminMessagesManagement = () => {
                     <select 
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm font-bold"
                         value={notificationForm.targetType}
-                        onChange={e => setNotificationForm({...notificationForm, targetType: e.target.value})}
+                        onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                          setNotificationForm({
+                            ...notificationForm,
+                            targetType: e.target.value as NotificationTargetType,
+                          })
+                        }
                     >
                         <option value="group">Specifieke Groep</option>
                         <option value="user">Specifieke Gebruiker (Email)</option>
@@ -587,7 +642,9 @@ const AdminMessagesManagement = () => {
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm"
                         placeholder={notificationForm.targetType === 'group' ? "bijv. SPOOLS_TEAM" : notificationForm.targetType === 'user' ? "user@example.com" : "Alle gebruikers"}
                         value={notificationForm.targetId}
-                        onChange={e => setNotificationForm({...notificationForm, targetId: e.target.value})}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                          setNotificationForm({ ...notificationForm, targetId: e.target.value })
+                        }
                         disabled={notificationForm.targetType === 'all'}
                     />
                 </div>
@@ -596,7 +653,7 @@ const AdminMessagesManagement = () => {
             <div>
                 <label className="text-xs font-bold uppercase text-slate-600 mb-2 block">Prioriteit</label>
                 <div className="flex gap-3">
-                    {['low', 'normal', 'high', 'urgent'].map(p => (
+                    {(['low', 'normal', 'high', 'urgent'] as NotificationPriority[]).map((p) => (
                         <button
                             key={p}
                             type="button"
@@ -619,7 +676,9 @@ const AdminMessagesManagement = () => {
                     type="text" 
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-blue-500 font-bold"
                     value={notificationForm.subject}
-                    onChange={e => setNotificationForm({...notificationForm, subject: e.target.value})}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setNotificationForm({ ...notificationForm, subject: e.target.value })
+                    }
                 />
             </div>
 
@@ -628,7 +687,9 @@ const AdminMessagesManagement = () => {
                 <textarea 
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-blue-500 h-24 resize-none"
                     value={notificationForm.content}
-                    onChange={e => setNotificationForm({...notificationForm, content: e.target.value})}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                      setNotificationForm({ ...notificationForm, content: e.target.value })
+                    }
                 />
             </div>
 

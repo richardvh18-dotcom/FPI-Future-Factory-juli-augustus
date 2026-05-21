@@ -26,6 +26,28 @@ import {
   ChevronRight,
 } from "lucide-react";
 
+type FoundCollection = {
+  name: string;
+  path: string;
+  isNewRoot: boolean;
+  isArtifact: boolean;
+};
+
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message?: unknown }).message || "onbekende fout");
+  }
+  return String(err || "onbekende fout");
+};
+
+const getErrorCode = (err: unknown): string => {
+  if (typeof err === "object" && err !== null && "code" in err) {
+    return String((err as { code?: unknown }).code || "UNKNOWN");
+  }
+  return "UNKNOWN";
+};
+
 /**
  * UniversalRescueTool V6.0 - Advanced Forensic Validator
  * Deze tool is het ultieme redmiddel om data-integriteit te controleren
@@ -33,16 +55,16 @@ import {
  */
 const UniversalRescueTool = () => {
   const { t } = useTranslation();
-  const [foundCollections, setFoundCollections] = useState([]);
+  const [foundCollections, setFoundCollections] = useState<FoundCollection[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [logs, setLogs] = useState([]);
-  const [error, setError] = useState(null);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [authStatus, setAuthStatus] = useState(t('universalRescueTool.checking', "Controleren..."));
 
-  const activeProjectId = db?._databaseId?.projectId || t('common.unknown', "ONBEKEND");
+  const activeProjectId = ((db as unknown as { _databaseId?: { projectId?: string } })._databaseId?.projectId) || t('common.unknown', "ONBEKEND");
 
-  const addLog = (msg) => {
+  const addLog = (msg: string) => {
     setLogs((prev) =>
       [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 30)
     );
@@ -55,8 +77,8 @@ const UniversalRescueTool = () => {
         addLog(t('universalRescueTool.sessionActive', "Sessie actief en geautoriseerd."));
       } else {
         setAuthStatus(t('universalRescueTool.notLoggedIn', "Niet ingelogd..."));
-        signInAnonymously(auth).catch((err) =>
-          addLog(t('universalRescueTool.authError', "Auth Fout: ") + err.message)
+        signInAnonymously(auth).catch((err: unknown) =>
+          addLog(t('universalRescueTool.authError', "Auth Fout: ") + getErrorMessage(err))
         );
       }
     });
@@ -101,9 +123,10 @@ const UniversalRescueTool = () => {
       );
       addLog(t('universalRescueTool.systemReady', "Systeem is gereed voor data-migratie."));
     } catch (err) {
-      addLog(`${t('universalRescueTool.accessDenied', "❌ TOEGANG GEWEIGERD: ")}${err.code}`);
+      const errCode = getErrorCode(err);
+      addLog(`${t('universalRescueTool.accessDenied', "❌ TOEGANG GEWEIGERD: ")}${errCode}`);
       setError(
-        t('universalRescueTool.writeTestFailed', { code: err.code, defaultValue: `Schrijf-test mislukt (${err.code}). Je Firestore Rules blokkeren toegang tot de nieuwe root.` })
+        t('universalRescueTool.writeTestFailed', { code: errCode, defaultValue: `Schrijf-test mislukt (${errCode}). Je Firestore Rules blokkeren toegang tot de nieuwe root.` })
       );
     } finally {
       setIsTesting(false);
@@ -168,7 +191,7 @@ const UniversalRescueTool = () => {
       }
       addLog(t('universalRescueTool.scanComplete', "Scan voltooid."));
     } catch (err) {
-      setError(t('universalRescueTool.fatalError', "Fataal systeem-onderzoek fout: ") + err.message);
+      setError(t('universalRescueTool.fatalError', "Fataal systeem-onderzoek fout: ") + getErrorMessage(err));
     } finally {
       setIsScanning(false);
     }

@@ -1,15 +1,66 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { create } from 'zustand';
 import { db, auth } from '../config/firebase';
-import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, limit } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
-const BackgroundTaskContext = createContext({
-    tasks: [],
-    downloadTaskResult: () => {}
-});
+export type BackgroundTask = {
+    id: string;
+    userId?: string;
+    status?: 'pending' | 'processing' | 'completed' | 'error' | string;
+    notified?: boolean;
+    taskName?: string;
+    result?: string;
+    fileName?: string;
+    error?: string;
+    createdAt?: { toDate?: () => Date } | any;
+    [key: string]: any;
+};
 
-export const BackgroundTaskProvider = ({ children }) => {
-    const [tasks, setTasks] = useState([]);
+interface BackgroundTaskStore {
+    tasks: BackgroundTask[];
+    setTasks: (tasks: BackgroundTask[]) => void;
+    downloadTaskResult: (task: BackgroundTask) => void;
+}
+
+const b64toBlob = (b64Data: string, contentType = '', sliceSize = 512) => {
+    const byteCharacters = atob(b64Data);
+    const byteArrays = [];
+    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+        const slice = byteCharacters.slice(offset, offset + sliceSize);
+        const byteNumbers = new Array(slice.length);
+        for (let i = 0; i < slice.length; i++) {
+            byteNumbers[i] = slice.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        byteArrays.push(byteArray);
+    }
+    return new Blob(byteArrays, { type: contentType });
+};
+
+export const useBackgroundTaskStore = create<BackgroundTaskStore>((set) => ({
+    tasks: [],
+    setTasks: (tasks) => set({ tasks }),
+    downloadTaskResult: (task: BackgroundTask) => {
+        if (!task.result) return;
+        
+        const blob = b64toBlob(task.result, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = task.fileName || 'export.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+}));
+
+// Backwards-compatible hook, voor eventuele andere componenten die dit nog gebruiken
+export const useBackgroundTasks = () => useBackgroundTaskStore();
+
+export const BackgroundTaskProvider = ({ children }: { children: React.ReactNode }) => {
+    const setTasks = useBackgroundTaskStore((state) => state.setTasks);
     const [currentUser, setCurrentUser] = useState(auth ? auth.currentUser : null);
     const [tasksEnabled, setTasksEnabled] = useState(true);
 
@@ -30,15 +81,25 @@ export const BackgroundTaskProvider = ({ children }) => {
         const q = query(
             collection(db, 'future-factory/exports/tasks'),
             where('userId', '==', currentUser.uid),
-            orderBy('createdAt', 'desc'),
-            limit(10)
+            limit(50)
         );
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const updatedTasks = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            }));
+            const updatedTasks: BackgroundTask[] = snapshot.docs
+                .map((doc): BackgroundTask => ({
+                    id: doc.id,
+                    ...(doc.data() as Record<string, unknown>)
+                }))
+                .sort((a, b) => {
+                    const aMs = typeof a?.createdAt?.toDate === 'function'
+                        ? a.createdAt.toDate().getTime()
+                        : 0;
+                    const bMs = typeof b?.createdAt?.toDate === 'function'
+                        ? b.createdAt.toDate().getTime()
+                        : 0;
+                    return bMs - aMs;
+                })
+                .slice(0, 10);
             setTasks(updatedTasks);
 
             // Check voor voltooide taken die nog een 'melding' nodig hebben
@@ -58,42 +119,7 @@ export const BackgroundTaskProvider = ({ children }) => {
         });
 
         return () => unsubscribe();
-    }, [currentUser, tasksEnabled]);
+    }, [currentUser, tasksEnabled, setTasks]);
 
-    const downloadTaskResult = (task) => {
-        if (!task.result) return;
-        
-        const blob = b64toBlob(task.result, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = task.fileName || 'export.xlsx';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    };
-
-    const b64toBlob = (b64Data, contentType = '', sliceSize = 512) => {
-        const byteCharacters = atob(b64Data);
-        const byteArrays = [];
-        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-            const slice = byteCharacters.slice(offset, offset + sliceSize);
-            const byteNumbers = new Array(slice.length);
-            for (let i = 0; i < slice.length; i++) {
-                byteNumbers[i] = slice.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            byteArrays.push(byteArray);
-        }
-        return new Blob(byteArrays, { type: contentType });
-    };
-
-    return (
-        <BackgroundTaskContext.Provider value={{ tasks, downloadTaskResult }}>
-            {children}
-        </BackgroundTaskContext.Provider>
-    );
+    return <>{children}</>;
 };
-
-export const useBackgroundTasks = () => useContext(BackgroundTaskContext);

@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect } from "react";
 import {
   BookOpen,
@@ -30,6 +30,69 @@ import {
 import { db, auth, logActivity } from "../../config/firebase";
 import { aiService } from "../../services/aiService";
 import { useNotifications } from '../../contexts/NotificationContext';
+import { getPathString } from "../../config/dbPaths";
+
+type FlashcardText = {
+  text?: string;
+  language?: string;
+};
+
+type Flashcard = {
+  id: string;
+  front?: FlashcardText;
+  back?: FlashcardText;
+  category?: string;
+  difficulty?: string;
+};
+
+type FlashcardResult = {
+  id: string;
+  correct?: boolean;
+  cardQuestion?: string;
+  timestamp?: { toDate?: () => Date };
+  userId?: string;
+};
+
+type Suggestion = {
+  front: string;
+  back: string;
+  category?: string;
+  difficulty?: string;
+};
+
+type NewCardState = {
+  front: string;
+  back: string;
+  category: string;
+  difficulty: string;
+};
+
+type AiDocument = {
+  fileName?: string;
+  analysis?: {
+    summary?: string;
+    keyFacts?: string[];
+    processes?: string[];
+  };
+};
+
+type ProductionOrder = {
+  id: string;
+  source: string;
+  orderId?: string;
+  name?: string;
+  status?: string;
+  workstation?: string;
+};
+
+type AIServiceLike = {
+  getAiDocuments: (limitCount: number) => Promise<AiDocument[]>;
+  getProductionOrders: (limitCount: number) => Promise<ProductionOrder[]>;
+  chat: (messages: Array<{ role: "user" | "assistant"; content: string }>, systemPrompt?: string | null) => Promise<string>;
+};
+
+const ai = aiService as unknown as AIServiceLike;
+const colPath = (path: string) => collection(db, path);
 
 /**
  * FlashcardManager V1.0
@@ -37,11 +100,11 @@ import { useNotifications } from '../../contexts/NotificationContext';
  */
 const FlashcardManager = () => {
   const { notify } = useNotifications();
-  const [flashcards, setFlashcards] = useState([]);
-  const [results, setResults] = useState([]);
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [results, setResults] = useState<FlashcardResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeView, setActiveView] = useState("cards"); // 'cards' of 'results'
-  const [newCard, setNewCard] = useState({
+  const [newCard, setNewCard] = useState<NewCardState>({
     front: "",
     back: "",
     category: "products",
@@ -49,18 +112,18 @@ const FlashcardManager = () => {
   });
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [suggestions, setSuggestions] = useState([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   // Load flashcards from Firestore
   useEffect(() => {
-    const flashcardsRef = collection(db, "future-factory", "settings", "flashcards");
+    const flashcardsRef = colPath("future-factory/settings/flashcards");
     const q = query(flashcardsRef, orderBy("createdAt", "desc"));
 
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
-        setFlashcards(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setFlashcards(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Flashcard, "id">) })));
         setLoading(false);
       },
       (err) => {
@@ -74,13 +137,13 @@ const FlashcardManager = () => {
 
   // Load flashcard results
   useEffect(() => {
-    const resultsRef = collection(db, "future-factory", "settings", "flashcard_results");
+    const resultsRef = colPath("future-factory/settings/flashcard_results");
     const q = query(resultsRef, orderBy("timestamp", "desc"));
 
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
-        setResults(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setResults(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<FlashcardResult, "id">) })));
       },
       (err) => {
         console.error("Error loading results:", err);
@@ -98,7 +161,7 @@ const FlashcardManager = () => {
 
     setSaving(true);
     try {
-      const flashcardsRef = collection(db, "future-factory", "settings", "flashcards");
+      const flashcardsRef = colPath("future-factory/settings/flashcards");
       await addDoc(flashcardsRef, {
         front: { text: newCard.front, language: "nl-NL" },
         back: { text: newCard.back, language: "nl-NL" },
@@ -109,7 +172,7 @@ const FlashcardManager = () => {
       });
 
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "FLASHCARD_CREATE",
         `Flashcard aangemaakt (${newCard.category}/${newCard.difficulty})`
       );
@@ -123,13 +186,13 @@ const FlashcardManager = () => {
     }
   };
 
-  const handleDeleteCard = async (id) => {
+  const handleDeleteCard = async (id: string) => {
     if (!window.confirm("Weet je zeker dat je deze kaart wilt verwijderen?")) return;
     
     try {
-      await deleteDoc(doc(db, "future-factory", "settings", "flashcards", id));
+      await deleteDoc(doc(db, `future-factory/settings/flashcards/${id}`));
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "FLASHCARD_DELETE",
         `Flashcard verwijderd: ${id}`
       );
@@ -145,13 +208,13 @@ const FlashcardManager = () => {
 
     try {
       // 1. Haal PDF documenten op
-      const documents = await aiService.getAiDocuments(10);
+      const documents = await ai.getAiDocuments(10);
 
       // 2. Haal planning data op
-      const planningData = await aiService.getProductionOrders(10);
+      const planningData = await ai.getProductionOrders(10);
 
       // 3. Haal geverifieerde AI knowledge op
-      const knowledgeRef = collection(db, "future-factory", "settings", "ai_knowledge_base");
+      const knowledgeRef = colPath("future-factory/settings/ai_knowledge_base");
       const knowledgeSnap = await getDocs(query(knowledgeRef, orderBy("timestamp", "desc")));
       const knowledgeItems = knowledgeSnap.docs
         .filter(doc => doc.data().verified)
@@ -166,7 +229,7 @@ const FlashcardManager = () => {
 
       if (documents.length > 0) {
         contextText += "=== PDF DOCUMENTEN ===\n";
-        documents.forEach((doc, idx) => {
+        documents.forEach((doc: AiDocument, idx: number) => {
           contextText += `Document ${idx + 1}: ${doc.fileName}\n`;
           if (doc.analysis?.summary) contextText += `Samenvatting: ${doc.analysis.summary}\n`;
           if (doc.analysis?.keyFacts) contextText += `Kernpunten: ${doc.analysis.keyFacts.join("; ")}\n`;
@@ -177,7 +240,7 @@ const FlashcardManager = () => {
 
       if (planningData.length > 0) {
         contextText += "\n=== PLANNING & PRODUCTIE ===\n";
-        planningData.slice(0, 5).forEach((order, idx) => {
+        planningData.slice(0, 5).forEach((order: ProductionOrder, idx: number) => {
           contextText += `Order ${idx + 1}: ${order.orderId || order.name}\n`;
           if (order.name) contextText += `Product: ${order.name}\n`;
           if (order.status) contextText += `Status: ${order.status}\n`;
@@ -208,7 +271,7 @@ const FlashcardManager = () => {
 
       // 5. Vraag AI om flashcards te genereren
       const systemPrompt = "Je bent een educatieve training expert. Genereer relevante flashcards voor productie medewerkers.";
-      const response = await aiService.chat([
+      const response = await ai.chat([
         { role: "user", content: contextText }
       ], systemPrompt);
 
@@ -217,7 +280,7 @@ const FlashcardManager = () => {
       if (jsonMatch) {
         const data = JSON.parse(jsonMatch[0]);
         if (data.flashcards && Array.isArray(data.flashcards)) {
-          setSuggestions(data.flashcards);
+          setSuggestions(data.flashcards as Suggestion[]);
         } else {
           throw new Error("Ongeldige flashcard data");
         }
@@ -225,17 +288,17 @@ const FlashcardManager = () => {
         throw new Error("Geen JSON gevonden in response");
       }
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error generating suggestions:", error);
-      notify("Kon geen suggesties genereren: " + error.message);
+      notify("Kon geen suggesties genereren: " + (error instanceof Error ? error.message : String(error)));
     } finally {
       setGenerating(false);
     }
   };
 
-  const handleAcceptSuggestion = async (suggestion) => {
+  const handleAcceptSuggestion = async (suggestion: Suggestion) => {
     try {
-      const flashcardsRef = collection(db, "future-factory", "settings", "flashcards");
+      const flashcardsRef = colPath("future-factory/settings/flashcards");
       await addDoc(flashcardsRef, {
         front: { text: suggestion.front, language: "nl-NL" },
         back: { text: suggestion.back, language: "nl-NL" },
@@ -247,13 +310,13 @@ const FlashcardManager = () => {
       });
 
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "FLASHCARD_CREATE",
         `AI-suggestie opgeslagen als flashcard (${suggestion.category || "general"})`
       );
 
       // Verwijder uit suggesties
-      setSuggestions(prev => prev.filter(s => s !== suggestion));
+      setSuggestions((prev) => prev.filter((s) => s !== suggestion));
     } catch (error) {
       console.error("Error accepting suggestion:", error);
       notify("Kon kaart niet opslaan.");

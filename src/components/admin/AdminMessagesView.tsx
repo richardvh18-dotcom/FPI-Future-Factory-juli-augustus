@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Mail,
@@ -35,9 +35,10 @@ import {
   getDocs,
   getDoc,
   or,
+  type DocumentData,
 } from "firebase/firestore";
 import { db, storage, logActivity } from "../../config/firebase";
-import { PATHS, isValidPath } from "../../config/dbPaths";
+import { PATHS, isValidPath, getPathString } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { format } from "date-fns";
@@ -49,32 +50,97 @@ import { useTranslation } from "react-i18next";
  * AdminMessagesView V6.0 - Master Communication Hub
  * Beheert de inbox en verzending via de root: /future-factory/production/messages/
  */
-const AdminMessagesView = ({ user: propUser }) => {
+type AppUser = {
+  id?: string;
+  uid?: string;
+  email?: string | null;
+  name?: string;
+  displayName?: string;
+  department?: string;
+  receivesCrashReports?: boolean;
+  role?: string;
+  [key: string]: unknown;
+};
+
+type MessageAttachmentMeta = {
+  name?: string;
+  type?: string;
+  size?: number;
+};
+
+type AdminMessage = {
+  id: string;
+  to?: string;
+  toName?: string;
+  from?: string;
+  senderId?: string;
+  senderName?: string;
+  subject?: string;
+  content: string;
+  priority?: string;
+  type?: string;
+  targetGroup?: string;
+  read?: boolean;
+  archived?: boolean;
+  attachmentUrl?: string | null;
+  attachmentMeta?: MessageAttachmentMeta | null;
+  timestamp: Date;
+  data?: unknown;
+  errorDetails?: unknown;
+  stack?: unknown;
+  [key: string]: unknown;
+};
+
+type MessageThread = {
+  id: string;
+  subject: string;
+  messages: AdminMessage[];
+  lastMessage: AdminMessage;
+  hasUnread: boolean;
+  timestamp: Date;
+  participants: Set<string>;
+};
+
+const toDate = (value: unknown): Date => {
+  if (value instanceof Date) return value;
+  if (typeof (value as { toDate?: () => Date })?.toDate === "function") {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  const parsed = new Date(typeof value === "string" || typeof value === "number" ? value : String(value));
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+};
+
+const getErrorMessage = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  return String(err);
+};
+
+const AdminMessagesView = ({ user: propUser }: { user?: AppUser | null }) => {
   const { t } = useTranslation();
   const { user: authUser, isAdmin } = useAdminAuth();
   const { showSuccess, showError, showConfirm } = useNotifications();
-  const user = propUser || authUser;
+  const user = (propUser || authUser || null) as AppUser | null;
   
   // Live user profile sync om instellingen (zoals receivesCrashReports) direct toe te passen
-  const [liveUser, setLiveUser] = useState(user);
+  const [liveUser, setLiveUser] = useState<AppUser | null | undefined>(user);
   useEffect(() => {
     if (!user?.uid) return;
-    const unsub = onSnapshot(doc(db, ...PATHS.USERS, user.uid), (snap) => {
+    const unsub = onSnapshot(doc(db, `${getPathString(PATHS.USERS)}/${user.uid}`), (snap) => {
       if (snap.exists()) {
-        setLiveUser({ ...user, ...snap.data() });
+        setLiveUser({ ...user, ...(snap.data() as DocumentData) });
       }
     });
     return () => unsub();
   }, [user?.uid]);
 
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState<AdminMessage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState("inbox"); // 'inbox', 'archived'
-  const [filterType, setFilterType] = useState('all'); // 'all', 'crash'
-  const [selectedThread, setSelectedThread] = useState(null);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"inbox" | "archived">("inbox"); // 'inbox', 'archived'
+  const [filterType, setFilterType] = useState<"all" | "crash">('all'); // 'all', 'crash'
+  const [selectedThread, setSelectedThread] = useState<MessageThread | null>(null);
   const [isComposeOpen, setIsComposeOpen] = useState(false);
-  const [replyContext, setReplyContext] = useState(null);
+  const [replyContext, setReplyContext] = useState<AdminMessage | null>(null);
 
   // Bepaal relevante groepen voor de huidige gebruiker (voor filtering en query)
   const userGroups = useMemo(() => {
@@ -95,7 +161,7 @@ const AdminMessagesView = ({ user: propUser }) => {
     if (!isValidPath("MESSAGES")) return;
 
     setLoading(true);
-    const messagesRef = collection(db, ...PATHS.MESSAGES);
+    const messagesRef = collection(db, getPathString(PATHS.MESSAGES));
 
     let q;
     setError(null);
@@ -118,18 +184,22 @@ const AdminMessagesView = ({ user: propUser }) => {
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const msgs = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          timestamp: doc.data().timestamp?.toDate() || new Date(),
-        }));
+        const msgs: AdminMessage[] = snapshot.docs.map((messageDoc) => {
+          const data = messageDoc.data() as DocumentData;
+          return {
+            ...data,
+            id: messageDoc.id,
+            content: String(data.content || ""),
+            timestamp: toDate(data.timestamp),
+          };
+        });
 
         // Client-side sorteren (nieuwste eerst)
-        msgs.sort((a, b) => b.timestamp - a.timestamp);
+        msgs.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
 
         // Filteren op basis van rechten
         const visibleMsgs = msgs.filter((m) => {
-          const isForMe = userGroups.includes(m.to);
+          const isForMe = userGroups.includes(m.to || "");
           const isFromMe = m.senderId === liveUser?.uid;
           // Admin berichten zijn voor 'admin', de groep 'admins' of systeem errors
           const isForAdmins = m.to === "admin" || m.targetGroup === "admins";
@@ -149,9 +219,9 @@ const AdminMessagesView = ({ user: propUser }) => {
         setMessages(visibleMsgs);
         setLoading(false);
       },
-      (err) => {
+      (err: unknown) => {
         console.error("Fout bij laden berichten:", err);
-        setError(err.message);
+        setError(getErrorMessage(err));
         setLoading(false);
       }
     );
@@ -160,14 +230,14 @@ const AdminMessagesView = ({ user: propUser }) => {
   }, [liveUser, isAdmin, userGroups]);
 
   // 2. Bericht Acties
-  const handleMarkAsRead = async (thread) => {
-    const unreadMessages = thread.messages.filter(m => !m.read && m.senderId !== liveUser?.uid);
+  const handleMarkAsRead = async (thread: MessageThread) => {
+    const unreadMessages = thread.messages.filter((m) => !m.read && m.senderId !== liveUser?.uid);
     if (unreadMessages.length === 0) return;
 
     try {
       await Promise.all(
         unreadMessages.map((msg) =>
-          updateDoc(doc(db, ...PATHS.MESSAGES, msg.id), { read: true })
+          updateDoc(doc(db, `${getPathString(PATHS.MESSAGES)}/${msg.id}`), { read: true })
         )
       );
       await logActivity(
@@ -175,16 +245,16 @@ const AdminMessagesView = ({ user: propUser }) => {
         "MESSAGE_MARK_READ",
         `Berichten als gelezen gemarkeerd in thread ${thread.id}: ${unreadMessages.length}`
       );
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
     }
   };
 
-  const handleArchive = async (thread) => {
+  const handleArchive = async (thread: MessageThread) => {
     try {
       const targetStatus = activeTab === "inbox"; // Als in inbox -> archiveer (true). Anders herstel (false).
-      await Promise.all(thread.messages.map(msg => 
-        updateDoc(doc(db, ...PATHS.MESSAGES, msg.id), { archived: targetStatus })
+      await Promise.all(thread.messages.map((msg) => 
+        updateDoc(doc(db, `${getPathString(PATHS.MESSAGES)}/${msg.id}`), { archived: targetStatus })
       ));
       await logActivity(
         liveUser?.uid || "system",
@@ -194,13 +264,13 @@ const AdminMessagesView = ({ user: propUser }) => {
       
       if (selectedThread?.id === thread.id) setSelectedThread(null);
       showSuccess(targetStatus ? t('adminMessagesView.conversationArchived') : t('adminMessagesView.conversationRestored'));
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
-      showError(t('adminMessagesView.actionFailed') + err.message);
+      showError(t('adminMessagesView.actionFailed') + getErrorMessage(err));
     }
   };
 
-  const handleDelete = async (thread) => {
+  const handleDelete = async (thread: MessageThread) => {
     const confirmed = await showConfirm({
       title: t('adminMessagesView.deleteConversationTitle', 'Conversatie verwijderen'),
       message: t('adminMessagesView.deleteConversationConfirm'),
@@ -210,8 +280,8 @@ const AdminMessagesView = ({ user: propUser }) => {
     });
     if (!confirmed) return;
     try {
-      await Promise.all(thread.messages.map(msg => 
-        deleteDoc(doc(db, ...PATHS.MESSAGES, msg.id))
+      await Promise.all(thread.messages.map((msg) => 
+        deleteDoc(doc(db, `${getPathString(PATHS.MESSAGES)}/${msg.id}`))
       ));
       await logActivity(
         liveUser?.uid || "system",
@@ -220,13 +290,13 @@ const AdminMessagesView = ({ user: propUser }) => {
       );
       if (selectedThread?.id === thread.id) setSelectedThread(null);
       showSuccess(t('adminMessagesView.conversationDeleted'));
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
-      showError(t('adminMessagesView.deleteFailed') + err.message);
+      showError(t('adminMessagesView.deleteFailed') + getErrorMessage(err));
     }
   };
 
-  const handleSaveConversation = (thread) => {
+  const handleSaveConversation = (thread: MessageThread | null) => {
     if (!thread) return;
     
     const lines = [];
@@ -237,13 +307,13 @@ const AdminMessagesView = ({ user: propUser }) => {
     lines.push("");
     
     const sortedMessages = [...thread.messages].sort((a, b) => {
-        const tA = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
-        const tB = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
-        return tA - tB;
+      const tA = toDate(a.timestamp);
+      const tB = toDate(b.timestamp);
+      return tA.getTime() - tB.getTime();
     });
 
     sortedMessages.forEach(msg => {
-      const time = msg.timestamp?.toDate ? msg.timestamp.toDate() : new Date(msg.timestamp);
+      const time = toDate(msg.timestamp);
       const timeStr = format(time, "dd-MM-yyyy HH:mm");
       const sender = msg.senderName || msg.from || t('common.unknown');
       
@@ -266,10 +336,10 @@ const AdminMessagesView = ({ user: propUser }) => {
   };
 
   // 3. Grouping Logic (Threads)
-  const threads = useMemo(() => {
-    const groups = {};
+  const threads = useMemo<MessageThread[]>(() => {
+    const groups: Record<string, MessageThread> = {};
     
-    messages.forEach(m => {
+    messages.forEach((m) => {
       // Filter logic inline
       if (activeTab === "inbox" && m.archived) return;
       if (activeTab === "archived" && !m.archived) return;
@@ -284,10 +354,10 @@ const AdminMessagesView = ({ user: propUser }) => {
           id: key,
           subject: subject,
           messages: [],
-          lastMessage: null,
+          lastMessage: m,
           hasUnread: false,
           timestamp: new Date(0), // Voor sortering
-          participants: new Set()
+          participants: new Set<string>()
         };
       }
 
@@ -295,7 +365,7 @@ const AdminMessagesView = ({ user: propUser }) => {
       group.messages.push(m);
       
       // Update stats
-      if (m.timestamp > group.timestamp) {
+      if (m.timestamp.getTime() > group.timestamp.getTime()) {
         group.timestamp = m.timestamp;
         group.lastMessage = m;
       }
@@ -308,7 +378,7 @@ const AdminMessagesView = ({ user: propUser }) => {
     });
 
     // Convert to array and sort by latest message
-    return Object.values(groups).sort((a, b) => b.timestamp - a.timestamp);
+    return Object.values(groups).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
   }, [messages, activeTab, filterType]);
 
   if (loading)
@@ -479,7 +549,7 @@ const AdminMessagesView = ({ user: propUser }) => {
                     {thread.subject}
                   </h4>
                   <p className="text-xs text-slate-400 line-clamp-1 font-medium italic">
-                    {lastMsg.content}
+                    {String(lastMsg.content || "")}
                   </p>
                   {isUnread && (
                     <div className="absolute top-6 right-3 w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)] animate-pulse"></div>
@@ -584,8 +654,13 @@ const AdminMessagesView = ({ user: propUser }) => {
             {/* Detail Body */}
             <div className="p-6 overflow-y-auto flex-1 text-left bg-slate-50/50">
               <div className="max-w-4xl mx-auto space-y-6">
-                {selectedThread.messages.sort((a,b) => a.timestamp - b.timestamp).map((msg) => {
+                {selectedThread.messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()).map((msg) => {
                   const isMe = msg.senderId === liveUser?.uid;
+                  const technicalDetails = msg.data || msg.errorDetails || msg.stack;
+                  const technicalDetailsText =
+                    typeof technicalDetails === "object"
+                      ? JSON.stringify(technicalDetails, null, 2)
+                      : String(technicalDetails || "");
                   return (
                     <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                       <div className={`max-w-[85%] p-6 rounded-[24px] shadow-sm border ${
@@ -595,7 +670,7 @@ const AdminMessagesView = ({ user: propUser }) => {
                       }`}>
                         <div className="flex justify-between items-center mb-2 gap-4">
                           <span className={`text-[10px] font-black uppercase tracking-widest ${isMe ? 'text-blue-200' : 'text-slate-400'}`}>
-                            {isMe ? t('adminMessagesView.me') : (msg.senderName || msg.from)}
+                            {isMe ? t('adminMessagesView.me') : String(msg.senderName || msg.from || t('common.employee'))}
                           </span>
                           <span className={`text-[9px] font-mono ${isMe ? 'text-blue-200' : 'text-slate-300'}`}>
                             {format(msg.timestamp, "dd MMM HH:mm")}
@@ -605,20 +680,20 @@ const AdminMessagesView = ({ user: propUser }) => {
                         {msg.type === 'SYSTEM_ERROR' ? (
                           <div className="space-y-3">
                             <pre className="bg-black/20 p-3 rounded-xl text-[10px] font-mono whitespace-pre-wrap overflow-x-auto">
-                              {msg.content}
+                              {String(msg.content || "")}
                             </pre>
-                            {(msg.data || msg.errorDetails || msg.stack) && (
+                            {Boolean(technicalDetails) && (
                               <div className="bg-red-50 border border-red-100 p-3 rounded-xl">
                                 <p className="text-[9px] font-black text-red-700 uppercase tracking-widest mb-2">{t('adminMessagesView.technicalDetails')}</p>
                                 <pre className="text-[9px] font-mono text-red-600 whitespace-pre-wrap overflow-x-auto">
-                                  {typeof (msg.data || msg.errorDetails || msg.stack) === 'object' ? JSON.stringify(msg.data || msg.errorDetails || msg.stack, null, 2) : (msg.data || msg.errorDetails || msg.stack)}
+                                  {technicalDetailsText}
                                 </pre>
                               </div>
                             )}
                           </div>
                         ) : (
                           <div className="whitespace-pre-wrap text-sm font-medium leading-relaxed">
-                            {msg.content}
+                            {String(msg.content || "")}
                           </div>
                         )}
 
@@ -705,35 +780,48 @@ const AdminMessagesView = ({ user: propUser }) => {
  * SUB-COMPONENT: ComposeModal
  * Wordt binnen hetzelfde bestand gedefinieerd voor stabiliteit.
  */
-const ComposeModal = ({ onClose, user, replyTo }) => {
+type ComposeModalProps = {
+  onClose: () => void;
+  user: AppUser | null;
+  replyTo: AdminMessage | null;
+};
+
+type ComposeFormState = {
+  to: string;
+  subject: string;
+  content: string;
+  priority: "normal" | "urgent";
+};
+
+const ComposeModal = ({ onClose, user, replyTo }: ComposeModalProps) => {
   const { t } = useTranslation();
   const { showSuccess, showError } = useNotifications();
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<ComposeFormState>({
     to: replyTo?.from || "admin",
-    subject: replyTo ? (replyTo.subject.startsWith("RE:") ? replyTo.subject : `RE: ${replyTo.subject}`) : "",
+    subject: replyTo ? (String(replyTo.subject || "").startsWith("RE:") ? String(replyTo.subject || "") : `RE: ${String(replyTo.subject || "")}`) : "",
     content: `\n\n${t('adminMessagesView.kindRegards')}\n${user?.name || user?.displayName || user?.email || t('common.employee')}`,
     priority: "normal",
   });
   const [sending, setSending] = useState(false);
-  const [userList, setUserList] = useState([]);
-  const [attachment, setAttachment] = useState(null);
-  const [attachmentPreview, setAttachmentPreview] = useState(null);
+  const [userList, setUserList] = useState<AppUser[]>([]);
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
   const [uploadProgress] = useState(0);
-  const [customSignature, setCustomSignature] = useState(null);
+  const [customSignature, setCustomSignature] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
       // 1. Users ophalen voor dropdown
-      const q = collection(db, ...PATHS.USERS);
+      const q = collection(db, getPathString(PATHS.USERS));
       const snap = await getDocs(q);
-      setUserList(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setUserList(snap.docs.map((d) => ({ id: d.id, ...(d.data() as DocumentData) }) as AppUser));
 
       // 2. Handtekening ophalen van huidige gebruiker
       if (user?.uid) {
         try {
-          const userDoc = await getDoc(doc(db, ...PATHS.USERS, user.uid));
+          const userDoc = await getDoc(doc(db, `${getPathString(PATHS.USERS)}/${user.uid}`));
           if (userDoc.exists() && userDoc.data().signature) {
-            setCustomSignature(userDoc.data().signature);
+            setCustomSignature(String(userDoc.data().signature));
           }
         } catch (e) {
           console.error("Fout bij ophalen handtekening:", e);
@@ -761,7 +849,7 @@ const ComposeModal = ({ onClose, user, replyTo }) => {
     setFormData(prev => ({ ...prev, content: prev.content + quote }));
   };
 
-  const handleSend = async (e) => {
+  const handleSend = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formData.subject || !formData.content) return;
     setSending(true);
@@ -781,7 +869,7 @@ const ComposeModal = ({ onClose, user, replyTo }) => {
         };
       }
 
-      await addDoc(collection(db, ...PATHS.MESSAGES), {
+      await addDoc(collection(db, getPathString(PATHS.MESSAGES)), {
         ...formData,
         senderId: user?.uid,
         senderName: user?.name || user?.displayName || user?.email,
@@ -800,8 +888,8 @@ const ComposeModal = ({ onClose, user, replyTo }) => {
       );
       showSuccess(t('adminMessagesView.messageSent'));
       onClose();
-    } catch (err) {
-      showError(t('adminMessagesView.sendFailed') + err.message);
+    } catch (err: unknown) {
+      showError(t('adminMessagesView.sendFailed') + getErrorMessage(err));
     } finally {
       setSending(false);
     }
@@ -811,7 +899,7 @@ const ComposeModal = ({ onClose, user, replyTo }) => {
   useEffect(() => {
     if (attachment && attachment.type.startsWith("image/")) {
       const reader = new FileReader();
-      reader.onload = (e) => setAttachmentPreview(e.target.result);
+      reader.onload = (e: ProgressEvent<FileReader>) => setAttachmentPreview(typeof e.target?.result === "string" ? e.target.result : null);
       reader.readAsDataURL(attachment);
     } else {
       setAttachmentPreview(null);
@@ -858,8 +946,8 @@ const ComposeModal = ({ onClose, user, replyTo }) => {
                 {userList
                   .filter((u) => u.email !== user?.email)
                   .map((u) => (
-                    <option key={u.id} value={u.email}>
-                      {u.name || u.email} ({u.role})
+                    <option key={String(u.id || u.email || "")} value={String(u.email || "")}> 
+                      {String(u.name || u.email || t('common.unknown'))} ({String(u.role || "-")})
                     </option>
                   ))}
               </select>
@@ -876,7 +964,7 @@ const ComposeModal = ({ onClose, user, replyTo }) => {
                 }`}
                 value={formData.priority}
                 onChange={(e) =>
-                  setFormData({ ...formData, priority: e.target.value })
+                  setFormData({ ...formData, priority: e.target.value as ComposeFormState["priority"] })
                 }
               >
                 <option value="normal">{t('adminMessagesView.priorityNormal')}</option>
@@ -935,7 +1023,7 @@ const ComposeModal = ({ onClose, user, replyTo }) => {
               type="file"
               accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.csv,.txt,.zip,.rar,.7z,.doc,.docx,.xls,.xlsx"
               className="w-full p-2 bg-slate-50 border-2 border-slate-100 rounded-2xl font-medium outline-none focus:border-blue-500 transition-all text-xs"
-              onChange={e => setAttachment(e.target.files[0])}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAttachment(e.target.files?.[0] ?? null)}
             />
             {attachmentPreview && (
               <img src={attachmentPreview} alt={t('adminMessagesView.preview')} className="mt-2 max-h-40 rounded-xl border border-slate-200 shadow" />

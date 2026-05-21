@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { collection, onSnapshot, doc, addDoc, deleteDoc, updateDoc, serverTimestamp, query, orderBy, limit } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { Mail, Plus, Edit, Trash2, CheckCircle, XCircle, LayoutTemplate, History } from "lucide-react";
 import { useNotifications } from "../../contexts/NotificationContext";
 
@@ -46,13 +46,13 @@ const EmailManagementView = () => {
 
   useEffect(() => {
     // Load Templates
-    const unsubTemplates = onSnapshot(collection(db, ...PATHS.EMAIL_TEMPLATES), (snap) => {
+    const unsubTemplates = onSnapshot(collection(db, getPathString(PATHS.EMAIL_TEMPLATES)), (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as EmailTemplate));
       setTemplates(data);
     });
 
     // Load Logs (limit to 100)
-    const logsQuery = query(collection(db, ...PATHS.EMAIL_LOGS), orderBy("createdAt", "desc"), limit(100));
+    const logsQuery = query(collection(db, getPathString(PATHS.EMAIL_LOGS)), orderBy("createdAt", "desc"), limit(100));
     const unsubLogs = onSnapshot(logsQuery, (snap) => {
       const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as EmailLog));
       setLogs(data);
@@ -66,36 +66,36 @@ const EmailManagementView = () => {
 
   const handleSave = async () => {
     if (!formData.name || !formData.subject || !formData.html) {
-      notify(t("email.management.requiredFields", "Naam, onderwerp en e-mailtekst zijn verplicht."), "warning");
+      notify(t("email.management.requiredFields", "Naam, onderwerp en e-mailtekst zijn verplicht."));
       return;
     }
 
     try {
       if (editingTemplate) {
-        await updateDoc(doc(db, ...PATHS.EMAIL_TEMPLATES, editingTemplate.id), {
+        await updateDoc(doc(db, `${getPathString(PATHS.EMAIL_TEMPLATES)}/${editingTemplate.id}`), {
           ...formData,
           updatedAt: serverTimestamp(),
         });
-        await logActivity(auth.currentUser?.uid, "EMAIL_TEMPLATE_UPDATE", `E-mail template bijgewerkt: ${formData.name}`);
-        notify(t("email.management.updated", "Template succesvol bijgewerkt!"), "success");
+        await logActivity(auth.currentUser?.uid || "system", "EMAIL_TEMPLATE_UPDATE", `E-mail template bijgewerkt: ${formData.name}`);
+        notify(t("email.management.updated", "Template succesvol bijgewerkt!"));
       } else {
-        await addDoc(collection(db, ...PATHS.EMAIL_TEMPLATES), {
+        await addDoc(collection(db, getPathString(PATHS.EMAIL_TEMPLATES)), {
           ...formData,
           createdAt: serverTimestamp(),
         });
-        await logActivity(auth.currentUser?.uid, "EMAIL_TEMPLATE_CREATE", `E-mail template aangemaakt: ${formData.name}`);
-        notify(t("email.management.created", "Template succesvol aangemaakt!"), "success");
+        await logActivity(auth.currentUser?.uid || "system", "EMAIL_TEMPLATE_CREATE", `E-mail template aangemaakt: ${formData.name}`);
+        notify(t("email.management.created", "Template succesvol aangemaakt!"));
       }
       setShowEditor(false);
       setEditingTemplate(null);
       setFormData({ name: "", subject: "", html: "" });
     } catch (err) {
       console.error(err);
-      notify(t("email.management.error", "Er is een fout opgetreden."), "error");
+      notify(t("email.management.error", "Er is een fout opgetreden."));
     }
   };
 
-  const handleDelete = async (id, name) => {
+  const handleDelete = async (id: string, name: string) => {
     const confirm = await showConfirm({
       title: t("email.management.deleteTitle", "Template verwijderen"),
       message: t("email.management.deleteMessage", `Weet je zeker dat je het template "${name}" wilt verwijderen? Dit kan automations breken!`),
@@ -105,9 +105,9 @@ const EmailManagementView = () => {
     });
 
     if (confirm) {
-      await deleteDoc(doc(db, ...PATHS.EMAIL_TEMPLATES, id));
-      await logActivity(auth.currentUser?.uid, "EMAIL_TEMPLATE_DELETE", `E-mail template verwijderd: ${name}`);
-      notify(t("email.management.deleted", "Template succesvol verwijderd!"), "success");
+      await deleteDoc(doc(db, `${getPathString(PATHS.EMAIL_TEMPLATES)}/${id}`));
+      await logActivity(auth.currentUser?.uid || "system", "EMAIL_TEMPLATE_DELETE", `E-mail template verwijderd: ${name}`);
+      notify(t("email.management.deleted", "Template succesvol verwijderd!"));
     }
   };
 

@@ -73,7 +73,7 @@ describe("automationEngine", () => {
       const result = await evaluateCapacityShortage({ threshold: 5 });
       
       expect(result.triggered).toBe(true);
-      expect(result.data.shortage).toBe(10);
+      expect(result.data!.shortage).toBe(10);
     });
 
     it("should not trigger when shortage <= threshold", async () => {
@@ -103,7 +103,7 @@ describe("automationEngine", () => {
       const result = await evaluateLowEfficiency({ threshold: 80 });
       
       expect(result.triggered).toBe(true);
-      expect(result.data.avgEfficiency).toBe(75);
+      expect(result.data!.avgEfficiency).toBe(75);
     });
 
     it("should not trigger when efficiency >= threshold", async () => {
@@ -137,8 +137,8 @@ describe("automationEngine", () => {
       const result = await evaluateOrderDelay({ minDelayedOrders: 1 });
       
       expect(result.triggered).toBe(true);
-      expect(result.data.delayedCount).toBe(1);
-      expect(result.data.delayedOrderIds).toContain("O1");
+      expect(result.data!.delayedCount).toBe(1);
+      expect((result.data!.delayedOrderIds as string[])).toContain("O1");
     });
   });
 
@@ -154,7 +154,7 @@ describe("automationEngine", () => {
 
       const result = await evaluateMissingOperator({ threshold: 2 });
       expect(result.triggered).toBe(true);
-      expect(result.data.count).toBe(2);
+      expect(result.data!.count).toBe(2);
     });
   });
 
@@ -169,8 +169,8 @@ describe("automationEngine", () => {
 
       const result = await evaluateDependencyBlocked({ threshold: 1 });
       expect(result.triggered).toBe(true);
-      expect(result.data.blockedCount).toBe(1);
-      expect(result.data.blockedOrderIds).toContain("MAIN-1");
+      expect(result.data!.blockedCount).toBe(1);
+      expect((result.data!.blockedOrderIds as string[])).toContain("MAIN-1");
     });
   });
 
@@ -193,8 +193,8 @@ describe("automationEngine", () => {
 
       const result = await evaluateInspectionOverdue({ daysOverdue: 7, station: "QC" });
       expect(result.triggered).toBe(true);
-      expect(result.data.overdueCount).toBe(1);
-      expect(result.data.products[0].lotNumber).toBe("L-1");
+      expect(result.data!.overdueCount).toBe(1);
+      expect((result.data!.products as any[])[0].lotNumber).toBe("L-1");
     });
   });
 

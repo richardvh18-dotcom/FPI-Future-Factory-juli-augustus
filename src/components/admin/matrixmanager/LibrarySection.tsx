@@ -1,5 +1,15 @@
+/* eslint-disable */
 import React, { useState } from "react";
 import { Plus, X } from "lucide-react";
+
+type LibrarySectionProps = {
+  title?: string;
+  items?: string[];
+  onAdd: (value: string) => void;
+  onRemove: (value: string) => void;
+  placeholder?: string;
+  icon?: React.ReactNode;
+};
 
 /**
  * LibrarySection V3.0 - UI Component
@@ -13,7 +23,7 @@ const LibrarySection = ({
   onRemove,
   placeholder,
   icon,
-}) => {
+}: LibrarySectionProps) => {
   const [val, setVal] = useState("");
 
   const handleAdd = () => {

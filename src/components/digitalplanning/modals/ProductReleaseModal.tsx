@@ -1,13 +1,12 @@
-// @ts-nocheck
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, CheckCircle, ArrowRight, AlertTriangle, Ruler, AlertOctagon, FileText } from "lucide-react";
 import { collection, collectionGroup, query, where, getDocs } from "firebase/firestore";
 import { db, auth, logActivity } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
+import { getPathString, PATHS } from "../../../config/dbPaths";
 import { REJECTION_REASONS, resolvePostLossenStation } from "../../../utils/workstationLogic";
 import { useNotifications } from '../../../contexts/NotificationContext';
-import { useProgressOperations } from '../../../contexts/ProgressOperationContext.tsx';
+import { useProgressOperationsStore } from '../../../contexts/ProgressOperationContext';
 import { rejectTrackedProductFinal, tempRejectTrackedProduct, advanceTrackedProduct } from "../../../services/planningSecurityService";
 
 const PILOT_ALLOW_INCOMPLETE_LOSSEN_MEASUREMENTS = true;
@@ -26,14 +25,14 @@ const LOSSEN_1218_STATION_NAME = "LOSSEN 12/18";
 const LOSSEN_1218_ORIGIN_STATIONS = new Set(["BH12", "BH15", "BH17", "BH18"]);
 const MOLD_CHANGE_THRESHOLD_DAYS = 21;
 
-const normalizeStationToken = (value = "") => String(value || "").toUpperCase().replace(/\s+/g, "").trim();
+const normalizeStationToken = (value: unknown = "") => String(value || "").toUpperCase().replace(/\s+/g, "").trim();
 
 const isLossen1218Station = (value = "") => {
   const token = normalizeStationToken(value);
   return token === "LOSSEN12/18" || token === "LOSSEN1218";
 };
 
-const isClosedTrackingState = (entry = {}) => {
+const isClosedTrackingState = (entry: Record<string, unknown> = {}) => {
   const statusUpper = String(entry?.status || "").toUpperCase();
   const stepUpper = String(entry?.currentStep || "").toUpperCase();
   return (
@@ -46,7 +45,7 @@ const isClosedTrackingState = (entry = {}) => {
   );
 };
 
-const isStillInLossen1218Flow = (entry = {}) => {
+const isStillInLossen1218Flow = (entry: Record<string, unknown> = {}) => {
   if (isClosedTrackingState(entry)) return false;
 
   const currentStation = normalizeStationToken(entry?.currentStation || "");
@@ -68,19 +67,20 @@ const isClosedPlanningStatus = (status = "") => {
   return ["completed", "cancelled", "rejected", "shipped", "finished", "deleted", "archived"].includes(normalized);
 };
 
-const toDateMillis = (value) => {
+const toDateMillis = (value: unknown) => {
   if (!value) return null;
-  if (typeof value?.toDate === "function") {
-    const d = value.toDate();
+  const valueObj = typeof value === "object" ? (value as { toDate?: () => Date }) : null;
+  if (valueObj && typeof valueObj.toDate === "function") {
+    const d = valueObj.toDate();
     const ms = d instanceof Date ? d.getTime() : Number.NaN;
     return Number.isFinite(ms) ? ms : null;
   }
-  const d = new Date(value);
+  const d = value instanceof Date ? value : new Date(String(value));
   const ms = d.getTime();
   return Number.isFinite(ms) ? ms : null;
 };
 
-const getOrderDateMillis = (data = {}) => {
+const getOrderDateMillis = (data: Record<string, unknown> = {}) => {
   const candidates = [
     data?.deliveryDate,
     data?.plannedDeliveryDate,
@@ -94,7 +94,7 @@ const getOrderDateMillis = (data = {}) => {
   return null;
 };
 
-const getLossenRoute = (itemText, originStation = "") => {
+const getLossenRoute = (itemText: unknown, originStation = "") => {
   const originNorm = String(originStation || "").toUpperCase().replace(/\s/g, "");
   if (LOSSEN_1218_SOURCE_STATIONS.has(originNorm)) {
     return { mode: "STATION", station: LOSSEN_1218_STATION_NAME };
@@ -121,14 +121,27 @@ const getLossenRoute = (itemText, originStation = "") => {
   return { mode: "TAB", station: originNorm || "" };
 };
 
+type ProductReleaseModalProps = {
+  isOpen?: boolean;
+  product: any;
+  bulkProducts?: any[];
+  onClose: () => void;
+  onComplete?: () => void;
+  autoApproveTrigger?: number;
+  forceLossenMode?: boolean;
+  appId?: string;
+  activeOperators?: string[];
+  autoFocus?: boolean;
+};
+
 /**
  * ProductReleaseModal
  * Verschijnt wanneer een operator op "Gereedmelden" klikt.
  * Stuurt het product door naar de volgende stap (bijv. van Wikkelen -> Lossen).
  * UPDATE: Uitgebreide functionaliteit voor Lossen (metingen, afkeur opties).
  */
-const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, autoApproveTrigger = 0, forceLossenMode = false }) => {
-  const maybeShowLossen1218MoldNotice = async (processedTargets = []) => {
+const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, autoApproveTrigger = 0, forceLossenMode = false, appId, activeOperators, autoFocus }: ProductReleaseModalProps) => {
+  const maybeShowLossen1218MoldNotice = async (processedTargets: any[] = []) => {
     if (!Array.isArray(processedTargets) || processedTargets.length === 0) return;
 
     const relevantTargets = processedTargets.filter((entry) => {
@@ -139,7 +152,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
 
     if (relevantTargets.length === 0) return;
 
-    const orderMap = new Map();
+    const orderMap = new Map<string, any>();
     relevantTargets.forEach((entry) => {
       const orderId = String(entry?.orderId || "").trim();
       const itemCode = String(entry?.itemCode || "").trim();
@@ -156,12 +169,14 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
     if (orderMap.size === 0) return;
 
     const thresholdMs = MOLD_CHANGE_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
-    const notices = [];
+    const notices: any[] = [];
 
     for (const meta of orderMap.values()) {
       const { orderId, itemCode, machine } = meta;
 
-      const trackedSnap = await getDocs(query(collection(db, ...PATHS.TRACKING), where("orderId", "==", orderId)));
+      const trackedSnap = await getDocs(
+        query(collection(db, getPathString(PATHS.TRACKING)), where("orderId", "==", orderId))
+      );
       const hasRemainingInLossenFlow = trackedSnap.docs.some((docSnap) => {
         const data = docSnap.data() || {};
         return isStillInLossen1218Flow(data);
@@ -171,9 +186,9 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
         continue;
       }
 
-      const planningMatches = new Map();
+      const planningMatches = new Map<string, any>();
       const [rootPlanningSnap, scopedPlanningSnap] = await Promise.all([
-        getDocs(query(collection(db, ...PATHS.PLANNING), where("itemCode", "==", itemCode))),
+        getDocs(query(collection(db, getPathString(PATHS.PLANNING)), where("itemCode", "==", itemCode))),
         getDocs(query(collectionGroup(db, "orders"), where("itemCode", "==", itemCode))),
       ]);
 
@@ -210,7 +225,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
 
       candidates.forEach(({ data }) => {
         const millis = getOrderDateMillis(data);
-        if (!Number.isFinite(millis)) return;
+        if (millis === null || !Number.isFinite(millis)) return;
         const delta = millis - baselineDate;
         if (delta > 0 && delta < minDeltaMs) minDeltaMs = delta;
       });
@@ -247,16 +262,18 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
   };
   const { t } = useTranslation();
   const { notify } = useNotifications();
-  const { addOperation, updateOperation, removeOperation } = useProgressOperations();
+  const addOperation = useProgressOperationsStore((state) => state.addOperation);
+  const updateOperation = useProgressOperationsStore((state) => state.updateOperation);
+  const removeOperation = useProgressOperationsStore((state) => state.removeOperation);
   const lastAutoApproveRef = useRef(0);
   
   // Form state
   const [status, setStatus] = useState("approved"); // approved, temp_reject, rejected
-  const [measurements, setMeasurements] = useState({});
-  const [errors, setErrors] = useState({});
-  const [selectedReasons, setSelectedReasons] = useState([]);
+  const [measurements, setMeasurements] = useState<Record<string, any>>({});
+  const [errors, setErrors] = useState<Record<string, boolean>>({});
+  const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [comment, setComment] = useState("");
-  const [selectedBulkLotIds, setSelectedBulkLotIds] = useState([]);
+  const [selectedBulkLotIds, setSelectedBulkLotIds] = useState<string[]>([]);
 
   const isBulkMode = Array.isArray(bulkProducts) && bulkProducts.length > 1;
 
@@ -274,13 +291,13 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
     ? bulkProducts.filter((p) => selectedBulkLotIds.includes(String(p.id || p.lotNumber || "")))
     : [product].filter(Boolean);
 
-  const getReasonLabel = (reasonKey) => {
+  const getReasonLabel = (reasonKey: string) => {
     const translated = t(reasonKey);
     if (translated && translated !== reasonKey) return translated;
-    return REJECTION_REASON_FALLBACKS[reasonKey] || reasonKey;
+    return REJECTION_REASON_FALLBACKS[reasonKey as keyof typeof REJECTION_REASON_FALLBACKS] || reasonKey;
   };
 
-  const toggleReason = (reasonKey) => {
+  const toggleReason = (reasonKey: string) => {
     setSelectedReasons((prev) =>
       prev.includes(reasonKey)
         ? prev.filter((r) => r !== reasonKey)
@@ -340,7 +357,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
   }
 
   const validateForm = () => {
-    const newErrors = {};
+    const newErrors: Record<string, boolean> = {};
     if (isLossenStep && status === 'approved') {
       const rawPrimaryValue =
         measurements[primaryMeasurementKey] ||
@@ -359,7 +376,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleMeasurementChange = (field, value) => {
+  const handleMeasurementChange = (field: string, value: string) => {
     setMeasurements(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => {
@@ -404,14 +421,18 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
           
           if (stationId) {
               let q = query(
-                  collection(db, ...PATHS.OCCUPANCY),
+                  collection(db, getPathString(PATHS.OCCUPANCY)),
                   where("machineId", "==", stationId),
                   where("date", "==", today)
               );
               let snap = await getDocs(q);
               
               if (snap.empty) {
-                  q = query(collection(db, ...PATHS.OCCUPANCY), where("machineId", "==", stationId.toUpperCase()), where("date", "==", today));
+                  q = query(
+                  collection(db, getPathString(PATHS.OCCUPANCY)),
+                  where("machineId", "==", stationId.toUpperCase()),
+                  where("date", "==", today)
+                  );
                   snap = await getDocs(q);
               }
 
@@ -522,7 +543,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
             
             // Mark as completed
             updateOperation(opId, "Klaar ✓");
-          } catch (err) {
+          } catch (err: any) {
             // Mark as error
             updateOperation(opId, `Fout: ${err.message}`);
             console.error(`Error processing ${targetId}:`, err);
@@ -544,7 +565,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
         setTimeout(() => {
           operationIds.forEach(id => removeOperation(id));
         }, 2000);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Fout:", error);
         notify(error.message);
         // Clear pending on error
@@ -556,7 +577,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
     onClose();
   };
 
-  const handleRelease = async (e) => {
+  const handleRelease = async (e?: React.MouseEvent) => {
     e?.stopPropagation?.(); // Voorkom dat clicks erdoorheen vallen
     await executeRelease();
   };

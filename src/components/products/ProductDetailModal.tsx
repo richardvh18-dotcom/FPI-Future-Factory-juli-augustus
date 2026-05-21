@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect } from "react";
 import {
   X,
@@ -24,9 +23,43 @@ import { doc, getDoc, updateDoc, arrayUnion } from "firebase/firestore";
 import { db, storage, auth, logActivity } from "../../config/firebase";
 import { generateProductPDF } from "../../utils/pdfGenerator";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { aiService } from "../../services/aiService";
-import VerificationBadge from "../admin/VerificationBadge.tsx";
+import VerificationBadge from "../admin/VerificationBadge";
+
+type ProductPdf = string | { name?: string; url?: string };
+
+type Product = {
+  id?: string;
+  name?: string;
+  productCode?: string;
+  articleCode?: string;
+  imageUrl?: string;
+  label?: string;
+  verificationStatus?: string;
+  verifiedBy?: string;
+  type?: string;
+  pressure?: string | number;
+  pn?: string | number;
+  diameter?: string | number;
+  dn?: string | number;
+  connection?: string;
+  angle?: string | number;
+  extraCode?: string;
+  drilling?: string;
+  sourcePdfs?: ProductPdf[];
+  [key: string]: unknown;
+};
+
+type ProductDetailModalProps = {
+  product: Product | null;
+  onClose: () => void;
+  userRole?: string;
+};
+
+type SpecsRecord = Record<string, unknown>;
+
+type TimestampLike = { seconds?: number };
 
 const getAppId = () => {
   if (typeof window !== "undefined" && window.__app_id) return window.__app_id;
@@ -39,15 +72,15 @@ const appId = getAppId();
  * ProductDetailModal V6.0: Bore Dimensions
  * - Toevoeging: Aparte sectie voor Boring/Flens data in Maatvoering tab.
  */
-const ProductDetailModal = ({ product, onClose, userRole }) => {
+const ProductDetailModal = ({ product, onClose, userRole }: ProductDetailModalProps) => {
   const [activeTab, setActiveTab] = useState("basis");
-  const [liveSpecs, setLiveSpecs] = useState(null);
-  const [boreSpecs, setBoreSpecs] = useState(null); // NIEUW: State voor boringen
+  const [liveSpecs, setLiveSpecs] = useState<SpecsRecord | null>(null);
+  const [boreSpecs, setBoreSpecs] = useState<SpecsRecord | null>(null); // NIEUW: State voor boringen
   const [loading, setLoading] = useState(true);
-  const [, setError] = useState(null);
+  const [, setError] = useState<string | null>(null);
 
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const FITTING_ORDER = ["TW", "L", "Lo", "R", "Weight"];
   const MOF_ORDER = ["B1", "B2", "BA", "A", "TWcb", "BD", "W"];
@@ -70,50 +103,62 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
         const bellId = `${connKey}_${pnStr}_${idStr}${extraCodeSuffix}`;
         
         // Generieke Fitting ID: TYPE_[ANGLE_]CONN_PN_ID
-        let fittingId = `${product.type.toUpperCase()}`;
+        let fittingId = `${String(product.type || "").toUpperCase()}`;
         if (product.angle && product.angle !== "-") {
           fittingId += `_${product.angle}`;
         }
         fittingId += `_${connKey}_${pnStr}_${idStr}${extraCodeSuffix}`;
 
         // Socket ID
-        const socketId = `${product.type.toUpperCase()}_SOCKET_${connKey}_${pnStr}_${idStr}${extraCodeSuffix}`;
+        const socketId = `${String(product.type || "").toUpperCase()}_SOCKET_${connKey}_${pnStr}_${idStr}${extraCodeSuffix}`;
 
         // Bepaal paden
         let bellPath = null;
         if (connKey === "TB") bellPath = PATHS.TB_DIMENSIONS;
         else if (connKey === "CB") bellPath = PATHS.CB_DIMENSIONS;
 
-        const promises = [];
+        const promises: Array<Promise<SpecsRecord>> = [];
         
         // 1. Bell Dimensions
         if (bellPath) {
-          promises.push(getDoc(doc(db, ...bellPath, bellId)).then(snap => snap.exists() ? snap.data() : {}));
+          promises.push(
+            getDoc(doc(db, getPathString(bellPath), bellId)).then((snap) =>
+              snap.exists() ? (snap.data() as SpecsRecord) : {}
+            )
+          );
         } else {
           promises.push(Promise.resolve({}));
         }
 
         // 2. Fitting Specs
         if (PATHS.FITTING_SPECS) {
-          promises.push(getDoc(doc(db, ...PATHS.FITTING_SPECS, fittingId)).then(snap => snap.exists() ? snap.data() : {}));
+          promises.push(
+            getDoc(doc(db, getPathString(PATHS.FITTING_SPECS), fittingId)).then((snap) =>
+              snap.exists() ? (snap.data() as SpecsRecord) : {}
+            )
+          );
         } else {
           promises.push(Promise.resolve({}));
         }
 
         // 3. Socket Specs
         if (PATHS.SOCKET_SPECS) {
-          promises.push(getDoc(doc(db, ...PATHS.SOCKET_SPECS, socketId)).then(snap => snap.exists() ? snap.data() : {}));
+          promises.push(
+            getDoc(doc(db, getPathString(PATHS.SOCKET_SPECS), socketId)).then((snap) =>
+              snap.exists() ? (snap.data() as SpecsRecord) : {}
+            )
+          );
         } else {
           promises.push(Promise.resolve({}));
         }
 
         const [bellData, fitStandardData, fitSocketData] = await Promise.all(promises);
 
-        let merged = {};
+        let merged: SpecsRecord = {};
         merged = { ...merged, ...bellData, ...fitStandardData, ...fitSocketData };
 
         // NIEUW: Boringen apart ophalen en opslaan
-        let boreData = null;
+        let boreData: SpecsRecord | null = null;
         if (product.drilling && product.drilling !== "-") {
           const boreId = `${product.drilling.replace(
             /\s+/g,
@@ -131,7 +176,7 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
             )
           );
           if (boreSnap.exists()) {
-            boreData = boreSnap.data();
+            boreData = boreSnap.data() as SpecsRecord;
             Object.assign(merged, boreData); // Ook in merged voor PDF/Totaaloverzicht
           }
         }
@@ -150,11 +195,11 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
 
   if (!product) return null;
 
-  const getOrderedSpecs = (orderList) => {
+  const getOrderedSpecs = (orderList: string[]): Array<{ label: string; value: unknown }> => {
     if (!liveSpecs) return [];
     const dbKeys = Object.keys(liveSpecs);
-    return orderList
-      .map((key) => {
+    const items = orderList
+      .map((key): { label: string; value: unknown } | null => {
         let value = liveSpecs[key];
         const lowerKey = key.toLowerCase();
 
@@ -172,6 +217,8 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
           : null;
       })
       .filter((item) => item !== null);
+
+    return items as Array<{ label: string; value: unknown }>;
   };
 
   const fittingSpecs = getOrderedSpecs(FITTING_ORDER);
@@ -206,8 +253,8 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
         })
         .map(([k, v]) => {
           let displayValue = v;
-          if (v && typeof v === "object" && v.seconds !== undefined) {
-            displayValue = new Date(v.seconds * 1000).toLocaleString("nl-NL");
+            if (v && typeof v === "object" && (v as TimestampLike).seconds !== undefined) {
+              displayValue = new Date(((v as TimestampLike).seconds || 0) * 1000).toLocaleString("nl-NL");
           } else if (v && typeof v === "object") {
             displayValue = "[Data Object]";
           }
@@ -215,7 +262,7 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
         })
     : [];
 
-  const TabButton = ({ id, label, icon: Icon }) => (
+    const TabButton = ({ id, label, icon: Icon }: { id: string; label: string; icon: any }) => (
     <button
       onClick={() => setActiveTab(id)}
       className={`flex items-center gap-2 px-6 py-4 text-[10px] font-black uppercase tracking-widest border-b-4 transition-all ${
@@ -263,8 +310,12 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
                       disabled={uploading}
                       onChange={async (e) => {
                         setUploadError(null);
-                        const file = e.target.files[0];
+                        const file = e.target.files?.[0];
                         if (!file) return;
+                        if (!product.id) {
+                          setUploadError("Product ID ontbreekt.");
+                          return;
+                        }
                         setUploading(true);
                         try {
                           // Upload naar Firebase Storage
@@ -277,20 +328,24 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
                             sourcePdfs: arrayUnion({ name: file.name, url })
                           });
                           await logActivity(
-                            auth.currentUser?.uid,
+                            auth.currentUser?.uid || "system",
                             "PRODUCT_PDF_UPLOAD",
                             `PDF toegevoegd aan product ${product.id}: ${file.name}`
                           );
                           // Trigger AI learning direct (optioneel: feedback)
                           try {
-                            await aiService.learnFromPdfUrl(url, file.name);
+                            const aiSvc = aiService as unknown as { learnFromPdfUrl?: (pdfUrl: string, fileName: string) => Promise<unknown> };
+                            if (aiSvc.learnFromPdfUrl) {
+                              await aiSvc.learnFromPdfUrl(url, file.name);
+                            }
                           } catch (aiErr) {
                             // AI mag falen zonder UI crash
                             console.warn("AI learning error:", aiErr);
                           }
                           window.location.reload(); // Simpel: herlaad om nieuwe PDF te tonen
                         } catch (err) {
-                          setUploadError("Uploaden mislukt: " + err.message);
+                          const message = err instanceof Error ? err.message : String(err);
+                          setUploadError("Uploaden mislukt: " + message);
                         } finally {
                           setUploading(false);
                         }
@@ -348,7 +403,7 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
               </div>
               <div className="lg:col-span-5 space-y-3">
                 <div className="mb-4">
-                  <VerificationBadge status={product.verificationStatus} verifiedBy={product.verifiedBy} />
+                  <VerificationBadge status={product.verificationStatus as any} verifiedBy={product.verifiedBy as any} />
                 </div>
                 <h4 className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] italic mb-4 flex items-center gap-2">
                   <Info size={14} /> Kerngegevens
@@ -405,13 +460,13 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
                   </div>
                 ))}
 
-                {product.sourcePdfs?.length > 0 && (
+                {(product.sourcePdfs || []).length > 0 && (
                   <div className="pt-6">
                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">
                       Documentatie
                     </h4>
                     <div className="space-y-2">
-                      {product.sourcePdfs.map((pdf, i) => {
+                      {(product.sourcePdfs || []).map((pdf: ProductPdf, i: number) => {
                         // Support voor zowel string URLs als objecten {name, url}
                         const url = typeof pdf === 'string' ? pdf : pdf.url;
                         let name = typeof pdf === 'string' ? `PDF Document ${i + 1}` : pdf.name;
@@ -421,7 +476,7 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
                           try {
                             const path = pdf.split('/o/')[1].split('?')[0];
                             const decodedPath = decodeURIComponent(path);
-                            const fileName = decodedPath.split('/').pop();
+                            const fileName = decodedPath.split('/').pop() || "";
                             name = fileName.replace(/^\d+_/, ''); // Verwijder timestamp prefix
                           } catch { /* fallback */ }
                         }
@@ -483,7 +538,7 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
                                 {spec.label}
                               </span>
                               <span className="text-sm font-black text-slate-800">
-                                {spec.value}{" "}
+                                {String(spec.value)}{" "}
                                 <small className="text-[9px] text-slate-300 ml-1 font-bold">
                                   {spec.label.toLowerCase().includes("weight")
                                     ? "kg"
@@ -519,7 +574,7 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
                                 {spec.label}
                               </span>
                               <span className="text-sm font-black text-slate-800">
-                                {spec.value}{" "}
+                                {String(spec.value)}{" "}
                                 <small className="text-[9px] text-slate-300 ml-1 font-bold">
                                   mm
                                 </small>
@@ -556,7 +611,7 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
                                 {key}
                               </span>
                               <span className="text-sm font-black text-slate-800">
-                                {value}
+                                {String(value)}
                               </span>
                             </div>
                           ))}
@@ -597,7 +652,7 @@ const ProductDetailModal = ({ product, onClose, userRole }) => {
         <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end gap-4 shrink-0">
           <button
             onClick={() =>
-              generateProductPDF({ ...product, ...liveSpecs }, userRole)
+              generateProductPDF({ ...product, ...(liveSpecs || {}) }, userRole)
             }
             disabled={loading || !liveSpecs}
             className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3 disabled:opacity-50 active:scale-95 transition-all"

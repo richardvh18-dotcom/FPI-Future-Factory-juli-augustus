@@ -22,21 +22,21 @@ import { PATHS } from "../../../config/dbPaths";
  *   updatedAt: ISO string
  * }
  */
-const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }) => {
+const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }: { isOpen: boolean; onClose: () => void; onSuccess?: () => void }) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [preview, setPreview] = useState(null); // { records: [...], site: "101" }
-  const [result, setResult] = useState(null);  // { written, skipped }
-  const [error, setError] = useState(null);
-  const fileInputRef = useRef(null);
+  const [preview, setPreview] = useState<any>(null); // { records: [...], site: "101" }
+  const [result, setResult] = useState<any>(null);  // { written, skipped }
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const functions = getFunctions(app);
   const importReferenceOperationsCallable = httpsCallable(functions, "importReferenceOperations");
 
   if (!isOpen) return null;
 
-  const clean = (val) => String(val ?? "").trim();
+  const clean = (val: any) => String(val ?? "").trim();
 
-  const deriveType = (descriptions, workCenters) => {
+  const deriveType = (descriptions: string[], workCenters: string[]) => {
     const combined = [...descriptions, ...workCenters]
       .map((s) => clean(s).toLowerCase())
       .join(" ");
@@ -46,25 +46,25 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }) => {
     return "production";
   };
 
-  const parseRefOpsFile = async (file) => {
+  const parseRefOpsFile = async (file: File) => {
     const buffer = await file.arrayBuffer();
     const wb = XLSX.read(buffer, { cellDates: true });
 
     // Zoek "data" sheet
-    const sheetName = wb.SheetNames.find((n) => n.toLowerCase() === "data") || wb.SheetNames[0];
+    const sheetName = wb.SheetNames.find((n: string) => n.toLowerCase() === "data") || wb.SheetNames[0];
     const sheet = wb.Sheets[sheetName];
     const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
 
     if (!rawRows.length) throw new Error("Geen rijen gevonden in het bestand.");
 
     // Header staat op rij 0 (index 0) in de reference ops file
-    const headers = rawRows[0].map((h) => clean(h));
+    const headers = (rawRows[0] as any[]).map((h: any) => clean(h));
     const dataRows = rawRows.slice(1);
 
-    const findCol = (candidates) => {
-      const normalizedHeaders = headers.map((h) => h.toLowerCase());
+    const findCol = (candidates: string[]) => {
+      const normalizedHeaders = headers.map((h: string) => h.toLowerCase());
       for (const c of candidates) {
-        const idx = normalizedHeaders.findIndex((h) => h.includes(c.toLowerCase()));
+        const idx = normalizedHeaders.findIndex((h: string) => h.includes(c.toLowerCase()));
         if (idx !== -1) return idx;
       }
       return -1;
@@ -80,9 +80,9 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }) => {
     if (idxRefOp === -1) throw new Error("Kolom 'Reference Operation' niet gevonden.");
 
     // Groepeer per refOp code, filter op Site 101
-    const grouped = new Map(); // code → { workCenters: Set, descriptions: Set }
+    const grouped = new Map<string, { workCenters: Set<string>; descriptions: Set<string> }>(); // code → { workCenters, descriptions }
 
-    dataRows.forEach((row) => {
+    dataRows.forEach((row: any) => {
       const code = clean(row[idxRefOp]);
       if (!code || isNaN(Number(code))) return;
 
@@ -106,6 +106,7 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }) => {
         grouped.set(code, { workCenters: new Set(), descriptions: new Set() });
       }
       const entry = grouped.get(code);
+      if (!entry) return;
       if (wc) entry.workCenters.add(wc);
       if (desc) entry.descriptions.add(desc);
     });
@@ -113,8 +114,8 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }) => {
     if (!grouped.size) throw new Error("Geen geldige Reference Operation-rijen gevonden voor Site 101.");
 
     const records = Array.from(grouped.entries()).map(([code, { workCenters, descriptions }]) => {
-      const wcsArr = Array.from(workCenters);
-      const descsArr = Array.from(descriptions);
+      const wcsArr = Array.from(workCenters) as string[];
+      const descsArr = Array.from(descriptions) as string[];
       const primaryDesc = descsArr[0] || code;
       const type = deriveType(descsArr, wcsArr);
       return {
@@ -131,7 +132,7 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }) => {
     return records;
   };
 
-  const handleFile = async (e) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setError(null);
@@ -141,7 +142,7 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }) => {
     try {
       const records = await parseRefOpsFile(file);
       setPreview({ records });
-    } catch (err) {
+    } catch (err: any) {
       setError(err.message || "Fout bij inlezen bestand.");
     } finally {
       setLoading(false);
@@ -158,13 +159,13 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }) => {
         records: preview.records,
       });
 
-      const payload = res?.data || {};
+      const payload = (res?.data || {}) as { written?: number; overwritten?: number };
       setResult({
         written: Number(payload.written || preview.records.length),
         skipped: Number(payload.overwritten || 0),
       });
       onSuccess?.();
-    } catch (err) {
+    } catch (err: any) {
       const backendMsg = err?.message || err?.details?.message || err;
       setError("Fout bij backend import: " + backendMsg);
     } finally {
@@ -181,7 +182,7 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }) => {
     onClose();
   };
 
-  const typeColor = (type) => {
+  const typeColor = (type: string) => {
     if (type === "qc") return "bg-blue-100 text-blue-700";
     if (type === "post") return "bg-amber-100 text-amber-700";
     return "bg-emerald-100 text-emerald-700";
@@ -278,7 +279,7 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }) => {
                       </tr>
                     </thead>
                     <tbody>
-                      {preview.records.map((rec) => (
+                      {preview.records.map((rec: { code: string; description?: string; type: string; workCenters: string[] }) => (
                         <tr key={rec.code} className="border-t border-slate-100 hover:bg-slate-50">
                           <td className="px-4 py-2 font-mono font-bold text-slate-800">{rec.code}</td>
                           <td className="px-4 py-2 text-slate-600">{rec.description || "—"}</td>

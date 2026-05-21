@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -31,6 +31,9 @@ import {
   deleteDoc,
   updateDoc,
   startAfter,
+  type DocumentData,
+  type QueryConstraint,
+  type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, parse, isValid } from "date-fns";
@@ -40,15 +43,36 @@ import { useNotifications } from "../../contexts/NotificationContext";
 
 const WEEK_INPUT_FORMAT = "RRRR-'W'II";
 
-const toDateValue = (value) => {
+type UnknownRecord = Record<string, unknown>;
+
+type DiffPayload = {
+  oldValue: unknown;
+  newValue: unknown;
+};
+
+type AuditLog = {
+  id: string;
+  timestamp: Date;
+  action?: string;
+  userEmail?: string;
+  userId?: string;
+  details?: unknown;
+  source?: string;
+  ipAddress?: string;
+  status?: string;
+  changes?: UnknownRecord;
+  [key: string]: unknown;
+};
+
+const toDateValue = (value: unknown): Date => {
   if (!value) return new Date();
-  if (typeof value?.toDate === "function") return value.toDate();
+  if (typeof (value as { toDate?: () => Date })?.toDate === "function") return (value as { toDate: () => Date }).toDate();
   if (value instanceof Date) return value;
-  const parsed = new Date(value);
+  const parsed = new Date(typeof value === "string" || typeof value === "number" ? value : String(value));
   return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 };
 
-const stringifyValue = (value) => {
+const stringifyValue = (value: unknown): string => {
   if (value == null) return "";
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
@@ -60,7 +84,7 @@ const stringifyValue = (value) => {
 };
 
 // --- Leesbare veldlabels voor audit diff ---
-const FIELD_LABELS = {
+const FIELD_LABELS: Record<string, string> = {
   status: 'Status',
   currentStep: 'Stap',
   currentStation: 'Station',
@@ -90,10 +114,13 @@ const FIELD_LABELS = {
 // Velden die te groot/irrelevant zijn voor de diff tabel
 const SKIP_DIFF_FIELDS = new Set(['id', 'labelZPL', 'history']);
 
-const formatTimestampValue = (value) => {
+const formatTimestampValue = (value: unknown): string | null => {
   if (!value) return null;
-  if (value?.seconds != null) {
-    try { return format(new Date(value.seconds * 1000), 'dd-MM-yyyy HH:mm:ss', { locale: nl }); } catch { return null; }
+  if (typeof value === "object" && value !== null && "seconds" in value) {
+    const seconds = (value as { seconds?: unknown }).seconds;
+    if (typeof seconds === "number") {
+      try { return format(new Date(seconds * 1000), 'dd-MM-yyyy HH:mm:ss', { locale: nl }); } catch { return null; }
+    }
   }
   if (typeof value === 'string' && value.length > 10) {
     const d = new Date(value);
@@ -102,7 +129,7 @@ const formatTimestampValue = (value) => {
   return null;
 };
 
-const getDiffFieldLabel = (key) => {
+const getDiffFieldLabel = (key: string): string => {
   if (FIELD_LABELS[key]) return FIELD_LABELS[key];
   if (key.startsWith('timestamps.')) {
     return '⏱ ' + key.replace('timestamps.', '').replace(/_/g, ' ');
@@ -110,7 +137,7 @@ const getDiffFieldLabel = (key) => {
   return key;
 };
 
-const formatDiffValue = (value) => {
+const formatDiffValue = (value: unknown): string | null => {
   if (value === null || value === undefined) return null;
   if (typeof value === 'boolean') return value ? 'ja' : 'nee';
   const ts = formatTimestampValue(value);
@@ -121,13 +148,15 @@ const formatDiffValue = (value) => {
   return String(value);
 };
 
-const SmartDiffView = ({ before, after }) => {
-  const patchKeys = after && typeof after === 'object' ? Object.keys(after) : [];
+const SmartDiffView = ({ before, after }: { before?: unknown; after?: unknown }) => {
+  const beforeObj = before && typeof before === 'object' ? (before as UnknownRecord) : null;
+  const afterObj = after && typeof after === 'object' ? (after as UnknownRecord) : null;
+  const patchKeys = afterObj ? Object.keys(afterObj) : [];
   const visibleKeys = patchKeys.filter(k => !SKIP_DIFF_FIELDS.has(k));
 
   // Fallback: als after leeg is maar before er is, toon before-only tabel
   const showKeys = visibleKeys.length > 0 ? visibleKeys
-    : (before && typeof before === 'object' ? Object.keys(before).filter(k => !SKIP_DIFF_FIELDS.has(k)) : []);
+    : (beforeObj ? Object.keys(beforeObj).filter(k => !SKIP_DIFF_FIELDS.has(k)) : []);
 
   if (showKeys.length === 0) {
     return <pre className="text-xs font-mono text-slate-500 break-all whitespace-pre-wrap">{JSON.stringify({ before, after }, null, 2)}</pre>;
@@ -145,8 +174,8 @@ const SmartDiffView = ({ before, after }) => {
         </thead>
         <tbody>
           {showKeys.map((key) => {
-            const oldVal = before?.[key];
-            const newVal = after?.[key];
+            const oldVal = beforeObj?.[key];
+            const newVal = afterObj?.[key];
             const oldStr = formatDiffValue(oldVal);
             const newStr = formatDiffValue(newVal);
             const changed = JSON.stringify(oldVal) !== JSON.stringify(newVal);
@@ -170,14 +199,14 @@ const SmartDiffView = ({ before, after }) => {
   );
 };
 
-const toReadableId = (value) => {
+const toReadableId = (value: unknown): string => {
   const raw = String(value || "").trim();
   if (!raw) return "";
   const parts = raw.split("/").filter(Boolean);
   return parts.length ? parts[parts.length - 1] : raw;
 };
 
-const toReadableFieldValue = (value) => {
+const toReadableFieldValue = (value: unknown): string => {
   if (value == null) return "";
   if (typeof value === "string") return value.trim();
   if (typeof value === "number" || typeof value === "boolean") return String(value);
@@ -192,8 +221,8 @@ const SKIP_SUMMARY_KEYS = new Set([
   'action', 'userEmail',
 ]);
 
-const formatObjectDetails = (details) => {
-  const d = details && typeof details === 'object' ? details : null;
+const formatObjectDetails = (details: unknown): string => {
+  const d = details && typeof details === 'object' ? (details as UnknownRecord) : null;
   if (!d) return '';
 
   const parts = [];
@@ -237,34 +266,47 @@ const formatObjectDetails = (details) => {
   return parts.join(' · ');
 };
 
-const getLogDetailsText = (log) => {
+const getLogDetailsText = (log: AuditLog): string => {
   const details = log?.details;
   if (typeof details === "string") return details;
   if (details && typeof details === "object") {
-    if (typeof details.message === "string" && details.message.trim()) {
-      return details.message;
+    const detailRecord = details as UnknownRecord;
+    if (typeof detailRecord.message === "string" && detailRecord.message.trim()) {
+      return detailRecord.message;
     }
-    const formatted = formatObjectDetails(details);
+    const formatted = formatObjectDetails(detailRecord);
     if (formatted) return formatted;
-    return stringifyValue(details);
+    return stringifyValue(detailRecord);
   }
   return "";
 };
 
-const getLogMeta = (log) => {
-  const details = log?.details && typeof log.details === "object" ? log.details : {};
+const getLogMeta = (log: AuditLog): { source: string; ipAddress: string; status: string } => {
+  const details = log?.details && typeof log.details === "object" ? (log.details as UnknownRecord) : {};
   return {
-    source: log?.source || details?.source || "",
-    ipAddress: log?.ipAddress || details?.ipAddress || "",
-    status: log?.status || details?.status || "",
+    source: String(log?.source || details.source || ""),
+    ipAddress: String(log?.ipAddress || details.ipAddress || ""),
+    status: String(log?.status || details.status || ""),
   };
 };
 
-const getDiffPayload = (log) => {
-  if (log?.changes && typeof log.changes === "object") return log.changes;
-  const details = log?.details && typeof log.details === "object" ? log.details : {};
-  if (details?.changes && typeof details.changes === "object") return details.changes;
-  if (details?.before != null || details?.after != null) {
+const getDiffPayload = (log: AuditLog): DiffPayload | null => {
+  if (log?.changes && typeof log.changes === "object") {
+    const changes = log.changes as UnknownRecord;
+    return {
+      oldValue: changes.oldValue ?? null,
+      newValue: changes.newValue ?? changes,
+    };
+  }
+  const details = log?.details && typeof log.details === "object" ? (log.details as UnknownRecord) : {};
+  if (details.changes && typeof details.changes === "object") {
+    const changes = details.changes as UnknownRecord;
+    return {
+      oldValue: changes.oldValue ?? null,
+      newValue: changes.newValue ?? changes,
+    };
+  }
+  if (details.before != null || details.after != null) {
     return {
       oldValue: details.before ?? null,
       newValue: details.after ?? null,
@@ -282,23 +324,23 @@ const AdminLogView = () => {
   const { t } = useTranslation();
   const { isAdmin } = useAdminAuth();
   const { showConfirm , notify} = useNotifications();
-  const [logs, setLogs] = useState([]);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState("ALL");
   const [periodFilter, setPeriodFilter] = useState("ALL");
   const [selectedDay, setSelectedDay] = useState(format(new Date(), "yyyy-MM-dd"));
   const [selectedWeek, setSelectedWeek] = useState(format(new Date(), WEEK_INPUT_FORMAT));
   const [searchQuery, setSearchQuery] = useState("");
-  const [lastVisibleDoc, setLastVisibleDoc] = useState(null);
+  const [lastVisibleDoc, setLastVisibleDoc] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
-  const [error, setError] = useState(null);
-  const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
-  const [expandedId, setExpandedId] = useState(null);
-  const [rawJsonIds, setRawJsonIds] = useState(new Set());
-  const toggleRawJson = (id) => setRawJsonIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [rawJsonIds, setRawJsonIds] = useState<Set<string>>(new Set());
+  const toggleRawJson = (id: string) => setRawJsonIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const [useYearMonthPrefilter, setUseYearMonthPrefilter] = useState(true);
   const PAGE_SIZE = 50;
 
@@ -307,8 +349,8 @@ const AdminLogView = () => {
   const READ_ONLY_MODE = true;
 
   // Correcte paden voor logs (hardcoded om mismatch met dbPaths te voorkomen)
-  const LOG_PATH = ["future-factory", "audit", "logs"];
-  const ARCHIVE_PATH = ["future-factory", "logs", "activity_logs_archive"];
+  const LOG_PATH = ["future-factory", "audit", "logs"] as const;
+  const ARCHIVE_PATH = ["future-factory", "logs", "activity_logs_archive"] as const;
 
   const actionTypes = [
     "PRODUCT_CREATE",
@@ -334,12 +376,16 @@ const AdminLogView = () => {
     "AI_VERIFY"
   ];
 
-  const getErrorMessage = (err) => {
+  const getErrorMessage = (err: unknown) => {
     if (!err) return t('adminLogView.dbError') + 'onbekende fout';
-    return err.code || err.message || String(err);
+    if (typeof err === "object" && err !== null) {
+      const maybeError = err as { code?: string; message?: string };
+      return maybeError.code || maybeError.message || String(err);
+    }
+    return String(err);
   };
 
-  const parseWeekInput = (weekValue) => {
+  const parseWeekInput = (weekValue: string) => {
     if (!weekValue) return new Date();
 
     try {
@@ -366,7 +412,7 @@ const AdminLogView = () => {
     return null;
   };
 
-  const getYearMonthKeysForRange = (range) => {
+  const getYearMonthKeysForRange = (range: { start: Date; end: Date } | null) => {
     if (!range?.start || !range?.end) return [];
 
     const keys = [];
@@ -381,10 +427,13 @@ const AdminLogView = () => {
     return keys.slice(0, 10);
   };
 
-  const buildQuery = (cursor = null, options = {}) => {
+  const buildQuery = (
+    cursor: QueryDocumentSnapshot<DocumentData> | null = null,
+    options: { includeYearMonth?: boolean } = {}
+  ) => {
     const includeYearMonth = options?.includeYearMonth !== false;
     const colRef = collection(db, ...LOG_PATH);
-    const constraints = [];
+    const constraints: QueryConstraint[] = [];
 
     if (filterType !== "ALL") {
       constraints.push(where("action", "==", filterType));
@@ -427,7 +476,7 @@ const AdminLogView = () => {
         usedYearMonthFilter = false;
       }
 
-      const logData = snapshot.docs.map((logDoc) => ({
+      const logData: AuditLog[] = snapshot.docs.map((logDoc) => ({
         id: logDoc.id,
         ...logDoc.data(),
         timestamp: toDateValue(logDoc.data().timestamp),
@@ -436,11 +485,13 @@ const AdminLogView = () => {
       setLogs(logData);
       setLastVisibleDoc(snapshot.docs.length ? snapshot.docs[snapshot.docs.length - 1] : null);
       setHasMore(snapshot.docs.length === PAGE_SIZE);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Audit Sync Error:", err);
-      if (err.code === "permission-denied") return;
-      if (err.code === "failed-precondition") {
-        setError(`${t('adminLogView.indexMissing')} - ${err.message}`);
+      const code = typeof err === "object" && err !== null ? (err as { code?: string }).code : undefined;
+      const message = typeof err === "object" && err !== null ? (err as { message?: string }).message : undefined;
+      if (code === "permission-denied") return;
+      if (code === "failed-precondition") {
+        setError(`${t('adminLogView.indexMissing')} - ${message || ""}`);
       } else {
         setError(`${t('adminLogView.dbError')}${getErrorMessage(err)}`);
       }
@@ -456,7 +507,7 @@ const AdminLogView = () => {
       const snapshot = await getDocs(
         buildQuery(lastVisibleDoc, { includeYearMonth: useYearMonthPrefilter })
       );
-      const moreLogs = snapshot.docs.map((logDoc) => ({
+      const moreLogs: AuditLog[] = snapshot.docs.map((logDoc) => ({
         id: logDoc.id,
         ...logDoc.data(),
         timestamp: toDateValue(logDoc.data().timestamp),
@@ -464,7 +515,7 @@ const AdminLogView = () => {
       setLogs((prev) => [...prev, ...moreLogs]);
       setLastVisibleDoc(snapshot.docs.length ? snapshot.docs[snapshot.docs.length - 1] : lastVisibleDoc);
       setHasMore(snapshot.docs.length === PAGE_SIZE);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Load more error:", err);
       notify(t('adminLogView.loadMoreError', 'Fout bij laden van meer logs.'));
     } finally {
@@ -476,7 +527,7 @@ const AdminLogView = () => {
     fetchInitialLogs();
   }, [filterType, periodFilter, selectedDay, selectedWeek]);
 
-  const filteredLogs = logs.filter((log) => {
+  const filteredLogs = logs.filter((log: AuditLog) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     const detailsText = getLogDetailsText(log).toLowerCase();
@@ -525,7 +576,7 @@ const AdminLogView = () => {
     try {
       const { jsPDF } = await import("jspdf");
       const autoTable = (await import("jspdf-autotable")).default;
-      const compact = (value, max = 160) => {
+      const compact = (value: unknown, max = 160) => {
         const txt = String(value || "").replace(/\s+/g, " ").trim();
         if (!txt) return "-";
         return txt.length > max ? `${txt.slice(0, max - 1)}…` : txt;
@@ -580,7 +631,7 @@ const AdminLogView = () => {
       });
 
       doc.save(`audit_log_${format(new Date(), "yyyyMMdd")}.pdf`);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("PDF generation failed:", err);
       notify(t('adminLogView.pdfError'));
     }
@@ -603,8 +654,8 @@ const AdminLogView = () => {
         batch.delete(ref);
       });
       await batch.commit();
-      await logActivity(auth.currentUser?.uid, "LOGS_CLEARED", "All logs cleared");
-    } catch (err) {
+      await logActivity(auth.currentUser?.uid ?? "system", "LOGS_CLEARED", "All logs cleared");
+    } catch (err: unknown) {
       console.error("Clear error:", err);
       notify(t('adminLogView.clearError'));
     } finally {
@@ -666,16 +717,16 @@ const AdminLogView = () => {
       }
 
       notify(t('adminLogView.archiveSuccess', { count: processed }));
-      await logActivity(auth.currentUser?.uid, "LOGS_ARCHIVED", `Archived ${processed} logs`);
-    } catch (err) {
+      await logActivity(auth.currentUser?.uid ?? "system", "LOGS_ARCHIVED", `Archived ${processed} logs`);
+    } catch (err: unknown) {
       console.error("Archive error:", err);
-      notify(t('adminLogView.archiveError') + err.message);
+      notify(t('adminLogView.archiveError') + getErrorMessage(err));
     } finally {
       setIsClearing(false);
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: string) => {
     const confirmed = await showConfirm({
       title: t('adminLogView.deleteLogTitle', 'Log verwijderen'),
       message: t('adminLogView.confirmDelete'),
@@ -686,8 +737,8 @@ const AdminLogView = () => {
     if (!confirmed) return;
     try {
       await deleteDoc(doc(db, ...LOG_PATH, id));
-      await logActivity(auth.currentUser?.uid, "LOG_DELETE", `Log deleted: ${id}`);
-    } catch (err) {
+      await logActivity(auth.currentUser?.uid ?? "system", "LOG_DELETE", `Log deleted: ${id}`);
+    } catch (err: unknown) {
       console.error("Delete error:", err);
     }
   };
@@ -699,13 +750,13 @@ const AdminLogView = () => {
         details: editValue
       });
       setEditingId(null);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Update error:", err);
       notify(t('adminLogView.updateFailed'));
     }
   };
 
-  const getActionColor = (action) => {
+  const getActionColor = (action: unknown) => {
     const normalized = String(action || "").toUpperCase();
     if (normalized.includes("DELETE") || normalized.includes("FAILED"))
       return "bg-rose-50 text-rose-600 border-rose-100";

@@ -279,7 +279,7 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }: Teamleade
                         Plan
                       </span>
                       <span className="text-xs font-black text-slate-700 italic">
-                        {Math.round(machine.planned)}
+                  {Math.round(machine.planned || 0)}
                       </span>
                     </div>
                   )}

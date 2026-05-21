@@ -16,7 +16,7 @@ type CapacityImportStats = {
   countUpdated: number;
   countDeleted: number;
   countMatched: number;
-  unmatchedOrders: unknown[];
+  unmatchedOrders: string[];
 };
 
 type CapacityImportModalProps = {
@@ -69,8 +69,13 @@ const CapacityImportModal = ({ isOpen, onClose, onSuccess }: CapacityImportModal
         // Roep de service aan om de data te verwerken
         // appId is niet strikt nodig omdat de service hardcoded paden gebruikt, maar we geven een default mee
         const result = await processInforUpdate(db, "fittings-app-v1", rawData);
-        
-        setStats(result);
+
+        setStats({
+          ...result,
+          unmatchedOrders: Array.isArray(result.unmatchedOrders)
+            ? result.unmatchedOrders.map((value) => String(value))
+            : [],
+        });
         if (onSuccess) onSuccess();
 
       } catch (err: unknown) {

@@ -4,16 +4,31 @@ import { format } from 'date-fns';
 import { nl } from 'date-fns/locale';
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
+import { getPathString, PATHS } from "../../../config/dbPaths";
 import { toDateSafe } from "../../../utils/dateUtils";
+
+type DateLikeInput =
+  | Date
+  | string
+  | number
+  | {
+      toDate?: () => Date;
+      toMillis?: () => number;
+      seconds?: number;
+      _seconds?: number;
+      nanoseconds?: number;
+      _nanoseconds?: number;
+    }
+  | null
+  | undefined;
 
 type JourneyEntry = {
   action?: string;
   details?: string;
   station?: string;
   machine?: string;
-  timestamp?: unknown;
-  time?: unknown;
+  timestamp?: DateLikeInput;
+  time?: DateLikeInput;
   user?: string;
   operator?: string;
   operatorName?: string;
@@ -58,18 +73,22 @@ const ProductJourneyModal = ({ product, onClose }: ProductJourneyModalProps) => 
           if (!ts || isNaN(ts.getTime())) return entry;
           
           const dateStr = ts.toISOString().split('T')[0];
-          const station = entry.station;
+          const station = String(entry.station || "");
 
           // Zoek in occupancy (eerst exact, dan uppercase)
           let q = query(
-            collection(db, ...PATHS.OCCUPANCY),
+            collection(db, getPathString(PATHS.OCCUPANCY)),
             where("date", "==", dateStr),
             where("machineId", "==", station)
           );
           let snap = await getDocs(q);
 
           if (snap.empty) {
-             q = query(collection(db, ...PATHS.OCCUPANCY), where("date", "==", dateStr), where("machineId", "==", station.toUpperCase()));
+             q = query(
+              collection(db, getPathString(PATHS.OCCUPANCY)),
+              where("date", "==", dateStr),
+              where("machineId", "==", station.toUpperCase())
+            );
              snap = await getDocs(q);
           }
 
@@ -103,7 +122,7 @@ const ProductJourneyModal = ({ product, onClose }: ProductJourneyModalProps) => 
     return tA - tB;
   });
 
-  const formatTime = (val: unknown) => {
+  const formatTime = (val: DateLikeInput) => {
     const date = toDateSafe(val);
     if (!date || isNaN(date.getTime())) return "-";
     return format(date, "dd MMM HH:mm", { locale: nl });

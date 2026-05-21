@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { format } from "date-fns";
 import { updateOrderKanbanStatus } from "../../services/planningSecurityService";
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -37,7 +37,7 @@ type KanbanColumn = {
   id: KanbanStatus;
   title: string;
   color: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
   wipLimit: number | null;
 };
 
@@ -90,7 +90,7 @@ const KanbanBoardView = () => {
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
-      collection(db, ...PATHS.PLANNING),
+      collection(db, getPathString(PATHS.PLANNING)),
       (snapshot) => {
         const ordersData = snapshot.docs.map((doc) => ({
           id: doc.id,
@@ -118,7 +118,8 @@ const KanbanBoardView = () => {
     // Check WIP limit
     const destColumn = columns.find((c) => c.id === destination.droppableId);
     const destOrders = orders.filter((o) => o.status === destination.droppableId);
-    
+    if (!destColumn) return;
+
     if (destColumn.wipLimit && destOrders.length >= destColumn.wipLimit) {
       notify(`⚠️ WIP Limiet bereikt! Max ${destColumn.wipLimit} orders in ${destColumn.title}`);
       return;
@@ -131,7 +132,7 @@ const KanbanBoardView = () => {
         status: destination.droppableId,
       });
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         "ORDER_STATUS_MOVE",
         `Kanban status gewijzigd voor order ${draggableId}: ${source.droppableId} -> ${destination.droppableId}`
       );
@@ -139,7 +140,7 @@ const KanbanBoardView = () => {
       // Optimistic UI update
       setOrders((prev) => prev.map((order) => 
         order.id === draggableId 
-          ? { ...order, status: destination.droppableId }
+          ? { ...order, status: destination.droppableId as KanbanStatus }
           : order
       ));
     } catch (error: unknown) {
@@ -207,7 +208,7 @@ const KanbanBoardView = () => {
 
                 {/* Column Content */}
                 <Droppable droppableId={column.id}>
-                  {(provided, snapshot) => (
+                  {(provided: any, snapshot: any) => (
                     <div
                       ref={provided.innerRef}
                       {...provided.droppableProps}
@@ -222,7 +223,7 @@ const KanbanBoardView = () => {
                             draggableId={order.id}
                             index={index}
                           >
-                            {(provided, snapshot) => (
+                            {(provided: any, snapshot: any) => (
                               <div
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}

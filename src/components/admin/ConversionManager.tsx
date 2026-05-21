@@ -1,5 +1,5 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo } from "react";
+import type { WorkBook } from "xlsx";
 import {
   Upload,
   FileText,
@@ -33,9 +33,112 @@ import {
 import { manualSyncDrawings } from "../../utils/manualSyncDrawings";
 import { collection, query, where, limit, getDocs } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { deleteAllConversionRecords, upsertConversionRecord } from "../../services/planningSecurityService";
+
+type ImportRow = Record<string, unknown> & {
+  label?: string;
+  manufacturedId?: string;
+  targetProductId?: string;
+  description?: string;
+  type?: string;
+  serie?: string;
+  dn?: string | number;
+  pn?: string | number;
+  ends?: string;
+};
+
+type ConversionItem = {
+  id?: string;
+  manufacturedId?: string;
+  targetProductId?: string;
+  description?: string;
+  type?: string;
+  serie?: string;
+  dn?: string | number;
+  pn?: string | number;
+  label?: string;
+  ends?: string;
+  [key: string]: string | number | boolean | null | undefined;
+};
+
+type LookupResult = {
+  id?: string;
+  matchType?: string;
+  error?: string;
+  manufacturedId?: string;
+  targetProductId?: string;
+  description?: string;
+  isFallback?: boolean;
+  [key: string]: string | number | boolean | null | undefined;
+};
+
+type SyncProgressState = {
+  current: number;
+  total: number;
+};
+
+type SyncResultItem = {
+  code: string;
+  found: boolean;
+  product?: string;
+  error?: string;
+  viaConversion?: boolean;
+  conversionTarget?: string | null;
+};
+
+type SearchRecord = {
+  id: string;
+  manufacturedId?: string;
+  targetProductId?: string;
+  description?: string;
+  itemCode?: string;
+  item?: string;
+  productId?: string;
+  articleCode?: string;
+  drawing?: string;
+  name?: string;
+  erpCode?: string;
+  productCode?: string;
+  [key: string]: string | number | boolean | null | undefined;
+};
+
+type DeleteAllResult = {
+  deleted?: number;
+  ok?: boolean;
+};
+
+type SyncSearchChain = {
+  sourceCode: string;
+  targetCodes: string[];
+  variantCodes: string[];
+  targetProducts: SearchRecord[];
+};
+
+type SyncSearchResults = {
+  conversions: SearchRecord[];
+  planning: SearchRecord[];
+  products: SearchRecord[];
+  chain: SyncSearchChain | null;
+  error?: string;
+};
+
+const colPath = (path: string[]) => collection(db, getPathString(path));
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error) {
+    return String((error as { message?: unknown }).message || "onbekende fout");
+  }
+  return String(error || "onbekende fout");
+};
+
+const normalizeScalar = (value: unknown): string | number | undefined => {
+  if (typeof value === "string" || typeof value === "number") return value;
+  if (value == null) return undefined;
+  return String(value);
+};
 
 /**
  * ConversionManager V6.0 - Root Integrated
@@ -47,42 +150,42 @@ export default function ConversionManager() {
   const [activeTab, setActiveTab] = useState("upload");
 
   // Upload State
-  const [fileData, setFileData] = useState([]);
+  const [fileData, setFileData] = useState<ImportRow[]>([]);
   const [uploading, setUploading] = useState(false);
   const [, setProgress] = useState(0);
   const [status, setStatus] = useState("idle");
   const [testCode, setTestCode] = useState("");
-  const [testResult, setTestResult] = useState(null);
-  const [sheetNames, setSheetNames] = useState([]);
-  const [selectedSheets, setSelectedSheets] = useState([]);
-  const [workbook, setWorkbook] = useState(null);
+  const [testResult, setTestResult] = useState<LookupResult | null>(null);
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheets, setSelectedSheets] = useState<string[]>([]);
+  const [workbook, setWorkbook] = useState<WorkBook | null>(null);
 
   // Beheer State
-  const [conversions, setConversions] = useState([]);
+  const [conversions, setConversions] = useState<ConversionItem[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [editingItem, setEditingItem] = useState(null);
-  const [detailItem, setDetailItem] = useState(null);
+  const [editingItem, setEditingItem] = useState<ConversionItem | null>(null);
+  const [detailItem, setDetailItem] = useState<ConversionItem | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   // Paginatie State
-  const [lastDoc, setLastDoc] = useState(null);
+  const [lastDoc, setLastDoc] = useState<unknown>(null);
   const [hasMore, setHasMore] = useState(true);
   const PAGE_SIZE = 50;
 
   // Sync State
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncProgress, setSyncProgress] = useState({ current: 0, total: 0 });
-  const [syncResults, setSyncResults] = useState(null);
+  const [syncProgress, setSyncProgress] = useState<SyncProgressState>({ current: 0, total: 0 });
+  const [syncResults, setSyncResults] = useState<SyncResultItem[] | null>(null);
 
   // Sync Search State
   const [syncSearchTerm, setSyncSearchTerm] = useState("");
   const [syncSearchLoading, setSyncSearchLoading] = useState(false);
-  const [syncSearchResults, setSyncSearchResults] = useState(null);
+  const [syncSearchResults, setSyncSearchResults] = useState<SyncSearchResults | null>(null);
 
   // Helper: Valideer en zet data
-  const validateAndSetData = (data) => {
+  const validateAndSetData = (data: ImportRow[]) => {
     if (data.length > 0) {
       const firstRow = data[0];
       const hasOldCode = firstRow["Old Item Code"] || firstRow["Item Code"] || firstRow["manufacturedId"];
@@ -96,33 +199,33 @@ export default function ConversionManager() {
   };
 
   // Helper: Process imported data (add label + normalize keys)
-  const processImportData = (data, label) => {
-    return data.map((item) => {
-      const newItem = { ...item };
+  const processImportData = (data: ImportRow[], label: string | null) => {
+    return data.map((item): ImportRow => {
+      const newItem: ImportRow = { ...item };
       if (label) newItem.label = label;
       
       // Mapping van Excel kolommen naar interne veldnamen
-      if (item["Old Item Code"]) newItem.manufacturedId = item["Old Item Code"];
-      if (item["Item Code"]) newItem.manufacturedId = item["Item Code"];
+      if (item["Old Item Code"]) newItem.manufacturedId = String(item["Old Item Code"]);
+      if (item["Item Code"]) newItem.manufacturedId = String(item["Item Code"]);
       
-      if (item["New Item Code"]) newItem.targetProductId = item["New Item Code"];
-      if (item["Target Code"]) newItem.targetProductId = item["Target Code"];
+      if (item["New Item Code"]) newItem.targetProductId = String(item["New Item Code"]);
+      if (item["Target Code"]) newItem.targetProductId = String(item["Target Code"]);
 
-      if (item["Description"]) newItem.description = item["Description"];
-      if (item["Item Description"]) newItem.description = item["Item Description"];
-      if (item["Omschrijving"]) newItem.description = item["Omschrijving"];
-      if (item["Type Description"]) newItem.description = item["Type Description"];
+      if (item["Description"]) newItem.description = String(item["Description"]);
+      if (item["Item Description"]) newItem.description = String(item["Item Description"]);
+      if (item["Omschrijving"]) newItem.description = String(item["Omschrijving"]);
+      if (item["Type Description"]) newItem.description = String(item["Type Description"]);
 
-      if (item["Type"]) newItem.type = item["Type"];
-      if (item["Serie"]) newItem.serie = item["Serie"];
+      if (item["Type"]) newItem.type = String(item["Type"]);
+      if (item["Serie"]) newItem.serie = String(item["Serie"]);
       
-      if (item["DN"]) newItem.dn = item["DN"];
-      if (item["DN [mm]"]) newItem.dn = item["DN [mm]"];
+      if (item["DN"]) newItem.dn = normalizeScalar(item["DN"]);
+      if (item["DN [mm]"]) newItem.dn = normalizeScalar(item["DN [mm]"]);
 
-      if (item["PN"]) newItem.pn = item["PN"];
-      if (item["PN [bar]"]) newItem.pn = item["PN [bar]"];
+      if (item["PN"]) newItem.pn = normalizeScalar(item["PN"]);
+      if (item["PN [bar]"]) newItem.pn = normalizeScalar(item["PN [bar]"]);
 
-      if (item["Ends"]) newItem.ends = item["Ends"];
+      if (item["Ends"]) newItem.ends = String(item["Ends"]);
 
       // Normaliseer dimensies A-N naar lowercase a-n
       ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"].forEach((key) => {
@@ -137,8 +240,8 @@ export default function ConversionManager() {
   };
 
   // --- UPLOAD HANDLERS ---
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
     setStatus("processing");
@@ -147,7 +250,7 @@ export default function ConversionManager() {
       file.name.toLowerCase().endsWith(".xls");
 
     try {
-      let parsedData = [];
+      let parsedData: ImportRow[] = [];
       if (isExcel) {
         const XLSX = await import("xlsx");
         const data = await file.arrayBuffer();
@@ -162,26 +265,26 @@ export default function ConversionManager() {
         }
         const sheetName = wb.SheetNames[0];
         const ws = wb.Sheets[sheetName];
-        parsedData = processImportData(XLSX.utils.sheet_to_json(ws), sheetName);
+        parsedData = processImportData(XLSX.utils.sheet_to_json<ImportRow>(ws), sheetName);
       } else {
-        const text = await new Promise((resolve, reject) => {
+        const text = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target.result);
+          reader.onload = (event) => resolve(String(event.target?.result || ""));
           reader.onerror = reject;
           reader.readAsText(file);
         });
-        parsedData = processImportData(parseCSV(text), null);
+        parsedData = processImportData(parseCSV(text) as ImportRow[], null);
       }
       
       validateAndSetData(parsedData);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
-      notify("Fout bij lezen bestand: " + err.message);
+      notify("Fout bij lezen bestand: " + getErrorMessage(err));
       setStatus("error");
     }
   };
 
-  const handleToggleSheet = (sheetName) => {
+  const handleToggleSheet = (sheetName: string) => {
     setSelectedSheets((prev) =>
       prev.includes(sheetName)
         ? prev.filter((n) => n !== sheetName)
@@ -194,15 +297,18 @@ export default function ConversionManager() {
 
     try {
       const XLSX = await import("xlsx");
-      let allData = [];
+      if (!workbook) {
+        throw new Error("Workbook niet geladen.");
+      }
+      let allData: ImportRow[] = [];
       selectedSheets.forEach((name) => {
         const ws = workbook.Sheets[name];
-        const data = processImportData(XLSX.utils.sheet_to_json(ws), name);
+        const data = processImportData(XLSX.utils.sheet_to_json<ImportRow>(ws), name);
         allData = [...allData, ...data];
       });
       validateAndSetData(allData);
-    } catch (err) {
-      notify("Fout bij laden tabbladen: " + err.message);
+    } catch (err: unknown) {
+      notify("Fout bij laden tabbladen: " + getErrorMessage(err));
       resetUpload();
     }
   };
@@ -216,15 +322,15 @@ export default function ConversionManager() {
       const total = fileData.length;
       await uploadConversionBatch(fileData, null, setProgress);
 
-      await logActivity(auth.currentUser?.uid, "MATRIX_UPDATE", `Batch import conversion matrix: ${total} records`);
+      await logActivity(auth.currentUser?.uid || "system", "MATRIX_UPDATE", `Batch import conversion matrix: ${total} records`);
       setStatus("done");
       notify(
         `Import voltooid! ${total} records naar de root geschreven.`
       );
       resetUpload();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(error);
-      notify("Fout tijdens uploaden: " + error.message);
+      notify("Fout tijdens uploaden: " + getErrorMessage(error));
       setStatus("error");
     } finally {
       setUploading(false);
@@ -244,7 +350,7 @@ export default function ConversionManager() {
 
   const handleTestLookup = async () => {
     if (!testCode) return;
-    const result = await lookupProductByManufacturedId(null, testCode);
+    const result = (await lookupProductByManufacturedId(null, testCode)) as LookupResult | null;
     setTestResult(result || { error: "Geen match gevonden" });
   };
 
@@ -274,10 +380,10 @@ export default function ConversionManager() {
         null,
         PAGE_SIZE
       );
-      setConversions(data);
+      setConversions(data as ConversionItem[]);
       setLastDoc(newLastDoc);
       setHasMore(data.length === PAGE_SIZE);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
     } finally {
       setLoadingList(false);
@@ -293,10 +399,10 @@ export default function ConversionManager() {
         lastDoc,
         PAGE_SIZE
       );
-      setConversions((prev) => [...prev, ...data]);
+      setConversions((prev) => [...prev, ...(data as ConversionItem[])]);
       setLastDoc(newLastDoc);
       setHasMore(data.length === PAGE_SIZE);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
     } finally {
       setLoadingMore(false);
@@ -315,7 +421,7 @@ export default function ConversionManager() {
           
           // Zoek op LN Code (Manufactured ID)
           const q1 = query(
-            collection(db, ...PATHS.CONVERSION_MATRIX),
+            colPath(PATHS.CONVERSION_MATRIX),
             where("manufacturedId", ">=", term),
             where("manufacturedId", "<=", term + "\uf8ff"),
             limit(50)
@@ -323,7 +429,7 @@ export default function ConversionManager() {
           
           // Zoek op Tekening Code (Target Product ID)
           const q2 = query(
-            collection(db, ...PATHS.CONVERSION_MATRIX),
+            colPath(PATHS.CONVERSION_MATRIX),
             where("targetProductId", ">=", term),
             where("targetProductId", "<=", term + "\uf8ff"),
             limit(50)
@@ -331,13 +437,13 @@ export default function ConversionManager() {
 
           const [snap1, snap2] = await Promise.all([getDocs(q1), getDocs(q2)]);
           
-          const resultsMap = new Map();
+          const resultsMap = new Map<string, ConversionItem>();
           snap1.docs.forEach((doc) => resultsMap.set(doc.id, { id: doc.id, ...doc.data() }));
           snap2.docs.forEach((doc) => resultsMap.set(doc.id, { id: doc.id, ...doc.data() }));
           
           setConversions(Array.from(resultsMap.values()));
           setHasMore(false);
-        } catch (err) {
+        } catch (err: unknown) {
           console.error("Search error:", err);
         } finally {
           setLoadingList(false);
@@ -359,7 +465,7 @@ export default function ConversionManager() {
 
     setUploading(true);
     try {
-      const result = await deleteAllConversionRecords();
+      const result = (await deleteAllConversionRecords()) as DeleteAllResult;
 
       if (!result?.deleted) {
         notify("Database is al leeg.");
@@ -371,9 +477,9 @@ export default function ConversionManager() {
       setConversions([]);
       setLastDoc(null);
       loadInitialConversions();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error(err);
-      notify("Fout bij verwijderen: " + err.message);
+      notify("Fout bij verwijderen: " + getErrorMessage(err));
     } finally {
       setUploading(false);
     }
@@ -392,18 +498,18 @@ export default function ConversionManager() {
         },
       });
 
-      await logActivity(auth.currentUser?.uid, "MATRIX_UPDATE", `Conversion record updated: ${editingItem.manufacturedId}`);
+      await logActivity(auth.currentUser?.uid || "system", "MATRIX_UPDATE", `Conversion record updated: ${editingItem.manufacturedId}`);
       setEditingItem(null);
       setIsCreating(false);
       loadInitialConversions();
-    } catch (err) {
-      notify("Opslaan mislukt: " + err.message);
+    } catch (err: unknown) {
+      notify("Opslaan mislukt: " + getErrorMessage(err));
     } finally {
       setUploading(false);
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: string) => {
     const confirmed = await showConfirm({
       title: 'Koppeling verwijderen',
       message: `Koppeling ${id} permanent wissen uit de root?`,
@@ -414,10 +520,10 @@ export default function ConversionManager() {
     if (!confirmed) return;
     try {
       await deleteConversion(null, id);
-      await logActivity(auth.currentUser?.uid, "MATRIX_UPDATE", `Conversion record deleted: ${id}`);
+      await logActivity(auth.currentUser?.uid || "system", "MATRIX_UPDATE", `Conversion record deleted: ${id}`);
       setConversions((prev) => prev.filter((c) => c.id !== id));
-    } catch (err) {
-      notify("Fout bij verwijderen: " + err.message);
+    } catch (err: unknown) {
+      notify("Fout bij verwijderen: " + getErrorMessage(err));
     }
   };
 
@@ -439,10 +545,10 @@ export default function ConversionManager() {
     try {
       const qUpper = q.toUpperCase();
       const qLower = q.toLowerCase();
-      const results = { conversions: [], planning: [], products: [], chain: null };
+      const results: SyncSearchResults = { conversions: [], planning: [], products: [], chain: null };
 
       // 1. Conversie Matrix - zoek op manufacturedId en targetProductId
-      const convRef = collection(db, ...PATHS.CONVERSION_MATRIX);
+      const convRef = colPath(PATHS.CONVERSION_MATRIX);
       const convSnap = await getDocs(convRef);
       convSnap.docs.forEach((d) => {
         const c = d.data();
@@ -455,7 +561,7 @@ export default function ConversionManager() {
       });
 
       // 2. Planning - zoek op itemCode, item, productId, doc id
-      const planRef = collection(db, ...PATHS.PLANNING);
+      const planRef = colPath(PATHS.PLANNING);
       const planSnap = await getDocs(planRef);
       planSnap.docs.forEach((d) => {
         const p = d.data();
@@ -466,9 +572,9 @@ export default function ConversionManager() {
       });
 
       // 3. Products - zoek op articleCode, name, id
-      const prodRef = collection(db, ...PATHS.PRODUCTS);
+      const prodRef = colPath(PATHS.PRODUCTS);
       const prodSnap = await getDocs(prodRef);
-      const allProducts = prodSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const allProducts = prodSnap.docs.map((d) => ({ id: d.id, ...d.data() })) as SearchRecord[];
 
       allProducts.forEach((p) => {
         const fields = [p.id, p.articleCode, p.name, p.manufacturedId, p.erpCode, p.productCode].filter(Boolean);
@@ -479,7 +585,7 @@ export default function ConversionManager() {
 
       // 4. Chain Trace: auto-follow conversie target → zoek product (incl. materiaalvarianten CST↔EST)
       if (results.conversions.length > 0 && results.products.length === 0) {
-        const targetCodes = [...new Set(results.conversions.map((c) => c.targetProductId).filter(Boolean))];
+        const targetCodes = [...new Set(results.conversions.map((c) => c.targetProductId).filter(Boolean) as string[])];
         // Genereer ook materiaalvarianten (CST↔EST positie 6)
         const allTargetCodes = [...targetCodes];
         targetCodes.forEach((tc) => {
@@ -490,7 +596,7 @@ export default function ConversionManager() {
           }
         });
         const uniqueTargets = [...new Set(allTargetCodes.map((c) => c.toUpperCase()))];
-        const followProducts = [];
+        const followProducts: SearchRecord[] = [];
         for (const tcUpper of uniqueTargets) {
           allProducts.forEach((p) => {
             const fields = [p.id, p.articleCode, p.name, p.manufacturedId, p.erpCode, p.productCode].filter(Boolean);
@@ -508,9 +614,9 @@ export default function ConversionManager() {
       }
 
       setSyncSearchResults(results);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Search error:", err);
-      setSyncSearchResults({ conversions: [], planning: [], products: [], error: err.message });
+      setSyncSearchResults({ conversions: [], planning: [], products: [], chain: null, error: getErrorMessage(err) });
     } finally {
       setSyncSearchLoading(false);
     }
@@ -525,10 +631,10 @@ export default function ConversionManager() {
         setSyncProgress({ current, total });
       });
       setSyncResults(results);
-      await logActivity(auth.currentUser?.uid, "DRAWING_SYNC", `Tekeningen sync: ${results.filter(r => r.found).length}/${results.length} matches`);
-    } catch (err) {
+      await logActivity(auth.currentUser?.uid || "system", "DRAWING_SYNC", `Tekeningen sync: ${results.filter(r => r.found).length}/${results.length} matches`);
+    } catch (err: unknown) {
       console.error("Sync error:", err);
-      setSyncResults([{ code: "ERROR", found: false, error: err.message }]);
+      setSyncResults([{ code: "ERROR", found: false, error: getErrorMessage(err) }]);
     } finally {
       setIsSyncing(false);
     }
@@ -914,7 +1020,9 @@ export default function ConversionManager() {
                         accept=".csv, .xlsx, .xls"
                         className="hidden"
                         onChange={handleFileUpload}
-                        onClick={(e) => (e.target.value = null)}
+                        onClick={(e) => {
+                          e.currentTarget.value = "";
+                        }}
                       />
                     </label>
                   </>
@@ -1043,7 +1151,7 @@ export default function ConversionManager() {
                               Bron (Infor-LN)
                             </span>
                             <p className="font-mono text-xs font-bold text-teal-400 break-all">
-                              {testResult.manufacturedId}
+                              {String(testResult.manufacturedId || "-")}
                             </p>
                           </div>
                           <div className="text-right">
@@ -1051,7 +1159,7 @@ export default function ConversionManager() {
                               Doel (Tekening)
                             </span>
                             <p className="font-mono text-sm font-black text-white break-all">
-                              {testResult.targetProductId}
+                              {String(testResult.targetProductId || "-")}
                             </p>
                           </div>
                         </div>
@@ -1060,8 +1168,8 @@ export default function ConversionManager() {
                             Resultaat Beschrijving
                           </span>
                           <p className="text-sm font-bold italic text-slate-300">
-                            {testResult.description ||
-                              "Geen omschrijving beschikbaar."}
+                            {String(testResult.description ||
+                              "Geen omschrijving beschikbaar.")}
                           </p>
                         </div>
                         {testResult.isFallback && (
@@ -1189,7 +1297,7 @@ export default function ConversionManager() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleDelete(item.id);
+                              if (item.id) handleDelete(item.id);
                             }}
                             className="p-3 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
                             title="Wissen"
@@ -1203,7 +1311,7 @@ export default function ConversionManager() {
                   {filteredList.length === 0 && !loadingList && (
                     <tr>
                       <td
-                        colSpan="4"
+                        colSpan={4}
                         className="py-32 text-center opacity-30 italic"
                       >
                         <Database
@@ -1316,7 +1424,7 @@ export default function ConversionManager() {
                     Ends
                   </p>
                   <p className="font-black text-slate-800 text-xs italic">
-                    {detailItem.ends || "CB/CB"}
+                    {String(detailItem.ends || "CB/CB")}
                   </p>
                 </div>
               </div>
@@ -1343,7 +1451,7 @@ export default function ConversionManager() {
                     return (
                       <div key={key} className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                         <p className="text-[8px] font-black text-slate-400 uppercase mb-1">{label}</p>
-                        <p className="text-xs font-bold text-slate-700 break-all">{val}</p>
+                        <p className="text-xs font-bold text-slate-700 break-all">{String(val)}</p>
                       </div>
                     );
                   })}
@@ -1470,7 +1578,7 @@ export default function ConversionManager() {
                     <div key={key} className="space-y-1">
                       <label className="text-[8px] font-black uppercase text-slate-400 ml-1 block text-center">{key.toUpperCase()}</label>
                       <input
-                        value={editingItem[key] || ""}
+                        value={String(editingItem[key] || "")}
                         onChange={(e) => setEditingItem({ ...editingItem, [key]: e.target.value })}
                         className="w-full p-2 bg-slate-50 border-2 border-slate-100 rounded-lg font-mono text-xs font-bold text-center outline-none focus:border-blue-500"
                       />
@@ -1486,7 +1594,7 @@ export default function ConversionManager() {
                   </label>
                   <input
                     type="number"
-                    value={editingItem.dn}
+                    value={editingItem.dn ?? ""}
                     onChange={(e) =>
                       setEditingItem({ ...editingItem, dn: e.target.value })
                     }
@@ -1499,7 +1607,7 @@ export default function ConversionManager() {
                   </label>
                   <input
                     type="number"
-                    value={editingItem.pn}
+                    value={editingItem.pn ?? ""}
                     onChange={(e) =>
                       setEditingItem({ ...editingItem, pn: e.target.value })
                     }
@@ -1513,8 +1621,8 @@ export default function ConversionManager() {
                   Infor-LN Beschrijving
                 </label>
                 <textarea
-                  rows="3"
-                  value={editingItem.description}
+                  rows={3}
+                  value={String(editingItem.description || "")}
                   onChange={(e) =>
                     setEditingItem({
                       ...editingItem,

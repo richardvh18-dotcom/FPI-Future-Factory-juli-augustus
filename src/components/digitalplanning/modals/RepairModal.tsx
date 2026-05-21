@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { X, Wrench, Save, Loader2, CheckSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-const getRepairActions = (t) => [
+const getRepairActions = (t: (key: string, defaultValue: string) => string) => [
   t("digitalplanning.repair.action_new_label", "Nieuw etiket/volgnummer"),
   t("digitalplanning.repair.action_thickened", "Opgedikt"),
   t("digitalplanning.repair.action_inner_repair", "Binnenkant gerepareerd"),
@@ -11,14 +11,24 @@ const getRepairActions = (t) => [
   t("digitalplanning.repair.action_leaktest", "Lektest herhaald"),
 ];
 
-const RepairModal = ({ product, onClose, onConfirm }) => {
+type RepairModalProps = {
+  product: {
+    lotNumber?: string;
+    id?: string;
+    [key: string]: any;
+  };
+  onClose: () => void;
+  onConfirm: (data: { actions: string[]; notes: string }) => void | Promise<void>;
+};
+
+const RepairModal = ({ product, onClose, onConfirm }: RepairModalProps) => {
   const { t } = useTranslation();
-  const [selectedActions, setSelectedActions] = useState([]);
+  const [selectedActions, setSelectedActions] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const repairActions = getRepairActions(t);
+  const repairActions = getRepairActions(t as any);
 
-  const toggleAction = (action) => {
+  const toggleAction = (action: string) => {
     setSelectedActions(prev => 
       prev.includes(action) ? prev.filter(a => a !== action) : [...prev, action]
     );

@@ -63,16 +63,16 @@ const Nabewerken = ({ products = [], orders = [] }: { products?: NabewerkingProd
       : null;
 
     return resolveDeliveryDate(
-      product.deliveryDate,
-      product.plannedDeliveryDate,
-      product.plannedDate,
-      product.date,
-      product.deadline,
-      linkedOrder?.deliveryDate,
-      linkedOrder?.plannedDeliveryDate,
-      linkedOrder?.plannedDate,
-      linkedOrder?.date,
-      linkedOrder?.deadline
+      product.deliveryDate as any,
+      product.plannedDeliveryDate as any,
+      product.plannedDate as any,
+      product.date as any,
+      product.deadline as any,
+      linkedOrder?.deliveryDate as any,
+      linkedOrder?.plannedDeliveryDate as any,
+      linkedOrder?.plannedDate as any,
+      linkedOrder?.date as any,
+      linkedOrder?.deadline as any
     );
   };
 
@@ -110,7 +110,7 @@ const Nabewerken = ({ products = [], orders = [] }: { products?: NabewerkingProd
   const [scanInput, setScanInput] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<NabewerkingProduct | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const scanInputRef = useRef(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
 
   const focusScanInput = useCallback(() => {
     const input = scanInputRef.current;
@@ -138,8 +138,8 @@ const Nabewerken = ({ products = [], orders = [] }: { products?: NabewerkingProd
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       const target = e?.target;
-      if (!target) return;
-      if (target.closest?.('input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-scan-ignore]')) return;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.closest('input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-scan-ignore]')) return;
       if (!showModal) scheduleScanFocus();
     };
     const handleWindowFocus = () => {

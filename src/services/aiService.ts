@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * AI Service - Google Gemini Integration
  * Exclusief voor Firebase/Google ecosystem
@@ -11,11 +10,68 @@
 import { collection, query, getDocs, addDoc, setDoc, getDoc, doc, limit, orderBy, serverTimestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import app, { auth, db, logActivity } from '../config/firebase';
-import { PATHS } from '../config/dbPaths';
+import { PATHS, getPathString } from '../config/dbPaths';
 import i18n from '../i18n';
 import { fetchScopedEfficiencyHours } from '../utils/efficiencyScopedReader';
 
+export type AiDocument = {
+  id: string;
+  fileName?: string;
+  parsed?: boolean;
+  characterCount?: number;
+  fullText?: string;
+  analysis?: {
+    title?: string;
+    summary?: string;
+    keyFacts?: string[];
+    tags?: string[];
+    fullContext?: string;
+    processes?: string[];
+    partNumbers?: string[];
+    tolerances?: string[];
+    warnings?: string[];
+    [key: string]: any;
+  };
+  [key: string]: any;
+};
+
+export type CatalogProduct = {
+  id: string;
+  name?: string;
+  sku?: string;
+  description?: string;
+  specifications?: any;
+  tolerance?: any;
+  toleranceRange?: string;
+  diameter?: string | number;
+  length?: string | number;
+  width?: string | number;
+  height?: string | number;
+  quantity?: number;
+  minStock?: number;
+  reserved?: number;
+  [key: string]: any;
+};
+
+export type AiMemory = {
+  id: string;
+  topic?: string;
+  content?: string;
+  keywords?: string[];
+  active?: boolean;
+  [key: string]: any;
+};
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  return String(error);
+};
+
 class AIService {
+  public availableModel: string;
+  public functions: any;
+  public aiProxyGenerate: any;
+
   constructor() {
     this.availableModel = 'gemini-2.5-flash';
     this.functions = getFunctions(app);
@@ -23,10 +79,10 @@ class AIService {
     
     // Expose debug functie globally voor troubleshooting
     if (typeof window !== 'undefined') {
-      window.aiDebug = {
+      (window as any).aiDebug = {
         listDocuments: () => this.debugListDocuments(),
-        searchDocuments: (term) => this.debugSearchDocuments(term),
-        testContext: (query) => this.debugTestContext(query)
+        searchDocuments: (term: string) => this.debugSearchDocuments(term),
+        testContext: (query: string) => this.debugTestContext(query)
       };
     }
   }
@@ -61,7 +117,7 @@ class AIService {
   /**
    * Debug: Test document search
    */
-  async debugSearchDocuments(searchTerm) {
+  async debugSearchDocuments(searchTerm: string) {
     console.log(`\n🔍 === SEARCH TEST voor: "${searchTerm}" ===`);
     const terms = this.extractSearchTerms(searchTerm);
     console.log('Geëxtraheerde zoektermen:', terms);
@@ -76,7 +132,7 @@ class AIService {
   /**
    * Debug: Test context generation
    */
-  async debugTestContext(query) {
+  async debugTestContext(query: string) {
     console.log(`\n📊 === CONTEXT TEST voor: "${query}" ===`);
     const context = await this.getRelevantContext(query);
     console.log(`Context lengte: ${context.length} karakters`);
@@ -92,44 +148,44 @@ class AIService {
    */
   async getProductionOrders(limitCount = 50) {
     try {
-      let allOrders = [];
+      let allOrders: any[] = [];
       
       // Probeer PATHS.PLANNING eerst
       try {
         console.log('🔎 Trying PATHS.PLANNING: /future-factory/production/digital_planning');
-        const planningCollection = collection(db, ...PATHS.PLANNING);
+        const planningCollection = collection(db, getPathString(PATHS.PLANNING));
         const q = query(planningCollection, limit(limitCount));
         const snapshot = await getDocs(q);
         
         const planningOrders = snapshot.docs.map(doc => ({
           id: doc.id,
           source: 'PLANNING',
-          ...doc.data()
+          ...(doc.data() as Record<string, any>)
         }));
         
         console.log(`📦 PATHS.PLANNING: ${planningOrders.length} documenten gevonden`);
         allOrders.push(...planningOrders);
       } catch (error) {
-        console.log('⚠️ PATHS.PLANNING error:', error.message);
+        console.log('⚠️ PATHS.PLANNING error:', getErrorMessage(error));
       }
       
       // Probeer PATHS.TRACKING
       try {
         console.log('🔎 Trying PATHS.TRACKING: /future-factory/production/tracked_products');
-        const trackingCollection = collection(db, ...PATHS.TRACKING);
+        const trackingCollection = collection(db, getPathString(PATHS.TRACKING));
         const q = query(trackingCollection, limit(limitCount));
         const snapshot = await getDocs(q);
         
         const trackedOrders = snapshot.docs.map(doc => ({
           id: doc.id,
           source: 'TRACKING',
-          ...doc.data()
+          ...(doc.data() as Record<string, any>)
         }));
         
         console.log(`📦 PATHS.TRACKING: ${trackedOrders.length} documenten gevonden`);
         allOrders.push(...trackedOrders);
       } catch (error) {
-        console.log('⚠️ PATHS.TRACKING error:', error.message);
+        console.log('⚠️ PATHS.TRACKING error:', getErrorMessage(error));
       }
       
       // Log eerste doc structure
@@ -141,7 +197,7 @@ class AIService {
       return allOrders;
       
     } catch (error) {
-      console.error('Error fetching production orders:', error.message);
+      console.error('Error fetching production orders:', getErrorMessage(error));
       return [];
     }
   }
@@ -152,13 +208,13 @@ class AIService {
    * @param {string} searchTerm - Zoekterm
    * @returns {Promise<Array>} Gevonden orders met volledige informatie
    */
-  async searchProductionOrders(searchTerm) {
+  async searchProductionOrders(searchTerm: string) {
     try {
       const orders = await this.getProductionOrders(200);
-      const normalize = (value) => (value ?? '').toString();
-      const collectLotNumbers = (order) => {
-        const lots = [];
-        const pushLot = (value) => {
+      const normalize = (value: any) => (value ?? '').toString();
+      const collectLotNumbers = (order: any) => {
+        const lots: string[] = [];
+        const pushLot = (value: any) => {
           const val = normalize(value);
           if (val) lots.push(val);
         };
@@ -261,17 +317,17 @@ class AIService {
    * @param {number} limitCount - Maximaal aantal producten
    * @returns {Promise<Array>} Array met catalog products
    */
-  async getCatalogProducts(limitCount = 50) {
+  async getCatalogProducts(limitCount = 50): Promise<CatalogProduct[]> {
     try {
       // Probeer producten uit inventory op te halen
-      const inventoryCollection = collection(db, ...PATHS.INVENTORY);
+      const inventoryCollection = collection(db, getPathString(PATHS.INVENTORY));
       const q = query(inventoryCollection, limit(limitCount));
       const snapshot = await getDocs(q);
       
       return snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
-      }));
+        ...(doc.data() as Record<string, any>)
+      }) as CatalogProduct);
     } catch (error) {
       console.error('Error fetching catalog products:', error);
       return [];
@@ -285,10 +341,10 @@ class AIService {
    * @returns {Promise<Array>} Array met meest recente activiteit
    */
   async getRecentProductionActivity(limitCount = 10) {
-    const results = [];
-    for (const pathKey of ['TRACKING', 'PLANNING']) {
+    const results: any[] = [];
+    for (const pathKey of ['TRACKING', 'PLANNING'] as const) {
       try {
-        const col = collection(db, ...PATHS[pathKey]);
+        const col = collection(db, getPathString(PATHS[pathKey]));
         let snapshot;
         // Probeer timestamp desc, dan createdAt desc, dan zonder sortering
         try {
@@ -300,11 +356,11 @@ class AIService {
             snapshot = await getDocs(query(col, limit(limitCount)));
           }
         }
-        const docs = snapshot.docs.map(d => ({ id: d.id, source: pathKey, ...d.data() }));
+        const docs = snapshot.docs.map(d => ({ id: d.id, source: pathKey, ...(d.data() as Record<string, any>) }));
         results.push(...docs);
         console.log(`📦 Recent activity from ${pathKey}: ${docs.length} items`);
       } catch (error) {
-        console.warn(`⚠️ Kon recente activiteit niet ophalen uit ${pathKey}:`, error.message);
+        console.warn(`⚠️ Kon recente activiteit niet ophalen uit ${pathKey}:`, getErrorMessage(error));
       }
     }
     return results;
@@ -317,21 +373,21 @@ class AIService {
    * @returns {Promise<Array>} Array met tijdregistraties
    */
   async getProductionTimes(limitCount = 20) {
-    const results = [];
-    for (const pathKey of ['TIME_LOGS']) {
+    const results: any[] = [];
+    for (const pathKey of ['TIME_LOGS'] as const) {
       try {
-        const col = collection(db, ...PATHS[pathKey]);
+        const col = collection(db, getPathString(PATHS[pathKey]));
         let snapshot;
         try {
           snapshot = await getDocs(query(col, orderBy('timestamp', 'desc'), limit(limitCount)));
         } catch {
           snapshot = await getDocs(query(col, limit(limitCount)));
         }
-        const docs = snapshot.docs.map(d => ({ id: d.id, source: pathKey, ...d.data() }));
+        const docs = snapshot.docs.map(d => ({ id: d.id, source: pathKey, ...(d.data() as Record<string, any>) }));
         results.push(...docs);
         console.log(`⏱️ Times from ${pathKey}: ${docs.length} items`);
       } catch (error) {
-        console.warn(`⚠️ Kon tijden niet ophalen uit ${pathKey}:`, error.message);
+        console.warn(`⚠️ Kon tijden niet ophalen uit ${pathKey}:`, getErrorMessage(error));
       }
     }
 
@@ -341,7 +397,7 @@ class AIService {
       results.push(...docs);
       console.log(`⏱️ Times from EFFICIENCY_HOURS(scoped): ${docs.length} items`);
     } catch (error) {
-      console.warn('⚠️ Kon scoped efficiency tijden niet ophalen:', error.message);
+      console.warn('⚠️ Kon scoped efficiency tijden niet ophalen:', getErrorMessage(error));
     }
 
     return results;
@@ -352,16 +408,16 @@ class AIService {
    * @param {number} limitCount - Maximaal aantal documenten
    * @returns {Promise<Array>} Array met documenten
    */
-  async getAiDocuments(limitCount = 20) {
+  async getAiDocuments(limitCount = 20): Promise<AiDocument[]> {
     try {
-      const docsCollection = collection(db, ...PATHS.AI_DOCUMENTS);
+      const docsCollection = collection(db, getPathString(PATHS.AI_DOCUMENTS));
       const q = query(docsCollection, limit(limitCount));
       const snapshot = await getDocs(q);
 
       return snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
-        ...docSnap.data(),
-      }));
+        ...(docSnap.data() as Record<string, any>),
+      }) as AiDocument);
     } catch (error) {
       console.error('Error fetching AI documents:', error);
       return [];
@@ -386,9 +442,9 @@ class AIService {
 
     // --- 1. Fabrieksstructuur (ploegen per afdeling) ---
     let dailyCapacityHours = 0; // totale norm-uren per werkdag op basis van ploegen
-    let departments = [];
+    let departments: any[] = [];
     try {
-      const factorySnap = await getDoc(doc(db, ...PATHS.FACTORY_CONFIG));
+      const factorySnap = await getDoc(doc(db, getPathString(PATHS.FACTORY_CONFIG)));
       if (factorySnap.exists()) {
         const data = factorySnap.data();
         departments = data.departments || [];
@@ -411,7 +467,7 @@ class AIService {
 
     // --- 2. Werkdagen in de komende 3 weken berekenen ---
     const horizon = 21; // dagen vooruit
-    const workdays = [];
+    const workdays: string[] = [];
     for (let i = 0; i < horizon; i++) {
       const d = new Date(today.getTime() + i * DAY_MS);
       const dow = d.getDay(); // 0=zo, 6=za
@@ -424,9 +480,9 @@ class AIService {
     ctx += `**Totaalaantal werkdagen: ${workdays.length} | Totale capaciteit: ${workdays.length * dailyCapacityHours} uur**\n`;
 
     // --- 3. Al bezette uren ophalen uit OCCUPANCY ---
-    const occupancyByDay = {};
+    const occupancyByDay: Record<string, number> = {};
     try {
-      const occSnap = await getDocs(collection(db, ...PATHS.OCCUPANCY));
+      const occSnap = await getDocs(collection(db, getPathString(PATHS.OCCUPANCY)));
       occSnap.docs.forEach(d => {
         const data = d.data();
         if (data.date && workdays.includes(data.date)) {
@@ -439,11 +495,11 @@ class AIService {
 
     // --- 4. Geschatte resterende werkuren per lopende order (EFFICIENCY_HOURS) ---
     let totalCommittedHours = 0;
-    const behindOrders = [];
-    const activeOrders = [];
+    const behindOrders: any[] = [];
+    const activeOrders: any[] = [];
     try {
       const efficiencyRows = await fetchScopedEfficiencyHours({ db, mode: 'active', maxDocs: 100 });
-      const trackingSnap = await getDocs(query(collection(db, ...PATHS.TRACKING), limit(500)));
+      const trackingSnap = await getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(500)));
       const trackingData = trackingSnap.docs.map(d => d.data());
 
       efficiencyRows.forEach(std => {
@@ -462,9 +518,9 @@ class AIService {
             const end = log.timestamps.completed?.toDate
               ? log.timestamps.completed.toDate()
               : (log.timestamps.finished?.toDate ? log.timestamps.finished.toDate() : new Date());
-            if (end - start > 0) actualMinutes += (end - start) / 60000;
+            if (end.getTime() - start.getTime() > 0) actualMinutes += (end.getTime() - start.getTime()) / 60000;
           }
-          if (['completed', 'Finished', 'GEREED'].includes(log.status || log.currentStep || log.currentStation)) {
+          if (['completed', 'Finished', 'GEREED'].includes(String(log.status || log.currentStep || log.currentStation))) {
             producedQty++;
           }
         });
@@ -553,7 +609,7 @@ class AIService {
    * Extract belangrijke zoektermen uit een vraag
    * Verwijdert stopwoorden en haalt key terms eruit
    */
-  extractSearchTerms(query) {
+  extractSearchTerms(query: string) {
     // Stopwoorden die we willen negeren
     const stopWords = ['wat', 'weet', 'je', 'van', 'over', 'vertel', 'me', 'het', 'de', 'een', 'is', 'zijn', 'heeft', 'kan', 'waar', 'hoe', 'welke', 'informatie', 'document'];
     
@@ -576,7 +632,7 @@ class AIService {
    * @param {string} searchTerm - Zoekterm
    * @returns {Promise<Array>} Gevonden documenten
    */
-  async searchAiDocuments(searchTerm) {
+  async searchAiDocuments(searchTerm: string): Promise<AiDocument[]> {
     try {
       const docs = await this.getAiDocuments(30);
       console.log(`📑 searchAiDocuments: ${docs.length} totale documenten beschikbaar`);
@@ -633,7 +689,7 @@ class AIService {
    * @param {string} searchTerm - Zoekterm
    * @returns {Promise<Array>} Gevonden producten
    */
-  async searchCatalogProducts(searchTerm) {
+  async searchCatalogProducts(searchTerm: string): Promise<CatalogProduct[]> {
     try {
       const products = await this.getCatalogProducts(100);
       const term = searchTerm.toLowerCase();
@@ -657,10 +713,10 @@ class AIService {
    * @param {string} userQuery - De gebruikersvraag
    * @returns {Promise<string>} Geformateerde context string
    */
-  async getRelevantContext(userQuery) {
+  async getRelevantContext(userQuery: string) {
     try {
       let contextData = '';
-      const query = userQuery.toLowerCase();
+      const queryStr = userQuery.toLowerCase();
       
       console.log('🔍 AI Context: Zoeken naar:', userQuery);
 
@@ -720,20 +776,20 @@ class AIService {
       }
       
       // Controleer altijd op ordernummers of productie gerelateerde vragen
-      const isOrderRelated = query.includes('order') || 
-                            query.includes('n2') || 
-                            query.includes('status') ||
-                            query.includes('klaar') ||
-                            query.includes('gereed') ||
-                            query.includes('hoeveel') ||
-                            query.includes('productie') ||
-                            query.includes('progress') ||
-                            query.includes('nog') ||
-                query.includes('gemaakt') ||
-                query.includes('lot') ||
-                /\b\d{10,20}\b/.test(query);
+      const isOrderRelated = queryStr.includes('order') || 
+                            queryStr.includes('n2') || 
+                            queryStr.includes('status') ||
+                            queryStr.includes('klaar') ||
+                            queryStr.includes('gereed') ||
+                            queryStr.includes('hoeveel') ||
+                            queryStr.includes('productie') ||
+                            queryStr.includes('progress') ||
+                            queryStr.includes('nog') ||
+                            queryStr.includes('gemaakt') ||
+                            queryStr.includes('lot') ||
+                            /\b\d{10,20}\b/.test(queryStr);
       
-      if (isOrderRelated || query.includes('product')) {
+      if (isOrderRelated || queryStr.includes('product')) {
         const orders = await this.searchProductionOrders(userQuery);
         console.log('📦 Orders gevonden:', orders.length);
         
@@ -765,7 +821,7 @@ class AIService {
             if (order.remaining !== undefined) {
               contextData += `Nog te doen: ${order.remaining} stuks\n`;
             } else if (order.quantity && order.completed) {
-              const remaining = order.quantity - order.completed;
+              const remaining = Number(order.quantity) - Number(order.completed);
               contextData += `Nog te doen: ${remaining} stuks\n`;
             }
             
@@ -773,7 +829,7 @@ class AIService {
             if (order.progress !== undefined) {
               contextData += `Progress: ${order.progress}%\n`;
             } else if (order.quantity && order.completed) {
-              const percent = Math.round((order.completed / order.quantity) * 100);
+              const percent = Math.round((Number(order.completed) / Number(order.quantity)) * 100);
               contextData += `Progress: ${percent}%\n`;
             }
             
@@ -813,11 +869,11 @@ class AIService {
       }
 
       // Vragen over meest recente lot / laatste activiteit
-      const isRecentQuery = query.includes('laatste') ||
-                            query.includes('recent') ||
-                            query.includes('nieuwste') ||
-                            query.includes('laats') ||
-                            (query.includes('lot') && (query.includes('welk') || query.includes('wat') || query.includes('nummer')));
+      const isRecentQuery = queryStr.includes('laatste') ||
+                            queryStr.includes('recent') ||
+                            queryStr.includes('nieuwste') ||
+                            queryStr.includes('laats') ||
+                            (queryStr.includes('lot') && (queryStr.includes('welk') || queryStr.includes('wat') || queryStr.includes('nummer')));
 
       if (isRecentQuery) {
         try {
@@ -846,7 +902,7 @@ class AIService {
 
               if (item.status) contextData += `Status: ${item.status}\n`;
               if (item.operator) contextData += `Operator: ${item.operator}\n`;
-              if (item.workstation) contextData += `Werkstation: ${item.workstation}\n`;
+              if (item.workstation || item.workcenter) contextData += `Werkstation: ${item.workstation || item.workcenter}\n`;
             });
 
             contextData += '\n' + '='.repeat(60) + '\n';
@@ -857,16 +913,16 @@ class AIService {
       }
 
       // Vragen over productie tijden / uren / efficiëntie
-      const isTimeQuery = query.includes('tijd') ||
-                          query.includes('uren') ||
-                          query.includes('uur') ||
-                          query.includes('effici') ||
-                          query.includes('hoelang') ||
-                          query.includes('duur') ||
-                          query.includes('cyclustijd') ||
-                          query.includes('bewerkingstijd') ||
-                          query.includes('instelttijd') ||
-                          query.includes('takt');
+      const isTimeQuery = queryStr.includes('tijd') ||
+                          queryStr.includes('uren') ||
+                          queryStr.includes('uur') ||
+                          queryStr.includes('effici') ||
+                          queryStr.includes('hoelang') ||
+                          queryStr.includes('duur') ||
+                          queryStr.includes('cyclustijd') ||
+                          queryStr.includes('bewerkingstijd') ||
+                          queryStr.includes('instelttijd') ||
+                          queryStr.includes('takt');
 
       if (isTimeQuery) {
         try {
@@ -918,14 +974,14 @@ class AIService {
 
       // Vragen over capaciteitsplanning, werkdruk, achterstand, inplannen
       const isCapacityQuery =
-        query.includes('werkuur') || query.includes('werkuren') ||
-        query.includes('capaciteit') || query.includes('werkdruk') ||
-        query.includes('inplannen') || query.includes('inplan') ||
-        query.includes('achterstand') || query.includes('achter') ||
-        query.includes('deadline') || query.includes('klaar voor') ||
-        query.includes('klaar op') || query.includes('hoeveel uur') ||
-        query.includes('beschikbaar') || query.includes('vrije') ||
-        query.includes('passen') ||
+        queryStr.includes('werkuur') || queryStr.includes('werkuren') ||
+        queryStr.includes('capaciteit') || queryStr.includes('werkdruk') ||
+        queryStr.includes('inplannen') || queryStr.includes('inplan') ||
+        queryStr.includes('achterstand') || queryStr.includes('achter') ||
+        queryStr.includes('deadline') || queryStr.includes('klaar voor') ||
+        queryStr.includes('klaar op') || queryStr.includes('hoeveel uur') ||
+        queryStr.includes('beschikbaar') || queryStr.includes('vrije') ||
+        queryStr.includes('passen') ||
         /\d+\s*(uur|werkuur|manuur)/i.test(userQuery);
 
       if (isCapacityQuery) {
@@ -940,12 +996,12 @@ class AIService {
       }
 
       // Controleer op catalog/maten/toleranties vragen
-      if (query.includes('maat') || 
-          query.includes('tolerantie') ||
-          query.includes('diameter') ||
-          query.includes('lengte') ||
-          query.includes('catalog') ||
-          query.includes('spec')) {
+      if (queryStr.includes('maat') || 
+          queryStr.includes('tolerantie') ||
+          queryStr.includes('diameter') ||
+          queryStr.includes('lengte') ||
+          queryStr.includes('catalog') ||
+          queryStr.includes('spec')) {
         const products = await this.searchCatalogProducts(userQuery);
         if (products.length > 0) {
           contextData += `\n\n${i18n.t("ai.context.catalog_info", "📋 CATALOGUS PRODUCT INFORMATIE:")}\n`;
@@ -992,7 +1048,7 @@ class AIService {
       return contextData;
     } catch (error) {
       console.error('Error getting context:', error);
-      return `\n\n${i18n.t("ai.context.error", "⚠️ Fout bij ophalen contextgegevens:")} ${error.message}\n`;
+      return `\n\n${i18n.t("ai.context.error", "⚠️ Fout bij ophalen contextgegevens:")} ${getErrorMessage(error)}\n`;
     }
   }
 
@@ -1000,7 +1056,7 @@ class AIService {
     return this.availableModel;
   }
 
-  async chat(messages, systemPrompt = null, options = {}) {
+  async chat(messages: any[], systemPrompt: string | null = null, options = {}) {
     if (!this.isConfigured()) {
       throw new Error(i18n.t("gemini.api_disabled", "AI functionaliteit is uitgeschakeld."));
     }
@@ -1013,7 +1069,7 @@ class AIService {
     const modelName = await this.getAvailableModel();
 
     try {
-      return await this.chatGoogle(messages, systemPrompt, modelName, options);
+      return await this.chatGoogle(messages, systemPrompt || '', modelName, options);
     } catch (error) {
       console.error('AI Chat Error:', error);
       throw error;
@@ -1027,7 +1083,7 @@ class AIService {
    * @param {boolean} includeContext - Include productie data context
    * @returns {Promise<string>} Response
    */
-  async chatWithContext(messages, systemPrompt = null, includeContext = true, options = {}) {
+  async chatWithContext(messages: any[], systemPrompt: string | null = null, includeContext = true, options = {}) {
     if (!this.isConfigured()) {
       throw new Error('AI functionaliteit is uitgeschakeld');
     }
@@ -1058,7 +1114,7 @@ class AIService {
     return this.chat(messages, enhancedSystemPrompt, options);
   }
 
-  async chatGoogle(messages, systemPrompt, modelName, options = {}) {
+  async chatGoogle(messages: any[], systemPrompt: string, modelName: string, options = {}) {
     try {
       const response = await this.aiProxyGenerate({
         messages,
@@ -1072,7 +1128,7 @@ class AIService {
       }
 
       return text;
-    } catch (error) {
+    } catch (error: any) {
       console.error('AI proxy error:', error);
 
       if (error?.code === 'resource-exhausted') {
@@ -1091,13 +1147,13 @@ class AIService {
    * Sla een geleerd feit op in het AI geheugen (Firestore)
    * Wordt opgeslagen wanneer de gebruiker een antwoord goedkeurt (thumbs up)
    */
-  async saveMemory({ topic, content, sourceQuestion = "", sourceAnswer = "", userId = null, category = "approved_answer" }) {
+  async saveMemory({ topic, content, sourceQuestion = "", sourceAnswer = "", userId = null, category = "approved_answer" }: Record<string, any>) {
     try {
       const keywords = [...new Set([
         ...this.extractSearchTerms(topic),
         ...this.extractSearchTerms(sourceQuestion),
       ])];
-      await addDoc(collection(db, ...PATHS.AI_MEMORY), {
+      await addDoc(collection(db, getPathString(PATHS.AI_MEMORY)), {
         category,
         topic,
         content,
@@ -1125,13 +1181,13 @@ class AIService {
    * Laad relevante herinneringen op basis van de gebruikersvraag
    * Filtert client-side op keyword overlap
    */
-  async getRelevantMemories(userQuery) {
+  async getRelevantMemories(userQuery: string): Promise<AiMemory[]> {
     try {
-      const memRef = collection(db, ...PATHS.AI_MEMORY);
+      const memRef = collection(db, getPathString(PATHS.AI_MEMORY));
       const q = query(memRef, limit(60));
       const snap = await getDocs(q);
       const memories = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
+        .map(d => ({ id: d.id, ...(d.data() as Record<string, any>) } as AiMemory))
         .filter(m => m.active !== false);
 
       const terms = this.extractSearchTerms(userQuery);
@@ -1152,11 +1208,11 @@ class AIService {
   /**
    * Sla de volledige gesprekgeschiedenis op per gebruiker (max 50 berichten)
    */
-  async saveConversation({ userId, sessionId, messages }) {
+  async saveConversation({ userId, sessionId, messages }: Record<string, any>) {
     if (!userId) return;
     try {
-      const userDocRef = doc(db, ...PATHS.AI_CONVERSATIONS, userId);
-      const toSave = messages.slice(-50).map(m => ({
+      const userDocRef = doc(db, `${getPathString(PATHS.AI_CONVERSATIONS)}/${userId}`);
+      const toSave = messages.slice(-50).map((m: any) => ({
         role: m.role,
         content: (m.content || '').substring(0, 2000),
         sessionId: sessionId || '',
@@ -1182,10 +1238,10 @@ class AIService {
    * Laad de meest recente gesprekgeschiedenis van een gebruiker
    * @returns {{ messages: Array, sessionId: string } | null}
    */
-  async loadRecentConversation(userId) {
+  async loadRecentConversation(userId: string) {
     if (!userId) return null;
     try {
-      const userDocRef = doc(db, ...PATHS.AI_CONVERSATIONS, userId);
+      const userDocRef = doc(db, `${getPathString(PATHS.AI_CONVERSATIONS)}/${userId}`);
       const snap = await getDoc(userDocRef);
       if (!snap.exists()) return null;
       return snap.data();
@@ -1195,7 +1251,7 @@ class AIService {
     }
   }
 
-  async generateFlashcards(topic, systemPrompt) {
+  async generateFlashcards(topic: string, systemPrompt: string | undefined) {
     const messages = [
       {
         role: 'user',
@@ -1203,7 +1259,7 @@ class AIService {
       },
     ];
 
-    const response = await this.chat(messages, systemPrompt);
+    const response = await this.chat(messages, systemPrompt || '');
     
     // Try to parse JSON from response
     try {

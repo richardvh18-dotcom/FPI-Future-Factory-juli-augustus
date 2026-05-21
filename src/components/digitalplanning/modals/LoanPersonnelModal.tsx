@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { X, ArrowRight, Users, Building2, Clock } from "lucide-react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db, auth } from "../../../config/firebase";
-import { PATHS } from "../../../config/dbPaths";
+import { PATHS, getPathString } from "../../../config/dbPaths";
 import { format, parse } from "date-fns";
 import { useNotifications } from '../../../contexts/NotificationContext';
 import { loanPersonnelToDepartment } from "../../../services/planningSecurityService";
@@ -71,7 +71,7 @@ const LoanPersonnelModal = ({ isOpen, onClose, person, currentDepartment }: Loan
     if (!isOpen) return;
 
     const unsubscribe = onSnapshot(
-      doc(db, ...PATHS.FACTORY_CONFIG),
+      doc(db, getPathString(PATHS.FACTORY_CONFIG)),
       (snap) => {
         if (snap.exists()) {
           const config = snap.data() as FactoryConfig;
@@ -96,7 +96,7 @@ const LoanPersonnelModal = ({ isOpen, onClose, person, currentDepartment }: Loan
     try {
       const start = parse(shiftObj.start, 'HH:mm', new Date());
       const end = parse(shiftObj.end, 'HH:mm', new Date());
-      let diff = (end - start) / (1000 * 60 * 60);
+      let diff = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
       if (diff < 0) diff += 24;
       const deduction = shiftObj.id === "DAGDIENST" ? 0.75 : 0; // Pauze aftrek voor dagdienst
       return Math.max(0, diff - deduction);

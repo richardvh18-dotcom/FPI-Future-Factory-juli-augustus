@@ -1,9 +1,8 @@
-// @ts-nocheck
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { getPathString, PATHS } from "../../config/dbPaths";
 import { rejectTrackedProductFinal, completeTrackedProduct, tempRejectTrackedProduct, advanceTrackedProduct } from "../../services/planningSecurityService";
 import { Package,
     Loader2,
@@ -15,11 +14,88 @@ import { Package,
     Keyboard } from "lucide-react";
 import ProductReleaseModal from "./modals/ProductReleaseModal";
 import PostProcessingFinishModal from "./modals/PostProcessingFinishModal";
-import { normalizeMachine } from "../../utils/hubHelpers.tsx";
+import { normalizeMachine } from "../../utils/hubHelpers";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { getNextFlowState } from "../../utils/workstationLogic";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
+
+type TimestampLike = { toDate?: () => Date; seconds?: number };
+
+type ProductItem = {
+  id?: string;
+  lotNumber?: string;
+  orderId?: string;
+  item?: string;
+  itemCode?: string;
+  seriesGroupId?: string;
+  originMachine?: string;
+  machine?: string;
+  stationLabel?: string;
+  currentStation?: string;
+  lastStation?: string;
+  currentStep?: string;
+  status?: string;
+  updatedAt?: TimestampLike | string | number | Date | null;
+  createdAt?: TimestampLike | string | number | Date | null;
+  timestamps?: Record<string, unknown>;
+  route?: { nextStation?: string };
+  inspection?: { status?: string };
+  [key: string]: unknown;
+};
+
+type OccupancyEntry = {
+  station?: string;
+  machineId?: string;
+  date?: TimestampLike | string | number | Date | null;
+  shift?: string;
+  operatorNumber?: string;
+  [key: string]: unknown;
+};
+
+type LossenViewProps = {
+  stationId?: string;
+  appId?: string;
+  products?: ProductItem[];
+};
+
+type AdminUser = {
+  uid?: string;
+  email?: string | null;
+  allowedStations?: string[];
+};
+
+type SeriesHeaderRow = {
+  id: string;
+  isSeriesHeader: true;
+  seriesGroupId: string;
+  orderId: string;
+  seriesCount: number;
+  seriesUnits: ProductItem[];
+};
+
+type DisplayRow = ProductItem | SeriesHeaderRow;
+
+const isSeriesHeaderRow = (row: DisplayRow): row is SeriesHeaderRow =>
+  (row as SeriesHeaderRow).isSeriesHeader === true;
+
+const toMillisFromMixed = (value: unknown): number => {
+  if (!value) return 0;
+  if (typeof (value as TimestampLike).toDate === "function") {
+    const date = (value as TimestampLike).toDate?.();
+    return date ? date.getTime() : 0;
+  }
+  if (typeof (value as TimestampLike).seconds === "number") {
+    return Number((value as TimestampLike).seconds) * 1000;
+  }
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+};
 
 const QR_CODE_OK_CONFIRMATION = 'FPI-ACTION-APPROVE-OK';
 const LOSSEN_1218_DIRECT_STATIONS = new Set(["BH12", "BH15", "BH17", "12", "15", "17"]);
@@ -27,7 +103,7 @@ const LOSSEN_1218_BH18_STATIONS = new Set(["BH18", "18"]);
 const LOSSEN_1218_STATION_NORM = "LOSSEN12/18";
 
 // Helper voor diameter (simpel)
-const getDiameter = (str) => {
+const getDiameter = (str: unknown) => {
   const text = String(str || "").toUpperCase();
   const numberMatches = Array.from(text.matchAll(/\d{2,4}/g)).map((m) => Number(m[0]));
   const candidates = numberMatches.filter((n) => Number.isFinite(n) && n >= 25 && n <= 2000);
@@ -35,7 +111,7 @@ const getDiameter = (str) => {
   return candidates.length > 0 ? candidates[0] : 0;
 };
 
-const shouldGoToCentralLossen = (item) => {
+const shouldGoToCentralLossen = (item: ProductItem) => {
   // Routing uitsluitend op basis van diameter:
   // TB >= 300mm → centraal Lossen; CB/ELB >= 350mm → centraal Lossen; rest → Lossen 12/18
   const itemStr = String(item?.item || "").toUpperCase();
@@ -52,34 +128,34 @@ const shouldGoToCentralLossen = (item) => {
   return false;
 };
 
-const hasOriginInSet = (candidates, stationSet) =>
-  candidates.some((value) => stationSet.has(normalizeMachine(value || "")));
+const hasOriginInSet = (candidates: unknown[], stationSet: Set<string>) =>
+  candidates.some((value: unknown) => stationSet.has(normalizeMachine(value || "")));
 
-const shouldBelongToLossen1218 = (item, candidates) => {
+const shouldBelongToLossen1218 = (item: ProductItem, candidates: unknown[]) => {
   if (hasOriginInSet(candidates, LOSSEN_1218_DIRECT_STATIONS)) return true;
   if (hasOriginInSet(candidates, LOSSEN_1218_BH18_STATIONS)) return !shouldGoToCentralLossen(item);
   return false;
 };
 
-const isTruthyRoutingFlag = (value) => {
+const isTruthyRoutingFlag = (value: unknown) => {
   if (value === true || value === 1) return true;
   const normalized = String(value || "").trim().toLowerCase();
   return ["true", "1", "yes", "ja", "nabewerking", "te nabewerken", "post_processing", "post processing"].includes(normalized);
 };
 
-const isSeriesEligibleItem = (item) => {
+const isSeriesEligibleItem = (item: ProductItem) => {
   const statusUpper = String(item?.status || "").toUpperCase();
   const stepUpper = String(item?.currentStep || "").toUpperCase();
   return statusUpper !== "REJECTED" && stepUpper !== "REJECTED";
 };
 
-const isFlensItem = (item) => {
+const isFlensItem = (item: ProductItem) => {
   const code = String(item?.itemCode || "").trim().toUpperCase();
   const name = String(item?.item || "").trim().toUpperCase();
   return code.startsWith("FL") || name.startsWith("FL");
 };
 
-const getLotSeriesPrefix = (lotNumber) => {
+const getLotSeriesPrefix = (lotNumber: unknown) => {
   const raw = String(lotNumber || "").trim();
   if (!raw) return "";
   const match = raw.match(/^(.*?)(\d{3})$/);
@@ -87,7 +163,7 @@ const getLotSeriesPrefix = (lotNumber) => {
   return match[1];
 };
 
-const hasNabewerkingFlag = (item) => {
+const hasNabewerkingFlag = (item: ProductItem) => {
   if (!item || typeof item !== "object") return false;
 
   const directFlagFields = [
@@ -131,21 +207,21 @@ const hasNabewerkingFlag = (item) => {
  * Gefikst: BH31 naar Nabewerking flow hersteld door betere normalisatie.
  * Update: Gebruikt nu 'products' prop indien beschikbaar om dubbele fetching te voorkomen.
  */
-const LossenView = ({ stationId, appId, products = [] }) => {
+const LossenView = ({ stationId, appId, products = [] }: LossenViewProps) => {
   const { t } = useTranslation();
-  const { user } = useAdminAuth();
+  const { user } = useAdminAuth() as { user: AdminUser | null };
   const { notify } = useNotifications();
-  const [items, setItems] = useState([]);
-  const [occupancy, setOccupancy] = useState([]);
+  const [items, setItems] = useState<ProductItem[]>([]);
+  const [occupancy, setOccupancy] = useState<OccupancyEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [bulkSeriesProducts, setBulkSeriesProducts] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null);
+  const [bulkSeriesProducts, setBulkSeriesProducts] = useState<ProductItem[]>([]);
   const [showActionModal, setShowActionModal] = useState(false);
-  const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [scanInput, setScanInput] = useState("");
   const [scannerMode, setScannerMode] = useState(true);
-  const scanInputRef = useRef(null);
-  const selectedProductRef = useRef(null); // Ref om huidige selectie bij te houden tijdens async acties
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
+  const selectedProductRef = useRef<ProductItem | null>(null); // Ref om huidige selectie bij te houden tijdens async acties
 
   const focusScanInput = useCallback(() => {
     const input = scanInputRef.current;
@@ -175,8 +251,8 @@ const LossenView = ({ stationId, appId, products = [] }) => {
     // Focus direct bij laden of als scannerMode aan gaat
     scheduleScanFocus();
     // Ook bij click buiten input, behalve op interactieve elementen
-    const handleClick = (e) => {
-      const target = e?.target;
+    const handleClick = (e: MouseEvent) => {
+      const target = e?.target as HTMLElement | null;
       if (!target) return;
       if (target.closest?.('input, textarea, select, button, a, [role="button"], [contenteditable="true"], [data-scan-ignore]')) return;
       if (!showActionModal) scheduleScanFocus();
@@ -197,7 +273,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
     scheduleScanFocus();
   }, [scheduleScanFocus]);
 
-  const handleScan = async (e) => {
+  const handleScan = async (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       const code = scanInput.trim().toUpperCase();
       if (!code) return;
@@ -219,7 +295,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
         return;
       }
 
-      const found = items.find(i => 
+      const found = items.find((i: ProductItem) => 
         (i.lotNumber || "").toLowerCase() === code.toLowerCase() || 
         (i.orderId || "").toLowerCase() === code.toLowerCase()
       );
@@ -244,19 +320,20 @@ const LossenView = ({ stationId, appId, products = [] }) => {
 
   // Haal occupancy data op voor operator tracking
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, ...PATHS.OCCUPANCY), (snap) => {
-      setOccupancy(snap.docs.map(d => d.data()));
+    const unsub = onSnapshot(collection(db, getPathString(PATHS.OCCUPANCY)), (snap) => {
+      const data: OccupancyEntry[] = snap.docs.map((d) => d.data() as OccupancyEntry);
+      setOccupancy(data);
     });
     return () => unsub();
   }, []);
 
   // Helper om te checken of een shift momenteel actief is
-  const isShiftActive = useCallback((shiftLabel) => {
+  const isShiftActive = useCallback((shiftLabel: unknown) => {
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
     const currentTime = currentHour * 60 + currentMinute;
-    const label = (shiftLabel || "").toUpperCase();
+    const label = String(shiftLabel || "").toUpperCase();
     
     if (label.includes("OCHTEND") || label.includes("MORNING") || label.includes("EARLY")) {
       return currentTime >= 5 * 60 + 30 && currentTime < 14 * 60;
@@ -274,26 +351,28 @@ const LossenView = ({ stationId, appId, products = [] }) => {
   }, []);
 
   // Bereken actieve operators voor dit station
-  const activeOperators = useMemo(() => {
+  const activeOperators = useMemo<string[]>(() => {
     if (!stationId || occupancy.length === 0) return [];
     const currentStation = normalizeMachine(stationId);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return occupancy.filter(occ => {
+    return occupancy.filter((occ: OccupancyEntry) => {
       const occStation = normalizeMachine(occ.station || occ.machineId || "");
       if (occStation !== currentStation) return false;
-      const occDate = occ.date.toDate ? occ.date.toDate() : new Date(occ.date);
-      occDate.setHours(0, 0, 0, 0);
-      return occDate.getTime() === today.getTime() && isShiftActive(occ.shift);
-    }).map(o => o.operatorNumber).filter(Boolean);
+      const occDate = toMillisFromMixed(occ.date);
+      if (!occDate) return false;
+      const occDateValue = new Date(occDate);
+      occDateValue.setHours(0, 0, 0, 0);
+      return occDateValue.getTime() === today.getTime() && isShiftActive(occ.shift);
+    }).map((o: OccupancyEntry) => o.operatorNumber).filter((value): value is string => Boolean(value));
   }, [occupancy, stationId, isShiftActive]);
 
   useEffect(() => {
     if (!stationId) return;
 
     // Verwerkingslogica losgekoppeld zodat deze voor zowel prop als snapshot werkt
-    const processData = (sourceData) => {
+    const processData = (sourceData: ProductItem[]) => {
       const currentStationNorm = normalizeMachine(stationId);
         const cleanStationId = (currentStationNorm || "").toUpperCase().replace(/\s/g, "");
         const isBM01Station = cleanStationId === "BM01" || cleanStationId === "STATIONBM01" || (currentStationNorm || "").toUpperCase().includes("BM01");
@@ -301,7 +380,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
         const isNabewerkingStation = cleanStationId === "NABEWERKING" || cleanStationId === "NABW" || cleanStationId.includes("NABEWERK");
         const isNahardingStation = cleanStationId === "NAHARDING" || cleanStationId.includes("NAHARD") || cleanStationId.includes("OVEN");
 
-      const filtered = sourceData.filter((item) => {
+      const filtered = sourceData.filter((item: ProductItem) => {
         const stepUpper = String(item.currentStep || "").toUpperCase().trim();
         const statusUpper = String(item.status || "").toUpperCase().trim();
         const stepLower = String(item.currentStep || "").toLowerCase().trim();
@@ -455,15 +534,15 @@ const LossenView = ({ stationId, appId, products = [] }) => {
           }
 
           // Filter op toegewezen stations van de gebruiker (indien specifiek ingesteld)
-          if (user && user.allowedStations && user.allowedStations.length > 0) {
+          if (user && Array.isArray(user.allowedStations) && user.allowedStations.length > 0) {
              const userTargets = user.allowedStations
-                .map(s => normalizeMachine(s))
-                .filter(s => s && s !== "TEAMLEADER");
+                .map((s: string) => normalizeMachine(s))
+                  .filter((s: string) => s && s !== "TEAMLEADER");
 
              // Meta-stations zoals LOSSEN12/18 moeten worden uitgevouwen naar bronmachines.
-             const expandedUserTargets = Array.from(
-               new Set(
-                 userTargets.flatMap((target) => {
+             const expandedUserTargets: string[] = Array.from(
+               new Set<string>(
+                 userTargets.flatMap((target: string) => {
                    const compact = target.replace(/[^A-Z0-9]/g, "");
                    if (target === LOSSEN_1218_STATION_NORM || compact === "LOSSEN1218") {
                      return lossen1218OperatorTargets;
@@ -510,7 +589,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
       });
 
       const fallbackFiltered = currentStationNorm === LOSSEN_1218_STATION_NORM && filtered.length === 0
-        ? sourceData.filter((item) => {
+        ? sourceData.filter((item: ProductItem) => {
             const stepUpper = String(item.currentStep || "").toUpperCase().trim();
             const statusUpper = String(item.status || "").toUpperCase().trim();
             const statusLower = String(item.status || "").toLowerCase().trim();
@@ -565,13 +644,13 @@ const LossenView = ({ stationId, appId, products = [] }) => {
         : filtered;
 
       const sorted = fallbackFiltered.sort((a, b) => {
-        const tA = a.updatedAt?.seconds || a.createdAt?.seconds || 0;
-        const tB = b.updatedAt?.seconds || b.createdAt?.seconds || 0;
+        const tA = toMillisFromMixed(a.updatedAt || a.createdAt || 0);
+        const tB = toMillisFromMixed(b.updatedAt || b.createdAt || 0);
         return tB - tA;
       });
 
       const finalItems = currentStationNorm === "LOSSEN"
-        ? sorted.filter((item) => {
+        ? sorted.filter((item: ProductItem) => {
             const origin = normalizeMachine(item.originMachine || item.machine || "");
             const stationLabel = normalizeMachine(item.stationLabel || "");
             const current = normalizeMachine(item.currentStation || "");
@@ -616,7 +695,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
       const unsub = subscribeTrackedProducts({
         db,
         statusExclusions: ["completed", "shipped", "deleted"],
-        onData: (sourceData) => {
+        onData: (sourceData: ProductItem[]) => {
           processData(sourceData);
         },
         onError: (err) => {
@@ -630,7 +709,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
       const unsub = subscribeTrackedProducts({
         db,
         statusExclusions: ["completed", "shipped", "deleted"],
-        onData: (sourceData) => {
+        onData: (sourceData: ProductItem[]) => {
           processData(sourceData);
         },
         onError: (err) => {
@@ -642,8 +721,8 @@ const LossenView = ({ stationId, appId, products = [] }) => {
     }
   }, [stationId, user, products]); // Dependency op 'products' toegevoegd
 
-  const handleItemClick = (item) => {
-    let sameSeries = [];
+  const handleItemClick = (item: ProductItem) => {
+    let sameSeries: ProductItem[] = [];
 
     // Batching (series) is alleen toegestaan voor flenzen (FL) op Lossen.
     if (supportsSeriesGrouping && isFlensItem(item)) {
@@ -661,7 +740,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
         const itemCodeKey = String(item?.itemCode || "").trim().toUpperCase();
 
         if (lotPrefix) {
-          sameSeries = items.filter((seriesItem) => {
+          sameSeries = items.filter((seriesItem: ProductItem) => {
             if (!isSeriesEligibleItem(seriesItem)) return false;
             const candidatePrefix = getLotSeriesPrefix(seriesItem?.lotNumber);
             if (!candidatePrefix || candidatePrefix !== lotPrefix) return false;
@@ -712,16 +791,17 @@ const LossenView = ({ stationId, appId, products = [] }) => {
   const isAdvancedStation = isBM01 || isMazak || isNabewerking || isNaharding;
 
 
-  const groupedSeries = useMemo(() => {
-    if (!supportsSeriesGrouping) return new Map();
-    const grouped = new Map();
-    items.forEach((item) => {
+  const groupedSeries = useMemo<Map<string, ProductItem[]>>(() => {
+    if (!supportsSeriesGrouping) return new Map<string, ProductItem[]>();
+    const grouped = new Map<string, ProductItem[]>();
+    items.forEach((item: ProductItem) => {
       if (!isFlensItem(item)) return; // Only allow grouping for FL items
 
       const groupId = item?.seriesGroupId;
       if (!groupId) return;
-      if (!grouped.has(groupId)) grouped.set(groupId, []);
-      grouped.get(groupId).push(item);
+      const current = grouped.get(groupId) || [];
+      current.push(item);
+      grouped.set(groupId, current);
     });
     return grouped;
   }, [items, supportsSeriesGrouping]);
@@ -729,11 +809,11 @@ const LossenView = ({ stationId, appId, products = [] }) => {
   useEffect(() => {
     setCollapsedGroups((prev) => {
       const next = { ...prev };
-      groupedSeries.forEach((group, groupId) => {
+      groupedSeries.forEach((group: ProductItem[], groupId: string) => {
         if (group.length <= 1) return;
         if (!(groupId in next)) next[groupId] = !isLossen1218;
       });
-      Object.keys(next).forEach((groupId) => {
+      Object.keys(next).forEach((groupId: string) => {
         const group = groupedSeries.get(groupId);
         if (!group || group.length <= 1) delete next[groupId];
       });
@@ -741,14 +821,18 @@ const LossenView = ({ stationId, appId, products = [] }) => {
     });
   }, [groupedSeries, isLossen1218]);
 
-  const displayRows = useMemo(() => {
-    const rendered = new Set();
-    const rows = [];
+  const displayRows = useMemo<DisplayRow[]>(() => {
+    const rendered = new Set<string>();
+    const rows: DisplayRow[] = [];
 
-    items.forEach((item) => {
+    items.forEach((item: ProductItem) => {
       const groupId = item?.seriesGroupId;
-      const group = groupId ? groupedSeries.get(groupId) || [] : [];
-      const isSeriesGroup = groupId && group.length > 1;
+      if (!groupId) {
+        rows.push(item);
+        return;
+      }
+      const group = groupedSeries.get(groupId) || [];
+      const isSeriesGroup = group.length > 1;
 
       if (isSeriesGroup && !rendered.has(groupId)) {
         rows.push({
@@ -771,7 +855,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
   }, [items, groupedSeries, collapsedGroups]);
 
   // --- NIEUW: Aparte handler voor afronden in Lossen vs. Nabewerking ---
-  const handlePostProcessingFinish = async (status, data, productOverride = null) => {
+  const handlePostProcessingFinish = async (status: string, data: { note?: string; reasons?: string[] }, productOverride: ProductItem | null = null) => {
     const product = productOverride || selectedProduct;
     if (!product) return;
 
@@ -847,7 +931,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
         `Lossen afhandeling: lot ${product.lotNumber || productId}, station ${stationId}, status ${status}`
       );
       if (selectedProductRef.current?.id === product.id) handleCloseModal();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Fout bij afronden:", error);
     }
   };
@@ -928,7 +1012,6 @@ const LossenView = ({ stationId, appId, products = [] }) => {
                   value={scanInput}
                   onChange={(e) => setScanInput(e.target.value)}
                   inputMode={scannerMode ? "none" : "text"}
-                  virtualKeyboardPolicy={scannerMode ? "manual" : "auto"}
                   onKeyDown={handleScan}
                   placeholder={t("digitalplanning.terminal.scan_lot_or_order", "Scan lotnummer of order...")}
                   className="w-full pl-14 pr-4 py-4 bg-white border-2 border-blue-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-300 rounded-2xl font-bold text-lg shadow-sm outline-none transition-all placeholder:text-slate-300"
@@ -954,7 +1037,7 @@ const LossenView = ({ stationId, appId, products = [] }) => {
                 </h3>
               </div>
               {displayRows.map((item) => {
-                if (item.isSeriesHeader) {
+                if (isSeriesHeaderRow(item)) {
                   const isCollapsed = !!collapsedGroups[item.seriesGroupId];
                   return (
                     <div

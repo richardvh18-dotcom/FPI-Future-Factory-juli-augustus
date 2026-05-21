@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -21,7 +21,7 @@ import {
 } from "firebase/firestore";
 import { db, auth, storage, logActivity } from "../../config/firebase";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { aiService } from "../../services/aiService";
 import {
   createAiDocumentRecord,
@@ -38,21 +38,66 @@ GlobalWorkerOptions.workerSrc = new URL(
 const MAX_CHARS = 50000;
 const MAX_FILE_SIZE_MB = 10; // Maximaal 10MB per bestand
 
+type StatusState = {
+  type: "success" | "error" | "info";
+  message: string;
+};
+
+type DocumentAnalysis = {
+  title: string;
+  summary: string;
+  keyFacts: string[];
+  processes: string[];
+  partNumbers: string[];
+  tolerances: string[];
+  stations: string[];
+  dates: string[];
+  warnings: string[];
+  tags: string[];
+  fullContext: string;
+};
+
+type AnalyzeDocumentResult = {
+  parsed: boolean;
+  analysisRaw: string;
+  analysis: DocumentAnalysis;
+};
+
+type AiDocumentRecord = {
+  id: string;
+  fileName?: string;
+  mimeType?: string;
+  size?: number;
+  analysis?: DocumentAnalysis;
+  analysisRaw?: string;
+  parsed?: boolean;
+  characterCount?: number;
+  fileUrl?: string;
+  fullText?: string;
+};
+
+type AIServiceLike = {
+  chat: (messages: Array<{ role: "user" | "assistant"; content: string }>, systemPrompt?: string | null) => Promise<string>;
+};
+
+const ai = aiService as unknown as AIServiceLike;
+const colPath = (path: string[]) => collection(db, getPathString(path));
+
 const AiDocumentUploadView = () => {
   const { t } = useTranslation();
-  const [documents, setDocuments] = useState([]);
+  const [documents, setDocuments] = useState<AiDocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<StatusState | null>(null);
   const [filter, setFilter] = useState("");
 
   useEffect(() => {
-    const colRef = collection(db, ...(PATHS?.AI_DOCUMENTS || ['future-factory', 'settings', 'ai_documents', 'knowledge', 'records']));
+    const colRef = colPath(PATHS.AI_DOCUMENTS);
     const q = query(colRef, orderBy("uploadedAt", "desc"));
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setDocuments(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setDocuments(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<AiDocumentRecord, "id">) })));
         setLoading(false);
       },
       (err) => {
@@ -66,7 +111,7 @@ const AiDocumentUploadView = () => {
   const visibleDocuments = useMemo(() => {
     if (!filter.trim()) return documents;
     const term = filter.toLowerCase();
-    return documents.filter((docItem) => {
+    return documents.filter((docItem: AiDocumentRecord) => {
       const haystack = JSON.stringify({
         name: docItem.fileName,
         summary: docItem.analysis?.summary,
@@ -77,7 +122,7 @@ const AiDocumentUploadView = () => {
     });
   }, [documents, filter]);
 
-  const extractJson = (text) => {
+  const extractJson = (text: string) => {
     if (!text) return null;
     
     // Verwijder markdown code blocks om parsing issues te voorkomen
@@ -95,17 +140,9 @@ const AiDocumentUploadView = () => {
   };
 
   const analyzeDocument = async ({ text, fileName }: AnalyzeDocumentProps): Promise<{
-    title: string;
-    summary: string;
-    keyFacts: string[];
-    processes: string[];
-    partNumbers: string[];
-    tolerances: string[];
-    stations: string[];
-    dates: string[];
-    warnings: string[];
-    tags: string[];
-    fullContext: string;
+    parsed: boolean;
+    analysisRaw: string;
+    analysis: DocumentAnalysis;
   }> => {
     const systemPrompt = `Je bent een AI die bedrijfsdocumenten analyseert voor een MES omgeving.
 
@@ -144,7 +181,7 @@ IMPORTANT RULES:
 - Lege array [] als niets gevonden, lege string "" als niet van toepassing`;
 
     try {
-      const response = await aiService.chat(
+      const response = await ai.chat(
         [{ role: "user", content: `Bestandsnaam: ${fileName}\n\nDocument inhoud:\n${text}` }],
         systemPrompt
       );
@@ -174,10 +211,10 @@ IMPORTANT RULES:
         };
       }
 
-      let analysis;
+      let analysis: Partial<DocumentAnalysis>;
       try {
         analysis = JSON.parse(jsonText);
-      } catch (parseErr) {
+      } catch (parseErr: unknown) {
         console.error("❌ JSON Parse Error:", parseErr, "\nText:", jsonText.substring(0, 500) + "...");
         throw new Error("Ongeldige JSON structuur ontvangen van AI", { cause: parseErr });
       }
@@ -199,15 +236,16 @@ IMPORTANT RULES:
       };
       
       return { parsed: true, analysisRaw: response, analysis: validatedAnalysis };
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Analyse fout:", err);
+      const message = err instanceof Error ? err.message : String(err);
       // Fallback: maak een basis analyse
       return { 
         parsed: false, 
-        analysisRaw: err.message, 
+        analysisRaw: message, 
         analysis: {
           title: fileName,
-          summary: `Fout bij analyseren: ${err.message}`,
+          summary: `Fout bij analyseren: ${message}`,
           keyFacts: [],
           processes: [],
           partNumbers: [],
@@ -222,7 +260,7 @@ IMPORTANT RULES:
     }
   };
 
-  const extractTextFromPdf = async (file) => {
+  const extractTextFromPdf = async (file: File) => {
     const buffer = await file.arrayBuffer();
     const pdf = await getDocument({ data: buffer }).promise;
     let fullText = "";
@@ -230,7 +268,7 @@ IMPORTANT RULES:
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
-      const pageText = textContent.items.map((item) => item.str).join(" ");
+      const pageText = textContent.items.map((item) => ("str" in item ? item.str : "")).join(" ");
       fullText += `\n${pageText}`;
       if (fullText.length > MAX_CHARS * 3) {
         break;
@@ -240,12 +278,12 @@ IMPORTANT RULES:
     return fullText;
   };
 
-  const handleFileUpload = async (e) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     // Check op duplicaten
-    const isDuplicate = documents.some(doc => doc.fileName === file.name);
+    const isDuplicate = documents.some((doc: AiDocumentRecord) => doc.fileName === file.name);
     if (isDuplicate) {
       if (!window.confirm(t('ai.upload.duplicate_warning', { fileName: file.name, defaultValue: `Het document '${file.name}' is al geüpload. Wil je doorgaan en een kopie toevoegen?` }))) {
         e.target.value = "";
@@ -297,21 +335,22 @@ IMPORTANT RULES:
       if (file.type === "application/pdf") {
         try {
           text = await extractTextFromPdf(file);
-        } catch (pdfErr) {
+        } catch (pdfErr: unknown) {
           console.error("PDF parsing error:", pdfErr);
-          throw new Error(`Kon PDF niet lezen (check worker configuratie): ${pdfErr.message}`, { cause: pdfErr });
+          const message = pdfErr instanceof Error ? pdfErr.message : String(pdfErr);
+          throw new Error(`Kon PDF niet lezen (check worker configuratie): ${message}`, { cause: pdfErr });
         }
       } else {
         text = await new Promise((resolve, reject) => {
           const reader = new FileReader();
-          reader.onload = () => resolve(reader.result || "");
+          reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
           reader.onerror = reject;
           reader.readAsText(file);
         });
       }
 
       const content = String(text).slice(0, MAX_CHARS);
-      const analysisResult = await analyzeDocument(content, file.name);
+      const analysisResult = await analyzeDocument({ text: content, fileName: file.name });
 
       // Sla ook de volledige tekst op (tot 50000 chars) voor betere context
       const fullTextContent = String(text).slice(0, MAX_CHARS);
@@ -329,7 +368,7 @@ IMPORTANT RULES:
         fileUrl, // downloadlink naar storage
       });
 
-      await logActivity(auth.currentUser?.uid, 'AI_UPLOAD', `Document uploaded: ${file.name} (${Math.round(file.size/1024)}KB)`);
+      await logActivity(auth.currentUser?.uid || 'system', 'AI_UPLOAD', `Document uploaded: ${file.name} (${Math.round(file.size/1024)}KB)`);
 
       const statusMessage = analysisResult.parsed 
         ? t('ai.upload.success_parsed', "✅ Document succesvol geüpload, geanalyseerd en opgeslagen.")
@@ -339,11 +378,12 @@ IMPORTANT RULES:
         type: "success",
         message: statusMessage,
       });
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Upload fout:", err);
       
-      let errorMessage = err.message || "Onbekende fout bij verwerken";
-      if (err.code === "storage/unauthorized") {
+      const errorMessageBase = err instanceof Error ? err.message : String(err);
+      let errorMessage = errorMessageBase || "Onbekende fout bij verwerken";
+      if (typeof err === "object" && err !== null && "code" in err && err.code === "storage/unauthorized") {
         errorMessage = "Geen rechten (storage/unauthorized). Check Firebase Storage Rules voor 'ai_documents/'.";
       }
 
@@ -357,7 +397,7 @@ IMPORTANT RULES:
     }
   };
 
-  const handleDelete = async (docItem) => {
+  const handleDelete = async (docItem: AiDocumentRecord) => {
     if (!window.confirm(t('ai.upload.confirm_delete', "Document verwijderen uit de AI kennisbank?"))) return;
     try {
       // 1. Verwijder record uit Firestore
@@ -372,23 +412,23 @@ IMPORTANT RULES:
           console.warn("Kon bestand niet verwijderen uit storage (mogelijk al weg):", storageErr);
         }
       }
-      await logActivity(auth.currentUser?.uid, 'AI_DELETE', `Document deleted: ${docItem.fileName}`);
-    } catch (err) {
+      await logActivity(auth.currentUser?.uid || 'system', 'AI_DELETE', `Document deleted: ${docItem.fileName || docItem.id}`);
+    } catch (err: unknown) {
       console.error("Verwijderen mislukt:", err);
     }
   };
 
-  const handleReanalyze = async (docItem) => {
+  const handleReanalyze = async (docItem: AiDocumentRecord) => {
     if (!docItem.fullText) {
       setStatus({ type: "error", message: "Geen tekst gevonden om opnieuw te analyseren." });
       return;
     }
 
     setUploading(true);
-    setStatus({ type: "info", message: `Document '${docItem.fileName}' opnieuw analyseren...` });
+    setStatus({ type: "info", message: `Document '${docItem.fileName || docItem.id}' opnieuw analyseren...` });
 
     try {
-      const analysisResult = await analyzeDocument(docItem.fullText, docItem.fileName);
+      const analysisResult = await analyzeDocument({ text: docItem.fullText, fileName: docItem.fileName || docItem.id });
       
       await updateAiDocumentRecord({
         docId: docItem.id,
@@ -404,9 +444,10 @@ IMPORTANT RULES:
         : "⚠️ Opnieuw analyseren resulteerde weer in fallback.";
 
       setStatus({ type: "success", message: statusMessage });
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Re-analyse fout:", err);
-      setStatus({ type: "error", message: `Fout bij opnieuw analyseren: ${err.message}` });
+      const message = err instanceof Error ? err.message : String(err);
+      setStatus({ type: "error", message: `Fout bij opnieuw analyseren: ${message}` });
     } finally {
       setUploading(false);
     }
@@ -543,7 +584,7 @@ IMPORTANT RULES:
                   
                   {docItem.characterCount && (
                     <div className="text-[10px] text-slate-500">
-                      {t('ai.upload.processed_text', { count: docItem.characterCount.toLocaleString(), defaultValue: `📊 Verwerkte tekst: ${docItem.characterCount.toLocaleString()} karakters` })}
+                      {t('ai.upload.processed_text', { count: docItem.characterCount, defaultValue: `📊 Verwerkte tekst: ${docItem.characterCount.toLocaleString()} karakters` })}
                     </div>
                   )}
                   
@@ -582,7 +623,7 @@ IMPORTANT RULES:
                       <div>
                         <div className="font-bold">{t('ai.upload.fallback_analysis_used', 'Fallback Analyse Gebruikt')}</div>
                         <div className="text-[9px] mt-0.5">
-                          {t('ai.upload.fallback_analysis_desc', { count: docItem.characterCount?.toLocaleString() || '?', defaultValue: `AI kon geen gestructureerd JSON genereren, maar document is wel verwerkt en doorzoekbaar. De volledige tekst (${docItem.characterCount?.toLocaleString() || '?'} karakters) is opgeslagen voor context.` })}
+                          {t('ai.upload.fallback_analysis_desc', { count: docItem.characterCount || 0, defaultValue: `AI kon geen gestructureerd JSON genereren, maar document is wel verwerkt en doorzoekbaar. De volledige tekst (${docItem.characterCount?.toLocaleString() || '?'} karakters) is opgeslagen voor context.` })}
                         </div>
                       </div>
                     </div>

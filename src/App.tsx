@@ -1,8 +1,7 @@
-// @ts-nocheck
 import React, { useState, Suspense, lazy, useEffect, useRef } from "react";
 import { listenToAppVersion } from "./services/versionService";
 import { Loader2 } from "lucide-react";
-import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth, db, logActivity } from "./config/firebase";
 import { addDoc, collection, doc, getDoc, serverTimestamp, query, collectionGroup, where, limit, getDocs } from "firebase/firestore";
@@ -10,24 +9,22 @@ import LoggedOutView from "./components/LoggedOutView";
 
 // Basis Componenten
 import Header from "./components/Header";
-import Sidebar from "./components/Sidebar.tsx";
-import LoginView from "./components/LoginView.tsx";
-import PortalView from "./components/PortalView.tsx";
-import ProfileView from "./components/ProfileView.tsx";
+import Sidebar from "./components/Sidebar";
+import LoginView from "./components/LoginView";
+import PortalView from "./components/PortalView";
+import ProfileView from "./components/ProfileView";
 import ProductSearchView from "./components/products/ProductSearchView";
 import ForcePasswordChangeView from "./components/ForcePasswordChangeView";
 import GodModeBootstrap from "./components/admin/GodModeBootstrap";
 import AutoLogoutWarning from "./components/AutoLogoutWarning";
-import { MTPresentation } from "./components/MTPresentation";
 
 // Notification System
 import { NotificationProvider } from "./contexts/NotificationContext";
-import { ProgressOperationProvider } from "./contexts/ProgressOperationContext.tsx";
 import { BackgroundTaskProvider } from "./contexts/BackgroundTaskContext";
 import ToastContainer from "./components/notifications/ToastContainer";
-import ConfirmDialog from "./components/notifications/ConfirmDialog.tsx";
-import BackgroundTaskOverlay from "./components/notifications/BackgroundTaskOverlay.tsx";
-import ProgressToast from "./components/digitalplanning/ProgressToast.tsx";
+import ConfirmDialog from "./components/notifications/ConfirmDialog";
+import BackgroundTaskOverlay from "./components/notifications/BackgroundTaskOverlay";
+import ProgressToast from "./components/digitalplanning/ProgressToast";
 
 // Hooks
 import { useAdminAuth } from "./hooks/useAdminAuth";
@@ -35,15 +32,15 @@ import { useProductsData } from "./hooks/useProductsData";
 import { useSettingsData } from "./hooks/useSettingsData";
 import { useMessages } from "./hooks/useMessages";
 import { useAutoLogout } from "./hooks/useAutoLogout";
-import { PATHS } from "./config/dbPaths";
+import { PATHS, getPathString } from "./config/dbPaths";
 
 // Lazy Loading Modules
 const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard"));
 const AdminMessagesView = lazy(() =>
   import("./components/admin/AdminMessagesView")
-); // NIEUW: Directe import voor route
+);
 const DigitalPlanningHub = lazy(() =>
-  import('./components/digitalplanning/DigitalPlanningHub')
+  import("./components/digitalplanning/DigitalPlanningHub")
 );
 const MobileScanner = lazy(() =>
   import("./components/digitalplanning/MobileScanner")
@@ -52,7 +49,7 @@ const ShopFloorMobileApp = lazy(() =>
   import("./components/planning/ShopFloorMobileApp")
 );
 const CalculatorView = lazy(() => import("./components/CalculatorView"));
-const AiAssistantView = lazy(() => import('./components/ai/AiAssistantView'));
+const AiAssistantView = lazy(() => import("./components/ai/AiAssistantView"));
 const AdminLogView = lazy(() => import("./components/admin/AdminLogView"));
 
 const PrintQueueAdminView = lazy(() =>
@@ -60,6 +57,7 @@ const PrintQueueAdminView = lazy(() =>
 );
 const ProductDossierModal = lazy(() => import("./components/digitalplanning/modals/ProductDossierModal"));
 const TeamleaderOrderDetailModal = lazy(() => import("./components/digitalplanning/modals/TeamleaderOrderDetailModal"));
+
 /**
  * App.jsx V18.0 - Responsive Design
  * + Mobile menu state management
@@ -67,21 +65,23 @@ const TeamleaderOrderDetailModal = lazy(() => import("./components/digitalplanni
  */
 const App = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
-  const [loginError, setLoginError] = useState(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
-  const [globalDossierProduct, setGlobalDossierProduct] = useState(null);
-  const [globalOrderDetail, setGlobalOrderDetail] = useState(null);
-  const [globalOrders, setGlobalOrders] = useState([]);
+  const [globalDossierProduct, setGlobalDossierProduct] = useState<any | null>(null);
+  const [globalOrderDetail, setGlobalOrderDetail] = useState<any | null>(null);
+  const [globalOrders, setGlobalOrders] = useState<any[]>([]);
 
   // Data fetching via Hooks
   const { user, isAdmin, role, loading: authLoading } = useAdminAuth();
-  const { products = [] } = useProductsData(user);
-  const { generalConfig } = useSettingsData(user);
-  useMessages(user);
+  const firebaseUser = user as any;
+  const { products = [] } = useProductsData(firebaseUser);
+  const { generalConfig } = useSettingsData(firebaseUser);
+  useMessages(firebaseUser);
+  const logoUrl = typeof generalConfig?.logoUrl === "string" ? generalConfig.logoUrl : undefined;
+  const appName = typeof generalConfig?.appName === "string" ? generalConfig.appName : undefined;
 
   // Auto-logout na inactiviteit (60 minuten inactiviteit, 5 minuten waarschuwing)
   const { showWarning, remainingTime, dismissWarning } = useAutoLogout(
@@ -93,6 +93,7 @@ const App = () => {
   // Versie-check: forceer refresh bij nieuwe versie
   const currentVersion = import.meta.env.VITE_APP_VERSION || "dev";
   const versionRef = useRef(currentVersion);
+  
   useEffect(() => {
     const host = typeof window !== "undefined" ? window.location.hostname : "";
     const isLocalDevHost =
@@ -105,7 +106,7 @@ const App = () => {
     // Dit voorkomt reload-loops bij verschil tussen lokale buildversie en remote config.
     if (isLocalDevHost) return () => {};
 
-    const requestVersionReload = (remoteVersionRaw) => {
+    const requestVersionReload = (remoteVersionRaw: unknown) => {
       const remoteVersion = String(remoteVersionRaw || "").trim();
       if (!remoteVersion || remoteVersion === versionRef.current) return;
 
@@ -118,7 +119,7 @@ const App = () => {
       window.location.reload();
     };
 
-    const unsubscribe = listenToAppVersion((remoteVersion) => {
+    const unsubscribe = listenToAppVersion((remoteVersion: string) => {
       requestVersionReload(remoteVersion);
     });
 
@@ -159,7 +160,7 @@ const App = () => {
     const checkPasswordChange = async () => {
       try {
         const userDoc = await getDoc(doc(db, "future-factory", "Users", "Accounts", user.uid));
-        setRequiresPasswordChange(Boolean(userDoc.exists() && userDoc.data().requirePasswordChange));
+        setRequiresPasswordChange(Boolean(userDoc.exists() && userDoc.data()?.requirePasswordChange));
       } catch (err) {
         console.error("Error checking password change:", err);
       }
@@ -170,10 +171,12 @@ const App = () => {
 
   useEffect(() => {
     if (typeof window === "undefined" || !user?.email) return undefined;
+    const userEmail = String(user.email || "").toLowerCase().trim();
+    if (!userEmail) return undefined;
 
     let initialized = false;
 
-    const createConnectivityMessage = async (online) => {
+    const createConnectivityMessage = async (online: boolean) => {
       const eventKey = `connectivity:${online ? "online" : "offline"}`;
       const lastRaw = window.localStorage.getItem("ff_last_connectivity_message");
       const now = Date.now();
@@ -189,8 +192,8 @@ const App = () => {
         }
       }
 
-      await addDoc(collection(db, ...PATHS.MESSAGES), {
-        to: user.email.toLowerCase(),
+      await addDoc(collection(db, getPathString(PATHS.MESSAGES)), {
+        to: userEmail,
         from: "SYSTEM",
         senderId: "system-connectivity",
         subject: online ? "Verbinding hersteld" : "Offline modus actief",
@@ -202,7 +205,7 @@ const App = () => {
         archived: false,
         priority: "normal",
         type: "system",
-        targetGroup: user.email.toLowerCase(),
+        targetGroup: userEmail,
       });
 
       window.localStorage.setItem(
@@ -211,7 +214,7 @@ const App = () => {
       );
     };
 
-    const handleConnectivityChange = (online) => {
+    const handleConnectivityChange = (online: boolean) => {
       if (!initialized) {
         initialized = true;
         return;
@@ -234,15 +237,15 @@ const App = () => {
     };
   }, [user?.email]);
 
-  const handleLogin = async (email, password) => {
+  const handleLogin = async (email: string, password: string) => {
     setLoginError(null);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       await logActivity(userCredential.user.uid, "LOGIN", `Succesvol ingelogd via email: ${email}`);
       navigate("/");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Login fout:", err);
-      await logActivity("system", "LOGIN_FAILED", `Mislukte inlogpoging voor: ${email}. Reden: ${err.code}`, "warning");
+      await logActivity("system", "LOGIN_FAILED", `Mislukte inlogpoging voor: ${email}. Reden: ${err.code}`);
       
       let errorMessage = "E-mail of wachtwoord onjuist.";
       
@@ -264,15 +267,15 @@ const App = () => {
     }
   };
 
-  const handleGlobalSearch = async (queryStr) => {
+  const handleGlobalSearch = async (queryStr: string) => {
     const qStr = queryStr.trim().toUpperCase();
     if (!qStr) return;
 
     setGlobalSearchLoading(true);
     try {
-      let foundProduct = null;
-      let foundOrder = null;
-      let parentOrders = [];
+      let foundProduct: any = null;
+      let foundOrder: any = null;
+      let parentOrders: any[] = [];
 
       const itemsQuery = query(collectionGroup(db, "items"), where("lotNumber", "==", qStr), limit(1));
       const itemsSnap = await getDocs(itemsQuery);
@@ -281,7 +284,7 @@ const App = () => {
       }
 
       if (!foundProduct) {
-        const rootTracked = await getDocs(query(collection(db, ...PATHS.TRACKING), where("lotNumber", "==", qStr), limit(1)));
+        const rootTracked = await getDocs(query(collection(db, getPathString(PATHS.TRACKING)), where("lotNumber", "==", qStr), limit(1)));
         if (!rootTracked.empty) foundProduct = { id: rootTracked.docs[0].id, ...rootTracked.docs[0].data() };
       }
 
@@ -303,7 +306,7 @@ const App = () => {
           const orderSnap = await getDocs(query(collectionGroup(db, "orders"), where("orderId", "==", orderId), limit(1)));
           if (!orderSnap.empty) parentOrders = [{ id: orderSnap.docs[0].id, ...orderSnap.docs[0].data() }];
           else {
-            const rootOrderSnap = await getDocs(query(collection(db, ...PATHS.PLANNING), where("orderId", "==", orderId), limit(1)));
+            const rootOrderSnap = await getDocs(query(collection(db, getPathString(PATHS.PLANNING)), where("orderId", "==", orderId), limit(1)));
             if (!rootOrderSnap.empty) parentOrders = [{ id: rootOrderSnap.docs[0].id, ...rootOrderSnap.docs[0].data() }];
           }
         }
@@ -316,7 +319,7 @@ const App = () => {
       const orderSnap = await getDocs(query(collectionGroup(db, "orders"), where("orderId", "==", qStr), limit(1)));
       if (!orderSnap.empty) foundOrder = { id: orderSnap.docs[0].id, ...orderSnap.docs[0].data() };
       else {
-        const rootOrderSnap = await getDocs(query(collection(db, ...PATHS.PLANNING), where("orderId", "==", qStr), limit(1)));
+        const rootOrderSnap = await getDocs(query(collection(db, getPathString(PATHS.PLANNING)), where("orderId", "==", qStr), limit(1)));
         if (!rootOrderSnap.empty) foundOrder = { id: rootOrderSnap.docs[0].id, ...rootOrderSnap.docs[0].data() };
       }
 
@@ -356,37 +359,29 @@ const App = () => {
   } else if (!user && !authLoading) {
     const path = window.location.pathname;
     if (path === "/login") {
-      content = <LoginView onLogin={handleLogin} error={loginError} logoUrl={generalConfig?.logoUrl} appName={generalConfig?.appName} />;
+      content = <LoginView onLogin={handleLogin} externalError={loginError} logoUrl={logoUrl} appName={appName} />;
     } else {
       content = <LoggedOutView />;
     }
   } else if (role === "guest") {
-    content = <LoginView onLogin={handleLogin} error={loginError} logoUrl={generalConfig?.logoUrl} appName={generalConfig?.appName} />;
+    content = <LoginView onLogin={handleLogin} externalError={loginError} logoUrl={logoUrl} appName={appName} />;
   } else if (requiresPasswordChange) {
     content = (
       <ForcePasswordChangeView 
-        user={user} 
+        user={auth.currentUser as any} 
         onComplete={() => setRequiresPasswordChange(false)} 
       />
-    );
-  } else if (location.pathname === "/presentation") {
-    // Presentatie zonder Header/Sidebar
-    content = (
-      <Routes>
-        <Route path="/presentation" element={<MTPresentation />} />
-        <Route path="*" element={<Navigate to="/presentation" replace />} />
-      </Routes>
     );
   } else {
     content = (
       <div className="flex flex-col h-screen bg-slate-50 font-sans overflow-hidden text-left relative">
         <Header
-          user={user}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           onSearchSubmit={handleGlobalSearch}
           isSearching={globalSearchLoading}
-          logoUrl={generalConfig?.logoUrl}
+          logoUrl={logoUrl}
+          appName={appName}
           onMenuToggle={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         />
 
@@ -394,7 +389,6 @@ const App = () => {
           <Sidebar
             user={user}
             isAdmin={isAdmin}
-            role={role}
             onLogout={async () => {
               if (user) {
                 await logActivity(user.uid, "LOGOUT", `Gebruiker uitgelogd: ${user.email}`);
@@ -417,19 +411,18 @@ const App = () => {
               <Routes>
                 <Route path="/" element={<PortalView />} />
                 <Route path="/portal" element={<PortalView />} />
-                <Route path="/presentation" element={<MTPresentation />} />
                 <Route path="/profile" element={<ProfileView />} />
-                <Route path="/products" element={<ProductSearchView products={products} />} />
+                <Route path="/products" element={<ProductSearchView showFilters={false} setShowFilters={() => {}} />} />
                 <Route path="/planning/*" element={<DigitalPlanningHub />} />
-                <Route path="/scanner" element={<MobileScanner />} />
+                <Route path="/scanner" element={<MobileScanner onScan={() => {}} onClose={() => navigate(-1)} />} />
                 <Route path="/inspector" element={<ShopFloorMobileApp />} />
                 <Route path="/calculator" element={<CalculatorView />} />
                 <Route path="/assistant" element={<AiAssistantView />} />
-                <Route path="/messages" element={<AdminMessagesView user={user} />} />
+                <Route path="/messages" element={<AdminMessagesView user={user as any} />} />
                 <Route path="/printer-queue" element={<PrintQueueAdminView />} />
                 <Route path="/admin/*" element={<AdminDashboard />} />
                 <Route path="/logs" element={<AdminLogView />} />
-                <Route path="/login" element={<LoginView onLogin={handleLogin} error={loginError} logoUrl={generalConfig?.logoUrl} appName={generalConfig?.appName} />} />
+                <Route path="/login" element={<LoginView onLogin={handleLogin} externalError={loginError} logoUrl={logoUrl} appName={appName} />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>
@@ -468,7 +461,6 @@ const App = () => {
 
   return (
     <NotificationProvider>
-      <ProgressOperationProvider>
         <BackgroundTaskProvider>
           <ToastContainer />
           <ConfirmDialog />
@@ -476,7 +468,6 @@ const App = () => {
           <ProgressToast />
           {content}
         </BackgroundTaskProvider>
-      </ProgressOperationProvider>
     </NotificationProvider>
   );
 };

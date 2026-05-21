@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -30,10 +30,50 @@ import {
   getDoc
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { formatMinutes } from "../../utils/efficiencyCalculator";
 import { analyzeAndUpdateStandards } from "../../utils/autoLearningService";
 import { useNotifications } from "../../contexts/NotificationContext";
+
+type StandardRecord = {
+  id: string;
+  itemCode: string;
+  machine: string;
+  standardMinutes: number;
+  description?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+};
+
+type StatusState = {
+  type: "success" | "error";
+  message: string;
+};
+
+type NewEntryState = {
+  itemCode: string;
+  machine: string;
+  standardMinutes: string;
+  description: string;
+};
+
+type AutoLearningRecommendation = {
+  itemCode: string;
+  machine: string;
+  sampleCount: number;
+  deviation: number;
+  currentStandard: number;
+  recommendedStandard: number;
+  change: number;
+};
+
+type AutoLearningResult = {
+  recommendations: AutoLearningRecommendation[];
+  updated: number;
+};
+
+const colPath = (path: string[]) => collection(db, getPathString(path));
+const docPath = (path: string[], id: string) => doc(db, `${getPathString(path)}/${id}`);
 
 /**
  * ProductionTimeStandardsManager
@@ -42,20 +82,20 @@ import { useNotifications } from "../../contexts/NotificationContext";
 const ProductionTimeStandardsManager = () => {
   const { t } = useTranslation();
   const { showConfirm } = useNotifications();
-  const [standards, setStandards] = useState([]);
+  const [standards, setStandards] = useState<StandardRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState(null);
+  const [status, setStatus] = useState<StatusState | null>(null);
   const [filter, setFilter] = useState("");
-  const [editMode, setEditMode] = useState(null);
-  const [availableItemCodes, setAvailableItemCodes] = useState([]);
-  const [availableMachines, setAvailableMachines] = useState([]);
-  const [learningRecommendations, setLearningRecommendations] = useState([]);
+  const [editMode, setEditMode] = useState<string | null>(null);
+  const [availableItemCodes, setAvailableItemCodes] = useState<string[]>([]);
+  const [availableMachines, setAvailableMachines] = useState<string[]>([]);
+  const [learningRecommendations, setLearningRecommendations] = useState<AutoLearningRecommendation[]>([]);
   const [isLearning, setIsLearning] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(false);
   
   // New entry form
-  const [newEntry, setNewEntry] = useState({
+  const [newEntry, setNewEntry] = useState<NewEntryState>({
     itemCode: "",
     machine: "",
     standardMinutes: "",
@@ -66,24 +106,29 @@ const ProductionTimeStandardsManager = () => {
     const loadData = async () => {
       try {
         // Load item codes from conversion mapping
-        const conversionSnapshot = await getDocs(collection(db, ...PATHS.CONVERSION_MATRIX));
-        const itemCodes = new Set();
-        conversionSnapshot.docs.forEach(doc => {
-          const data = doc.data();
-          if (data.itemCode) itemCodes.add(data.itemCode);
-          if (data.productCode) itemCodes.add(data.productCode);
+        const conversionSnapshot = await getDocs(colPath(PATHS.CONVERSION_MATRIX));
+        const itemCodes = new Set<string>();
+        conversionSnapshot.docs.forEach((entryDoc) => {
+          const data = entryDoc.data() as { itemCode?: unknown; productCode?: unknown };
+          if (data.itemCode) itemCodes.add(String(data.itemCode));
+          if (data.productCode) itemCodes.add(String(data.productCode));
         });
         setAvailableItemCodes([...itemCodes].sort());
 
         // Load machines from factory config
-        const factoryDoc = await getDoc(doc(db, ...PATHS.FACTORY_CONFIG));
+        const factoryDoc = await getDoc(doc(db, getPathString(PATHS.FACTORY_CONFIG)));
         if (factoryDoc.exists()) {
-          const config = factoryDoc.data();
-          const machines = new Set();
+          const config = factoryDoc.data() as { departments?: unknown };
+          const machines = new Set<string>();
+          const rawDepartments = config.departments;
+          const departmentsArray: unknown[] = Array.isArray(rawDepartments)
+            ? rawDepartments
+            : Object.values((rawDepartments as Record<string, unknown>) || {});
           
           // Extract all stations from all departments
-          Object.values(config.departments || {}).forEach(dept => {
-            (dept.stations || []).forEach(station => {
+          departmentsArray.forEach((dept) => {
+            const stations = (dept as { stations?: Array<{ id?: string; name?: string }> }).stations || [];
+            stations.forEach((station) => {
               if (station.id) machines.add(station.id);
               if (station.name && station.name !== station.id) machines.add(station.name);
             });
@@ -99,13 +144,13 @@ const ProductionTimeStandardsManager = () => {
     loadData();
 
     // Listen to standards collection
-    const q = query(collection(db, ...PATHS.PRODUCTION_STANDARDS));
+    const q = query(colPath(PATHS.PRODUCTION_STANDARDS));
     const unsub = onSnapshot(
       q,
       (snapshot) => {
-        const data = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const data: StandardRecord[] = snapshot.docs.map((entryDoc) => ({
+          id: entryDoc.id,
+          ...(entryDoc.data() as Omit<StandardRecord, "id">)
         }));
         setStandards(data);
         setLoading(false);
@@ -137,7 +182,7 @@ const ProductionTimeStandardsManager = () => {
 
     setSaving(true);
     try {
-      await addDoc(collection(db, ...PATHS.PRODUCTION_STANDARDS), {
+      await addDoc(colPath(PATHS.PRODUCTION_STANDARDS), {
         itemCode: newEntry.itemCode.trim(),
         machine: newEntry.machine.trim(),
         standardMinutes: parseFloat(newEntry.standardMinutes),
@@ -146,7 +191,7 @@ const ProductionTimeStandardsManager = () => {
         updatedAt: serverTimestamp()
       });
 
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Production standard added: ${newEntry.itemCode} (${newEntry.machine})`);
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Production standard added: ${newEntry.itemCode} (${newEntry.machine})`);
 
       setNewEntry({ itemCode: "", machine: "", standardMinutes: "", description: "" });
       setStatus({ type: "success", message: t('productionStandards.success_added', "Standaard toegevoegd") });
@@ -159,16 +204,16 @@ const ProductionTimeStandardsManager = () => {
     }
   };
 
-  const handleUpdate = async (id, updates) => {
+  const handleUpdate = async (id: string, updates: Partial<StandardRecord>) => {
     setSaving(true);
     try {
       await setDoc(
-        doc(db, ...PATHS.PRODUCTION_STANDARDS, id),
+        docPath(PATHS.PRODUCTION_STANDARDS, id),
         { ...updates, updatedAt: serverTimestamp() },
         { merge: true }
       );
 
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Production standard updated: ${id}`);
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Production standard updated: ${id}`);
 
       setEditMode(null);
       setStatus({ type: "success", message: t('productionStandards.success_updated', "Standaard bijgewerkt") });
@@ -181,7 +226,7 @@ const ProductionTimeStandardsManager = () => {
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: string) => {
     const confirmed = await showConfirm({
       title: t('productionStandards.deleteTitle', 'Standaard verwijderen'),
       message: t('productionStandards.confirm_delete', "Weet je zeker dat je deze standaard wilt verwijderen?"),
@@ -192,8 +237,8 @@ const ProductionTimeStandardsManager = () => {
     if (!confirmed) return;
     
     try {
-      await deleteDoc(doc(db, ...PATHS.PRODUCTION_STANDARDS, id));
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Production standard deleted: ${id}`);
+      await deleteDoc(docPath(PATHS.PRODUCTION_STANDARDS, id));
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Production standard deleted: ${id}`);
       setStatus({ type: "success", message: t('productionStandards.success_deleted', "Standaard verwijderd") });
       setTimeout(() => setStatus(null), 3000);
     } catch (error) {
@@ -202,16 +247,20 @@ const ProductionTimeStandardsManager = () => {
     }
   };
 
-  const handleImportCSV = (e) => {
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = async (event) => {
+    reader.onload = async (event: ProgressEvent<FileReader>) => {
       try {
         const text = event.target?.result;
+        if (typeof text !== "string") {
+          setStatus({ type: "error", message: t('productionStandards.error_importing', "Fout bij importeren CSV") });
+          return;
+        }
         const lines = text.split('\n');
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        const headers = lines[0].split(',').map((h: string) => h.trim().toLowerCase());
         
         // Expected headers: itemCode, machine, standardMinutes, description
         const itemCodeIdx = headers.indexOf('itemcode') >= 0 ? headers.indexOf('itemcode') : 0;
@@ -226,14 +275,14 @@ const ProductionTimeStandardsManager = () => {
           const line = lines[i].trim();
           if (!line) continue;
           
-          const values = line.split(',').map(v => v.trim());
+          const values = line.split(',').map((v: string) => v.trim());
           const itemCode = values[itemCodeIdx];
           const machine = values[machineIdx];
           const minutes = parseFloat(values[minutesIdx]);
           const description = values[descIdx] || "";
 
           if (itemCode && machine && !isNaN(minutes)) {
-            await addDoc(collection(db, ...PATHS.PRODUCTION_STANDARDS), {
+            await addDoc(colPath(PATHS.PRODUCTION_STANDARDS), {
               itemCode,
               machine,
               standardMinutes: minutes,
@@ -246,7 +295,7 @@ const ProductionTimeStandardsManager = () => {
         }
 
         if (imported > 0) {
-          await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Production standards imported: ${imported} records`);
+          await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Production standards imported: ${imported} records`);
         }
 
         setStatus({ 
@@ -259,7 +308,7 @@ const ProductionTimeStandardsManager = () => {
         setStatus({ type: "error", message: t('productionStandards.error_importing', "Fout bij importeren CSV") });
       } finally {
         setSaving(false);
-        e.target.value = "";
+        if (e.target) e.target.value = "";
       }
     };
     
@@ -286,18 +335,18 @@ const ProductionTimeStandardsManager = () => {
   const handleAutoLearn = async (applyUpdates = false) => {
     setIsLearning(true);
     try {
-      const results = await analyzeAndUpdateStandards({
+      const results = (await analyzeAndUpdateStandards({
         minSamples: 5,
         maxDeviation: 50,
         learningRate: 0.3,
         dryRun: !applyUpdates
-      });
+      })) as AutoLearningResult;
 
       setLearningRecommendations(results.recommendations);
       setShowRecommendations(true);
 
       if (applyUpdates) {
-        await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Production standards auto-updated: ${results.updated} records`);
+        await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Production standards auto-updated: ${results.updated} records`);
         setStatus({ 
           type: "success", 
           message: t('productionStandards.success_auto_updated', { count: results.updated, defaultValue: `${results.updated} standaarden automatisch bijgewerkt` })
@@ -642,9 +691,12 @@ const ProductionTimeStandardsManager = () => {
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
-                          const itemCode = document.getElementById(`edit-item-${std.id}`).value;
-                          const machine = document.getElementById(`edit-machine-${std.id}`).value;
-                          const minutes = parseFloat(document.getElementById(`edit-minutes-${std.id}`).value);
+                          const itemCodeInput = document.getElementById(`edit-item-${std.id}`) as HTMLInputElement | null;
+                          const machineInput = document.getElementById(`edit-machine-${std.id}`) as HTMLInputElement | null;
+                          const minutesInput = document.getElementById(`edit-minutes-${std.id}`) as HTMLInputElement | null;
+                          const itemCode = itemCodeInput?.value || "";
+                          const machine = machineInput?.value || "";
+                          const minutes = parseFloat(minutesInput?.value || "0");
                           handleUpdate(std.id, { itemCode, machine, standardMinutes: minutes });
                         }}
                         className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700"

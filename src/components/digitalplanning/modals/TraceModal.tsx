@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useMemo } from "react";
 import {
   X,
@@ -20,16 +19,33 @@ import StatusBadge from "../common/StatusBadge";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 
+type TraceModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  data?: any[];
+  onRowClick?: (item: any) => void;
+  onRowAction?: ((item: any) => void) | null;
+  rowActionLabel?: string;
+  weekNavigation?: {
+    label: string;
+    onPrevious: () => void;
+    onNext: () => void;
+    canGoNext: boolean;
+    onCurrentWeek: () => void;
+  } | null;
+};
+
 /**
  * TraceModal - Toont de gedetailleerde lijst die hoort bij een KPI tegel.
  */
 
-const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction = null, rowActionLabel = "", weekNavigation = null }) => {
+const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction = null, rowActionLabel = "", weekNavigation = null }: TraceModalProps) => {
   const { t } = useTranslation();
   const [sortConfig, setSortConfig] = useState({ key: 'updatedAt', direction: 'desc' });
   const [searchTerm, setSearchTerm] = useState("");
 
-  const getPriorityLevel = (item) => {
+  const getPriorityLevel = (item: any) => {
     const rawPriority = item?.priority;
     const normalizedPriority =
       rawPriority === true
@@ -44,7 +60,7 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction
     return "normal";
   };
 
-  const getPriorityBadge = (item) => {
+  const getPriorityBadge = (item: any) => {
     const level = getPriorityLevel(item);
     if (level === "immediate") {
       return { label: t('digitalplanning.trace_modal.priority_immediate', '1st Prio'), className: "bg-rose-100 text-rose-700 border border-rose-200" };
@@ -78,14 +94,14 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction
     if (!filteredData) return [];
     let sortableItems = [...filteredData];
     if (sortConfig.key !== null) {
-      sortableItems.sort((a, b) => {
+      sortableItems.sort((a: any, b: any) => {
         let aValue = a[sortConfig.key];
         let bValue = b[sortConfig.key];
 
         // Speciale handling voor datums en fallbacks
         if (sortConfig.key === 'updatedAt') {
-             const getDate = (obj) => obj.updatedAt || obj.lastUpdated || obj.createdAt;
-             const getMillis = (d) => toDateSafe(d)?.getTime() || 0;
+             const getDate = (obj: any) => obj.updatedAt || obj.lastUpdated || obj.createdAt;
+             const getMillis = (d: any) => toDateSafe(d)?.getTime() || 0;
              
              aValue = getMillis(getDate(a));
              bValue = getMillis(getDate(b));
@@ -103,7 +119,7 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction
     return sortableItems;
   }, [filteredData, sortConfig]);
 
-  const requestSort = (key) => {
+  const requestSort = (key: string) => {
     let direction = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
       direction = 'desc';
@@ -111,7 +127,7 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction
     setSortConfig({ key, direction });
   };
 
-  const formatDisplayDate = (dateInput) => {
+  const formatDisplayDate = (dateInput: any) => {
     const date = toDateSafe(dateInput);
     if (!date) return "-";
     try {
@@ -121,7 +137,7 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction
     }
   };
 
-  const SortIcon = ({ columnKey }) => {
+  const SortIcon = ({ columnKey }: { columnKey: string }) => {
     if (sortConfig.key !== columnKey) return <div className="w-3 h-3" />; // Placeholder
     return sortConfig.direction === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
   };
@@ -134,7 +150,7 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction
     doc.setFontSize(10);
     doc.text(`Datum gegenereerd: ${format(new Date(), 'dd-MM-yyyy HH:mm')}`, 14, 22);
 
-    const getDwellTime = (product) => {
+    const getDwellTime = (product: any) => {
       let startTime = new Date();
       if (product.updatedAt) {
         startTime = typeof product.updatedAt.toDate === 'function' ? product.updatedAt.toDate() : new Date(product.updatedAt);
@@ -145,7 +161,7 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction
       return formatDistanceStrict(startTime, new Date(), { locale: nl });
     };
 
-    const tableData = sortedData.map(product => [
+    const tableData = sortedData.map((product: any) => [
       product.lotNumber || "Onbekend",
       product.orderId || product.orderNumber || "Onbekend",
       product.item || product.description || "Onbekend",
@@ -155,7 +171,7 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction
       getDwellTime(product)
     ]);
 
-    doc.autoTable({
+    (doc as any).autoTable({
       startY: 28,
       head: [['Lotnummer', 'Ordernummer', 'Product', 'Oorsprong', 'Huidig Station', 'Status', 'Verblijftijd']],
       body: tableData,

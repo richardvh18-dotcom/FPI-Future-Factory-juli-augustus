@@ -1,4 +1,4 @@
-// @ts-nocheck
+/* eslint-disable */
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { jsPDF } from "jspdf";
@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { 
   collection, 
+  collectionGroup,
   onSnapshot, 
   addDoc, 
   deleteDoc, 
@@ -35,35 +36,142 @@ import {
   getDocs,
   query,
   where,
+  orderBy,
   limit,
-  documentId
+  documentId,
+  type DocumentData,
+  type QuerySnapshot,
 } from "firebase/firestore";
+import { getDriver, applyCalibration, PRINTER_DRIVERS } from "../../utils/printerDrivers";
+import { queuePrintJob } from "../../services/planningSecurityService";
+import { generatePrintData } from "../../utils/zplHelper";
+import {
+  processLabelData,
+  resolveLabelContent,
+  applyLabelLogic,
+  filterTempOrderLabelsByProduct,
+} from "../../utils/labelHelpers";
+import PrintQueueAdminView from "../printer/PrintQueueAdminView";
+import AutoScaledLabelPreview from "../printer/AutoScaledLabelPreview";
+import InternalQrImage from "../../utils/InternalQrImage";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { db, auth, logActivity } from "../../config/firebase";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { isUsbDirectSupported, requestUsbDevice, printRawUsb } from "../../utils/usbPrintService";
+import { executeOrderLabelSearch, loadFactoryMachinePaths, normalizeText } from "../../utils/orderLabelSearch";
 
 // Parse USB ID strings (e.g., "1234" or "0x1234") to numbers
-const parseUsbId = (idStr) => {
+type PrinterConnectionType = "webusb" | "windows_host" | "network";
+type PrinterProtocol = "zpl" | "epl" | "tspl" | "escpos" | "custom";
+
+type PrinterRecord = {
+  id: string;
+  name?: string;
+  ip?: string;
+  port?: string;
+  protocol?: string;
+  dpi?: string;
+  width?: string;
+  height?: string;
+  rollWidthMm?: string;
+  rollType?: string;
+  darkness?: string;
+  speed?: string;
+  linkedStations?: string[];
+  queueStations?: string[];
+  type?: string;
+  isDefault?: boolean;
+  vendorId?: number | string | null;
+  productId?: number | string | null;
+  deviceName?: string;
+  calibrationOffsetXMm?: string;
+  calibrationOffsetYMm?: string;
+  driverModel?: string;
+  [key: string]: unknown;
+};
+
+type PrinterFormData = {
+  name: string;
+  ip: string;
+  port: string;
+  protocol: PrinterProtocol;
+  dpi: string;
+  width: string;
+  height: string;
+  rollWidthMm: string;
+  rollType: string;
+  darkness: string;
+  speed: string;
+  linkedStations: string[];
+  type: PrinterConnectionType;
+  isDefault: boolean;
+  vendorId: number | null;
+  productId: number | null;
+  deviceName: string;
+  calibrationOffsetXMm: string;
+  calibrationOffsetYMm: string;
+  driverModel: string;
+};
+
+type TempOrderRecord = {
+  id: string;
+  orderDisplay?: string;
+  productDisplay?: string;
+  orderId?: string;
+  Order?: string;
+  Productieorder?: string;
+  order?: string;
+  item?: string;
+  itemCode?: string;
+  Item?: string;
+  Artikel?: string;
+  description?: string;
+  Description?: string;
+  Omschrijving?: string;
+  [key: string]: unknown;
+};
+
+type LabelTemplate = {
+  id: string;
+  name?: string;
+  tags?: string[];
+  width?: number;
+  height?: number;
+  [key: string]: unknown;
+};
+
+const getErrMsg = (err: unknown): string => {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message?: unknown }).message || "onbekende fout");
+  }
+  return String(err);
+};
+
+const colPath = (path: string[]) => collection(db, getPathString(path));
+const docPath = (path: string[], id?: string) => (id ? doc(db, `${getPathString(path)}/${id}`) : doc(db, getPathString(path)));
+
+const parseUsbId = (idStr: unknown): number | undefined => {
   if (!idStr) return undefined;
   const trimmed = String(idStr).trim();
   const parsed = parseInt(trimmed.startsWith('0x') ? trimmed : "0x" + trimmed, 16);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 };
-import { getDriver, applyCalibration, PRINTER_DRIVERS } from "../../utils/printerDrivers";
-import { queuePrintJob } from "../../services/planningSecurityService";
-import PrintQueueAdminView from "../printer/PrintQueueAdminView";
-import InternalQrImage from "../../utils/InternalQrImage.tsx";
 
-const PRINTER_PROTOCOLS = ["zpl", "epl", "tspl", "escpos", "custom"];
+const PRINTER_PROTOCOLS: PrinterProtocol[] = ["zpl", "epl", "tspl", "escpos", "custom"];
 const PRINT_SETTINGS_KEY = 'printConfig';
 const CONNECTION_TYPES = {
   WEBUSB: 'webusb',
   WINDOWS_HOST: 'windows_host',
   NETWORK: 'network',
+} as const;
+
+const normalizeProtocol = (value: unknown): PrinterProtocol => {
+  const raw = String(value || "").toLowerCase();
+  return (PRINTER_PROTOCOLS.includes(raw as PrinterProtocol) ? raw : "zpl") as PrinterProtocol;
 };
 
-const normalizePrinterType = (type) => {
+const normalizePrinterType = (type: unknown): PrinterConnectionType => {
   if (type === 'zebra_local') return CONNECTION_TYPES.WEBUSB;
   if (type === CONNECTION_TYPES.WEBUSB || type === CONNECTION_TYPES.WINDOWS_HOST || type === CONNECTION_TYPES.NETWORK) {
     return type;
@@ -71,14 +179,14 @@ const normalizePrinterType = (type) => {
   return CONNECTION_TYPES.WEBUSB;
 };
 
-const getConnectionLabel = (type) => {
+const getConnectionLabel = (type: unknown): string => {
   const normalized = normalizePrinterType(type);
   if (normalized === CONNECTION_TYPES.WINDOWS_HOST) return 'Windows Host';
   if (normalized === CONNECTION_TYPES.NETWORK) return 'Netwerk (IP)';
   return 'WebUSB / Zadig';
 };
 
-const DEFAULT_PRINTER_FORM = {
+const DEFAULT_PRINTER_FORM: PrinterFormData = {
   name: "",
   ip: "",
   port: "9100",
@@ -101,32 +209,32 @@ const DEFAULT_PRINTER_FORM = {
   driverModel: "",  // bijv. 'zebra-zm400-300' of 'lighthouse-cjpro2'
 };
 
-const parseMm = (value, fallback = 0) => {
+const parseMm = (value: unknown, fallback = 0): number => {
   const parsed = Number.parseFloat(String(value ?? "").replace(',', '.'));
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
-const normalizeRollType = (value) => {
+const normalizeRollType = (value: unknown): "gap" | "continuous" | "mark" => {
   const raw = String(value || '').trim().toLowerCase();
   if (raw === 'continuous' || raw === 'mark') return raw;
   return 'gap';
 };
 
-const resolveRollWidthMm = (printerLike = {}) => {
+const resolveRollWidthMm = (printerLike: Partial<PrinterFormData | PrinterRecord> = {}) => {
   return parseMm(printerLike.rollWidthMm ?? printerLike.width, 90);
 };
 
-const mmToDots = (mm, dpi = 203) => Math.round((Number(mm) || 0) * (dpi / 25.4));
+const mmToDots = (mm: unknown, dpi = 203) => Math.round((Number(mm) || 0) * (dpi / 25.4));
 
 // applyCalibrationToRawZpl is vervangen door applyCalibration() uit printerDrivers.js.
 // buildCalibrationCrossZpl gebruikt nu getDriver() voor correcte DPI-berekening.
 
-const buildCalibrationCrossZpl = ({ printer, labelWidthMm = 90, labelHeightMm = 40 }) => {
+const buildCalibrationCrossZpl = ({ printer, labelWidthMm = 90, labelHeightMm = 40 }: { printer: PrinterRecord | PrinterFormData; labelWidthMm?: number; labelHeightMm?: number }) => {
   const driver = getDriver(printer);
   const dpi = driver.nativeDpi;
   const darkness = printer?.darkness ? parseInt(printer.darkness, 10) : driver.defaultDarkness;
   const printSpeed = printer?.speed ? parseInt(printer.speed, 10) : driver.defaultSpeed;
-  const toDots = (mm) => mmToDots(mm, dpi);
+  const toDots = (mm: number) => mmToDots(mm, dpi);
 
   const widthDots = toDots(labelWidthMm);
   const heightDots = toDots(labelHeightMm);
@@ -185,7 +293,7 @@ const buildCalibrationCrossZpl = ({ printer, labelWidthMm = 90, labelHeightMm = 
   return applyCalibration(zpl, printer, driver);
 };
 
-const buildLabelaryPreviewUrl = ({ zpl, dpi = 203, widthMm = 90, heightMm = 40 }) => {
+const buildLabelaryPreviewUrl = ({ zpl, dpi = 203, widthMm = 90, heightMm = 40 }: { zpl: string; dpi?: number; widthMm?: number; heightMm?: number }) => {
   // dpmm: Labelary ondersteunt 6, 8, 12, 24 (dpm = dots per mm)
   const dpmm = dpi >= 500 ? 24 : dpi >= 250 ? 12 : dpi >= 150 ? 8 : 6;
   const widthInch = (widthMm / 25.4).toFixed(2);
@@ -194,7 +302,7 @@ const buildLabelaryPreviewUrl = ({ zpl, dpi = 203, widthMm = 90, heightMm = 40 }
 };
 
 // Helpers voor Lotnummer generatie
-const getMachineCode = (station) => {
+const getMachineCode = (station: unknown): string => {
   if (!station) return "999";
   const normalized = String(station).toUpperCase().trim();
   const baseStation = normalized.startsWith('40') ? normalized.substring(2) : normalized;
@@ -215,7 +323,7 @@ const getMachineCode = (station) => {
     'BA07': '417'
   };
   
-  if (map[baseStation]) return map[baseStation];
+  if (baseStation in map) return map[baseStation as keyof typeof map];
 
   const digits = baseStation.replace(/\D/g, "");
   if (!digits) return "999";
@@ -225,23 +333,42 @@ const getMachineCode = (station) => {
   return `4${digits.slice(-2).padStart(2, "0")}`;
 };
 
-const getIsoWeekAndYear = (d) => {
+const getIsoWeekAndYear = (d: Date): { week: string; year: string } => {
   const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
   const year = date.getUTCFullYear();
   const yearStart = new Date(Date.UTC(year, 0, 1));
-  const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  const weekNo = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   return { week: String(weekNo).padStart(2, '0'), year: String(year) };
 };
 
-const LotPrintModal = ({ onClose, stations, printers, onPrint }) => {
-  const [config, setConfig] = useState({
+const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
+  onClose: () => void;
+  stations: string[];
+  printers: PrinterRecord[];
+  onPrint: (config: {
+    station: string;
+    weekOffset: number;
+    startSeq: number;
+    count: number;
+    mode: "sequential" | "identical";
+    printerId: string;
+  }) => void;
+}) => {
+  const [config, setConfig] = useState<{
+    station: string;
+    weekOffset: number;
+    startSeq: string;
+    count: string;
+    mode: "sequential" | "identical";
+    printerId: string;
+  }>({
     station: stations[0] || "",
     weekOffset: 0, // -1 = vorige week, 0 = huidige week, 1 = volgende week
     startSeq: "1",
     count: "1",
     mode: 'sequential', // 'sequential' | 'identical'
-    printerId: printers.find(p => p.isDefault)?.id || printers[0]?.id || ""
+    printerId: printers.find((p) => p.isDefault)?.id || printers[0]?.id || ""
   });
 
   const parsedStartSeq = Math.max(1, Math.min(9999, parseInt(config.startSeq, 10) || 1));
@@ -276,7 +403,7 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }) => {
                 value={config.station}
                 onChange={e => setConfig({...config, station: e.target.value})}
               >
-                {stations.map(s => <option key={s} value={s}>{s}</option>)}
+                {stations.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div>
@@ -341,7 +468,7 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }) => {
               value={config.printerId}
               onChange={e => setConfig({...config, printerId: e.target.value})}
             >
-              {printers.map(p => <option key={p.id} value={p.id}>{p.name} ({p.type})</option>)}
+              {printers.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.type})</option>)}
             </select>
           </div>
 
@@ -379,16 +506,50 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }) => {
 };
 
 // Tijdelijke legacy label modal (tot 30 maart)
-const TempLabelModal = ({ onClose, printers, onPrint }) => {
+const TempLabelModal = ({ onClose, printers, labelTemplates, labelRules, onPrint, onOpenTemplateManager }: {
+  onClose: () => void;
+  printers: PrinterRecord[];
+  labelTemplates: LabelTemplate[];
+  labelRules: Record<string, unknown>[];
+  onPrint: (orderData: TempOrderRecord, targetPrinterId: string, templateId?: string) => void;
+  onOpenTemplateManager?: () => void;
+}) => {
   const { t } = useTranslation();
+  const { notify } = useNotifications();
   const [orderStr, setOrderStr] = useState("");
-  const [results, setResults] = useState([]);
-  const [initialList, setInitialList] = useState([]);
+  const [results, setResults] = useState<TempOrderRecord[]>([]);
+  const [initialList, setInitialList] = useState<TempOrderRecord[]>([]);
   const [loadingInitialList, setLoadingInitialList] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [printerId, setPrinterId] = useState(printers.find(p => p.isDefault)?.id || printers[0]?.id || "");
+  const [searchDiagnostics, setSearchDiagnostics] = useState<string[]>([]);
+  const [printerId, setPrinterId] = useState<string>(printers.find((p) => p.isDefault)?.id || printers[0]?.id || "");
+  const [selectedTemplateByOrder, setSelectedTemplateByOrder] = useState<Record<string, string>>({});
 
-  const normalizeText = (value) => String(value || "").toLowerCase().trim();
+
+  const getTemplateOptions = (item: TempOrderRecord): LabelTemplate[] => {
+    const normalizedProduct = {
+      itemCode: item.itemCode || item.Item || item.Artikel || item.item || '',
+      productId: item.itemCode || item.Item || item.Artikel || item.item || '',
+      description: item.description || item.Description || item.Omschrijving || '',
+      item: item.item || item.description || item.Description || item.Omschrijving || '',
+      extraCode: item.extraCode || item.Code || '',
+    };
+    return filterTempOrderLabelsByProduct(labelTemplates, normalizedProduct as Record<string, unknown>) as LabelTemplate[];
+  };
+
+  const getPreviewData = (item: TempOrderRecord): Record<string, unknown> => {
+    const order = item.orderId || item.Order || item.Productieorder || item.order || item.id || "ONBEKEND";
+    const itemCode = item.itemCode || item.Item || item.Artikel || item.item || "";
+    const desc = item.description || item.Description || item.Omschrijving || "";
+    const base = processLabelData({
+      ...item,
+      orderNumber: order,
+      productId: itemCode,
+      description: desc,
+      lotNumber: String(item.lotNumber || order),
+    });
+    return applyLabelLogic(base, labelRules || []);
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -396,18 +557,46 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
     const loadInitialList = async () => {
       setLoadingInitialList(true);
       try {
-        const [tempSnap, planSnap, trackSnap] = await Promise.all([
-          getDocs(query(collection(db, ...PATHS.TEMP_PLANNING), limit(120))),
-          getDocs(query(collection(db, ...PATHS.PLANNING), limit(120))),
-          getDocs(query(collection(db, ...PATHS.TRACKING), limit(120))),
+        const planningPrefix = `${getPathString(PATHS.PLANNING)}/`;
+        
+        const loadInitialDeepPaths = async () => {
+          const deepResults: TempOrderRecord[] = [];
+          const machinePairs = await loadFactoryMachinePaths();
+          for (const { productType, machine } of machinePairs) {
+              try {
+                const machinePath = `${getPathString(PATHS.PLANNING)}/${productType}/machines/${machine}/orders`;
+                const machineSnap = await getDocs(query(collection(db, machinePath), limit(200)));
+                machineSnap.docs.forEach((d) => {
+                  const data = (d.data() || {}) as DocumentData;
+                  deepResults.push({
+                    id: d.id,
+                    ...data,
+                    orderDisplay: data.orderId || data.Order || data.Productieorder || data.order || d.id,
+                    productDisplay: data.item || data.itemCode || data.Item || data.Artikel || data.description || data.Description || data.Omschrijving || "-",
+                  });
+                });
+              } catch {
+                // Silent fail: pad bestaat misschien niet
+              }
+          }
+          return deepResults;
+        };
+
+        const [tempSnap, planSnap, trackSnap, scopedPlanningSnap, deepPaths] = await Promise.all([
+          getDocs(query(colPath(PATHS.TEMP_PLANNING), limit(120))),
+          getDocs(query(colPath(PATHS.PLANNING), limit(120))),
+          getDocs(query(colPath(PATHS.TRACKING), limit(120))),
+          getDocs(query(collectionGroup(db, "orders"), limit(250))),
+          loadInitialDeepPaths(),
         ]);
 
         if (!isMounted) return;
 
-        const rows = [];
-        const pushRows = (snap) => {
+        const rows: TempOrderRecord[] = [];
+        const pushRows = (snap: QuerySnapshot<DocumentData>, pathPrefix?: string) => {
           snap.docs.forEach((d) => {
-            const data = d.data() || {};
+            if (pathPrefix && !String(d.ref?.path || "").startsWith(pathPrefix)) return;
+            const data = (d.data() || {}) as DocumentData;
             rows.push({
               id: d.id,
               ...data,
@@ -420,10 +609,14 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
         pushRows(tempSnap);
         pushRows(planSnap);
         pushRows(trackSnap);
-        console.log("📋 InitialList loaded:", rows.length, "items (temp:", tempSnap.docs.length, "plan:", planSnap.docs.length, "track:", trackSnap.docs.length, ")");
+        pushRows(scopedPlanningSnap, planningPrefix);
+        deepPaths.forEach((item) => {
+          if (!rows.find((r) => r.id === item.id)) rows.push(item);
+        });
+        console.log("📋 InitialList loaded:", rows.length, "items (temp:", tempSnap.docs.length, "plan:", planSnap.docs.length, "track:", trackSnap.docs.length, "scoped:", scopedPlanningSnap.docs.length, "deepPaths:", deepPaths.length, ")");
 
-        const dedup = [];
-        const seen = new Set();
+        const dedup: TempOrderRecord[] = [];
+        const seen = new Set<string>();
         rows.forEach((r) => {
           if (seen.has(r.id)) return;
           seen.add(r.id);
@@ -432,7 +625,7 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
 
         dedup.sort((a, b) => String(a.orderDisplay).localeCompare(String(b.orderDisplay), undefined, { numeric: true }));
         setInitialList(dedup);
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("❌ Fout bij laden order labels lijst:", err);
       } finally {
         if (isMounted) setLoadingInitialList(false);
@@ -453,155 +646,20 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
     }
     setLoading(true);
     setResults([]);
+    setSearchDiagnostics([]);
     try {
-      let searchStr = orderStr.trim().toUpperCase();
-      if (searchStr.includes('/')) {
-        searchStr = searchStr.split('/').filter(Boolean).pop();
-      }
+      const { results: finalResults, diagnostics } = await executeOrderLabelSearch(orderStr, initialList as any);
+      setSearchDiagnostics(diagnostics);
+      setResults(finalResults as TempOrderRecord[]);
 
-      let searchOptions = [searchStr];
-      const digitsMatch = searchStr.match(/\d+/);
-      if (digitsMatch) {
-          const digits = digitsMatch[0];
-          if (digits.length >= 3) {
-              // Check if searchStr already starts with a prefix, if not add variations
-              if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
-                  searchOptions.push(`N${digits}`);
-                  searchOptions.push(`N20${digits}`);
-                  searchOptions.push(`N200${digits}`);
-                  searchOptions.push(`N21${digits}`);
-                  searchOptions.push(`N210${digits}`);
-                  searchOptions.push(`P${digits}`);
-              }
-          }
-      }
-
-      const uniqueOptions = Array.from(new Set(searchOptions)).slice(0, 15);
-      console.log("🔍 Search options:", uniqueOptions);
-      const colRef = collection(db, ...PATHS.TEMP_PLANNING);
-      const planRef = collection(db, ...PATHS.PLANNING);
-      const trackRef = collection(db, ...PATHS.TRACKING);
-      let foundDocs = new Map();
-      const addDocs = (snap) => {
-        if (snap && snap.docs) {
-          snap.docs.forEach(d => foundDocs.set(d.id, { id: d.id, ...d.data() }));
-        }
-      };
-      
-      for (const opt of uniqueOptions) {
-          try {
-              const docRef = doc(db, ...PATHS.TEMP_PLANNING, opt);
-              const docSnap = await getDoc(docRef);
-              if (docSnap.exists()) foundDocs.set(docSnap.id, { id: docSnap.id, ...docSnap.data() });
-              
-              const planDocRef = doc(db, ...PATHS.PLANNING, opt);
-              const planDocSnap = await getDoc(planDocRef);
-              if (planDocSnap.exists()) foundDocs.set(planDocSnap.id, { id: planDocSnap.id, ...planDocSnap.data() });
-              
-              const trackDocRef = doc(db, ...PATHS.TRACKING, opt);
-              const trackDocSnap = await getDoc(trackDocRef);
-              if (trackDocSnap.exists()) foundDocs.set(trackDocSnap.id, { id: trackDocSnap.id, ...trackDocSnap.data() });
-          } catch {
-        // Ignore missing documents
-      }
-      }
-      
-      const exactQueries = [
-        getDocs(query(colRef, where("orderId", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Order", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Productieorder", "in", uniqueOptions))),
-        getDocs(query(colRef, where("order", "in", uniqueOptions))),
-        getDocs(query(colRef, where("itemCode", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Item", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Artikel", "in", uniqueOptions))),
-        getDocs(query(planRef, where("orderId", "in", uniqueOptions))),
-        getDocs(query(planRef, where("orderNumber", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Order", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Productieorder", "in", uniqueOptions))),
-        getDocs(query(planRef, where("order", "in", uniqueOptions))),
-        getDocs(query(planRef, where("originalOrderId", "in", uniqueOptions))),
-        getDocs(query(planRef, where("itemCode", "in", uniqueOptions))),
-        getDocs(query(planRef, where("productCode", "in", uniqueOptions))),
-        getDocs(query(planRef, where("articleCode", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Item", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Artikel", "in", uniqueOptions))),
-        getDocs(query(planRef, where("itemDescription", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("orderId", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("orderNumber", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("Order", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("order", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("originalOrderId", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("itemCode", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("item", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("itemDescription", "in", uniqueOptions)))
-      ];
-      const exactSnaps = await Promise.all(exactQueries.map(p => p.catch(() => null)));
-      exactSnaps.forEach(addDocs);
-      console.log("📦 After exact queries, found:", foundDocs.size);
-
-      if (foundDocs.size < 5 && searchStr.length >= 3) {
-        const startOptions = [searchStr];
-        if (digitsMatch && digitsMatch[0].length >= 3) {
-            // Only add prefix variations if searchStr doesn't already start with a prefix
-            if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
-                startOptions.push(`N200${digitsMatch[0]}`);
-                startOptions.push(`N20${digitsMatch[0]}`);
-                startOptions.push(`N210${digitsMatch[0]}`);
-                startOptions.push(`N21${digitsMatch[0]}`);
-            }
-        }
-        
-        const startsWithQueries = [];
-        Array.from(new Set(startOptions)).forEach(opt => {
-            startsWithQueries.push(getDocs(query(colRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("Productieorder", ">=", opt), where("Productieorder", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
+      if (finalResults.length === 0) {
+        setSearchDiagnostics((prev) => {
+          const msgs = prev.length > 0 ? prev : ["Geen matches in fallback queries."];
+          notify({ type: "warning", message: `Geen resultaat gevonden voor '${orderStr}'.` });
+          return msgs;
         });
-
-        const startSnaps = await Promise.all(startsWithQueries.map(p => p.catch(() => null)));
-        startSnaps.forEach(addDocs);
-        console.log("📦 After range queries, found:", foundDocs.size);
       }
-
-      const queryText = normalizeText(orderStr);
-      const clientMatches = initialList.filter((item) => {
-        const orderText = normalizeText(item.orderId || item.Order || item.Productieorder || item.order || item.id);
-        const productText = normalizeText(item.item || item.itemCode || item.Item || item.Artikel || item.description || item.Description || item.Omschrijving);
-        return orderText.includes(queryText) || productText.includes(queryText);
-      });
-      console.log("🔎 Client-side matches:", clientMatches.length);
-
-      const merged = new Map();
-      Array.from(foundDocs.values()).forEach((item) => merged.set(item.id, item));
-      clientMatches.forEach((item) => merged.set(item.id, item));
-
-      const finalResults = Array.from(merged.values());
-      console.log("✅ Final results:", finalResults.length);
-      setResults(finalResults);
-    } catch (e) {
+    } catch (e: unknown) {
       console.error("❌ Zoekfout temp labels:", e);
       console.error("Search string was:", orderStr);
     } finally {
@@ -617,6 +675,21 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
             <Tag className="text-amber-500" /> Legacy Order Labels
           </h3>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full"><X size={20} /></button>
+        </div>
+
+        <div className="mb-4 p-3 bg-emerald-50 border border-emerald-100 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <p className="text-xs font-bold text-emerald-800">
+            Label Templates: groot overzicht per vaste map. Klik op het pennetje om direct in Designer te openen.
+          </p>
+          {onOpenTemplateManager && (
+            <button
+              type="button"
+              onClick={onOpenTemplateManager}
+              className="px-3 py-2 bg-white border border-emerald-200 text-emerald-700 rounded-lg text-[11px] font-black uppercase tracking-wider hover:bg-emerald-100"
+            >
+              Open Label Templates
+            </button>
+          )}
         </div>
 
         <div className="flex gap-2 mb-6">
@@ -640,7 +713,7 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
             value={printerId}
             onChange={(e) => setPrinterId(e.target.value)}
           >
-            {printers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {printers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
 
@@ -649,19 +722,64 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
             {(orderStr.trim() ? results : initialList).map((item, idx) => {
               const orderDisplay = item.orderId || item.Order || item.Productieorder || item.order || item.id || "-";
               const productDisplay = item.item || item.itemCode || item.Item || item.Artikel || item.description || item.Description || item.Omschrijving || "-";
+              const itemKey = String(item.id || orderDisplay);
+              const templateOptions = getTemplateOptions(item);
+              const selectedTemplateId = selectedTemplateByOrder[itemKey] || templateOptions[0]?.id || "";
+              const selectedTemplate = templateOptions.find((tpl) => tpl.id === selectedTemplateId) || templateOptions[0] || null;
+              const previewData = getPreviewData(item);
 
               return (
-                <button
+                <div
                   key={`${item.id || orderDisplay}-${idx}`}
-                  onClick={() => onPrint(item, printerId)}
-                  className="w-full p-4 bg-white border border-slate-200 hover:border-amber-300 hover:bg-amber-50/30 rounded-2xl transition-all text-left flex items-center justify-between gap-4"
+                  className="w-full p-4 bg-white border border-slate-200 hover:border-amber-300 rounded-2xl transition-all"
                 >
-                  <div className="min-w-0">
-                    <p className="text-sm font-black text-slate-800 truncate">{orderDisplay}</p>
-                    <p className="text-xs font-bold text-slate-500 truncate">{productDisplay}</p>
+                  <div className="flex flex-col lg:flex-row gap-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-black text-slate-800 truncate">{orderDisplay}</p>
+                      <p className="text-xs font-bold text-slate-500 truncate">{productDisplay}</p>
+
+                      <div className="mt-3">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Template</label>
+                        {templateOptions.length > 0 ? (
+                          <select
+                            className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                            value={selectedTemplateId}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              setSelectedTemplateByOrder((prev) => ({ ...prev, [itemKey]: value }));
+                            }}
+                          >
+                            {templateOptions.map((tpl) => (
+                              <option key={tpl.id} value={tpl.id}>{String(tpl.name || tpl.id)}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <p className="text-xs italic text-amber-600">Geen passende tijdelijke template gevonden.</p>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => onPrint(item, printerId, selectedTemplateId)}
+                        disabled={!printerId || !selectedTemplateId}
+                        className="mt-3 px-3 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-amber-600 disabled:opacity-50"
+                      >
+                        Print
+                      </button>
+                    </div>
+
+                    <div className="w-full lg:w-64 h-36 bg-white border border-slate-200 rounded-xl p-2 flex items-center justify-center">
+                      {selectedTemplate ? (
+                        <AutoScaledLabelPreview
+                          label={selectedTemplate}
+                          data={previewData}
+                          maxScale={1}
+                        />
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">Geen preview</p>
+                      )}
+                    </div>
                   </div>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 shrink-0">Print</span>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -672,14 +790,29 @@ const TempLabelModal = ({ onClose, printers, onPrint }) => {
         )}
 
         {results.length === 0 && orderStr.trim() && !loading && (
-          <p className="text-center py-8 text-slate-400 font-bold italic">Geen order gevonden in tijdelijke import.</p>
+          <div className="py-6 space-y-2">
+            <p className="text-center text-slate-400 font-bold italic">Geen order gevonden in tijdelijke import.</p>
+            {searchDiagnostics.length > 0 && (
+              <div className="mx-auto max-w-xl text-[11px] font-mono bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-600">
+                <p className="font-black mb-1">Zoekdiagnostiek</p>
+                {searchDiagnostics.map((line, idx) => (
+                  <p key={`${line}-${idx}`} className="break-all">{line}</p>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>
   );
 };
 
-const CalibrationModal = ({ printer, onClose, onPrint, onApply }) => {
+const CalibrationModal = ({ printer, onClose, onPrint, onApply }: {
+  printer: PrinterRecord;
+  onClose: () => void;
+  onPrint: (config: { labelHeightMm: number }) => void;
+  onApply: (payload: { calibrationOffsetXMm: number; calibrationOffsetYMm: number }) => void;
+}) => {
   const [labelHeightMm, setLabelHeightMm] = useState(40);
   const [manualXMm, setManualXMm] = useState(String(parseMm(printer?.calibrationOffsetXMm, 0)));
   const [manualYMm, setManualYMm] = useState(String(parseMm(printer?.calibrationOffsetYMm, 0)));
@@ -721,8 +854,8 @@ const CalibrationModal = ({ printer, onClose, onPrint, onApply }) => {
       });
       const dpi = getDriver(previewPrinter).nativeDpi;
       setPreviewUrl(buildLabelaryPreviewUrl({ zpl, dpi, widthMm: resolveRollWidthMm(previewPrinter), heightMm: labelHeightMm }));
-    } catch (err) {
-      setPreviewError("Preview genereren mislukt: " + err.message);
+    } catch (err: unknown) {
+      setPreviewError("Preview genereren mislukt: " + getErrMsg(err));
     }
   };
 
@@ -848,33 +981,35 @@ const CalibrationModal = ({ printer, onClose, onPrint, onApply }) => {
   );
 };
 
-const AdminPrinterManager = () => {
+const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | null) => void }) => {
   const { t } = useTranslation();
   const { showSuccess, showError, showInfo, showConfirm } = useNotifications();
-  const [activeTab, setActiveTab] = useState("config"); // 'config' | 'queue-stations' | 'queue'
-  const [printers, setPrinters] = useState([]);
+  const [activeTab, setActiveTab] = useState<"config" | "queue-stations" | "queue">("config"); // 'config' | 'queue-stations' | 'queue'
+  const [printers, setPrinters] = useState<PrinterRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [availableStations, setAvailableStations] = useState([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [availableStations, setAvailableStations] = useState<string[]>([]);
   const [selectedQueuePrinterId, setSelectedQueuePrinterId] = useState("");
-  const [queueStations, setQueueStations] = useState([]);
+  const [queueStations, setQueueStations] = useState<string[]>([]);
   const [queueStationToAdd, setQueueStationToAdd] = useState("");
   const [isSavingQueueStations, setIsSavingQueueStations] = useState(false);
   const [showLotModal, setShowLotModal] = useState(false);
   const [showTempModal, setShowTempModal] = useState(false);
-  const [showTestMenu, setShowTestMenu] = useState(null);
-  const [calibrationPrinter, setCalibrationPrinter] = useState(null);
+  const [showTestMenu, setShowTestMenu] = useState<string | null>(null);
+  const [calibrationPrinter, setCalibrationPrinter] = useState<PrinterRecord | null>(null);
+  const [labelTemplates, setLabelTemplates] = useState<LabelTemplate[]>([]);
+  const [labelLogicRules, setLabelLogicRules] = useState<Record<string, unknown>[]>([]);
   const [windowsHostMode, setWindowsHostMode] = useState(false);
   const [savingWindowsHostMode, setSavingWindowsHostMode] = useState(false);
   
   // Form state
-  const [formData, setFormData] = useState(DEFAULT_PRINTER_FORM);
+  const [formData, setFormData] = useState<PrinterFormData>(DEFAULT_PRINTER_FORM);
 
   // Fetch printers
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, ...PATHS.PRINTERS), (snap) => {
-      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const unsub = onSnapshot(colPath(PATHS.PRINTERS), (snap) => {
+      const list: PrinterRecord[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as DocumentData) } as PrinterRecord));
       setPrinters(list);
       setLoading(false);
     });
@@ -882,9 +1017,33 @@ const AdminPrinterManager = () => {
   }, []);
 
   useEffect(() => {
+    const unsub = onSnapshot(colPath(PATHS.LABEL_TEMPLATES), (snap) => {
+      const templates: LabelTemplate[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as DocumentData) } as LabelTemplate));
+      setLabelTemplates(templates);
+    }, (err) => {
+      console.error("Label templates listen error:", err);
+    });
+
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(colPath(PATHS.LABEL_LOGIC), (snap) => {
+      const rules = snap.docs.map((d) => ({ id: d.id, ...(d.data() as DocumentData) }));
+      setLabelLogicRules(rules);
+    }, (err) => {
+      console.error("Label logic listen error:", err);
+    });
+
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
     if (!selectedQueuePrinterId && printers.length > 0) {
       const defaultPrinter = printers.find((p) => p.isDefault) || printers[0];
-      setSelectedQueuePrinterId(defaultPrinter.id);
+      if (defaultPrinter?.id) {
+        setSelectedQueuePrinterId(defaultPrinter.id);
+      }
     }
   }, [printers, selectedQueuePrinterId]);
 
@@ -903,16 +1062,16 @@ const AdminPrinterManager = () => {
 
   // Fetch stations uit factory config
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, ...PATHS.FACTORY_CONFIG), (snap) => {
+    const unsub = onSnapshot(docPath(PATHS.FACTORY_CONFIG), (snap) => {
       if (!snap.exists()) {
         setAvailableStations([]);
         return;
       }
 
-      const data = snap.data();
-      const stations = [];
-      (data.departments || []).forEach(dept => {
-        (dept.stations || []).forEach(s => {
+      const data = (snap.data() || {}) as { departments?: Array<{ stations?: Array<{ name?: string }> }> };
+      const stations: string[] = [];
+      (data.departments || []).forEach((dept) => {
+        (dept.stations || []).forEach((s) => {
           const name = String(s?.name || "").trim();
           if (name) stations.push(name);
         });
@@ -928,9 +1087,9 @@ const AdminPrinterManager = () => {
 
   // Centrale printmodus instelling (AAN/UIT) voor tijdelijke Windows print-host flow
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, ...PATHS.GENERAL_SETTINGS), (snap) => {
-      const data = snap.data() || {};
-      const cfg = data?.[PRINT_SETTINGS_KEY] || {};
+    const unsub = onSnapshot(docPath(PATHS.GENERAL_SETTINGS), (snap) => {
+      const data = (snap.data() || {}) as Record<string, unknown>;
+      const cfg = (data?.[PRINT_SETTINGS_KEY] || {}) as { windowsHostModeEnabled?: boolean };
       setWindowsHostMode(Boolean(cfg.windowsHostModeEnabled));
     }, (err) => {
       console.error('Windows host mode listen error:', err);
@@ -943,7 +1102,7 @@ const AdminPrinterManager = () => {
     const next = !windowsHostMode;
     setSavingWindowsHostMode(true);
     try {
-      await setDoc(doc(db, ...PATHS.GENERAL_SETTINGS), {
+      await setDoc(docPath(PATHS.GENERAL_SETTINGS), {
         [PRINT_SETTINGS_KEY]: {
           windowsHostModeEnabled: next,
           updatedAt: serverTimestamp(),
@@ -955,36 +1114,36 @@ const AdminPrinterManager = () => {
       }, { merge: true });
 
       await logActivity(
-        auth.currentUser?.uid,
+        auth.currentUser?.uid || "system",
         'SETTINGS_UPDATE',
         `Windows Print Host Mode ${next ? 'enabled' : 'disabled'}`
       );
 
       setWindowsHostMode(next);
       showSuccess(`Windows Print Host modus ${next ? 'AAN' : 'UIT'} gezet.`);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Toggle windows host mode error:', err);
-      showError('Opslaan van Windows Print Host modus mislukt: ' + err.message);
+      showError('Opslaan van Windows Print Host modus mislukt: ' + getErrMsg(err));
     } finally {
       setSavingWindowsHostMode(false);
     }
   };
 
-  const saveQueueStations = async (nextStations) => {
+  const saveQueueStations = async (nextStations: string[]) => {
     if (!selectedQueuePrinterId) {
       showError("Kies eerst een printer.");
       return;
     }
     setIsSavingQueueStations(true);
     try {
-      await updateDoc(doc(db, ...PATHS.PRINTERS, selectedQueuePrinterId), {
+      await updateDoc(docPath(PATHS.PRINTERS, selectedQueuePrinterId), {
         queueStations: nextStations,
         updatedAt: serverTimestamp(),
       });
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Queue stations updated for printer ${selectedQueuePrinterId} (${nextStations.length})`);
-    } catch (err) {
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Queue stations updated for printer ${selectedQueuePrinterId} (${nextStations.length})`);
+    } catch (err: unknown) {
       console.error("Queue stations save error:", err);
-      showError("Opslaan queue stations mislukt: " + err.message);
+      showError("Opslaan queue stations mislukt: " + getErrMsg(err));
     } finally {
       setIsSavingQueueStations(false);
     }
@@ -1003,8 +1162,8 @@ const AdminPrinterManager = () => {
     await saveQueueStations(next);
   };
 
-  const handleRemoveQueueStation = async (station) => {
-    const next = queueStations.filter(s => s !== station);
+  const handleRemoveQueueStation = async (station: string) => {
+    const next = queueStations.filter((s) => s !== station);
     setQueueStations(next);
     await saveQueueStations(next);
   };
@@ -1033,42 +1192,42 @@ const AdminPrinterManager = () => {
       // Als deze default wordt, zet anderen uit
       if (formData.isDefault) {
         const updates = printers
-          .filter(p => p.isDefault && p.id !== editingId)
-          .map(p => updateDoc(doc(db, ...PATHS.PRINTERS, p.id), { isDefault: false }));
+          .filter((p) => p.isDefault && p.id !== editingId)
+          .map((p) => updateDoc(docPath(PATHS.PRINTERS, p.id), { isDefault: false }));
         await Promise.all(updates);
       }
 
       if (editingId) {
-        await updateDoc(doc(db, ...PATHS.PRINTERS, editingId), {
+        await updateDoc(docPath(PATHS.PRINTERS, editingId), {
           ...payload,
           updatedAt: serverTimestamp()
         });
       } else {
-        await addDoc(collection(db, ...PATHS.PRINTERS), {
+        await addDoc(colPath(PATHS.PRINTERS), {
           ...payload,
           createdAt: serverTimestamp()
         });
       }
 
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Printer saved: ${formData.name}`);
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Printer saved: ${formData.name}`);
 
       setIsAdding(false);
       setEditingId(null);
       setFormData(DEFAULT_PRINTER_FORM);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Error saving printer:", err);
-      showError(t('adminPrinterManager.saveError') + err.message);
+      showError(t('adminPrinterManager.saveError') + getErrMsg(err));
     }
   };
 
-  const getQueueMetadataBase = (printer) => ({
+  const getQueueMetadataBase = (printer: PrinterRecord) => ({
     source: 'admin-printer-manager',
     targetPrinterName: printer?.name || 'Onbekende printer',
     protocol: (printer?.protocol || 'zpl').toLowerCase(),
     stationId: 'ADMIN'
   });
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id: string) => {
     const confirmed = await showConfirm({
       title: t('adminPrinterManager.deletePrinterTitle', 'Printer verwijderen'),
       message: t('adminPrinterManager.confirmDeletePrinter'),
@@ -1078,47 +1237,47 @@ const AdminPrinterManager = () => {
     });
     if (!confirmed) return;
     try {
-      await deleteDoc(doc(db, ...PATHS.PRINTERS, id));
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Printer deleted: ${id}`);
-    } catch (err) {
+      await deleteDoc(docPath(PATHS.PRINTERS, id));
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Printer deleted: ${id}`);
+    } catch (err: unknown) {
       console.error("Error deleting:", err);
     }
   };
 
-  const handleSetDefault = async (id) => {
+  const handleSetDefault = async (id: string) => {
     try {
       // Zet alle anderen op false
-      const updates = printers.map(p => 
-        updateDoc(doc(db, ...PATHS.PRINTERS, p.id), { 
+      const updates = printers.map((p) => 
+        updateDoc(docPath(PATHS.PRINTERS, p.id), { 
           isDefault: p.id === id 
         })
       );
       await Promise.all(updates);
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Printer default set to: ${id}`);
-    } catch (err) {
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Printer default set to: ${id}`);
+    } catch (err: unknown) {
       console.error("Error setting default:", err);
     }
   };
 
-  const handleApplyCalibration = async (printer, payload) => {
+  const handleApplyCalibration = async (printer: PrinterRecord, payload: { calibrationOffsetXMm: number; calibrationOffsetYMm: number }) => {
     if (!printer?.id) return;
     try {
-      await updateDoc(doc(db, ...PATHS.PRINTERS, printer.id), {
+      await updateDoc(docPath(PATHS.PRINTERS, printer.id), {
         calibrationOffsetXMm: String(payload.calibrationOffsetXMm ?? 0),
         calibrationOffsetYMm: String(payload.calibrationOffsetYMm ?? 0),
         updatedAt: serverTimestamp(),
       });
-      await logActivity(auth.currentUser?.uid, "SETTINGS_UPDATE", `Printer calibration updated: ${printer.name}`);
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Printer calibration updated: ${printer.name}`);
       showSuccess(`Calibratie opgeslagen voor ${printer.name}.`);
       setCalibrationPrinter(null);
       setShowTestMenu(null);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Calibration save error:", err);
-      showError("Calibratie opslaan mislukt: " + err.message);
+      showError("Calibratie opslaan mislukt: " + getErrMsg(err));
     }
   };
 
-  const handleCalibrationPrint = async (printer, { labelHeightMm }) => {
+  const handleCalibrationPrint = async (printer: PrinterRecord, { labelHeightMm }: { labelHeightMm: number }) => {
     if (!printer) return;
     try {
       const rollWidthMm = resolveRollWidthMm(printer);
@@ -1135,13 +1294,18 @@ const AdminPrinterManager = () => {
       );
       setCalibrationPrinter(null);
       setShowTestMenu(null);
-    } catch (err) {
-      showError("Calibratie print mislukt: " + err.message);
+    } catch (err: unknown) {
+      showError("Calibratie print mislukt: " + getErrMsg(err));
     }
   };
 
   // Print dispatch: WebUSB direct voor webusb-printers, anders via wachtrij.
-  const sendPrintJob = async (printerData, printContent, metadata = {}, options = {}) => {
+  const sendPrintJob = async (
+    printerData: PrinterRecord,
+    printContent: string,
+    metadata: Record<string, unknown> = {},
+    options: { allowQueueFallback?: boolean } = {}
+  ): Promise<{ mode: "webusb" | "queue" }> => {
     const { allowQueueFallback = true } = options;
     const printerType = normalizePrinterType(printerData?.type);
 
@@ -1153,10 +1317,11 @@ const AdminPrinterManager = () => {
       try {
         await printRawUsb({ content: printContent, printer: printerData || {} });
         return { mode: 'webusb' };
-      } catch (err) {
+      } catch (err: unknown) {
         console.error("USB print error:", err);
-        const message = String(err?.message || "");
-        const isAccessIssue = err?.name === 'SecurityError' || /access denied|permission|toegang/i.test(message);
+        const e = err as { message?: string; name?: string };
+        const message = String(e?.message || "");
+        const isAccessIssue = e?.name === 'SecurityError' || /access denied|permission|toegang/i.test(message);
         const isClaimIssue = /claiminterface|claim interface|unable to claim/i.test(message);
 
         // Praktische fallback: als WebUSB-interface bezet is (veelvoorkomend op Windows/Zadig),
@@ -1203,8 +1368,8 @@ const AdminPrinterManager = () => {
     return { mode: 'queue' };
   };
 
-  const handleBulkLotPrint = async (config) => {
-    const printer = printers.find(p => p.id === config.printerId);
+  const handleBulkLotPrint = async (config: { printerId: string; station: string; weekOffset: number; count: number; startSeq: number; mode: "sequential" | "identical" }) => {
+    const printer = printers.find((p) => p.id === config.printerId);
     if (!printer) return showError("Selecteer een printer.");
 
     const lotDate = new Date();
@@ -1270,13 +1435,13 @@ const AdminPrinterManager = () => {
           : `${config.count} labels verzonden naar ${printer.name}.`
       );
       setShowLotModal(false);
-    } catch (e) {
-      showError(`Print via ${printer.name} mislukt: ${e.message}`);
+    } catch (e: unknown) {
+      showError(`Print via ${printer.name} mislukt: ${getErrMsg(e)}`);
     }
   };
 
-  const handleTempLegacyPrint = async (orderData, targetPrinterId) => {
-    const printer = printers.find(p => p.id === targetPrinterId);
+  const handleTempLegacyPrint = async (orderData: TempOrderRecord, targetPrinterId: string, templateId?: string) => {
+    const printer = printers.find((p) => p.id === targetPrinterId);
     if (!printer) return showError("Printer niet gevonden.");
     
     const driver = getDriver(printer);
@@ -1284,14 +1449,37 @@ const AdminPrinterManager = () => {
     const printSpeed = printer.speed ? parseInt(printer.speed, 10) : driver.defaultSpeed;
     const dotsPerMm = driver.dotsPerMm;
     
-    const order = orderData.Order || orderData.Productieorder || "ONBEKEND";
-    const item = orderData.Item || orderData.Artikel || "";
-    const desc = orderData.Description || orderData.Omschrijving || "";
+    const order = orderData.orderId || orderData.Order || orderData.Productieorder || orderData.order || orderData.id || "ONBEKEND";
+    const item = orderData.itemCode || orderData.Item || orderData.Artikel || orderData.item || "";
+    const desc = orderData.description || orderData.Description || orderData.Omschrijving || "";
+
+    const normalizedProduct = {
+      itemCode: orderData.itemCode || orderData.Item || orderData.Artikel || orderData.item || '',
+      productId: orderData.itemCode || orderData.Item || orderData.Artikel || orderData.item || '',
+      description: orderData.description || orderData.Description || orderData.Omschrijving || '',
+      item: orderData.item || orderData.description || orderData.Description || orderData.Omschrijving || '',
+      extraCode: orderData.extraCode || orderData.Code || '',
+    };
+
+    const tempCandidates = filterTempOrderLabelsByProduct(labelTemplates, normalizedProduct as Record<string, unknown>) as LabelTemplate[];
+    const explicitTemplate = templateId ? labelTemplates.find((tpl) => tpl.id === templateId) : null;
+    const selectedTemplate = explicitTemplate || tempCandidates[0] || null;
     
-    // Tijdelijk basis ZPL zonder verplichte lotnummers
-    // Pas dit eventueel later aan via de LabelDesigner
-    const qrMag = Math.max(2, Math.round(4 * driver.nativeDpi / 203));
-    let zpl = `^XA
+    let zpl = "";
+    if (selectedTemplate) {
+      const labelData = processLabelData({
+        ...orderData,
+        orderNumber: order,
+        productId: item,
+        description: desc,
+        lotNumber: String(orderData.lotNumber || order),
+      });
+      const processedData = applyLabelLogic(labelData, labelLogicRules);
+      zpl = await generatePrintData(selectedTemplate as any, processedData as any, driver.nativeDpi, resolveLabelContent as any, t as any);
+    } else {
+      // Fallback zolang er geen passende tijdelijke template gevonden is.
+      const qrMag = Math.max(2, Math.round(4 * driver.nativeDpi / 203));
+      zpl = `^XA
 ^PW${Math.round(90 * dotsPerMm)}
 ~SD${darkness}
 ^PR${printSpeed}
@@ -1300,6 +1488,7 @@ const AdminPrinterManager = () => {
 ^FO${Math.round(5 * dotsPerMm)},${Math.round(25 * dotsPerMm)}^A0N,${Math.round(5 * dotsPerMm)},${Math.round(4 * dotsPerMm)}^FD${desc.substring(0, 40)}^FS
 ^FO${Math.round(60 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^BQN,2,${qrMag}^FDQA,${order}^FS
 ^XZ`;
+    }
     zpl = applyCalibration(zpl, printer, driver);
 
     try {
@@ -1312,8 +1501,8 @@ const AdminPrinterManager = () => {
           ? `Legacy label voor ${order} in wachtrij gezet voor ${printer.name}`
           : `Legacy label voor ${order} verzonden naar ${printer.name}`
       );
-    } catch (e) {
-      showError("Print Fout: " + e.message);
+    } catch (e: unknown) {
+      showError("Print Fout: " + getErrMsg(e));
     }
   };
 
@@ -1331,10 +1520,11 @@ const AdminPrinterManager = () => {
         productId: device.productId,
         deviceName: device.productName || "USB Printer"
       }));
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Pairing error:", err);
-      if (err.name !== 'NotFoundError') {
-          showError("Koppelen geannuleerd of mislukt: " + err.message);
+      const e = err as { name?: string; message?: string };
+      if (e.name !== 'NotFoundError') {
+          showError("Koppelen geannuleerd of mislukt: " + (e.message || "onbekende fout"));
       }
     }
   };
@@ -1374,15 +1564,16 @@ const AdminPrinterManager = () => {
       }));
 
       showSuccess(`USB opnieuw gekoppeld: ${device.productName || 'Onbekende printer'}`);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('USB reset/reconnect error:', err);
-      if (err?.name !== 'NotFoundError') {
-        showError('USB reset/reconnect mislukt: ' + (err?.message || 'onbekende fout'));
+      const e = err as { name?: string; message?: string };
+      if (e?.name !== 'NotFoundError') {
+        showError('USB reset/reconnect mislukt: ' + (e?.message || 'onbekende fout'));
       }
     }
   };
 
-  const buildProtocolTestPayload = (printer, { lengthMm = 50, title = 'TEST PRINT' } = {}) => {
+  const buildProtocolTestPayload = (printer: PrinterRecord, { lengthMm = 50, title = 'TEST PRINT' }: { lengthMm?: number; title?: string } = {}) => {
     const protocol = (printer?.protocol || "zpl").toLowerCase();
     const testDriver = getDriver(printer);
     const dpi = testDriver.nativeDpi;
@@ -1438,7 +1629,7 @@ const AdminPrinterManager = () => {
     return applyCalibration(zpl, printer, getDriver(printer));
   };
 
-  const handleTestPrint = async (printer) => {
+  const handleTestPrint = async (printer: PrinterRecord) => {
     const payload = buildProtocolTestPayload(printer, { lengthMm: 50, title: 'TEST PRINT' });
     setShowTestMenu(null);
 
@@ -1451,12 +1642,12 @@ const AdminPrinterManager = () => {
           ? `Testprint in wachtrij gezet voor ${printer.name}.`
           : t('adminPrinterManager.usbDirectPrintSent')
       );
-    } catch (err) {
-      showError("USB Print Fout: " + err.message);
+    } catch (err: unknown) {
+      showError("USB Print Fout: " + getErrMsg(err));
     }
   };
 
-  const handleLengthTestPrint = async (printer, lengthMm) => {
+  const handleLengthTestPrint = async (printer: PrinterRecord, lengthMm: number) => {
     const payload = buildProtocolTestPayload(printer, {
       lengthMm,
       title: `TEST ${lengthMm}MM`,
@@ -1473,8 +1664,8 @@ const AdminPrinterManager = () => {
           ? `Testlabel van ${lengthMm}mm in wachtrij gezet voor ${printer.name}.`
           : `Testlabel van ${lengthMm}mm verzonden naar ${printer.name}.`
       );
-    } catch (err) {
-      showError("Test Print Fout: " + err.message);
+    } catch (err: unknown) {
+      showError("Test Print Fout: " + getErrMsg(err));
     }
   };
 
@@ -1515,19 +1706,19 @@ const AdminPrinterManager = () => {
       }
 
       setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-    } catch (err) {
+    } catch (err: unknown) {
       if (popup && !popup.closed) popup.close();
       console.error('A4 QR PDF error:', err);
-      showError('A4 PDF genereren mislukt: ' + (err?.message || 'onbekende fout'));
+      showError('A4 PDF genereren mislukt: ' + getErrMsg(err));
     }
   };
 
-  const handleEdit = (printer) => {
+  const handleEdit = (printer: PrinterRecord) => {
     setFormData({
       name: printer.name || "",
       ip: printer.ip || "",
       port: printer.port || "9100",
-      protocol: printer.protocol || "zpl",
+      protocol: normalizeProtocol(printer.protocol),
       dpi: printer.dpi || "203",
       width: String(resolveRollWidthMm(printer)),
       height: printer.height || "50",
@@ -1538,8 +1729,8 @@ const AdminPrinterManager = () => {
       linkedStations: printer.linkedStations || [],
       type: normalizePrinterType(printer.type),
       isDefault: printer.isDefault || false,
-      vendorId: printer.vendorId ?? null,
-      productId: printer.productId ?? null,
+      vendorId: parseUsbId(printer.vendorId) ?? null,
+      productId: parseUsbId(printer.productId) ?? null,
       deviceName: printer.deviceName || "",
       calibrationOffsetXMm: String(parseMm(printer.calibrationOffsetXMm, 0)),
       calibrationOffsetYMm: String(parseMm(printer.calibrationOffsetYMm, 0)),
@@ -1758,7 +1949,7 @@ const AdminPrinterManager = () => {
               <select
                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:border-blue-500"
                 value={formData.protocol}
-                onChange={e => setFormData({...formData, protocol: e.target.value})}
+                onChange={(e) => setFormData({ ...formData, protocol: normalizeProtocol(e.target.value) })}
               >
                 {PRINTER_PROTOCOLS.map(protocol => (
                   <option key={protocol} value={protocol}>{t(`adminPrinterManager.protocol${protocol.toUpperCase()}`)}</option>
@@ -1891,7 +2082,17 @@ const AdminPrinterManager = () => {
       )}
 
       {showTempModal && (
-        <TempLabelModal onClose={() => setShowTempModal(false)} printers={printers} onPrint={handleTempLegacyPrint} />
+        <TempLabelModal
+          onClose={() => setShowTempModal(false)}
+          printers={printers}
+          labelTemplates={labelTemplates}
+          labelRules={labelLogicRules}
+          onPrint={handleTempLegacyPrint}
+          onOpenTemplateManager={() => {
+            setShowTempModal(false);
+            onNavigate?.("label_manager");
+          }}
+        />
       )}
 
       {calibrationPrinter && (
