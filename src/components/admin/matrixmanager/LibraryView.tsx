@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Layers,
   Hash,
@@ -19,7 +19,6 @@ import LibrarySection from "./LibrarySection";
  * Beheert de configuratie-arrays die worden opgeslagen in GENERAL_SETTINGS.
  * Deze component koppelt de UI (LibrarySection) aan de centrale state.
  */
-import { useState } from "react";
 
 type Blueprint = {
   naam?: string;

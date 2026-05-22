@@ -295,6 +295,11 @@ export const en = {
           title: "Mobile Inspector",
           desc: "Quality control and inspection on the floor.",
           action: "Start Inspection"
+        },
+        qc_hub: {
+          title: "QC Hub",
+          desc: "Lab measurements and quality checks on produced products.",
+          action: "Open QC Hub"
         }
       }
     },
@@ -1059,6 +1064,8 @@ export const en = {
         pipe_desc: "Piping & Lamination",
         spools_title: "Spools Productions",
         spools_desc: "Assembly & Prefab",
+        qc_title: "QC",
+        qc_desc: "Quality Control & Release",
         planner_title: "Central Planner",
         planner_desc: "Work Preparation & Planning",
         system_error_title: "System Error in Planning",
@@ -1603,8 +1610,13 @@ export const en = {
       back_to_hub: "Back to Production Hub",
       stations: "Stations",
       select_instruction: "Select a workstation or management option",
+      virtual_lot_issuance: "Virtual Lot Issuance",
       no_assigned: "No stations assigned to your account",
-      teamleader_hub_html: "Teamleader<br/>Hub"
+      teamleader_hub_html: "Teamleader<br/>Hub",
+      workplace_not_configured: "Workplace {{name}} ({{type}}) is not linked to a production flow yet.",
+      workplaces: {
+        chemical_lab: "Chemical Lab"
+      }
     },
     rejection: {
       title: "Quality Analysis",

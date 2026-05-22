@@ -51,6 +51,7 @@ const ShopFloorMobileApp = lazy(() =>
 const CalculatorView = lazy(() => import("./components/CalculatorView"));
 const AiAssistantView = lazy(() => import("./components/ai/AiAssistantView"));
 const AdminLogView = lazy(() => import("./components/admin/AdminLogView"));
+const QCHub = lazy(() => import("./components/qc/QCHub"));
 
 const PrintQueueAdminView = lazy(() =>
   import("./components/printer/PrintQueueAdminView")
@@ -418,6 +419,7 @@ const App = () => {
                 <Route path="/inspector" element={<ShopFloorMobileApp />} />
                 <Route path="/calculator" element={<CalculatorView />} />
                 <Route path="/assistant" element={<AiAssistantView />} />
+                <Route path="/qc/*" element={<QCHub />} />
                 <Route path="/messages" element={<AdminMessagesView user={user as any} />} />
                 <Route path="/printer-queue" element={<PrintQueueAdminView />} />
                 <Route path="/admin/*" element={<AdminDashboard />} />

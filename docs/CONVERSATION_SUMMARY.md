@@ -1,3 +1,78 @@
+## Update sessie 22 mei 2026 (QC Hub, Lab Metingen, ISO Compliance & PDF Paspoort)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Kwaliteitscontrole (QC) Hub & Lab Metingen:**
+- De `QCHub` is volledig dynamisch gemaakt en luistert realtime (via `onSnapshot`) naar `qc_measurements` en `qc_inspections`.
+- Weergave gesplitst: In de Lab Metingen tab kan nu geschakeld worden tussen **Brix Metingen** en **Tg Metingen**.
+- Metingen worden nu overzichtelijk gegroepeerd weergegeven per ISO-weeknummer.
+
+**2. ISO 9001/27001 Backend Logging & Security:**
+- Alle invoer (Labmetingen en Vloerinspecties) loopt nu via veilige backend Cloud Functions (`saveQcMeasurement`, `saveQcInspection`).
+- Deze callables maken gebruik van de `withAudit` wrapper, waardoor elke meting en inspectie gegarandeerd en onveranderbaar wordt gelogd in het Audit Log.
+- De Firestore rules voor `/qc_measurements` en `/qc_inspections` zijn dichtgezet voor client-writes (`allow write: if false;`), zodat datamanipulatie buiten de backend om onmogelijk is.
+- Ingevulde Brix- en Tg-waarden worden op de backend nu direct weggeschreven naar het hoofddossier van de order in `tracked_products` (onder `measurements.Brix` en `measurements.Tg`). Er wordt geverifieerd of het ingevulde lotnummer daadwerkelijk bestaat.
+
+**3. Rapportage & PDF Paspoort:**
+- **Bulk Exports:** Labmetingen zijn toegevoegd als extra kolom in de Excel en PDF exports binnen de `TeamleaderExportModal`.
+- **Product Paspoort:** In de `ProductDossierModal` is een nieuwe knop **PDF Paspoort** toegevoegd. Deze genereert direct in de browser een strak keuringsrapport voor één specifiek lot (inclusief metingen, eventuele afkeurredenen en de volledige proceshistorie).
+
+**4. Navigatie & Portal Flow:**
+- De portaaltegel is aangepast van "QC Hub" naar "QC Stations", welke netjes navigeert naar de afdelingsselector voor de Kwaliteitsafdeling.
+- De dubbele "QC Hub" tegel is daar verwijderd; de bestaande tegel "Chemisch Lab" stuurt gebruikers nu direct door naar de nieuwe `/qc` omgeving.
+- Terug-knoppen in de QC Hub navigeren logisch terug naar de "QC Stations" overzicht in plaats van helemaal terug naar het hoofdmenu.
+
+**Hervatpunt voor de volgende sessie:**
+- Toevoegen van extra velden (zoals Machine en Ploeg Vroeg/Middag/Nacht) in het formulier voor nieuwe labmetingen (`AddLabMeasurementModal`).
+- Functionaliteit rond de offline caching voor QC checken (als operators hun verbinding verliezen in de fabriek).
+
+---
+
+## Update sessie 21 mei 2026 (Header ruimtebesparing & Vite Import Fix)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. UI/UX: Ruimtebesparing in Matrix Manager:**
+- De header van het "Matrix Manager" admin paneel en de bijbehorende navigatietabs (zoals Beschikbaarheid, Tolerantie Manager, Bibliotheek, etc.) zijn samengevoegd in één strakke, vaste menubalk.
+- Overtollige en dubbele headers (zoals extra "Matrix Hub" teksten en de globale "Root Synchronized" knop) in `AdminDashboard.tsx` en `AdminMatrixManager.tsx` zijn slim geïntegreerd of weggehaald om maximale verticale schermruimte terug te winnen voor de datatabellen.
+
+**2. Bugfix: Vite Dynamische Import Fout (Lazy Loading):**
+- Vite liet de applicatie crashen met de melding: `TypeError: Failed to fetch dynamically imported module: ... AdminMatrixManager.tsx`.
+- Dit werd veroorzaakt door het plaatsen van `import`-statements halverwege het bestand (na de declaratie van Types en constanten), wat onderliggende ES Module syntax breekt.
+- Alle child-component imports in `AdminMatrixManager.tsx` en `LibraryView.tsx` zijn netjes naar de top van de bestanden verplaatst, waarmee de compilatiefout direct is opgelost.
+
+**Hervatpunt voor de volgende sessie:**
+- De applicatie bouwt weer zonder module-fouten. 
+- De Matrix Manager laadt correct (via lazy loading) en is nu veel ruimte-efficiënter ingericht voor weergave op allerlei schermformaten.
+
+---
+
+## Update sessie 21 mei 2026 (Toleranties & Kwaliteitscontrole)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Tolerantie Manager Bulk-Acties:**
+- In de Matrix Hub (Toleranties) zijn range-filters toegevoegd voor Diameter (ID), Drukklasse (PN) en Hoek.
+- Met de nieuwe "Bulk" knop kun je een ingestelde tolerantie in één keer toepassen op alle gefilterde producten.
+
+**2. Live Kwaliteitsvalidatie (Lossen):**
+- Bij het gereedmelden (o.a. op station Lossen) haalt het systeem nu automatisch de actieve toleranties en de nominale streefwaarden op uit de database.
+- Operators zien direct de streefwaarde en tolerantie (bijv. "Doel: 12.5 mm (+/- 1.5)").
+- Velden kleuren groen (binnen tolerantie) of rood (buiten tolerantie) tijdens het typen.
+- Een duidelijke infotekst is toegevoegd dat rode velden de voortgang (nog) niet blokkeren tijdens de testfase.
+
+**3. Metingen opslaan en inzien:**
+- Ingevulde metingen worden nu altijd opgeslagen en correct weergegeven in het Product Dossier en het Teamleader Order Overzicht (`TW: 4.5 | TWcb: 3.2`).
+- Metingen worden ook volledig meegenomen in het Audit Log voor ISO 9001 traceerbaarheid.
+
+**4. Nieuwe meting na herstel (Reparatie):**
+- Zodra een product hersteld wordt vanuit "Tijdelijke Afkeur" of vanuit een actieve reparatie, dwingt de gereedmeld-popup nu af dat er een *nieuwe* set metingen wordt ingevoerd voordat het product terug de flow in mag.
+
+---
+
 ## Update sessie 21 mei 2026 (Vloercontrole & Actieve Lots uitgebreid)
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)

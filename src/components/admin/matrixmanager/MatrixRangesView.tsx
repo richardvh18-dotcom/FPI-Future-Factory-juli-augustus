@@ -11,6 +11,7 @@ import {
   Search,
   Link2,
   Ruler,
+  Layers,
 } from "lucide-react";
 import { db, auth, logActivity } from "../../../config/firebase";
 import {
@@ -22,6 +23,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { PATHS, getPathString } from "../../../config/dbPaths";
+import { useNotifications } from "../../../contexts/NotificationContext";
 
 type ParsedSpec = {
   id: string;
@@ -43,7 +45,9 @@ type SpecRecord = {
 
 type ToleranceField = {
   enabled: boolean;
-  tolerance: string;
+  tolerance?: string; // Keep for backward compatibility.
+  plus?: string;
+  minus?: string;
 };
 
 type ToleranceConfigItem = {
@@ -96,6 +100,10 @@ const META_KEYS = new Set([
   "storagePath",
   "type",
   "sourceType",
+  "__parsed",
+  "articleCode",
+  "migratedAt",
+  "sourceNode",
 ]);
 
 const FITTING_FIELD_ORDER = ["TW", "L", "Lo", "R", "Weight"];
@@ -203,6 +211,15 @@ const MatrixRangesView = () => {
   const [selectedAngle, setSelectedAngle] = useState("");
   const [selectedSourceId, setSelectedSourceId] = useState("");
   const [draftTolerances, setDraftTolerances] = useState<Record<string, ToleranceField>>({});
+
+  const { showConfirm, notify } = useNotifications();
+  const [minPn, setMinPn] = useState("");
+  const [maxPn, setMaxPn] = useState("");
+  const [minId, setMinId] = useState("");
+  const [maxId, setMaxId] = useState("");
+  const [minAngle, setMinAngle] = useState("");
+  const [maxAngle, setMaxAngle] = useState("");
+  const [showRangeFilters, setShowRangeFilters] = useState(false);
 
   useEffect(() => {
     const docRef = docPath(PATHS.MATRIX_CONFIG);
@@ -333,13 +350,31 @@ const MatrixRangesView = () => {
       if (selectedConnection && parsed.connection !== selectedConnection) return false;
       if (selectedTypeKey && parsed.typeKey !== selectedTypeKey) return false;
       if (selectedAngle && parsed.angle !== selectedAngle) return false;
+
+      if (minPn || maxPn) {
+        const pnNum = Number(parsed.pressure);
+        if (minPn && pnNum < Number(minPn)) return false;
+        if (maxPn && pnNum > Number(maxPn)) return false;
+      }
+      if (minId || maxId) {
+        const idNum = Number(parsed.diameter);
+        if (minId && idNum < Number(minId)) return false;
+        if (maxId && idNum > Number(maxId)) return false;
+      }
+      if (minAngle || maxAngle) {
+        if (!parsed.angle) return false;
+        const angleNum = Number(parsed.angle);
+        if (minAngle && angleNum < Number(minAngle)) return false;
+        if (maxAngle && angleNum > Number(maxAngle)) return false;
+      }
+
       if (!term) return true;
       return [record.id, parsed.typeLabel, parsed.extraCode, parsed.diameter, parsed.pressure]
         .join(" ")
         .toUpperCase()
         .includes(term);
     });
-  }, [fittingRecords, search, selectedConnection, selectedTypeKey, selectedAngle]);
+  }, [fittingRecords, search, selectedConnection, selectedTypeKey, selectedAngle, minPn, maxPn, minId, maxId, minAngle, maxAngle]);
 
   const selectedFitting = useMemo(
     () => matchingFittings.find((record) => record.id === selectedSourceId) || fittingRecords.find((record) => record.id === selectedSourceId) || null,
@@ -391,9 +426,24 @@ const MatrixRangesView = () => {
 
     selectedFields.forEach((field) => {
       const current = existing?.tolerances?.[field.key];
+      
+      let plusValue = current?.plus ?? '';
+      let minusValue = current?.minus ?? '';
+
+      // Backwards compatibility: parse old string format
+      if ((!plusValue && !minusValue) && typeof current?.tolerance === 'string' && current.tolerance) {
+        const tol = current.tolerance.trim();
+        if (tol.startsWith('+/-') || tol.startsWith('±')) {
+          const val = tol.replace(/[±+/-]/g, '').trim();
+          plusValue = val;
+          minusValue = val;
+        }
+      }
+
       nextDraft[field.key] = {
         enabled: Boolean(current?.enabled),
-        tolerance: current?.tolerance || "",
+        plus: String(plusValue),
+        minus: String(minusValue),
       };
     });
 
@@ -425,20 +475,82 @@ const MatrixRangesView = () => {
     setDraftTolerances((prev) => ({
       ...prev,
       [fieldKey]: {
+        ...prev[fieldKey],
         enabled: !prev[fieldKey]?.enabled,
-        tolerance: prev[fieldKey]?.tolerance || "",
+        plus: prev[fieldKey]?.plus || '',
+        minus: prev[fieldKey]?.minus || '',
       },
     }));
   };
 
-  const handleToleranceChange = (fieldKey: string, value: string) => {
-    setDraftTolerances((prev) => ({
-      ...prev,
-      [fieldKey]: {
-        enabled: prev[fieldKey]?.enabled ?? true,
-        tolerance: value,
-      },
-    }));
+  const handleToleranceChange = (fieldKey: string, value: string, type: 'plus' | 'minus') => {
+    setDraftTolerances((prev) => {
+      const newDraft = { ...prev };
+      const fieldData = newDraft[fieldKey] || { enabled: true };
+      
+      const updatedField = {
+        ...fieldData,
+        [type]: value,
+      };
+      delete updatedField.tolerance;
+      newDraft[fieldKey] = updatedField;
+      return newDraft;
+    });
+  };
+
+  const handleBulkAddTolerances = async () => {
+    if (!selectedFitting) return notify("Selecteer eerst een referentie-fitting links.");
+    if (matchingFittings.length === 0) return;
+
+    const activeTolerances = Object.fromEntries(
+      Object.entries(draftTolerances).filter(([, value]) => value?.enabled)
+    );
+
+    if (Object.keys(activeTolerances).length === 0) {
+      return notify("Vink minimaal één tolerantieveld aan.");
+    }
+
+    const confirmed = await showConfirm({
+      title: "Bulk Toleranties Toepassen",
+      message: `Je staat op het punt deze toleranties toe te passen op ALLE ${matchingFittings.length} gefilterde items uit de linker lijst. Bestaande configuraties voor deze items worden overschreven.\n\nDoorgaan?`,
+      confirmText: "Toepassen",
+      cancelText: "Annuleren",
+      tone: "warning"
+    });
+
+    if (!confirmed) return;
+
+    setConfig((prev) => {
+      const currentItems = Array.isArray(prev.toleranceItems) ? [...prev.toleranceItems] : [];
+
+      matchingFittings.forEach((record) => {
+        const matchedSocket = socketLookup.get(buildLookupKey(record.__parsed));
+        const item = {
+          sourceId: record.id,
+          sourceDisplayName: getDisplayName(record.__parsed),
+          fittingId: record.id,
+          socketId: matchedSocket?.id || "",
+          connection: record.__parsed.connection,
+          typeKey: record.__parsed.typeKey,
+          typeLabel: record.__parsed.typeLabel,
+          angle: record.__parsed.angle,
+          pressure: record.__parsed.pressure,
+          diameter: record.__parsed.diameter,
+          extraCode: record.__parsed.extraCode,
+          tolerances: activeTolerances,
+          updatedAt: new Date().toISOString(),
+        };
+
+        const index = currentItems.findIndex((entry) => entry.sourceId === item.sourceId);
+        if (index >= 0) currentItems[index] = item;
+        else currentItems.push(item);
+      });
+
+      return { ...prev, toleranceItems: currentItems };
+    });
+
+    setStatus({ type: "success", msg: `${matchingFittings.length} configuraties bulk-bijgewerkt.` });
+    setTimeout(() => setStatus(null), 3000);
   };
 
   const handleAddOrUpdateTolerance = () => {
@@ -528,8 +640,8 @@ const MatrixRangesView = () => {
   }
 
   return (
-    <div className="h-full overflow-y-auto p-8 bg-slate-50 text-left custom-scrollbar animate-in fade-in">
-      <div className="max-w-7xl mx-auto space-y-6">
+    <div className="animate-in fade-in text-left">
+      <div className="w-full mx-auto space-y-6">
         <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm flex flex-col xl:flex-row justify-between xl:items-center gap-6">
           <div className="text-left">
             <h3 className="text-xl font-black text-slate-900 uppercase italic leading-none">
@@ -569,7 +681,7 @@ const MatrixRangesView = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 xl:grid-cols-[420px_minmax(0,1fr)] gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-[380px_minmax(0,1fr)] 2xl:grid-cols-[420px_minmax(0,1fr)] gap-6">
           <div className="space-y-6">
             <div className="bg-white rounded-[35px] border border-slate-200 shadow-sm overflow-hidden">
               <div className="p-6 border-b border-slate-100 bg-slate-50/70">
@@ -642,6 +754,43 @@ const MatrixRangesView = () => {
                       className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-xs font-bold outline-none focus:border-blue-500"
                     />
                   </div>
+                </div>
+
+                <div className="pt-2">
+                  <button 
+                    onClick={() => setShowRangeFilters(!showRangeFilters)}
+                    className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                  >
+                    {showRangeFilters ? "- Verberg Range Filters" : "+ Toon Range Filters (voor Bulk Selectie)"}
+                  </button>
+                  {showRangeFilters && (
+                    <div className="mt-3 p-4 bg-blue-50 border border-blue-100 rounded-2xl grid grid-cols-2 gap-3 animate-in slide-in-from-top-2">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-500">ID Range (mm)</label>
+                        <div className="flex items-center gap-2">
+                          <input placeholder="Min ID" value={minId} onChange={e => setMinId(e.target.value)} type="number" className="w-full p-2 rounded-lg text-xs font-bold border border-blue-200 outline-none focus:border-blue-500" />
+                          <span className="text-slate-400">-</span>
+                          <input placeholder="Max ID" value={maxId} onChange={e => setMaxId(e.target.value)} type="number" className="w-full p-2 rounded-lg text-xs font-bold border border-blue-200 outline-none focus:border-blue-500" />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black uppercase text-slate-500">PN Range (bar)</label>
+                        <div className="flex items-center gap-2">
+                          <input placeholder="Min PN" value={minPn} onChange={e => setMinPn(e.target.value)} type="number" className="w-full p-2 rounded-lg text-xs font-bold border border-blue-200 outline-none focus:border-blue-500" />
+                          <span className="text-slate-400">-</span>
+                          <input placeholder="Max PN" value={maxPn} onChange={e => setMaxPn(e.target.value)} type="number" className="w-full p-2 rounded-lg text-xs font-bold border border-blue-200 outline-none focus:border-blue-500" />
+                        </div>
+                      </div>
+                      <div className="space-y-1 col-span-2">
+                        <label className="text-[9px] font-black uppercase text-slate-500">Hoek Range (°)</label>
+                        <div className="flex items-center gap-2">
+                          <input placeholder="Min Hoek" value={minAngle} onChange={e => setMinAngle(e.target.value)} type="number" className="w-full p-2 rounded-lg text-xs font-bold border border-blue-200 outline-none focus:border-blue-500" />
+                          <span className="text-slate-400">-</span>
+                          <input placeholder="Max Hoek" value={maxAngle} onChange={e => setMaxAngle(e.target.value)} type="number" className="w-full p-2 rounded-lg text-xs font-bold border border-blue-200 outline-none focus:border-blue-500" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="border border-slate-100 rounded-2xl overflow-hidden">
@@ -736,14 +885,25 @@ const MatrixRangesView = () => {
                   Kies een fittingrecord. De manager combineert automatisch de fittingtekening met de bijbehorende moftekening en laat alle beschikbare velden zien.
                 </p>
               </div>
-              <button
-                onClick={handleAddOrUpdateTolerance}
-                disabled={!selectedFitting}
-                className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg disabled:opacity-40 flex items-center gap-2"
-              >
-                <Plus size={16} />
-                {existingConfigIndex >= 0 ? "Werk selectie bij" : "Voeg selectie toe"}
-              </button>
+              <div className="flex flex-col md:flex-row gap-2">
+                <button
+                  onClick={handleBulkAddTolerances}
+                  disabled={!selectedFitting || matchingFittings.length === 0}
+                  className="px-5 py-3 bg-blue-100 text-blue-700 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-200 transition-all shadow-sm disabled:opacity-40 flex items-center gap-2"
+                  title="Pas in één keer toe op alle gefilterde fittings uit de linkerkolom"
+                >
+                  <Layers size={16} />
+                  Bulk ({matchingFittings.length})
+                </button>
+                <button
+                  onClick={handleAddOrUpdateTolerance}
+                  disabled={!selectedFitting}
+                  className="px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg disabled:opacity-40 flex items-center gap-2"
+                >
+                  <Plus size={16} />
+                  {existingConfigIndex >= 0 ? "Werk selectie bij" : "Voeg selectie toe"}
+                </button>
+              </div>
             </div>
 
             {!selectedFitting ? (
@@ -754,7 +914,7 @@ const MatrixRangesView = () => {
                 </p>
               </div>
             ) : (
-              <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar max-h-[calc(100vh-280px)]">
+          <div className="p-8 space-y-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                   <div className="p-4 rounded-2xl border border-slate-100 bg-slate-50">
                     <span className="text-[9px] font-black uppercase text-slate-400">Type fitting</span>
@@ -795,29 +955,46 @@ const MatrixRangesView = () => {
                     {selectedFields.map((field) => {
                       const fieldState = draftTolerances[field.key] || { enabled: false, tolerance: "" };
                       return (
-                        <div key={field.key} className="grid grid-cols-1 lg:grid-cols-[140px_120px_minmax(0,1fr)_220px] gap-4 px-6 py-4 items-center">
+                        <div key={field.key} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[120px_80px_minmax(0,1fr)_minmax(0,1.5fr)] xl:grid-cols-[140px_80px_minmax(0,1fr)_minmax(0,1.5fr)] gap-4 md:gap-6 px-4 sm:px-6 py-4 items-center">
                           <label className="flex items-center gap-3 text-sm font-black text-slate-800">
                             <input
                               type="checkbox"
                               checked={fieldState.enabled}
                               onChange={() => handleToggleField(field.key)}
-                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 shrink-0"
                             />
-                            {field.key}
+                            <span className="truncate" title={field.key}>{field.key}</span>
                           </label>
                           <span className={`text-[10px] font-black uppercase tracking-widest ${field.source === "Mof" ? "text-emerald-600" : "text-blue-600"}`}>
                             {field.source}
                           </span>
-                          <div className="text-sm font-mono font-bold text-slate-600 break-all bg-slate-50 border border-slate-100 rounded-xl px-4 py-3">
+                          <div className="text-sm font-mono font-bold text-slate-600 truncate bg-slate-50 border border-slate-100 rounded-xl px-4 py-3" title={String(field.value)}>
                             {String(field.value)}
                           </div>
-                          <input
-                            value={fieldState.tolerance}
-                            onChange={(e) => handleToleranceChange(field.key, e.target.value)}
-                            disabled={!fieldState.enabled}
-                            placeholder="Bijv. +/- 1.5 mm"
-                            className="w-full bg-white border-2 border-slate-100 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-300"
-                          />
+                          <div className="grid grid-cols-2 gap-2 w-full min-w-0">
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-slate-400 text-lg pointer-events-none">+</span>
+                                <input
+                                    value={fieldState.plus || ''}
+                                    onChange={(e) => handleToleranceChange(field.key, e.target.value, 'plus')}
+                                    disabled={!fieldState.enabled}
+                                    placeholder="1.5"
+                                    className="w-full bg-white border-2 border-slate-100 rounded-xl pl-7 pr-8 py-3 text-sm font-bold outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-300"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 pointer-events-none uppercase italic">mm</span>
+                            </div>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 font-black text-slate-400 text-lg pointer-events-none">-</span>
+                                <input
+                                    value={fieldState.minus || ''}
+                                    onChange={(e) => handleToleranceChange(field.key, e.target.value, 'minus')}
+                                    disabled={!fieldState.enabled}
+                                    placeholder="1.5"
+                                    className="w-full bg-white border-2 border-slate-100 rounded-xl pl-7 pr-8 py-3 text-sm font-bold outline-none focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-300"
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 pointer-events-none uppercase italic">mm</span>
+                            </div>
+                          </div>
                         </div>
                       );
                     })}

@@ -2,6 +2,9 @@ import React, { useState, useEffect } from "react";
 import {
   Building2,
   Cpu,
+  Briefcase,
+  FlaskConical,
+  SearchCheck,
   Plus,
   Trash2,
   Save,
@@ -79,6 +82,14 @@ const FactoryStructureManager = () => {
   const [status, setStatus] = useState<StatusState | null>(null);
   const [expandedDepts, setExpandedDepts] = useState<Record<string, boolean>>({});
   const [showDebug, setShowDebug] = useState(false);
+
+  const stationTypeOptions: Array<{ value: string; label: string }> = [
+    { value: "machine", label: "Machine" },
+    { value: "function", label: "Function" },
+    { value: "lab", label: "Lab" },
+    { value: "inspector", label: "Inspector" },
+    { value: "teamleader", label: "Teamleader" },
+  ];
 
   // Use the verified path from dbPaths.js
   const CONFIG_PATH = PATHS.FACTORY_CONFIG;
@@ -182,7 +193,12 @@ const FactoryStructureManager = () => {
     }));
   };
 
-  const updateStation = (deptId: string, stationId: string, value: string) => {
+  const updateStation = (
+    deptId: string,
+    stationId: string,
+    field: keyof Pick<StationRecord, "name" | "type">,
+    value: string
+  ) => {
     setConfig((prev) => ({
       ...prev,
       departments: prev.departments.map((d) => {
@@ -190,7 +206,14 @@ const FactoryStructureManager = () => {
           return {
             ...d,
             stations: d.stations.map((s) =>
-              s.id === stationId ? { ...s, name: value.toUpperCase() } : s
+              s.id === stationId
+                ? {
+                    ...s,
+                    [field]: field === "name" && (s.type || "machine") === "machine"
+                      ? value.toUpperCase()
+                      : value,
+                  }
+                : s
             ),
           };
         }
@@ -539,24 +562,53 @@ const FactoryStructureManager = () => {
                       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
                         {(dept.stations || []).map((station) => (
                           <div key={station.id} className="relative group/st">
-                            <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-hover/st:text-blue-500 transition-colors pointer-events-none">
-                              <Cpu size={16} />
+                            <div className="absolute left-4 top-[26px] -translate-y-1/2 text-slate-300 group-hover/st:text-blue-500 transition-colors pointer-events-none">
+                              {(station.type || "machine") === "lab" ? (
+                                <FlaskConical size={16} />
+                              ) : (station.type || "machine") === "inspector" ? (
+                                <SearchCheck size={16} />
+                              ) : (station.type || "machine") === "function" ? (
+                                <Briefcase size={16} />
+                              ) : (
+                                <Cpu size={16} />
+                              )}
                             </div>
-                            <input
-                              type="text"
-                              value={station.name}
-                              onChange={(e) =>
-                                updateStation(
-                                  dept.id,
-                                  station.id,
-                                  e.target.value
-                                )
-                              }
-                              className="w-full pl-12 pr-10 py-5 bg-slate-50 border-2 border-slate-100 rounded-[20px] font-black text-xs outline-none focus:border-blue-500 focus:bg-white transition-all shadow-sm uppercase tracking-tighter"
-                            />
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={station.name}
+                                onChange={(e) =>
+                                  updateStation(
+                                    dept.id,
+                                    station.id,
+                                    "name",
+                                    e.target.value
+                                  )
+                                }
+                                className="w-full pl-12 pr-10 py-5 bg-slate-50 border-2 border-slate-100 rounded-[20px] font-black text-xs outline-none focus:border-blue-500 focus:bg-white transition-all shadow-sm tracking-tight"
+                              />
+                              <select
+                                value={station.type || "machine"}
+                                onChange={(e) =>
+                                  updateStation(
+                                    dept.id,
+                                    station.id,
+                                    "type",
+                                    e.target.value
+                                  )
+                                }
+                                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wide text-slate-600 outline-none focus:border-blue-500"
+                              >
+                                {stationTypeOptions.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
                             <button
                               onClick={() => removeStation(dept.id, station.id)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-slate-200 hover:text-rose-500 transition-colors opacity-0 group-hover/st:opacity-100"
+                              className="absolute right-3 top-[26px] -translate-y-1/2 p-2 text-slate-200 hover:text-rose-500 transition-colors opacity-0 group-hover/st:opacity-100"
                             >
                               <Trash2 size={16} />
                             </button>

@@ -13,10 +13,21 @@ import {
   Loader2,
   TableProperties,
   Target,
+  ArrowLeft,
 } from "lucide-react";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth, logActivity } from "../../../config/firebase";
 import { PATHS, getPathString } from "../../../config/dbPaths";
+
+// Sub-componenten
+import AvailabilityView from "./AvailabilityView";
+import LibraryView from "./LibraryView";
+import BlueprintsView from "./BlueprintsView";
+import DimensionsView from "./DimensionsView";
+import SpecsView from "./SpecsView";
+import BulkUploadView from "./BulkUploadView";
+import MatrixRangesView from "./MatrixRangesView";
+import AdminDrillingView from "./AdminDrillingView"; // NIEUW: Boorpatronen beheer
 
 type StatusState = {
   type: string;
@@ -64,22 +75,12 @@ const docPathWithId = (path: string[], id: string) => doc(db, `${getPathString(p
 // Nieuw pad voor site config
 const SITE_CONFIG_PATH = ["future-factory", "settings", "site_config", "app"];
 
-// Sub-componenten
-import AvailabilityView from "./AvailabilityView";
-import LibraryView from "./LibraryView";
-import BlueprintsView from "./BlueprintsView";
-import DimensionsView from "./DimensionsView";
-import SpecsView from "./SpecsView";
-import BulkUploadView from "./BulkUploadView";
-import MatrixRangesView from "./MatrixRangesView";
-import AdminDrillingView from "./AdminDrillingView"; // NIEUW: Boorpatronen beheer
-
 /**
  * AdminMatrixManager V7.5 - Full Access Edition
  * Beheert de volledige technische intelligentie inclusief boorpatronen (Drilling).
  */
 
-const AdminMatrixManager = () => {
+const AdminMatrixManager = ({ onNavigate }: { onNavigate?: (screen: string | null) => void }) => {
   const [activeTab, setActiveTab] = useState<ActiveTab>("matrix");
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<StatusState>({ type: "", msg: "" });
@@ -265,56 +266,53 @@ const AdminMatrixManager = () => {
   }
 
   return (
-    <div className="flex-1">
-      <div className="bg-white border-b border-slate-200 px-8 py-4 flex justify-between items-center shrink-0 shadow-sm z-20 w-full h-20">
-        <div className="flex items-center gap-6">
-          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 italic uppercase leading-none">
-            <LayoutDashboard size={24} className="text-blue-600" /> Matrix{" "}
-            <span className="text-blue-600">Hub</span>
-          </h2>
-            {["matrix", "library", "blueprints"].includes(activeTab) && (
-              <>
-                <div className="h-8 w-px bg-slate-200"></div>
-                <button
-                  onClick={handleSave}
-                  disabled={
-                    loading || (!hasUnsavedChanges && status.type !== "error")
-                  }
-                  className={`px-8 py-2.5 rounded-xl transition-all font-black text-sm flex items-center gap-2 shadow-lg uppercase tracking-widest ${
-                    hasUnsavedChanges || status.type === "error"
-                      ? "bg-slate-900 text-white hover:bg-blue-600"
-                      : "bg-slate-100 text-slate-300"
-                  }`}
-                >
-                  {loading ? (
-                    <RefreshCw className="animate-spin" size={18} />
-                  ) : (
-                    <Save size={18} />
-                  )}{" "}
-                  Opslaan
-                </button>
-              </>
-            )}
+    <div className="flex-1 flex flex-col h-full overflow-hidden">
+      {/* Gecombineerde Header + Tabs */}
+      <div className="bg-white/90 backdrop-blur-md border-b border-slate-200 flex justify-between items-end shrink-0 shadow-sm sticky top-0 z-20 w-full px-4 lg:px-8">
+        <div className="flex items-center overflow-x-auto no-scrollbar flex-1">
+          <div className="flex items-center gap-4 text-left mr-4 lg:mr-8 py-3 shrink-0">
+            <button 
+              onClick={() => onNavigate && onNavigate(null)} 
+              className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-600 transition-all active:scale-90"
+            >
+              <ArrowLeft size={20} />
+            </button>
+            <h2 className="hidden xl:flex text-xl font-black text-slate-800 items-center gap-2 italic uppercase leading-none">
+              <Grid size={20} className="text-purple-600" /> Matrix Manager
+            </h2>
+          </div>
+          <div className="flex gap-1 lg:gap-4">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-4 px-2 lg:px-3 text-[10px] font-black uppercase tracking-widest border-b-4 transition-all whitespace-nowrap flex items-center ${
+                  activeTab === tab.id
+                    ? "border-blue-600 text-slate-900 bg-slate-50/50"
+                    : "border-transparent text-slate-400 hover:text-slate-600"
+                }`}
+              >
+                <span className="mr-1.5 opacity-50">{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Navigatie Tabs */}
-      <div className="flex justify-center bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-10 w-full overflow-x-auto no-scrollbar">
-        <div className="flex gap-4 px-8">
-          {TABS.map((tab) => (
+        <div className="py-2 xl:py-3 shrink-0 ml-4 hidden sm:flex">
+          {["matrix", "library", "blueprints"].includes(activeTab) && (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`py-4 px-4 text-[10px] font-black uppercase tracking-widest border-b-4 transition-all whitespace-nowrap ${
-                activeTab === tab.id
-                  ? `border-blue-600 text-slate-900 bg-slate-50/50`
-                  : "border-transparent text-slate-400 hover:text-slate-600"
+              onClick={handleSave}
+              disabled={loading || (!hasUnsavedChanges && status.type !== "error")}
+              className={`px-5 py-2.5 rounded-xl transition-all font-black text-[10px] uppercase tracking-widest flex items-center gap-2 shadow-sm ${
+                hasUnsavedChanges || status.type === "error"
+                  ? "bg-slate-900 text-white hover:bg-blue-600"
+                  : "bg-slate-100 text-slate-300"
               }`}
             >
-              <span className="mr-2 opacity-50">{tab.icon}</span>
-              {tab.label}
+              {loading ? <RefreshCw className="animate-spin" size={16} /> : <Save size={16} />} Opslaan
             </button>
-          ))}
+          )}
         </div>
       </div>
 
