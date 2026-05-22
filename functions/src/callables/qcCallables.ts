@@ -1,5 +1,5 @@
 import * as functions from "firebase-functions";
-import { withAudit } from "../utils/withAudit";
+const { withAudit } = require("../utils/withAudit");
 import { saveQcMeasurementService, saveQcInspectionService } from "../services/qcService";
 
 export const saveQcMeasurement = functions.https.onCall(
