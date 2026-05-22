@@ -294,6 +294,11 @@ export const nl = {
           title: "Mobile Inspector",
           desc: "Kwaliteitscontrole en inspectie op de vloer.",
           action: "Start Inspectie"
+        },
+        qc_hub: {
+          title: "QC Hub",
+          desc: "Labmetingen en kwaliteitscontroles op geproduceerde producten.",
+          action: "Open QC Hub"
         }
       }
     },
@@ -1081,6 +1086,8 @@ export const nl = {
         pipe_desc: "Leidingwerk & Lamineren",
         spools_title: "Spools Producties",
         spools_desc: "Assemblage & Prefab",
+        qc_title: "QC",
+        qc_desc: "Kwaliteitscontrole & Vrijgave",
         planner_title: "Centrale Planner",
         planner_desc: "Werkvoorbereiding & Planning",
         system_error_title: "Systeemfout in Planning",
@@ -1625,8 +1632,13 @@ export const nl = {
       back_to_hub: "Terug naar Productie Hub",
       stations: "Stations",
       select_instruction: "Selecteer een werkstation of management optie",
+      virtual_lot_issuance: "Virtuele Lotuitgifte",
       no_assigned: "Geen stations toegewezen aan uw account",
-      teamleader_hub_html: "Teamleader<br/>Hub"
+      teamleader_hub_html: "Teamleader<br/>Hub",
+      workplace_not_configured: "Werkplek {{name}} ({{type}}) is nog niet gekoppeld aan een productieflow.",
+      workplaces: {
+        chemical_lab: "Chemisch Lab"
+      }
     },
     rejection: {
       title: "Kwaliteitsanalyse",

@@ -253,6 +253,8 @@ export const de = {
       pipe_desc: "Rohrarbeit & Laminieren",
       spools_title: "Spool-Produktion",
       spools_desc: "Montage & Prefab",
+      qc_title: "QS",
+      qc_desc: "Qualitaetskontrolle & Freigabe",
       planner_title: "Zentrale Planung",
       planner_desc: "Arbeitsvorbereitung & Planung",
       system_error_title: "Systemfehler in der Planung",

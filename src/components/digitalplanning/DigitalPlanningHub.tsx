@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useLocation } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -12,6 +12,10 @@ import {
   Calendar,
   Loader2,
   AlertTriangle,
+  Factory,
+  Wrench,
+  Boxes,
+  ShieldCheck,
 } from "lucide-react";
 
 import { useAdminAuth } from "../../hooks/useAdminAuth";
@@ -32,6 +36,8 @@ type FactoryStation = {
 type FactoryDepartment = {
   id?: string;
   slug?: string;
+  name?: string;
+  isActive?: boolean;
   stations?: FactoryStation[];
 };
 
@@ -60,6 +66,40 @@ const DigitalPlanningHub = () => {
   const [searchOrderNumber, setSearchOrderNumber] = useState<string | null>(null);
   const [factoryConfig, setFactoryConfig] = useState<FactoryConfig | null>(null);
   const [configLoading, setConfigLoading] = useState(true);
+
+  const normalizeKey = (value: string | undefined | null): string =>
+    String(value || "")
+      .toLowerCase()
+      .replace(/[\s_-]+/g, "");
+
+  const toDepartmentId = (department: FactoryDepartment): string => {
+    const raw = String(department.id || department.slug || department.name || "").trim();
+    return raw ? raw.toUpperCase() : "";
+  };
+
+  const stylePalette: Array<{ icon: React.ReactNode; color: string; iconColor: string }> = [
+    { icon: <Factory size={40} />, color: "#EEF2FF", iconColor: "#4338CA" },
+    { icon: <Wrench size={40} />, color: "#FFE4E6", iconColor: "#BE123C" },
+    { icon: <Boxes size={40} />, color: "#CCFBF1", iconColor: "#0F766E" },
+    { icon: <ShieldCheck size={40} />, color: "#FEF3C7", iconColor: "#B45309" },
+    { icon: <Cpu size={40} />, color: "#E0F2FE", iconColor: "#075985" },
+    { icon: <Activity size={40} />, color: "#ECFCCB", iconColor: "#3F6212" },
+  ];
+
+  const getDepartmentStyle = (
+    department: FactoryDepartment,
+    fallbackIndex: number
+  ): { icon: React.ReactNode; color: string; iconColor: string } => {
+    const key = normalizeKey(`${department.name || ""} ${department.slug || ""} ${department.id || ""}`);
+    if (key.includes("fitting")) return { icon: <Monitor size={40} />, color: "#DCFCE7", iconColor: "#047857" };
+    if (key.includes("pipe") || key.includes("buis")) return { icon: <Cpu size={40} />, color: "#FFEDD5", iconColor: "#C2410C" };
+    if (key.includes("spool")) return { icon: <Activity size={40} />, color: "#F3E8FF", iconColor: "#6D28D9" };
+    if (key === "qc" || key.includes("quality") || key.includes("kwaliteit")) {
+      return { icon: <AlertTriangle size={40} />, color: "#CFFAFE", iconColor: "#0E7490" };
+    }
+    const paletteIndex = fallbackIndex % stylePalette.length;
+    return stylePalette[paletteIndex];
+  };
 
   // Laad factory config voor station-afdeling mapping
   useEffect(() => {
@@ -91,13 +131,13 @@ const DigitalPlanningHub = () => {
       for (const dept of factoryConfig.departments || []) {
         const station = (dept.stations || []).find(s => s.name === singleStationName);
         if (station) {
-          stationDept = dept.id || dept.slug;
+          stationDept = toDepartmentId(dept);
           break;
         }
       }
 
       if (stationDept) {
-        setActiveDept(stationDept.toUpperCase());
+        setActiveDept(stationDept);
         return; // Stop verdere logica om reset te voorkomen
       }
     }
@@ -128,36 +168,36 @@ const DigitalPlanningHub = () => {
     }
   }, [location, user, factoryConfig, configLoading]); // Trigger bij elke navigatie en als user/config data laadt
 
-  const DEPARTMENTS = [
-    {
-      id: "FITTINGS",
-      title: t("digitalplanning.hub.fitting_title"),
-      icon: <Monitor size={40} />,
-      description: "",
-      color: "bg-emerald-600",
-    },
-    {
-      id: "PIPES",
-      title: t("digitalplanning.hub.pipe_title"),
-      icon: <Cpu size={40} />,
-      description: "",
-      color: "bg-orange-600",
-    },
-    {
-      id: "SPOOLS",
-      title: t("digitalplanning.hub.spools_title"),
-      icon: <Activity size={40} />,
-      description: "",
-      color: "bg-purple-600",
-    },
-    {
-      id: "PLANNER",
-      title: t("digitalplanning.hub.planner_title"),
-      icon: <Calendar size={40} />,
-      description: t("digitalplanning.hub.planner_desc"),
-      color: "bg-slate-600",
-    },
-  ];
+  const DEPARTMENTS = useMemo(() => {
+    const dynamicDepartments = (factoryConfig?.departments || [])
+      .filter((dept) => dept && dept.isActive !== false)
+      .map((dept, index) => {
+        const id = toDepartmentId(dept);
+        if (!id) return null;
+        const style = getDepartmentStyle(dept, index);
+        return {
+          id,
+          title: String(dept.name || dept.slug || dept.id || id),
+          icon: style.icon,
+          description: "",
+          color: style.color,
+          iconColor: style.iconColor,
+        };
+      })
+      .filter((dept): dept is { id: string; title: string; icon: React.ReactNode; description: string; color: string; iconColor: string } => Boolean(dept));
+
+    return [
+      ...dynamicDepartments,
+      {
+        id: "PLANNER",
+        title: t("digitalplanning.hub.planner_title"),
+        icon: <Calendar size={40} />,
+        description: t("digitalplanning.hub.planner_desc"),
+        color: "#E2E8F0",
+        iconColor: "#334155",
+      },
+    ];
+  }, [factoryConfig, t]);
 
   // Foutscherm als er iets kritiek misgaat
   if (hasError) {
@@ -186,7 +226,7 @@ const DigitalPlanningHub = () => {
   }
 
   // Toon de Planner Hub (Centrale Planning)
-  if (activeDept === "PLANNER") {
+  if (String(activeDept || "").toUpperCase() === "PLANNER") {
     return (
       <Suspense
         fallback={
@@ -201,7 +241,7 @@ const DigitalPlanningHub = () => {
   }
 
   // Toon de Teamleader Hub (Direct Dashboard)
-  if (activeDept === "TEAMLEADER") {
+  if (String(activeDept || "").toUpperCase() === "TEAMLEADER") {
     return (
       <Suspense
         fallback={
@@ -255,7 +295,10 @@ const DigitalPlanningHub = () => {
               onClick={() => setActiveDept(dept.id)}
               className="group relative p-10 rounded-3xl border-2 border-slate-200 bg-white hover:border-blue-500 hover:shadow-2xl text-center transition-all duration-300"
             >
-              <div className={`w-20 h-20 rounded-2xl flex items-center justify-center text-white mb-6 shadow-lg mx-auto transition-transform group-hover:scale-110 ${dept.color}`}>
+              <div
+                className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 shadow-lg mx-auto transition-transform group-hover:scale-110"
+                style={{ backgroundColor: dept.color, color: dept.iconColor }}
+              >
                 {dept.icon}
               </div>
               <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight mb-2 group-hover:text-blue-600 transition-colors italic">

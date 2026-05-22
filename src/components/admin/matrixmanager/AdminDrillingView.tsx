@@ -216,14 +216,6 @@ const AdminDrillingView = () => {
             <Ruler className="text-blue-600" size={32} /> {t('adminDrilling.title', 'Boor Dimensies').split(' ')[0]}{" "}
             <span className="text-blue-600">{t('adminDrilling.title', 'Boor Dimensies').split(' ').slice(1).join(' ')}</span>
           </h2>
-          <div className="mt-3 flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase italic">
-              <ShieldCheck size={10} /> {t('adminDrilling.rootProtected', 'Root Beveiligd')}
-            </span>
-            <p className="text-[9px] font-mono text-slate-400 uppercase tracking-widest">
-              Target: /{PATHS.BORE_DIMENSIONS.join("/")}
-            </p>
-          </div>
         </div>
 
         <div className="relative w-full md:w-72 relative z-10">

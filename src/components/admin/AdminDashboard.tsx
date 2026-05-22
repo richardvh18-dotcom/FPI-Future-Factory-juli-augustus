@@ -609,23 +609,22 @@ const AdminDashboard = () => {
 
     return (
       <div className="flex flex-col h-full bg-slate-50 w-full animate-in fade-in overflow-hidden text-left">
-        <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0 shadow-sm">
-          <div className="flex items-center gap-4 text-left">
-            <button
-              onClick={() => setActiveScreen(null)}
-              className="p-2.5 bg-slate-100 hover:bg-slate-200 rounded-2xl text-slate-600 transition-all active:scale-90"
-            >
-              <ArrowLeft size={20} />
-            </button>
-            <h2 className="text-xl font-black text-slate-800 uppercase italic tracking-tight flex items-center gap-3">
-              {activeItem?.icon} {activeItem?.title}
-            </h2>
+        {/* Verberg de generieke header alleen voor de matrix manager, zodat hij zijn eigen balk kan gebruiken */}
+        {activeScreen !== "matrix" && (
+          <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between shrink-0 shadow-sm">
+            <div className="flex items-center gap-4 text-left">
+              <button
+                onClick={() => setActiveScreen(null)}
+                className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-600 transition-all active:scale-90"
+              >
+                <ArrowLeft size={20} />
+              </button>
+              <h2 className="text-xl font-black text-slate-800 uppercase italic tracking-tight flex items-center gap-3">
+                {activeItem?.icon} {activeItem?.title}
+              </h2>
+            </div>
           </div>
-          <div className="bg-slate-900 text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest hidden sm:flex items-center gap-2">
-            <ShieldCheck size={12} className="text-emerald-400" /> Root
-            Synchronized
-          </div>
-        </div>
+        )}
 
         <div className="flex-1 overflow-auto bg-slate-50 relative">
           <Suspense

@@ -80,6 +80,7 @@ export default defineConfig({
         host: true,
         allowedHosts: [
             'localhost',
+            '.app.github.dev',
             '.csb.app',
             'ffqznh-3000.csb.app'
         ],

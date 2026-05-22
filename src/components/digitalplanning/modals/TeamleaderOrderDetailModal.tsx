@@ -559,10 +559,9 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          {/* Mockup voor metingen, of echte data als beschikbaar */}
-                          {unit.measurements ? (
+                          {unit.measurements && Object.keys(unit.measurements).length > 0 ? (
                             <span className="text-xs font-mono text-slate-700">
-                              Ø: {unit.measurements.diameter || "-"} | W: {unit.measurements.wallThickness || "-"}
+                              {Object.entries(unit.measurements).map(([k, v]) => `${k}: ${v}`).join(" | ")}
                             </span>
                           ) : (
                             <span className="text-xs text-gray-400 italic">Geen data</span>

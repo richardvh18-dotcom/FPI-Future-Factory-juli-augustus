@@ -19,6 +19,7 @@ import {
   Eye,
   EyeOff,
   Printer,
+  Download,
 } from "lucide-react";
 import StatusBadge from "../common/StatusBadge";
 import { WORKSTATIONS, REJECTION_REASONS } from "../../../utils/workstationLogic";
@@ -525,6 +526,100 @@ const ProductDossierModal = ({
     const date = toDateSafe(val as any);
     if (date) return format(date, "dd-MM-yyyy");
     return String(val || "-");
+  };
+
+  const handleExportPDF = async () => {
+    try {
+      const { default: jsPDF } = await import("jspdf");
+      await import("jspdf-autotable");
+      
+      const doc = new jsPDF();
+      
+      doc.setFontSize(22);
+      doc.text("Productpaspoort", 14, 20);
+      
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("Lotnummer:", 14, 32);
+      doc.setFont("helvetica", "normal");
+      doc.text(String(product?.lotNumber || "-"), 45, 32);
+      
+      doc.setFont("helvetica", "bold");
+      doc.text("Order:", 14, 38);
+      doc.setFont("helvetica", "normal");
+      doc.text(String(displayOrderId), 45, 38);
+
+      doc.setFont("helvetica", "bold");
+      doc.text("Product:", 14, 44);
+      doc.setFont("helvetica", "normal");
+      doc.text(String(product?.item || parentOrder?.item || "-"), 45, 44);
+      
+      doc.setFont("helvetica", "bold");
+      doc.text("Status:", 14, 50);
+      doc.setFont("helvetica", "normal");
+      doc.text(String(product?.status || "-"), 45, 50);
+      
+      let startY = 60;
+
+      if (product?.measurements && Object.keys(product.measurements).length > 0) {
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("Kwaliteitsmetingen (QC)", 14, startY);
+        
+        const measBody = Object.entries(product.measurements).map(([k, v]) => [k, String(v)]);
+        (doc as any).autoTable({
+          startY: startY + 5,
+          head: [['Meting', 'Waarde']],
+          body: measBody,
+          theme: 'grid',
+          headStyles: { fillColor: [59, 130, 246] }
+        });
+        startY = (doc as any).lastAutoTable.finalY + 15;
+      }
+
+      if (product?.inspection?.reasons && product.inspection.reasons.length > 0) {
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("Inspectie Bevindingen", 14, startY);
+        
+        const inspBody = product.inspection.reasons.map(r => [r]);
+        (doc as any).autoTable({
+          startY: startY + 5,
+          head: [['Reden / Afwijking']],
+          body: inspBody,
+          theme: 'grid',
+          headStyles: { fillColor: [244, 63, 94] }
+        });
+        startY = (doc as any).lastAutoTable.finalY + 15;
+      }
+
+      if (historyWithOperators && historyWithOperators.length > 0) {
+         doc.setFontSize(14);
+         doc.setFont("helvetica", "bold");
+         doc.text("Proceshistorie", 14, startY);
+         
+         const histBody = historyWithOperators.map(h => [
+           formatDateTimeSafe(h.time || h.timestamp),
+           h.station || "-",
+           h.action || "-",
+           h.operatorName || h.operatorNumber || h.user || "Systeem"
+         ]);
+         
+         (doc as any).autoTable({
+           startY: startY + 5,
+           head: [['Tijdstip', 'Station', 'Actie', 'Door']],
+           body: histBody,
+           theme: 'grid',
+           headStyles: { fillColor: [100, 116, 139] },
+           styles: { fontSize: 8 }
+         });
+      }
+      
+      doc.save(`Productpaspoort_${product?.lotNumber || "unknown"}.pdf`);
+    } catch (err: any) {
+      console.error(err);
+      notifyAny("Kon PDF niet genereren.");
+    }
   };
 
   const handleDefinitiveRejection = async () => {
@@ -1193,6 +1288,12 @@ const ProductDossierModal = ({
                       <ArrowRightLeft size={16} /> {isTijdelijkeAfkeur ? "Reparatie" : "Verplaats"}
                     </button>
                   )}
+                <button
+                  onClick={handleExportPDF}
+                  className="px-6 py-4 bg-white border-2 border-slate-200 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-100 transition-all flex items-center gap-2"
+                >
+                  <Download size={16} /> PDF Paspoort
+                </button>
                   <button
                     onClick={onClose}
                     className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-600 transition-all shadow-xl"

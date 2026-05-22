@@ -318,6 +318,17 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ISO hardening: QC writes must go via backend callables.
+    match /future-factory/production/qc_measurements/{document=**} {
+      allow read: if hasUserRecord() || isSignedIn();
+      allow write: if false;
+    }
+
+    match /future-factory/production/qc_inspections/{document=**} {
+      allow read: if hasUserRecord() || isSignedIn();
+      allow write: if false;
+    }
+
     // collectionGroup("orders") query voor scoped per-machine planning orders
     match /{path=**}/orders/{orderId} {
       allow read: if hasUserRecord() || isSignedIn();

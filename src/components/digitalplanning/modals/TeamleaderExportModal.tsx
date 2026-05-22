@@ -342,7 +342,8 @@ export default function TeamleaderExportModal({
         "Oorsprong": product.originMachine || product.machine || "Onbekend",
         "Huidig Station": product.currentStation || product.currentStep || "Onbekend",
         "Status": product.status || product.currentStep || "Onbekend",
-        "Verblijftijd": getDwellTime(product)
+        "Verblijftijd": getDwellTime(product),
+        "Metingen": product.measurements ? Object.entries(product.measurements).map(([k,v]) => `${k}: ${v}`).join(" | ") : "-"
       };
     }).sort((a: any, b: any) => {
       const locCompare = a["Huidig Station"].localeCompare(b["Huidig Station"]);
@@ -465,7 +466,7 @@ export default function TeamleaderExportModal({
         if (currentLoc !== rowLoc) {
           excelData.push({
             'Lotnummer': `=== Locatie: ${rowLoc} ===`,
-            'Ordernummer': '', 'Product Omschrijving': '', 'Oorsprong': '', 'Huidig Station': '', 'Status': '', 'Verblijftijd': ''
+            'Ordernummer': '', 'Product Omschrijving': '', 'Oorsprong': '', 'Huidig Station': '', 'Status': '', 'Verblijftijd': '', 'Metingen': ''
           });
           currentLoc = rowLoc;
         }
@@ -540,7 +541,7 @@ export default function TeamleaderExportModal({
         const rowLoc = row["Huidig Station" as keyof typeof row];
         if (currentLoc !== rowLoc) {
           tableData.push([
-            { content: `=== Locatie: ${rowLoc} ===`, colSpan: 7, styles: { halign: 'center', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' } }
+            { content: `=== Locatie: ${rowLoc} ===`, colSpan: 8, styles: { halign: 'center', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' } }
           ]);
           currentLoc = rowLoc;
         }
@@ -551,13 +552,14 @@ export default function TeamleaderExportModal({
           row["Oorsprong"],
           row["Huidig Station"],
           row["Status"],
-          row["Verblijftijd"]
+          row["Verblijftijd"],
+          row["Metingen"]
         ]);
       });
 
       (doc as any).autoTable({
         startY: 28,
-        head: [['Lotnummer', 'Ordernummer', 'Product', 'Oorsprong', 'Huidig Station', 'Status', 'Verblijftijd']],
+        head: [['Lotnummer', 'Ordernummer', 'Product', 'Oorsprong', 'Huidig Station', 'Status', 'Verblijftijd', 'Metingen']],
         body: tableData,
         theme: 'grid',
         headStyles: { fillColor: [37, 99, 235], textColor: 255 },

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, CheckCircle, ArrowRight, AlertTriangle, Ruler, AlertOctagon, FileText } from "lucide-react";
-import { collection, collectionGroup, query, where, getDocs } from "firebase/firestore";
+import { collection, collectionGroup, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 import { db, auth, logActivity } from "../../../config/firebase";
 import { getPathString, PATHS } from "../../../config/dbPaths";
 import { REJECTION_REASONS, resolvePostLossenStation } from "../../../utils/workstationLogic";
@@ -140,7 +140,7 @@ type ProductReleaseModalProps = {
  * Stuurt het product door naar de volgende stap (bijv. van Wikkelen -> Lossen).
  * UPDATE: Uitgebreide functionaliteit voor Lossen (metingen, afkeur opties).
  */
-const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, autoApproveTrigger = 0, forceLossenMode = false, appId, activeOperators, autoFocus }: ProductReleaseModalProps) => {
+const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onComplete, autoApproveTrigger = 0, forceLossenMode = false, appId, activeOperators, autoFocus }: ProductReleaseModalProps) => {
   const maybeShowLossen1218MoldNotice = async (processedTargets: any[] = []) => {
     if (!Array.isArray(processedTargets) || processedTargets.length === 0) return;
 
@@ -274,6 +274,8 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
   const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
   const [comment, setComment] = useState("");
   const [selectedBulkLotIds, setSelectedBulkLotIds] = useState<string[]>([]);
+  const [toleranceConfig, setToleranceConfig] = useState<any>(null);
+  const [nominalValues, setNominalValues] = useState<Record<string, number>>({});
 
   const isBulkMode = Array.isArray(bulkProducts) && bulkProducts.length > 1;
 
@@ -327,12 +329,13 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
   const showSecondaryMeasurement = isStandardFitting && (isCB || isTB);
   const secondaryMeasurementKey = isCB ? "TWcb" : isTB ? "TWtb" : null;
 
-  // Bepaal huidige en volgende stap dynamisch
+  // Bepaal huidige en volgende stap dynamisch (Verplaatst naar boven voor veilige evaluatie)
   const currentStep = product?.currentStep || "Wikkelen";
   const currentStepUpper = String(product?.currentStep || "").toUpperCase();
   const currentStationUpper = String(product?.currentStation || "").toUpperCase();
   const statusUpper = String(product?.status || "").toUpperCase();
-  // Only show extended form if we are processing in Lossen context.
+  const inspectionStatusUpper = String(product?.inspection?.status || "").toUpperCase();
+  
   const isLossenStep =
     forceLossenMode ||
     currentStepUpper === "LOSSEN" ||
@@ -340,6 +343,96 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
     currentStationUpper === "LOSSEN" ||
     currentStationUpper.includes("LOSSEN") ||
     statusUpper.includes("LOSSEN");
+
+  const isRecoveringFromTempReject = 
+    inspectionStatusUpper === "TIJDELIJKE AFKEUR" ||
+    statusUpper === "TEMP_REJECT" || 
+    statusUpper === "HOLD_AREA" || 
+    currentStepUpper === "TEMP_REJECT" ||
+    Boolean(product?.repairActive);
+
+  const requiresMeasurements = isLossenStep || isRecoveringFromTempReject;
+
+  // Ophalen van tolerantie data en nominale doelwaarden uit Matrix Hub
+  useEffect(() => {
+    if (!requiresMeasurements || !isOpen || !product) return;
+
+    const loadTolerancesAndNominals = async () => {
+      try {
+        const desc = String(product?.item || product?.itemDescription || "").toUpperCase();
+        const diaMatch = desc.match(/\b(?:ID|DN)?\s*(\d{2,4})\b/);
+        const diameter = diaMatch ? diaMatch[1] : "";
+        const pnMatch = desc.match(/\bPN\s*(\d+(?:\.\d+)?)\b/);
+        const pressure = pnMatch ? pnMatch[1] : "";
+        
+        let connection = "";
+        if (desc.includes("CB")) connection = "CB";
+        else if (desc.includes("TB")) connection = "TB";
+        else if (desc.includes("FL") || desc.includes("FLENS")) connection = "FL";
+
+        let typeKey = "";
+        let angle = "";
+        if (desc.includes("ELB") || desc.includes("BOCHT")) {
+            typeKey = "ELBOW";
+            const angleMatch = desc.match(/\b(90|45|30|15|60|11\.25)\b/);
+            if (angleMatch) angle = angleMatch[1];
+        } else if (desc.includes("TEE") || desc.includes("T-EQUAL")) {
+            typeKey = "TEE";
+        } else if (desc.includes("RED") || desc.includes("REDUCER")) {
+            typeKey = "REDUCER";
+        } else if (desc.includes("CPL") || desc.includes("COUPLER") || desc.includes("KOPPELING")) {
+            typeKey = "COUPLER";
+        } else if (desc.includes("FLANGE") || desc.includes("FLENS")) {
+            typeKey = "FLANGE";
+        }
+
+        const matrixRef = doc(db, getPathString(PATHS.MATRIX_CONFIG));
+        const matrixSnap = await getDoc(matrixRef);
+        let matchedToleranceItem = null;
+
+        if (matrixSnap.exists()) {
+            const data = matrixSnap.data();
+            const items = Array.isArray(data.toleranceItems) ? data.toleranceItems : [];
+            
+            for (const item of items) {
+                if (
+                    (!typeKey || item.typeKey.toUpperCase().includes(typeKey)) &&
+                    (!angle || item.angle === angle) &&
+                    (!connection || item.connection === connection) &&
+                    (!diameter || item.diameter === diameter) &&
+                    (!pressure || item.pressure === pressure)
+                ) {
+                    matchedToleranceItem = item;
+                    break;
+                }
+            }
+        }
+
+        if (matchedToleranceItem) {
+            setToleranceConfig(matchedToleranceItem.tolerances);
+            let fetchedNominals: Record<string, number> = {};
+
+            // Helper om data in te laden
+            const loadDocData = async (pathObj: string[], docId: string) => {
+                const dRef = doc(db, getPathString(pathObj), docId);
+                const dSnap = await getDoc(dRef);
+                if (dSnap.exists()) {
+                    Object.entries(dSnap.data()).forEach(([k, v]) => {
+                        const num = parseFloat(String(v));
+                        if (!isNaN(num)) fetchedNominals[k] = num;
+                    });
+                }
+            };
+
+            if (matchedToleranceItem.fittingId) await loadDocData(PATHS.FITTING_SPECS, matchedToleranceItem.fittingId);
+            if (matchedToleranceItem.socketId) await loadDocData(PATHS.SOCKET_SPECS, matchedToleranceItem.socketId);
+
+            setNominalValues(fetchedNominals);
+        }
+      } catch (err) { console.error("Fout bij ophalen toleranties", err); }
+    };
+    loadTolerancesAndNominals();
+  }, [requiresMeasurements, isOpen, product]);
 
   let nextStepDisplay = "Lossen";
 
@@ -358,7 +451,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
 
   const validateForm = () => {
     const newErrors: Record<string, boolean> = {};
-    if (isLossenStep && status === 'approved') {
+    if (requiresMeasurements && status === 'approved') {
       const rawPrimaryValue =
         measurements[primaryMeasurementKey] ||
         (primaryMeasurementKey === "TWco" ? measurements.TWc : "");
@@ -376,6 +469,79 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
     return Object.keys(newErrors).length === 0;
   };
 
+  const parseTolerance = (tolStr: string) => {
+    let upper = 0; let lower = 0;
+    const s = String(tolStr).replace(/\s/g, '').toLowerCase().replace('mm','');
+    if (s.includes('+/-') || s.includes('±')) {
+        const val = parseFloat(s.replace('+/-', '').replace('±', ''));
+        if (!isNaN(val)) { upper = val; lower = -val; }
+    } else if (s.includes('/')) {
+        const parts = s.split('/');
+        parts.forEach(p => {
+            if (p.startsWith('+')) upper = parseFloat(p.replace('+', ''));
+            else if (p.startsWith('-')) lower = parseFloat(p);
+        });
+    }
+    return { upper, lower, raw: tolStr };
+  };
+
+  const getToleranceStatus = (fieldKey: string, valStr: string) => {
+    if (!valStr || String(valStr).trim() === "") return "none";
+    const val = parseFloat(valStr);
+    if (isNaN(val)) return "none";
+
+    const tolField = toleranceConfig?.[fieldKey];
+    if (!tolField || !tolField.enabled || !tolField.tolerance) return "none";
+    const nominal = nominalValues[fieldKey];
+    if (nominal === undefined) return "none";
+
+    const parsedTol = parseTolerance(tolField.tolerance);
+    const min = nominal + parsedTol.lower;
+    const max = nominal + parsedTol.upper;
+
+    if (val >= min && val <= max) return "ok";
+    return "error";
+  };
+
+  const renderToleranceHint = (fieldKey: string) => {
+    const tolField = toleranceConfig?.[fieldKey];
+    const nominal = nominalValues[fieldKey];
+    if (tolField?.enabled && nominal !== undefined) {
+        return (
+            <span className="text-[9px] font-bold text-slate-400 ml-2">
+                Doel: {nominal} mm ({tolField.tolerance})
+            </span>
+        );
+    }
+    return null;
+  };
+
+  const renderMeasurementInput = (fieldKey: string, label: string) => {
+    const val = measurements[fieldKey] || (fieldKey === 'TWco' ? measurements.TWc || "" : "");
+    const stat = getToleranceStatus(fieldKey, val);
+    const statusClass = stat === "ok" ? "border-emerald-500 bg-emerald-50 text-emerald-900" : stat === "error" ? "border-rose-500 bg-rose-50 text-rose-900" : errors[fieldKey] ? "border-red-500 bg-red-50 text-red-900" : "border-slate-200 text-slate-700";
+    
+    return (
+        <div key={fieldKey}>
+            <label className="flex items-center text-[10px] font-bold text-slate-500 uppercase mb-1">
+                {label} (mm) {renderToleranceHint(fieldKey)}
+            </label>
+            <div className="relative w-full min-w-0">
+              <input
+                  type="number"
+                  value={val}
+                  onChange={(e) => handleMeasurementChange(fieldKey, e.target.value)}
+                  className={`w-full pl-4 pr-10 py-3 rounded-xl border-2 font-bold focus:border-blue-500 outline-none transition-colors ${statusClass}`}
+                  placeholder="Waarde..."
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 pointer-events-none uppercase italic opacity-60">
+                mm
+              </span>
+            </div>
+        </div>
+    );
+  };
+
   const handleMeasurementChange = (field: string, value: string) => {
     setMeasurements(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
@@ -391,7 +557,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
     const isFormValid = validateForm();
     const mayProceedInPilot =
       PILOT_ALLOW_INCOMPLETE_LOSSEN_MEASUREMENTS &&
-      isLossenStep &&
+      requiresMeasurements &&
       status === "approved";
 
     if (selectedTargets.length === 0) {
@@ -529,6 +695,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
                 actorLabel: activeOperator,
                 previousStep: targetCurrentStep,
                 previousStatus: target?.status || currentStep,
+                measurements: normalizedMeasurements,
                 source: "ProductReleaseModal",
               });
             } else if (status === "rejected") {
@@ -537,6 +704,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
                 reasons: selectedReasons,
                 note: comment,
                 source: "ProductReleaseModal",
+                measurements: normalizedMeasurements,
                 actorLabel: activeOperator,
               });
             }
@@ -551,10 +719,11 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
         }
 
         // Log activity after all complete
+        const measurementsStr = Object.keys(normalizedMeasurements).length > 0 ? ` | Metingen: ${JSON.stringify(normalizedMeasurements)}` : "";
         await logActivity(
           auth.currentUser?.uid || "system",
           status === "approved" ? "PRODUCT_RELEASE" : status === "temp_reject" ? "QUALITY_TEMP_REJECT" : "QUALITY_REJECT_FINAL",
-          `Release modal: ${selectedTargets.length} lot(s), station ${product?.currentStation || product?.machine || "onbekend"}, status ${status}`
+          `Release modal: ${selectedTargets.length} lot(s), station ${product?.currentStation || product?.machine || "onbekend"}, status ${status}${measurementsStr}`
         );
 
         if (status === "approved" && isLossenStep) {
@@ -585,12 +754,14 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
   useEffect(() => {
     if (!autoApproveTrigger) return;
     if (autoApproveTrigger === lastAutoApproveRef.current) return;
-    // Veiligheid: in Lossen nooit auto-approve via QR, daar zijn metingen verplicht.
-    if (isLossenStep) return;
+    // Veiligheid: Bij verplichte metingen nooit auto-approve via QR
+    if (requiresMeasurements) return;
 
     lastAutoApproveRef.current = autoApproveTrigger;
     executeRelease();
-  }, [autoApproveTrigger, isLossenStep]);
+  }, [autoApproveTrigger, requiresMeasurements]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -612,7 +783,7 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
 
         <div className="p-4 md:p-6 overflow-y-auto custom-scrollbar">
           {/* Status Selection */}
-          {isLossenStep && (
+          {requiresMeasurements && (
             <div className="grid grid-cols-3 gap-2 md:gap-3 mb-4 md:mb-6">
               <button
                 onClick={() => setStatus("approved")}
@@ -664,65 +835,33 @@ const ProductReleaseModal = ({ product, bulkProducts = [], onClose, onComplete, 
             </div>
           )}
 
-          {/* Measurements (Only if Lossen Step) */}
-          {isLossenStep && (
+          {/* Measurements (Only if requires measurements) */}
+          {requiresMeasurements && (
             <div className="mb-4 md:mb-6 bg-slate-50 p-3 md:p-4 rounded-2xl border border-slate-100">
               <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 md:mb-3 flex items-center gap-2">
-                <Ruler size={14} /> Meetwaarden
+                <Ruler size={14} /> Meetwaarden {isRecoveringFromTempReject && !isLossenStep ? "(Nieuwe meting na herstel)" : ""}
               </h4>
               <div className="grid grid-cols-2 gap-4">
                 {isFlange ? (
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">TF (mm)</label>
-                    <input
-                      type="number"
-                      value={measurements.TF || ""}
-                      onChange={(e) => handleMeasurementChange('TF', e.target.value)}
-                      className={`w-full p-3 rounded-xl border font-bold text-slate-700 focus:border-blue-500 outline-none transition-colors ${errors.TF ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
-                      placeholder="Waarde..."
-                    />
-                  </div>
+                  renderMeasurementInput('TF', 'TF')
                 ) : (
                   <>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">{primaryMeasurementLabel} (mm)</label>
-                      <input
-                        type="number"
-                        value={measurements[primaryMeasurementKey] || (primaryMeasurementKey === 'TWco' ? measurements.TWc || "" : "")}
-                        onChange={(e) => handleMeasurementChange(primaryMeasurementKey, e.target.value)}
-                        className={`w-full p-3 rounded-xl border font-bold text-slate-700 focus:border-blue-500 outline-none transition-colors ${errors[primaryMeasurementKey] ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
-                        placeholder="Waarde..."
-                      />
-                    </div>
-
-                    {showSecondaryMeasurement && isCB && (
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">TWcb (mm)</label>
-                        <input
-                          type="number"
-                          value={measurements.TWcb || ""}
-                          onChange={(e) => handleMeasurementChange('TWcb', e.target.value)}
-                          className={`w-full p-3 rounded-xl border font-bold text-slate-700 focus:border-blue-500 outline-none transition-colors ${errors.TWcb ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
-                          placeholder="Waarde..."
-                        />
-                      </div>
-                    )}
-
-                    {showSecondaryMeasurement && isTB && (
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">TWtb (mm)</label>
-                        <input
-                          type="number"
-                          value={measurements.TWtb || ""}
-                          onChange={(e) => handleMeasurementChange('TWtb', e.target.value)}
-                          className={`w-full p-3 rounded-xl border font-bold text-slate-700 focus:border-blue-500 outline-none transition-colors ${errors.TWtb ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}
-                          placeholder="Waarde..."
-                        />
-                      </div>
-                    )}
+                    {renderMeasurementInput(primaryMeasurementKey, primaryMeasurementLabel)}
+                    {showSecondaryMeasurement && isCB && renderMeasurementInput('TWcb', 'TWcb')}
+                    {showSecondaryMeasurement && isTB && renderMeasurementInput('TWtb', 'TWtb')}
                   </>
                 )}
+                {toleranceConfig && Object.keys(toleranceConfig).map(field => {
+                  // Render extra ingeschakelde velden die nog niet standaard op het scherm stonden
+                  if (toleranceConfig[field].enabled && field !== 'TF' && field !== primaryMeasurementKey && !(isCB && field === 'TWcb') && !(isTB && field === 'TWtb')) {
+                    return renderMeasurementInput(field, field);
+                  }
+                  return null;
+                })}
               </div>
+              <p className="mt-3 text-[10px] font-bold text-amber-600 flex items-center gap-1.5 bg-amber-50 p-2 rounded-lg border border-amber-100">
+                <AlertTriangle size={12} /> Testfase: Afwijkende (rode) meetwaarden blokkeren de gereedmelding niet. Je kunt gewoon opslaan.
+              </p>
             </div>
           )}
 

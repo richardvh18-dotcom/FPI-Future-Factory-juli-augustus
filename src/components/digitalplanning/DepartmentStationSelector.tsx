@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { ArrowLeft, Cpu, Loader2, Users } from "lucide-react";
+import { ArrowLeft, Cpu, Loader2, Users, FlaskConical, SearchCheck, Briefcase } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { getPathString, PATHS } from "../../config/dbPaths";
@@ -11,6 +12,7 @@ import { useAdminAuth } from "../../hooks/useAdminAuth";
 type Station = {
   id?: string;
   name?: string;
+  type?: string;
 };
 
 type Department = {
@@ -34,11 +36,49 @@ type AdminUser = {
   allowedStations?: string[];
 };
 
+type StationItem = {
+  id?: string;
+  name?: string;
+  type?: string;
+  isVirtualLotAction?: boolean;
+  isQcHubAction?: boolean;
+};
+
 /**
  * DepartmentStationSelector
  * Laadt stations dynamisch uit factory_config in Firestore
  */
 const DepartmentStationSelector = ({ department, onBack, searchOrder }: DepartmentStationSelectorProps) => {
+    const normalizeKey = (value: string | undefined | null): string =>
+      String(value || "")
+        .toLowerCase()
+        .replace(/[\s_-]+/g, "");
+
+    const resolveDepartmentAliases = (rawDepartment: string): string[] => {
+      const normalized = normalizeKey(rawDepartment);
+      const aliases = new Set<string>([normalized]);
+
+      if (normalized === "fittings" || normalized === "fitting") {
+        aliases.add("fittings");
+        aliases.add("fitting");
+      }
+      if (normalized === "pipes" || normalized === "pipe") {
+        aliases.add("pipes");
+        aliases.add("pipe");
+      }
+      if (normalized === "spools" || normalized === "spool") {
+        aliases.add("spools");
+        aliases.add("spool");
+      }
+      if (normalized === "qc" || normalized === "qualitycontrol" || normalized === "kwaliteit") {
+        aliases.add("qc");
+        aliases.add("qualitycontrol");
+        aliases.add("kwaliteit");
+      }
+
+      return Array.from(aliases);
+    };
+
     // Station kleur/icon mapping
     const stationStyles = {
       'teamleader': {
@@ -69,14 +109,28 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
         color: 'bg-yellow-300 text-black border-yellow-600',
         icon: <Cpu size={24} className="text-black" />
       },
+      'lab': {
+        color: 'bg-cyan-100 text-cyan-800 border-cyan-300',
+        icon: <FlaskConical size={24} className="text-cyan-700" />
+      },
+      'inspector': {
+        color: 'bg-indigo-100 text-indigo-800 border-indigo-300',
+        icon: <SearchCheck size={24} className="text-indigo-700" />
+      },
+      'workplace': {
+        color: 'bg-slate-100 text-slate-800 border-slate-300',
+        icon: <Briefcase size={24} className="text-slate-700" />
+      },
       'algemeen': {
         color: 'bg-orange-400 text-white border-orange-700',
         icon: <Cpu size={24} className="text-white" />
       }
     };
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { user } = useAdminAuth() as { user: AdminUser | null };
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
+  const [pendingWorkplace, setPendingWorkplace] = useState<StationItem | null>(null);
   const [showTeamleader, setShowTeamleader] = useState(false);
   const [factoryConfig, setFactoryConfig] = useState<FactoryConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,29 +157,56 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
   }, []);
 
   // Bereken stations voor huidige department
-  const stations = useMemo(() => {
-    if (!factoryConfig || !department) return [];
-    
-    const slugMap: Record<string, string> = { FITTINGS: "fittings", PIPES: "pipes", SPOOLS: "spools" };
-    const targetSlug = slugMap[department] || department.toLowerCase();
-    
-    const deptData = (factoryConfig.departments || []).find(
-      (d) => d.slug === targetSlug || d.id === targetSlug || String(d.name || "").toLowerCase() === targetSlug
+  const matchedDepartment = useMemo(() => {
+    if (!factoryConfig || !department) return undefined;
+    const departmentKeys = resolveDepartmentAliases(department);
+
+    return (factoryConfig.departments || []).find(
+      (d) => {
+        const slugKey = normalizeKey(d.slug);
+        const idKey = normalizeKey(d.id);
+        const nameKey = normalizeKey(d.name);
+        return departmentKeys.includes(slugKey) || departmentKeys.includes(idKey) || departmentKeys.includes(nameKey);
+      }
     );
-    
-    let availableStations = deptData ? (deptData.stations || [])
+  }, [factoryConfig, department]);
+
+  const displayDepartmentName = String(
+    matchedDepartment?.name || matchedDepartment?.slug || matchedDepartment?.id || department || ""
+  );
+
+  const stations = useMemo(() => {
+    if (!matchedDepartment) return [];
+
+    let availableStations: StationItem[] = (matchedDepartment.stations || [])
       .filter((s) => {
         const name = (s.name || "").toLowerCase();
         return name !== "algemeen";
       })
-      .map((s) => ({ id: s.id || s.name, name: s.name || "" }))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })) : [];
+      .map((s) => ({ id: s.id || s.name, name: s.name || "", type: s.type || "" }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+
+    const deptKey = normalizeKey(`${matchedDepartment.name || ""} ${matchedDepartment.slug || ""} ${matchedDepartment.id || ""}`);
+    const isQcDepartment = deptKey.includes("qc") || deptKey.includes("quality") || deptKey.includes("kwaliteit");
+
+    if (isQcDepartment) {
+      availableStations = [
+        {
+          id: "QC_VIRTUAL_LOT_ISSUANCE",
+          name: t("departmentSelector.virtual_lot_issuance", "Virtuele Lotuitgifte"),
+          type: "function",
+          isVirtualLotAction: true,
+        },
+        ...availableStations,
+      ];
+    }
 
     // Filter op toegewezen stations als de gebruiker beperkingen heeft
     if (user && user.allowedStations && Array.isArray(user.allowedStations) && user.allowedStations.length > 0) {
       const allowedNorm = user.allowedStations.map((s) => (s || "").toUpperCase().replace(/\s/g, ""));
       
       availableStations = availableStations.filter((station) => {
+        if (station.isVirtualLotAction || station.isQcHubAction) return true;
         const sName = (station.name || "").toUpperCase().replace(/\s/g, "");
         // Check of station naam (bv "BH11") in de allowed lijst staat
         // Ook checken of "TEAMLEADER" toegestaan is voor de teamleader knop
@@ -135,7 +216,27 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
     }
 
     return availableStations;
-  }, [factoryConfig, department, user]);
+  }, [matchedDepartment, user, t]);
+
+  const isMachineLikeStation = (station: StationItem): boolean => {
+    if (station.isVirtualLotAction || station.isQcHubAction) return false;
+    const normalizedName = normalizeKey(station.name || station.id);
+    if (["chemichlab", "chemicallab", "chemischlab"].includes(normalizedName)) return false;
+    const type = String(station.type || "").toLowerCase().trim();
+    if (!type) return true;
+    return type === "machine" || type === "teamleader";
+  };
+
+  const getTranslatedStationName = (stationLike: StationItem | null | undefined): string => {
+    const rawName = String(stationLike?.name || "").trim();
+    const normalized = normalizeKey(rawName);
+
+    if (["chemichlab", "chemicallab", "chemischlab"].includes(normalized)) {
+      return t("departmentSelector.workplaces.chemical_lab", "Chemisch Lab");
+    }
+
+    return rawName;
+  };
 
   // Auto-select station if user has only one assigned
   useEffect(() => {
@@ -151,12 +252,12 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
 
   // Als Teamleader is geselecteerd, toon TeamleaderHub
   if (showTeamleader) {
-    const safeDepartment = String(department || "all");
+    const safeDepartment = String(matchedDepartment?.slug || matchedDepartment?.id || department || "all");
     return (
       <TeamleaderHub 
         onBack={() => setShowTeamleader(false)} 
         fixedScope={safeDepartment.toLowerCase()}
-        departmentName={safeDepartment}
+        departmentName={displayDepartmentName}
       />
     );
   }
@@ -192,11 +293,22 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
             <ArrowLeft size={14} /> {t('departmentSelector.back_to_hub', 'Terug naar Productie Hub')}
           </button>
           <h1 className="text-4xl md:text-5xl font-black text-slate-900 mb-3 uppercase italic tracking-tighter leading-none">
-            {department} <span className="text-blue-600">{t('departmentSelector.stations', 'Stations')}</span>
+            {displayDepartmentName} <span className="text-blue-600">{t('departmentSelector.stations', 'Stations')}</span>
           </h1>
           <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">
             {t('departmentSelector.select_instruction', 'Selecteer een werkstation of management optie')}
           </p>
+          {pendingWorkplace && (
+            <p className="mt-3 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
+              {t(
+                'departmentSelector.workplace_not_configured',
+                'Werkplek {{name}} ({{type}}) is nog niet gekoppeld aan een productieflow.'
+              , {
+                name: getTranslatedStationName(pendingWorkplace) || 'Onbekend',
+                type: pendingWorkplace.type || 'function',
+              })}
+            </p>
+          )}
         </div>
 
         {stations.length === 0 ? (
@@ -208,11 +320,15 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {stations.map((station) => {
             const key = (station.name || station.id || "").toLowerCase();
+            const stationType = String(station.type || "").toLowerCase();
             const isTeamleader = key.includes("teamleader");
             
             // Bepaal stijl op basis van naam
             let style = stationStyles.algemeen;
             if (isTeamleader) style = stationStyles.teamleader;
+            else if (stationType.includes("lab") || key.includes("lab") || key.includes("qc_hub")) style = stationStyles.lab;
+            else if (stationType.includes("inspect") || key.includes("inspect") || key.includes("tester") || key.includes("testing")) style = stationStyles.inspector;
+            else if (stationType && !stationType.includes("machine")) style = stationStyles.workplace;
             else if (key.includes("bm")) style = stationStyles.bm;
             else if (key.includes("ba")) style = stationStyles.ba;
             else if (key.includes("bh")) style = stationStyles.bh;
@@ -223,14 +339,43 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
             return (
               <button
                 key={station.id}
-                onClick={() => isTeamleader ? setShowTeamleader(true) : setSelectedStation(String(station.name || station.id || ""))}
+                onClick={() => {
+                  if (isTeamleader) {
+                    setPendingWorkplace(null);
+                    setShowTeamleader(true);
+                    return;
+                  }
+
+                  const normalizedName = normalizeKey(station.name || station.id);
+                  if (station.isQcHubAction || ["chemichlab", "chemicallab", "chemischlab"].includes(normalizedName)) {
+                    setPendingWorkplace(null);
+                    navigate("/qc");
+                    return;
+                  }
+
+                  if (station.isVirtualLotAction) {
+                    setPendingWorkplace(null);
+                    navigate("/admin", { state: { openScreen: "qshe_virtual_lots" } });
+                    return;
+                  }
+
+                  if (!isMachineLikeStation(station)) {
+                    setPendingWorkplace(station);
+                    return;
+                  }
+
+                  setPendingWorkplace(null);
+                  setSelectedStation(String(station.name || station.id || ""));
+                }}
                 className={`group relative p-6 rounded-2xl border-2 border-slate-200 bg-white text-center transition-all duration-200 hover:border-blue-500 hover:shadow-xl ${isTeamleader ? "col-span-2 row-span-2" : ""}`}
               >
                 <div className={`${isTeamleader ? "w-20 h-20" : "w-12 h-12"} rounded-xl flex items-center justify-center mb-3 shadow-md mx-auto transition-transform group-hover:scale-110 ${style.color.split(' ')[0]}`}> 
                   {style.icon}
                 </div>
                 <h3 className={`${isTeamleader ? "text-lg" : "text-sm"} font-black text-slate-800 uppercase tracking-tight group-hover:text-blue-600 transition-colors`}>
-                  {isTeamleader ? <span dangerouslySetInnerHTML={{__html: t('departmentSelector.teamleader_hub_html', 'Teamleader<br/>Hub')}} /> : station.name}
+                  {isTeamleader
+                    ? <span dangerouslySetInnerHTML={{__html: t('departmentSelector.teamleader_hub_html', 'Teamleader<br/>Hub')}} />
+                    : getTranslatedStationName(station)}
                 </h3>
               </button>
             );
