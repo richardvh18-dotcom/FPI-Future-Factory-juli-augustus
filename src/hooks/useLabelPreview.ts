@@ -1,7 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '../config/firebase';
-import { PATHS, getPathString } from '../config/dbPaths';
+import { useMemo } from 'react';
+import { useLabelCatalog } from './useLabelCatalog';
 import { processLabelData, applyLabelLogic } from '../utils/labelHelpers';
 
 type LabelTemplate = {
@@ -39,28 +37,7 @@ export const useLabelPreview = (
   productData: ProductData | null | undefined,
   selectedLabelId: string | null | undefined,
 ): LabelPreviewResult => {
-  const [labelTemplates, setLabelTemplates] = useState<LabelTemplate[]>([]);
-  const [labelRules, setLabelRules] = useState<LabelRule[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    const templatesRef = collection(db, getPathString(PATHS.LABEL_TEMPLATES));
-    const unsubTemplates = onSnapshot(templatesRef, (snap) => {
-      setLabelTemplates(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-    }, () => setLoading(false));
-
-    const logicRef = collection(db, getPathString(PATHS.LABEL_LOGIC));
-    const unsubLogic = onSnapshot(logicRef, (snap) => {
-      setLabelRules(snap.docs.map((d) => d.data()));
-    }, () => setLoading(false));
-
-    return () => {
-      unsubTemplates();
-      unsubLogic();
-    };
-  }, []);
+  const { labelTemplates, labelRules, loadingLabels } = useLabelCatalog();
 
   const selectedLabel = useMemo<LabelTemplate | null>(() => {
     if (!selectedLabelId || labelTemplates.length === 0) return null;
@@ -78,5 +55,5 @@ export const useLabelPreview = (
     return applyLabelLogic(baseData, labelRules);
   }, [productData, labelRules]);
 
-  return { selectedLabel, previewData, availableLabels: labelTemplates, loadingLabels: loading };
+  return { selectedLabel, previewData, availableLabels: labelTemplates, loadingLabels };
 };

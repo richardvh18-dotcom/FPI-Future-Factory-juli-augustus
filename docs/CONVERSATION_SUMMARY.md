@@ -1,3 +1,425 @@
+## Update sessie 28 mei 2026 (Print nog afwijkend na bitmap-only hardening)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Bitmap-only printpad verder afgedwongen in actieve schermflows**
+- Runtime-fallbacks naar karakter-ZPL in de primaire labelschermen verder verwijderd.
+- Geen-template fallbacklabels worden nu ook via dezelfde bitmap render-engine opgebouwd i.p.v. handmatige tekst-ZPL strings.
+
+**2. Preview/print parity pipeline uitgebreid en getuned**
+- `AutoScaledLabelPreview` uitgebreid met `exactBitmapPreview` (offscreen render + capture + monochrome conversie) om preview dichter bij print te brengen.
+- `canvasToBitmapZpl.ts` uitgebreid met gedeelde boosted-mask logica en extra `strokeBoost` optie voor hardere printverdikking.
+- `unifiedLabelRenderEngine.tsx` en previewinstellingen meerdere keren getuned (`textScaleFactor`, anti-pixel look) op basis van user feedback.
+
+**3. Schermspecifieke preview-afstemming**
+- In printschermen (`PrintStationView`, `PrintQueueAdminView`, `AdminPrinterManager`) is exacte bitmap-preview getest/aangezet.
+- In `AdminLabelManager` is bitmap-preview weer uitgezet voor betere UI-leesbaarheid (vector-preview behoud), omdat de 8-bit look als storend werd ervaren.
+
+**4. Laatste harde print-only poging zonder preview-impact**
+- In `zplHelper.ts` threshold verhoogd en `strokeBoost` geactiveerd voor fysieke printverdikking.
+- Doel: zichtbaar vollere letterstammen op papier zonder verdere previewwijzigingen.
+
+### Validatie
+- Type/script foutcontrole uitgevoerd op alle aangepaste print/preview bestanden: geen nieuwe errors.
+
+### Huidige status
+- Preview wordt door gebruiker als beter beoordeeld.
+- Fysieke printeroutput blijft volgens gebruiker nog te dun/kleiner dan gewenst, ondanks meerdere bitmap-only tuningstappen.
+- Laatste user-feedback: “totaal geen enkele verandering in de printeroutput”.
+
+### Eerstvolgende gerichte stap
+1. Runtime-verificatie toevoegen op het daadwerkelijke printpad (expliciete marker/log in actieve knopflow) om hard te bevestigen dat de gebruikte printactie de nieuwe bitmap pipeline raakt.
+2. Als marker niet verschijnt: resterend oud printpad identificeren en omzetten.
+3. Als marker wel verschijnt: printerprofielspecifieke fysieke output-tuning (darkness/speed/media + eventueel hogere `strokeBoost`) gericht op het gebruikte device.
+
+## Update sessie 28 mei 2026 (Print/Preview 1-op-1 parity doorbraak)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Printpaden geforceerd naar bitmap-only rendering (geen karakter-ZPL fallback meer in actieve UI-flows)**
+- Legacy/nood en reguliere printflows in de belangrijkste schermen zijn geconvergeerd naar één bitmap-renderpad via `renderLabelToBitmapZpl`.
+- Oude `generatePrintData`-branches in runtime schermflows zijn verwijderd of buiten het actieve pad gebracht.
+- Dit is doorgevoerd in o.a.:
+    - `src/components/printer/PrintStationView.tsx`
+    - `src/components/printer/PrintQueueAdminView.tsx`
+    - `src/components/admin/AdminPrinterManager.tsx`
+    - `src/components/digitalplanning/MazakView.tsx`
+
+**2. Preview omgezet naar dezelfde bitmap-pipeline als print (exact bitmap preview mode)**
+- `AutoScaledLabelPreview` ondersteunt nu `exactBitmapPreview`.
+- In deze mode wordt offscreen gerenderd met dezelfde capture + monochrome binarisatiepipeline als de printoutput.
+- Relevante printschermen tonen nu standaard deze exacte bitmap-preview i.p.v. alleen vector/DOM-preview.
+
+**3. Monochrome conversie gecentraliseerd en verzwaard voor consistente text-weight**
+- In `canvasToBitmapZpl.ts` is een gedeelde boosted-mask pipeline toegevoegd (threshold + edge-boost), gebruikt door zowel bitmap-print als bitmap-preview.
+- Hiermee zijn dunne anti-aliased randpixels beter behouden in de eindbitmap.
+
+**4. DPI-gerelateerde font mismatch opgelost in de renderer**
+- In `LabelVisualPreview.tsx` is font-size berekening DPI-aware gemaakt (dots-per-point op basis van `printerDpi`), zodat tekst fysiek consistent schaalt met de rest van het label.
+- Dit pakt het effect aan waarbij fonts op print kleiner uitvielen dan in de preview bij verschillende DPI-profielen.
+
+### Validatie
+- Type/script foutcontrole uitgevoerd op alle gewijzigde print/preview-bestanden: geen nieuwe errors.
+- Dev server is tussentijds meerdere keren herstart voor hertest.
+
+### Huidige status
+- Architectuur staat nu op één bronpad voor print: bitmap-only render.
+- Preview gebruikt op de printschermen dezelfde bitmap-logica als printoutput.
+- Laatste functionele check blijft: fysieke printerhertest per template/printerprofiel om te bevestigen dat visuele parity nu 1-op-1 is in praktijk.
+
+### Eerstvolgende stap bij resterende afwijking
+1. Pending queue-jobs regenereren met de nieuwste renderer (oude jobs kunnen nog oudere payload bevatten).
+2. Daarna pas printerprofiel-tuning (darkness/speed/media) uitvoeren als fysieke output nog afwijkt.
+
+## Update sessie 28 mei 2026 (Hervatting: Print parity + QC stabilisatie vervolg)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Samenvattende status bij hervatten
+**1. Order Labels printpariteit staat functioneel goed, maar vraagt nog laatste visuele afronding**
+- Legacy/Nood printpad is in eerdere stappen geforceerd naar bitmap-route om stille fallback naar karakter-ZPL te voorkomen.
+- Kernlayout, QR-positie en kolomuitlijning zijn sterk verbeterd, maar er blijft nog een klein risico op typografie/wrap-verschillen tussen preview en fysieke print bij specifieke templates.
+
+**2. ProductionStartModal permissiepad is functioneel verplaatst naar callable securityflow**
+- Queue print-import gebruikt nu server-side callable service in plaats van directe client write-service.
+- Hierdoor is het oorspronkelijke "onvoldoende rechten" pad technisch ondervangen en sluit de flow beter aan op productie-autorisatie.
+
+**3. QC Brix backend/frontend stabilisatie is inhoudelijk doorgevoerd**
+- Undefined update-waarden worden in backend updates gefilterd.
+- Lot-validatie is tijdelijk transitie-proof gemaakt (BH18 strikt, overige machinecodes tijdelijk soepeler).
+- Brix-items hebben admin-only bewerkpad via veilige callable en weekgroepering volgt nu primair `measuredAt` i.p.v. opslagtijd.
+
+### Openstaande controlepunten (hoogste prioriteit)
+1. Print Stations: één-op-één visuele vergelijking doen tussen preview en fysieke print op de resterende typografiegevallen (titel-clipping en verticale tekstgedrag).
+2. ProductionStartModal: op werkvloerflow opnieuw valideren dat queue print zonder rechtenfout doorloopt.
+3. QC Brix: in productiecheck bevestigen dat admin-edit, weekgroepering en opslag in gekoppelde dossiers stabiel blijven onder realistische invoer.
+
+### Concreet hervatplan
+1. Eerst gerichte regressietest op labels uitvoeren met dezelfde template/printer-combinatie en afwijkingen direct loggen per element.
+2. Daarna ProductionStartModal end-to-end nalopen met echte operatorflow (start -> queue -> printimport).
+3. Tot slot QC Brix controle afronden op historische en nieuwe metingen, inclusief weekgroepering en admin-edit pad.
+
+## Update sessie 27 mei 2026 (Print parity routes + ProductionStartModal rechtenfix)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Print Stations Legacy/Nood labels naar geforceerde bitmap-route**
+- In `src/components/printer/PrintStationView.tsx` is de template-flow expliciet op bitmap-print gezet (`useBitmapForLegacyTemplate = true`).
+- Doel: voorkomen dat deze route stil terugvalt op karakter-ZPL en daardoor afwijkende verticale positionering/schaal geeft t.o.v. preview.
+
+**2. Rechtenfout bij ProductionStartModal opgelost via callable pad**
+- In `src/components/digitalplanning/modals/ProductionStartModal.tsx` is de queue print-import omgezet van client write-service naar beveiligde callable service:
+    - van `services/printService`
+    - naar `services/planningSecurityService`
+- Doel: permissie-afhandeling via server-side securitycontext in plaats van directe client write (oorzaak van "onvoldoende rechten" in startflow).
+
+### Validatie
+- Type/script foutcontrole op beide gewijzigde bestanden: geen errors.
+- Productiebuild uitgevoerd en geslaagd:
+    - `npm run build` succesvol.
+- Dev server herstart op poort 3000 voor directe hertest in github.dev context.
+
+### Testfocus voor vervolgstap
+1. `Print Stations -> Order Labels Legacy/Nood` met hetzelfde template/printer controleren op zichtbare bitmap-parity.
+2. `ProductionStartModal` opnieuw doorlopen om te bevestigen dat queue print zonder permissiefout verwerkt wordt.
+3. Bij resterende mismatch: route-specifieke runtime logging toevoegen om te verifiëren dat de uiteindelijke payload daadwerkelijk `^GFA` bevat.
+
+## Update sessie 27 mei 2026 (QC Brix stabilisatie, admin-bewerken & weeknummer-fix)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. QC save backend gestabiliseerd (500/INTERNAL opgelost op Brix pad)**
+- Root-cause in backendpad aangescherpt: Firestore updates schreven bij Brix soms `undefined` waarden door (o.a. optionele velden), wat server-side fouten kon triggeren.
+- `functions/src/services/qcService.ts` aangepast zodat alleen gedefinieerde velden worden doorgezet in updates.
+- Callable foutafhandeling in `functions/src/callables/qcCallables.ts` verbeterd zodat fouten niet meer als onduidelijke kale `INTERNAL` terugkomen, maar met specifieker bericht/code.
+
+**2. Lot-validatie logisch gemaakt voor transitie-fase**
+- Backendlot-koppeling aangepast:
+    - BH18-lots (`418`) blijven verplicht gekoppeld aan bestaand productdossier.
+    - Overige machine-lots mogen tijdelijk zonder gekoppeld tracked product worden opgeslagen.
+- Hiermee is frontend-gedrag en backend-regel nu consistent.
+
+**3. Dubbele afdelingstegels in Brix/Lab opgelost**
+- In `src/components/qc/LabMeasurementsView.tsx` normalisatie toegevoegd voor afdelingsnamen (trim/case/canonieke naam), zodat varianten zoals `Fittings`, `fittings` en `Fittings ` niet meer als losse tegels verschijnen.
+- Dezelfde canonieke naamgeving doorgezet in save-pad (frontend + backend) zodat nieuwe metingen consistent worden opgeslagen.
+
+**4. Brix metingen omgezet naar uitklapbare lijstweergave**
+- Brix-items tonen nu in ingeklapte kop exact de gevraagde kernvelden:
+    - Week
+    - Tijd
+    - Datum
+    - Meetpunt
+    - Ploeg
+- Overige meetdetails zijn verplaatst naar uitgeklapte inhoud.
+
+**5. Admin-only bewerken van Brix metingen toegevoegd**
+- Frontend:
+    - Admin check via `useAdminAuth`.
+    - In uitgeklapte Brix-items bewerkmodus met `Bewerken`/`Opslaan`/`Annuleren`.
+    - Bewerkbare velden: meettijd, meetpunt, ploeg, brekingsindex, verhouding, area, visuele check, operator.
+- Backend:
+    - Nieuwe callable `updateQcMeasurement` toegevoegd (admin-only permissiecontrole).
+    - Nieuwe service `updateQcMeasurementService` toegevoegd voor veilige update van `qc_measurements` en, waar mogelijk, synchronisatie naar gekoppeld tracked productdossier.
+- Exports/wiring toegevoegd in `functions/index.js` en client-side callable service in `src/services/qcSecurityService.ts`.
+
+**6. Weeknummer-bug bij historische metingen opgelost**
+- Oorzaak: weeknummer in `QCHub` werd nog afgeleid van `createdAt` (opslagmoment) i.p.v. `measuredAt` (echte meetmoment).
+- Fix: week/year worden nu primair berekend op basis van `measuredAt`, met fallback op `createdAt`.
+- Parsing uitgebreid zodat ook formaat `dd-mm-jjjj hh:mm` robuust wordt ondersteund.
+
+### Deploy & validatie
+- Meerdere gerichte Firebase deploys succesvol uitgevoerd op project `future-factory-377ef`:
+    - `saveQcMeasurement`
+    - `saveQcInspection`
+    - `updateQcMeasurement` (nieuw)
+- Lokale foutcontroles op gewijzigde frontend/backendbestanden zonder nieuwe errors.
+
+### Resultaatstatus
+- QC Brix opslaan werkt stabieler met betere foutdiagnose.
+- Historische metingen groeperen nu op de juiste kalenderweek van het daadwerkelijke meetmoment.
+- Admins kunnen bestaande Brix-metingen nu direct in de lijst bewerken via veilige backend-callable flow.
+
+## Update sessie 26 mei 2026 (QC callable auth/preview stabilisatie)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Root-cause analyse van QC save fouten op preview**
+- De eerdere 500-crash (`res.on is not a function`) is geanalyseerd via Firebase logs en herleid naar callable-wrapping/signature problemen.
+- 401 meldingen op preview zijn opgesplitst in:
+    - Vercel Deployment Protection (verwacht in niet-ingelogde terminal probes).
+    - Echte Firebase `UNAUTHENTICATED` responses wanneer geen geldige app-sessie/token aanwezig is.
+
+**2. Backend callable fix (Firebase Functions)**
+- `saveQcMeasurement` en `saveQcInspection` zijn omgezet naar native Gen2 callable handlers met de correcte request-signature.
+- Authenticatiecontrole gebeurt nu direct op `request.auth`.
+- Beide functies zijn succesvol opnieuw gedeployed naar project `future-factory-377ef` (Node.js 22, Gen2).
+
+**3. Frontend QC security verbeteringen**
+- In `qcSecurityService` is een auth-readiness guard toegevoegd:
+    - wacht kort op auth-state,
+    - forceert token-ophaling,
+    - breekt vroegtijdig af met duidelijke melding als user niet ingelogd is.
+- Error normalisatie verbeterd:
+    - netwerk/CORS preview-fouten blijven apart herkenbaar,
+    - `UNAUTHENTICATED` krijgt nu expliciete sessie-verlopen/herlogin melding.
+
+**4. Deploy & validatie**
+- Functions type-check geslaagd.
+- Frontend build geslaagd.
+- Nieuwe Vercel preview gepubliceerd:
+    - `https://futurefactoryapp-pq2fyp3pu-richard-van-heerdes-projects.vercel.app`
+
+### Niet-blockerende ruis (bewust onderscheiden)
+- `background.js: window is not defined` komt uit extension/script-context, niet uit app-core.
+- `rokt-icons.woff preload not used` is een performance waarschuwing, geen blocker voor QC save.
+
+### Hervatpunt voor volgende sessie
+1. User-side hertest op nieuwste preview met expliciete app-login + hard refresh.
+2. Bij nieuwe fout direct de exacte request/response van `/api/callables/saveQcMeasurement` en de laatste functions logs vergelijken.
+3. Optioneel: audit logging pad (`withAudit` + rawRequest serialisatie) verder opschonen voor stillere logs.
+
+### Vervolgnotities (aanvulling op stabilisatie)
+**1. Backend data-koppeling is nu strikter en robuuster**
+- `saveQcMeasurementService` en `saveQcInspectionService` zoeken het gekoppelde productdossier via drie stappen:
+    - expliciet `trackedProductPath` (als meegegeven),
+    - root-collectie `future-factory/production/tracked_products`,
+    - fallback via `collectionGroup("items")`.
+- Als geen match bestaat op lotnummer, wordt de save bewust geweigerd met een duidelijke fout, zodat QC-data niet op een losstaand/spookdocument terechtkomt.
+
+**2. Preview routing voor callables is expliciet gemaakt**
+- In `qcSecurityService` gaat verkeer op `*.vercel.app` via `httpsCallableFromURL(.../api/callables/<name>)`.
+- Op niet-preview omgevingen blijft de app de standaard `httpsCallable` route gebruiken.
+- Hierdoor blijft de runtime-routing voorspelbaar per omgeving en is debuggen van preview-specifieke issues eenvoudiger.
+
+**3. Auth-flow vóór callable-call is afgedwongen**
+- De frontend wacht kort op auth-state (`waitForAuthenticatedUser`) en forceert vervolgens tokenverversing (`getIdToken`) vóór de save-call.
+- Zonder geldige sessie wordt direct een gebruikersgerichte foutmelding gegeven (niet pas ná een backend roundtrip).
+
+### Status na deze aanvulling
+- De stabilisatie bestaat nu uit drie lagen: correcte Gen2 callable-signature, expliciete preview-routering en preflight-auth guard.
+- Open risico blijft vooral omgevingsafhankelijk (preview domain/CORS/deployment protection), niet de kernlogica van de QC save zelf.
+
+## Update sessie 26 mei 2026 (Virtuele Lotuitgifte / QC Hub fixes)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Virtuele Lotuitgifte (QC) UX & Functionaliteit**
+- "QSHE" terminologie overal vervangen door "QC".
+- Layout geoptimaliseerd voor mobiel: de actieve order dropdown staat nu direct onder de machinekeuze in een verticale lijst.
+- Orderlijst pas zichtbaar nadat een machine geselecteerd is.
+- "Actief" badge toegevoegd bij orders die daadwerkelijk `in_progress` / `in productie` zijn.
+- Auto-lotnummer modus toegevoegd: reserveert netjes het volgende lotnummer voor de gekozen machine op de achtergrond.
+- Teller-fix voor Auto-lot: het systeem kijkt nu correct naar bestaande lotnummers (inclusief LN geïmporteerde reeksen) en de *originele* machienaam van de order, zodat de reeks netjes doorloopt (bijv. van `...0006` naar `...0007`).
+- Directe **Print Label** knop toegevoegd na succesvolle uitgifte, welke een A4 HTML printvenster opent met QR code en ordergegevens.
+
+## Update sessie 28 mei 2026 (ATPS -> App leidend voor aanwezigheid)
+
+### Vastgelegd gesprekspunt
+- Gewenste primaire richting is **ATPS -> app** voor aanwezigheid en afmelding.
+- Scenario dat leidend moet zijn:
+    - Medewerker logt in ATPS in (aanwezig op terrein/afdeling) -> app mag aanwezigheid/afdelingsuren laten lopen.
+    - Medewerker meldt zich daarna op tablet/app aan op machine -> vanaf dat moment tellen productie-uren op machine.
+    - Medewerker logt via ATPS uit -> app moet medewerker direct van machine/werkplek afmelden en uren stoppen.
+- Koppeling moet dus aanwezigheid vanuit ATPS als bron gebruiken, met machine-productie als tweede stap in de app.
+
+**2. Tellers & Virtuele Lots**
+- Virtuele lots (`isVirtualLot: true`) worden nu 100% genegeerd in de ordertellers (`startedAmount`, `liveStartedAmount`, `productionProgressMap`) in de `WorkstationHub`, `Terminal`, `PlanningSidebar` en `OrderDetail`.
+- Hierdoor kunnen QC operators naar hartenlust virtuele lots aanmaken voor inspectie zonder dat de productieteller van de order voortijdig afneemt of de planning in de war raakt.
+
+---
+
+## Update sessie 26 mei 2026 (Brix Formulier QAQC-W11 Auto-Selectie & i18n Voorbereiding)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Herstructurering Brix Meting Formulier (`AddLabMeasurementModal.tsx`)**
+- Volgorde van het formulier exact afgestemd op de fysieke werkinstructies: Operator (Personeelsnummer) -> Meetstation -> Datum/Tijd/Ploeg -> Lotnummer -> Hars -> IPD -> Brekingsindex.
+- **Ploeg-bepaling geautomatiseerd:** Wordt nu op de achtergrond afgeleid van het gekozen tijdstip (Vroeg/Middag/Nacht) en is read-only.
+- **QAQC-W11 Tabellen Ingebakken:** De wiskundige theorie-formule is vervangen door de exacte empirische tabellen uit de kwaliteitsdocumenten (Tabel 1, 3, 4, 5).
+- **Super-slimme Tabel-Selectie:** Zodra de operator een *Gemeten Brekingsindex* (bijv. `1.5545`) intypt, scant de app razendsnel alle QAQC tabellen om te zien in welke tabel deze waarde exact voorkomt. Hij kiest de tabel vervolgens **volledig automatisch**.
+- De berekende ratio en de goedkeurings-zone (Area A/B/C) hangen nu 100% af van de geselecteerde Tabel + Gemeten Brekingsindex, conform fabriekspraktijk.
+
+### Hervatpunt voor volgende sessie
+- De kwaliteitscontrole-verbeteringen staan nu live in de code.
+- We kunnen direct door met het geplande i18n-werk. **Start de i18n vertaling voor `src/components/planning/AutomationRulesView.jsx`** (vervangen van vaste teksten door `t()` calls).
+
+---
+
+## Update sessie 26 mei 2026 (Voorbereiding i18n migratie & roadmap update - ochtend)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Huidige Status & Planning
+**1. i18n Literal Strings Opschoning**
+- Er is een actuele analyse gemaakt (`i18n-literal-report.txt`) met betrekking tot resterende hardcoded teksten (~1904 meldingen over ~84 bestanden).
+- Diverse bestanden zijn in het verleden al omgezet (o.a. `PersonnelManager`, `AdminLabelLogic`, `TeamleaderHub`).
+- Een geprioriteerde takenlijst (`translation-tasks.txt`) is opgesteld voor de volgende iteraties om de applicatie volledig meertalig (NL/EN/DE/AR) te maken.
+
+**2. Eerstvolgende Actiepunten (Hoogste prioriteit)**
+- De vertaalslag (vervangen van vaste teksten door `t()` calls) start bij de volgende drie componenten:
+  - `src/components/planning/AutomationRulesView.jsx`
+  - `src/components/planning/ShopFloorMobileApp.jsx`
+  - `src/components/planning/CapacityPlanningView.jsx`
+- Hierbij worden de nieuwe keys direct toegevoegd aan `nl.js` en `en.js`. 
+- Tevens moeten ontbrekende namespaces (zoals `verification`, `planner` en `productionStandards`) nog worden aangevuld in `de.js` en `ar.js`.
+
+### Hervatpunt voor volgende sessie
+- Pak de i18n migratie daadwerkelijk op voor bovengenoemde drie bestanden: `AutomationRulesView`, `ShopFloorMobileApp`, en `CapacityPlanningView`.
+- Voeg de vereiste translation-keys toe aan de taalbestanden.
+- Werk na afronding van deze batch `translation-tasks.txt` bij en rapporteer of check het resultaat.
+- De volgende bestanden in de prioriteitenlijst zijn daarna `TimeTrackingView.jsx` (35 open meldingen) en `ProjectStructureViewer.jsx` (31 open meldingen).
+
+---
+
+## Update sessie 25 mei 2026 (Factory Configurator uitbreiding, ATM-stijl Lab Invoer & Slimme Lot-Validatie)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Factory Configurator Update (`FactoryStructureManager.tsx`)**
+- Machines en meetpunten hebben nu gerichte categorieën in de dropdown (o.a. Weegschaal, Hars tap, Frees, Boor frees, Afzuiging, Ovens).
+- Status-vinkjes toegevoegd om specifiek te markeren of iets een "Productie machine" is, of behoort tot "Overige (Brix, Lab, Harskeuken, etc)".
+- Voor Lab-meetpunten kunnen nu direct de maximale limieten voor Hars en IPD (kg) dynamisch worden ingesteld via het admin-paneel.
+
+**2. Brix & Lab Formulier Update (`AddLabMeasurementModal.tsx` & `LabMeasurementsView.tsx`)**
+- Hardcoded lijsten verwijderd. De Harskeuken/Meetpunt dropdown vult zich nu dynamisch met data uit de Factory Config (alles met het "Overige/Lab" vinkje).
+- Het "Aftappunt" veld is volledig verwijderd.
+- Datum en tijd velden toegevoegd, zodat deze (bovenop de automatische huidige tijd) nog handmatig gecorrigeerd kunnen worden.
+- **"ATM-stijl" invoer** toegevoegd voor Hars, IPD en Brekingsindex. Operatoren hoeven geen punten of komma's meer te typen; de getallen schuiven tijdens het intypen automatisch naar de decimalen (delen door 1000 of 10.000).
+- **Visuele waarschuwingen (oranje driehoeken)** toegevoegd. De operator krijgt een niet-blokkerende waarschuwing wanneer hars of IPD de ingestelde station-limiet overschrijdt, of als de brekingsindex buiten de ingestelde normale marges (1.52 - 1.58) valt.
+
+**3. Slimme Lotnummer Validatie & Productdossier Koppeling**
+- Zodra het lab-formulier wordt opgeslagen, doorzoekt het systeem ALTIJD eerst de productie-database.
+- Bevat het lotnummer **418** (BH18)? Dan blokkeert het formulier met een foutmelding als de order niet wordt gevonden (voorkomt metingen op spookproducten).
+- Bevat het lotnummer een andere machinecode? Dan accepteert de app dit (tijdelijk) wel, om nog-niet aangesloten afdelingen in de transitiefase niet te blokkeren.
+- Als het document **wél** gevonden wordt in de productie-database, schrijft het formulier de Brix, Mixverhouding en Tg waarden nu tegelijkertijd direct weg in het fysieke productdossier (`measurements.Brix`, `measurements.Tg`). Het Product Paspoort toont dit nu ook direct!
+
+---
+
+## Update sessie 24 mei 2026 (Harscontrole formulierstructuur, afdelingstegels en dossierkoppeling)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Brix-weergave uitgebreid naar afdelingsturing met 3 tegels:**
+- De Brix-flow in `LabMeasurementsView` is uitgebreid met drie expliciete afdelings-tegels: **Fittings**, **Spoolbouw**, **Buizen**.
+- Per afdeling kan nu specifiek gefilterd worden op **harskeuken**.
+- Er is een zoekveld toegevoegd zodat metingen snel gevonden kunnen worden op o.a. lotnummer, operator, ploeg, aftappunt en mengverhouding.
+
+**2. Formulierlogica aangepast op harscontrole-praktijk (met aftappunten):**
+- In `AddLabMeasurementModal` is een afdelingsconfiguratie toegevoegd met dynamische opties voor:
+    - `department`
+    - `kitchen`
+    - `tapPoint` (aftappunt)
+- Standaardafdeling staat op Fittings; bij wisselen van afdeling worden geldige harskeuken- en aftappuntopties automatisch meegewijzigd.
+- Brix-formulier is meer "papierachtig" en sequentieel ingericht zodat invoer dezelfde logische volgorde volgt als op de werkvloer:
+    1. Lotnummer
+    2. Afdeling
+    3. Harskeuken
+    4. Aftappunt
+    5. Ploeg
+    6. Tabelreferentie
+    7. Ingewogen hars
+    8. Ingewogen IPD
+    9. Gemeten brekingsindex
+    10. Visuele check
+
+**3. Ingevulde waarden onder elkaar terugzoekbaar gemaakt:**
+- Brix-resultaten worden nu weergegeven als formulierachtige records (velden onder elkaar per meting) in plaats van alleen tabelkolommen.
+- Hierdoor sluiten we beter aan op het gewenste gedrag: ingevulde waarden kunnen visueel "zoals formulierregels" worden nagekeken.
+
+**4. End-to-end opslag uitgebreid naar productdossier:**
+- Nieuwe veld `tapPoint` wordt nu:
+    - meegestuurd via frontend payload (`qcSecurityService`),
+    - ingelezen in `QCHub` vanuit `qc_measurements`,
+    - opgeslagen in het productdossier (`tracked_products`) als `measurements.Brix_TapPoint` in backend `qcService`.
+
+**5. Formulevalidatie behouden:**
+- De bestaande QAQC-W11 afgeleide berekening en classificatie naar Area A/B/C is intact gebleven in het Brix-formulier.
+
+### Opmerking m.b.t. PDF-referentie
+- Referentiebestand: `Tijdelijke Bestanden/PDF/2026-05-22 15-17.pdf`.
+- In deze container bleek dit PDF een scan-afbeelding zonder tekstlaag; standaard tools (`pdftotext`, `pdfinfo`, `pdftoppm`) waren niet beschikbaar.
+- Daarom is de formulierstructuur in deze sessie inhoudelijk en visueel benaderd op basis van de opgegeven werkvloerlogica en bestaande QC-context.
+
+### Hervatpunt voor volgende sessie
+1. Indien gewenst: exacte 1-op-1 veldlabels en volgorde afstemmen op het fysieke PDF-formulier aan de hand van een screenshot of veldlijst.
+2. Eventueel extra uitbreidbare afdelingconfig toevoegen (meer harskeukens/aftappunten zonder code-aanpassing via centrale config).
+
+---
+
+## Update sessie 23 mei 2026 (Algoritme ontdekking QC Hub / Lab Metingen - Brix/Brekingsindex)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Ontdekking Algoritme (QAQC-W11):**
+- Er is een wiskundige formule (algoritme) afgeleid uit het QC document (QAQC-W11) voor het berekenen van de acceptabele brekingsindex/mengverhouding voor Epoxyhars (Epikote 828, Der 336 etc.) en IPD. 
+- Dit algoritme wordt later gebruikt in de **QC Hub** (bij de Brix & Lab Metingen tab) voor het automatisch valideren of een ingevoerde meting binnen de toleranties (Acceptatieniveau A/B/C) valt.
+
+**Formule (Volumefractie-mengregel):**
+`n_mix = (n_hars + (x / 100) * K * n_IPD) / (1 + (x / 100) * K)`
+
+Waarbij:
+- **`n_mix`**: Berekende brekingsindex van het mengsel.
+- **`n_hars`**: Brekingsindex van de basis-hars (bijv. 1,5738).
+- **`n_IPD`**: Vaste waarde van de harder (1,4888).
+- **`x`**: Mengverhouding van de harder (bij een verhouding van 100:23,4 is `x = 23,4`).
+- **`K`**: Constante factor van **1,214** (Dichtheidsverhouding `D_hars / D_IPD`).
+
+**Vuistregels voor snelle validatie:**
+1. Als de brekingsindex van de hars met bijv. `0,0002` daalt, dalen alle eindwaarden in de mix ook met exact `0,0002`.
+2. Elke `1,0` extra deel IPD verlaagt de brekingsindex van het mengsel met grofweg `0,00064`.
+
+---
+
 ## Update sessie 22 mei 2026 (QC Hub, Lab Metingen, ISO Compliance & PDF Paspoort)
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)

@@ -17,6 +17,9 @@ const EFFICIENCY_COLLECTION = `${BASE}/production/efficiency_hours`;
 const IMPORT_RUNS_COLLECTION = `${BASE}/integrations/import_runs`;
 const AI_RATE_LIMIT_COLLECTION = `${BASE}/security/ai_rate_limits`;
 const CLIENT_ERROR_LOG_COLLECTION = `${BASE}/logs/client_errors`;
+const ATPS_PRESENCE_STATE_COLLECTION = `${BASE}/integrations/atps_presence`;
+const ATPS_PRESENCE_SESSION_COLLECTION = `${BASE}/integrations/atps_presence_sessions`;
+const ATPS_PRESENCE_MACHINE_ID = 'ATPS_AANWEZIGHEID';
 const STATS_TODAY_DOC = `${BASE}/stats/today`;
 const STATS_DAILY_COLLECTION = `${BASE}/stats/daily`;
 const STORAGE_IMPORT_FOLDER = 'imports/planning/';
@@ -111,6 +114,7 @@ const {
   reconcileOrderControl,
 } = require('./src/callables/planningCallables');
 const { runMigrationTool } = require('./src/callables/migrationCallables');
+const { saveQcMeasurement, saveQcInspection, updateQcMeasurement } = require('./src/callables/qcCallables');
 const auditService = require('./src/services/auditService');
 const {
   aiReactiveWatchdogTrackedScoped,
@@ -253,6 +257,80 @@ const getEuropeAmsterdamDayKey = (dateLike = new Date()) => {
 const toNumber = (value) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+};
+
+const normalizeEmployeeNumber = (value) => String(value || '').trim();
+
+const parseTimestampInput = (value) => {
+  if (!value) return new Date();
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+};
+
+const getDateKeyFromDate = (dateLike = new Date()) => {
+  const date = dateLike instanceof Date ? dateLike : new Date(dateLike);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+const resolveAtpsWebhookToken = () => {
+  const runtimeConfig = getLegacyRuntimeConfig();
+  return (
+    runtimeConfig?.atps?.webhook_token ||
+    runtimeConfig?.integration?.atps?.webhook_token ||
+    process.env.ATPS_WEBHOOK_TOKEN ||
+    process.env.INTEGRATION_ATPS_WEBHOOK_TOKEN ||
+    ''
+  );
+};
+
+const computeElapsedHours = (entry = {}, checkoutAtDate = new Date()) => {
+  const startRaw = entry.shiftEffectiveStart || entry.checkedInAt;
+  const startDate = startRaw?.toDate ? startRaw.toDate() : new Date(startRaw);
+  if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) return Number(entry.hoursWorked || 0);
+  const elapsed = Math.max(0, (checkoutAtDate.getTime() - startDate.getTime()) / 3600000);
+  const previous = Number(entry.hoursWorked || 0);
+  return Number((previous + elapsed).toFixed(2));
+};
+
+const closeActiveOccupancyForEmployee = async ({ employeeNumber, checkoutAt, reason = 'atps_logout' }) => {
+  const normalized = normalizeEmployeeNumber(employeeNumber);
+  if (!normalized) return { closedCount: 0, machineIds: [] };
+
+  const snap = await db.collection('future-factory/production/machine_occupancy')
+    .where('operatorNumber', '==', normalized)
+    .limit(500)
+    .get();
+
+  const checkoutDate = parseTimestampInput(checkoutAt);
+  const activeDocs = snap.docs.filter((d) => {
+    const data = d.data() || {};
+    return data.isActive !== false && !data.checkedOutAt;
+  });
+
+  if (!activeDocs.length) return { closedCount: 0, machineIds: [] };
+
+  const batch = db.batch();
+  const machineIds = [];
+
+  activeDocs.forEach((docSnap) => {
+    const data = docSnap.data() || {};
+    const finalHours = computeElapsedHours(data, checkoutDate);
+    if (data.machineId) machineIds.push(String(data.machineId));
+    batch.set(docSnap.ref, {
+      hoursWorked: finalHours,
+      checkedOutAt: admin.firestore.Timestamp.fromDate(checkoutDate),
+      checkedOutReason: reason,
+      isActive: false,
+      autoCheckout: true,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+
+  await batch.commit();
+  return { closedCount: activeDocs.length, machineIds: Array.from(new Set(machineIds)) };
 };
 
 const normalizeStatusForStats = (value = '') =>
@@ -1286,6 +1364,175 @@ exports.importPlanningFromWebhook = functions.https.onRequest(async (req, res) =
 });
 
 /**
+ * ATPS Presence Webhook (ATPS -> App)
+ *
+ * Doel:
+ * - CHECK_IN in ATPS = medewerker aanwezig op afdeling (presence state/session in app)
+ * - CHECK_OUT in ATPS = medewerker direct uitgelogd van alle actieve machines in app
+ *
+ * Verwachte body:
+ * {
+ *   employeeNumber: string,
+ *   eventType: 'CHECK_IN' | 'CHECK_OUT' | 'IN' | 'OUT',
+ *   timestamp?: string (ISO),
+ *   departmentId?: string,
+ *   token?: string
+ * }
+ */
+exports.atpsPresenceWebhook = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ ok: false, error: 'Method not allowed' });
+  }
+
+  try {
+    const expectedToken = resolveAtpsWebhookToken();
+    const providedToken = req.get('x-atps-token') || req.body?.token;
+    if (!expectedToken || providedToken !== expectedToken) {
+      return res.status(401).json({ ok: false, error: 'Unauthorized' });
+    }
+
+    const employeeNumber = normalizeEmployeeNumber(req.body?.employeeNumber || req.body?.employeeNo || req.body?.badge || '');
+    const eventType = String(req.body?.eventType || req.body?.event || req.body?.action || '').trim().toUpperCase();
+    const departmentId = clean(req.body?.departmentId || req.body?.department || '');
+    const eventAt = parseTimestampInput(req.body?.timestamp || req.body?.eventAt || req.body?.time);
+
+    if (!employeeNumber) {
+      return res.status(422).json({ ok: false, error: 'employeeNumber is required' });
+    }
+
+    const isCheckIn = ['CHECK_IN', 'IN', 'LOGIN', 'CLOCK_IN'].includes(eventType);
+    const isCheckOut = ['CHECK_OUT', 'OUT', 'LOGOUT', 'CLOCK_OUT'].includes(eventType);
+    if (!isCheckIn && !isCheckOut) {
+      return res.status(422).json({ ok: false, error: 'Unsupported eventType' });
+    }
+
+    const presenceRef = db.collection(ATPS_PRESENCE_STATE_COLLECTION).doc(employeeNumber);
+    const nowIso = new Date().toISOString();
+
+    if (isCheckIn) {
+      const sessionRef = db.collection(ATPS_PRESENCE_SESSION_COLLECTION).doc();
+      await sessionRef.set({
+        employeeNumber,
+        departmentId: departmentId || null,
+        source: 'atps_presence',
+        status: 'active',
+        checkInAt: admin.firestore.Timestamp.fromDate(eventAt),
+        checkInAtIso: eventAt.toISOString(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      const dateKey = getDateKeyFromDate(eventAt);
+      const occDocId = `${dateKey}_ATPS_${employeeNumber}_${Date.now()}`;
+      await db.collection('future-factory/production/machine_occupancy').doc(occDocId).set({
+        date: dateKey,
+        machineId: ATPS_PRESENCE_MACHINE_ID,
+        departmentId: departmentId || 'ATPS',
+        operatorNumber: employeeNumber,
+        operatorName: `ATPS ${employeeNumber}`,
+        shift: 'ATPS',
+        shiftKey: 'ATPS',
+        source: 'atps_presence_checkin',
+        isActive: true,
+        isPresenceOnly: true,
+        checkedInAt: admin.firestore.Timestamp.fromDate(eventAt),
+        shiftEffectiveStart: eventAt.toISOString(),
+        checkedOutAt: null,
+        hoursWorked: 0,
+        atpsExported: false,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      await presenceRef.set({
+        employeeNumber,
+        isPresent: true,
+        departmentId: departmentId || null,
+        lastCheckInAt: admin.firestore.Timestamp.fromDate(eventAt),
+        lastCheckInAtIso: eventAt.toISOString(),
+        lastEventType: 'CHECK_IN',
+        lastEventAt: admin.firestore.Timestamp.fromDate(eventAt),
+        lastEventAtIso: eventAt.toISOString(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      auditService.logSystem('ATPS_PRESENCE_CHECKIN', {
+        employeeNumber,
+        departmentId: departmentId || null,
+        eventAt: eventAt.toISOString(),
+      }, { category: 'SYSTEM', severity: 'INFO' });
+
+      return res.status(200).json({
+        ok: true,
+        direction: 'ATPS_TO_APP',
+        eventType: 'CHECK_IN',
+        employeeNumber,
+        updatedAt: nowIso,
+      });
+    }
+
+    const closeResult = await closeActiveOccupancyForEmployee({
+      employeeNumber,
+      checkoutAt: eventAt,
+      reason: 'atps_logout',
+    });
+
+    const activeSessionsSnap = await db.collection(ATPS_PRESENCE_SESSION_COLLECTION)
+      .where('employeeNumber', '==', employeeNumber)
+      .where('status', '==', 'active')
+      .limit(20)
+      .get();
+
+    for (const sessionDoc of activeSessionsSnap.docs) {
+      const session = sessionDoc.data() || {};
+      const checkInDate = session?.checkInAt?.toDate ? session.checkInAt.toDate() : parseTimestampInput(session?.checkInAtIso);
+      const durationHours = Math.max(0, (eventAt.getTime() - checkInDate.getTime()) / 3600000);
+      await sessionDoc.ref.set({
+        status: 'closed',
+        checkOutAt: admin.firestore.Timestamp.fromDate(eventAt),
+        checkOutAtIso: eventAt.toISOString(),
+        durationHours: Number(durationHours.toFixed(2)),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+
+    await presenceRef.set({
+      employeeNumber,
+      isPresent: false,
+      lastCheckOutAt: admin.firestore.Timestamp.fromDate(eventAt),
+      lastCheckOutAtIso: eventAt.toISOString(),
+      lastEventType: 'CHECK_OUT',
+      lastEventAt: admin.firestore.Timestamp.fromDate(eventAt),
+      lastEventAtIso: eventAt.toISOString(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    auditService.logSystem('ATPS_PRESENCE_CHECKOUT', {
+      employeeNumber,
+      closedMachineAssignments: closeResult.closedCount,
+      machineIds: closeResult.machineIds,
+      eventAt: eventAt.toISOString(),
+    }, { category: 'SYSTEM', severity: 'INFO' });
+
+    return res.status(200).json({
+      ok: true,
+      direction: 'ATPS_TO_APP',
+      eventType: 'CHECK_OUT',
+      employeeNumber,
+      closedMachineAssignments: closeResult.closedCount,
+      machineIds: closeResult.machineIds,
+      updatedAt: nowIso,
+    });
+  } catch (error) {
+    console.error('atpsPresenceWebhook error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'ATPS presence webhook failed',
+      details: error?.message || 'Unknown error',
+    });
+  }
+});
+
+/**
  * Firebase Storage trigger import (geen Power Automate nodig).
  * Upload een LN Excel bestand naar: imports/planning/
  */
@@ -1591,6 +1838,9 @@ exports.linkPlanningOrderProduct = linkPlanningOrderProduct;
 exports.createPlanningOrderManual = createPlanningOrderManual;
 exports.markMazakLabelsPrinted = markMazakLabelsPrinted;
 exports.appendQcNote = appendQcNote;
+exports.saveQcMeasurement = saveQcMeasurement;
+exports.saveQcInspection = saveQcInspection;
+exports.updateQcMeasurement = updateQcMeasurement;
 exports.reserveAutoLotNumberRange = reserveAutoLotNumberRange;
 exports.addOrderDependency = addOrderDependency;
 exports.removeOrderDependency = removeOrderDependency;
@@ -1634,8 +1884,185 @@ exports.aiNightlyBottleneckPlanner = aiNightlyBottleneckPlanner;
 exports.aiImportConsolidator = aiImportConsolidator;
 
 // Export Callables
-const { requestExportTask } = require('./src/callables/exportCallables');
+const {
+  requestExportTask,
+  previewAtpsOccupancyExport,
+  runAtpsOccupancyPreview,
+  executeAtpsOccupancyExport,
+  getAtpsExportMonitor,
+  processAtpsRetryQueue,
+  processAtpsRetryQueueInternal,
+} = require('./src/callables/exportCallables');
 exports.requestExportTask = requestExportTask;
+exports.previewAtpsOccupancyExport = previewAtpsOccupancyExport;
+exports.executeAtpsOccupancyExport = executeAtpsOccupancyExport;
+exports.getAtpsExportMonitor = getAtpsExportMonitor;
+exports.processAtpsRetryQueue = processAtpsRetryQueue;
+
+exports.scheduleAtpsPreviewReport = functions
+  .region('europe-west1')
+  .pubsub
+  .schedule('every 2 hours')
+  .timeZone('Europe/Amsterdam')
+  .onRun(async () => {
+    const now = new Date();
+    const runRecord = {
+      startedAt: admin.firestore.FieldValue.serverTimestamp(),
+      startedAtIso: now.toISOString(),
+      type: 'ATPS_DRY_RUN_PREVIEW',
+      status: 'running',
+      source: 'scheduleAtpsPreviewReport',
+      mode: 'passive',
+    };
+
+    const runRef = await db.collection(`${BASE}/integrations/atps_preview_runs`).add(runRecord);
+
+    try {
+      const preview = await runAtpsOccupancyPreview({
+        dryRun: true,
+        executeLive: false,
+        includeRecords: false,
+        allowLive: false,
+        limit: 250,
+      });
+
+      await runRef.set({
+        status: 'success',
+        finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        finishedAtIso: new Date().toISOString(),
+        mode: preview.mode,
+        dryRun: preview.dryRun,
+        liveEligible: preview.liveEligible,
+        noopReason: preview.noopReason,
+        totals: preview.totals,
+        filter: preview.filter,
+        config: preview.config,
+      }, { merge: true });
+
+      auditService.logSystem('ATPS_PREVIEW_SCHEDULED_SUCCESS', {
+        runId: runRef.id,
+        count: Number(preview?.totals?.count || 0),
+        adjustedCount: Number(preview?.totals?.adjustedCount || 0),
+        hoursWorked: Number(preview?.totals?.hoursWorked || 0),
+      }, {
+        category: 'SYSTEM',
+        severity: 'INFO',
+      });
+
+      return null;
+    } catch (error) {
+      await runRef.set({
+        status: 'failed',
+        finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        finishedAtIso: new Date().toISOString(),
+        error: String(error?.message || error || 'Onbekende fout').slice(0, 1200),
+      }, { merge: true });
+
+      auditService.logSystem('ATPS_PREVIEW_SCHEDULED_FAILED', {
+        runId: runRef.id,
+        error: String(error?.message || error || 'Onbekende fout').slice(0, 1200),
+      }, {
+        category: 'SYSTEM',
+        severity: 'CRITICAL',
+      });
+
+      return null;
+    }
+  });
+
+exports.scheduleAtpsRetryQueue = functions
+  .region('europe-west1')
+  .pubsub
+  .schedule('every 15 minutes')
+  .timeZone('Europe/Amsterdam')
+  .onRun(async () => {
+    const result = await processAtpsRetryQueueInternal({ limit: 150 });
+
+    auditService.logSystem('ATPS_RETRY_SCHEDULED_RUN', {
+      processed: Number(result?.processed || 0),
+      success: Number(result?.success || 0),
+      failed: Number(result?.failed || 0),
+      rescheduled: Number(result?.rescheduled || 0),
+      skipped: Boolean(result?.skipped),
+      reason: result?.reason || null,
+    }, {
+      category: 'SYSTEM',
+      severity: 'INFO',
+    });
+
+    return null;
+  });
+
+exports.scheduleAtpsLiveExport = functions
+  .region('europe-west1')
+  .pubsub
+  .schedule('every 1 hours')
+  .timeZone('Europe/Amsterdam')
+  .onRun(async () => {
+    const runRef = await db.collection(`${BASE}/integrations/atps_export_runs`).add({
+      status: 'running',
+      type: 'scheduled_live_export',
+      source: 'scheduleAtpsLiveExport',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAtIso: new Date().toISOString(),
+    });
+
+    try {
+      const result = await runAtpsOccupancyPreview({
+        limit: 250,
+        dryRun: false,
+        executeLive: true,
+        allowLive: true,
+        includeRecords: false,
+        markExportedOnSuccess: true,
+        enqueueOnFailure: true,
+        throwOnDeliveryError: false,
+        exportRunId: runRef.id,
+      });
+
+      await runRef.set({
+        status: result?.delivery?.success ? 'success' : 'partial',
+        finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        finishedAtIso: new Date().toISOString(),
+        mode: result.mode,
+        totals: result.totals,
+        delivery: result.delivery,
+        noopReason: result.noopReason || null,
+        filter: result.filter,
+        config: result.config,
+      }, { merge: true });
+
+      auditService.logSystem('ATPS_LIVE_EXPORT_SCHEDULED_RUN', {
+        runId: runRef.id,
+        mode: result?.mode || 'passive',
+        count: Number(result?.totals?.count || 0),
+        markedExported: Number(result?.delivery?.markedExported || 0),
+        queuedForRetry: Number(result?.delivery?.queuedForRetry || 0),
+      }, {
+        category: 'SYSTEM',
+        severity: 'INFO',
+      });
+
+      return null;
+    } catch (error) {
+      await runRef.set({
+        status: 'failed',
+        finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+        finishedAtIso: new Date().toISOString(),
+        error: String(error?.message || error || 'Onbekende fout').slice(0, 1200),
+      }, { merge: true });
+
+      auditService.logSystem('ATPS_LIVE_EXPORT_SCHEDULED_FAILED', {
+        runId: runRef.id,
+        error: String(error?.message || error || 'Onbekende fout').slice(0, 1200),
+      }, {
+        category: 'SYSTEM',
+        severity: 'CRITICAL',
+      });
+
+      return null;
+    }
+  });
 
 /**
  * Backend AI proxy: voorkomt dat API keys in de frontend staan.

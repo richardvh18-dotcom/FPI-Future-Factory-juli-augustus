@@ -42,7 +42,9 @@ const shouldAttachManifest = (() => {
   const host = String(window.location.hostname || "").toLowerCase();
   // GitHub dev preview can redirect manifest requests through auth endpoints,
   // which causes noisy CORS errors in console without impacting app runtime.
-  return !host.endsWith(".app.github.dev");
+  // Vercel previews can also protect static assets like manifest.json behind
+  // preview auth, which causes a noisy 401 without affecting app behavior.
+  return !host.endsWith(".app.github.dev") && !host.endsWith(".vercel.app");
 })();
 
 if (shouldAttachManifest) {

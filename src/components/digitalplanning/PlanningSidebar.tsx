@@ -716,6 +716,7 @@ const PlanningSidebar = ({
     const countMap = new Map();
 
     trackedProducts.forEach((product) => {
+      if (product?.isVirtualLot) return;
       const orderId = normalizeOrderKey(getOrderIdFromRecord(product));
       if (!orderId) return;
 

@@ -127,8 +127,9 @@ const ProductionTimeStandardsManager = () => {
           
           // Extract all stations from all departments
           departmentsArray.forEach((dept) => {
-            const stations = (dept as { stations?: Array<{ id?: string; name?: string }> }).stations || [];
+            const stations = (dept as { stations?: Array<{ id?: string; name?: string; isAvailableForPlanning?: boolean }> }).stations || [];
             stations.forEach((station) => {
+              if (station.isAvailableForPlanning === false) return;
               if (station.id) machines.add(station.id);
               if (station.name && station.name !== station.id) machines.add(station.name);
             });

@@ -32,12 +32,14 @@ import {
   Search,
   Undo,
   Plus,
+  Printer,
 } from "lucide-react";
 import {
   doc,
   setDoc,
   getDocs,
   collection,
+  collectionGroup,
   query,
   limit,
   serverTimestamp,
@@ -56,8 +58,11 @@ import {
   resolveLabelContent,
 } from "../../utils/labelHelpers";
 import { generatePrintData, downloadZPL } from "../../utils/zplHelper";
+import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
 import { getDriver } from "../../utils/printerDrivers";
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useLabelCatalog } from '../../hooks/useLabelCatalog';
+import { isUsbDirectSupported, requestUsbDevice, printRawUsbToDevice } from "../../utils/usbPrintService";
 
 /**
  * CRITICAL DPI PARITY: designer moet dezelfde schaal gebruiken als preview
@@ -66,7 +71,7 @@ import { useNotifications } from '../../contexts/NotificationContext';
 const CSS_PIXELS_PER_POINT = 96 / 72;
 const SNAP_THRESHOLD_MM = 1.5;
 const DEFAULT_PRINTER_DPI = 203;
-const PRINTER_PREVIEW_FONT_STACK = '"Lucida Console", "Courier New", monospace';
+const PRINTER_PREVIEW_FONT_STACK = '"Arial Narrow", "Helvetica Condensed", Arial, sans-serif';
 
 /**
  * Berekent PIXELS_PER_MM voor gegeven printer-DPI
@@ -126,7 +131,7 @@ type LabelLogicRule = {
 type Department = {
   id?: string;
   name?: string;
-  stations?: Array<{ name?: string }>;
+  stations?: Array<{ name?: string; isAvailableForPlanning?: boolean }>;
 };
 
 type HistoryEntry = {
@@ -148,10 +153,24 @@ type OrderRecord = {
   id: string;
   isDefault?: boolean;
   orderId?: string;
+  orderNumber?: string;
+  machine?: string;
+  station?: string;
   status?: string;
   item?: string;
   itemCode?: string;
   lotNumber?: string;
+  sourcePath?: string;
+};
+
+type PrinterRecord = {
+  id: string;
+  isDefault?: boolean;
+  name?: string;
+  dpi?: string | number;
+  vendorId?: string | number;
+  productId?: string | number;
+  [key: string]: unknown;
 };
 
 const getLongestPreviewLineLength = (value: unknown) => {
@@ -272,10 +291,10 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
   const [previewData, setPreviewData] = useState<Record<string, unknown> | null>(null);
   const [showDataModal, setShowDataModal] = useState(false);
   const [availableOrders, setAvailableOrders] = useState<OrderRecord[]>([]);
+  const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
+  const [isUsbPrinting, setIsUsbPrinting] = useState(false);
 
-  const [savedLabels, setSavedLabels] = useState<SavedLabel[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [labelLogicRules, setLabelLogicRules] = useState<LabelLogicRule[]>([]);
   const [selectedLogicCode, setSelectedLogicCode] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
@@ -288,30 +307,9 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastOpenedFromPropRef = useRef<string | null>(null);
-
-  // 1. Live Sync met de Root
-  useEffect(() => {
-    const colRef = collection(db, getPathString(PATHS.LABEL_TEMPLATES));
-    const unsub = onSnapshot(
-      colRef,
-      (snap) => {
-        setSavedLabels(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<SavedLabel, "id">) })));
-      },
-      (err) => console.error("Sync Error:", err)
-    );
-
-    return () => unsub();
-  }, []);
-
-  // 1b. Fetch Label Logic Rules
-  useEffect(() => {
-    const logicRef = collection(db, getPathString(PATHS.LABEL_LOGIC));
-    const unsub = onSnapshot(logicRef, (snap) => {
-        const rules = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LabelLogicRule, "id">) }));
-        setLabelLogicRules(rules);
-    });
-    return () => unsub();
-  }, []);
+  const { labelTemplates: catalogTemplates, labelRules: catalogRules } = useLabelCatalog();
+  const savedLabels = useMemo(() => catalogTemplates as SavedLabel[], [catalogTemplates]);
+  const labelLogicRules = useMemo(() => catalogRules as LabelLogicRule[], [catalogRules]);
 
   // 1c. Fetch Departments for assignment
   useEffect(() => {
@@ -334,12 +332,122 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     departments.forEach((dept) => {
       if (dept.stations) {
         dept.stations.forEach((s) => {
+          if (s.isAvailableForPlanning === false) return;
           if (s.name) stations.add(s.name);
         });
       }
     });
     return Array.from(stations).sort();
   }, [departments]);
+
+  useEffect(() => {
+    const restoreUsbConnection = async () => {
+      if (!isUsbDirectSupported()) return;
+      const savedVendor = localStorage.getItem('usb_printer_vendor');
+      const savedProduct = localStorage.getItem('usb_printer_product');
+      if (!savedVendor || !savedProduct) return;
+
+      try {
+        const devices = await navigator.usb.getDevices();
+        const match = devices.find((d) =>
+          d.vendorId === parseInt(savedVendor, 10) && d.productId === parseInt(savedProduct, 10)
+        );
+        if (match) setUsbDevice(match);
+      } catch (err) {
+        console.warn('Kon USB printer niet automatisch herstellen:', err);
+      }
+    };
+
+    void restoreUsbConnection();
+  }, []);
+
+  const mapOrderDoc = (snap: any): OrderRecord => {
+    const data = (snap.data?.() || {}) as Record<string, unknown>;
+    const path = String(snap.ref?.path || '');
+    const pathMachine = path.match(/\/machines\/([^/]+)\/orders\//i)?.[1] || '';
+    const orderId = String(
+      data.orderId || data.orderNumber || data.Order || data.Productieorder || data.order || snap.id || ''
+    );
+
+    return {
+      id: String(snap.id || orderId || Math.random()),
+      orderId,
+      orderNumber: String(data.orderNumber || data.orderId || ''),
+      machine: String(data.machine || data.station || pathMachine || ''),
+      station: String(data.station || data.machine || pathMachine || ''),
+      status: String(data.status || ''),
+      item: String(data.item || data.description || data.Description || data.Omschrijving || ''),
+      itemCode: String(data.itemCode || data.productId || data.Item || data.Artikel || ''),
+      lotNumber: String(data.lotNumber || ''),
+      sourcePath: path,
+    };
+  };
+
+  const loadLiveOrders = async ({
+    station = '',
+    searchTerm = '',
+    maxRows = 300,
+  }: {
+    station?: string;
+    searchTerm?: string;
+    maxRows?: number;
+  }) => {
+    const planningPath = getPathString(PATHS.PLANNING);
+    const [rootSnap, scopedSnap] = await Promise.all([
+      getDocs(query(collection(db, planningPath), limit(maxRows))),
+      getDocs(query(collectionGroup(db, 'orders'), limit(maxRows))),
+    ]);
+
+    const rows = [...rootSnap.docs, ...scopedSnap.docs].map(mapOrderDoc);
+    const dedup = new Map<string, OrderRecord>();
+    rows.forEach((row) => {
+      const key = String(row.orderId || row.id || '').trim().toUpperCase();
+      if (!key) return;
+      if (!dedup.has(key)) dedup.set(key, row);
+    });
+
+    let filtered = Array.from(dedup.values());
+    const normalizedStation = String(station || '').trim().toUpperCase();
+    if (normalizedStation) {
+      filtered = filtered.filter((row) => {
+        const machine = String(row.machine || row.station || '').toUpperCase();
+        const path = String(row.sourcePath || '').toUpperCase();
+        return machine === normalizedStation || path.includes(`/MACHINES/${normalizedStation}/ORDERS/`);
+      });
+    }
+
+    const normalizedTerm = String(searchTerm || '').trim().toUpperCase();
+    if (normalizedTerm) {
+      filtered = filtered.filter((row) => {
+        const haystack = [row.orderId, row.orderNumber, row.itemCode, row.item, row.lotNumber]
+          .map((v) => String(v || '').toUpperCase())
+          .join(' ');
+        return haystack.includes(normalizedTerm);
+      });
+    }
+
+    filtered.sort((a, b) => String(a.orderId || '').localeCompare(String(b.orderId || ''), undefined, { numeric: true }));
+    setAvailableOrders(filtered.slice(0, maxRows));
+  };
+
+  const resolveDefaultPrinter = async (): Promise<{ printer: PrinterRecord | null; dpi: number }> => {
+    let resolvedDpi = 203;
+    let targetPrinter: PrinterRecord | null = null;
+
+    try {
+      const printerSnap = await getDocs(collection(db, getPathString(PATHS.PRINTERS)));
+      const printers: PrinterRecord[] = printerSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PrinterRecord, 'id'>) }));
+      targetPrinter = printers.find((p) => p.isDefault) || printers[0] || null;
+      const driver = getDriver(targetPrinter as any);
+      if (Number.isFinite(driver?.nativeDpi) && driver.nativeDpi > 0) {
+        resolvedDpi = driver.nativeDpi;
+      }
+    } catch (e) {
+      console.warn('Kon printer-DPI niet bepalen, fallback naar 203 DPI:', e);
+    }
+
+    return { printer: targetPrinter, dpi: resolvedDpi };
+  };
 
   // Helper voor navigatie beveiliging (Dirty State Check)
   const confirmDiscardChanges = () => {
@@ -485,9 +593,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     setStationFilter("");
     setIsLoading(true);
     try {
-      const q = query(collection(db, getPathString(PATHS.PLANNING)), limit(15));
-      const snapshot = await getDocs(q);
-      setAvailableOrders(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderRecord, "id">) })));
+      await loadLiveOrders({ station: '', maxRows: 300 });
       setShowDataModal(true);
     } catch (e) {
       console.error("Fout bij ophalen orders:", e);
@@ -500,14 +606,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     setStationFilter(station);
     setIsLoading(true);
     try {
-      let q;
-      if (station) {
-        q = query(collection(db, getPathString(PATHS.PLANNING)), where("machine", "==", station), limit(500));
-      } else {
-        q = query(collection(db, getPathString(PATHS.PLANNING)), limit(15));
-      }
-      const snapshot = await getDocs(q);
-      setAvailableOrders(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderRecord, "id">) })));
+      await loadLiveOrders({ station, maxRows: 500 });
     } catch (e) {
       console.error("Filter fout:", e);
     } finally {
@@ -517,16 +616,12 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
 
   const handleSearchOrder = async (queryText: string) => {
     if (!queryText) {
-        handleStationFilterChange(stationFilter); // Reset naar huidig filter
-        return;
+      handleStationFilterChange(stationFilter); // Reset naar huidig filter
+      return;
     }
     setIsLoading(true);
     try {
-      const term = queryText.trim();
-      // Zoek op orderId (start met...)
-      const q = query(collection(db, getPathString(PATHS.PLANNING)), where("orderId", ">=", term), where("orderId", "<=", term + "\uf8ff"), limit(20));
-      const snapshot = await getDocs(q);
-      setAvailableOrders(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderRecord, "id">) })));
+      await loadLiveOrders({ station: stationFilter, searchTerm: queryText, maxRows: 500 });
     } catch (e) {
       console.error("Zoekfout:", e);
     } finally {
@@ -555,21 +650,68 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
       elements: elements,
     };
 
-    let resolvedDpi = 203;
-    try {
-      const printerSnap = await getDocs(collection(db, getPathString(PATHS.PRINTERS)));
-      const printers: OrderRecord[] = printerSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OrderRecord, "id">) }));
-      const targetPrinter = printers.find((p) => p.isDefault) || printers[0] || null;
-      const driver = getDriver(targetPrinter);
-      if (Number.isFinite(driver?.nativeDpi) && driver.nativeDpi > 0) {
-        resolvedDpi = driver.nativeDpi;
-      }
-    } catch (e) {
-      console.warn("Kon printer-DPI niet bepalen, fallback naar 203 DPI:", e);
+    const { dpi: resolvedDpi } = await resolveDefaultPrinter();
+
+    const printData = await renderLabelToBitmapZpl({
+      template: labelConfig as any,
+      data: data as any,
+      printerDpi: resolvedDpi,
+      darkness: 15,
+      printSpeed: 3,
+      widthMm: Number(labelWidth) || 90,
+      heightMm: Number(labelHeight) || 40,
+    });
+    downloadZPL(printData, `${labelName.replace(/\s+/g, "_")}_preview.zpl`);
+  };
+
+  const handleDirectWebUsbPrint = async () => {
+    if (!isUsbDirectSupported()) {
+      notify('WebUSB is niet beschikbaar in deze browser/context.');
+      return;
     }
 
-    const printData = await generatePrintData(labelConfig, data, resolvedDpi, resolveLabelContent as never, t);
-    downloadZPL(printData, `${labelName.replace(/\s+/g, "_")}_preview.zpl`);
+    const data = previewData || {
+      lotNumber: 'TEST-LOT-001',
+      orderId: 'TEST-ORDER',
+      itemCode: 'TEST-ITEM',
+      item: 'Test Product Description',
+      description: 'Test Product Description',
+      date: new Date().toLocaleDateString('nl-NL'),
+    };
+
+    setIsUsbPrinting(true);
+    try {
+      const { printer, dpi } = await resolveDefaultPrinter();
+      const widthMm = Number(labelWidth) || 90;
+      const heightMm = Number(labelHeight) || 40;
+
+      const printData = await renderLabelToBitmapZpl({
+        template: {
+          width: widthMm,
+          height: heightMm,
+          elements,
+        },
+        data,
+        printerDpi: dpi,
+        darkness: 15,
+        printSpeed: 3,
+      });
+
+      let deviceToUse = usbDevice;
+      if (!deviceToUse) {
+        deviceToUse = await requestUsbDevice(printer || {});
+        setUsbDevice(deviceToUse);
+        localStorage.setItem('usb_printer_vendor', String(deviceToUse.vendorId));
+        localStorage.setItem('usb_printer_product', String(deviceToUse.productId));
+      }
+
+      await printRawUsbToDevice({ device: deviceToUse, content: printData });
+      notify(`Label direct geprint via WebUSB${deviceToUse?.productName ? `: ${deviceToUse.productName}` : ''}`);
+    } catch (e) {
+      notify('WebUSB print fout: ' + (e instanceof Error ? e.message : String(e || 'Onbekende fout')));
+    } finally {
+      setIsUsbPrinting(false);
+    }
   };
 
   const addToHistory = () => {
@@ -967,6 +1109,14 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
             <Code size={18} />
           </button>
           <button
+            onClick={handleDirectWebUsbPrint}
+            disabled={isUsbPrinting || !isUsbDirectSupported()}
+            className="p-3 bg-white border-2 border-slate-100 text-slate-600 hover:text-emerald-600 hover:border-emerald-200 rounded-2xl transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            title={t('adminLabelDesigner.directUsbPrint', 'Direct print via WebUSB')}
+          >
+            {isUsbPrinting ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
+          </button>
+          <button
             onClick={fetchLiveOrders}
             className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 transition-all ${
               previewData
@@ -1214,8 +1364,10 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                           className="leading-tight"
                           style={{
                             ...previewTextStyle,
-                            fontWeight: el.isBold ? "900" : "normal",
-                            fontFamily: !el.fontFamily || el.fontFamily === "Arial"
+                            fontWeight: el.isBold ? "900" : "bold",
+                            fontStretch: "condensed",
+                            letterSpacing: "0.5px",
+                            fontFamily: !el.fontFamily || el.fontFamily === "Arial" || String(el.fontFamily) === "0"
                               ? PRINTER_PREVIEW_FONT_STACK
                               : el.fontFamily,
                             width: isVerticalRotation
@@ -1733,6 +1885,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                       <div className="flex gap-2 mt-2">
                          {order.itemCode && <span className="text-[9px] font-mono bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100">{order.itemCode}</span>}
                          {order.lotNumber && <span className="text-[9px] font-mono bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded border border-purple-100">{order.lotNumber}</span>}
+                         {order.machine && <span className="text-[9px] font-mono bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100">{order.machine}</span>}
                       </div>
                     </button>
                   ))}

@@ -482,7 +482,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
               if (store.hasPermission && document.hidden) {
                 new Notification(data.subject || 'Nieuw bericht', {
                   body: data.body || data.message || '',
-                  icon: '/manifest.json',
+                  icon: '/favicon.ico',
                   tag: change.doc.id,
                 });
               }

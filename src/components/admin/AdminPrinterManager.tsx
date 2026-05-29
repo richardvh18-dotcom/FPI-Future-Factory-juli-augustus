@@ -55,10 +55,16 @@ import PrintQueueAdminView from "../printer/PrintQueueAdminView";
 import AutoScaledLabelPreview from "../printer/AutoScaledLabelPreview";
 import InternalQrImage from "../../utils/InternalQrImage";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useLabelCatalog } from "../../hooks/useLabelCatalog";
+import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
 import { isUsbDirectSupported, requestUsbDevice, printRawUsb } from "../../utils/usbPrintService";
 import { executeOrderLabelSearch, loadFactoryMachinePaths, normalizeText } from "../../utils/orderLabelSearch";
+import {
+  buildOrderLabelPreviewData,
+  buildOrderLabelTemplateProduct,
+} from "../../utils/orderLabelTemplateUtils";
 
 // Parse USB ID strings (e.g., "1234" or "0x1234") to numbers
 type PrinterConnectionType = "webusb" | "windows_host" | "network";
@@ -87,6 +93,8 @@ type PrinterRecord = {
   calibrationOffsetXMm?: string;
   calibrationOffsetYMm?: string;
   driverModel?: string;
+  zplTextFont?: string;
+  bitmapPrintEnabled?: boolean;
   [key: string]: unknown;
 };
 
@@ -111,6 +119,8 @@ type PrinterFormData = {
   calibrationOffsetXMm: string;
   calibrationOffsetYMm: string;
   driverModel: string;
+  zplTextFont: string;
+  bitmapPrintEnabled: boolean;
 };
 
 type TempOrderRecord = {
@@ -207,6 +217,8 @@ const DEFAULT_PRINTER_FORM: PrinterFormData = {
   calibrationOffsetXMm: "0",
   calibrationOffsetYMm: "0",
   driverModel: "",  // bijv. 'zebra-zm400-300' of 'lighthouse-cjpro2'
+  zplTextFont: "0",
+  bitmapPrintEnabled: false,
 };
 
 const parseMm = (value: unknown, fallback = 0): number => {
@@ -218,6 +230,12 @@ const normalizeRollType = (value: unknown): "gap" | "continuous" | "mark" => {
   const raw = String(value || '').trim().toLowerCase();
   if (raw === 'continuous' || raw === 'mark') return raw;
   return 'gap';
+};
+
+const normalizeZplTextFont = (value: unknown): "0" | "A" => {
+  const raw = String(value || "").trim().toUpperCase();
+  if (raw === "A") return "A";
+  return "0";
 };
 
 const resolveRollWidthMm = (printerLike: Partial<PrinterFormData | PrinterRecord> = {}) => {
@@ -527,28 +545,11 @@ const TempLabelModal = ({ onClose, printers, labelTemplates, labelRules, onPrint
 
 
   const getTemplateOptions = (item: TempOrderRecord): LabelTemplate[] => {
-    const normalizedProduct = {
-      itemCode: item.itemCode || item.Item || item.Artikel || item.item || '',
-      productId: item.itemCode || item.Item || item.Artikel || item.item || '',
-      description: item.description || item.Description || item.Omschrijving || '',
-      item: item.item || item.description || item.Description || item.Omschrijving || '',
-      extraCode: item.extraCode || item.Code || '',
-    };
-    return filterTempOrderLabelsByProduct(labelTemplates, normalizedProduct as Record<string, unknown>) as LabelTemplate[];
+    return filterTempOrderLabelsByProduct(labelTemplates, buildOrderLabelTemplateProduct(item as Record<string, unknown>)) as LabelTemplate[];
   };
 
   const getPreviewData = (item: TempOrderRecord): Record<string, unknown> => {
-    const order = item.orderId || item.Order || item.Productieorder || item.order || item.id || "ONBEKEND";
-    const itemCode = item.itemCode || item.Item || item.Artikel || item.item || "";
-    const desc = item.description || item.Description || item.Omschrijving || "";
-    const base = processLabelData({
-      ...item,
-      orderNumber: order,
-      productId: itemCode,
-      description: desc,
-      lotNumber: String(item.lotNumber || order),
-    });
-    return applyLabelLogic(base, labelRules || []);
+    return buildOrderLabelPreviewData(item as Record<string, unknown>, labelRules || []);
   };
 
   useEffect(() => {
@@ -773,6 +774,7 @@ const TempLabelModal = ({ onClose, printers, labelTemplates, labelRules, onPrint
                           label={selectedTemplate}
                           data={previewData}
                           maxScale={1}
+                          exactBitmapPreview
                         />
                       ) : (
                         <p className="text-xs text-slate-400 italic">Geen preview</p>
@@ -998,8 +1000,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
   const [showTempModal, setShowTempModal] = useState(false);
   const [showTestMenu, setShowTestMenu] = useState<string | null>(null);
   const [calibrationPrinter, setCalibrationPrinter] = useState<PrinterRecord | null>(null);
-  const [labelTemplates, setLabelTemplates] = useState<LabelTemplate[]>([]);
-  const [labelLogicRules, setLabelLogicRules] = useState<Record<string, unknown>[]>([]);
+  const { labelTemplates, labelRules: labelLogicRules } = useLabelCatalog();
   const [windowsHostMode, setWindowsHostMode] = useState(false);
   const [savingWindowsHostMode, setSavingWindowsHostMode] = useState(false);
   
@@ -1013,28 +1014,6 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       setPrinters(list);
       setLoading(false);
     });
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const unsub = onSnapshot(colPath(PATHS.LABEL_TEMPLATES), (snap) => {
-      const templates: LabelTemplate[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as DocumentData) } as LabelTemplate));
-      setLabelTemplates(templates);
-    }, (err) => {
-      console.error("Label templates listen error:", err);
-    });
-
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const unsub = onSnapshot(colPath(PATHS.LABEL_LOGIC), (snap) => {
-      const rules = snap.docs.map((d) => ({ id: d.id, ...(d.data() as DocumentData) }));
-      setLabelLogicRules(rules);
-    }, (err) => {
-      console.error("Label logic listen error:", err);
-    });
-
     return () => unsub();
   }, []);
 
@@ -1068,10 +1047,11 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         return;
       }
 
-      const data = (snap.data() || {}) as { departments?: Array<{ stations?: Array<{ name?: string }> }> };
+      const data = (snap.data() || {}) as { departments?: Array<{ stations?: Array<{ name?: string, isAvailableForPlanning?: boolean }> }> };
       const stations: string[] = [];
       (data.departments || []).forEach((dept) => {
         (dept.stations || []).forEach((s) => {
+          if (s.isAvailableForPlanning === false) return;
           const name = String(s?.name || "").trim();
           if (name) stations.push(name);
         });
@@ -1185,6 +1165,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         rollWidthMm: normalizedRollWidth,
         speed: normalizedSpeed,
         rollType: normalizeRollType(formData.rollType),
+        zplTextFont: normalizeZplTextFont(formData.zplTextFont),
         // Legacy compat: bestaand veld blijft gevuld voor oude flows.
         width: normalizedRollWidth,
       };
@@ -1318,11 +1299,17 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         await printRawUsb({ content: printContent, printer: printerData || {} });
         return { mode: 'webusb' };
       } catch (err: unknown) {
-        console.error("USB print error:", err);
         const e = err as { message?: string; name?: string };
         const message = String(e?.message || "");
+        const isDeviceSelectionCanceled = e?.name === 'NotFoundError' || /no device selected|geen usb-printer geselecteerd|geen apparaat geselecteerd/i.test(message);
         const isAccessIssue = e?.name === 'SecurityError' || /access denied|permission|toegang/i.test(message);
         const isClaimIssue = /claiminterface|claim interface|unable to claim/i.test(message);
+
+        if (isDeviceSelectionCanceled) {
+          throw new Error("Geen USB-printer geselecteerd. Kies een printer in de browser-popup om te printen.", { cause: err });
+        }
+
+        console.error("USB print error:", err);
 
         // Praktische fallback: als WebUSB-interface bezet is (veelvoorkomend op Windows/Zadig),
         // stuur dezelfde opdracht naar de queue zodat printen toch doorgaat.
@@ -1453,15 +1440,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
     const item = orderData.itemCode || orderData.Item || orderData.Artikel || orderData.item || "";
     const desc = orderData.description || orderData.Description || orderData.Omschrijving || "";
 
-    const normalizedProduct = {
-      itemCode: orderData.itemCode || orderData.Item || orderData.Artikel || orderData.item || '',
-      productId: orderData.itemCode || orderData.Item || orderData.Artikel || orderData.item || '',
-      description: orderData.description || orderData.Description || orderData.Omschrijving || '',
-      item: orderData.item || orderData.description || orderData.Description || orderData.Omschrijving || '',
-      extraCode: orderData.extraCode || orderData.Code || '',
-    };
-
-    const tempCandidates = filterTempOrderLabelsByProduct(labelTemplates, normalizedProduct as Record<string, unknown>) as LabelTemplate[];
+    const tempCandidates = filterTempOrderLabelsByProduct(labelTemplates, buildOrderLabelTemplateProduct(orderData as Record<string, unknown>)) as LabelTemplate[];
     const explicitTemplate = templateId ? labelTemplates.find((tpl) => tpl.id === templateId) : null;
     const selectedTemplate = explicitTemplate || tempCandidates[0] || null;
     
@@ -1475,26 +1454,59 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         lotNumber: String(orderData.lotNumber || order),
       });
       const processedData = applyLabelLogic(labelData, labelLogicRules);
-      zpl = await generatePrintData(selectedTemplate as any, processedData as any, driver.nativeDpi, resolveLabelContent as any, t as any);
+      const widthMm = Number((selectedTemplate as any)?.width) || resolveRollWidthMm(printer);
+      const heightMm = Number((selectedTemplate as any)?.height) || 40;
+
+      try {
+        const bitmapZpl = await renderLabelToBitmapZpl({
+          template: selectedTemplate as any,
+          data: processedData as any,
+          printerDpi: driver.nativeDpi,
+          darkness,
+          printSpeed,
+          widthMm,
+          heightMm,
+        });
+        zpl = applyCalibration(bitmapZpl, printer, driver);
+      } catch (bitmapError) {
+        console.error("Bitmap rendering mislukt (strict mode):", bitmapError);
+        throw new Error(`Bitmap print mislukt: ${getErrMsg(bitmapError)}`);
+      }
     } else {
-      // Fallback zolang er geen passende tijdelijke template gevonden is.
-      const qrMag = Math.max(2, Math.round(4 * driver.nativeDpi / 203));
-      zpl = `^XA
-^PW${Math.round(90 * dotsPerMm)}
-~SD${darkness}
-^PR${printSpeed}
-^FO${Math.round(5 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^A0N,${Math.round(8 * dotsPerMm)},${Math.round(6 * dotsPerMm)}^FDOrder: ${order}^FS
-^FO${Math.round(5 * dotsPerMm)},${Math.round(15 * dotsPerMm)}^A0N,${Math.round(6 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^FDItem: ${item}^FS
-^FO${Math.round(5 * dotsPerMm)},${Math.round(25 * dotsPerMm)}^A0N,${Math.round(5 * dotsPerMm)},${Math.round(4 * dotsPerMm)}^FD${desc.substring(0, 40)}^FS
-^FO${Math.round(60 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^BQN,2,${qrMag}^FDQA,${order}^FS
-^XZ`;
+      const fallbackTemplate = {
+        width: 90,
+        height: 40,
+        elements: [
+          { type: 'text', x: 5, y: 4, width: 52, height: 8, fontSize: 12, isBold: true, content: 'Order: {orderNumber}' },
+          { type: 'text', x: 5, y: 14, width: 52, height: 7, fontSize: 9, isBold: true, content: 'Item: {itemCode}' },
+          { type: 'text', x: 5, y: 23, width: 52, height: 10, fontSize: 8, isBold: true, maxLines: 2, content: '{description}' },
+          { type: 'qr', x: 60, y: 5, width: 25, height: 25, content: '{orderNumber}' },
+        ],
+      };
+      const fallbackBitmapZpl = await renderLabelToBitmapZpl({
+        template: fallbackTemplate as any,
+        data: {
+          orderNumber: order,
+          itemCode: item,
+          description: String(desc || '').substring(0, 80),
+        },
+        printerDpi: driver.nativeDpi,
+        darkness,
+        printSpeed,
+        widthMm: 90,
+        heightMm: 40,
+      });
+      zpl = applyCalibration(fallbackBitmapZpl, printer, driver);
     }
-    zpl = applyCalibration(zpl, printer, driver);
+    if (!selectedTemplate) {
+      zpl = applyCalibration(zpl, printer, driver);
+    }
 
     try {
       const result = await sendPrintJob(printer, zpl, {
         description: `Legacy label voor ${order}`,
-        orderId: order
+        orderId: order,
+        renderMode: selectedTemplate ? "bitmap" : "zpl"
       });
       showSuccess(
         result.mode === 'queue'
@@ -1735,6 +1747,8 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       calibrationOffsetXMm: String(parseMm(printer.calibrationOffsetXMm, 0)),
       calibrationOffsetYMm: String(parseMm(printer.calibrationOffsetYMm, 0)),
       driverModel: printer.driverModel || "",
+      zplTextFont: normalizeZplTextFont(printer.zplTextFont),
+      bitmapPrintEnabled: Boolean(printer.bitmapPrintEnabled),
     });
     setEditingId(printer.id);
     setIsAdding(true);
@@ -1957,7 +1971,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
               </select>
             </div>
             
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:col-span-2">
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 md:col-span-2">
                 <div>
                     <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t('adminPrinterManager.dpi')}</label>
                     <select className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold" value={formData.dpi} onChange={e => setFormData({...formData, dpi: e.target.value})}>
@@ -1997,6 +2011,17 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Speed (ips)</label>
                   <input type="number" min="1" max="14" className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold" value={formData.speed} onChange={e => setFormData({...formData, speed: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">ZPL Font</label>
+                  <select
+                    className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold"
+                    value={normalizeZplTextFont(formData.zplTextFont)}
+                    onChange={e => setFormData({ ...formData, zplTextFont: normalizeZplTextFont(e.target.value) })}
+                  >
+                    <option value="0">Font 0 (standaard)</option>
+                    <option value="A">Font A</option>
+                  </select>
                 </div>
             </div>
 
@@ -2052,6 +2077,23 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                   onChange={e => setFormData({ ...formData, calibrationOffsetYMm: e.target.value })}
                 />
               </div>
+            </div>
+
+            <div className="md:col-span-2 bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.bitmapPrintEnabled}
+                  onChange={e => setFormData({ ...formData, bitmapPrintEnabled: e.target.checked })}
+                  className="w-4 h-4 mt-0.5"
+                />
+                <span>
+                  <span className="block text-xs font-black text-slate-700 uppercase tracking-wider">Bitmap print voor deze printer</span>
+                  <span className="block text-xs text-slate-500 mt-1">
+                    Print labels als 1-op-1 rasterbitmap vanaf de preview. Deze instelling geldt alleen voor deze opgeslagen printer.
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
 
@@ -2148,6 +2190,12 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                 </p>
                 <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
                   Print: Darkness {printer.darkness || getDriver(printer).defaultDarkness} | Speed {printer.speed || getDriver(printer).defaultSpeed} ips
+                </p>
+                <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
+                  ZPL tekstfont: {normalizeZplTextFont(printer.zplTextFont)}
+                </p>
+                <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
+                  Bitmap print: {printer.bitmapPrintEnabled ? 'Aan' : 'Uit'}
                 </p>
                 <p className="text-[10px] text-slate-400 mt-1 flex flex-wrap gap-1">
                     {printer.linkedStations && printer.linkedStations.length > 0 

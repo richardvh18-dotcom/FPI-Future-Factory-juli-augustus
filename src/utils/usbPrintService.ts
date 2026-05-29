@@ -106,6 +106,10 @@ const normalizeUsbError = (err: unknown): Error => {
     const message = String(err.message || "");
     const combined = `${name} ${message}`.toLowerCase();
 
+    if (name === "NotFoundError" || /no device selected|geen apparaat geselecteerd/i.test(combined)) {
+      return new Error("Geen USB-printer geselecteerd. Kies een printer in de browser-popup om te printen.");
+    }
+
     if (name === "SecurityError" || /access denied|permission|toegang|not allowed/i.test(combined)) {
       return new Error(
         "USB toegang geweigerd. Sluit andere tabbladen/apps die de printer gebruiken, koppel USB opnieuw en geef browsertoegang opnieuw."
@@ -180,7 +184,20 @@ const selectUsbDevice = async (printer: UsbPrinterFilterInput = {}): Promise<USB
 
   if (matchAuthorized) return matchAuthorized;
 
-  return navigator.usb.requestDevice({ filters });
+  try {
+    return await navigator.usb.requestDevice({ filters });
+  } catch (err: unknown) {
+    const isNotFound = err instanceof Error && err.name === "NotFoundError";
+    // Als profiel-filters te strikt of onjuist zijn, geef een tweede kans zonder filters.
+    if (isNotFound && filters.length > 0) {
+      try {
+        return await navigator.usb.requestDevice({ filters: [] });
+      } catch (fallbackErr: unknown) {
+        throw normalizeUsbError(fallbackErr);
+      }
+    }
+    throw normalizeUsbError(err);
+  }
 };
 
 export const findAuthorizedUsbDevice = async (
@@ -204,7 +221,19 @@ export const findAuthorizedUsbDevice = async (
 export const requestUsbDevice = async (printer: UsbPrinterFilterInput = {}): Promise<USBDevice> => {
   ensureUsbSupport();
   const filters = getPrinterFilters(printer);
-  return navigator.usb.requestDevice({ filters });
+  try {
+    return await navigator.usb.requestDevice({ filters });
+  } catch (err: unknown) {
+    const isNotFound = err instanceof Error && err.name === "NotFoundError";
+    if (isNotFound && filters.length > 0) {
+      try {
+        return await navigator.usb.requestDevice({ filters: [] });
+      } catch (fallbackErr: unknown) {
+        throw normalizeUsbError(fallbackErr);
+      }
+    }
+    throw normalizeUsbError(err);
+  }
 };
 
 export const printRawUsbToDevice = async ({

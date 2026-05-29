@@ -5,6 +5,22 @@
   "framework": "vite",
   "rewrites": [
     {
+      "source": "/api/callables/saveQcMeasurement",
+      "destination": "https://us-central1-future-factory-377ef.cloudfunctions.net/saveQcMeasurement"
+    },
+    {
+      "source": "/api/callables/saveQcInspection",
+      "destination": "https://us-central1-future-factory-377ef.cloudfunctions.net/saveQcInspection"
+    },
+    {
+      "source": "/__/auth/(.*)",
+      "destination": "https://future-factory-377ef.firebaseapp.com/__/auth/$1"
+    },
+    {
+      "source": "/__/firebase/(.*)",
+      "destination": "https://future-factory-377ef.firebaseapp.com/__/firebase/$1"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

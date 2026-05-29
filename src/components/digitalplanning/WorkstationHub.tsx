@@ -1187,10 +1187,12 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         });
 
       const currentMachineNormalized = String(normalizeMachine(selectedStation) || selectedStation || "").toUpperCase();
+      const atpsPresenceMachine = "ATPS_AANWEZIGHEID";
       const otherActiveStations = Array.from(new Set(
         activeEntries
           .map((entry) => String(entry.machineId || "").trim())
           .filter(Boolean)
+          .filter((machineId) => machineId.toUpperCase() !== atpsPresenceMachine)
           .filter((machineId) => String(normalizeMachine(machineId) || machineId).toUpperCase() !== currentMachineNormalized)
       ));
 
@@ -1459,6 +1461,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     };
 
     rawProducts.forEach((product) => {
+      if (product.isVirtualLot) return;
       const orderId = String(product?.orderId || "").trim();
       if (!orderId) return;
 
@@ -1549,6 +1552,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
 
     const pipeProgressCountByOrder = new Map();
     rawProducts.forEach((p) => {
+      if (p.isVirtualLot) return;
       const orderId = String(p.orderId || "").trim();
       if (!orderId) return;
 
@@ -1575,6 +1579,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     
     const orderStats: Record<string, { started: number; finished: number }> = {};
     rawProducts.forEach((p: TrackedProductDoc) => {
+      if (p.isVirtualLot) return;
       if (!p.orderId) return;
       if (p.status === "rejected" || p.currentStep === "REJECTED") return;
 
@@ -1590,6 +1595,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
 
     const waitingForLossenOnlyByOrder = new Map();
     rawProducts.forEach((p) => {
+      if (p.isVirtualLot) return;
       const orderId = String(p?.orderId || "").trim();
       if (!orderId) return;
 
