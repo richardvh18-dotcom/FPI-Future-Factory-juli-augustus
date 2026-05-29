@@ -16,6 +16,7 @@ type ZplElement = {
     content?: string;
     fontSize?: number;
     fontWidth?: number;
+    fontFamily?: string;
     maxLines?: number;
     align?: ZplTextAlign;
     inverted?: boolean;
@@ -43,6 +44,7 @@ type LabelData = Record<string, unknown> & {
     columnIndex?: number;
     useDynamicLength?: boolean;
     lotNumber?: string;
+    zplTextFont?: string;
 };
 
 type LegacyOptions = {
@@ -139,18 +141,56 @@ const wrapTextContent = (value: unknown, maxCharsPerLine = 1, maxLines = 1): str
     return wrapped.slice(0, safeMaxLines);
 };
 
-const PRINT_TEXT_SCALE = 0.88;
+const PREVIEW_GLYPH_ASPECT_RATIO = 0.46; // Zebra Font 0 is "CG Triumvirate Bold Condensed" (smal lettertype)
+const PREVIEW_TEXT_PADDING = 1.0;
+const PRINT_FONT_HEIGHT_VISUAL_BOOST = 1.25; 
+const PRINT_FONT_WIDTH_VISUAL_BOOST = 1.25;
+const DEFAULT_ZPL_TEXT_FONT = "0";
+
+const normalizeZplFontName = (value: unknown): string => {
+    const raw = String(value || "").trim().toUpperCase();
+    if (!raw) return DEFAULT_ZPL_TEXT_FONT;
+
+    if (raw === "A" || raw === "0") return raw;
+    if (raw.includes("FONTA") || raw.includes("ZEBRA-A")) return "A";
+    if (raw.includes("FONT0") || raw.includes("ZEBRA-0") || raw.includes("FONT O")) return "0";
+
+    return DEFAULT_ZPL_TEXT_FONT;
+};
+
+const buildTextFontCommand = (fontName: string, rot: ZplRotation, height: number, width: number): string => {
+    if (fontName === "A") {
+        return `^AA${rot},${height},${width}`;
+    }
+
+    return `^A0${rot},${height},${width}`;
+};
 
 const getTextMetrics = (el: ZplElement, content: string, rot: ZplRotation = "N") => {
-    const requestedHeight = Math.max(1, Math.floor(mmToDots((el.fontSize || 10) / 2.8) * PRINT_TEXT_SCALE));
+    // Converteer font points (pt) naar printer dots op basis van de actuele DPI.
+    // 1 pt = 1/72 inch. Printer dots per inch = DPI * 25.4.
+    const dotsPerPoint = (DPI * 25.4) / 72;
+    const requestedHeight = Math.max(
+        1,
+        Math.round((Number(el.fontSize) || 10) * dotsPerPoint * PRINT_FONT_HEIGHT_VISUAL_BOOST)
+    );
     const hasExplicitWidth = Number.isFinite(Number(el.fontWidth));
     const explicitWidth = hasExplicitWidth
-        ? mmToDots((el.fontWidth || 12) / 2.8)
+        ? Math.max(
+            1,
+            Math.round((Number(el.fontWidth) || 12) * dotsPerPoint * PRINT_FONT_WIDTH_VISUAL_BOOST)
+        )
         : 0;
-    const naturalWidth = explicitWidth || Math.max(1, Math.round(requestedHeight * 0.48));
+    const naturalWidth = explicitWidth || Math.max(
+        1,
+        Math.round(requestedHeight * PREVIEW_GLYPH_ASPECT_RATIO * PRINT_FONT_WIDTH_VISUAL_BOOST)
+    );
 
     if (!el.width) {
-        const fallbackWidth = Math.max(1, Math.round(requestedHeight * 0.44));
+        const fallbackWidth = Math.max(
+            1,
+            Math.round(requestedHeight * PREVIEW_GLYPH_ASPECT_RATIO * PRINT_FONT_WIDTH_VISUAL_BOOST)
+        );
         return {
             fontHeight: requestedHeight,
             fontWidth: hasExplicitWidth ? explicitWidth : fallbackWidth,
@@ -164,17 +204,18 @@ const getTextMetrics = (el: ZplElement, content: string, rot: ZplRotation = "N")
         ? (Number(el.height) || Number(el.width) || 0)
         : Number(el.width);
     const rawWidthDots = mmToDots(wrapWidthMm);
-    const innerWidthDots = Math.max(1, rawWidthDots - mmToDots(0.8));
+    const innerWidthDots = Math.max(1, Math.floor(rawWidthDots * PREVIEW_TEXT_PADDING));
     const maxLines = Math.max(1, Number(el.maxLines) || 1);
     // Het beschikbare regelbudget staat bij verticale tekst op de X-as (element.width).
     const lineBudgetMm = (rot === 'R' || rot === 'B')
         ? (Number(el.width) || Number(el.height) || 0)
         : (Number(el.height) || 0);
     const heightLimitDots = lineBudgetMm
-        ? Math.max(1, Math.floor(mmToDots(lineBudgetMm) / maxLines))
+        ? Math.max(1, Math.floor((mmToDots(lineBudgetMm) * 0.9) / maxLines))
         : requestedHeight;
     const longestLineLength = Math.max(1, getLongestLineLength(content));
-    const maxCharWidth = Math.max(1, Math.floor((innerWidthDots * 0.98) / longestLineLength));
+    const estimatedLongestWrappedLine = Math.max(1, Math.ceil(longestLineLength / maxLines));
+    const maxCharWidth = Math.max(1, Math.floor((innerWidthDots * 1.0) / estimatedLongestWrappedLine));
     const fittedWidth = Math.min(naturalWidth, maxCharWidth);
     // Houd de glyph-ratio stabiel: als de beschikbare breedte kleiner wordt,
     // schaal de hoogte mee om overlap in kopregels te voorkomen.
@@ -183,12 +224,14 @@ const getTextMetrics = (el: ZplElement, content: string, rot: ZplRotation = "N")
         : 1;
     const widthConstrainedHeight = hasExplicitWidth
         ? Math.max(1, Math.floor(requestedHeight * Math.min(1, widthRatio)))
-        : Math.max(1, Math.floor(fittedWidth / 0.48));
+        : Math.max(1, Math.floor(fittedWidth / PREVIEW_GLYPH_ASPECT_RATIO));
     const fittedHeight = Math.max(1, Math.min(heightLimitDots, requestedHeight, widthConstrainedHeight));
 
     return {
         fontHeight: fittedHeight,
-        fontWidth: hasExplicitWidth ? fittedWidth : Math.max(1, Math.round(fittedHeight * 0.44)),
+        fontWidth: hasExplicitWidth
+            ? fittedWidth
+            : Math.max(1, Math.round(fittedHeight * PREVIEW_GLYPH_ASPECT_RATIO * PRINT_FONT_WIDTH_VISUAL_BOOST)),
         widthDots: innerWidthDots,
     };
 };
@@ -239,6 +282,7 @@ export const generatePrintData = (
         columnIndex = 0,
         useDynamicLength = false // Kan true zijn als template dat toestaat
     } = data; // Data bevat nu ook de print-context opties
+    const requestedFont = normalizeZplFontName(data.zplTextFont);
 
     // 1. Setup & Encoding
     let zpl = "^XA";            // Start Format
@@ -298,40 +342,51 @@ export const generatePrintData = (
         // TYPE: TEXT
         if (el.type === 'text') {
             let { fontHeight, fontWidth, widthDots } = getTextMetrics(el, content, rot);
-            const printableMinX = mmToDots(1);
-            const printableMaxX = mmToDots(width) - mmToDots(1);
-            const printableMinY = mmToDots(1);
-            const printableMaxY = mmToDots(height) - mmToDots(1);
 
             let x = baseX;
             let y = baseY;
 
-            // Voor 90/270 graden gebruikt ZPL een ander origin-ankerpunt dan de preview.
-            // Corrigeer dit met elementafmetingen zodat beide zij-kolommen zichtbaar blijven.
-            if (normalizedRotation === 270) {
-                y -= mmToDots(Number(el.width || 0));
-            }
-
-            if (normalizedRotation === 90) {
-                const inwardNudge = mmToDots(Number(el.width || 0));
-                x -= inwardNudge;
-            }
-
-            x = Math.max(printableMinX, Math.min(x, printableMaxX));
-            y = Math.max(printableMinY, Math.min(y, printableMaxY));
-
-            zpl += `^FO${x},${y}`;
-            const safeFontHeight = Math.max(6, Math.min(fontHeight, 500));
-            zpl += `^A0${rot},${safeFontHeight},${fontWidth}`;
+            const alignMap: Record<ZplTextAlign, string> = { 'left': 'L', 'center': 'C', 'right': 'R', 'justify': 'J' };
+            const alignKey: ZplTextAlign = el.align === 'center' || el.align === 'right' || el.align === 'justify' ? el.align : 'left';
+            const align = alignMap[alignKey] || 'L';
+            const maxLines = Math.max(1, Number(el.maxLines || 1));
+            
+            let applyFB = !!widthDots;
 
             if (widthDots) {
-                const alignMap = { 'left': 'L', 'center': 'C', 'right': 'R', 'justify': 'J' };
-                const alignKey: ZplTextAlign =
-                    el.align === 'center' || el.align === 'right' || el.align === 'justify'
-                        ? el.align
-                        : 'left';
-                const align = alignMap[alignKey] || 'L';
-                const maxLines = Math.max(1, Number(el.maxLines || 1));
+                const isVertical = rot === 'R' || rot === 'B';
+                
+                // Schakel het bug-gevoelige Zebra Field Block (^FB) ALLEEN uit voor VERTICALE tekst
+                if (maxLines === 1 && isVertical) {
+                    applyFB = false;
+                    
+                    // Manuele uitlijning zonder ^FB (voorkomt verspringende karakters bij rotatie)
+                    if (align !== 'L') {
+                        const estimatedTextLength = content.length * (fontHeight * 0.60);
+                        const shift = align === 'C' ? Math.floor((widthDots - estimatedTextLength) / 2) : (widthDots - estimatedTextLength);
+                        
+                        if (shift > 0) { // Voorkom negatieve shift (naar links/boven)
+                            if (rot === 'R') y += shift;
+                            else if (rot === 'B') y -= shift;
+                        }
+                    }
+                } else if (maxLines === 1 && !isVertical) {
+                    // Voor horizontale tekst: behoud ^FB maar maak het veld ruimer om afkappen (clipping) te voorkomen
+                    const extraSpace = 200; 
+                    widthDots += extraSpace;
+                    if (align === 'C') x -= Math.floor(extraSpace / 2);
+                    else if (align === 'R') x -= extraSpace;
+                }
+            }
+
+            zpl += `^FO${Math.round(x)},${Math.round(y)}`;
+            const safeFontHeight = Math.max(4, Math.min(fontHeight, 500));
+            const safeFontWidth = Math.max(2, Math.min(fontWidth, 500));
+            const elementFont = normalizeZplFontName(el.fontFamily);
+            const effectiveFont = elementFont !== DEFAULT_ZPL_TEXT_FONT ? elementFont : requestedFont;
+            zpl += buildTextFontCommand(effectiveFont, rot, safeFontHeight, safeFontWidth);
+
+            if (applyFB && widthDots) {
                 zpl += `^FB${widthDots},${maxLines},0,${align},0`;
             }
 
@@ -578,6 +633,98 @@ export const downloadZPL = (zpl: string, filename = "label.zpl"): void => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+};
+
+/**
+ * BITMAP PRINT MODE: Genereer label als pure raster (GFA bitmap)
+ * in plaats van ZPL commando's. Dit garandeert 1-op-1 parity tussen
+ * preview en fysieke print.
+ */
+export const generateBitmapPrintData = async (
+    labelCanvas: HTMLCanvasElement | null,
+    width: number,
+    height: number,
+    printerDpi = 203,
+    darkness = 15,
+    printSpeed = 3
+): Promise<string> => {
+    if (!labelCanvas) {
+        throw new Error("Label canvas required for bitmap rendering");
+    }
+
+    try {
+        const { canvasToZplGfa } = await import("./canvasToBitmapZpl");
+        
+        const zpl = canvasToZplGfa(labelCanvas, {
+            width,
+            height,
+            printerDpi,
+            darkness,
+            printSpeed,
+            // Printerprofiel: hogere threshold houdt meer anti-aliased randpixels vast,
+            // waardoor tekst op papier minder dun uitvalt.
+            threshold: 204,
+            // Harde verdikking op print-output: maakt letterstammen zichtbaar voller.
+            strokeBoost: 1
+        });
+
+        return zpl;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Bitmap rendering failed: ${message}`);
+    }
+};
+
+/**
+ * Helper om HTML element naar canvas te converteren (voor bitmap print)
+ * Dit is een simpele implementatie; voor complexe layouts gebruik html2canvas library
+ */
+export const captureElementAsCanvas = async (
+    element: HTMLElement | null,
+    widthMm: number,
+    heightMm: number,
+    printerDpi = 203
+): Promise<HTMLCanvasElement> => {
+    if (!element) {
+        throw new Error("Element required for canvas capture");
+    }
+
+    const canvas = document.createElement('canvas');
+    const dotsPerMm = printerDpi / 25.4;
+    canvas.width = Math.round(widthMm * dotsPerMm);
+    canvas.height = Math.round(heightMm * dotsPerMm);
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+        throw new Error("Canvas 2D context not available");
+    }
+
+    // Zet witte achtergrond
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Gebruik html2canvas package direct voor betrouwbare rendering.
+    if ((document as any)?.fonts?.ready) {
+        try {
+            await (document as any).fonts.ready;
+        } catch {
+            // Font readiness is best-effort.
+        }
+    }
+
+    const { default: html2canvas } = await import('html2canvas');
+    // Render het element 1:1 (het is al op 4× renderZoom gerenderd via unifiedLabelRenderEngine).
+    // captureElementAsCanvas schaalt het grote canvas terug naar printerresolutie.
+    const renderCanvas = await html2canvas(element, {
+        backgroundColor: '#ffffff',
+        scale: 1,
+        useCORS: true,
+        logging: false
+    });
+
+    // Downsample van grote render naar printerresolutie dots (versterkt lettertypegewicht).
+    ctx.drawImage(renderCanvas, 0, 0, canvas.width, canvas.height);
+    return canvas;
 };
 
 export const logPrintAction = async (

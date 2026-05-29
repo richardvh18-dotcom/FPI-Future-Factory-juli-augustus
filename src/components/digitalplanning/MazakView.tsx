@@ -33,8 +33,8 @@ import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 import AutoScaledLabelPreview from "../printer/AutoScaledLabelPreview";
 import StatusBadge from "./common/StatusBadge";
 import { getISOWeek, addWeeks, subWeeks } from "date-fns";
-import { filterLabelsByProduct, processLabelData, resolveLabelContent } from "../../utils/labelHelpers";
-import { generatePrintData } from "../../utils/zplHelper";
+import { filterLabelsByProduct, processLabelData } from "../../utils/labelHelpers";
+import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
 import { useNotifications } from '../../contexts/NotificationContext';
 
 const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
@@ -539,20 +539,22 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       const batchTasks = itemsToPrint.map(async (item) => {
         const processedData = processLabelData(item);
         
-        // Genereer ZPL code voor deze label + product combinatie
+        // Genereer bitmap-ZPL code voor deze label + product combinatie
         let zplCode = "";
         try {
           if (templateToUse?.elements) {
-            zplCode = generatePrintData(
-              templateToUse,
-              processedData,
-              DEFAULT_MAZAK_DPI,
-              resolveLabelContent as any,
-              t
-            );
+            zplCode = await renderLabelToBitmapZpl({
+              template: templateToUse as any,
+              data: processedData as any,
+              printerDpi: DEFAULT_MAZAK_DPI,
+              darkness: 15,
+              printSpeed: 3,
+              widthMm: Number((templateToUse as any)?.width) || 90,
+              heightMm: Number((templateToUse as any)?.height) || 40,
+            });
           }
         } catch (zplErr) {
-          console.warn("ZPL generatie fout:", zplErr);
+          console.warn("Bitmap generatie fout:", zplErr);
           zplCode = ""; // Fallback: lege ZPL
         }
 

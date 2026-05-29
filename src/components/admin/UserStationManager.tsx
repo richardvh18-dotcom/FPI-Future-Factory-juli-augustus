@@ -24,6 +24,7 @@ type StationOption = {
 
 type FactoryStation = {
   name?: string;
+  isAvailableForPlanning?: boolean;
 };
 
 type FactoryDepartment = {
@@ -65,6 +66,7 @@ const UserStationManager = () => {
           config.departments.forEach((dept) => {
             if (dept.stations) {
               dept.stations.forEach((st) => {
+                if (st.isAvailableForPlanning === false) return;
                 stations.push({
                   id: st.name || "",
                   name: st.name || "",

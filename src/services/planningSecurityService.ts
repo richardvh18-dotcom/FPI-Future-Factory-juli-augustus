@@ -76,6 +76,9 @@ const verifyAiKnowledgeEntryCallable = httpsCallable(functions, "verifyAiKnowled
 const deleteAiKnowledgeEntryCallable = httpsCallable(functions, "deleteAiKnowledgeEntry");
 const migrateAiKnowledgeFieldsCallable = httpsCallable(functions, "migrateAiKnowledgeFields");
 const runMigrationToolCallable = httpsCallable(functions, "runMigrationTool");
+const previewAtpsOccupancyExportCallable = callableWithRuntime(httpsCallable(functions, "previewAtpsOccupancyExport"));
+const executeAtpsOccupancyExportCallable = callableWithRuntime(httpsCallable(functions, "executeAtpsOccupancyExport"));
+const getAtpsExportMonitorCallable = callableWithRuntime(httpsCallable(functions, "getAtpsExportMonitor"));
 
 export const rejectTrackedProductFinal = async ({
   productId,
@@ -1517,4 +1520,41 @@ export const migrateAiKnowledgeFields = async () => {
 export const runMigrationTool = async ({ mode, orderId, mismatches }: Record<string, unknown>) => {
   const result = await runMigrationToolCallable({ mode, orderId: orderId || null, mismatches: mismatches || null });
   return result?.data;
+};
+
+export const previewAtpsOccupancyExport = async ({
+  limit = 200,
+  dryRun = true,
+  executeLive = false,
+  dateFrom = null,
+  dateTo = null,
+}: Record<string, unknown> = {}) => {
+  const result = await previewAtpsOccupancyExportCallable({
+    limit,
+    dryRun,
+    executeLive,
+    dateFrom,
+    dateTo,
+  });
+  return result?.data || {};
+};
+
+export const executeAtpsOccupancyExport = async ({
+  limit = 200,
+}: Record<string, unknown> = {}) => {
+  const result = await executeAtpsOccupancyExportCallable({
+    limit,
+  });
+  return result?.data || {};
+};
+
+export const getAtpsExportMonitor = async ({
+  runsLimit = 20,
+  previewLimit = 20,
+}: Record<string, unknown> = {}) => {
+  const result = await getAtpsExportMonitorCallable({
+    runsLimit,
+    previewLimit,
+  });
+  return result?.data || { runs: [], previewRuns: [], retryQueue: {} };
 };

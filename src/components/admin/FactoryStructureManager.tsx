@@ -32,6 +32,10 @@ type StationRecord = {
   id: string;
   name: string;
   type: string;
+  isAvailableForPlanning?: boolean;
+  isAvailableForLabMeasurements?: boolean;
+  maxResinWeight?: number;
+  maxHardenerWeight?: number;
 };
 
 type ShiftRecord = {
@@ -89,6 +93,13 @@ const FactoryStructureManager = () => {
     { value: "lab", label: "Lab" },
     { value: "inspector", label: "Inspector" },
     { value: "teamleader", label: "Teamleader" },
+    { value: "weegschaal", label: "Weegschaal" },
+    { value: "hars_tap", label: "Hars tap" },
+    { value: "frees", label: "Frees" },
+    { value: "boor_frees", label: "Boor frees" },
+    { value: "afzuiging", label: "Afzuiging" },
+    { value: "nahardingsoven", label: "Nahardingsoven" },
+    { value: "voorhardingsoven", label: "Voorhardingsoven" },
   ];
 
   // Use the verified path from dbPaths.js
@@ -185,6 +196,8 @@ const FactoryStructureManager = () => {
             id: `st_${Date.now()}`,
             name: "STATION-X",
             type: "machine",
+            isAvailableForPlanning: true,
+            isAvailableForLabMeasurements: false,
           };
           return { ...d, stations: [...(d.stations || []), newStation] };
         }
@@ -196,8 +209,8 @@ const FactoryStructureManager = () => {
   const updateStation = (
     deptId: string,
     stationId: string,
-    field: keyof Pick<StationRecord, "name" | "type">,
-    value: string
+    field: keyof StationRecord,
+    value: any
   ) => {
     setConfig((prev) => ({
       ...prev,
@@ -210,7 +223,7 @@ const FactoryStructureManager = () => {
                 ? {
                     ...s,
                     [field]: field === "name" && (s.type || "machine") === "machine"
-                      ? value.toUpperCase()
+                      ? String(value).toUpperCase()
                       : value,
                   }
                 : s
@@ -284,6 +297,99 @@ const FactoryStructureManager = () => {
       }),
     }));
   };
+
+  const renderStationCard = (deptId: string, station: StationRecord) => (
+    <div key={station.id} className="relative group/st">
+      <div className="absolute left-4 top-[26px] -translate-y-1/2 text-slate-300 group-hover/st:text-blue-500 transition-colors pointer-events-none">
+        {(station.type || "machine") === "lab" ? (
+          <FlaskConical size={16} />
+        ) : (station.type || "machine") === "inspector" ? (
+          <SearchCheck size={16} />
+        ) : (station.type || "machine") === "function" ? (
+          <Briefcase size={16} />
+        ) : (
+          <Cpu size={16} />
+        )}
+      </div>
+      <div className="space-y-2">
+        <input
+          type="text"
+          value={station.name}
+          onChange={(e) =>
+            updateStation(deptId, station.id, "name", e.target.value)
+          }
+          className="w-full pl-12 pr-10 py-5 bg-slate-50 border-2 border-slate-100 rounded-[20px] font-black text-xs outline-none focus:border-blue-500 focus:bg-white transition-all shadow-sm tracking-tight"
+        />
+        <select
+          value={station.type || "machine"}
+          onChange={(e) =>
+            updateStation(deptId, station.id, "type", e.target.value)
+          }
+          className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wide text-slate-600 outline-none focus:border-blue-500"
+        >
+          {stationTypeOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+
+        <div className="flex flex-col gap-2 pt-2 pb-1 px-1">
+          <label className="flex items-start gap-2 cursor-pointer group">
+            <input 
+              type="checkbox"
+              className="mt-0.5 w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer shrink-0"
+              checked={station.isAvailableForPlanning !== false} // Standaard is true
+              onChange={(e) => updateStation(deptId, station.id, "isAvailableForPlanning", e.target.checked)}
+            />
+            <span className="text-[9px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors uppercase tracking-wider leading-tight">
+              Productie<br/>
+              <span className="font-medium text-[8px] opacity-70 normal-case">(Als machine in afdeling)</span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2 cursor-pointer group">
+            <input 
+              type="checkbox"
+              className="mt-0.5 w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer shrink-0"
+              checked={station.isAvailableForLabMeasurements === true}
+              onChange={(e) => updateStation(deptId, station.id, "isAvailableForLabMeasurements", e.target.checked)}
+            />
+            <span className="text-[9px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors uppercase tracking-wider leading-tight">
+              Overige<br/>
+              <span className="font-medium text-[8px] opacity-70 normal-case">(Brix, Lab, Harskeuken, etc)</span>
+            </span>
+          </label>
+        </div>
+        
+        {/* Extra Limieten Configuratie voor Lab Meetpunten */}
+        {station.isAvailableForLabMeasurements && (
+          <div className="flex gap-2 mt-2 p-2 bg-white rounded-lg border border-slate-200 animate-in fade-in">
+            <div className="flex-1">
+              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Max Hars (kg)</label>
+              <input 
+                type="number" placeholder="200" 
+                value={station.maxResinWeight || ""} onChange={(e) => updateStation(deptId, station.id, "maxResinWeight", e.target.value ? Number(e.target.value) : undefined)} 
+                className="w-full px-2 py-1.5 text-[10px] font-bold bg-slate-50 border border-slate-200 rounded outline-none focus:border-blue-500" />
+            </div>
+            <div className="flex-1">
+              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Max IPD (kg)</label>
+              <input 
+                type="number" placeholder="100" 
+                value={station.maxHardenerWeight || ""} onChange={(e) => updateStation(deptId, station.id, "maxHardenerWeight", e.target.value ? Number(e.target.value) : undefined)} 
+                className="w-full px-2 py-1.5 text-[10px] font-bold bg-slate-50 border border-slate-200 rounded outline-none focus:border-blue-500" />
+            </div>
+          </div>
+        )}
+      </div>
+      <button
+        onClick={() => removeStation(deptId, station.id)}
+        className="absolute right-3 top-[26px] -translate-y-1/2 p-2 text-slate-200 hover:text-rose-500 transition-colors opacity-0 group-hover/st:opacity-100"
+      >
+        <Trash2 size={16} />
+      </button>
+    </div>
+  );
 
   // --- FIRESTORE PERSISTENCE ---
   const saveConfig = async () => {
@@ -546,10 +652,10 @@ const FactoryStructureManager = () => {
                       <div className="flex justify-between items-center mb-6">
                         <div className="text-left">
                           <h5 className="text-[11px] font-black text-blue-600 uppercase tracking-[0.3em] flex items-center gap-2 italic leading-none">
-                            <Activity size={18} /> Integrated Workstations
+                            <Activity size={18} /> Integrated Workstations (Productie)
                           </h5>
                           <p className="text-[9px] font-bold text-slate-400 uppercase mt-2">
-                            Active terminals linked to this unit
+                            Actieve werkplekken met planning
                           </p>
                         </div>
                         <button
@@ -560,66 +666,35 @@ const FactoryStructureManager = () => {
                         </button>
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                        {(dept.stations || []).map((station) => (
-                          <div key={station.id} className="relative group/st">
-                            <div className="absolute left-4 top-[26px] -translate-y-1/2 text-slate-300 group-hover/st:text-blue-500 transition-colors pointer-events-none">
-                              {(station.type || "machine") === "lab" ? (
-                                <FlaskConical size={16} />
-                              ) : (station.type || "machine") === "inspector" ? (
-                                <SearchCheck size={16} />
-                              ) : (station.type || "machine") === "function" ? (
-                                <Briefcase size={16} />
-                              ) : (
-                                <Cpu size={16} />
-                              )}
-                            </div>
-                            <div className="space-y-2">
-                              <input
-                                type="text"
-                                value={station.name}
-                                onChange={(e) =>
-                                  updateStation(
-                                    dept.id,
-                                    station.id,
-                                    "name",
-                                    e.target.value
-                                  )
-                                }
-                                className="w-full pl-12 pr-10 py-5 bg-slate-50 border-2 border-slate-100 rounded-[20px] font-black text-xs outline-none focus:border-blue-500 focus:bg-white transition-all shadow-sm tracking-tight"
-                              />
-                              <select
-                                value={station.type || "machine"}
-                                onChange={(e) =>
-                                  updateStation(
-                                    dept.id,
-                                    station.id,
-                                    "type",
-                                    e.target.value
-                                  )
-                                }
-                                className="w-full px-4 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wide text-slate-600 outline-none focus:border-blue-500"
-                              >
-                                {stationTypeOptions.map((opt) => (
-                                  <option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <button
-                              onClick={() => removeStation(dept.id, station.id)}
-                              className="absolute right-3 top-[26px] -translate-y-1/2 p-2 text-slate-200 hover:text-rose-500 transition-colors opacity-0 group-hover/st:opacity-100"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                        {(dept.stations || [])
+                          .filter(s => s.isAvailableForPlanning !== false)
+                          .map((station) => renderStationCard(dept.id, station))}
+                      </div>
+
+                      {/* Overige Stations */}
+                      {(dept.stations || []).filter(s => s.isAvailableForPlanning === false).length > 0 && (
+                        <div className="pt-6 mt-6 border-t border-slate-100">
+                          <div className="text-left mb-6">
+                            <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.3em] flex items-center gap-2 italic leading-none">
+                              <FlaskConical size={18} /> Overige / Lab Stations
+                            </h5>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase mt-2">
+                              Werkplekken zonder directe planning
+                            </p>
                           </div>
-                        ))}
+                          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 opacity-80">
+                            {(dept.stations || [])
+                              .filter(s => s.isAvailableForPlanning === false)
+                              .map((station) => renderStationCard(dept.id, station))}
+                          </div>
+                        </div>
+                      )}
+
                         {dept.stations?.length === 0 && (
                           <div className="col-span-full py-10 bg-slate-50/50 rounded-[30px] border-2 border-dashed border-slate-100 text-center text-[10px] font-black uppercase text-slate-300 italic tracking-widest">
                             No stations configured
                           </div>
                         )}
-                      </div>
                     </div>
 
                     {/* SECTION 3: SHIFT SCHEDULES */}

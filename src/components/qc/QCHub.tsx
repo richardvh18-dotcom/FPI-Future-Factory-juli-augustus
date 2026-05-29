@@ -10,6 +10,24 @@ import InspectionLogView, { QcInspection } from "./InspectionLogView";
 
 type QCTab = "lab" | "inspection";
 
+const parseMeasuredAtDate = (value: unknown): Date | null => {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const normalized = raw.includes("T") ? raw : raw.replace(" ", "T");
+  const parsed = new Date(normalized);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+
+  const dutchPattern = raw.match(/^(\d{2})-(\d{2})-(\d{4})(?:\s+(\d{2}):(\d{2}))?$/);
+  if (dutchPattern) {
+    const [, dd, mm, yyyy, hh = "00", min = "00"] = dutchPattern;
+    const fallback = new Date(Number(yyyy), Number(mm) - 1, Number(dd), Number(hh), Number(min));
+    if (!Number.isNaN(fallback.getTime())) return fallback;
+  }
+
+  return null;
+};
+
 const QCHub = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<QCTab>("lab");
@@ -37,17 +55,32 @@ const QCHub = () => {
     const unsubM = onSnapshot(qMeasurements, (snap) => {
       setMeasurements(snap.docs.map(doc => {
         const d = doc.data();
-        const dateObj = d.createdAt?.toDate ? d.createdAt.toDate() : new Date();
+        const createdAtDate = d.createdAt?.toDate ? d.createdAt.toDate() : new Date();
+        const measuredAtDate = parseMeasuredAtDate(d.measuredAt);
+        const dateObj = measuredAtDate || createdAtDate;
         return {
           id: doc.id,
           lotNumber: d.lotNumber || "-",
           resinBatch: d.resinBatch || "-",
           brix: d.brix || 0,
           tg: d.tg || 0,
-          measuredAt: formatDateTimeSafe(d.createdAt) || "-",
+          measuredAt: d.measuredAt || formatDateTimeSafe(d.createdAt) || "-",
           measuredBy: d.actorLabel || "-",
           week: !isNaN(dateObj.getTime()) ? getISOWeek(dateObj) : 0,
           year: !isNaN(dateObj.getTime()) ? getYear(dateObj) : 0,
+          type: d.type || (d.brix ? 'brix' : 'tg'),
+          department: d.department,
+          kitchen: d.kitchen,
+          tapPoint: d.tapPoint,
+          shift: d.shift,
+          resinWeight: d.resinWeight,
+          hardenerWeight: d.hardenerWeight,
+          refractiveIndex: d.refractiveIndex,
+          visualCheckOk: d.visualCheckOk,
+          tableRef: d.tableRef,
+          mixingRatio: d.mixingRatio,
+          area: d.area,
+          trackedProductPath: d.trackedProductPath || null,
         } as LabMeasurement;
       }));
       mLoaded = true; checkLoading();
@@ -99,7 +132,7 @@ const QCHub = () => {
                   : "bg-slate-100 text-slate-600"
               }`}
             >
-              Brix / Lab Metingen
+              Brekingsindex / Lab Metingen
             </button>
             <button
               onClick={() => setActiveTab("inspection")}

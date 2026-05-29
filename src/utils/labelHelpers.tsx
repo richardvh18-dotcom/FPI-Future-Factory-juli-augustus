@@ -685,6 +685,39 @@ export const filterTempOrderLabelsByProduct = (
 ): LabelTemplate[] => {
   if (!product || !labels) return labels || [];
 
+  const getTemplateSortTime = (label: LabelTemplate): number => {
+    const stamp = label.lastUpdated || label.updatedAt || label.createdAt;
+    if (!stamp) return 0;
+
+    if (typeof stamp === "number") return stamp;
+    if (typeof stamp === "string") {
+      const parsed = Date.parse(stamp);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+
+    if (typeof stamp === "object") {
+      const typedStamp = stamp as {
+        toMillis?: () => number;
+        toDate?: () => Date;
+        seconds?: number;
+      };
+
+      if (typeof typedStamp.toMillis === "function") {
+        return typedStamp.toMillis();
+      }
+
+      if (typeof typedStamp.toDate === "function") {
+        return typedStamp.toDate().getTime();
+      }
+
+      if (typeof typedStamp.seconds === "number") {
+        return typedStamp.seconds * 1000;
+      }
+    }
+
+    return 0;
+  };
+
   const itemText = `${product.itemCode || product.productId || ""} ${product.description || product.item || ""} ${product.extraCode || product.code || ""} ${product.productType || product.type || ""}`.toUpperCase();
   const normalizedItemText = itemText.replace(/[^A-Z0-9]+/g, " ").trim();
 
@@ -705,6 +738,13 @@ export const filterTempOrderLabelsByProduct = (
   const tempLabels = labels.filter((label: LabelTemplate) => {
     const tags = normalizedTags(label);
     return tags.includes("TIJDELIJK") || tags.includes("TEMP");
+  }).sort((a: LabelTemplate, b: LabelTemplate) => {
+    const timeDiff = getTemplateSortTime(b) - getTemplateSortTime(a);
+    if (timeDiff !== 0) return timeDiff;
+
+    const nameA = String(a.name || a.id || "").toUpperCase();
+    const nameB = String(b.name || b.id || "").toUpperCase();
+    return nameA.localeCompare(nameB, undefined, { numeric: true });
   });
 
   const hasAnyAdapterLabel = tempLabels.some((label: LabelTemplate) => hasAdapterTag(normalizedTags(label)));

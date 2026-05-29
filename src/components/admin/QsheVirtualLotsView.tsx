@@ -1,10 +1,14 @@
 /* eslint-disable */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ShieldCheck, Send, Loader2, Camera, Keyboard } from "lucide-react";
+import { ShieldCheck, Send, Loader2, Camera, Keyboard, Hash, RefreshCw, Printer } from "lucide-react";
+import QRCode from "qrcode";
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import { db } from "../../config/firebase";
+import { PATHS, getPathString } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { useNotifications } from "../../contexts/NotificationContext";
-import { startProductionLots } from "../../services/planningSecurityService";
+import { startProductionLots, reserveAutoLotNumberRange } from "../../services/planningSecurityService";
 import { useTeamleaderFirestore } from "../digitalplanning/useTeamleaderFirestore";
 import { isOpenOrRunningOrder } from "../../utils/teamleaderDerived";
 
@@ -18,6 +22,7 @@ type TeamleaderOrder = {
   productId?: string;
   item?: string;
   itemDescription?: string;
+  status?: string;
 };
 
 type AuthUser = {
@@ -31,11 +36,41 @@ type BarcodeDetectionResultLike = {
   rawValue?: string;
 };
 
+const getNormalizedMachine = (m: string) => {
+  let norm = String(m || "").trim().toUpperCase().replace(/\s/g, "");
+  if (norm.startsWith("40")) norm = norm.substring(2);
+  return norm;
+};
+
 type BarcodeDetectorLike = {
   detect: (image: ImageBitmapSource) => Promise<BarcodeDetectionResultLike[]>;
 };
 
 type BarcodeDetectorCtor = new (options?: { formats?: string[] }) => BarcodeDetectorLike;
+
+const getIsoWeekAndYear = (d: Date) => {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+  const year = date.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const weekNo = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return { week: String(weekNo).padStart(2, '0'), year: String(year) };
+};
+
+const getMachineCode = (station: string): string => {
+  const normalized = getNormalizedMachine(station);
+  const map: Record<string, string> = {
+    'BH11': '411', 'BH12': '412', 'BH15': '415', 'BH16': '416',
+    'BH17': '417', 'BH18': '418', 'BH31': '431', 'BH05': '405',
+    'BH07': '407', 'BH08': '408', 'BH09': '409', 'BA05': '405', 'BA07': '417'
+  };
+  if (map[normalized]) return map[normalized];
+  const digits = normalized.replace(/\D/g, "");
+  if (!digits) return "999";
+  if (digits.length === 3) return digits;
+  if (digits.length === 1) return `40${digits}`;
+  return `4${digits.slice(-2).padStart(2, "0")}`;
+};
 
 const QsheVirtualLotsView = () => {
   const { t } = useTranslation();
@@ -49,35 +84,32 @@ const QsheVirtualLotsView = () => {
   const [orderId, setOrderId] = useState("");
   const [lotNumber, setLotNumber] = useState("");
   const [reason, setReason] = useState("");
-  const [scanMode, setScanMode] = useState("manual");
+  const [scanMode, setScanMode] = useState("auto"); // Standaard op auto gezet
+  const [autoLotPreview, setAutoLotPreview] = useState("");
   const [isDecodingImage, setIsDecodingImage] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const [lastIssued, setLastIssued] = useState<{lot: string, orderId: string, itemCode: string, itemDescription: string} | null>(null);
 
   const { rawOrders } = useTeamleaderFirestore({ user: user as any }) as { rawOrders: TeamleaderOrder[] };
 
   const machineOptions = useMemo(() => {
     const set = new Set<string>();
     (Array.isArray(rawOrders) ? rawOrders : []).forEach((order: TeamleaderOrder) => {
-      const value = String(order?.machine || "").trim();
+      const value = getNormalizedMachine(order?.machine || "");
       if (value) set.add(value);
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [rawOrders]);
 
-  useEffect(() => {
-    if (!machine && machineOptions.length > 0) {
-      setMachine(machineOptions[0]);
-    }
-  }, [machine, machineOptions]);
-
   const orderOptions = useMemo(() => {
-    const machineKey = String(machine || "").trim().toUpperCase();
+    const machineKey = getNormalizedMachine(machine);
     return (Array.isArray(rawOrders) ? rawOrders : [])
       .filter((order) => isOpenOrRunningOrder(order))
       .filter((order: TeamleaderOrder) => {
         if (!machineKey) return true;
-        return String(order?.machine || "").trim().toUpperCase() === machineKey;
+        return getNormalizedMachine(order?.machine || "") === machineKey;
       })
       .sort((a: TeamleaderOrder, b: TeamleaderOrder) => String(a?.orderId || "").localeCompare(String(b?.orderId || "")));
   }, [rawOrders, machine]);
@@ -101,6 +133,57 @@ const QsheVirtualLotsView = () => {
     if (!selectedOrder) return "";
     return String(selectedOrder?.itemDescription || selectedOrder?.item || "Onbekend").trim();
   }, [selectedOrder]);
+
+  useEffect(() => {
+    const targetStation = selectedOrder?.machine || machine;
+    if (scanMode === "auto" && targetStation) {
+      setAutoLotPreview("Laden...");
+      const fetchNext = async () => {
+        try {
+          const now = new Date();
+          const { week, year } = getIsoWeekAndYear(now);
+          const shortYear = year.slice(-2);
+          const machineCode = getMachineCode(targetStation);
+          const prefix = `40${shortYear}${week}${machineCode}40`;
+          
+          let maxSeq = 0;
+          
+          // 1. Controleer orders uit planning (inclusief geïmporteerde LN orders)
+          (rawOrders || []).forEach(order => {
+            const lot = String((order as any).lotNumber || (order as any).activeLot || (order as any).lotStart || "");
+            if (lot.startsWith(prefix)) {
+              const seq = parseInt(lot.slice(-4), 10);
+              if (seq > maxSeq) maxSeq = seq;
+            }
+          });
+          
+          // 2. Controleer actieve tracking database (live producten op de vloer)
+          try {
+            const trackingRef = collection(db, getPathString(PATHS.TRACKING));
+            const q = query(trackingRef, where("lotNumber", ">=", prefix), where("lotNumber", "<=", prefix + "\uf8ff"));
+            const snap = await getDocs(q);
+            snap.docs.forEach(docSnap => {
+              const lot = docSnap.data().lotNumber;
+              if (lot && lot.startsWith(prefix)) {
+                const seq = parseInt(lot.slice(-4), 10);
+                if (seq > maxSeq) maxSeq = seq;
+              }
+            });
+          } catch(e) { console.warn(e); }
+          
+          const nextSeq = maxSeq + 1;
+          setAutoLotPreview(`${prefix}${String(nextSeq).padStart(4, '0')}`);
+        } catch (err) {
+          console.error(err);
+          setAutoLotPreview("Fout bij laden");
+        }
+      };
+      
+      fetchNext();
+    } else {
+      setAutoLotPreview("");
+    }
+  }, [scanMode, machine, selectedOrder, user?.email, rawOrders, refreshKey]);
 
   const handleOpenCamera = () => {
     cameraInputRef.current?.click();
@@ -148,26 +231,47 @@ const QsheVirtualLotsView = () => {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    
+    const effectiveMachine = String(selectedOrder?.machine || machine || "").trim();
 
     if (!selectedOrder) {
       showWarning(t("qshe.virtualLots.selectOrder", "Selecteer eerst een order."));
       return;
     }
 
-    const cleanLot = String(lotNumber || "").trim().toUpperCase();
     const cleanItemCode = String(selectedOrderItemCode || "").trim();
-
-    if (!cleanLot) {
-      showWarning(t("qshe.virtualLots.lotRequired", "Lotnummer is verplicht."));
-      return;
-    }
 
     if (!cleanItemCode) {
       showWarning(t("qshe.virtualLots.itemRequired", "Geen itemcode gevonden op deze order. Vul itemcode eerst aan in planning."));
       return;
     }
 
-    setSubmitting(true);
+    let finalLot = String(lotNumber || "").trim().toUpperCase();
+
+    if (scanMode === "auto") {
+      if (!autoLotPreview || autoLotPreview === "Laden..." || autoLotPreview === "Fout bij laden") {
+        showWarning("Wacht tot het auto-lotnummer geladen is of vul handmatig in.");
+        return;
+      }
+      finalLot = autoLotPreview;
+      setSubmitting(true);
+      
+      // Update the counter in the background just in case it needs to advance
+      reserveAutoLotNumberRange({
+        stationId: effectiveMachine,
+        count: 1,
+        reserve: true,
+        actorLabel: user?.email || "QC",
+        source: "QsheVirtualLotsView"
+      }).catch(console.error);
+    } else {
+      if (!finalLot) {
+        showWarning(t("qshe.virtualLots.lotRequired", "Lotnummer is verplicht."));
+        return;
+      }
+      setSubmitting(true);
+    }
+
     try {
       await startProductionLots({
         orderDocId: selectedOrder.id,
@@ -176,19 +280,32 @@ const QsheVirtualLotsView = () => {
         orderId: selectedOrder?.orderId,
         itemCode: cleanItemCode,
         item: selectedOrder?.item || selectedOrder?.itemDescription || "",
-        lotStart: cleanLot,
+        lotStart: finalLot,
         totalToProduce: 1,
-        stationId: String(machine || selectedOrder?.machine || "").trim(),
-        stationLabel: String(machine || selectedOrder?.machine || "").trim(),
-        actorLabel: user?.email || "QSHE",
+        stationId: effectiveMachine,
+        stationLabel: effectiveMachine,
+        actorLabel: user?.email || "QC",
         isVirtualLot: true,
         virtualReason: String(reason || "").trim(),
       });
 
       setLotNumber("");
+      
+      if (scanMode === "auto") {
+        setAutoLotPreview("Laden...");
+        setRefreshKey(k => k + 1);
+      }
+
+      setLastIssued({
+        lot: finalLot,
+        orderId: selectedOrder?.orderId || "",
+        itemCode: cleanItemCode,
+        itemDescription: selectedOrder?.itemDescription || selectedOrder?.item || ""
+      });
+
       showSuccess(
         t("qshe.virtualLots.success", "Virtueel lot {{lot}} uitgegeven voor order {{order}}.", {
-          lot: cleanLot,
+          lot: finalLot,
           order: selectedOrder?.orderId,
         })
       );
@@ -201,6 +318,48 @@ const QsheVirtualLotsView = () => {
     }
   };
 
+  const handlePrintLastIssued = async (issued: typeof lastIssued) => {
+    if (!issued) return;
+    try {
+      const qrDataUrl = await QRCode.toDataURL(issued.lot, { errorCorrectionLevel: 'H', margin: 1, width: 200 });
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        showWarning("Pop-up geblokkeerd. Sta pop-ups toe om direct te kunnen printen.");
+        return;
+      }
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Print Virtueel Lot - ${issued.lot}</title>
+            <style>
+              body { font-family: sans-serif; text-align: center; padding: 20px; }
+              .label-box { border: 2px solid #000; padding: 15px; display: inline-block; border-radius: 8px; min-width: 250px; }
+              h2 { margin: 0 0 10px 0; font-size: 16px; color: #000; }
+              p { margin: 5px 0; font-size: 12px; color: #333; }
+              .lot { font-family: monospace; font-size: 18px; font-weight: bold; margin-top: 10px; }
+              .footer { margin-top: 15px; font-size: 10px; color: #666; text-transform: uppercase; }
+            </style>
+          </head>
+          <body>
+            <div class="label-box">
+              <h2>Virtueel Lot (QC)</h2>
+              <p>Order: <strong>${issued.orderId}</strong></p>
+              <p>${issued.itemDescription}</p>
+              <img src="${qrDataUrl}" width="150" height="150" />
+              <div class="lot">${issued.lot}</div>
+              <div class="footer">FPi Future Factory</div>
+            </div>
+            <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 500); };</script>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    } catch (e) {
+      console.error(e);
+      showWarning("Kon label niet genereren om te printen.");
+    }
+  };
+
   return (
     <div className="p-6 md:p-8 max-w-4xl mx-auto text-left">
       <div className="rounded-[28px] border border-orange-200 bg-gradient-to-br from-orange-50 via-amber-50 to-white p-6 shadow-sm">
@@ -209,7 +368,7 @@ const QsheVirtualLotsView = () => {
             <ShieldCheck size={22} />
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-700">QSHE</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-700">QC</p>
             <h2 className="text-2xl font-black italic text-slate-900 mt-1">Virtuele Lotuitgifte</h2>
             <p className="text-sm font-bold text-slate-600 mt-2">
               Geef lotnummers uit zonder fysiek product. Deze lots blijven volledig traceerbaar en worden zichtbaar op de order.
@@ -218,51 +377,61 @@ const QsheVirtualLotsView = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <select
-              value={machine}
-              onChange={(e) => {
-                setMachine(e.target.value);
-                setOrderId("");
-              }}
-              className="px-3 py-2 rounded-xl border border-orange-200 bg-white text-xs font-bold text-slate-700 outline-none focus:border-orange-400"
-            >
-              <option value="">Kies machine</option>
-              {machineOptions.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
-            </select>
-
+          <div className="flex flex-col gap-3">
             <div className="rounded-xl border border-orange-200 bg-white p-2">
-              <p className="text-[10px] font-black uppercase tracking-widest text-orange-700 px-1 pb-2">Kies order</p>
-              <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
-                {orderOptions.map((entry) => {
-                  const entryOrderId = String(entry?.orderId || "").trim();
-                  const entryLabel = String(entry?.itemDescription || entry?.item || "Onbekend").trim();
-                  const isSelected = String(orderId || "") === entryOrderId;
-                  return (
-                    <button
-                      key={entry.id || entryOrderId}
-                      type="button"
-                      onClick={() => setOrderId(entryOrderId)}
-                      className={`w-full px-3 py-2 rounded-lg border text-left transition-colors ${
-                        isSelected
-                          ? "bg-orange-100 border-orange-300"
-                          : "bg-white border-slate-200 hover:bg-orange-50"
-                      }`}
-                    >
-                      <p className="text-xs font-black text-slate-900 leading-tight">{entryOrderId || "-"}</p>
-                      <p className="text-[11px] font-bold text-slate-600 mt-0.5 leading-tight break-words">{entryLabel}</p>
-                    </button>
-                  );
-                })}
-                {orderOptions.length === 0 && (
-                  <p className="px-2 py-3 text-[11px] font-bold text-slate-500">Geen orders gevonden voor deze machine.</p>
-                )}
-              </div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-orange-700 px-1 pb-2">Kies machine</p>
+              <select
+                value={machine}
+                onChange={(e) => {
+                  setMachine(e.target.value);
+                  setOrderId("");
+                }}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 outline-none focus:border-orange-400"
+              >
+                <option value="">- Selecteer een machine -</option>
+                {machineOptions.map((entry) => (
+                  <option key={entry} value={entry}>
+                    {entry}
+                  </option>
+                ))}
+              </select>
             </div>
+
+            {machine && (
+              <div className="rounded-xl border border-orange-200 bg-white p-2 animate-in fade-in">
+                <p className="text-[10px] font-black uppercase tracking-widest text-orange-700 px-1 pb-2">Kies actieve order</p>
+                <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
+                  {orderOptions.map((entry) => {
+                    const entryOrderId = String(entry?.orderId || "").trim();
+                    const entryLabel = String(entry?.itemDescription || entry?.item || "Onbekend").trim();
+                    const isSelected = String(orderId || "") === entryOrderId;
+                    const statusStr = String(entry?.status || "").toLowerCase().trim();
+                    const isActive = ["in_progress", "in progress", "in-behandeling", "in behandeling", "active", "processing", "running", "lopend", "in production", "in productie"].includes(statusStr);
+                    return (
+                      <button
+                        key={entry.id || entryOrderId}
+                        type="button"
+                        onClick={() => setOrderId(entryOrderId)}
+                        className={`w-full px-3 py-2 rounded-lg border text-left transition-colors ${
+                          isSelected
+                            ? "bg-orange-100 border-orange-300"
+                            : "bg-white border-slate-200 hover:bg-orange-50"
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-1">
+                          <p className="text-xs font-black text-slate-900 leading-tight">{entryOrderId || "-"}</p>
+                          {isActive && <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold uppercase tracking-wider">Actief</span>}
+                        </div>
+                        <p className="text-[11px] font-bold text-slate-600 leading-tight break-words">{entryLabel}</p>
+                      </button>
+                    );
+                  })}
+                  {orderOptions.length === 0 && (
+                    <p className="px-2 py-3 text-[11px] font-bold text-slate-500">Geen actieve orders gevonden voor deze machine.</p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {selectedOrder && (
@@ -279,6 +448,17 @@ const QsheVirtualLotsView = () => {
 
           <div className="rounded-xl border border-orange-200 bg-white p-3 space-y-3">
             <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setScanMode("auto")}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
+                  scanMode === "auto"
+                    ? "bg-orange-100 text-orange-700 border-orange-300"
+                    : "bg-white text-slate-500 border-slate-200"
+                }`}
+              >
+                <Hash size={12} className="inline mr-1" /> Auto
+              </button>
               <button
                 type="button"
                 onClick={() => setScanMode("manual")}
@@ -303,13 +483,36 @@ const QsheVirtualLotsView = () => {
               </button>
             </div>
 
-            <input
-              type="text"
-              value={lotNumber}
-              onChange={(e) => setLotNumber(e.target.value.toUpperCase())}
-              placeholder={scanMode === "camera" ? "Scan via camera of typ handmatig" : "Typ of scan lotnummer"}
-              className="w-full px-3 py-2 rounded-xl border border-orange-300 bg-white text-xs font-black text-slate-800 outline-none focus:border-orange-500"
-            />
+            {scanMode === "auto" ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={autoLotPreview}
+                  className="w-full px-3 py-2 rounded-xl border border-orange-300 bg-orange-50 text-xs font-black text-orange-800 outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!machine && !selectedOrder?.machine) return;
+                    setAutoLotPreview("Laden...");
+                    setRefreshKey(k => k + 1);
+                  }}
+                  className="p-2 bg-orange-100 text-orange-600 rounded-lg hover:bg-orange-200 transition-colors shrink-0 border border-orange-200"
+                  title="Ververs auto-lotnummer"
+                >
+                  <RefreshCw size={16} />
+                </button>
+              </div>
+            ) : (
+              <input
+                type="text"
+                value={lotNumber}
+                onChange={(e) => setLotNumber(e.target.value.toUpperCase())}
+                placeholder={scanMode === "camera" ? "Scan via camera of typ handmatig" : "Typ of scan lotnummer"}
+                className="w-full px-3 py-2 rounded-xl border border-orange-300 bg-white text-xs font-black text-slate-800 outline-none focus:border-orange-500"
+              />
+            )}
 
             {scanMode === "camera" && (
               <div className="flex items-center gap-2">
@@ -339,7 +542,7 @@ const QsheVirtualLotsView = () => {
             type="text"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Optionele reden (QSHE aanvraag)"
+            placeholder="Optionele reden (QC aanvraag)"
             className="w-full px-3 py-2 rounded-xl border border-orange-200 bg-white text-xs font-bold text-slate-700 outline-none focus:border-orange-400"
           />
 
@@ -354,6 +557,22 @@ const QsheVirtualLotsView = () => {
             </button>
           </div>
         </form>
+
+        {lastIssued && (
+          <div className="mt-4 p-4 rounded-xl border border-emerald-200 bg-emerald-50 flex items-center justify-between animate-in slide-in-from-bottom-2">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Laatst uitgegeven (QC Lot)</p>
+              <p className="text-sm font-bold text-emerald-900 mt-1">{lastIssued.lot} <span className="opacity-50 text-xs font-medium">({lastIssued.orderId})</span></p>
+            </div>
+            <button
+              type="button"
+              onClick={() => handlePrintLastIssued(lastIssued)}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-colors flex items-center gap-2 shadow-sm"
+            >
+              <Printer size={14} /> Print Label
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

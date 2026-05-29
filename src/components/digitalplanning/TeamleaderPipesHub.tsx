@@ -8,6 +8,7 @@ import { Loader2 } from "lucide-react";
 
 type StationConfig = {
   name: string;
+  isAvailableForPlanning?: boolean;
 };
 
 type DepartmentConfig = {
@@ -43,7 +44,8 @@ const TeamleaderPipesHub = React.memo((props: Record<string, unknown>) => {
           );
           if (myDept) {
             console.log('[TeamleaderPipesHub] Found pipes dept with', myDept.stations?.length || 0, 'stations');
-            setStations(myDept.stations || []);
+            const activeStations = (myDept.stations || []).filter((s: StationConfig) => s.isAvailableForPlanning !== false);
+            setStations(activeStations);
           } else {
             console.warn('[TeamleaderPipesHub] No pipes department found in factory config');
           }

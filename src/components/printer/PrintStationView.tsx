@@ -5,13 +5,23 @@ import { collection, query, where, getDocs, limit, doc, getDoc, documentId, onSn
 import { PATHS, getPathString } from '../../config/dbPaths';
 import { Loader2, Printer, Search, RefreshCw, Send, X, Tag, Usb } from 'lucide-react';
 import { useNotifications } from '../../contexts/NotificationContext';
-import { generatePrintData, generateLotBatchZPL } from '../../utils/zplHelper';
+import { generateLotBatchZPL } from '../../utils/zplHelper';
 import { getDriver } from '../../utils/printerDrivers';
 import { getISOWeekInfo, getStationMachineCode } from '../../utils/lotLogic';
 import AutoScaledLabelPreview from './AutoScaledLabelPreview';
+import { useLabelCatalog } from '../../hooks/useLabelCatalog';
 import { useLabelPreview } from '../../hooks/useLabelPreview';
-import { processLabelData, applyLabelLogic, filterTempOrderLabelsByProduct, resolveLabelContent } from '../../utils/labelHelpers';
+import { processLabelData, applyLabelLogic, filterTempOrderLabelsByProduct } from '../../utils/labelHelpers';
 import { executeOrderLabelSearch, loadFactoryMachinePaths, normalizeText } from "../../utils/orderLabelSearch";
+import { renderLabelToBitmapZpl } from '../../utils/unifiedLabelRenderEngine';
+import {
+  buildOrderLabelPreviewData,
+  buildOrderLabelTemplateProduct,
+  getOrderLabelDescription,
+  getOrderLabelItemCode,
+  getOrderLabelOrder,
+  normalizeOrderLabelProductData,
+} from '../../utils/orderLabelTemplateUtils';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -32,6 +42,8 @@ type PrinterConfig = {
   productName?: string;
   dpi?: number | string;
   darkness?: number | string;
+  zplTextFont?: string;
+  bitmapPrintEnabled?: boolean;
   isDefault?: boolean;
   queueStations?: unknown[];
   linkedStations?: unknown[];
@@ -79,41 +91,6 @@ const stationNameFromValue = (stationValue: unknown): string => {
   return String(stationValue).trim();
 };
 
-const getOrderLabelOrder = (item: AnyRecord = {}): string =>
-  String(
-    item.orderId ||
-    item.orderNumber ||
-    item.Order ||
-    item.Productieorder ||
-    item.order ||
-    item.originalOrderId ||
-    item.id ||
-    "ONBEKEND"
-  );
-
-const getOrderLabelItemCode = (item: AnyRecord = {}): string =>
-  String(
-    item.itemCode ||
-    item.productCode ||
-    item.articleCode ||
-    item.productId ||
-    item.Item ||
-    item.Artikel ||
-    item.item ||
-    ""
-  );
-
-const getOrderLabelDescription = (item: AnyRecord = {}): string =>
-  String(
-    item.itemDescription ||
-    item.description ||
-    item.Description ||
-    item.Omschrijving ||
-    item.item ||
-    ""
-  );
-
-
 const getErrMsg = (err: unknown): string => {
   if (err instanceof Error) return err.message;
   if (typeof err === "object" && err !== null && "message" in err) {
@@ -128,14 +105,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
   const topOptions = useMemo(() => {
-    const normalizedProduct = {
-      itemCode: getOrderLabelItemCode(item),
-      productId: item.productId || getOrderLabelItemCode(item),
-      description: getOrderLabelDescription(item),
-      item: item.item || getOrderLabelDescription(item),
-      extraCode: item.extraCode || item.Code || ''
-    };
-    return filterTempOrderLabelsByProduct(labelTemplates || [], normalizedProduct as AnyRecord) as LabelTemplate[];
+    return filterTempOrderLabelsByProduct(labelTemplates || [], buildOrderLabelTemplateProduct(item)) as LabelTemplate[];
   }, [item, labelTemplates]);
 
   useEffect(() => {
@@ -152,17 +122,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
   const selectedTemplate = topOptions.find((t: LabelTemplate) => t.id === selectedTemplateId) || topOptions[0];
 
   const previewData = useMemo<Record<string, unknown>>(() => {
-    const order = item.orderId || item.Order || item.Productieorder || item.order || item.id || "ONBEKEND";
-    const itemCode = item.itemCode || item.Item || item.Artikel || item.item || "";
-    const desc = item.description || item.Description || item.Omschrijving || "";
-    const base = processLabelData({
-      ...item,
-      orderNumber: order,
-      productId: itemCode,
-      description: desc,
-      lotNumber: String(item.lotNumber || order),
-    });
-    return applyLabelLogic(base, labelRules || []);
+    return buildOrderLabelPreviewData(item, labelRules);
   }, [item, labelRules]);
 
   return (
@@ -197,7 +157,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
         </div>
         <div className="w-full lg:w-64 h-36 bg-white border border-slate-200 rounded-xl p-2 flex items-center justify-center">
           {selectedTemplate ? (
-            <AutoScaledLabelPreview label={selectedTemplate} data={previewData} maxScale={1} />
+            <AutoScaledLabelPreview label={selectedTemplate} data={previewData} maxScale={1} exactBitmapPreview />
           ) : (
             <p className="text-xs text-slate-400 italic">Geen preview</p>
           )}
@@ -640,33 +600,21 @@ const PrintStationView = () => {
   const [selectedLabelId, setSelectedLabelId] = useState('');
   const [showTempModal, setShowTempModal] = useState(false);
   const [showLotModal, setShowLotModal] = useState(false);
-  const [labelTemplates, setLabelTemplates] = useState<LabelTemplate[]>([]);
-  const [labelRules, setLabelRules] = useState<AnyRecord[]>([]);
+  const { labelTemplates, labelRules } = useLabelCatalog();
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
   const [factoryConfig, setFactoryConfig] = useState<AnyRecord | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const normalizedProductData = useMemo(() => {
     if (!productData) return null;
-    const order = getOrderLabelOrder(productData);
-    const code = getOrderLabelItemCode(productData);
-    const desc = getOrderLabelDescription(productData);
-    return {
-      ...productData,
-      orderId: order,
-      orderNumber: order,
-      itemCode: code,
-      productId: code,
-      item: desc,
-      description: desc,
-      lotNumber: productData.lotNumber || order
-    };
+    return normalizeOrderLabelProductData(productData);
   }, [productData]);
 
   const { selectedLabel, previewData, availableLabels } = useLabelPreview(normalizedProductData, selectedLabelId);
 
   const filteredLabels = useMemo(() => {
     if (!normalizedProductData) return availableLabels;
-    return filterTempOrderLabelsByProduct(availableLabels as any[], normalizedProductData as AnyRecord);
+    return filterTempOrderLabelsByProduct(availableLabels as any[], buildOrderLabelTemplateProduct(normalizedProductData as AnyRecord));
   }, [availableLabels, normalizedProductData]);
 
   useEffect(() => {
@@ -732,19 +680,11 @@ const PrintStationView = () => {
   };
 
   useEffect(() => {
-    const unsubTemplates = onSnapshot(collection(db, getPathString(PATHS.LABEL_TEMPLATES)), (snap) => {
-      setLabelTemplates(snap.docs.map((d): LabelTemplate => ({ id: d.id, ...(d.data() as AnyRecord) })));
-    });
-    const unsubRules = onSnapshot(collection(db, getPathString(PATHS.LABEL_LOGIC)), (snap) => {
-      setLabelRules(snap.docs.map((d): AnyRecord => ({ id: d.id, ...(d.data() as AnyRecord) })));
-    });
     const unsubPrinters = onSnapshot(collection(db, getPathString(PATHS.PRINTERS)), (snap) => {
       setPrinters(snap.docs.map((d): PrinterConfig => ({ id: d.id, ...(d.data() as AnyRecord) })));
     });
 
     return () => {
-      unsubTemplates();
-      unsubRules();
       unsubPrinters();
     };
   }, []);
@@ -812,6 +752,13 @@ const PrintStationView = () => {
     const parsed = parseInt(String(activeQueuePrinter?.darkness ?? ''), 10);
     return Number.isFinite(parsed) ? parsed : 15;
   }, [activeQueuePrinter]);
+
+  const printerZplTextFont = useMemo(() => {
+    const raw = String(activeQueuePrinter?.zplTextFont || '').trim().toUpperCase();
+    return raw === 'A' ? 'A' : '0';
+  }, [activeQueuePrinter]);
+
+  const bitmapPrintEnabled = useMemo(() => Boolean(activeQueuePrinter?.bitmapPrintEnabled), [activeQueuePrinter]);
 
   const handleLotNumberSearch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -900,8 +847,7 @@ const PrintStationView = () => {
   const handleTempLegacyPrint = async (orderData: AnyRecord, templateId: string) => {
     const template = labelTemplates.find((t: LabelTemplate) => t.id === templateId);
     const dpi = printerDpi;
-    const dotsPerMm = dpi / 25.4;
-    const darkness = printerDarkness;
+    const bitmapDarkness = Math.max(15, Number(printerDarkness) || 15);
 
     const order = getOrderLabelOrder(orderData);
     const item = getOrderLabelItemCode(orderData);
@@ -921,17 +867,41 @@ const PrintStationView = () => {
             lotNumber: orderData.lotNumber || order
         });
         const processedData = applyLabelLogic(labelData, labelRules);
-        zpl = await generatePrintData(template, processedData, dpi, resolveLabelContent as any, t);
+        const widthMm = Number((template as any)?.width) || 90;
+        const heightMm = Number((template as any)?.height) || 40;
+        zpl = await renderLabelToBitmapZpl({
+          template: template as any,
+          data: processedData as AnyRecord,
+          printerDpi: dpi,
+          darkness: bitmapDarkness,
+          printSpeed: 3,
+          widthMm,
+          heightMm,
+        });
     } else {
-      const qrMag = Math.max(2, Math.round((8 * dotsPerMm) / 24));
-        zpl = `^XA
-^PW${Math.round(90 * dotsPerMm)}
-~SD${darkness}
-^FO${Math.round(5 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^A0N,${Math.round(8 * dotsPerMm)},${Math.round(6 * dotsPerMm)}^FDOrder: ${order}^FS
-^FO${Math.round(5 * dotsPerMm)},${Math.round(15 * dotsPerMm)}^A0N,${Math.round(6 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^FDItem: ${item}^FS
-^FO${Math.round(5 * dotsPerMm)},${Math.round(25 * dotsPerMm)}^A0N,${Math.round(5 * dotsPerMm)},${Math.round(4 * dotsPerMm)}^FD${desc.substring(0, 40)}^FS
-  ^FO${Math.round(60 * dotsPerMm)},${Math.round(5 * dotsPerMm)}^BQN,2,${qrMag}^FDQA,${order}^FS
-^XZ`;
+      const fallbackTemplate = {
+        width: 90,
+        height: 40,
+        elements: [
+          { type: 'text', x: 5, y: 4, width: 52, height: 8, fontSize: 12, isBold: true, content: 'Order: {orderNumber}' },
+          { type: 'text', x: 5, y: 14, width: 52, height: 7, fontSize: 9, isBold: true, content: 'Item: {itemCode}' },
+          { type: 'text', x: 5, y: 23, width: 52, height: 10, fontSize: 8, isBold: true, maxLines: 2, content: '{description}' },
+          { type: 'qr', x: 60, y: 5, width: 25, height: 25, content: '{orderNumber}' },
+        ],
+      };
+      zpl = await renderLabelToBitmapZpl({
+        template: fallbackTemplate as any,
+        data: {
+          orderNumber: order,
+          itemCode: item,
+          description: String(desc || '').substring(0, 80),
+        },
+        printerDpi: dpi,
+        darkness: bitmapDarkness,
+        printSpeed: 3,
+        widthMm: 90,
+        heightMm: 40,
+      });
     }
 
     try {
@@ -959,7 +929,18 @@ const PrintStationView = () => {
     }
     setIsLoading(true);
     try {
-      const printData = await generatePrintData(selectedLabel as any, previewData as AnyRecord, printerDpi, resolveLabelContent as any, t);
+      const widthMm = Number((selectedLabel as any)?.width) || 90;
+      const heightMm = Number((selectedLabel as any)?.height) || 40;
+      const bitmapDarkness = Math.max(15, Number(printerDarkness) || 15);
+      const printData = await renderLabelToBitmapZpl({
+        template: selectedLabel as any,
+        data: (previewData as AnyRecord) || {},
+        printerDpi,
+        darkness: bitmapDarkness,
+        printSpeed: 3,
+        widthMm,
+        heightMm,
+      });
       
       let deviceToUse = usbDevice;
       if (!deviceToUse) {
@@ -1080,7 +1061,9 @@ const PrintStationView = () => {
               </div>
               <div className="bg-slate-800 p-4 rounded-lg">
                 <h3 className="text-white font-bold mb-2">Label Preview</h3>
-                {selectedLabel ? <AutoScaledLabelPreview label={selectedLabel} data={previewData} className="mx-auto" printerDpi={printerDpi} maxScale={1} /> : <p className="text-slate-400">Selecteer een label</p>}
+                <div ref={previewRef}>
+                  {selectedLabel ? <AutoScaledLabelPreview label={selectedLabel} data={previewData} className="mx-auto" printerDpi={printerDpi} maxScale={1} exactBitmapPreview /> : <p className="text-slate-400">Selecteer een label</p>}
+                </div>
               </div>
             </div>
           </div>

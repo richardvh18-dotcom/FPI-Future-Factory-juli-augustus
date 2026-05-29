@@ -12,7 +12,8 @@ import InternalQrImage from '../../utils/InternalQrImage';
  */
 const SCREEN_DPI = 96;
 const CSS_PIXELS_PER_POINT = 96 / 72;
-const PRINTER_PREVIEW_FONT_STACK = '"Lucida Console", "Courier New", monospace';
+const PRINTER_PREVIEW_FONT_STACK = '"Arial Narrow", "Helvetica Condensed", Arial, sans-serif';
+const PREVIEW_GLYPH_WIDTH_RATIO = 0.52;
 
 type LabelElement = {
   type?: 'text' | 'line' | 'box' | 'qr' | 'barcode' | string;
@@ -41,6 +42,8 @@ type LabelVisualPreviewProps = {
   zoom?: number;
   className?: string;
   printerDpi?: number;
+  strictFontSizing?: boolean;
+  textScaleFactor?: number;
 };
 
 /**
@@ -93,11 +96,18 @@ const getPreviewTextStyle = (
   content: unknown,
   zoom: number,
   rotation = 0,
-  pixelsPerMm = 3.78
+  pixelsPerMm = 3.78,
+  strictFontSizing = false,
+  textScaleFactor = 1
 ): { fontSize: number; lineHeight: string } => {
   const normalizedRotation = ((Number(rotation) || 0) % 360 + 360) % 360;
   const isVerticalRotation = normalizedRotation === 90 || normalizedRotation === 270;
   const baseFontPx = (element.fontSize || 10) * CSS_PIXELS_PER_POINT * zoom;
+
+  if (strictFontSizing) {
+    return { fontSize: baseFontPx * textScaleFactor, lineHeight: '1.05' };
+  }
+
   const maxLines = getResolvedPreviewMaxLines(element, baseFontPx, normalizedRotation, zoom, pixelsPerMm);
 
   if (isVerticalRotation) {
@@ -111,10 +121,10 @@ const getPreviewTextStyle = (
     if (runLengthPx > 0) {
       const longestLineLength = Math.max(1, getLongestPreviewLineLength(content));
       const estimatedLongestWrappedLine = Math.max(1, Math.ceil(longestLineLength / maxLines));
-      const widthLimitedFontPx = (runLengthPx * 0.92) / (estimatedLongestWrappedLine * 0.52);
+      const widthLimitedFontPx = (runLengthPx * 0.92) / (estimatedLongestWrappedLine * PREVIEW_GLYPH_WIDTH_RATIO);
       const heightLimitedFontPx = lineBudgetPx ? (lineBudgetPx * 0.9) / maxLines : baseFontPx;
       const fittedFontPx = Math.max(1, Math.min(baseFontPx, widthLimitedFontPx, heightLimitedFontPx));
-      return { fontSize: fittedFontPx, lineHeight: "1.05" };
+      return { fontSize: fittedFontPx * textScaleFactor, lineHeight: "1.05" };
     }
     return { fontSize: baseFontPx, lineHeight: "1.05" };
   }
@@ -129,14 +139,14 @@ const getPreviewTextStyle = (
 
   const longestLineLength = Math.max(1, getLongestPreviewLineLength(content));
   const estimatedLongestWrappedLine = Math.max(1, Math.ceil(longestLineLength / maxLines));
-  const widthLimitedFontPx = (blockWidthPx * 0.92) / (estimatedLongestWrappedLine * 0.52);
+  const widthLimitedFontPx = (blockWidthPx * 0.92) / (estimatedLongestWrappedLine * PREVIEW_GLYPH_WIDTH_RATIO);
   const heightLimitedFontPx = blockHeightPx ? (blockHeightPx * 0.9) / maxLines : baseFontPx;
   const fittedFontPx = Math.max(1, Math.min(baseFontPx, widthLimitedFontPx, heightLimitedFontPx));
 
-  return { fontSize: fittedFontPx, lineHeight: "1.05" };
+  return { fontSize: fittedFontPx * textScaleFactor, lineHeight: "1.05" };
 };
 
-const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printerDpi = 203 }: LabelVisualPreviewProps) => {
+const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printerDpi = 203, strictFontSizing = false, textScaleFactor = 1 }: LabelVisualPreviewProps) => {
   const pixelsPerMm = getPixelsPerMm(printerDpi);
   
   if (!label) return <div className={`w-48 h-32 bg-slate-200 flex items-center justify-center text-xs text-slate-400 italic ${className}`}>Geen template</div>;
@@ -176,7 +186,7 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
         };
 
         if (el.type === "text") {
-          const textStyle = getPreviewTextStyle(el, displayContent, zoom, rotation, pixelsPerMm);
+          const textStyle = getPreviewTextStyle(el, displayContent, zoom, rotation, pixelsPerMm, strictFontSizing, textScaleFactor);
 
           return (
             <div
@@ -193,8 +203,10 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
                     : "auto"),
                 fontSize: `${textStyle.fontSize}px`,
                 lineHeight: textStyle.lineHeight,
-                fontWeight: el.isBold ? "900" : "normal",
-                fontFamily: !el.fontFamily || el.fontFamily === "Arial"
+                fontWeight: el.isBold ? "900" : "bold",
+                fontStretch: "condensed",
+                letterSpacing: "0.5px",
+                fontFamily: !el.fontFamily || el.fontFamily === "Arial" || String(el.fontFamily) === "0"
                   ? PRINTER_PREVIEW_FONT_STACK
                   : el.fontFamily,
                 textAlign: el.align || "left",

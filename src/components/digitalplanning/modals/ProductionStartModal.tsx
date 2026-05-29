@@ -27,9 +27,10 @@ import { getFlangeSeriesInfo } from "../../../utils/flangeSeriesHelper";
 import { lookupProductByManufacturedId } from "../../../utils/conversionLogic";
 import { useNotifications } from "../../../contexts/NotificationContext";
 import { useProgressOperationsStore } from "../../../contexts/ProgressOperationContext";
-import { generatePrintData, generateLotBatchZPL } from "../../../utils/zplHelper";
+import { generateLotBatchZPL } from "../../../utils/zplHelper";
+import { renderLabelToBitmapZpl } from "../../../utils/unifiedLabelRenderEngine";
 import { getDriver } from "../../../utils/printerDrivers";
-import { queuePrintJob } from "../../../services/printService";
+import { queuePrintJob } from "../../../services/planningSecurityService";
 import LabelVisualPreview from "../../printer/LabelVisualPreview";
 import { useLabelPreview } from "../../../hooks/useLabelPreview";
 import InternalQrImage from "../../../utils/InternalQrImage";
@@ -1216,7 +1217,14 @@ const ProductionStartModal = ({
             ...previewData,
             lotNumber: effectiveLotNumber,
           };
-          printData = await generatePrintData(selectedLabel, printPreviewData, dpiForPrint);
+          const darkness = Number.parseInt(String((targetPrinter as any)?.darkness || '15'), 10);
+          printData = await renderLabelToBitmapZpl({
+            template: selectedLabel as any,
+            data: printPreviewData as Record<string, unknown>,
+            printerDpi: dpiForPrint,
+            darkness: Number.isFinite(darkness) ? darkness : 15,
+            printSpeed: 3,
+          });
         }
       } else {
         // Manual mode: eerst machinecode validatie, dan uniciteitscheck.

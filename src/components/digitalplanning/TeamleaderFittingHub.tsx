@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 
 type StationConfig = {
   name: string;
+  isAvailableForPlanning?: boolean;
 };
 
 type DepartmentConfig = {
@@ -44,7 +45,8 @@ const TeamleaderFittingHub = (props: Record<string, unknown>) => {
           );
           if (myDept) {
             console.log('[TeamleaderFittingHub] Found fittings dept with', myDept.stations?.length || 0, 'stations');
-            setStations(myDept.stations || []);
+            const activeStations = (myDept.stations || []).filter((s: StationConfig) => s.isAvailableForPlanning !== false);
+            setStations(activeStations);
           } else {
             console.warn('[TeamleaderFittingHub] No fittings department found in factory config');
           }

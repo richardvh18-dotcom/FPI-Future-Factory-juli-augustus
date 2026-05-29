@@ -403,13 +403,14 @@ const AdminUsersView = () => {
   useEffect(() => {
     const unsubConfig = onSnapshot(docPath(PATHS.FACTORY_CONFIG), (snap) => {
       if (snap.exists()) {
-        const config = (snap.data() || {}) as { departments?: Array<{ title?: string; name?: string; country?: string; stations?: Array<{ name?: string }> }> };
+        const config = (snap.data() || {}) as { departments?: Array<{ title?: string; name?: string; country?: string; stations?: Array<{ name?: string, isAvailableForPlanning?: boolean }> }> };
         const stations: StationRecord[] = [];
         
         if (config.departments) {
           config.departments.forEach((dept) => {
             if (dept.stations) {
               dept.stations.forEach((st) => {
+                if (st.isAvailableForPlanning === false) return;
                 stations.push({
                   id: String(st.name || ""),
                   name: String(st.name || ""),

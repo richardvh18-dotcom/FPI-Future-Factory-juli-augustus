@@ -7,6 +7,7 @@ import {
   Users,
   Package,
   Activity,
+  Upload,
   Download,
   Filter,
   BarChart3,
@@ -28,6 +29,7 @@ import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWi
 import { normalizeMachine } from "../../utils/hubHelpers";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { fetchScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
+import { executeAtpsOccupancyExport, getAtpsExportMonitor, previewAtpsOccupancyExport } from "../../services/planningSecurityService";
 
 type AnyRecord = Record<string, any>;
 type LeadTimeRow = { station: string; orderId: string; hours: number };
@@ -87,6 +89,74 @@ const AdminReportsView = () => {
   const [measurementDetailMode, setMeasurementDetailMode] = useState("current_week"); // current_week | browse_week | all
   const [measurementWeekOffset, setMeasurementWeekOffset] = useState(0);
   const [measurementLotNumberSearch, setMeasurementLotNumberSearch] = useState("");
+  const [atpsPreviewLoading, setAtpsPreviewLoading] = useState(false);
+  const [atpsLiveLoading, setAtpsLiveLoading] = useState(false);
+  const [atpsMonitorLoading, setAtpsMonitorLoading] = useState(false);
+  const [atpsPreviewLast, setAtpsPreviewLast] = useState<AnyRecord | null>(null);
+  const [atpsMonitor, setAtpsMonitor] = useState<AnyRecord | null>(null);
+
+  const runAtpsDryRunPreview = async () => {
+    setAtpsPreviewLoading(true);
+    try {
+      const result = await previewAtpsOccupancyExport({
+        limit: 200,
+        dryRun: true,
+        executeLive: false,
+      });
+
+      setAtpsPreviewLast(result as AnyRecord);
+
+      const totals = (result as AnyRecord)?.totals || {};
+      const mode = String((result as AnyRecord)?.mode || "passive");
+      const noopReason = String((result as AnyRecord)?.noopReason || "");
+      notify(
+        `ATPS dry-run klaar: ${Number(totals.count || 0)} records, ${Number(totals.hoursWorked || 0)} uur (${mode}). ${noopReason}`.trim()
+      );
+    } catch (error) {
+      console.error("ATPS dry-run preview fout:", error);
+      notify("ATPS dry-run mislukt. Zie console voor details.");
+    } finally {
+      setAtpsPreviewLoading(false);
+    }
+  };
+
+  const refreshAtpsMonitor = async () => {
+    setAtpsMonitorLoading(true);
+    try {
+      const result = await getAtpsExportMonitor({ runsLimit: 12, previewLimit: 8 });
+      setAtpsMonitor(result as AnyRecord);
+    } catch (error) {
+      console.error("ATPS monitor ophalen fout:", error);
+      notify("ATPS monitor kon niet geladen worden.");
+    } finally {
+      setAtpsMonitorLoading(false);
+    }
+  };
+
+  const runAtpsLiveExport = async () => {
+    const confirmed = window.confirm("Live ATPS export starten? Alleen records met atpsExported = false worden verwerkt.");
+    if (!confirmed) return;
+
+    setAtpsLiveLoading(true);
+    try {
+      const result = await executeAtpsOccupancyExport({ limit: 250 });
+      const delivery = (result as AnyRecord)?.delivery || {};
+      notify(
+        `ATPS live export afgerond: marked ${Number(delivery.markedExported || 0)}, retry queue ${Number(delivery.queuedForRetry || 0)}.`
+      );
+      await refreshAtpsMonitor();
+    } catch (error) {
+      console.error("ATPS live export fout:", error);
+      notify("ATPS live export mislukt. Bekijk monitor/retry queue.");
+      await refreshAtpsMonitor();
+    } finally {
+      setAtpsLiveLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshAtpsMonitor();
+  }, []);
 
   useEffect(() => {
     const loadFactoryDepartments = async () => {
@@ -132,6 +202,7 @@ const AdminReportsView = () => {
       const key = String(dept?.slug || dept?.id || dept?.name || "").trim().toLowerCase();
       const label = toDisplayDeptLabel(dept?.name || dept?.slug || dept?.id || "Onbekend");
       const stations = (dept?.stations || [])
+        .filter((s: AnyRecord) => s.isAvailableForPlanning !== false)
         .map((s: AnyRecord) => normalizeMachine(s?.name || s?.id || ""))
         .filter(Boolean);
       return { key, label, stations };
@@ -1905,6 +1976,30 @@ const AdminReportsView = () => {
 
             <div className="flex items-center gap-2">
               <button
+                onClick={runAtpsDryRunPreview}
+                disabled={atpsPreviewLoading}
+                className="px-4 py-2 bg-amber-50 text-amber-700 rounded-xl text-sm font-bold hover:bg-amber-100 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Test de passieve ATPS export preview"
+              >
+                {atpsPreviewLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} ATPS Dry-run
+              </button>
+              <button
+                onClick={runAtpsLiveExport}
+                disabled={atpsLiveLoading}
+                className="px-4 py-2 bg-rose-50 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-100 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Start live export naar ATPS"
+              >
+                {atpsLiveLoading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} ATPS Live
+              </button>
+              <button
+                onClick={refreshAtpsMonitor}
+                disabled={atpsMonitorLoading}
+                className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Ververs ATPS monitor"
+              >
+                {atpsMonitorLoading ? <Loader2 size={16} className="animate-spin" /> : <Activity size={16} />} Monitor
+              </button>
+              <button
                 onClick={exportToCSV}
                 disabled={!canExport}
                 className="px-4 py-2 bg-green-50 text-green-700 rounded-xl text-sm font-bold hover:bg-green-100 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -2015,6 +2110,26 @@ const AdminReportsView = () => {
       {/* Report Content */}
       <div className="p-6">
         <div className="max-w-7xl mx-auto">
+          {atpsPreviewLast && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+              <span className="font-black uppercase tracking-wider">ATPS Dry-run</span>
+              <span className="ml-2">
+                mode: {String(atpsPreviewLast.mode || "passive")} | records: {Number(atpsPreviewLast?.totals?.count || 0)} | uren: {Number(atpsPreviewLast?.totals?.hoursWorked || 0)}
+              </span>
+            </div>
+          )}
+
+          {atpsMonitor && (
+            <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-700">
+              <div className="font-black uppercase tracking-wider text-slate-800 mb-1">ATPS Monitor</div>
+              <div className="flex flex-wrap gap-4">
+                <span>Pending retries: <strong>{Number(atpsMonitor?.retryQueue?.pendingCount || 0)}</strong></span>
+                <span>Failed retries: <strong>{Number(atpsMonitor?.retryQueue?.failedCount || 0)}</strong></span>
+                <span>Laatste live run: <strong>{String(atpsMonitor?.runs?.[0]?.status || "-")}</strong></span>
+                <span>Laatste preview run: <strong>{String(atpsMonitor?.previewRuns?.[0]?.status || "-")}</strong></span>
+              </div>
+            </div>
+          )}
           {loading ? (
             <div className="flex flex-col items-center justify-center h-64 gap-4">
               <Loader2 className="animate-spin text-blue-600" size={48} />

@@ -13,6 +13,7 @@ type Station = {
   id?: string;
   name?: string;
   type?: string;
+  isAvailableForPlanning?: boolean;
 };
 
 type Department = {
@@ -180,6 +181,7 @@ const DepartmentStationSelector = ({ department, onBack, searchOrder }: Departme
 
     let availableStations: StationItem[] = (matchedDepartment.stations || [])
       .filter((s) => {
+        if (s.isAvailableForPlanning === false) return false;
         const name = (s.name || "").toLowerCase();
         return name !== "algemeen";
       })

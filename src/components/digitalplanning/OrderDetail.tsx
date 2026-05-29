@@ -519,6 +519,7 @@ const OrderDetail = React.memo(({
     return sum + (Number(value) || 0);
   }, 0);
   const liveStartedAmount = orderProducts.filter((product) => {
+    if (product.isVirtualLot) return false;
     const statusUpper = String(product?.status || "").toUpperCase();
     const stepUpper = String(product?.currentStep || "").toUpperCase();
     const isClosed =
@@ -533,6 +534,7 @@ const OrderDetail = React.memo(({
     new Set(
       orderProducts
         .filter((product) => {
+          if (product.isVirtualLot) return false;
           const statusUpper = String(product?.status || "").toUpperCase();
           const stepUpper = String(product?.currentStep || "").toUpperCase();
           // Definitief afgekeurd of verwijderd: telt NIET als gestart (must re-make).
@@ -560,7 +562,7 @@ const OrderDetail = React.memo(({
         summedStartedAmount,
         liveStartedAmount
       );
-  const trackedProducedAmount = countFinishedTrackedLots(orderProducts);
+  const trackedProducedAmount = countFinishedTrackedLots(orderProducts.filter(p => !p.isVirtualLot));
   // producedAmount: als we live tracking hebben, is dat de bron van waarheid.
   // order.produced is een LN-import waarde die snel verouderd raakt en mag
   // de live telling niet overschrijven.

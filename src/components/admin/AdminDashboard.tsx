@@ -274,7 +274,7 @@ const AdminDashboard = () => {
     },
     {
       id: "qshe",
-      title: "QSHE",
+      title: "QC",
       icon: <ShieldCheck size={20} className="text-orange-600" />,
       color: "bg-orange-50 border-orange-200",
       items: [

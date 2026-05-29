@@ -366,6 +366,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
     };
 
     allTracked.forEach((product) => {
+      if (product.isVirtualLot) return;
       const orderId = String(product?.orderId || "").trim();
       if (!orderId) return;
 
@@ -409,11 +410,13 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
 
     allTracked.forEach((p) => {
       if (isDefinitiveRejectedOrRemoved(p)) return;
+      if (p.isVirtualLot) return;
       addLot(p?.orderId, p?.lotNumber || p?.id);
     });
 
     archiveTrackedItems.forEach((p) => {
       if (isDefinitiveRejectedOrRemoved(p)) return;
+      if (p.isVirtualLot) return;
       addLot(p?.orderId, p?.lotNumber || p?.id);
     });
 
@@ -541,6 +544,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
   const productionProgressMap = useMemo(() => {
     const map: Record<string, number> = {};
     allTracked.forEach((p) => {
+      if (p.isVirtualLot) return;
       const oid = String(p.orderId || "").trim();
       if (!oid) return;
       // Alleen actieve (niet-afgeronde) producten tellen mee
@@ -558,6 +562,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
   const rejectedCountMap = useMemo(() => {
     const map: Record<string, number> = {};
     allTracked.forEach((p) => {
+      if (p.isVirtualLot) return;
       const oid = String(p.orderId || "").trim();
       if (!oid) return;
       const statusValue = String(p.status || "");
@@ -572,6 +577,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
   const readyForReturnMap = useMemo(() => {
     const map: Record<string, number> = {};
     allTracked.forEach((p) => {
+      if (p.isVirtualLot) return;
       const currentStationNorm = (normalizeMachine(p.currentStation) || "").toUpperCase().trim();
       if (currentStationNorm === normalizedStationId && 
           p.status !== "completed" && 
@@ -588,6 +594,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
   const waitingForLossenMap = useMemo(() => {
     const map: Record<string, number> = {};
     allTracked.forEach((p) => {
+      if (p.isVirtualLot) return;
       const originNorm = (normalizeMachine(p.originMachine || p.machine || p.currentStation) || "").toUpperCase().trim();
       const stepNorm = String(p.currentStep || "").trim().toLowerCase();
       const statusNorm = String(p.status || "").trim().toLowerCase();
@@ -611,6 +618,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
   const activeWikkelingen = useMemo(() => {
     const active = allTracked
       .filter(p => {
+        if (p.isVirtualLot) return false;
         const currentNorm = (normalizeMachine(p.currentStation) || "").toUpperCase().trim();
         const fallbackNorm = (normalizeMachine(p.originMachine || p.machine) || "").toUpperCase().trim();
 
