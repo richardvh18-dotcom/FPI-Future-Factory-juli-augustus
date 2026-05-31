@@ -21,6 +21,7 @@ import {
   Printer,
   Download,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import StatusBadge from "../common/StatusBadge";
 import { WORKSTATIONS, REJECTION_REASONS } from "../../../utils/workstationLogic";
 import { format } from "date-fns";
@@ -32,6 +33,8 @@ import { useAdminAuth } from "../../../hooks/useAdminAuth";
 import ProductDetailModal from "../../products/ProductDetailModal";
 import LabelVisualPreview from "../../printer/LabelVisualPreview";
 import { useLabelPreview } from "../../../hooks/useLabelPreview";
+import { getDriver } from "../../../utils/printerDrivers";
+import { renderLabelToBitmapZpl } from "../../../utils/unifiedLabelRenderEngine";
 import ConfirmationModal from "./ConfirmationModal";
 import { formatDateTimeSafe, toDateSafe } from "../../../utils/dateUtils";
 import { useNotifications } from '../../../contexts/NotificationContext';
@@ -60,6 +63,91 @@ type DateLikeInput =
     }
   | null
   | undefined;
+
+const getMeasurementLabel = (key: string, t: any): string => {
+  const labels: Record<string, string> = {
+    "Brix_Department": t("qc.meas_department", "Afdeling"),
+    "Brix_Kitchen": t("qc.meas_kitchen", "Harskeuken"),
+    "Brix_TapPoint": t("qc.meas_tappoint", "Aftappunt"),
+    "Brix_Shift": t("qc.meas_shift", "Ploeg"),
+    "Brix_Operator": t("qc.meas_operator", "Operator (Personeelsnr)"),
+    "Brix_OperatorNumber": t("qc.meas_operator", "Operator (Personeelsnr)"),
+    "operator": t("qc.meas_operator", "Operator (Personeelsnr)"),
+    "operatorNumber": t("qc.meas_operator", "Operator (Personeelsnr)"),
+    "OperatorNumber": t("qc.meas_operator", "Operator (Personeelsnr)"),
+    "Operator": t("qc.meas_operator_short", "Operator"),
+    "Brix_TableRef": t("qc.meas_tableref", "Tabelreferentie"),
+    "Brix_Table": t("qc.meas_tableref", "Tabelreferentie"),
+    "Brix_ResinWeight": t("qc.meas_resin_g", "Ingewogen Hars (g)"),
+    "Brix_Resin": t("qc.meas_resin_g", "Ingewogen Hars (g)"),
+    "Brix_HardenerWeight": t("qc.meas_hardener_g", "Ingewogen Harder (g)"),
+    "Brix_IPD": t("qc.meas_ipd_g", "Ingewogen IPD (g)"),
+    "Brix": t("qc.meas_brix", "Brekingsindex"),
+    "Brix_Ratio": t("qc.meas_ratio", "Mengverhouding"),
+    "Brix_Area": t("qc.meas_area", "Acceptatieniveau (Area)"),
+    "Brix_VisualCheck": t("qc.meas_visual", "Visuele Check"),
+    "Tg": t("qc.meas_tg", "Tg Meting (°C)"),
+    "TW": t("qc.meas_tw", "Wanddikte (TW)"),
+    "TF": t("qc.meas_tf", "Flensdikte (TF)"),
+    "TWco": t("qc.meas_twco", "Wanddikte Mof (TWco)"),
+    "TWc": t("qc.meas_twc", "Wanddikte Mof (TWc)"),
+    "TWcb": t("qc.meas_twcb", "Wanddikte CB-Mof (TWcb)"),
+    "TWtb": t("qc.meas_twtb", "Wanddikte TB-Mof (TWtb)"),
+  };
+  return labels[key] || key;
+};
+
+const MEASUREMENT_ORDER = [
+  "Brix_Department",
+  "Brix_Kitchen",
+  "Brix_TapPoint",
+  "Brix_Shift",
+  "Brix_Operator",
+  "Brix_OperatorNumber",
+  "operator",
+  "operatorNumber",
+  "OperatorNumber",
+  "Operator",
+  "Brix_TableRef",
+  "Brix_Table",
+  "Brix_ResinWeight",
+  "Brix_Resin",
+  "Brix_HardenerWeight",
+  "Brix_IPD",
+  "Brix",
+  "Brix_Ratio",
+  "Brix_Area",
+  "Brix_VisualCheck",
+  "Tg",
+  "TF",
+  "TW",
+  "TWco",
+  "TWc",
+  "TWcb",
+  "TWtb"
+];
+
+const formatMeasurementValue = (key: string, value: any, t: any): string => {
+  const strVal = String(value);
+  if (key === "Brix_VisualCheck") {
+    if (value === true || strVal.toLowerCase() === "true") return t("qc.visual_check_ok", "Ja (Akkoord)");
+    if (value === false || strVal.toLowerCase() === "false") return t("qc.visual_check_nok", "Nee (Afgekeurd)");
+  }
+  if (key === "Brix_Shift") {
+    const s = strVal.toLowerCase().trim();
+    if (["mo", "morning", "ochtend", "vroeg", "v"].includes(s)) return t("qc.shift_morning", "Ochtend");
+    if (["af", "afternoon", "middag", "m", "mi"].includes(s)) return t("qc.shift_afternoon", "Middag");
+    if (["ev", "evening", "avond", "a", "av"].includes(s)) return t("qc.shift_evening", "Avond");
+    if (["ni", "night", "nacht", "n", "na"].includes(s)) return t("qc.shift_night", "Nacht");
+  }
+  if (["Brix_ResinWeight", "Brix_HardenerWeight", "Brix_Resin", "Brix_IPD"].includes(key)) {
+    const numVal = parseFloat(strVal);
+    if (!isNaN(numVal)) {
+      return numVal.toFixed(3);
+    }
+  }
+  return strVal;
+};
 
 /**
  * ProductDossierModal: Toont proces-stappen, kwaliteitsmetingen en order-info.
@@ -177,6 +265,7 @@ const ProductDossierModal = ({
   currentDepartment,
   allowedStations = [],
 }: ProductDossierModalProps) => {
+  const { t } = useTranslation();
   const { notify } = useNotifications();
   const [newNote, setNewNote] = useState("");
   const [isAdding, setIsAdding] = useState(false);
@@ -445,7 +534,7 @@ const ProductDossierModal = ({
     }
   };
 
-  // FIX: Stations lijst opschonen (BH31 toevoegen, dubbele BM01 verwijderen)
+  // Stations lijst opschonen (BH31 toevoegen, dubbele BM01 verwijderen)
   const sortedStations = useMemo(() => {
     const stations = [...WORKSTATIONS];
     
@@ -566,7 +655,31 @@ const ProductDossierModal = ({
         doc.setFont("helvetica", "bold");
         doc.text("Kwaliteitsmetingen (QC)", 14, startY);
         
-        const measBody = Object.entries(product.measurements).map(([k, v]) => [k, String(v)]);
+        const sortedMeas = Object.entries(product.measurements).sort(([keyA], [keyB]) => {
+            const orderA = MEASUREMENT_ORDER.indexOf(keyA);
+            const orderB = MEASUREMENT_ORDER.indexOf(keyB);
+            if (orderA !== -1 && orderB !== -1) return orderA - orderB;
+            if (orderA !== -1) return -1;
+            if (orderB !== -1) return 1;
+            return keyA.localeCompare(keyB);
+        });
+
+        const measBody: any[] = [];
+        let lastCategory = "";
+        
+        sortedMeas.forEach(([k, v]) => {
+          let category = t("qc.cat_other", "Overige Metingen");
+          if (k.startsWith("Brix")) category = t("qc.cat_brix", "Brekingsindex");
+          else if (k === "Tg") category = t("qc.cat_tg", "Laboratorium (Tg)");
+          else if (["TW", "TF", "TWco", "TWc", "TWcb", "TWtb"].includes(k)) category = t("qc.cat_physical", "Fysieke Metingen (Operator)");
+
+          if (category !== lastCategory) {
+            measBody.push([{ content: category, colSpan: 2, styles: { fillColor: [238, 242, 255], textColor: [49, 46, 129], fontStyle: 'bold' } }]);
+            lastCategory = category;
+          }
+          measBody.push([getMeasurementLabel(k, t), formatMeasurementValue(k, v, t)]);
+        });
+
         (doc as any).autoTable({
           startY: startY + 5,
           head: [['Meting', 'Waarde']],
@@ -714,8 +827,8 @@ const ProductDossierModal = ({
   };
 
   const handleReprintLabel = async () => {
-    const zplToReprint = String(effectiveLabelZPL || "").trim();
-    if (!zplToReprint) {
+    let zplToReprint = String(effectiveLabelZPL || "").trim();
+    if (!zplToReprint && !dossierLabel) {
       notify("Geen labeldata gevonden om te herprinten.");
       return;
     }
@@ -734,6 +847,21 @@ const ProductDossierModal = ({
 
       if (!targetPrinter) {
         throw new Error("Geen BM01/default printer gevonden in Printer Beheer.");
+      }
+
+      if (dossierLabel && dossierPreviewData) {
+        const driver = getDriver(targetPrinter as Record<string, unknown>);
+        const widthMm = Number((dossierLabel as any)?.width) || 90;
+        const heightMm = Number((dossierLabel as any)?.height) || 40;
+        zplToReprint = await renderLabelToBitmapZpl({
+          template: dossierLabel as any,
+          data: dossierPreviewData as Record<string, unknown>,
+          printerDpi: Number(driver.nativeDpi) || 203,
+          darkness: Number((targetPrinter as Record<string, unknown>)?.darkness) || driver.defaultDarkness || 15,
+          printSpeed: Number((targetPrinter as Record<string, unknown>)?.speed) || driver.defaultSpeed || 3,
+          widthMm,
+          heightMm,
+        });
       }
 
       await queuePrintJob(targetPrinter.id, zplToReprint, {
@@ -775,7 +903,7 @@ const ProductDossierModal = ({
               </div>
               <div>
                 <h3 className="text-3xl font-black italic uppercase tracking-tight text-left">
-                  Product <span className="text-blue-400">Dossier</span>
+                  {t("productDossier.product", "Product")} <span className="text-blue-400">{t("productDossier.dossier", "Dossier")}</span>
                 </h3>
                 <div className="text-left mt-1">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
@@ -943,7 +1071,7 @@ const ProductDossierModal = ({
 
               {/* Label sectie altijd zichtbaar; toont status/fallback als ZPL ontbreekt */}
               <div className="lg:col-span-4 mt-4 pt-4 border-t border-blue-200/50">
-                <h4 className="text-[9px] font-black text-blue-400 uppercase mb-2">Label (Her)print</h4>
+                <h4 className="text-[9px] font-black text-blue-400 uppercase mb-2">{t("productDossier.labelReprint", "Label (Her)print")}</h4>
                 {isResolvingLabel ? (
                   <div className="bg-white/60 p-4 rounded-lg border border-blue-100/50 text-xs font-bold text-slate-500 flex items-center gap-2">
                     <Loader2 size={14} className="animate-spin" /> Labelgegevens laden...
@@ -995,16 +1123,16 @@ const ProductDossierModal = ({
                             className="shadow-md"
                           />
                         ) : isResolvingLabel ? (
-                          <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">Laden...</span>
+                          <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">{t("common.loading", "Laden...")}</span>
                         ) : (
-                          <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">Geen labeltemplate beschikbaar</span>
+                          <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">{t("productDossier.noLabelTemplateAvailable", "Geen labeltemplate beschikbaar")}</span>
                         )}
                       </div>
                     )}
                   </>
                 ) : (
                   <div className="bg-white/60 p-4 rounded-lg border border-blue-100/50 flex items-center justify-between gap-3">
-                    <span className="text-xs font-bold text-slate-500">Geen opgeslagen label gevonden voor dit product.</span>
+                    <span className="text-xs font-bold text-slate-500">{t("productDossier.noSavedLabelForProduct", "Geen opgeslagen label gevonden voor dit product.")}</span>
                     <button
                       onClick={handleReprintLabel}
                       disabled
@@ -1076,27 +1204,61 @@ const ProductDossierModal = ({
                   )}
 
                 {/* Metingen */}
-                {product.measurements && (
+                {product.measurements && Object.keys(product.measurements).length > 0 && (
                   <div className="p-6 bg-indigo-50 rounded-[32px] border border-indigo-100">
-                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest block mb-2 flex items-center gap-2">
-                      <Ruler size={14} /> Metingen
+                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest block mb-4 flex items-center gap-2">
+                      <Ruler size={14} /> Kwaliteitsmetingen
                     </span>
-                    <div className="space-y-1">
-                      {Object.entries(product.measurements).map(
-                        ([key, val]) => (
-                          <div
-                            key={key}
-                            className="flex justify-between text-xs border-b border-indigo-100/50 pb-1 last:border-0"
-                          >
-                            <span className="font-bold text-slate-600 uppercase">
-                              {key}:
-                            </span>
-                            <span className="font-mono font-black text-slate-800">
-                              {val}
-                            </span>
+                    <div className="space-y-4">
+                      {(() => {
+                        const sortedEntries = Object.entries(product.measurements).sort(([keyA], [keyB]) => {
+                          const idxA = MEASUREMENT_ORDER.indexOf(keyA);
+                          const idxB = MEASUREMENT_ORDER.indexOf(keyB);
+                          if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                          if (idxA !== -1) return -1;
+                          if (idxB !== -1) return 1;
+                          return keyA.localeCompare(keyB);
+                        });
+
+                        const groups: { category: string; items: [string, any][] }[] = [];
+                        let currentCategory = "";
+
+                        sortedEntries.forEach(([key, val]) => {
+                          let category = t("qc.cat_other", "Overige Metingen");
+                          if (key.startsWith("Brix")) category = t("qc.cat_brix", "Brekingsindex");
+                          else if (key === "Tg") category = t("qc.cat_tg", "Laboratorium (Tg)");
+                          else if (["TW", "TF", "TWco", "TWc", "TWcb", "TWtb"].includes(key)) category = t("qc.cat_physical", "Fysieke Metingen (Operator)");
+
+                          if (category !== currentCategory) {
+                            currentCategory = category;
+                            groups.push({ category, items: [] });
+                          }
+                          groups[groups.length - 1].items.push([key, val]);
+                        });
+
+                        return groups.map((group, gIdx) => (
+                          <div key={group.category} className={gIdx > 0 ? "pt-3 border-t border-indigo-200" : ""}>
+                            <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-2">
+                              {group.category}
+                            </div>
+                            <div className="space-y-1">
+                              {group.items.map(([key, val]) => (
+                                <div
+                                  key={key}
+                                  className="grid grid-cols-[180px_1fr] sm:grid-cols-[200px_1fr] gap-2 text-xs border-b border-indigo-100/50 pb-1 last:border-0 items-start"
+                                >
+                                  <span className="font-bold text-slate-600 uppercase break-words">
+                                    {getMeasurementLabel(key, t)}:
+                                  </span>
+                                  <span className="font-mono font-black text-slate-800 break-words">
+                                    {formatMeasurementValue(key, val, t)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        )
-                      )}
+                        ));
+                      })()}
                     </div>
                   </div>
                 )}
@@ -1144,7 +1306,7 @@ const ProductDossierModal = ({
                     <div className="bg-white p-4 rounded-2xl border border-rose-200 animate-in fade-in slide-in-from-bottom-2">
                       <textarea
                         className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-rose-500 min-h-[100px] mb-3"
-                        placeholder="Beschrijf de klacht, oorzaak en actie..."
+                        placeholder={t("placeholders.dpIssueDescription", "Beschrijf de klacht, oorzaak en actie...")}
                         value={newNote}
                         onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNewNote(e.target.value)}
                         autoFocus
@@ -1234,7 +1396,7 @@ const ProductDossierModal = ({
                     onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setTargetStation(e.target.value)}
                     className="px-4 py-4 bg-white border-2 border-slate-200 rounded-2xl font-bold text-xs text-slate-700 outline-none focus:border-blue-500"
                   >
-                    <option value="">Kies station...</option>
+                    <option value="">{t("common.chooseStation", "Kies station...")}</option>
                     {moveStations.map((s: any) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
@@ -1246,7 +1408,7 @@ const ProductDossierModal = ({
                       value={repairInstruction}
                       onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRepairInstruction(e.target.value)}
                       className="px-4 py-3 bg-white border-2 border-slate-200 rounded-2xl font-medium text-xs text-slate-700 outline-none focus:border-blue-500 min-w-[260px] min-h-[92px]"
-                      placeholder="Wat moet de operator repareren?"
+                      placeholder={t("placeholders.dpRepairInstruction", "Wat moet de operator repareren?")}
                     />
                   )}
                   <button
@@ -1389,7 +1551,7 @@ const ProductDossierModal = ({
                   value={rejectNote}
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setRejectNote(e.target.value)}
                   className="w-full p-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500 outline-none"
-                  placeholder="Bijv. kras op flensvlak, niet herstelbaar..."
+                  placeholder={t("placeholders.dpIrreparableExample", "Bijv. kras op flensvlak, niet herstelbaar...")}
                   rows={3}
                 />
               </div>

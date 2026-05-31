@@ -5,6 +5,7 @@ import { PATHS } from '../../config/dbPaths';
 import { formatDistanceToNow } from 'date-fns';
 import { nl } from 'date-fns/locale';
 import { Loader2, RefreshCw, Trash2, Wifi, WifiOff, AlertTriangle, CheckCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { requeuePrintQueueJob, deletePrintQueueJob } from '../../services/planningSecurityService';
 
@@ -38,12 +39,12 @@ type ListenerItem = {
   [key: string]: unknown;
 };
 
-const StatusBadge = ({ status }: { status?: string }) => {
+const StatusBadge = ({ status, t }: { status?: string; t: (key: string, fallback?: string) => string }) => {
   const config: Record<string, { icon: React.ReactNode; text: string; color: string }> = {
-    pending: { icon: <Loader2 className="animate-spin text-yellow-500" size={16} />, text: 'Wachtend', color: 'bg-yellow-100 text-yellow-800' },
-    printing: { icon: <RefreshCw className="animate-spin text-blue-500" size={16} />, text: 'Printen', color: 'bg-blue-100 text-blue-800' },
-    completed: { icon: <CheckCircle className="text-green-500" size={16} />, text: 'Voltooid', color: 'bg-green-100 text-green-800' },
-    error: { icon: <AlertTriangle className="text-red-500" size={16} />, text: 'Fout', color: 'bg-red-100 text-red-800' },
+    pending: { icon: <Loader2 className="animate-spin text-yellow-500" size={16} />, text: t('printQueue.waiting', 'Wachtend'), color: 'bg-yellow-100 text-yellow-800' },
+    printing: { icon: <RefreshCw className="animate-spin text-blue-500" size={16} />, text: t('printQueue.printing', 'Printen'), color: 'bg-blue-100 text-blue-800' },
+    completed: { icon: <CheckCircle className="text-green-500" size={16} />, text: t('printQueue.completed', 'Voltooid'), color: 'bg-green-100 text-green-800' },
+    error: { icon: <AlertTriangle className="text-red-500" size={16} />, text: t('printQueue.error', 'Fout'), color: 'bg-red-100 text-red-800' },
   };
   const current = config[status || 'pending'] || config.pending;
   return (
@@ -55,6 +56,7 @@ const StatusBadge = ({ status }: { status?: string }) => {
 };
 
 const PrintQueueAdminView = () => {
+  const { t } = useTranslation();
   const { showError, showConfirm } = useNotifications();
   const [printJobs, setPrintJobs] = useState<PrintJob[]>([]);
   const [listeners, setListeners] = useState<ListenerItem[]>([]);
@@ -137,10 +139,10 @@ const PrintQueueAdminView = () => {
 
   const handleReprint = async (jobId: string) => {
     const confirmed = await showConfirm({
-      title: 'Taak opnieuw printen',
-      message: 'Weet u zeker dat u deze taak opnieuw wilt printen?',
-      confirmText: 'Opnieuw printen',
-      cancelText: 'Annuleren',
+      title: t('printQueue.reprintTask', 'Taak opnieuw printen'),
+      message: t('printQueue.reprintConfirm', 'Weet u zeker dat u deze taak opnieuw wilt printen?'),
+      confirmText: t('printQueue.reprint', 'Opnieuw printen'),
+      cancelText: t('common.cancel', 'Annuleren'),
       tone: 'warning',
     });
     if (!confirmed) return;
@@ -151,16 +153,16 @@ const PrintQueueAdminView = () => {
       });
     } catch (error) {
       console.error(error);
-      showError("Fout bij opnieuw printen");
+      showError(t('printQueue.reprintError', 'Fout bij opnieuw printen'));
     }
   };
 
   const handleDelete = async (jobId: string) => {
     const confirmed = await showConfirm({
-      title: 'Printtaak verwijderen',
-      message: 'Weet u zeker dat u deze taak permanent wilt verwijderen?',
-      confirmText: 'Verwijderen',
-      cancelText: 'Annuleren',
+      title: t('printQueue.deleteTask', 'Printtaak verwijderen'),
+      message: t('printQueue.deleteConfirm', 'Weet u zeker dat u deze taak permanent wilt verwijderen?'),
+      confirmText: t('common.delete', 'Verwijderen'),
+      cancelText: t('common.cancel', 'Annuleren'),
       tone: 'danger',
     });
     if (!confirmed) return;
@@ -171,17 +173,17 @@ const PrintQueueAdminView = () => {
       });
     } catch (error) {
       console.error(error);
-      showError("Fout bij verwijderen");
+      showError(t('printQueue.deleteError', 'Fout bij verwijderen'));
     }
   };
 
   return (
     <div className="p-4 md:p-8">
-      <h1 className="text-3xl font-bold mb-2">Print Wachtrij Beheer</h1>
-      <p className="text-slate-600 mb-6">Monitor de status van printopdrachten en verbonden printer listeners.</p>
+      <h1 className="text-3xl font-bold mb-2">{t('printQueue.managementTitle', 'Print Wachtrij Beheer')}</h1>
+      <p className="text-slate-600 mb-6">{t('printQueue.managementSubtitle', 'Monitor de status van printopdrachten en verbonden printer listeners.')}</p>
 
       <div className="mb-8">
-        <h2 className="text-xl font-bold mb-3">Printer Listeners</h2>
+        <h2 className="text-xl font-bold mb-3">{t('printQueue.printerListeners', 'Printer Listeners')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {listeners.length > 0 ? listeners.map((listener) => {
             const isOnline = !!listener.lastSeen?.toDate && listener.lastSeen.toDate() > new Date(Date.now() - 30000); // Online if seen in last 30s
@@ -195,33 +197,33 @@ const PrintQueueAdminView = () => {
                   Status: {isOnline ? 'Online' : 'Offline'}
                 </p>
                 <p className="text-xs text-slate-500 mt-2">
-                  Laatst gezien: {listener.lastSeen?.toDate ? formatDistanceToNow(listener.lastSeen.toDate(), { addSuffix: true, locale: nl }) : 'nooit'}
+                  {t('printQueue.lastSeen', 'Laatst gezien')}: {listener.lastSeen?.toDate ? formatDistanceToNow(listener.lastSeen.toDate(), { addSuffix: true, locale: nl }) : t('printQueue.never', 'nooit')}
                 </p>
               </div>
             );
-          }) : <p className="text-slate-500">Geen actieve listeners gevonden.</p>}
+          }) : <p className="text-slate-500">{t('printQueue.noActiveListeners', 'Geen actieve listeners gevonden.')}</p>}
         </div>
       </div>
 
-      <h2 className="text-xl font-bold mb-3">Print Taken</h2>
+      <h2 className="text-xl font-bold mb-3">{t('printQueue.printTasks', 'Print Taken')}</h2>
       <div className="bg-white shadow-md rounded-lg overflow-x-auto">
         <table className="w-full text-sm text-left text-slate-500">
           <thead className="text-xs text-slate-700 uppercase bg-slate-50">
             <tr>
-              <th scope="col" className="px-6 py-3">Status</th>
-              <th scope="col" className="px-6 py-3">Beschrijving</th>
-              <th scope="col" className="px-6 py-3">Aangevraagd door</th>
-              <th scope="col" className="px-6 py-3">Tijdstip</th>
-              <th scope="col" className="px-6 py-3">Acties</th>
+              <th scope="col" className="px-6 py-3">{t('common.status', 'Status')}</th>
+              <th scope="col" className="px-6 py-3">{t('common.description', 'Beschrijving')}</th>
+              <th scope="col" className="px-6 py-3">{t('printQueue.requestedBy', 'Aangevraagd door')}</th>
+              <th scope="col" className="px-6 py-3">{t('printQueue.timestamp', 'Tijdstip')}</th>
+              <th scope="col" className="px-6 py-3">{t('common.actions', 'Acties')}</th>
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={5} className="text-center p-8"><Loader2 className="animate-spin inline-block" /></td></tr>}
-            {!loading && printJobs.length === 0 && <tr><td colSpan={5} className="text-center p-8">De print wachtrij is leeg.</td></tr>}
+            {!loading && printJobs.length === 0 && <tr><td colSpan={5} className="text-center p-8">{t('printQueue.empty', 'De print wachtrij is leeg.')}</td></tr>}
             {printJobs.map((job) => (
               <tr key={job.id} className="bg-white border-b hover:bg-slate-50">
                 <td className="px-6 py-4">
-                  <StatusBadge status={job.status} />
+                  <StatusBadge status={job.status} t={t} />
                 </td>
                 <td className="px-6 py-4 font-medium text-slate-900">
                   {job.description}

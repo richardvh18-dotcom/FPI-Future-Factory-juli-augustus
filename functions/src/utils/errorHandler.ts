@@ -66,6 +66,11 @@ const ERROR_MAP = {
 
   // Resource exhausted
   NO_UNIQUE_LOT_AVAILABLE: { code: 'resource-exhausted', message: 'Geen uniek lotnummer beschikbaar voor deze machine/week.' },
+
+  // Printing validation
+  'Ongeldige printerId.':               { code: 'invalid-argument', message: 'printerId is ongeldig.' },
+  'ZPL payload ontbreekt of is te groot.': { code: 'invalid-argument', message: 'zplData ontbreekt of is te groot.' },
+  'Metadata is te groot.':              { code: 'invalid-argument', message: 'metadata is te groot.' },
 };
 
 /**

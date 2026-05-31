@@ -1,6 +1,8 @@
 import React from 'react';
+import i18n from 'i18next';
 import { resolveLabelContent, getBarcodeUrl } from '../../utils/labelHelpers';
 import InternalQrImage from '../../utils/InternalQrImage';
+import { getWavistrongLayoutNudge } from '../../utils/labelLayoutAdjustments';
 
 /**
  * CRITICAL: PIXELS_PER_MM moet passen bij printer DPI voor print/preview parity.
@@ -149,7 +151,7 @@ const getPreviewTextStyle = (
 const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printerDpi = 203, strictFontSizing = false, textScaleFactor = 1 }: LabelVisualPreviewProps) => {
   const pixelsPerMm = getPixelsPerMm(printerDpi);
   
-  if (!label) return <div className={`w-48 h-32 bg-slate-200 flex items-center justify-center text-xs text-slate-400 italic ${className}`}>Geen template</div>;
+  if (!label) return <div className={`w-48 h-32 bg-slate-200 flex items-center justify-center text-xs text-slate-400 italic ${className}`}>{i18n.t('labelPreview.noTemplate', 'Geen template')}</div>;
 
   return (
     <div
@@ -168,10 +170,11 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
         const y = Number(el.y) || 0;
         const widthMm = Number(el.width) || 0;
         const heightMm = Number(el.height) || 0;
+        const layoutNudge = getWavistrongLayoutNudge(label, el, displayContent);
         const baseStyle: React.CSSProperties = {
           position: "absolute",
-          left: `${x * pixelsPerMm * zoom}px`,
-          top: `${y * pixelsPerMm * zoom}px`,
+          left: `${(x + layoutNudge.xMm) * pixelsPerMm * zoom}px`,
+          top: `${(y + layoutNudge.yMm) * pixelsPerMm * zoom}px`,
           width: widthMm
             ? `${widthMm * pixelsPerMm * zoom}px`
             : "auto",

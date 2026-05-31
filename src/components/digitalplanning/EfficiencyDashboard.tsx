@@ -880,10 +880,10 @@ const EfficiencyDashboard = () => {
           onChange={(e) => setDepartmentFilter(e.target.value)}
           className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl focus:ring-blue-500 focus:border-blue-500 block p-2.5 font-bold outline-none"
         >
-          <option value="ALL">Alle Afdelingen</option>
-          <option value="FITTINGS">Fittings</option>
-          <option value="PIPES">Pipes</option>
-          <option value="SPOOLS">Spools</option>
+          <option value="ALL">{t('efficiency_dashboard.all_departments', 'Alle Afdelingen')}</option>
+          <option value="FITTINGS">{t('efficiency_dashboard.fittings', 'Fittings')}</option>
+          <option value="PIPES">{t('efficiency_dashboard.pipes', 'Pipes')}</option>
+          <option value="SPOOLS">{t('efficiency_dashboard.spools', 'Spools')}</option>
         </select>
 
         <select
@@ -891,7 +891,7 @@ const EfficiencyDashboard = () => {
           onChange={(e) => setMachineFilter(e.target.value)}
           className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl focus:ring-blue-500 focus:border-blue-500 block p-2.5 font-bold outline-none"
         >
-          <option value="ALL">Alle Machines</option>
+          <option value="ALL">{t('efficiency_dashboard.all_machines', 'Alle Machines')}</option>
           {machineOptions.map((machine) => (
             <option key={machine} value={machine}>{machine}</option>
           ))}
@@ -914,7 +914,7 @@ const EfficiencyDashboard = () => {
             className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-xl shadow-md font-black text-[10px] uppercase tracking-wider hover:bg-purple-700 transition-all"
           >
             <BrainCircuit size={16} />
-            <span className="hidden sm:inline">AI Analyse</span>
+            <span className="hidden sm:inline">{t('efficiency_dashboard.ai_analysis', 'AI Analyse')}</span>
           </button>
 
           {/* View Mode Selector (Actueel vs Archief) */}
@@ -1047,7 +1047,7 @@ const EfficiencyDashboard = () => {
                     {formatMinutes(item.actualMinutes)} {t('efficiency_dashboard.spent')}
                   </span>
                   <div className="text-right">
-                    <span className="text-slate-400 block text-[10px] uppercase">Target</span>
+                    <span className="text-slate-400 block text-[10px] uppercase">{t('efficiency_dashboard.target', 'Target')}</span>
                     <span className="text-slate-600">{formatMinutes(item.standardTimeTotal)}</span>
                   </div>
                 </div>

@@ -1,4 +1,5 @@
 import React from "react";
+import i18n from "i18next";
 import {
   Plus,
   LayoutGrid,
@@ -97,7 +98,7 @@ const MatrixGrid = ({
                       type="text"
                       value={col.label}
                       onChange={(e) => onUpdateColLabel(col.id, e.target.value)}
-                      placeholder="Kolom kop..."
+                      placeholder={i18n.t("placeholders.adminMatrixColumnHeader", "Kolom kop...")}
                       className="w-full bg-transparent border-none text-center text-xs font-black text-slate-800 uppercase tracking-widest outline-none placeholder:text-slate-300"
                     />
                     <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-blue-500 scale-x-0 group-focus-within:scale-x-100 transition-transform" />
@@ -120,7 +121,7 @@ const MatrixGrid = ({
                       type="text"
                       value={row.label}
                       onChange={(e) => onUpdateRowLabel(row.id, e.target.value)}
-                      placeholder="Rij naam..."
+                      placeholder={i18n.t("placeholders.adminMatrixRowName", "Rij naam...")}
                       className="w-full bg-transparent border-none text-sm font-black text-slate-700 italic outline-none placeholder:text-slate-300"
                     />
                     <ChevronRight
@@ -145,7 +146,7 @@ const MatrixGrid = ({
                           onValueChange(row.id, col.id, e.target.value)
                         }
                         className="w-full h-full p-4 bg-transparent text-center text-xs font-bold text-slate-600 outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/20 transition-all placeholder:opacity-20"
-                        placeholder="-"
+                        placeholder={i18n.t("placeholders.adminMatrixCellDash", "-")}
                       />
                     </td>
                   );

@@ -105,7 +105,7 @@ const ScenarioPlanningView = React.lazy(() => import("../planning/ScenarioPlanni
 // Reports & Analytics
 const AdminReportsView = React.lazy(() => import("./AdminReportsView"));
 const FloorControlReportsView = React.lazy(() => import("./FloorControlReportsView"));
-const QsheVirtualLotsView = React.lazy(() => import("./QsheVirtualLotsView"));
+const QcSampleView = React.lazy(() => import("./QcSampleView"));
 // LN Stamdata import
 const ReferenceOpsImportModal = React.lazy(() => import("../digitalplanning/modals/ReferenceOpsImportModal"));
 
@@ -166,7 +166,12 @@ const AdminDashboard = () => {
   // Reset naar dashboard overzicht als er op de sidebar knop wordt geklikt (geen state)
   useEffect(() => {
     if (locationState.openScreen) {
-      setActiveScreen(locationState.openScreen);
+      // Fallback voor links vanuit DepartmentSelector of oude bookmarks
+      if (locationState.openScreen === "qshe_virtual_lots") {
+        setActiveScreen("qc_sample");
+      } else {
+        setActiveScreen(locationState.openScreen);
+      }
       return;
     }
 
@@ -279,13 +284,13 @@ const AdminDashboard = () => {
       color: "bg-orange-50 border-orange-200",
       items: [
         {
-          id: "qshe_virtual_lots",
-          title: "Virtuele Lotuitgifte",
-          desc: "Geef een virtueel lotnummer uit op machine + order zonder fysiek product.",
+          id: "qc_sample",
+          title: "QC Steekproef",
+          desc: "Trek een steekproef-lot voor inspectie zonder de productie-teller te beïnvloeden.",
           icon: <ShieldCheck size={24} className="text-orange-600" />,
           color: "bg-orange-50 border-orange-100",
           roles: ["admin", "qc", "teamleader"],
-          component: QsheVirtualLotsView,
+          component: QcSampleView,
         },
       ]
     },
@@ -637,7 +642,7 @@ const AdminDashboard = () => {
               </div>
             }
           >
-            {ActiveComponent ? <ActiveComponent user={user} canEdit={true} onNavigate={setActiveScreen} {...componentProps} /> : <div className="flex h-full items-center justify-center text-slate-400"><p>Component laden...</p></div>}
+            {ActiveComponent ? <ActiveComponent user={user} canEdit={true} onNavigate={setActiveScreen} {...componentProps} /> : <div className="flex h-full items-center justify-center text-slate-400"><p>{t('common.loadingComponent', 'Component laden...')}</p></div>}
           </Suspense>
         </div>
       </div>

@@ -872,7 +872,7 @@ const PersonnelManager: React.FC<PersonnelManagerProps> = ({ initialViewDate, in
                   <span className="text-[9px] font-black text-blue-400 uppercase block mb-1">{t('personnel.totalVolume', "Totaal Volume")}</span>
                   <div className="flex items-baseline gap-1.5 text-white">
                     <span className="text-2xl font-black italic">{kpiData.global.hours.toFixed(1)}</span>
-                    <span className="text-[9px] font-bold text-slate-500 uppercase">u</span>
+                    <span className="text-[9px] font-bold text-slate-500 uppercase">{t('common.hoursUnitShort', 'u')}</span>
                   </div>
                   <span className="text-[8px] text-slate-400 font-bold uppercase">{timeMode === 'DAY' ? t('common.perDay', 'per dag') : t('common.perWeek', 'per week')}</span>
                 </div>
@@ -1128,7 +1128,7 @@ const PersonnelManager: React.FC<PersonnelManagerProps> = ({ initialViewDate, in
                       {currentPersonNfcMappings.map((mapping) => (
                         <div key={mapping.id} className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-emerald-200">
                           <div className="min-w-0">
-                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Tag</p>
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{t('common.tag', 'Tag')}</p>
                             <p className="text-xs font-mono font-bold text-slate-800 truncate">{mapping.tagId || mapping.id}</p>
                           </div>
                           <button

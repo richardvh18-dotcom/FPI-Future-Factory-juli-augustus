@@ -1,4 +1,5 @@
 import React from "react";
+import i18n from "i18next";
 import {
   Package,
   FileText,
@@ -45,7 +46,7 @@ const SpecsView = ({ blueprints = {} }: SpecsViewProps) => {
           </div>
           <div>
             <h3 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">
-              Technical <span className="text-orange-500">Inventory</span>
+              {i18n.t("specs.technical", "Technical")} <span className="text-orange-500">{i18n.t("specs.inventory", "Inventory")}</span>
             </h3>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 flex items-center gap-2">
               <ShieldCheck size={12} className="text-emerald-500" /> Overzicht
@@ -175,7 +176,7 @@ const SpecsView = ({ blueprints = {} }: SpecsViewProps) => {
             Deze tabel synchroniseert real-time met{" "}
             <strong>/future-factory/settings/blueprint_configs/main</strong>.
             Blauwdrukken die hier verschijnen worden automatisch gebruikt door
-            de <strong>Maatvoering</strong> module om invoervelden te genereren.
+            de <strong>{i18n.t("specs.dimensioning", "Maatvoering")}</strong> module om invoervelden te genereren.
           </p>
         </div>
       </div>

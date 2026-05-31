@@ -1215,7 +1215,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
               onChange={(e) => setSelectedMachine(e.target.value)}
               className="px-2.5 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="ALLES">Alle machines</option>
+              <option value="ALLES">{t("planning.gantt.allMachines", "Alle machines")}</option>
               {machines.map((machine) => (
                 <option key={machine} value={machine}>{machine}</option>
               ))}
@@ -1226,9 +1226,9 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
               onChange={(e) => setSelectedStatus(e.target.value)}
               className="px-2.5 py-1 bg-white border border-slate-200 rounded-md text-[11px] font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="all">Alle status</option>
-              <option value="active">In behandeling</option>
-              <option value="done">Gereed</option>
+              <option value="all">{t("planning.gantt.allStatuses", "Alle status")}</option>
+              <option value="active">{t("planning.gantt.inProgress", "In behandeling")}</option>
+              <option value="done">{t("planning.gantt.done", "Gereed")}</option>
             </select>
 
             {/* Search */}
@@ -1704,7 +1704,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
             )}
             {bounds?.actualDuration && (
               <div className="border-t border-emerald-400 pt-2 mt-2">
-                <div className="font-bold text-emerald-400">Werkelijke duur:</div>
+                <div className="font-bold text-emerald-400">{t("planning.gantt.actualDuration", "Werkelijke duur:")}</div>
                 <div>{bounds.actualDuration.actualDays} dagen ({Math.round(bounds.actualDuration.actualDays / 7 * 10) / 10} wk)</div>
                 <div>{bounds.actualDuration.totalProduced} stuks, ~{Math.round(bounds.actualDuration.avgPerDay * 10) / 10}/dag</div>
               </div>

@@ -655,18 +655,18 @@ export const generateBitmapPrintData = async (
     try {
         const { canvasToZplGfa } = await import("./canvasToBitmapZpl");
         
-        const zpl = canvasToZplGfa(labelCanvas, {
+        const zplRaw = canvasToZplGfa(labelCanvas, {
             width,
             height,
             printerDpi,
             darkness,
             printSpeed,
-            // Printerprofiel: hogere threshold houdt meer anti-aliased randpixels vast,
-            // waardoor tekst op papier minder dun uitvalt.
-            threshold: 204,
-            // Harde verdikking op print-output: maakt letterstammen zichtbaar voller.
-            strokeBoost: 1
+            // Houd nog wat anti-aliased randpixels vast, maar zonder kleine letters dicht te smeren.
+            threshold: 188,
+            strokeBoost: 0
         });
+
+        const zpl = String(zplRaw || '').replace(/^\^XA/, '^XA\n^FXBITMAP_V3_TS160^FS');
 
         return zpl;
     } catch (error) {

@@ -142,7 +142,7 @@ const AdminLabelLogic: React.FC = () => {
     ]);
   };
 
-  return <div>Admin Label Logic Component</div>;
+  return <div>{t('adminLabelLogic.componentTitle', 'Admin Label Logic Component')}</div>;
 };
 
 export default AdminLabelLogic;

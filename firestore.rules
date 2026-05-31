@@ -353,6 +353,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /future-factory/production/counters/{counterId} {
+      // Lotnummer-counters: operators mogen lezen en verhogen via transactie.
+      allow read: if canOperateProduction();
+      allow create, update: if canOperateProduction();
+      allow delete: if isAdmin();
+    }
+
     match /future-factory/production/{collectionId}/{document=**} {
       allow read: if hasUserRecord() || isSignedIn();
       allow write: if (

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import {
   Building2,
   Cpu,
@@ -344,7 +345,7 @@ const FactoryStructureManager = () => {
             />
             <span className="text-[9px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors uppercase tracking-wider leading-tight">
               Productie<br/>
-              <span className="font-medium text-[8px] opacity-70 normal-case">(Als machine in afdeling)</span>
+              <span className="font-medium text-[8px] opacity-70 normal-case">{i18n.t('factoryStructure.asMachineInDepartment', '(Als machine in afdeling)')}</span>
             </span>
           </label>
 
@@ -357,7 +358,7 @@ const FactoryStructureManager = () => {
             />
             <span className="text-[9px] font-bold text-slate-500 group-hover:text-slate-800 transition-colors uppercase tracking-wider leading-tight">
               Overige<br/>
-              <span className="font-medium text-[8px] opacity-70 normal-case">(Brix, Lab, Harskeuken, etc)</span>
+              <span className="font-medium text-[8px] opacity-70 normal-case">{i18n.t('factoryStructure.otherExamples', '(Brix, Lab, Harskeuken, etc)')}</span>
             </span>
           </label>
         </div>
@@ -366,16 +367,16 @@ const FactoryStructureManager = () => {
         {station.isAvailableForLabMeasurements && (
           <div className="flex gap-2 mt-2 p-2 bg-white rounded-lg border border-slate-200 animate-in fade-in">
             <div className="flex-1">
-              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Max Hars (kg)</label>
+              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">{i18n.t('factoryStructure.maxResinKg', 'Max Hars (kg)')}</label>
               <input 
-                type="number" placeholder="200" 
+                type="number" placeholder={i18n.t("placeholders.adminMaxResinKg", "200")} 
                 value={station.maxResinWeight || ""} onChange={(e) => updateStation(deptId, station.id, "maxResinWeight", e.target.value ? Number(e.target.value) : undefined)} 
                 className="w-full px-2 py-1.5 text-[10px] font-bold bg-slate-50 border border-slate-200 rounded outline-none focus:border-blue-500" />
             </div>
             <div className="flex-1">
-              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">Max IPD (kg)</label>
+              <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block mb-1">{i18n.t('factoryStructure.maxIpdKg', 'Max IPD (kg)')}</label>
               <input 
-                type="number" placeholder="100" 
+                type="number" placeholder={i18n.t("placeholders.adminMaxIpdKg", "100")} 
                 value={station.maxHardenerWeight || ""} onChange={(e) => updateStation(deptId, station.id, "maxHardenerWeight", e.target.value ? Number(e.target.value) : undefined)} 
                 className="w-full px-2 py-1.5 text-[10px] font-bold bg-slate-50 border border-slate-200 rounded outline-none focus:border-blue-500" />
             </div>
@@ -442,7 +443,7 @@ const FactoryStructureManager = () => {
 
           <div className="text-left relative z-10">
             <h1 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">
-              Factory <span className="text-blue-600">Structure</span>
+              {i18n.t('factoryStructure.factory', 'Factory')} <span className="text-blue-600">{i18n.t('factoryStructure.structure', 'Structure')}</span>
             </h1>
             <div className="mt-3 flex items-center gap-3">
               <span className="flex items-center gap-1.5 text-[9px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-100 uppercase italic">
@@ -510,11 +511,11 @@ const FactoryStructureManager = () => {
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <p>
-                <span className="text-slate-500">Firestore Path:</span> /
+                <span className="text-slate-500">{i18n.t('factoryStructure.firestorePath', 'Firestore Path:')}</span> /
                 {CONFIG_PATH.join("/")}
               </p>
               <p>
-                <span className="text-slate-500">Node Status:</span>{" "}
+                <span className="text-slate-500">{i18n.t('factoryStructure.nodeStatus', 'Node Status:')}</span>{" "}
                 {loading ? "Syncing..." : "Live"}
               </p>
             </div>
@@ -641,8 +642,8 @@ const FactoryStructureManager = () => {
                           <option value="Nederland">
                             Nederland (FPi Hardenberg)
                           </option>
-                          <option value="Dubai">Dubai (DXB Plant)</option>
-                          <option value="EGT">Egypte (EGT Plant)</option>
+                          <option value="Dubai">{i18n.t('factoryStructure.dubaiPlant', 'Dubai (DXB Plant)')}</option>
+                          <option value="EGT">{i18n.t('factoryStructure.egyptPlant', 'Egypte (EGT Plant)')}</option>
                         </select>
                       </div>
                     </div>

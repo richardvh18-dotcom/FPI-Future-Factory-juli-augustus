@@ -403,9 +403,9 @@ const TerminalPlanningView = ({
             </div>
 
             <div className="flex-1 overflow-hidden">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-black text-slate-900">
-                  {order.orderId}
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-block px-3 py-1 bg-slate-200 text-slate-800 rounded-lg text-sm font-black uppercase tracking-wider border border-slate-300 shadow-sm">
+                  Order: {order.orderId}
                 </span>
                 {priorityBadge && (
                   <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wide ${priorityBadge.className}`}>
@@ -413,7 +413,7 @@ const TerminalPlanningView = ({
                   </span>
                 )}
               </div>
-              <h4 className="font-black text-base leading-tight truncate uppercase text-slate-800 mb-1">
+              <h4 className="font-black text-base sm:text-lg leading-tight uppercase text-slate-900 mb-1 line-clamp-2">
                 {displayName}
               </h4>
               {(order.extraCode && order.extraCode !== "-") || typeBadge ? (
@@ -437,7 +437,7 @@ const TerminalPlanningView = ({
               )}
               {(order.poText || order.notes) && (
                 <div className="mt-1.5 rounded-lg border border-amber-400 bg-amber-100 px-2 py-0.5 animate-pulse shadow-md shadow-amber-300/50">
-                  <p className="text-[9px] font-black uppercase tracking-wide text-amber-800">PO Text</p>
+                  <p className="text-[9px] font-black uppercase tracking-wide text-amber-800">{t("terminalPlanning.poText", "PO Text")}</p>
                   <p className="truncate text-[10px] font-bold text-amber-900">
                     {order.poText || order.notes}
                   </p>
@@ -702,15 +702,14 @@ const TerminalPlanningView = ({
                   >
                     <ArrowLeft size={20} />
                   </button>
-                  <span className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] block mb-2">
-                    {t("digitalplanning.order_detail.view_dossier", "Bekijk uitgebreid dossier")}
-                  </span>
-                  <h2 className="text-4xl font-black italic tracking-tighter leading-none mb-2">
-                    {selectedOrder.orderId}
-                  </h2>
-                  <p className="text-lg font-black text-white leading-tight uppercase italic max-w-3xl">
+                  <div className="mb-2">
+                    <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base sm:text-lg font-black uppercase tracking-widest border border-white/40 shadow-sm">
+                      Order: {selectedOrder.orderId}
+                    </span>
+                  </div>
+                  <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
                     {getOrderDisplayName(selectedOrder)}
-                  </p>
+                  </h2>
                   <p className="text-xs font-bold text-white/60 mt-1">
                     {selectedOrder.itemCode || "-"}
                   </p>
@@ -796,7 +795,7 @@ const TerminalPlanningView = ({
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                   </span>
                   <div>
-                    <p className="text-[9px] font-black text-amber-900/60 uppercase tracking-widest mb-0.5">PO Text / Opmerking</p>
+                    <p className="text-[9px] font-black text-amber-900/60 uppercase tracking-widest mb-0.5">{t("terminalPlanning.poTextNote", "PO Text / Opmerking")}</p>
                     <p className="text-sm font-black text-amber-900 leading-snug">{poText}</p>
                   </div>
                 </div>
@@ -815,7 +814,7 @@ const TerminalPlanningView = ({
                   </span>
                 </div>
                 {selectedOrderLots.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">Geen lotnummers gevonden voor deze order.</p>
+                  <p className="text-xs text-slate-400 italic">{t("terminalPlanning.noLotsFoundForOrder", "Geen lotnummers gevonden voor deze order.")}</p>
                 ) : (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -916,7 +915,7 @@ const TerminalPlanningView = ({
                   <div className="space-y-3">
                     <div className="flex justify-between items-center border-b border-slate-200 pb-2">
                       <span className="text-[11px] font-bold text-slate-500 uppercase">
-                        {t("digitalplanning.order_detail.creation_date_ln", "Aanmaakdatum LN")}:
+                        {t("digitalplanning.order_detail.creation_date", "Aanmaakdatum Order")}:
                       </span>
                       <span className="text-sm font-black text-blue-600 flex items-center gap-2">
                         <Calendar size={14} /> {selectedOrder.orderCreationDate || t("digitalplanning.terminal.not_available", "Niet beschikbaar")}
@@ -949,7 +948,7 @@ const TerminalPlanningView = ({
                 </div>
 
                 {selectedOrderLots.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">Geen lotnummers gevonden voor deze order.</p>
+                  <p className="text-xs text-slate-400 italic">{t("terminalPlanning.noLotsFoundForOrder", "Geen lotnummers gevonden voor deze order.")}</p>
                 ) : (
                   <div className="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 custom-scrollbar">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

@@ -12,6 +12,7 @@ import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, serverTimest
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useTranslation } from "react-i18next";
 
 type AnyRecord = Record<string, any>;
 
@@ -21,6 +22,7 @@ type AnyRecord = Record<string, any>;
  */
 const NotificationRulesView = () => {
   const { showConfirm , notify} = useNotifications();
+  const { t } = useTranslation();
   const [rules, setRules] = useState<AnyRecord[]>([]);
   const [notifications, setNotifications] = useState<AnyRecord[]>([]);
   const [occupancy, setOccupancy] = useState<AnyRecord[]>([]);
@@ -291,11 +293,11 @@ const NotificationRulesView = () => {
 
   const getTriggerLabel = (trigger: string) => {
     const labels: Record<string, string> = {
-      capacity_shortage: "Capaciteitstekort",
-      low_efficiency: "Lage Efficiency",
-      order_delay: "Order Vertraging",
-      missing_operator: "Ontbrekende Operator",
-      dependency_blocked: "Geblokkeerde Dependencies"
+      capacity_shortage: t("notificationRulesView.capacityShortage", "Capaciteitstekort"),
+      low_efficiency: t("notificationRulesView.lowEfficiency", "Lage Efficiency"),
+      order_delay: t("notificationRulesView.orderDelay", "Order Vertraging"),
+      missing_operator: t("notificationRulesView.missingOperator", "Ontbrekende Operator"),
+      dependency_blocked: t("notificationRulesView.blockedDependencies", "Geblokkeerde Dependencies")
     };
     return labels[trigger] || trigger;
   };
@@ -316,7 +318,7 @@ const NotificationRulesView = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-black text-slate-800">
-              Notification <span className="text-blue-600">Rules</span>
+              {t("notificationRulesView.title", "Notification Rules")}
             </h1>
             <p className="text-sm text-slate-600 mt-1">
               Configureer geautomatiseerde notificaties voor systeem events
@@ -328,7 +330,7 @@ const NotificationRulesView = () => {
             className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-bold transition-colors"
           >
             <Plus size={16} />
-            Nieuwe Regel
+            {t("notificationRulesView.newRule", "Nieuwe Regel")}
           </button>
         </div>
       </div>
@@ -338,14 +340,14 @@ const NotificationRulesView = () => {
         <div className="space-y-4">
           <div className="bg-white rounded-2xl shadow-sm border-2 border-slate-200">
             <div className="p-4 border-b-2 border-slate-200 bg-slate-50">
-              <h3 className="text-sm font-bold text-slate-800">Actieve Regels</h3>
+              <h3 className="text-sm font-bold text-slate-800">{t("notificationRulesView.activeRules", "Actieve Regels")}</h3>
             </div>
             <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto">
               {showAddRule && (
                 <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-xl space-y-3">
                   <input
                     type="text"
-                    placeholder="Regel naam..."
+                    placeholder={t("placeholders.ruleName", "Regel naam...")}
                     value={newRule.name}
                     onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
                     className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg text-sm"
@@ -356,16 +358,16 @@ const NotificationRulesView = () => {
                     onChange={(e) => setNewRule({ ...newRule, trigger: e.target.value })}
                     className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg text-sm"
                   >
-                    <option value="capacity_shortage">Capaciteitstekort</option>
-                    <option value="low_efficiency">Lage Efficiency</option>
-                    <option value="order_delay">Order Vertraging</option>
-                    <option value="missing_operator">Ontbrekende Operator</option>
-                    <option value="dependency_blocked">Geblokkeerde Dependencies</option>
+                    <option value="capacity_shortage">{t("notificationRulesView.capacityShortage", "Capaciteitstekort")}</option>
+                    <option value="low_efficiency">{t("notificationRulesView.lowEfficiency", "Lage Efficiency")}</option>
+                    <option value="order_delay">{t("notificationRulesView.orderDelay", "Order Vertraging")}</option>
+                    <option value="missing_operator">{t("notificationRulesView.missingOperator", "Ontbrekende Operator")}</option>
+                    <option value="dependency_blocked">{t("notificationRulesView.blockedDependencies", "Geblokkeerde Dependencies")}</option>
                   </select>
 
                   <input
                     type="number"
-                    placeholder="Threshold..."
+                    placeholder={t("placeholders.threshold", "Threshold...")}
                     value={newRule.threshold}
                     onChange={(e) => setNewRule({ ...newRule, threshold: parseInt(e.target.value) })}
                     className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg text-sm"
@@ -376,10 +378,10 @@ const NotificationRulesView = () => {
                     onChange={(e) => setNewRule({ ...newRule, recipients: e.target.value })}
                     className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg text-sm"
                   >
-                    <option value="all">Iedereen</option>
-                    <option value="admins">Alleen Admins</option>
-                    <option value="teamleaders">Teamleaders</option>
-                    <option value="engineers">Engineers</option>
+                    <option value="all">{t("notificationRulesView.everyone", "Iedereen")}</option>
+                    <option value="admins">{t("notificationRulesView.adminsOnly", "Alleen Admins")}</option>
+                    <option value="teamleaders">{t("notificationRulesView.teamleaders", "Teamleaders")}</option>
+                    <option value="engineers">{t("notificationRulesView.engineers", "Engineers")}</option>
                   </select>
 
                   <div className="flex gap-2">
@@ -387,13 +389,13 @@ const NotificationRulesView = () => {
                       onClick={addRule}
                       className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold transition-colors"
                     >
-                      Opslaan
+                      {t("common.save", "Opslaan")}
                     </button>
                     <button
                       onClick={() => setShowAddRule(false)}
                       className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-bold transition-colors"
                     >
-                      Annuleren
+                      {t("common.cancel", "Annuleren")}
                     </button>
                   </div>
                 </div>
@@ -464,7 +466,7 @@ const NotificationRulesView = () => {
         {/* Recent Notifications */}
         <div className="bg-white rounded-2xl shadow-sm border-2 border-slate-200">
           <div className="p-4 border-b-2 border-slate-200 bg-slate-50">
-            <h3 className="text-sm font-bold text-slate-800">Recente Notificaties</h3>
+            <h3 className="text-sm font-bold text-slate-800">{t("notificationRulesView.recentNotifications", "Recente Notificaties")}</h3>
           </div>
           <div className="p-4 space-y-2 max-h-[600px] overflow-y-auto">
             {notifications.length === 0 ? (

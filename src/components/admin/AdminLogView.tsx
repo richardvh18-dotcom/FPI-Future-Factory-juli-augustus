@@ -167,9 +167,9 @@ const SmartDiffView = ({ before, after }: { before?: unknown; after?: unknown })
       <table className="w-full text-xs border-separate border-spacing-y-0.5">
         <thead>
           <tr>
-            <th className="text-left text-[9px] font-black text-slate-400 uppercase tracking-widest pb-2 pr-4 w-36">Veld</th>
-            <th className="text-left text-[9px] font-black text-rose-400 uppercase tracking-widest pb-2 pr-4">Was</th>
-            <th className="text-left text-[9px] font-black text-emerald-500 uppercase tracking-widest pb-2">Wordt</th>
+            <th className="text-left text-[9px] font-black text-slate-400 uppercase tracking-widest pb-2 pr-4 w-36">{t('adminLog.field', 'Veld')}</th>
+            <th className="text-left text-[9px] font-black text-rose-400 uppercase tracking-widest pb-2 pr-4">{t('adminLog.was', 'Was')}</th>
+            <th className="text-left text-[9px] font-black text-emerald-500 uppercase tracking-widest pb-2">{t('adminLog.becomes', 'Wordt')}</th>
           </tr>
         </thead>
         <tbody>

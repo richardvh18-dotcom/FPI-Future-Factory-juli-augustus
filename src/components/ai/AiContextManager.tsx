@@ -100,7 +100,7 @@ const AiContextManager: FC = () => {
             value={context}
             onChange={(e) => setContext(e.target.value)}
             className="w-full h-[600px] p-4 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm text-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none"
-            placeholder="Voer hier de systeem prompt in..."
+            placeholder={t("placeholders.aiSystemPrompt", "Voer hier de systeem prompt in...")}
           />
           <div className="absolute bottom-4 right-4 text-xs text-slate-400 font-mono">
             {context.length} karakters
@@ -110,7 +110,7 @@ const AiContextManager: FC = () => {
         <div className="mt-4 p-4 bg-blue-50 border border-blue-100 rounded-xl flex items-start gap-3">
           <AlertCircle className="text-blue-600 shrink-0 mt-0.5" size={18} />
           <div className="text-xs text-blue-800">
-            <strong>Tip:</strong> Gebruik Markdown voor structuur. De AI reageert goed op secties zoals <code>## INSTRUCTIES</code> en <code>## KENNIS</code>.
+            <strong>{t('common.tip', 'Tip')}:</strong> Gebruik Markdown voor structuur. De AI reageert goed op secties zoals <code>## INSTRUCTIES</code> en <code>## KENNIS</code>.
             Wijzigingen zijn direct actief voor nieuwe chatsessies.
           </div>
         </div>

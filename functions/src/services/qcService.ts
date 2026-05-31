@@ -88,6 +88,7 @@ export const saveQcMeasurementService = async (payload: any) => {
       addIfDefined("measurements.Brix_ResinWeight", payload.resinWeight);
       addIfDefined("measurements.Brix_HardenerWeight", payload.hardenerWeight);
       addIfDefined("measurements.Brix_TableRef", payload.tableRef);
+      addIfDefined("measurements.Brix_Operator", payload.actorLabel);
     } else if (payload.tg !== undefined && payload.tg !== null && !isNaN(payload.tg)) {
       addIfDefined("measurements.Tg", payload.tg);
       if (payload.resinBatch) {
@@ -213,6 +214,7 @@ export const updateQcMeasurementService = async (payload: any) => {
     addIfDefined("measurements.Brix_ResinWeight", merged.resinWeight);
     addIfDefined("measurements.Brix_HardenerWeight", merged.hardenerWeight);
     addIfDefined("measurements.Brix_TableRef", merged.tableRef);
+    addIfDefined("measurements.Brix_Operator", merged.actorLabel);
 
     if (Object.keys(trackedUpdate).length > 0) {
       batch.update(trackedRef, trackedUpdate);

@@ -14,6 +14,7 @@ import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
 import { addOrderDependency, removeOrderDependency } from "../../services/planningSecurityService";
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useTranslation } from "react-i18next";
 
 type DependencyOrder = {
   id: string;
@@ -40,6 +41,7 @@ type GraphNode = {
  * Shows which orders block others and calculates critical path
  */
 const OrderDependenciesView = () => {
+  const { t } = useTranslation();
   const { notify } = useNotifications();
   const [orders, setOrders] = useState<DependencyOrder[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<DependencyOrder | null>(null);
@@ -239,19 +241,19 @@ const OrderDependenciesView = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-black text-slate-800">
-              Order <span className="text-purple-600">Dependencies</span>
+              {t("orderDependenciesView.title", "Order Dependencies")}
             </h1>
             <p className="text-sm text-slate-600 mt-1">
-              Beheer afhankelijkheden en critical path tussen orders
+              {t("orderDependenciesView.subtitle", "Beheer afhankelijkheden en critical path tussen orders")}
             </p>
           </div>
 
           <div className="flex items-center gap-4">
             {/* Critical Path Badge */}
             <div className="px-4 py-2 bg-red-50 border-2 border-red-200 rounded-xl">
-              <div className="text-xs text-red-600 font-bold uppercase tracking-wider">Critical Path</div>
+              <div className="text-xs text-red-600 font-bold uppercase tracking-wider">{t("orderDependenciesView.criticalPath", "Critical Path")}</div>
               <div className="text-2xl font-black text-red-600">{criticalPath.length}</div>
-              <div className="text-xs text-red-500 mt-1">orders</div>
+              <div className="text-xs text-red-500 mt-1">{t("common.orders", "orders")}</div>
             </div>
           </div>
         </div>
@@ -261,7 +263,7 @@ const OrderDependenciesView = () => {
         {/* Orders List */}
         <div className="bg-white rounded-2xl shadow-sm border-2 border-slate-200">
           <div className="p-4 border-b-2 border-slate-200 bg-slate-50">
-            <h3 className="text-sm font-bold text-slate-800">Orders</h3>
+            <h3 className="text-sm font-bold text-slate-800">{t("common.orders", "Orders")}</h3>
           </div>
           <div className="p-4 max-h-[700px] overflow-y-auto space-y-2">
             {orders.map((order) => {
@@ -332,19 +334,19 @@ const OrderDependenciesView = () => {
                 
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
-                    <div className="text-xs text-slate-500 uppercase">Item</div>
+                    <div className="text-xs text-slate-500 uppercase">{t("common.item", "Item")}</div>
                     <div className="font-bold text-slate-800">{selectedOrder.itemCode || selectedOrder.extraCode}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 uppercase">Status</div>
+                    <div className="text-xs text-slate-500 uppercase">{t("common.status", "Status")}</div>
                     <div className="font-bold text-slate-800">{selectedOrder.status || "planned"}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 uppercase">Machine</div>
+                    <div className="text-xs text-slate-500 uppercase">{t("common.machine", "Machine")}</div>
                     <div className="font-bold text-slate-800">{selectedOrder.machine || "-"}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 uppercase">Geschatte uren</div>
+                    <div className="text-xs text-slate-500 uppercase">{t("orderDependenciesView.estimatedHours", "Geschatte uren")}</div>
                     <div className="font-bold text-slate-800">{selectedOrder.estimatedHours || 8}h</div>
                   </div>
                 </div>
@@ -353,7 +355,7 @@ const OrderDependenciesView = () => {
               {/* Dependencies (Blockers) */}
               <div className="bg-white rounded-2xl shadow-sm border-2 border-slate-200">
                 <div className="p-4 border-b-2 border-slate-200 bg-slate-50 flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-slate-800">Dependencies (moet wachten op)</h3>
+                  <h3 className="text-sm font-bold text-slate-800">{t("orderDependenciesView.dependenciesWaitingOn", "Dependencies (moet wachten op)")}</h3>
                   <button
                     onClick={() => setShowAddDependency(!showAddDependency)}
                     className="p-1 hover:bg-slate-200 rounded-lg transition-colors"
@@ -370,7 +372,7 @@ const OrderDependenciesView = () => {
                         onChange={(e) => setPotentialDependency(e.target.value)}
                         className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg mb-2 text-sm"
                       >
-                        <option value="">Selecteer order...</option>
+                        <option value="">{t("orderDependenciesView.selectOrder", "Selecteer order...")}</option>
                         {orders
                           .filter((o) => o.id !== selectedOrder.id && !(selectedOrder.dependencies || []).includes(o.id))
                           .map((o) => (
@@ -432,7 +434,7 @@ const OrderDependenciesView = () => {
               {/* Blocked Orders */}
               <div className="bg-white rounded-2xl shadow-sm border-2 border-slate-200">
                 <div className="p-4 border-b-2 border-slate-200 bg-slate-50">
-                  <h3 className="text-sm font-bold text-slate-800">Blocked Orders (wachten op deze order)</h3>
+                  <h3 className="text-sm font-bold text-slate-800">{t("orderDependenciesView.blockedOrdersWaitingOnThis", "Blocked Orders (wachten op deze order)")}</h3>
                 </div>
                 <div className="p-4 space-y-2">
                   {getBlockedOrders(selectedOrder.id).length === 0 ? (
@@ -488,8 +490,7 @@ const OrderDependenciesView = () => {
           </div>
           <div className="mt-4 p-3 bg-red-50 rounded-xl border border-red-200">
             <div className="text-xs text-red-800">
-              <strong>Let op:</strong> Deze orders vormen het critical path. Vertragingen in deze orders 
-              vertragen het hele project. Prioriteer deze voor on-time delivery.
+              <strong>{t("common.attention", "Let op")}:</strong> {t("orderDependenciesView.criticalPathWarning", "Deze orders vormen het critical path. Vertragingen in deze orders vertragen het hele project. Prioriteer deze voor on-time delivery.")}
             </div>
           </div>
         </div>

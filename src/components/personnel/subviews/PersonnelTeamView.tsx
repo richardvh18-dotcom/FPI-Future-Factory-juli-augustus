@@ -1,4 +1,5 @@
 import React from "react";
+import i18n from "i18next";
 
 interface PersonnelTeamPerson {
   id: string;
@@ -19,7 +20,7 @@ interface PersonnelTeamViewProps {
 const PersonnelTeamView = React.memo(({ personnel, departments }: PersonnelTeamViewProps) => {
   return (
     <div>
-      <h3 className="font-bold mb-2">Teamindeling</h3>
+      <h3 className="font-bold mb-2">{i18n.t('personnel.teamLayout', 'Teamindeling')}</h3>
       {departments.map((dept) => (
         <div key={dept.id} className="mb-4">
           <h4 className="font-semibold text-slate-700">{dept.name}</h4>

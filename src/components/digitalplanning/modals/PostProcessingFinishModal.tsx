@@ -19,6 +19,9 @@ import { useTranslation } from "react-i18next";
 type ProductLike = {
   id?: string;
   lotNumber?: string;
+  item?: string;
+  itemDescription?: string;
+  itemCode?: string;
 };
 
 type FinishStatus = "completed" | "rejected" | "temp_reject";
@@ -121,9 +124,16 @@ const PostProcessingFinishModal = ({
             <h3 className="text-base sm:text-xl font-black text-slate-800 uppercase tracking-tight">
               Kwaliteitscontrole & Afronden
             </h3>
-            <p className="text-[11px] sm:text-xs text-slate-500 font-mono font-bold">
-              {product.lotNumber}
-            </p>
+            <div className="mt-1.5">
+              <span className="inline-block px-3 py-1 bg-slate-200 text-slate-800 rounded-lg text-sm sm:text-base font-black uppercase tracking-wider mb-1.5 border border-slate-300 shadow-sm">
+                Lot: {product.lotNumber || product.id}
+              </span>
+              {(product.item || product.itemDescription || product.itemCode) && (
+                <p className="text-lg sm:text-xl font-black text-slate-700 leading-tight max-w-[280px] sm:max-w-md mt-1">
+                  {product.item || product.itemDescription || product.itemCode}
+                </p>
+              )}
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -144,7 +154,7 @@ const PostProcessingFinishModal = ({
               }`}
             >
               <CheckCircle size={20} className="sm:w-6 sm:h-6 shrink-0" />
-              <span className="font-black text-[10px] sm:text-xs leading-tight uppercase text-left min-[480px]:text-center">Goed</span>
+              <span className="font-black text-[10px] sm:text-xs leading-tight uppercase text-left min-[480px]:text-center">{t("common.good", "Goed")}</span>
             </button>
             <button
               onClick={() => setStatus("temp_reject")}
@@ -155,7 +165,7 @@ const PostProcessingFinishModal = ({
               }`}
             >
               <AlertTriangle size={20} className="sm:w-6 sm:h-6 shrink-0" />
-              <span className="font-black text-[10px] sm:text-xs leading-tight uppercase text-left min-[480px]:text-center">Tijdelijke afkeur</span>
+              <span className="font-black text-[10px] sm:text-xs leading-tight uppercase text-left min-[480px]:text-center">{t("status.tempRejected", "Tijdelijke afkeur")}</span>
             </button>
             <button
               onClick={() => setStatus("rejected")}
@@ -166,7 +176,7 @@ const PostProcessingFinishModal = ({
               }`}
             >
               <XCircle size={20} className="sm:w-6 sm:h-6 shrink-0" />
-              <span className="font-black text-[10px] sm:text-xs leading-tight uppercase text-left min-[480px]:text-center">Definitieve afkeur</span>
+              <span className="font-black text-[10px] sm:text-xs leading-tight uppercase text-left min-[480px]:text-center">{t("status.finalRejected", "Definitieve afkeur")}</span>
             </button>
           </div>
 
@@ -213,7 +223,7 @@ const PostProcessingFinishModal = ({
               value={note}
               onChange={(e) => setNote(e.target.value)}
               className="w-full p-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              placeholder="Bijv. kras op flensvlak..."
+              placeholder={t("placeholders.dpPostProcessDefectExample", "Bijv. kras op flensvlak...")}
               rows={3}
             />
           </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useTranslation, Trans } from "react-i18next";
+import { useTranslation } from "react-i18next";
 import {
   collection,
   onSnapshot,
@@ -286,7 +286,7 @@ const AdminDrillingView = () => {
             <input
               required
               className="w-full p-4 bg-blue-50/50 border-2 border-blue-100 rounded-2xl text-sm font-black text-blue-700 outline-none focus:border-blue-500 text-center placeholder:text-blue-200 shadow-inner"
-              placeholder="000.0"
+              placeholder={t("placeholders.adminDrillingDiameterExample", "000.0")}
               value={formData.pcd}
               onChange={(e) =>
                 setFormData({ ...formData, pcd: e.target.value })
@@ -301,7 +301,7 @@ const AdminDrillingView = () => {
             <input
               required
               className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 text-center"
-              placeholder="Bijv. 8"
+              placeholder={t("placeholders.adminDrillingCountExample", "Bijv. 8")}
               value={formData.holes}
               onChange={(e) =>
                 setFormData({ ...formData, holes: e.target.value })
@@ -316,7 +316,7 @@ const AdminDrillingView = () => {
             <input
               required
               className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 text-center"
-              placeholder="M.."
+              placeholder={t("placeholders.adminDrillingCodeExample", "M..")}
               value={formData.thread}
               onChange={(e) =>
                 setFormData({ ...formData, thread: e.target.value })
@@ -485,9 +485,16 @@ const AdminDrillingView = () => {
           <h4 className="text-white text-sm mb-2 italic tracking-tight uppercase leading-none">
             {t('adminDrilling.footerTitle', 'Engineering Control Protocol')}
           </h4>
-          <Trans i18nKey="adminDrilling.footerText">
-            De boorpatronen in deze lijst worden gebruikt door de <strong>Product Configurator</strong> en <strong>Eindinspectie</strong> om te controleren of flenzen voldoen aan de technische eisen. Wijzigingen zijn direct live voor alle terminals.
-          </Trans>
+          <span
+            dangerouslySetInnerHTML={{
+              __html: t('adminDrilling.footerText', {
+                productConfigurator: t('adminDrilling.productConfigurator', 'Product Configurator'),
+                finalInspection: t('adminDrilling.finalInspection', 'Eindinspectie'),
+                defaultValue:
+                  'De boorpatronen in deze lijst worden gebruikt door de <strong>{{productConfigurator}}</strong> en <strong>{{finalInspection}}</strong> om te controleren of flenzen voldoen aan de technische eisen. Wijzigingen zijn direct live voor alle terminals.',
+              }),
+            }}
+          />
         </div>
       </div>
     </div>

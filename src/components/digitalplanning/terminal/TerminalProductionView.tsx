@@ -361,8 +361,17 @@ const TerminalProductionView = ({
                     {isMultiSelected ? <ClipboardCheck size={20} /> : <Zap size={20} />}
                   </div>
                   <div className="text-left text-left">
-                    <h4 className="font-black italic leading-none mb-1">{prod.lotNumber}</h4>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase">{t("productionStartModal.labels.order", "Order")}: {prod.orderId}</p>
+                    <div className="mb-1.5">
+                      <span className={`inline-block px-3 py-1 rounded-lg text-xs font-black uppercase tracking-wider border shadow-sm ${isMultiSelected ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "bg-orange-100 text-orange-800 border-orange-200"}`}>
+                        Lot: {prod.lotNumber}
+                      </span>
+                    </div>
+                    {prod.item && (
+                      <h4 className="font-black text-sm sm:text-base text-slate-800 leading-tight uppercase mb-1 line-clamp-2">
+                        {prod.item}
+                      </h4>
+                    )}
+                    <p className="text-[10px] font-bold text-slate-500 uppercase">{t("productionStartModal.labels.order", "Order")}: {prod.orderId}</p>
                     {hasLotConflict && (
                       <p className="mt-1 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-rose-700 bg-rose-50 border border-rose-200 rounded-full px-2 py-1">
                         <AlertTriangle size={12} /> {t("digitalplanning.terminal.lot_conflict", "Lotconflict")}
@@ -405,13 +414,24 @@ const TerminalProductionView = ({
            const isMultiSelected = selectedMultiLots.includes(selectedWikkeling.id);
            return (
           <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-500 text-left">
-            <div className="bg-slate-900 rounded-[35px] p-6 text-white flex justify-between items-center border-4 border-orange-500/20 relative overflow-hidden shadow-xl text-left">
-              <button onClick={() => onSelectTracked(null)} className="lg:hidden p-2 text-white/50 mr-2"><ArrowLeft size={20} /></button>
+            <div className="bg-slate-900 rounded-[35px] p-6 sm:p-8 text-white flex justify-between items-start border-4 border-orange-500/20 relative overflow-hidden shadow-xl text-left">
+              <button onClick={() => onSelectTracked(null)} className="lg:hidden p-2 text-white/50 mr-2 mt-1"><ArrowLeft size={20} /></button>
               <div className="text-left flex-1">
-                <span className="text-[8px] font-black text-orange-400 uppercase block mb-1 text-left">{t("digitalplanning.terminal.dossier", "Dossier")}</span>
-                <h2 className="text-3xl font-black italic leading-none text-left">{selectedWikkeling.lotNumber}</h2>
+                <div className="mb-2">
+                  <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base sm:text-lg font-black uppercase tracking-widest border border-white/40 shadow-sm">
+                    Lot: {selectedWikkeling.lotNumber}
+                  </span>
+                </div>
+                {selectedWikkeling.item && (
+                  <h2 className="text-xl sm:text-2xl font-black text-white leading-tight uppercase italic mb-1.5 max-w-2xl">
+                    {selectedWikkeling.item}
+                  </h2>
+                )}
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                  {t("productionStartModal.labels.order", "Order")}: {selectedWikkeling.orderId}
+                </p>
               </div>
-              <div className="p-3 bg-orange-600 rounded-2xl shadow-lg animate-pulse"><Zap size={24} /></div>
+              <div className="p-3 bg-orange-600 rounded-2xl shadow-lg animate-pulse shrink-0"><Zap size={24} /></div>
             </div>
             
             {selectedWikkeling.notes && (

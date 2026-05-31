@@ -4779,18 +4779,19 @@ const findPrintQueueJobDocById = async ({ jobId }) => {
   const safeJobId = clean(jobId);
   if (!safeJobId) return null;
 
-  const scopedByDocId = await db
-    .collectionGroup('items')
-    .where(admin.firestore.FieldPath.documentId(), '==', safeJobId)
-    .limit(20)
-    .get();
-
-  const scopedDoc = scopedByDocId.docs.find((snap) => String(snap.ref?.path || '').includes('/print_queue/'));
-  if (scopedDoc) return scopedDoc;
-
   const rootRef = db.collection(PRINT_QUEUE_COLLECTION).doc(safeJobId);
   const rootSnap = await rootRef.get();
   if (rootSnap.exists) return rootSnap;
+
+  // Fallback voor oudere scoped-only jobs.
+  const scopedById = await db
+    .collectionGroup('items')
+    .where('id', '==', safeJobId)
+    .limit(20)
+    .get();
+
+  const scopedDoc = scopedById.docs.find((snap) => String(snap.ref?.path || '').includes('/print_queue/'));
+  if (scopedDoc) return scopedDoc;
 
   return null;
 };

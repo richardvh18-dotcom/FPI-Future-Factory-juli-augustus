@@ -60,6 +60,7 @@ import {
 import { generatePrintData, downloadZPL } from "../../utils/zplHelper";
 import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
 import { getDriver } from "../../utils/printerDrivers";
+import { getWavistrongLayoutNudge } from "../../utils/labelLayoutAdjustments";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useLabelCatalog } from '../../hooks/useLabelCatalog';
 import { isUsbDirectSupported, requestUsbDevice, printRawUsbToDevice } from "../../utils/usbPrintService";
@@ -490,6 +491,13 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
   };
 
   const selectedElement = elements.find((el) => el.id === selectedElementIds[selectedElementIds.length - 1]);
+  const currentLabelMeta = useMemo(() => ({
+    name: labelName,
+    folder: labelFolder,
+    tags: labelTags,
+    width: labelWidth,
+    height: labelHeight,
+  }), [labelName, labelFolder, labelTags, labelWidth, labelHeight]);
 
   const filteredVariables = useMemo(() => {
       // Start with a set of all possible dynamic variables from all logic rules.
@@ -647,6 +655,9 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     const labelConfig = {
       width: labelWidth,
       height: labelHeight,
+      name: labelName,
+      folder: labelFolder,
+      tags: labelTags,
       elements: elements,
     };
 
@@ -689,6 +700,9 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
         template: {
           width: widthMm,
           height: heightMm,
+          name: labelName,
+          folder: labelFolder,
+          tags: labelTags,
           elements,
         },
         data,
@@ -1164,7 +1178,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                   className="w-10 bg-transparent text-[10px] font-bold text-center outline-none border-b border-slate-300 focus:border-blue-500"
                   title={t('widthMm')}
                 />
-                <span className="text-[10px] text-slate-400">x</span>
+                <span className="text-[10px] text-slate-400">{t('common.multiplicationSign', 'x')}</span>
                 <input
                   type="number"
                   value={labelHeight}
@@ -1172,7 +1186,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                   className="w-10 bg-transparent text-[10px] font-bold text-center outline-none border-b border-slate-300 focus:border-blue-500"
                   title={t('heightMm')}
                 />
-                <span className="text-[10px] text-slate-400">mm</span>
+                <span className="text-[10px] text-slate-400">{t('common.mm', 'mm')}</span>
               </div>
             )}
           </div>
@@ -1334,14 +1348,18 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                 />
               ))}
 
-              {elements.map((el) => (
+              {elements.map((el) => {
+                const resolvedContent = resolveLabelContent(el, previewData) as { content?: string | number | null };
+                const layoutNudge = getWavistrongLayoutNudge(currentLabelMeta, el, resolvedContent.content);
+
+                return (
                 <div
                   key={el.id}
                   onMouseDown={(e) => handleMouseDown(e, el.id)}
                   className="absolute cursor-move group select-none"
                   style={{
-                    left: `${(el.x || 0) * PIXELS_PER_MM * zoom}px`,
-                    top: `${(el.y || 0) * PIXELS_PER_MM * zoom}px`,
+                    left: `${((el.x || 0) + layoutNudge.xMm) * PIXELS_PER_MM * zoom}px`,
+                    top: `${((el.y || 0) + layoutNudge.yMm) * PIXELS_PER_MM * zoom}px`,
                     transform: `rotate(${el.rotation || 0}deg)`,
                     transformOrigin: "top left",
                   }}
@@ -1354,7 +1372,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                     } p-0.5`}
                   >
                     {el.type === "text" && (() => {
-                      const { content } = (resolveLabelContent(el, previewData) as { content?: string | number | null });
+                      const { content } = resolvedContent;
                       const hasContent = content !== null && content !== undefined && String(content).trim() !== "";
                       const normalizedRotation = ((Number(el.rotation) || 0) % 360 + 360) % 360;
                       const isVerticalRotation = normalizedRotation === 90 || normalizedRotation === 270;
@@ -1441,7 +1459,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1483,7 +1502,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                       }}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 transition-all"
                     >
-                      <option value="">Geen vaste map</option>
+                      <option value="">{t('adminLabelDesigner.noFixedFolder', 'Geen vaste map')}</option>
                       {LABEL_FOLDER_OPTIONS.map(folder => (
                         <option key={folder} value={folder}>{folder}</option>
                       ))}
@@ -1634,17 +1653,17 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                         <option value="pq">{t('pq')}</option>
                         <option value="temperature">{t('temperatureLimit')}</option>
                         <option value="date">{t('productionDate')}</option>
-                        <option value="idLine">ID Line</option>
-                        <option value="pressureLine">Pressure Line</option>
-                        <option value="pressureLineEmt">Pressure Line EMT</option>
-                        <option value="connectionLine">Connection Line</option>
-                        <option value="radiusText">Radius Text</option>
-                        <option value="jointCode">Joint Code A2G3</option>
-                        <option value="extraCode">Extra Code</option>
-                        <option value="flangeIdLine">Flange ID Line</option>
-                        <option value="flangePressureLine">Flange Pressure Line</option>
-                        <option value="flangeConnectionLine">Flange Connection Line</option>
-                        <option value="flangeDrillingLine">Flange Drilling Line</option>
+                        <option value="idLine">{t('adminLabelDesigner.idLine', 'ID Line')}</option>
+                        <option value="pressureLine">{t('adminLabelDesigner.pressureLine', 'Pressure Line')}</option>
+                        <option value="pressureLineEmt">{t('adminLabelDesigner.pressureLineEmt', 'Pressure Line EMT')}</option>
+                        <option value="connectionLine">{t('adminLabelDesigner.connectionLine', 'Connection Line')}</option>
+                        <option value="radiusText">{t('adminLabelDesigner.radiusText', 'Radius Text')}</option>
+                        <option value="jointCode">{t('adminLabelDesigner.jointCode', 'Joint Code A2G3')}</option>
+                        <option value="extraCode">{t('adminLabelDesigner.extraCode', 'Extra Code')}</option>
+                        <option value="flangeIdLine">{t('adminLabelDesigner.flangeIdLine', 'Flange ID Line')}</option>
+                        <option value="flangePressureLine">{t('adminLabelDesigner.flangePressureLine', 'Flange Pressure Line')}</option>
+                        <option value="flangeConnectionLine">{t('adminLabelDesigner.flangeConnectionLine', 'Flange Connection Line')}</option>
+                        <option value="flangeDrillingLine">{t('adminLabelDesigner.flangeDrillingLine', 'Flange Drilling Line')}</option>
                         {filteredVariables.length > 0 && (
                             <optgroup label={selectedLogicCode ? t('variablesFor', { code: selectedLogicCode }) : t('allDynamicVariables')}>
                                 {filteredVariables.map(v => (

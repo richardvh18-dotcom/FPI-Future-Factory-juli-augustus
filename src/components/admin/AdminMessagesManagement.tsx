@@ -607,7 +607,7 @@ const AdminMessagesManagement = () => {
           <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
             <Bell className="text-blue-600" size={20} />
             <div>
-              <h3 className="font-bold text-blue-900">Systeem Bericht Console</h3>
+              <h3 className="font-bold text-blue-900">{t('adminMessages.systemMessageConsole', 'Systeem Bericht Console')}</h3>
               <p className="text-xs text-blue-700 mt-1">
                 Stuur handmatige systeem-notificaties naar gebruikers of groepen (bijv. voor testen of mededelingen).
               </p>
@@ -617,7 +617,7 @@ const AdminMessagesManagement = () => {
           <form onSubmit={handleSendNotification} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                    <label className="text-xs font-bold uppercase text-slate-600 mb-2 block">Doelgroep Type</label>
+                <label className="text-xs font-bold uppercase text-slate-600 mb-2 block">{t('adminMessages.targetType', 'Doelgroep Type')}</label>
                     <select 
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-blue-500 text-sm font-bold"
                         value={notificationForm.targetType}
@@ -628,9 +628,9 @@ const AdminMessagesManagement = () => {
                           })
                         }
                     >
-                        <option value="group">Specifieke Groep</option>
-                        <option value="user">Specifieke Gebruiker (Email)</option>
-                        <option value="all">Iedereen (Broadcast)</option>
+                        <option value="group">{t('adminMessages.specificGroup', 'Specifieke Groep')}</option>
+                        <option value="user">{t('adminMessages.specificUserEmail', 'Specifieke Gebruiker (Email)')}</option>
+                        <option value="all">{t('adminMessages.everyoneBroadcast', 'Iedereen (Broadcast)')}</option>
                     </select>
                 </div>
                 <div>
@@ -651,7 +651,7 @@ const AdminMessagesManagement = () => {
             </div>
 
             <div>
-                <label className="text-xs font-bold uppercase text-slate-600 mb-2 block">Prioriteit</label>
+              <label className="text-xs font-bold uppercase text-slate-600 mb-2 block">{t('common.priority', 'Prioriteit')}</label>
                 <div className="flex gap-3">
                     {(['low', 'normal', 'high', 'urgent'] as NotificationPriority[]).map((p) => (
                         <button
@@ -671,7 +671,7 @@ const AdminMessagesManagement = () => {
             </div>
 
             <div>
-                <label className="text-xs font-bold uppercase text-slate-600 mb-2 block">Onderwerp</label>
+              <label className="text-xs font-bold uppercase text-slate-600 mb-2 block">{t('common.subject', 'Onderwerp')}</label>
                 <input 
                     type="text" 
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-blue-500 font-bold"
@@ -683,7 +683,7 @@ const AdminMessagesManagement = () => {
             </div>
 
             <div>
-                <label className="text-xs font-bold uppercase text-slate-600 mb-2 block">Bericht Inhoud</label>
+              <label className="text-xs font-bold uppercase text-slate-600 mb-2 block">{t('adminMessages.messageContent', 'Bericht Inhoud')}</label>
                 <textarea 
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg outline-none focus:border-blue-500 h-24 resize-none"
                     value={notificationForm.content}

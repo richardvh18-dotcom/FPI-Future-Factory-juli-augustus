@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import i18n from "i18next";
 import {
   Plus,
   Trash2,
@@ -218,7 +219,7 @@ const BoreDimensionsManager = () => {
           </div>
           <div className="text-left">
             <h2 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">
-              Boring <span className="text-purple-600">Manager</span>
+              {i18n.t('boreDimensions.boring', 'Boring')} <span className="text-purple-600">{i18n.t('boreDimensions.manager', 'Manager')}</span>
             </h2>
             <div className="mt-3 flex items-center gap-3">
               <span className="flex items-center gap-1.5 text-[9px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-100 uppercase italic">
@@ -268,7 +269,7 @@ const BoreDimensionsManager = () => {
                 <input
                   required
                   className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black text-slate-800 outline-none focus:border-purple-500 focus:bg-white transition-all text-sm shadow-inner"
-                  placeholder="Bijv: DIN 2576"
+                  placeholder={i18n.t("placeholders.adminBoreTypeExample", "Bijv: DIN 2576")}
                   value={formData.type}
                   onChange={(e) => handleInputChange("type", e.target.value)}
                 />
@@ -287,7 +288,7 @@ const BoreDimensionsManager = () => {
                     type="number"
                     required
                     className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black text-slate-800 outline-none focus:border-purple-500 focus:bg-white transition-all text-sm shadow-inner"
-                    placeholder="200"
+                    placeholder={i18n.t("placeholders.adminBoreDiameterExample", "200")}
                     value={formData.diameter}
                     onChange={(e) =>
                       handleInputChange("diameter", e.target.value)
@@ -311,7 +312,7 @@ const BoreDimensionsManager = () => {
                       <input
                         type="text"
                         className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-purple-500 transition-all text-xs"
-                        placeholder="0.0"
+                        placeholder={i18n.t("placeholders.adminBoreDecimalExample", "0.0")}
                         value={formData[field.id]}
                         onChange={(e) =>
                           handleInputChange(field.id, e.target.value)
@@ -350,7 +351,7 @@ const BoreDimensionsManager = () => {
             />
             <input
               className="w-full pl-16 pr-8 py-5 bg-white border-2 border-slate-100 rounded-[30px] outline-none focus:border-purple-500 shadow-sm font-bold text-base transition-all placeholder:text-slate-300"
-              placeholder="Zoek op ID of Type (bijv. ASA 150)..."
+              placeholder={i18n.t("placeholders.adminBoreSearch", "Zoek op ID of Type (bijv. ASA 150)...")}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -361,10 +362,10 @@ const BoreDimensionsManager = () => {
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] border-b sticky top-0 z-10 shadow-sm">
                   <tr>
-                    <th className="px-10 py-6">Database Sleutel (ID)</th>
-                    <th className="px-10 py-6">Type</th>
-                    <th className="px-10 py-6 text-center">Specificaties</th>
-                    <th className="px-10 py-6 text-right">Acties</th>
+                    <th className="px-10 py-6">{i18n.t('boreDimensions.databaseKeyId', 'Database Sleutel (ID)')}</th>
+                    <th className="px-10 py-6">{i18n.t('common.type', 'Type')}</th>
+                    <th className="px-10 py-6 text-center">{i18n.t('boreDimensions.specifications', 'Specificaties')}</th>
+                    <th className="px-10 py-6 text-right">{i18n.t('common.actions', 'Acties')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -455,7 +456,7 @@ const BoreDimensionsManager = () => {
           Deze boringen worden gebruikt voor de calculatie van flenzen en
           koppelingen. Elk nieuw record dat hier wordt toegevoegd is direct
           beschikbaar in de{" "}
-          <span className="text-blue-400 italic">Matrix Logic Engine</span>
+          <span className="text-blue-400 italic">{i18n.t('boreDimensions.matrixLogicEngine', 'Matrix Logic Engine')}</span>
           voor alle terminals en configurators.
         </div>
       </div>

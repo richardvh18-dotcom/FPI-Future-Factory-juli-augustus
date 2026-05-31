@@ -1,4 +1,5 @@
 import React, { FC } from "react";
+import i18n from "i18next";
 import { Users, Activity, CalendarDays, AlertTriangle, CheckCircle2 } from "lucide-react";
 import GanttChartView from "../planning/GanttChartView";
 
@@ -42,7 +43,7 @@ const TeamleaderGanttView: FC<TeamleaderGanttViewProps> = ({ metrics }) => {
           </div>
           <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-slate-600">Stations</span>
+              <span className="text-slate-600">{i18n.t("teamleaderGantt.stations", "Stations")}</span>
               <span className="font-bold">{metrics.machineGridData.length}</span>
             </div>
           </div>
@@ -64,7 +65,7 @@ const TeamleaderGanttView: FC<TeamleaderGanttViewProps> = ({ metrics }) => {
           </div>
           <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-slate-600">Actief</span>
+              <span className="text-slate-600">{i18n.t("status.active", "Actief")}</span>
               <span className="font-bold">{metrics.activeCount}</span>
             </div>
           </div>
@@ -107,7 +108,7 @@ const TeamleaderGanttView: FC<TeamleaderGanttViewProps> = ({ metrics }) => {
         </div>
       </div>
       <div className="max-w-4xl w-full bg-white rounded-3xl shadow-xl p-8 flex flex-col items-center">
-        <h2 className="text-2xl font-black text-orange-700 mb-4 uppercase tracking-widest">Gantt-planning</h2>
+        <h2 className="text-2xl font-black text-orange-700 mb-4 uppercase tracking-widest">{i18n.t("teamleaderGantt.ganttPlanning", "Gantt-planning")}</h2>
         <GanttChartComponent
           planningOrders={Array.isArray(metrics?.planningOrders) ? metrics.planningOrders : null}
           trackedProducts={Array.isArray(metrics?.trackedProducts) ? metrics.trackedProducts : null}

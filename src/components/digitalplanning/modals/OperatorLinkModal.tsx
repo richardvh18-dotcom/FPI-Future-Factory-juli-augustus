@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import i18n from "i18next";
 import { Loader2, X, ImageIcon } from "lucide-react";
 import { collection, query, where, limit, getDocs } from "firebase/firestore";
 import { db } from "../../../config/firebase";
@@ -58,7 +59,7 @@ const OperatorLinkModal = ({ order, onClose, onLinkProduct }: OperatorLinkModalP
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-gray-100 scale-100 animate-in zoom-in-95 flex flex-col max-h-[80vh]">
         <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
           <div>
-            <h2 className="text-xl font-black text-gray-800 uppercase italic tracking-tight">Koppel Product</h2>
+            <h2 className="text-xl font-black text-gray-800 uppercase italic tracking-tight">{i18n.t('operatorLink.linkProduct', 'Koppel Product')}</h2>
             <p className="text-xs text-gray-500 font-medium font-mono">Order: {order.orderId}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
@@ -69,7 +70,7 @@ const OperatorLinkModal = ({ order, onClose, onLinkProduct }: OperatorLinkModalP
           <div className="flex gap-2 mb-6">
             <input
               type="text"
-              placeholder="Zoek op productnaam..."
+              placeholder={i18n.t("placeholders.dpOperatorLinkSearchProduct", "Zoek op productnaam...")}
               className="flex-1 p-3 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -91,7 +92,7 @@ const OperatorLinkModal = ({ order, onClose, onLinkProduct }: OperatorLinkModalP
                   )}
                   <div><p className="text-sm font-bold text-gray-800">{prod.name}</p><p className="text-xs text-gray-400">{prod.articleCode}</p></div>
                 </div>
-                <div className="bg-emerald-500 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm">Kies</div>
+                <div className="bg-emerald-500 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm">{i18n.t('common.choose', 'Kies')}</div>
               </div>
             ))}
           </div>

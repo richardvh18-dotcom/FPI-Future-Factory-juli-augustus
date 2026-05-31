@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, { useState, useMemo } from 'react';
+import i18n from 'i18next';
 import { X, AlertTriangle, Clock, Users, Filter, Plus, Minus } from 'lucide-react';
 import { getWeek } from 'date-fns';
 
@@ -199,7 +200,7 @@ const AdvancedOperatorAssignModal = ({
         <div className="p-6 border-b border-slate-200 space-y-4 shrink-0">
           <div className="flex items-center gap-2">
             <Filter size={16} className="text-slate-400" />
-            <span className="text-xs font-bold text-slate-600 uppercase">Filters</span>
+            <span className="text-xs font-bold text-slate-600 uppercase">{i18n.t('common.filters', 'Filters')}</span>
           </div>
           
           <div className="grid grid-cols-2 gap-4">
@@ -213,7 +214,7 @@ const AdvancedOperatorAssignModal = ({
                 onChange={(e) => setSelectedShift(e.target.value)}
                 className="w-full p-3 rounded-2xl bg-slate-50 border-2 border-slate-200 text-xs font-bold focus:border-blue-500 outline-none"
               >
-                <option value="all">Alle diensten</option>
+                <option value="all">{i18n.t('advancedOperatorAssign.allShifts', 'Alle diensten')}</option>
                 {shifts?.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.label} ({s.start}-{s.end})
@@ -231,7 +232,7 @@ const AdvancedOperatorAssignModal = ({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Naam..."
+                placeholder={i18n.t('placeholders.adminOperatorSearchName', 'Naam...')}
                 className="w-full p-3 rounded-2xl bg-slate-50 border-2 border-slate-200 text-xs font-bold focus:border-blue-500 outline-none"
               />
             </div>
@@ -243,7 +244,7 @@ const AdvancedOperatorAssignModal = ({
           {filteredPersonnel.length === 0 ? (
             <div className="py-12 text-center">
               <Users size={48} className="mx-auto text-slate-300 mb-3" />
-              <p className="text-sm font-bold text-slate-400">Geen operators gevonden</p>
+              <p className="text-sm font-bold text-slate-400">{i18n.t('advancedOperatorAssign.noOperatorsFound', 'Geen operators gevonden')}</p>
             </div>
           ) : (
             filteredPersonnel.map(person => {

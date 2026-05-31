@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import i18n from "i18next";
 import {
   X,
   CheckCircle2,
@@ -21,6 +22,9 @@ type InspectionStatus = "approved" | "rejected";
 type InspectionOrder = {
   id: string;
   lotNumber?: string;
+  item?: string;
+  itemDescription?: string;
+  itemCode?: string;
   [key: string]: unknown;
 };
 
@@ -70,10 +74,16 @@ const InspectionModal = ({ isOpen, onClose, order, onInspect }: InspectionModalP
               <h3 className="text-2xl font-black uppercase italic tracking-tighter leading-none">
                 Eindinspectie
               </h3>
-              <p className="text-[10px] font-bold text-slate-500 uppercase mt-2 tracking-widest flex items-center gap-2">
-                <Zap size={10} className="text-blue-500" /> Lot:{" "}
-                {order.lotNumber || "Onbekend"}
-              </p>
+              <div className="mt-3">
+                <span className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/30 text-blue-100 rounded-lg text-sm sm:text-base font-black uppercase tracking-widest border border-blue-400/50 mb-1.5 shadow-sm">
+                  <Zap size={14} className="text-blue-400" /> Lot: {order.lotNumber || order.id || "Onbekend"}
+                </span>
+                {(order.item || order.itemDescription || order.itemCode) && (
+                  <p className="text-lg sm:text-xl font-black text-slate-200 mt-1.5 leading-tight max-w-sm">
+                    {order.item || order.itemDescription || order.itemCode}
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-3 relative z-10">
@@ -140,7 +150,7 @@ const InspectionModal = ({ isOpen, onClose, order, onInspect }: InspectionModalP
                 value={notes}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-[25px] p-5 text-sm font-medium text-slate-700 focus:border-blue-500 focus:bg-white outline-none min-h-[120px] transition-all shadow-inner placeholder:text-slate-300 italic"
-                placeholder="Beschrijf eventuele afwijkingen of bijzonderheden..."
+                placeholder={i18n.t("placeholders.dpInspectionNotes", "Beschrijf eventuele afwijkingen of bijzonderheden...")}
               />
             </div>
 

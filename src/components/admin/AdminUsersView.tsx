@@ -931,7 +931,7 @@ const AdminUsersView = () => {
               <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Zoek gebruiker..."
+                placeholder={t("placeholders.adminUserSearch", "Zoek gebruiker...")}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-12 pr-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-500 transition-all placeholder:text-slate-400"
@@ -1247,42 +1247,42 @@ const AdminUsersView = () => {
                 {isUsingDefaults && (
                     <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex flex-col md:flex-row justify-between items-center gap-4 animate-in fade-in">
                         <div className="text-sm text-blue-800">
-                            <p className="font-bold">⚠️ Je gebruikt momenteel tijdelijke standaardrollen.</p>
-                            <p className="text-xs mt-1">Zodra je een eigen rol toevoegt, verdwijnen deze standaarden tenzij je ze eerst opslaat in de database.</p>
+                          <p className="font-bold">⚠️ {t('adminUsers.temporaryDefaultRolesInUse', 'Je gebruikt momenteel tijdelijke standaardrollen.')}</p>
+                          <p className="text-xs mt-1">{t('adminUsers.defaultsDisappearUnlessSaved', 'Zodra je een eigen rol toevoegt, verdwijnen deze standaarden tenzij je ze eerst opslaat in de database.')}</p>
                         </div>
                         <button 
                             onClick={handleInitRoles}
                             className="px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-blue-700 whitespace-nowrap flex items-center gap-2 shadow-sm"
                         >
                             <Database size={14} />
-                            Standaarden Opslaan in DB
+                            {t('adminUsers.saveDefaultsInDb', 'Standaarden Opslaan in DB')}
                         </button>
                     </div>
                 )}
 
                 <div className="bg-white p-6 rounded-[30px] border border-slate-200 shadow-sm">
-                    <h3 className="text-lg font-black text-slate-800 uppercase italic mb-4">Nieuwe Rol Toevoegen</h3>
+                        <h3 className="text-lg font-black text-slate-800 uppercase italic mb-4">{t('adminUsers.addNewRole', 'Nieuwe Rol Toevoegen')}</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
                         <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-500 uppercase">ID (Slug)</label>
+                            <label className="text-xs font-bold text-slate-500 uppercase">{t('adminUsers.roleIdSlug', 'ID (Slug)')}</label>
                             <input 
                                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-purple-500"
-                                placeholder="bijv. qshc_manager"
+                                placeholder={t("placeholders.adminRoleKeyExample", "bijv. qshc_manager")}
                                 value={newRole.id}
                                 onChange={e => setNewRole({...newRole, id: e.target.value})}
                             />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-500 uppercase">Label (Weergave)</label>
+                          <label className="text-xs font-bold text-slate-500 uppercase">{t('adminUsers.roleLabelDisplay', 'Label (Weergave)')}</label>
                             <input 
                                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-purple-500"
-                                placeholder="bijv. QSHC Manager"
+                                placeholder={t("placeholders.adminRoleLabelExample", "bijv. QSHC Manager")}
                                 value={newRole.label}
                                 onChange={e => setNewRole({...newRole, label: e.target.value})}
                             />
                         </div>
                         <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-500 uppercase">Kleur Label</label>
+                          <label className="text-xs font-bold text-slate-500 uppercase">{t('adminUsers.roleColorLabel', 'Kleur Label')}</label>
                             <div className="flex gap-2 flex-wrap p-2 bg-slate-50 rounded-xl border border-slate-200">
                                 {ROLE_COLORS.map(c => (
                                     <button
@@ -1501,19 +1501,17 @@ const AdminUsersView = () => {
                 </div>
             
             <div className="space-y-2 pt-4 border-t border-slate-50">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">
-                Startpagina (Na inloggen)
-              </label>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">{t('adminUsers.startPageAfterLogin', 'Startpagina (Na inloggen)')}</label>
               <div className="relative group">
                 <Globe className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500" size={18} />
                 <input
                   className="w-full pl-14 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-[20px] font-bold text-xs outline-none focus:border-blue-500 transition-all shadow-inner"
                   value={selectedUser.defaultRoute || ""}
                   onChange={(e) => setSelectedUser({ ...selectedUser, defaultRoute: e.target.value })}
-                  placeholder="Bijv. /planning of /"
+                  placeholder={t("placeholders.adminDefaultRouteExample", "Bijv. /planning of /")}
                 />
               </div>
-              <p className="text-[9px] text-slate-400 italic ml-2 mt-1">Systeem stuurt de gebruiker hier direct naartoe (bijv. na QR scan).</p>
+              <p className="text-[9px] text-slate-400 italic ml-2 mt-1">{t('adminUsers.systemRoutesUserDirectly', 'Systeem stuurt de gebruiker hier direct naartoe (bijv. na QR scan).')}</p>
             </div>
 
                 <div className="space-y-2">
@@ -1548,7 +1546,7 @@ const AdminUsersView = () => {
                         <CheckCircle2 size={14} /> Kern Modules — Altijd Beschikbaar
                       </label>
                     </div>
-                    <p className="text-[9px] text-slate-500 italic ml-2">Planning, Catalogus en Inbox zijn standaard aan voor iedereen. Je kunt sub-onderdelen per gebruiker beperken.</p>
+                    <p className="text-[9px] text-slate-500 italic ml-2">{t('adminUsers.coreModulesAlwaysOnNote', 'Planning, Catalogus en Inbox zijn standaard aan voor iedereen. Je kunt sub-onderdelen per gebruiker beperken.')}</p>
                     
                     <div className="space-y-3">
                       {Object.entries(CORE_MODULE_FEATURES).map(([moduleId, module]) => {
@@ -1588,7 +1586,7 @@ const AdminUsersView = () => {
                             {/* Sub-features van kern-module */}
                             {isExpanded && (
                               <div className="bg-white border-t border-emerald-100 p-4 space-y-3">
-                                <p className="text-[9px] text-slate-400 italic ml-2 mb-2">Schakel uit om deze gebruiker toegang te ontzeggen tot dit sub-onderdeel.</p>
+                                <p className="text-[9px] text-slate-400 italic ml-2 mb-2">{t('adminUsers.disableToRevokeSubmoduleAccess', 'Schakel uit om deze gebruiker toegang te ontzeggen tot dit sub-onderdeel.')}</p>
                                 {module.features.map(feature => {
                                   const isChecked = allOn || (perms[moduleId] || []).includes(feature.id);
 
@@ -1633,7 +1631,7 @@ const AdminUsersView = () => {
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2 flex items-center gap-2">
                       <Layers size={14} /> Optionele Modules
                     </label>
-                    <p className="text-[9px] text-slate-500 italic ml-2">Schakel in per gebruiker. Per module kun je per sub-onderdeel verdere toegang bepalen.</p>
+                    <p className="text-[9px] text-slate-500 italic ml-2">{t('adminUsers.enablePerUserAndSubmodule', 'Schakel in per gebruiker. Per module kun je per sub-onderdeel verdere toegang bepalen.')}</p>
                     
                     <div className="space-y-3">
                       {moduleEntries.map(([moduleId, module]) => {
@@ -1719,9 +1717,7 @@ const AdminUsersView = () => {
                     </label>
                     <label className="flex items-center justify-between p-4 bg-red-50 rounded-2xl border border-red-100 cursor-pointer hover:border-red-200 transition-all group">
                       <div>
-                        <div className="font-bold text-sm text-red-900 group-hover:text-red-700 transition-colors">
-                          Ontvang Crash Rapporten
-                        </div>
+                        <div className="font-bold text-sm text-red-900 group-hover:text-red-700 transition-colors">{t('adminUsers.receiveCrashReports', 'Ontvang Crash Rapporten')}</div>
                         <div className="text-[10px] text-red-700/60 font-medium">
                           Notificaties bij systeemfouten
                         </div>
@@ -1822,9 +1818,7 @@ const AdminUsersView = () => {
                   </p>
 
                 <div className="mt-6 pt-6 border-t border-slate-100 space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">
-                    Voorkeursstation (Direct Openen)
-                  </label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-2">{t('adminUsers.preferredStationDirectOpen', 'Voorkeursstation (Direct Openen)')}</label>
                   <div className="relative">
                     <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
                     <select
@@ -1832,12 +1826,12 @@ const AdminUsersView = () => {
                       onChange={(e) => setSelectedUser({ ...selectedUser, defaultStation: e.target.value })}
                       className="w-full pl-12 pr-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-[20px] font-bold text-xs outline-none focus:border-blue-500 appearance-none cursor-pointer"
                     >
-                      <option value="">Geen voorkeur (Zelf kiezen)</option>
+                      <option value="">{t('adminUsers.noPreferenceChooseYourself', 'Geen voorkeur (Zelf kiezen)')}</option>
                       {allStations.map(s => <option key={s.id} value={s.id}>{s.name} ({s.department})</option>)}
                     </select>
                     <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   </div>
-                  <p className="text-[9px] text-slate-400 italic ml-2 mt-1">Indien ingesteld, opent dit station automatisch in de Planning module.</p>
+                  <p className="text-[9px] text-slate-400 italic ml-2 mt-1">{t('adminUsers.defaultStationAutoOpenPlanning', 'Indien ingesteld, opent dit station automatisch in de Planning module.')}</p>
                 </div>
                 </div>
               )}
@@ -1869,7 +1863,7 @@ const AdminUsersView = () => {
             <Database size={14} /> {t('adminUsers.centralIdentityVault', "Central Identity Vault")}
           </span>
         </div>
-        <span className="opacity-30 italic">User Management v6.11</span>
+        <span className="opacity-30 italic">{t('adminUsers.versionLabel', 'User Management v6.11')}</span>
       </div>
 
       {/* Add User Modal */}
@@ -1947,7 +1941,7 @@ const AdminUsersView = () => {
                   value={newUser.email}
                   onChange={(e) => setNewUser({...newUser, email: e.target.value})}
                   className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold text-sm focus:outline-none focus:border-blue-500 transition-all"
-                  placeholder="naam@futurepipe.com"
+                  placeholder={t("placeholders.accountEmailExample", "naam@futurepipe.com")}
                 />
               </div>
 

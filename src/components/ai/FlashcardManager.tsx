@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import {
   BookOpen,
   Plus,
@@ -333,7 +334,7 @@ const FlashcardManager = () => {
       <div className="flex flex-col items-center justify-center p-20 gap-4 h-full">
         <Loader2 className="animate-spin text-purple-500" size={40} />
         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 italic">
-          Flashcards laden...
+          {i18n.t("aiFlashcardManager.loadingFlashcards", "Flashcards laden...")}
         </p>
       </div>
     );
@@ -349,23 +350,23 @@ const FlashcardManager = () => {
         <div className="relative z-10 flex justify-between items-start">
           <div>
             <h2 className="text-2xl font-black uppercase italic tracking-tighter leading-none mb-3">
-              Flashcard <span className="text-purple-300">Manager</span>
+              {i18n.t("aiFlashcardManager.title", "Flashcard Manager")}
             </h2>
             <p className="text-purple-200 text-sm font-medium max-w-xl">
-              Maak en beheer interactieve leerkaarten voor training. Bekijk statistieken van gebruikers.
+              {i18n.t("aiFlashcardManager.subtitle", "Maak en beheer interactieve leerkaarten voor training. Bekijk statistieken van gebruikers.")}
             </p>
           </div>
           <div className="flex gap-4">
             <div className="bg-white/10 backdrop-blur-sm border border-white/20 p-4 rounded-2xl text-center">
-              <div className="text-[8px] font-black text-purple-300 uppercase mb-1">Totaal Kaarten</div>
+              <div className="text-[8px] font-black text-purple-300 uppercase mb-1">{i18n.t("aiFlashcardManager.totalCards", "Totaal Kaarten")}</div>
               <div className="text-2xl font-black">{flashcards.length}</div>
             </div>
             <div className="bg-white/10 backdrop-blur-sm border border-white/20 p-4 rounded-2xl text-center">
-              <div className="text-[8px] font-black text-purple-300 uppercase mb-1">Pogingen</div>
+              <div className="text-[8px] font-black text-purple-300 uppercase mb-1">{i18n.t("aiFlashcardManager.attempts", "Pogingen")}</div>
               <div className="text-2xl font-black">{totalAttempts}</div>
             </div>
             <div className="bg-white/10 backdrop-blur-sm border border-white/20 p-4 rounded-2xl text-center">
-              <div className="text-[8px] font-black text-purple-300 uppercase mb-1">Correctheid</div>
+              <div className="text-[8px] font-black text-purple-300 uppercase mb-1">{i18n.t("aiFlashcardManager.accuracy", "Correctheid")}</div>
               <div className="text-2xl font-black text-emerald-300">{accuracy}%</div>
             </div>
           </div>
@@ -382,7 +383,7 @@ const FlashcardManager = () => {
               : "text-slate-500 hover:text-slate-700"
           }`}
         >
-          <BookOpen size={16} /> Kaarten Beheer
+          <BookOpen size={16} /> {i18n.t("aiFlashcardManager.cardsManagement", "Kaarten Beheer")}
         </button>
         <button
           onClick={() => setActiveView("results")}
@@ -392,7 +393,7 @@ const FlashcardManager = () => {
               : "text-slate-500 hover:text-slate-700"
           }`}
         >
-          <BarChart3 size={16} /> Resultaten & Stats
+          <BarChart3 size={16} /> {i18n.t("aiFlashcardManager.resultsAndStats", "Resultaten & Stats")}
         </button>
       </div>
 
@@ -404,20 +405,20 @@ const FlashcardManager = () => {
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <h3 className="text-lg font-black text-slate-800 mb-2 flex items-center gap-2">
-                            <Lightbulb size={20} className="text-yellow-600" /> AI Suggesties
+                            <Lightbulb size={20} className="text-yellow-600" /> {i18n.t("aiFlashcardManager.aiSuggestions", "AI Suggesties")}
                           </h3>
                           <p className="text-sm text-slate-600 font-medium">
-                            Laat AI automatisch flashcards voorstellen op basis van geüploade PDF's, planning data en geverifieerde kennis.
+                            {i18n.t("aiFlashcardManager.aiSuggestionsHelp", "Laat AI automatisch flashcards voorstellen op basis van geüploade PDF's, planning data en geverifieerde kennis.")}
                           </p>
                           <div className="flex gap-3 mt-3 text-xs text-slate-500">
                             <span className="flex items-center gap-1">
-                              <FileText size={12} /> PDF Documenten
+                              <FileText size={12} /> {i18n.t("aiFlashcardManager.pdfDocuments", "PDF Documenten")}
                             </span>
                             <span className="flex items-center gap-1">
-                              <Factory size={12} /> Planning Data
+                              <Factory size={12} /> {i18n.t("aiFlashcardManager.planningData", "Planning Data")}
                             </span>
                             <span className="flex items-center gap-1">
-                              <BookOpen size={12} /> AI Kennisbank
+                              <BookOpen size={12} /> {i18n.t("aiFlashcardManager.aiKnowledgeBase", "AI Kennisbank")}
                             </span>
                           </div>
                         </div>
@@ -429,12 +430,12 @@ const FlashcardManager = () => {
                           {generating ? (
                             <>
                               <Loader2 className="animate-spin" size={18} />
-                              Genereren...
+                              {i18n.t("common.generating", "Genereren...")}
                             </>
                           ) : (
                             <>
                               <Sparkles size={18} />
-                              Genereer Suggesties
+                              {i18n.t("aiFlashcardManager.generateSuggestions", "Genereer Suggesties")}
                             </>
                           )}
                         </button>
@@ -445,9 +446,9 @@ const FlashcardManager = () => {
                     {showSuggestions && suggestions.length > 0 && (
                       <div className="bg-white rounded-[3rem] p-8 border-2 border-purple-200 shadow-lg">
                         <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2">
-                          <Sparkles size={20} className="text-purple-600" /> AI Gegenereerde Suggesties
+                          <Sparkles size={20} className="text-purple-600" /> {i18n.t("aiFlashcardManager.aiGeneratedSuggestions", "AI Gegenereerde Suggesties")}
                           <span className="bg-purple-100 text-purple-600 px-3 py-1 rounded-full text-xs">
-                            {suggestions.length} kaarten
+                            {suggestions.length} {i18n.t("aiFlashcardManager.cards", "kaarten")}
                           </span>
                         </h3>
               
@@ -476,11 +477,11 @@ const FlashcardManager = () => {
                     
                               <div className="space-y-3 mb-4">
                                 <div className="bg-white p-3 rounded-xl">
-                                  <div className="text-[8px] font-black text-slate-500 uppercase mb-1">Vraag</div>
+                                  <div className="text-[8px] font-black text-slate-500 uppercase mb-1">{i18n.t("aiFlashcardManager.question", "Vraag")}</div>
                                   <p className="text-sm font-bold text-slate-800">{suggestion.front}</p>
                                 </div>
                                 <div className="bg-white p-3 rounded-xl">
-                                  <div className="text-[8px] font-black text-purple-600 uppercase mb-1">Antwoord</div>
+                                  <div className="text-[8px] font-black text-purple-600 uppercase mb-1">{i18n.t("aiFlashcardManager.answer", "Antwoord")}</div>
                                   <p className="text-sm text-slate-700">{suggestion.back}</p>
                                 </div>
                               </div>
@@ -490,7 +491,7 @@ const FlashcardManager = () => {
                                 className="w-full bg-purple-600 text-white py-3 rounded-xl font-black text-xs uppercase tracking-wider hover:bg-purple-700 active:scale-95 transition-all flex items-center justify-center gap-2"
                               >
                                 <CheckCircle2 size={16} />
-                                Accepteer & Opslaan
+                                {i18n.t("aiFlashcardManager.acceptAndSave", "Accepteer & Opslaan")}
                               </button>
                             </div>
                           ))}
@@ -501,56 +502,56 @@ const FlashcardManager = () => {
           {/* NEW CARD FORM */}
           <div className="bg-white rounded-[3rem] p-8 border-2 border-purple-100 shadow-lg">
             <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2">
-              <Plus size={20} className="text-purple-600" /> Nieuwe Flashcard Maken
+              <Plus size={20} className="text-purple-600" /> {i18n.t("aiFlashcardManager.createNewFlashcard", "Nieuwe Flashcard Maken")}
             </h3>
             
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-black text-slate-600 uppercase mb-2">Categorie</label>
+                  <label className="block text-xs font-black text-slate-600 uppercase mb-2">{i18n.t("aiFlashcardManager.category", "Categorie")}</label>
                   <select
                     value={newCard.category}
                     onChange={(e) => setNewCard({ ...newCard, category: e.target.value })}
                     className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-400 outline-none"
                   >
-                    <option value="products">Producten</option>
-                    <option value="procedures">Procedures</option>
-                    <option value="safety">Veiligheid</option>
-                    <option value="machines">Machines</option>
-                    <option value="terminology">Terminologie</option>
+                    <option value="products">{i18n.t("aiFlashcardManager.categoryProducts", "Producten")}</option>
+                    <option value="procedures">{i18n.t("aiFlashcardManager.categoryProcedures", "Procedures")}</option>
+                    <option value="safety">{i18n.t("aiFlashcardManager.categorySafety", "Veiligheid")}</option>
+                    <option value="machines">{i18n.t("aiFlashcardManager.categoryMachines", "Machines")}</option>
+                    <option value="terminology">{i18n.t("aiFlashcardManager.categoryTerminology", "Terminologie")}</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-black text-slate-600 uppercase mb-2">Moeilijkheid</label>
+                  <label className="block text-xs font-black text-slate-600 uppercase mb-2">{i18n.t("aiFlashcardManager.difficulty", "Moeilijkheid")}</label>
                   <select
                     value={newCard.difficulty}
                     onChange={(e) => setNewCard({ ...newCard, difficulty: e.target.value })}
                     className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-400 outline-none"
                   >
-                    <option value="easy">Makkelijk</option>
-                    <option value="medium">Gemiddeld</option>
-                    <option value="hard">Moeilijk</option>
+                    <option value="easy">{i18n.t("aiFlashcardManager.difficultyEasy", "Makkelijk")}</option>
+                    <option value="medium">{i18n.t("aiFlashcardManager.difficultyMedium", "Gemiddeld")}</option>
+                    <option value="hard">{i18n.t("aiFlashcardManager.difficultyHard", "Moeilijk")}</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-black text-slate-600 uppercase mb-2">Voorkant (Vraag)</label>
+                <label className="block text-xs font-black text-slate-600 uppercase mb-2">{i18n.t("aiFlashcardManager.frontQuestion", "Voorkant (Vraag)")}</label>
                 <input
                   type="text"
                   value={newCard.front}
                   onChange={(e) => setNewCard({ ...newCard, front: e.target.value })}
-                  placeholder="Bijv: Wat betekent EST?"
+                  placeholder={i18n.t("placeholders.aiFlashcardFrontExample", "Bijv: Wat betekent EST?")}
                   className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-400 outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-black text-slate-600 uppercase mb-2">Achterkant (Antwoord)</label>
+                <label className="block text-xs font-black text-slate-600 uppercase mb-2">{i18n.t("aiFlashcardManager.backAnswer", "Achterkant (Antwoord)")}</label>
                 <textarea
                   value={newCard.back}
                   onChange={(e) => setNewCard({ ...newCard, back: e.target.value })}
-                  placeholder="Bijv: Epoxy Standard (Wavistrong Blauw)"
+                  placeholder={i18n.t("placeholders.aiFlashcardBackExample", "Bijv: Epoxy Standard (Wavistrong Blauw)")}
                   rows={3}
                   className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-purple-400 outline-none"
                 />
@@ -562,7 +563,7 @@ const FlashcardManager = () => {
                 className="w-full bg-purple-600 text-white py-4 rounded-2xl font-black text-sm uppercase tracking-wider hover:bg-purple-700 shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {saving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
-                Kaart Opslaan
+                {i18n.t("aiFlashcardManager.saveCard", "Kaart Opslaan")}
               </button>
             </div>
           </div>
@@ -570,7 +571,7 @@ const FlashcardManager = () => {
           {/* EXISTING CARDS */}
           <div className="space-y-4">
             <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-              <BookOpen size={18} className="text-purple-600" /> Bestaande Kaarten
+              <BookOpen size={18} className="text-purple-600" /> {i18n.t("aiFlashcardManager.existingCards", "Bestaande Kaarten")}
               <span className="bg-purple-100 text-purple-600 px-3 py-0.5 rounded-full text-[10px]">
                 {flashcards.length}
               </span>
@@ -580,7 +581,7 @@ const FlashcardManager = () => {
               <div className="bg-slate-50 p-10 rounded-[3rem] text-center">
                 <BookOpen size={48} className="mx-auto mb-4 text-slate-300" />
                 <p className="text-sm text-slate-500 font-medium">
-                  Nog geen flashcards. Maak je eerste kaart hierboven!
+                  {i18n.t("aiFlashcardManager.noFlashcardsYet", "Nog geen flashcards. Maak je eerste kaart hierboven!")}
                 </p>
               </div>
             ) : (
@@ -611,11 +612,11 @@ const FlashcardManager = () => {
                     
                     <div className="space-y-3">
                       <div className="bg-slate-50 p-4 rounded-xl">
-                        <div className="text-[8px] font-black text-slate-500 uppercase mb-1">Vraag</div>
+                        <div className="text-[8px] font-black text-slate-500 uppercase mb-1">{i18n.t("aiFlashcardManager.question", "Vraag")}</div>
                         <p className="text-sm font-bold text-slate-800">{card.front?.text}</p>
                       </div>
                       <div className="bg-purple-50 p-4 rounded-xl">
-                        <div className="text-[8px] font-black text-purple-600 uppercase mb-1">Antwoord</div>
+                        <div className="text-[8px] font-black text-purple-600 uppercase mb-1">{i18n.t("aiFlashcardManager.answer", "Antwoord")}</div>
                         <p className="text-sm text-slate-700">{card.back?.text}</p>
                       </div>
                     </div>
@@ -632,14 +633,14 @@ const FlashcardManager = () => {
         <div className="space-y-6">
           <div className="bg-white rounded-[3rem] p-8 border-2 border-blue-100 shadow-lg">
             <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-2">
-              <BarChart3 size={20} className="text-blue-600" /> Training Resultaten
+              <BarChart3 size={20} className="text-blue-600" /> {i18n.t("aiFlashcardManager.trainingResults", "Training Resultaten")}
             </h3>
 
             {results.length === 0 ? (
               <div className="bg-slate-50 p-10 rounded-[3rem] text-center">
                 <TrendingUp size={48} className="mx-auto mb-4 text-slate-300" />
                 <p className="text-sm text-slate-500 font-medium">
-                  Nog geen resultaten. Begin met trainen om statistieken te zien!
+                  {i18n.t("aiFlashcardManager.noResultsYet", "Nog geen resultaten. Begin met trainen om statistieken te zien!")}
                 </p>
               </div>
             ) : (

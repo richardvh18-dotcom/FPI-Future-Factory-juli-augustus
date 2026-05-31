@@ -138,7 +138,7 @@ const AiTrainingView = () => {
         </div>
         <div className="relative z-10 text-left flex-1">
           <h2 className="text-2xl font-black uppercase italic tracking-tighter leading-none">
-            AI <span className="text-blue-500">Learning Center</span>
+            {t('ai.training.ai', 'AI')} <span className="text-blue-500">{t('ai.training.learningCenter', 'Learning Center')}</span>
           </h2>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <span className="flex items-center gap-1.5 text-[9px] font-black text-emerald-400 bg-white/5 px-2 py-0.5 rounded uppercase border border-white/10 italic">
@@ -231,7 +231,7 @@ const AiTrainingView = () => {
                           className="w-full bg-white border-none rounded-[2rem] p-6 text-sm font-bold outline-none min-h-[120px] shadow-inner text-slate-700"
                           value={correction}
                           onChange={(e) => setCorrection(e.target.value)}
-                          placeholder="Voer het juiste technische antwoord in..."
+                          placeholder={t("placeholders.aiTrainingCorrectAnswer", "Voer het juiste technische antwoord in...")}
                           autoFocus
                         />
                       </div>

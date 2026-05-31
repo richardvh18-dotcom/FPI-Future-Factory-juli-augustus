@@ -497,8 +497,8 @@ const AiChatView = () => {
     return (
       <div className="flex flex-col h-full bg-slate-50 items-center justify-center animate-in fade-in">
         <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-        <h2 className="text-lg font-bold text-slate-700">AI Assistent Starten...</h2>
-        <p className="text-slate-500 text-sm">Even geduld, we laden de context.</p>
+        <h2 className="text-lg font-bold text-slate-700">{t("aiChat.startingAssistant", "AI Assistent Starten...")}</h2>
+        <p className="text-slate-500 text-sm">{t("aiChat.loadingContext", "Even geduld, we laden de context.")}</p>
       </div>
     );
   }
@@ -506,7 +506,7 @@ const AiChatView = () => {
   return (
     <div className="h-full flex flex-col max-w-4xl mx-auto">
       <div className="flex items-center justify-between px-6 py-2 border-b border-slate-200 bg-white shrink-0">
-        <span className="text-xs text-slate-400 select-none">AI Assistent</span>
+        <span className="text-xs text-slate-400 select-none">{t("aiChat.assistantLabel", "AI Assistent")}</span>
         <button
           onClick={handleNewConversation}
           className="text-xs text-slate-500 hover:text-red-600 transition-colors"
@@ -553,7 +553,7 @@ const AiChatView = () => {
           <input
             type="text"
             className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:border-blue-500 transition-colors"
-            placeholder="Typ je vraag..."
+            placeholder={t("placeholders.aiChatQuestion", "Typ je vraag...")}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={isLoading || isUploadingDocument}
@@ -562,7 +562,7 @@ const AiChatView = () => {
             <Paperclip size={18} />
             <input type="file" accept=".pdf,.txt,.md,.csv,.json" onChange={handleChatFileUpload} disabled={isUploadingDocument} className="hidden" />
           </label>
-          <button type="button" onClick={handleStopChat} disabled={!isLoading} className="bg-white text-slate-700 border border-slate-200 p-3 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Stop antwoord">Stop</button>
+          <button type="button" onClick={handleStopChat} disabled={!isLoading} className="bg-white text-slate-700 border border-slate-200 p-3 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title={t("aiChat.stopResponse", "Stop antwoord")}>{t("common.stop", "Stop")}</button>
           <button type="submit" disabled={isLoading} className="bg-blue-600 text-white p-3 rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
             {isLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Send size={20} />}
           </button>

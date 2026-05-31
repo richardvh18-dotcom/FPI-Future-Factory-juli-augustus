@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import { Search, UserCircle, Edit3, Trash2, Plus, ChevronDown, ChevronUp, Layers, Filter, RotateCcw, ArrowRight, Nfc } from "lucide-react";
 import { getISOWeek } from "date-fns";
 
@@ -234,7 +235,7 @@ const PersonnelListView = React.memo(({
           />
           <input
             type="text"
-            placeholder="Zoek op naam of personeelsnummer..."
+            placeholder={i18n.t("placeholders.personnelSearch", "Zoek op naam of personeelsnummer...")}
             className="w-full pl-14 pr-6 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold outline-none focus:border-blue-500 focus:bg-white transition-all shadow-inner"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -247,7 +248,7 @@ const PersonnelListView = React.memo(({
             className="px-6 py-3.5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-blue-700 transition-all shadow-lg flex items-center gap-2 active:scale-95 shrink-0 w-full md:w-auto justify-center"
           >
             <Plus size={16} />
-            <span>Toevoegen</span>
+            <span>{i18n.t("common.add", "Toevoegen")}</span>
           </button>
         )}
       </div>
@@ -317,7 +318,7 @@ const PersonnelListView = React.memo(({
                       {displayedPersonnel.length > 0 ? (
                         displayedPersonnel.map(p => renderCard(p))
                       ) : (
-                        <div className="col-span-full text-center py-8 text-slate-400 italic text-sm">Geen personeel gevonden voor dit filter</div>
+                        <div className="col-span-full text-center py-8 text-slate-400 italic text-sm">{i18n.t("personnelList.noPersonnelForFilter", "Geen personeel gevonden voor dit filter")}</div>
                       )}
                     </div>
                   </div>
@@ -332,8 +333,8 @@ const PersonnelListView = React.memo(({
                 <div className="flex items-center gap-3 text-left flex-1 p-2">
                   <div className="p-2 bg-amber-500 text-white rounded-xl shadow-md"><Layers size={16} /></div>
                   <div className="min-w-0">
-                    <h3 className="text-base sm:text-lg font-black text-amber-900 uppercase italic tracking-tight truncate">Ongekoppelde afdelingen</h3>
-                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mt-1">Personeel met een oude of onbekende afdeling-ID</p>
+                    <h3 className="text-base sm:text-lg font-black text-amber-900 uppercase italic tracking-tight truncate">{i18n.t("personnelList.unlinkedDepartments", "Ongekoppelde afdelingen")}</h3>
+                    <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mt-1">{i18n.t("personnelList.oldOrUnknownDepartmentId", "Personeel met een oude of onbekende afdeling-ID")}</p>
                   </div>
                 </div>
                 <span className="text-[10px] sm:text-xs font-bold px-2 py-1 rounded-lg whitespace-nowrap text-amber-800 bg-amber-100">

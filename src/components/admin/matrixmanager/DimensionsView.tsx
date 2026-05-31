@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import {
   Loader2,
   Trash2,
@@ -399,7 +400,7 @@ const DimensionsView = ({ libraryData, blueprints, productRange }: DimensionsVie
                     setDimFilters({ ...dimFilters, type: e.target.value })
                   }
                 >
-                  <option value="">- Selecteer Product -</option>
+                  <option value="">{i18n.t('adminDimensions.selectProduct', '- Selecteer Product -')}</option>
                   {libraryData?.product_names?.map((t) => (
                     <option key={t} value={t}>
                       {t}
@@ -415,7 +416,7 @@ const DimensionsView = ({ libraryData, blueprints, productRange }: DimensionsVie
                     setDimFilters({ ...dimFilters, drilling: e.target.value })
                   }
                 >
-                  <option value="">- Selecteer Boring -</option>
+                  <option value="">{i18n.t('adminDimensions.selectDrilling', '- Selecteer Boring -')}</option>
                   {libraryData?.borings?.map((b) => (
                     <option key={b} value={b}>
                       {b}
@@ -431,7 +432,7 @@ const DimensionsView = ({ libraryData, blueprints, productRange }: DimensionsVie
                     setDimFilters({ ...dimFilters, pn: e.target.value, id: "" })
                   }
                 >
-                  <option value="">PN</option>
+                  <option value="">{i18n.t("adminDimensions.pn", "PN")}</option>
                   {getAvailablePNs().map((pn) => (
                     <option key={pn} value={pn}>
                       PN{pn}
@@ -445,7 +446,7 @@ const DimensionsView = ({ libraryData, blueprints, productRange }: DimensionsVie
                     setDimFilters({ ...dimFilters, id: e.target.value })
                   }
                 >
-                  <option value="">ID (mm)</option>
+                  <option value="">{i18n.t("adminDimensions.idMm", "ID (mm)")}</option>
                   {getAvailableIDs().map((id) => (
                     <option key={id} value={id}>
                       ID{id}
@@ -471,7 +472,7 @@ const DimensionsView = ({ libraryData, blueprints, productRange }: DimensionsVie
               />
               <input
                 className="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-100 rounded-2xl text-xs font-bold outline-none focus:border-blue-500"
-                placeholder="Zoek op ID..."
+                placeholder={i18n.t("placeholders.adminDimensionsSearchId", "Zoek op ID...")}
                 value={listSearch}
                 onChange={(e) => setListSearch(e.target.value)}
               />

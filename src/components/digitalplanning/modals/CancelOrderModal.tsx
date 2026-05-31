@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import i18n from 'i18next';
 import { X, AlertTriangle, Loader2 } from 'lucide-react';
 
 type CancelOrderModalProps = {
@@ -32,7 +33,7 @@ const CancelOrderModal = ({ isOpen, onClose, onConfirm, orderId, isProcessing = 
             <div className="p-2 bg-red-100 rounded-full text-red-600">
               <AlertTriangle size={20} />
             </div>
-            <h3 className="font-bold text-red-900">Order Annuleren</h3>
+            <h3 className="font-bold text-red-900">{i18n.t('cancelOrder.title', 'Order Annuleren')}</h3>
           </div>
           <button onClick={onClose} className="text-red-400 hover:text-red-600 transition-colors">
             <X size={20} />
@@ -56,7 +57,7 @@ const CancelOrderModal = ({ isOpen, onClose, onConfirm, orderId, isProcessing = 
                 setReason(e.target.value);
                 setError('');
               }}
-              placeholder="Bijv. Dubbele invoer, klant heeft geannuleerd, foutieve specificaties..."
+              placeholder={i18n.t('placeholders.dpCancelOrderReasonExample', 'Bijv. Dubbele invoer, klant heeft geannuleerd, foutieve specificaties...')}
               className="w-full p-3 text-sm border-2 border-slate-200 rounded-xl focus:border-red-500 focus:ring-0 outline-none min-h-[100px] resize-none"
               autoFocus
             />

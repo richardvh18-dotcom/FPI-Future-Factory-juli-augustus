@@ -1,4 +1,5 @@
 import React, { useState, useEffect, FC } from 'react';
+import i18n from 'i18next';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { Loader2, Hash, Calendar, Server } from 'lucide-react';
@@ -115,7 +116,7 @@ const AdminLotCounters: FC = () => {
             </div>
             
             <div className="flex flex-col gap-1 my-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Laatst Gebruikt</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{i18n.t('adminLotCounters.lastUsed', 'Laatst Gebruikt')}</span>
                 <span className="text-xl font-black text-blue-600 tracking-tight font-mono select-all">
                 {fullLot}
                 </span>

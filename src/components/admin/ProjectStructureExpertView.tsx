@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import { 
   BookOpen, 
   ChevronRight, 
@@ -367,8 +368,8 @@ const ProjectStructureExpertView = () => {
         </div>
         <div className="flex items-center space-x-3">
           <div className="text-right mr-4 hidden md:block">
-            <p className="text-[10px] text-slate-500 font-mono">GIT_HASH: 5e405e21</p>
-            <p className="text-[10px] text-green-400 font-mono italic">BUILD_STATUS: STABLE</p>
+            <p className="text-[10px] text-slate-500 font-mono">{i18n.t('projectStructureExpert.gitHash', 'GIT_HASH: 5e405e21')}</p>
+            <p className="text-[10px] text-green-400 font-mono italic">{i18n.t('projectStructureExpert.buildStatus', 'BUILD_STATUS: STABLE')}</p>
           </div>
           <div className="bg-blue-500/20 text-blue-400 px-4 py-2 rounded-xl border border-blue-500/30 text-xs font-black">
             PILOT v3.0
@@ -379,7 +380,7 @@ const ProjectStructureExpertView = () => {
       <div className="flex flex-1 overflow-hidden">
         {/* Navigatie (Linkerzijde) */}
         <div className="w-1/2 overflow-y-auto p-6 border-r border-gray-100 bg-gray-50/30 scrollbar-thin scrollbar-thumb-gray-200">
-          <h3 className="text-[10px] uppercase font-black text-gray-400 mb-4 tracking-[0.2em]">Project Verkenner</h3>
+          <h3 className="text-[10px] uppercase font-black text-gray-400 mb-4 tracking-[0.2em]">{i18n.t('projectStructureExpert.projectExplorer', 'Project Verkenner')}</h3>
           {projectStructure.map((node, i) => (
             <TreeNode 
               key={i} 
@@ -432,9 +433,9 @@ const ProjectStructureExpertView = () => {
                     <div className="p-5 bg-amber-50 rounded-2xl border border-amber-100 flex items-start space-x-3 shadow-sm">
                       <Zap className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                       <div>
-                        <h4 className="text-xs font-black text-amber-900 uppercase tracking-tight">Lead-raad voor Ontwikkelaars</h4>
+                        <h4 className="text-xs font-black text-amber-900 uppercase tracking-tight">{i18n.t('projectStructureExpert.developerGuidance', 'Lead-raad voor Ontwikkelaars')}</h4>
                         <p className="text-xs text-amber-700 mt-1 leading-normal">
-                          Dit bestand is een kernonderdeel van de <b>{detail.tags[0]}</b> logica. Wijzigingen hier hebben direct impact op de gebruikerservaring van de operators. Test altijd in <b>Preview Mode</b>.
+                          {i18n.t('projectStructureExpert.corePartPrefix', 'Dit bestand is een kernonderdeel van de ')}<b>{detail.tags[0]}</b>{i18n.t('projectStructureExpert.corePartSuffix', ' logica. Wijzigingen hier hebben direct impact op de gebruikerservaring van de operators. Test altijd in ')}<b>{i18n.t('projectStructureExpert.previewMode', 'Preview Mode')}</b>.
                         </p>
                       </div>
                     </div>
@@ -446,7 +447,7 @@ const ProjectStructureExpertView = () => {
                   <div className="p-4 bg-amber-50 rounded-2xl border-2 border-amber-200 flex items-start gap-3 shadow-sm">
                     <AlertTriangle className="w-8 h-8 text-amber-500 shrink-0 mt-1" />
                     <div>
-                      <h4 className="text-xs font-black text-amber-900 uppercase tracking-tight">AI Assistent niet geconfigureerd</h4>
+                      <h4 className="text-xs font-black text-amber-900 uppercase tracking-tight">{i18n.t('projectStructureExpert.aiNotConfigured', 'AI Assistent niet geconfigureerd')}</h4>
                       <p className="text-xs text-amber-800 mt-1 leading-normal font-medium">
                         De backend AI-configuratie ontbreekt. Configureer de AI sleutel in Firebase Functions configuratie of server environment variables.
                       </p>
@@ -492,7 +493,7 @@ const ProjectStructureExpertView = () => {
                 <Box className="w-12 h-12 text-gray-200" />
               </div>
               <div>
-                <h4 className="text-lg font-black text-gray-300 uppercase tracking-widest">Selecteer Component</h4>
+                <h4 className="text-lg font-black text-gray-300 uppercase tracking-widest">{i18n.t('projectStructureExpert.selectComponent', 'Selecteer Component')}</h4>
                 <p className="text-gray-400 text-sm mt-2 max-w-[250px] mx-auto italic">
                   Klik op een bestand in de boomstructuur om de technische fiches en logica te ontsluiten.
                 </p>
@@ -505,11 +506,11 @@ const ProjectStructureExpertView = () => {
       {/* Industriële Footer */}
       <div className="p-3 bg-slate-100 border-t border-gray-200 flex items-center justify-between text-[10px] font-bold text-gray-500 uppercase tracking-widest">
         <div className="flex items-center space-x-6 px-4">
-          <span className="flex items-center text-blue-600"><Database className="w-3 h-3 mr-1" /> Firestore: Live</span>
-          <span className="flex items-center text-green-600"><Printer className="w-3 h-3 mr-1" /> Zebra Driver: v2.1</span>
-          <span className="flex items-center text-amber-600"><Cpu className="w-3 h-3 mr-1" /> Edge-Bridge: Syncing</span>
+          <span className="flex items-center text-blue-600"><Database className="w-3 h-3 mr-1" /> {i18n.t('projectStructureExpert.firestoreLive', 'Firestore: Live')}</span>
+          <span className="flex items-center text-green-600"><Printer className="w-3 h-3 mr-1" /> {i18n.t('projectStructureExpert.zebraDriverVersion', 'Zebra Driver: v2.1')}</span>
+          <span className="flex items-center text-amber-600"><Cpu className="w-3 h-3 mr-1" /> {i18n.t('projectStructureExpert.edgeBridgeSyncing', 'Edge-Bridge: Syncing')}</span>
         </div>
-        <div className="px-4 opacity-50">Authorized Engineering Only • FPi Fittings 2026</div>
+        <div className="px-4 opacity-50">{i18n.t('projectStructureExpert.authorizedEngineeringOnly', 'Authorized Engineering Only • FPi Fittings 2026')}</div>
       </div>
     </div>
   );

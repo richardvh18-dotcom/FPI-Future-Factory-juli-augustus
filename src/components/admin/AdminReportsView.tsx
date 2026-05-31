@@ -1724,20 +1724,20 @@ const AdminReportsView = () => {
   </head>
   <body style="font-family:Arial,sans-serif;padding:24px;">
     <h1 style="margin:0 0 8px 0;">${selectedReport.title}</h1>
-    <p style="margin:0 0 16px 0;color:#666;">Gegenereerd op ${new Date().toLocaleString()}</p>
-    <h2>Samenvatting</h2>
+    <p style="margin:0 0 16px 0;color:#666;">${t("adminReportsView.generatedOn", "Gegenereerd op")} ${new Date().toLocaleString()}</p>
+    <h2>${t("adminReportsView.summary", "Samenvatting")}</h2>
     <ul>
-      <li>Totaal: ${reportData.summary?.total ?? 0}</li>
-      <li>Trend: ${reportData.summary?.trend || "n/a"} (${reportData.summary?.change ?? 0}%)</li>
+      <li>${t("adminReportsView.total", "Totaal")}: ${reportData.summary?.total ?? 0}</li>
+      <li>${t("adminReportsView.trend", "Trend")}: ${reportData.summary?.trend || "n/a"} (${reportData.summary?.change ?? 0}%)</li>
     </ul>
-    <h2>Overzicht per Werkstation</h2>
+    <h2>${t("adminReportsView.overviewPerWorkstation", "Overzicht per Werkstation")}</h2>
     <table style="border-collapse:collapse;width:100%;margin-bottom:16px;">
-      <thead><tr><th style="padding:8px;border:1px solid #ddd;text-align:left;">Werkstation</th><th style="padding:8px;border:1px solid #ddd;text-align:right;">Waarde</th></tr></thead>
+      <thead><tr><th style="padding:8px;border:1px solid #ddd;text-align:left;">${t("adminReportsView.workstation", "Werkstation")}</th><th style="padding:8px;border:1px solid #ddd;text-align:right;">${t("adminReportsView.value", "Waarde")}</th></tr></thead>
       <tbody>${chartRows}</tbody>
     </table>
-    <h2>Details</h2>
+    <h2>${t("adminReportsView.details", "Details")}</h2>
     <table style="border-collapse:collapse;width:100%;">
-      <thead><tr><th style="padding:8px;border:1px solid #ddd;text-align:left;">Naam</th><th style="padding:8px;border:1px solid #ddd;text-align:right;">Aantal</th><th style="padding:8px;border:1px solid #ddd;text-align:left;">Status</th></tr></thead>
+      <thead><tr><th style="padding:8px;border:1px solid #ddd;text-align:left;">${t("adminReportsView.name", "Naam")}</th><th style="padding:8px;border:1px solid #ddd;text-align:right;">${t("adminReportsView.amount", "Aantal")}</th><th style="padding:8px;border:1px solid #ddd;text-align:left;">${t("adminReportsView.status", "Status")}</th></tr></thead>
       <tbody>${detailRows}</tbody>
     </table>
     <script>window.onload = () => { window.print(); };</script>
@@ -1834,7 +1834,7 @@ const AdminReportsView = () => {
 
   const sourceBadge = (
     <div className={`mb-4 inline-flex items-center rounded-xl border px-3 py-1.5 text-[11px] font-black uppercase tracking-widest ${usePilotReadData ? "border-amber-300 bg-amber-50 text-amber-800" : "border-slate-300 bg-slate-100 text-slate-700"}`}>
-      Databron: {usePilotReadData ? "Pilot DB (Read Only)" : "Huidige DB"}
+      {t("adminReportsView.dataSource", "Databron")}: {usePilotReadData ? t("adminReportsView.pilotDbReadOnly", "Pilot DB (Read Only)") : t("adminReportsView.currentDb", "Huidige DB")}
     </div>
   );
 
@@ -1890,7 +1890,7 @@ const AdminReportsView = () => {
             onClick={() => setSelectedCategory(null)}
             className="mb-6 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors"
           >
-            ← Terug naar categorieën
+            {t("adminReportsView.backToCategories", "← Terug naar categorieën")}
           </button>
 
           <div className="mb-8">
@@ -1963,7 +1963,7 @@ const AdminReportsView = () => {
             onClick={() => setSelectedReport(null)}
             className="mb-4 px-4 py-2 bg-slate-100 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-200 transition-colors"
           >
-            ← Terug naar rapporten
+            {t("adminReportsView.backToReports", "← Terug naar rapporten")}
           </button>
           
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -2030,10 +2030,10 @@ const AdminReportsView = () => {
               onChange={(e) => setDateRange(e.target.value)}
               className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
             >
-              <option value="today">Vandaag</option>
-              <option value="week">Deze Week</option>
-              <option value="month">Deze Maand</option>
-              <option value="custom">Custom Periode</option>
+              <option value="today">{t("adminReportsView.today", "Vandaag")}</option>
+              <option value="week">{t("adminReportsView.thisWeek", "Deze Week")}</option>
+              <option value="month">{t("adminReportsView.thisMonth", "Deze Maand")}</option>
+              <option value="custom">{t("adminReportsView.customPeriod", "Custom Periode")}</option>
             </select>
 
             {selectedReport?.id !== "offered_totals" && (
@@ -2042,12 +2042,12 @@ const AdminReportsView = () => {
                 onChange={(e) => setFilters({ ...filters, station: e.target.value })}
                 className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
               >
-                <option value="ALL">Alle Werkstations</option>
-                <option value="BH11">BH11</option>
-                <option value="BH16">BH16</option>
-                <option value="BH18">BH18</option>
-                <option value="BH31">BH31</option>
-                <option value="BM01">BM01</option>
+                <option value="ALL">{t("adminReportsView.allWorkstations", "Alle Werkstations")}</option>
+                <option value="BH11">{t("adminReportsView.stationBh11", "BH11")}</option>
+                <option value="BH16">{t("adminReportsView.stationBh16", "BH16")}</option>
+                <option value="BH18">{t("adminReportsView.stationBh18", "BH18")}</option>
+                <option value="BH31">{t("adminReportsView.stationBh31", "BH31")}</option>
+                <option value="BM01">{t("adminReportsView.stationBm01", "BM01")}</option>
               </select>
             )}
 
@@ -2056,7 +2056,7 @@ const AdminReportsView = () => {
               className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors flex items-center gap-2"
             >
               {loading ? <Loader2 size={16} className="animate-spin" /> : <Filter size={16} />}
-              {loading ? "Laden..." : "Genereer Rapport"}
+              {loading ? t("common.loading", "Laden...") : t("adminReportsView.generateReport", "Genereer Rapport")}
             </button>
 
             {isDepartmentScopedReport(selectedReport?.id) && (
@@ -2065,7 +2065,7 @@ const AdminReportsView = () => {
                 onChange={(e) => setProductionDepartmentFilter(e.target.value)}
                 className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
               >
-                <option value="ALL">Alle Afdelingen</option>
+                <option value="ALL">{t("adminReportsView.allDepartments", "Alle Afdelingen")}</option>
                 {factoryDepartmentMeta.byLabelList
                   .map((d: AnyRecord) => d.label)
                   .sort((a, b) => a.localeCompare(b))
@@ -2085,7 +2085,7 @@ const AdminReportsView = () => {
                   }}
                   className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
                 >
-                  <option value="ALL">Alle Afdelingen</option>
+                  <option value="ALL">{t("adminReportsView.allDepartments", "Alle Afdelingen")}</option>
                   {(reportData?.availableDepartments || []).map((dept: string) => (
                     <option key={dept} value={dept}>{getDepartmentDisplayLabel(dept)}</option>
                   ))}
@@ -2096,7 +2096,7 @@ const AdminReportsView = () => {
                   onChange={(e) => setOfferedWorkstationFilter(e.target.value)}
                   className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700"
                 >
-                  <option value="ALL">Alle Werkstations</option>
+                  <option value="ALL">{t("adminReportsView.allWorkstations", "Alle Werkstations")}</option>
                   {(reportData?.availableWorkstations || []).map((station: string) => (
                     <option key={station} value={station}>{station}</option>
                   ))}
@@ -2112,7 +2112,7 @@ const AdminReportsView = () => {
         <div className="max-w-7xl mx-auto">
           {atpsPreviewLast && (
             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
-              <span className="font-black uppercase tracking-wider">ATPS Dry-run</span>
+              <span className="font-black uppercase tracking-wider">{t("adminReportsView.atpsDryRun", "ATPS Dry-run")}</span>
               <span className="ml-2">
                 mode: {String(atpsPreviewLast.mode || "passive")} | records: {Number(atpsPreviewLast?.totals?.count || 0)} | uren: {Number(atpsPreviewLast?.totals?.hoursWorked || 0)}
               </span>
@@ -2121,19 +2121,19 @@ const AdminReportsView = () => {
 
           {atpsMonitor && (
             <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-700">
-              <div className="font-black uppercase tracking-wider text-slate-800 mb-1">ATPS Monitor</div>
+              <div className="font-black uppercase tracking-wider text-slate-800 mb-1">{t("adminReportsView.atpsMonitor", "ATPS Monitor")}</div>
               <div className="flex flex-wrap gap-4">
-                <span>Pending retries: <strong>{Number(atpsMonitor?.retryQueue?.pendingCount || 0)}</strong></span>
-                <span>Failed retries: <strong>{Number(atpsMonitor?.retryQueue?.failedCount || 0)}</strong></span>
-                <span>Laatste live run: <strong>{String(atpsMonitor?.runs?.[0]?.status || "-")}</strong></span>
-                <span>Laatste preview run: <strong>{String(atpsMonitor?.previewRuns?.[0]?.status || "-")}</strong></span>
+                <span>{t("adminReportsView.pendingRetries", "Pending retries")}: <strong>{Number(atpsMonitor?.retryQueue?.pendingCount || 0)}</strong></span>
+                <span>{t("adminReportsView.failedRetries", "Failed retries")}: <strong>{Number(atpsMonitor?.retryQueue?.failedCount || 0)}</strong></span>
+                <span>{t("adminReportsView.latestLiveRun", "Laatste live run")}: <strong>{String(atpsMonitor?.runs?.[0]?.status || "-")}</strong></span>
+                <span>{t("adminReportsView.latestPreviewRun", "Laatste preview run")}: <strong>{String(atpsMonitor?.previewRuns?.[0]?.status || "-")}</strong></span>
               </div>
             </div>
           )}
           {loading ? (
             <div className="flex flex-col items-center justify-center h-64 gap-4">
               <Loader2 className="animate-spin text-blue-600" size={48} />
-              <p className="text-sm text-slate-500 font-bold">Rapport wordt gegenereerd...</p>
+              <p className="text-sm text-slate-500 font-bold">{t("adminReportsView.reportGenerating", "Rapport wordt gegenereerd...")}</p>
             </div>
           ) : reportData ? (
             <div className="space-y-6">
@@ -2146,7 +2146,7 @@ const AdminReportsView = () => {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold text-slate-500 uppercase">
-                      {selectedReport?.id === "offered_totals" ? "Gereedgemeld Totaal" : "Totaal"}
+                      {selectedReport?.id === "offered_totals" ? t("adminReportsView.reportedReadyTotal", "Gereedgemeld Totaal") : t("adminReportsView.total", "Totaal")}
                     </span>
                     {reportData.summary.change !== undefined && (
                       <div className={`px-2 py-1 rounded-lg text-xs font-bold ${reportData.summary.trend === 'up' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
@@ -2163,7 +2163,7 @@ const AdminReportsView = () => {
                     onClick={() => openKpiPopup("OFFERED")}
                     className={`p-6 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-2xl border text-left w-full hover:border-emerald-300 transition-colors ${offeredKpiFilter === "OFFERED" ? "border-emerald-500 ring-2 ring-emerald-100" : "border-emerald-200"}`}
                   >
-                    <span className="text-xs font-bold text-emerald-700 uppercase block mb-2">Totaal Aangeboden</span>
+                    <span className="text-xs font-bold text-emerald-700 uppercase block mb-2">{t("adminReportsView.totalOffered", "Totaal Aangeboden")}</span>
                     <div className="text-4xl font-black text-emerald-900">
                       {reportData.summary.offeredTotal.toLocaleString()}
                     </div>
@@ -2173,7 +2173,7 @@ const AdminReportsView = () => {
                 {/* Conditionally show FTR for quality reports */}
                 {reportData.summary.ftrPercentage !== undefined && (
                   <div className="p-6 bg-gradient-to-br from-green-50 to-green-100 rounded-2xl border border-green-200">
-                    <span className="text-xs font-bold text-green-700 uppercase block mb-2">First Time Right</span>
+                    <span className="text-xs font-bold text-green-700 uppercase block mb-2">{t("adminReportsView.firstTimeRight", "First Time Right")}</span>
                     <div className="text-4xl font-black text-green-900">
                       {reportData.summary.ftrPercentage}%
                     </div>
@@ -2183,7 +2183,7 @@ const AdminReportsView = () => {
                 {/* Show completed count for production reports */}
                 {reportData.summary.completed !== undefined && (
                   <div className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border border-blue-200">
-                    <span className="text-xs font-bold text-blue-700 uppercase block mb-2">Voltooid</span>
+                    <span className="text-xs font-bold text-blue-700 uppercase block mb-2">{t("adminReportsView.completed", "Voltooid")}</span>
                     <div className="text-4xl font-black text-blue-900">
                       {reportData.summary.completed.toLocaleString()}
                     </div>
@@ -2196,7 +2196,7 @@ const AdminReportsView = () => {
                     onClick={() => openKpiPopup("PRODUCED_NOT_OFFERED")}
                     className={`p-6 bg-gradient-to-br from-amber-50 to-amber-100 rounded-2xl border text-left w-full hover:border-amber-300 transition-colors ${offeredKpiFilter === "PRODUCED_NOT_OFFERED" ? "border-amber-500 ring-2 ring-amber-100" : "border-amber-200"}`}
                   >
-                    <span className="text-xs font-bold text-amber-700 uppercase block mb-2">Geproduceerd, Niet Aangeboden</span>
+                    <span className="text-xs font-bold text-amber-700 uppercase block mb-2">{t("adminReportsView.producedNotOffered", "Geproduceerd, Niet Aangeboden")}</span>
                     <div className="text-4xl font-black text-amber-900">
                       {reportData.summary.producedNotOfferedTotal.toLocaleString()}
                     </div>
@@ -2205,7 +2205,7 @@ const AdminReportsView = () => {
 
                 {selectedReport?.id === "offered_totals" && reportData.summary.departmentsWithOutput !== undefined && (
                   <div className="p-6 bg-gradient-to-br from-indigo-50 to-indigo-100 rounded-2xl border border-indigo-200">
-                    <span className="text-xs font-bold text-indigo-700 uppercase block mb-2">Afdelingen Met Output</span>
+                    <span className="text-xs font-bold text-indigo-700 uppercase block mb-2">{t("adminReportsView.departmentsWithOutput", "Afdelingen Met Output")}</span>
                     <div className="text-4xl font-black text-indigo-900">
                       {reportData.summary.departmentsWithOutput.toLocaleString()}
                     </div>
@@ -2214,7 +2214,7 @@ const AdminReportsView = () => {
 
                 {selectedReport?.id === "offered_totals" && reportData.summary.workstationsWithOutput !== undefined && (
                   <div className="p-6 bg-gradient-to-br from-sky-50 to-sky-100 rounded-2xl border border-sky-200">
-                    <span className="text-xs font-bold text-sky-700 uppercase block mb-2">Werkstations Met Output</span>
+                    <span className="text-xs font-bold text-sky-700 uppercase block mb-2">{t("adminReportsView.workstationsWithOutput", "Werkstations Met Output")}</span>
                     <div className="text-4xl font-black text-sky-900">
                       {reportData.summary.workstationsWithOutput.toLocaleString()}
                     </div>
@@ -2224,7 +2224,7 @@ const AdminReportsView = () => {
                 {/* Show rejected count */}
                 {reportData.summary.rejected !== undefined && (
                   <div className="p-6 bg-gradient-to-br from-red-50 to-red-100 rounded-2xl border border-red-200">
-                    <span className="text-xs font-bold text-red-700 uppercase block mb-2">Afgekeurd</span>
+                    <span className="text-xs font-bold text-red-700 uppercase block mb-2">{t("adminReportsView.rejected", "Afgekeurd")}</span>
                     <div className="text-4xl font-black text-red-900">
                       {reportData.summary.rejected.toLocaleString()}
                     </div>
@@ -2235,14 +2235,14 @@ const AdminReportsView = () => {
                 {!reportData.summary.ftrPercentage && !reportData.summary.completed && (
                   <>
                 <div className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-2xl border border-blue-200">
-                  <span className="text-xs font-bold text-blue-700 uppercase block mb-2">Gemiddelde per Dag</span>
+                  <span className="text-xs font-bold text-blue-700 uppercase block mb-2">{t("adminReportsView.averagePerDay", "Gemiddelde per Dag")}</span>
                   <div className="text-4xl font-black text-blue-900">
                     {Math.round(reportData.summary.total / 7).toLocaleString()}
                   </div>
                 </div>
 
                 <div className="p-6 bg-gradient-to-br from-purple-50 to-purple-100 rounded-2xl border border-purple-200">
-                  <span className="text-xs font-bold text-purple-700 uppercase block mb-2">Stations Actief</span>
+                  <span className="text-xs font-bold text-purple-700 uppercase block mb-2">{t("adminReportsView.activeStations", "Stations Actief")}</span>
                   <div className="text-4xl font-black text-purple-900">{reportData.chartData.length}</div>
                 </div>
                   </>
@@ -2252,11 +2252,11 @@ const AdminReportsView = () => {
               {/* Chart */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
                 <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-6">
-                  {selectedReport?.id === "offered_totals" ? "Gereedgemeld per Afdeling" : "Overzicht per Werkstation"}
+                  {selectedReport?.id === "offered_totals" ? t("adminReportsView.reportedReadyByDepartment", "Gereedgemeld per Afdeling") : t("adminReportsView.overviewPerWorkstation", "Overzicht per Werkstation")}
                 </h3>
                 {selectedReport?.id === "offered_totals" && (
                   <p className="text-xs text-slate-500 mb-4">
-                    Actieve KPI-filter: {offeredKpiFilter === "COMPLETED" ? "Gereedgemeld" : offeredKpiFilter === "OFFERED" ? "Aangeboden" : offeredKpiFilter === "PRODUCED_NOT_OFFERED" ? "Geproduceerd, niet aangeboden" : "Alles"}
+                    {t("adminReportsView.activeKpiFilter", "Actieve KPI-filter")}: {offeredKpiFilter === "COMPLETED" ? t("adminReportsView.reportedReady", "Gereedgemeld") : offeredKpiFilter === "OFFERED" ? t("adminReportsView.offered", "Aangeboden") : offeredKpiFilter === "PRODUCED_NOT_OFFERED" ? t("adminReportsView.producedNotOfferedLower", "Geproduceerd, niet aangeboden") : t("common.all", "Alles")}
                   </p>
                 )}
                 <div className="space-y-3">
@@ -2379,32 +2379,32 @@ const AdminReportsView = () => {
                     <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
                       <div>
                         <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight">
-                          {kpiPopup.type === "COMPLETED" && "KPI Detail: Gereedgemeld"}
-                          {kpiPopup.type === "OFFERED" && "KPI Detail: Aangeboden"}
-                          {kpiPopup.type === "PRODUCED_NOT_OFFERED" && "KPI Detail: Geproduceerd, Niet Aangeboden"}
+                          {kpiPopup.type === "COMPLETED" && t("adminReportsView.kpiDetailReportedReady", "KPI Detail: Gereedgemeld")}
+                          {kpiPopup.type === "OFFERED" && t("adminReportsView.kpiDetailOffered", "KPI Detail: Aangeboden")}
+                          {kpiPopup.type === "PRODUCED_NOT_OFFERED" && t("adminReportsView.kpiDetailProducedNotOffered", "KPI Detail: Geproduceerd, Niet Aangeboden")}
                         </h3>
-                        <p className="text-xs text-slate-500 mt-1">Per afdeling en per werkstation binnen de huidige periode/filters.</p>
+                        <p className="text-xs text-slate-500 mt-1">{t("adminReportsView.perDepartmentAndWorkstationInCurrentPeriod", "Per afdeling en per werkstation binnen de huidige periode/filters.")}</p>
                       </div>
                       <button
                         type="button"
                         onClick={closeKpiPopup}
                         className="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-bold hover:bg-slate-200"
                       >
-                        Sluiten
+                        {t("common.close", "Sluiten")}
                       </button>
                     </div>
 
                     <div className="p-6 overflow-auto space-y-6">
                       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
                         <div className="px-6 py-4 border-b border-slate-200">
-                          <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Per Afdeling</h4>
+                          <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">{t("adminReportsView.perDepartment", "Per Afdeling")}</h4>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full">
                             <thead className="bg-slate-50 border-b border-slate-200">
                               <tr>
-                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Afdeling</th>
-                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Aantal</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">{t("adminReportsView.department", "Afdeling")}</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">{t("adminReportsView.amount", "Aantal")}</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200">
@@ -2433,14 +2433,14 @@ const AdminReportsView = () => {
 
                       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
                         <div className="px-6 py-4 border-b border-slate-200">
-                          <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">Per Werkstation</h4>
+                          <h4 className="text-sm font-black text-slate-700 uppercase tracking-wider">{t("adminReportsView.perWorkstation", "Per Werkstation")}</h4>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full">
                             <thead className="bg-slate-50 border-b border-slate-200">
                               <tr>
-                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Werkstation</th>
-                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">Aantal</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">{t("adminReportsView.workstation", "Werkstation")}</th>
+                                <th className="px-6 py-3 text-left text-xs font-black text-slate-600 uppercase tracking-wider">{t("adminReportsView.amount", "Aantal")}</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-200">
@@ -2521,9 +2521,9 @@ const AdminReportsView = () => {
                         }}
                         className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700"
                       >
-                        <option value="current_week">Huidige Week</option>
-                        <option value="browse_week">Terugbladeren per Week</option>
-                        <option value="all">Alles</option>
+                        <option value="current_week">{t("adminReportsView.currentWeek", "Huidige Week")}</option>
+                        <option value="browse_week">{t("adminReportsView.browseByWeek", "Terugbladeren per Week")}</option>
+                        <option value="all">{t("common.all", "Alles")}</option>
                       </select>
 
                       {measurementDetailMode === "browse_week" && (
@@ -2550,7 +2550,7 @@ const AdminReportsView = () => {
                       )}
                       <input
                         type="text"
-                        placeholder="Zoeken op lotnummer..."
+                        placeholder={t("placeholders.adminReportsLotSearch", "Zoeken op lotnummer...")}
                         value={measurementLotNumberSearch}
                         onChange={(e) => setMeasurementLotNumberSearch(e.target.value)}
                         className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 placeholder-slate-400"
@@ -2663,7 +2663,7 @@ const AdminReportsView = () => {
           ) : (
             <div className="flex flex-col items-center justify-center h-64 gap-4">
               <FileText className="text-slate-300" size={64} />
-              <p className="text-slate-500 text-sm font-bold">Geen data beschikbaar</p>
+              <p className="text-slate-500 text-sm font-bold">{t("adminReportsView.noDataAvailable", "Geen data beschikbaar")}</p>
               <button
                 onClick={generateReportData}
                 className="px-6 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-colors"

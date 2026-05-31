@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import i18n from "i18next";
 import { useLocation } from "react-router-dom";
 import {
   X,
@@ -126,7 +127,7 @@ const DrillDownModal = React.memo(({
             />
             <input
               className="w-full pl-14 pr-6 py-5 bg-white border-2 border-slate-200 rounded-[25px] font-bold outline-none focus:border-blue-500 transition-all shadow-sm placeholder:text-slate-300"
-              placeholder="Zoek op lot, order of omschrijving..."
+              placeholder={i18n.t("placeholders.dpDrillDownSearch", "Zoek op lot, order of omschrijving...")}
               value={internalSearch}
               onChange={(e) => {
                 setInternalSearch(e.target.value);

@@ -1,4 +1,5 @@
 import React from "react";
+import i18n from "i18next";
 import { X, FileText, Image as ImageIcon } from "lucide-react";
 
 interface ProductPassportItem {
@@ -22,7 +23,7 @@ const ProductPassportModal = ({ item, onClose }: ProductPassportModalProps) => {
       <div className="bg-white w-full max-w-md p-6 rounded-3xl relative shadow-2xl flex flex-col">
         <div className="flex justify-between items-start mb-4">
           <div>
-            <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tight">Product Paspoort</h2>
+            <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tight">{i18n.t("productPassport.title", "Product Paspoort")}</h2>
             <p className="text-xs text-slate-500 font-bold">{item.lotNumber || "Geen Lotnummer"}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
@@ -32,17 +33,17 @@ const ProductPassportModal = ({ item, onClose }: ProductPassportModalProps) => {
         
         <div className="space-y-4">
           <div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item</span>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{i18n.t("common.item", "Item")}</span>
             <p className="font-bold text-slate-800">{item.item}</p>
           </div>
           <div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Order</span>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{i18n.t("common.order", "Order")}</span>
             <p className="font-mono font-bold text-blue-600">{item.orderId}</p>
           </div>
           
           {item.drawing && (
              <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Tekening</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{i18n.t("common.drawing", "Tekening")}</span>
                 <div className="flex items-center gap-2 mt-1">
                     <ImageIcon size={16} className="text-blue-500" />
                     <p className="font-bold text-slate-800">{item.drawing}</p>

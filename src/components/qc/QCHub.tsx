@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { collection, query, orderBy, onSnapshot, limit } from "firebase/firestore";
@@ -7,8 +8,9 @@ import { formatDateTimeSafe } from "../../utils/dateUtils";
 import { getISOWeek, getYear } from "date-fns";
 import LabMeasurementsView, { LabMeasurement } from "./LabMeasurementsView";
 import InspectionLogView, { QcInspection } from "./InspectionLogView";
+import QcSampleView from "../admin/QcSampleView";
 
-type QCTab = "lab" | "inspection";
+type QCTab = "lab" | "inspection" | "sample";
 
 const parseMeasuredAtDate = (value: unknown): Date | null => {
   const raw = String(value || "").trim();
@@ -144,6 +146,16 @@ const QCHub = () => {
             >
               Inspectielog
             </button>
+            <button
+              onClick={() => setActiveTab("sample")}
+              className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider ${
+                activeTab === "sample"
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              QC Steekproeven
+            </button>
           </div>
         </header>
 
@@ -151,12 +163,14 @@ const QCHub = () => {
           {loading ? (
             <div className="py-20 flex flex-col items-center justify-center text-slate-400 gap-4">
               <Loader2 className="animate-spin" size={32} />
-              <p className="text-sm font-bold uppercase tracking-widest">Data inladen...</p>
+              <p className="text-sm font-bold uppercase tracking-widest">{i18n.t('common.loadingData', 'Data inladen...')}</p>
             </div>
           ) : activeTab === "lab" ? (
             <LabMeasurementsView measurements={measurements} />
-          ) : (
+          ) : activeTab === "inspection" ? (
             <InspectionLogView inspections={inspections} />
+          ) : (
+            <QcSampleView />
           )}
         </section>
       </div>

@@ -8,6 +8,7 @@ import { nl } from "date-fns/locale";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../../../config/firebase";
 import { useBackgroundTasks } from "../../../contexts/BackgroundTaskContext";
+import { useTranslation } from "react-i18next";
 
 const safeToDate = (value: any) => {
   if (!value) return null;
@@ -55,6 +56,7 @@ export default function TeamleaderExportModal({
   onTaskCreated,
   preloadedTask,
 }: TeamleaderExportModalProps) {
+  const { t } = useTranslation();
   const [exportType, setExportType] = useState("planning"); // 'planning', 'lotnummers' of 'ln_compare'
   const [selectedMachine, setSelectedMachine] = useState("Alle machines");
   const [isRequestingExport, setIsRequestingExport] = useState(false);
@@ -70,7 +72,7 @@ export default function TeamleaderExportModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    if (["planning", "lotnummers", "ln_compare"].includes(initialExportType)) {
+    if (["planning", "lotnummers"].includes(initialExportType)) {
       setExportType(initialExportType);
     } else {
       setExportType("planning");
@@ -356,42 +358,7 @@ export default function TeamleaderExportModal({
   const currentData = useMemo(() => {
     if (exportType === "planning") return planningExportData;
     if (exportType === "lotnummers") return lotnummerExportData;
-    
-    // LN Vergelijking Export (Nieuw)
-    // We maken een platte lijst die lijkt op de LN export tisfc140101200
-    const filteredOrders = allOrders.filter((o: any) => {
-        if (selectedMachine === "Alle machines") return true;
-        let m = String(o.machine || "").toUpperCase().replace(/\s/g, "");
-        if (m.startsWith("40")) m = m.slice(2);
-        return m === selectedMachine;
-    });
-
-    return filteredOrders.map((order: any) => {
-        const orderId = String(order.orderId || "").trim().toUpperCase();
-        const orderProducts = allProducts.filter((p: any) => String(p.orderId || "").trim().toUpperCase() === orderId);
-        const rawDate = order.deliveryDate ?? order.dateObj;
-        
-        const gereedCount = orderProducts.filter((p: any) => {
-            const stepUpper = String(p.currentStep || "").toUpperCase();
-            const statusUpper = String(p.status || "").toUpperCase();
-            const isArchived = !!(p.archived || p._archived || p.archivedAt);
-            return isArchived || statusUpper === "COMPLETED" || statusUpper === "GEREED" || stepUpper === "FINISHED";
-        }).length;
-
-        // Formaat matcht tisfc140... kolom posities (ongeveer)
-        return {
-            "Ordernummer": orderId,
-          "Datum": safeFormatDate(rawDate, 'yyyy-MM-dd HH:mm:ss', ''),
-            "Afdeling": order.machine || "",
-            "Status": order.isGeheelGereed ? "Gereed" : "Actief",
-            "Artikel": order.itemCode || order.articleId || "",
-            "Omschrijving": order.item || order.description || "",
-            "Plan Aantal": Number(order.plan || order.quantity || 0),
-            "Gemaakt Aantal": gereedCount,
-            "Totaal Gemaakt": gereedCount,
-            "Laatste Sync": order.lastSync || ""
-        };
-    });
+    return [];
   }, [exportType, planningExportData, lotnummerExportData, allOrders, allProducts, selectedMachine]);
 
   const handleExportCloud = async () => {
@@ -476,12 +443,6 @@ export default function TeamleaderExportModal({
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Lotnummers");
       XLSX.writeFile(wb, `Lotnummer_Export_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
-    } else {
-      // LN Compare Export
-      const ws = XLSX.utils.json_to_sheet(currentData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "LN_Comparison");
-      XLSX.writeFile(wb, `LN_Vergelijking_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
     }
     onClose();
   };
@@ -598,9 +559,6 @@ export default function TeamleaderExportModal({
               <button onClick={() => setExportType("lotnummers")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'lotnummers' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
                 <ListTodo size={16} /> Lotnummers
               </button>
-              <button onClick={() => setExportType("ln_compare")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'ln_compare' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
-                <Search size={16} /> Vergelijking
-              </button>
             </div>
           )}
 
@@ -624,19 +582,19 @@ export default function TeamleaderExportModal({
           {exportType === "planning" ? (
             <div className="space-y-6 animate-in slide-in-from-left-2 duration-300">
               <div>
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Order Status</label>
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">{t('teamleaderExportModal.orderStatus', 'Order Status')}</label>
                 <div className="flex gap-2">
-                  <button onClick={() => setOrderStatusFilter("lopend")} className={`flex-1 py-3 text-xs font-bold rounded-xl border-2 transition-colors ${orderStatusFilter === "lopend" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>Lopende Orders</button>
-                  <button onClick={() => setOrderStatusFilter("gereed")} className={`flex-1 py-3 text-xs font-bold rounded-xl border-2 transition-colors ${orderStatusFilter === "gereed" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>Geheel Gereed</button>
+                      <button onClick={() => setOrderStatusFilter("lopend")} className={`flex-1 py-3 text-xs font-bold rounded-xl border-2 transition-colors ${orderStatusFilter === "lopend" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('teamleaderExportModal.runningOrders', 'Lopende Orders')}</button>
+                      <button onClick={() => setOrderStatusFilter("gereed")} className={`flex-1 py-3 text-xs font-bold rounded-xl border-2 transition-colors ${orderStatusFilter === "gereed" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('teamleaderExportModal.fullyReady', 'Geheel Gereed')}</button>
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Leverdatum Filter</label>
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">{t('teamleaderExportModal.deliveryDateFilter', 'Leverdatum Filter')}</label>
                 <div className="flex gap-2 mb-3">
-                  <button onClick={() => setDateFilterType("all")} className={`flex-1 py-3 text-[10px] font-black tracking-widest uppercase rounded-xl border-2 transition-colors ${dateFilterType === "all" ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>Alles</button>
+                  <button onClick={() => setDateFilterType("all")} className={`flex-1 py-3 text-[10px] font-black tracking-widest uppercase rounded-xl border-2 transition-colors ${dateFilterType === "all" ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('common.all', 'Alles')}</button>
                   <button onClick={() => setDateFilterType("single")} className={`flex-1 py-3 text-[10px] font-black tracking-widest uppercase rounded-xl border-2 transition-colors ${dateFilterType === "single" ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>1 Datum</button>
-                  <button onClick={() => setDateFilterType("range")} className={`flex-1 py-3 text-[10px] font-black tracking-widest uppercase rounded-xl border-2 transition-colors ${dateFilterType === "range" ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>Periode</button>
+                  <button onClick={() => setDateFilterType("range")} className={`flex-1 py-3 text-[10px] font-black tracking-widest uppercase rounded-xl border-2 transition-colors ${dateFilterType === "range" ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('common.period', 'Periode')}</button>
                 </div>
                 
                 {dateFilterType === "single" && (
@@ -656,17 +614,10 @@ export default function TeamleaderExportModal({
             <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 flex gap-3 items-start animate-in slide-in-from-right-2 duration-300">
               <Info className="text-blue-500 shrink-0 mt-0.5" size={20} />
               <p className="text-xs text-blue-800 leading-relaxed font-medium">
-                Deze export toont de <strong>fysieke werkvoorraad</strong> op de vloer. Je ziet direct waar actieve lotnummers liggen en hoelang ze daar al verblijven. Vervangt de oude To Do lijst.
+                {t('teamleaderExportModal.thisExportShows', 'Deze export toont de ')}<strong>{t('teamleaderExportModal.physicalShopfloorStock', 'fysieke werkvoorraad')}</strong>{t('teamleaderExportModal.onTheFloorDesc', ' op de vloer. Je ziet direct waar actieve lotnummers liggen en hoelang ze daar al verblijven. Vervangt de oude To Do lijst.')}
               </p>
             </div>
-          ) : (
-            <div className="bg-emerald-50 p-5 rounded-2xl border border-emerald-100 flex gap-3 items-start animate-in slide-in-from-right-2 duration-300">
-                <Search className="text-emerald-500 shrink-0 mt-0.5" size={20} />
-                <p className="text-xs text-emerald-800 leading-relaxed font-medium">
-                    Deze export genereert een lijst met alle orders, hun status en het <strong>werkelijk aantal gereedgemelde producten</strong>. Ideaal om naast een LN dump te leggen om verschillen op te sporen.
-                </p>
-            </div>
-          )}
+          ) : null}
 
           {/* Actieknoppen & Teller */}
           <div className="pt-2 border-t border-slate-100">
@@ -678,8 +629,8 @@ export default function TeamleaderExportModal({
                   <div className="flex flex-col items-center gap-4 py-6 px-4 bg-blue-50 rounded-2xl border border-blue-200">
                     <Loader2 className="animate-spin text-blue-500" size={40} />
                     <div className="text-center">
-                      <p className="font-black text-blue-800 text-sm uppercase tracking-widest">Export wordt aangemaakt</p>
-                      <p className="text-xs text-blue-500 mt-1">Dit kan even duren. Je kunt dit venster sluiten — we melden het als het klaar is.</p>
+                      <p className="font-black text-blue-800 text-sm uppercase tracking-widest">{t('teamleaderExportModal.exportBeingCreated', 'Export wordt aangemaakt')}</p>
+                      <p className="text-xs text-blue-500 mt-1">{t('teamleaderExportModal.exportMayTakeTime', 'Dit kan even duren. Je kunt dit venster sluiten — we melden het als het klaar is.')}</p>
                     </div>
                     <button
                       onClick={onClose}
@@ -692,7 +643,7 @@ export default function TeamleaderExportModal({
                   <div className="flex flex-col items-center gap-4 py-6 px-4 bg-emerald-50 rounded-2xl border border-emerald-200">
                     <CheckCircle2 className="text-emerald-500" size={40} />
                     <div className="text-center">
-                      <p className="font-black text-emerald-800 text-sm uppercase tracking-widest">Export klaar!</p>
+                      <p className="font-black text-emerald-800 text-sm uppercase tracking-widest">{t('teamleaderExportModal.exportReady', 'Export klaar!')}</p>
                       <p className="text-xs text-emerald-600 mt-1">{activeTask.fileName || 'export.xlsx'}</p>
                     </div>
                     <button
@@ -704,7 +655,7 @@ export default function TeamleaderExportModal({
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-4 py-6 px-4 bg-red-50 rounded-2xl border border-red-200">
-                    <p className="font-black text-red-700 text-sm uppercase tracking-widest">Export mislukt</p>
+                    <p className="font-black text-red-700 text-sm uppercase tracking-widest">{t('teamleaderExportModal.exportFailed', 'Export mislukt')}</p>
                     <p className="text-xs text-red-500">{activeTask.error || 'Onbekende fout'}</p>
                     <button
                       onClick={() => setActiveTaskId(null)}
@@ -718,7 +669,7 @@ export default function TeamleaderExportModal({
             ) : (
               <>
                 <div className="flex items-center justify-between mb-4 mt-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Resultaat</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t('common.result', 'Resultaat')}</span>
                   <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${currentData.length > 0 ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-slate-100 text-slate-400"}`}>
                     <CheckCircle2 size={12} />
                     {currentData.length} item(s)

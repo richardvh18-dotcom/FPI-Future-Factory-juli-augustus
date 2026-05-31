@@ -294,7 +294,7 @@ const AdminDatabaseView = () => {
           <div className="p-2 bg-blue-50 text-blue-600 rounded-lg border border-blue-100">
             <Database size={18} />
           </div>
-          <h2 className="text-sm font-bold text-slate-800">Database Explorer</h2>
+          <h2 className="text-sm font-bold text-slate-800">{t('adminDatabase.explorer', 'Database Explorer')}</h2>
         </div>
         
         <div className="flex items-center gap-2">
@@ -590,7 +590,7 @@ const AdminDatabaseView = () => {
                     <div className="relative">
                         <input 
                             className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10 transition-all"
-                            placeholder="Vraag over collecties of paden..."
+                            placeholder={t("placeholders.adminDbQuestion", "Vraag over collecties of paden...")}
                             value={aiQuery}
                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAiQuery(e.target.value)}
                         />

@@ -10,6 +10,7 @@ import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
 import { addDays } from "date-fns";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useTranslation } from "react-i18next";
 
 type ChangeType =
   | "add_capacity"
@@ -102,6 +103,7 @@ const toSeconds = (value: DateLike): number | null => {
  */
 const ScenarioPlanningView = () => {
   const { showConfirm , notify} = useNotifications();
+  const { t } = useTranslation();
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [occupancy, setOccupancy] = useState<OccupancyRow[]>([]);
   const [planning, setPlanning] = useState<PlanningRow[]>([]);
@@ -380,11 +382,11 @@ const ScenarioPlanningView = () => {
 
   const getChangeTypeLabel = (type: ChangeType) => {
     const labels: Record<ChangeType, string> = {
-      add_capacity: "Capaciteit Toevoegen",
-      remove_capacity: "Capaciteit Verminderen",
-      delay_order: "Order Uitstellen",
-      rush_order: "Order Vervroegen",
-      change_efficiency: "Efficiency Aanpassen"
+      add_capacity: t("scenarioPlanningView.addCapacity", "Capaciteit Toevoegen"),
+      remove_capacity: t("scenarioPlanningView.removeCapacity", "Capaciteit Verminderen"),
+      delay_order: t("scenarioPlanningView.delayOrder", "Order Uitstellen"),
+      rush_order: t("scenarioPlanningView.rushOrder", "Order Vervroegen"),
+      change_efficiency: t("scenarioPlanningView.changeEfficiency", "Efficiency Aanpassen")
     };
     return labels[type] || String(type);
   };
@@ -396,7 +398,7 @@ const ScenarioPlanningView = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-black text-slate-800">
-              Scenario <span className="text-purple-600">Planning</span>
+              {t("scenarioPlanningView.title", "Scenario Planning")}
             </h1>
             <p className="text-sm text-slate-600 mt-1">
               What-if analyse: simuleer veranderingen voor je ze implementeert
@@ -408,7 +410,7 @@ const ScenarioPlanningView = () => {
             className="flex items-center gap-2 px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-xl font-bold transition-colors"
           >
             <Plus size={16} />
-            Nieuw Scenario
+            {t("scenarioPlanningView.newScenario", "Nieuw Scenario")}
           </button>
         </div>
       </div>
@@ -418,19 +420,19 @@ const ScenarioPlanningView = () => {
         <div className="space-y-4">
           {showCreateScenario && (
             <div className="bg-white rounded-2xl shadow-sm border-2 border-purple-200 p-6">
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Nieuw Scenario</h3>
+              <h3 className="text-lg font-bold text-slate-800 mb-4">{t("scenarioPlanningView.newScenario", "Nieuw Scenario")}</h3>
               
               <div className="space-y-4">
                 <input
                   type="text"
-                  placeholder="Scenario naam..."
+                  placeholder={t("planning.scenario.namePlaceholder", "Scenario naam...")}
                   value={newScenario.name}
                   onChange={(e) => setNewScenario({ ...newScenario, name: e.target.value })}
                   className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg text-sm"
                 />
 
                 <textarea
-                  placeholder="Beschrijving..."
+                  placeholder={t("planning.scenario.descriptionPlaceholder", "Beschrijving...")}
                   value={newScenario.description}
                   onChange={(e) => setNewScenario({ ...newScenario, description: e.target.value })}
                   className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg text-sm"
@@ -439,7 +441,7 @@ const ScenarioPlanningView = () => {
 
                 <div>
                   <label className="text-xs font-bold text-slate-700 uppercase mb-2 block">
-                    Wijzigingen
+                    {t("scenarioPlanningView.changes", "Wijzigingen")}
                   </label>
                   <div className="space-y-2 mb-3">
                     {newScenario.changes.map((change) => (
@@ -460,14 +462,14 @@ const ScenarioPlanningView = () => {
                           <div className="grid grid-cols-2 gap-2">
                             <input
                               type="text"
-                              placeholder="Machine"
+                              placeholder={t("planning.scenario.machinePlaceholder", "Machine")}
                               value={change.machine}
                               onChange={(e) => updateChange(change.id, "machine", e.target.value)}
                               className="px-2 py-1 text-xs border border-slate-200 rounded"
                             />
                             <input
                               type="number"
-                              placeholder="Uren"
+                              placeholder={t("planning.scenario.hoursPlaceholder", "Uren")}
                               value={change.hours}
                               onChange={(e) => updateChange(change.id, "hours", parseInt(e.target.value))}
                               className="px-2 py-1 text-xs border border-slate-200 rounded"
@@ -487,12 +489,12 @@ const ScenarioPlanningView = () => {
                     }}
                     className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg text-sm"
                   >
-                    <option value="">Wijziging toevoegen...</option>
-                    <option value="add_capacity">Capaciteit Toevoegen</option>
-                    <option value="remove_capacity">Capaciteit Verminderen</option>
-                    <option value="delay_order">Order Uitstellen</option>
-                    <option value="rush_order">Order Vervroegen</option>
-                    <option value="change_efficiency">Efficiency Aanpassen</option>
+                    <option value="">{t("scenarioPlanningView.addChange", "Wijziging toevoegen...")}</option>
+                    <option value="add_capacity">{t("scenarioPlanningView.addCapacity", "Capaciteit Toevoegen")}</option>
+                    <option value="remove_capacity">{t("scenarioPlanningView.removeCapacity", "Capaciteit Verminderen")}</option>
+                    <option value="delay_order">{t("scenarioPlanningView.delayOrder", "Order Uitstellen")}</option>
+                    <option value="rush_order">{t("scenarioPlanningView.rushOrder", "Order Vervroegen")}</option>
+                    <option value="change_efficiency">{t("scenarioPlanningView.changeEfficiency", "Efficiency Aanpassen")}</option>
                   </select>
                 </div>
 
@@ -501,13 +503,13 @@ const ScenarioPlanningView = () => {
                     onClick={createScenario}
                     className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-bold transition-colors"
                   >
-                    Scenario Opslaan
+                    {t("scenarioPlanningView.saveScenario", "Scenario Opslaan")}
                   </button>
                   <button
                     onClick={() => setShowCreateScenario(false)}
                     className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-bold transition-colors"
                   >
-                    Annuleren
+                    {t("common.cancel", "Annuleren")}
                   </button>
                 </div>
               </div>
@@ -516,7 +518,7 @@ const ScenarioPlanningView = () => {
 
           <div className="bg-white rounded-2xl shadow-sm border-2 border-slate-200">
             <div className="p-4 border-b-2 border-slate-200 bg-slate-50">
-              <h3 className="text-sm font-bold text-slate-800">Scenarios ({scenarios.length})</h3>
+                <h3 className="text-sm font-bold text-slate-800">{t("scenarioPlanningView.scenariosCount", "Scenarios ({{count}})", { count: scenarios.length })}</h3>
             </div>
             <div className="p-4 space-y-2 max-h-[600px] overflow-y-auto">
               {scenarios.length === 0 ? (
@@ -576,11 +578,11 @@ const ScenarioPlanningView = () => {
             <div className="space-y-6">
               {/* Impact Summary */}
               <div className="bg-white rounded-2xl shadow-sm border-2 border-slate-200 p-6">
-                <h3 className="text-lg font-bold text-slate-800 mb-4">Impact Analyse</h3>
+                <h3 className="text-lg font-bold text-slate-800 mb-4">{t("scenarioPlanningView.impactAnalysis", "Impact Analyse")}</h3>
                 
                 <div className="grid grid-cols-3 gap-4 mb-6">
                   <div className="text-center">
-                    <div className="text-xs text-slate-500 uppercase mb-1">Capaciteit</div>
+                    <div className="text-xs text-slate-500 uppercase mb-1">{t("scenarioPlanningView.capacity", "Capaciteit")}</div>
                     <div className="text-2xl font-black text-slate-800">
                       {Math.round(activeScenarioImpact.totalCapacity)}h
                     </div>
@@ -592,7 +594,7 @@ const ScenarioPlanningView = () => {
                   </div>
 
                   <div className="text-center">
-                    <div className="text-xs text-slate-500 uppercase mb-1">Utilization</div>
+                    <div className="text-xs text-slate-500 uppercase mb-1">{t("scenarioPlanningView.utilization", "Utilization")}</div>
                     <div className="text-2xl font-black text-slate-800">
                       {Math.round(activeScenarioImpact.utilization)}%
                     </div>
@@ -604,7 +606,7 @@ const ScenarioPlanningView = () => {
                   </div>
 
                   <div className="text-center">
-                    <div className="text-xs text-slate-500 uppercase mb-1">Gap</div>
+                    <div className="text-xs text-slate-500 uppercase mb-1">{t("scenarioPlanningView.gap", "Gap")}</div>
                     <div className={`text-2xl font-black ${
                       activeScenarioImpact.gap >= 0 ? 'text-emerald-600' : 'text-red-600'
                     }`}>
@@ -621,14 +623,14 @@ const ScenarioPlanningView = () => {
                 {/* Comparison */}
                 <div className="pt-6 border-t-2 border-slate-200">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs font-bold text-slate-600 uppercase">Baseline</span>
+                    <span className="text-xs font-bold text-slate-600 uppercase">{t("scenarioPlanningView.baseline", "Baseline")}</span>
                     <span className="text-sm font-bold text-slate-700">
                       {Math.round(activeScenarioImpact.baselineCapacity)}h capaciteit / 
                       {Math.round(activeScenarioImpact.baselineGap)}h gap
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-purple-600 uppercase">Na Scenario</span>
+                    <span className="text-xs font-bold text-purple-600 uppercase">{t("scenarioPlanningView.afterScenario", "Na Scenario")}</span>
                     <span className="text-sm font-bold text-purple-700">
                       {Math.round(activeScenarioImpact.totalCapacity)}h capaciteit / 
                       {Math.round(activeScenarioImpact.gap)}h gap

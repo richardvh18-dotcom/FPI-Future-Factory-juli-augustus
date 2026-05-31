@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import i18n from 'i18next';
 import { ScanLine } from 'lucide-react';
 
 interface MobileScannerProps {
@@ -37,13 +38,13 @@ const MobileScanner = ({ onScan, active }: MobileScannerProps) => {
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           className="w-full p-3 rounded-xl text-center font-mono font-bold text-sm bg-white/10 text-white border-2 border-emerald-500/50 focus:outline-none focus:border-emerald-400 focus:bg-white/20 transition-all placeholder:text-white/30"
-          placeholder="Wacht op hardware scan..."
+          placeholder={i18n.t('placeholders.waitHardwareScan', 'Wacht op hardware scan...')}
           autoFocus
           onBlur={() => {
             if (active) setTimeout(() => inputRef.current?.focus(), 100);
           }}
         />
-        <button type="submit" className="hidden">Submit</button>
+        <button type="submit" className="hidden">{i18n.t('common.submit', 'Submit')}</button>
       </form>
     </div>
   );

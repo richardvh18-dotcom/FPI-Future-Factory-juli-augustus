@@ -245,7 +245,7 @@ export const WorkstationModals = ({
               <div className="flex items-center gap-2">
                 <div className="p-2 rounded-xl bg-amber-50 text-amber-600"><Pencil size={18} /></div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">Uren corrigeren</h3>
+                  <h3 className="text-base font-black text-slate-900">{t('workstationModals.correctHours', 'Uren corrigeren')}</h3>
                   <p className="text-xs text-slate-500 font-bold">{store.hourCorrectionEntry.operatorName} · {store.hourCorrectionEntry.machineId}</p>
                 </div>
               </div>
@@ -274,7 +274,7 @@ export const WorkstationModals = ({
                   max="12"
                   value={store.correctedHours}
                   onChange={(e) => store.setCorrectedHours(e.target.value)}
-                  placeholder="bijv. 6 of 7.5"
+                  placeholder={t("placeholders.dpWorkedHoursExample", "bijv. 6 of 7.5")}
                   className="w-full p-3 rounded-xl border-2 border-slate-200 font-black text-lg text-slate-900 outline-none focus:border-amber-400 text-center"
                 />
                 <p className="text-[10px] text-slate-400 mt-1 text-center">
@@ -289,7 +289,7 @@ export const WorkstationModals = ({
                   type="text"
                   value={store.correctionReason}
                   onChange={(e) => store.setCorrectionReason(e.target.value)}
-                  placeholder="bijv. eerder naar huis, doktersbezoek..."
+                  placeholder={t("placeholders.dpWorkstationReasonExample", "bijv. eerder naar huis, doktersbezoek...")}
                   className="w-full p-3 rounded-xl border-2 border-slate-200 font-bold text-sm text-slate-800 outline-none focus:border-amber-400"
                 />
               </div>

@@ -30,7 +30,7 @@ export const renderLabelToBitmapZpl = async ({
   darkness = 15,
   printSpeed = 3,
   strictFontSizing = false,
-  textScaleFactor = 1.15,
+  textScaleFactor = 1.6,
   widthMm,
   heightMm,
 }: RenderLabelToBitmapZplArgs): Promise<string> => {
@@ -74,7 +74,8 @@ export const renderLabelToBitmapZpl = async ({
     });
 
     const canvas = await captureElementAsCanvas(host, finalWidthMm, finalHeightMm, printerDpi);
-    const zpl = await generateBitmapPrintData(canvas, finalWidthMm, finalHeightMm, printerDpi, darkness, printSpeed);
+    const zplRaw = await generateBitmapPrintData(canvas, finalWidthMm, finalHeightMm, printerDpi, darkness, printSpeed);
+    const zpl = String(zplRaw || '').replace(/^\^XA/, '^XA\n^FXBITMAP_V3_TS160^FS');
 
     if (!/\^GFA,/i.test(String(zpl || ''))) {
       throw new Error('Bitmap payload ongeldig: ^GFA ontbreekt.');

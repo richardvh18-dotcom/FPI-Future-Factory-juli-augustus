@@ -1,5 +1,6 @@
 import { useNotifications } from '../../../contexts/NotificationContext';
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import {
   Package,
   Info,
@@ -212,7 +213,7 @@ const MatrixView = ({
                   value={copySource}
                   onChange={(e) => setCopySource(e.target.value)}
                 >
-                  <option value="">Kopieer van...</option>
+                  <option value="">{i18n.t('matrix.copyFrom', 'Kopieer van...')}</option>
                   {libraryData.product_names
                     .filter((p) => p !== selectedType)
                     .map((p) => (

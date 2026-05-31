@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import {
   FileUp,
   Database,
@@ -354,7 +355,7 @@ const BulkUploadView = () => {
               </p>
               <textarea
                 className="w-full h-40 bg-white/5 border-2 border-slate-700 rounded-[35px] p-5 text-[10px] font-mono outline-none focus:border-emerald-500 focus:bg-white/10 transition-all placeholder:text-slate-600 shadow-inner"
-                placeholder="Kopieer cellen in Excel en plak hier..."
+                placeholder={i18n.t("placeholders.adminBulkUploadPaste", "Kopieer cellen in Excel en plak hier...")}
                 value={pastedText}
                 onChange={handlePaste}
               />
@@ -497,12 +498,12 @@ const BulkUploadView = () => {
             Bulk Hub Root Protocols:
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[10px] font-bold text-blue-700/70 uppercase leading-relaxed text-left">
-            <p>1. Kolom 'id' is VERPLICHT voor elk record (bv: ID350_PN8).</p>
-            <p>2. Het systeem negeert automatisch lege rijen en kolommen.</p>
+            <p>{i18n.t('bulkUpload.protocol.idRequired', "1. Kolom 'id' is VERPLICHT voor elk record (bv: ID350_PN8).")}</p>
+            <p>{i18n.t('bulkUpload.protocol.ignoreEmpty', '2. Het systeem negeert automatisch lege rijen en kolommen.')}</p>
             <p>
               3. Validatie checkt op unieke ID's en Firestore compatibiliteit.
             </p>
-            <p>4. Voor mof-maten (CB/TB) gebruik: B1, B2, BA, A, etc.</p>
+            <p>{i18n.t('bulkUpload.protocol.socketFields', '4. Voor mof-maten (CB/TB) gebruik: B1, B2, BA, A, etc.')}</p>
           </div>
         </div>
       </div>

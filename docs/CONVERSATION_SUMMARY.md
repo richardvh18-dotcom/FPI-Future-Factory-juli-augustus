@@ -1,3 +1,166 @@
+## Update sessie 31 mei 2026 (QC Steekproef robuustheid & dubbele teller fix)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Dashboard routing hersteld voor QC Steekproef**
+- Fallback ingebouwd in `AdminDashboard.tsx` zodat de oude bookmark/link ID (`qshe_virtual_lots`) netjes doorverwijst naar de nieuwe ID (`qc_sample`), waarmee de foutmelding "Component laden..." is opgelost.
+
+**2. Hybride lotnummer-lookup in QC Formulier**
+- Voorkomen dat auto-lotnummers op 1 beginnen wanneer de teller via eerdere paden uit de pas liep.
+- `QcSampleView` checkt nu via een robuuste hybrid-lookup: root tracking, scoped tracking (via `collectionGroup`) en de backend teller. Hierbij pakt de app gegarandeerd het absoluut hoogste getal dat op de vloer rondslingert.
+
+**3. Dubbele tellers door LN-prefix voorkomen**
+- Infor LN plakt vaak een `40`-prefix voor machines (bijv. `40BH18`). Dit veroorzaakte per ongeluk dubbele database-tellers (bijv. `40BH18_2622` naast de reguliere `BH18_2622`).
+- `getNormalizedMachine` toegepast voordat de teller-aanvraag naar de backend gaat in `QcSampleView`. De app gebruikt hierdoor nu altijd het opgeschoonde machine-id.
+
+**4. Typo / Crash opgelost**
+- Een corrupte importregel (`402622418400002import`) in `QcSampleView.tsx` succesvol hersteld.
+
+---
+
+## Update sessie 30 mei 2026 (Queue stabilisatie, exacte herprint en BH18 labelregel)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Queue payload en zichtbaarheid gestabiliseerd**
+- `queuePrintJob` flow aangescherpt met payload-normalisatie/guarding in `ProductionStartModal` zodat lege payloads niet meer worden ingestuurd.
+- Backend limiet voor queue ZPL verhoogd (`MAX_ZPL_LENGTH` naar `700000`) voor bitmap-gebaseerde labels.
+- Queue write-pad backward-compatible gemaakt: jobs worden zowel op root print_queue als scoped print_queue pad opgeslagen.
+
+**2. 500 op `transitionPrintQueueJobStatus` opgelost**
+- Root cause uit Cloud Functions logs geïdentificeerd: ongeldige `collectionGroup + documentId` query met losse id.
+- Lookup in `planningTransitionService` aangepast naar veilige root-first lookup met scoped fallback op veld `id`.
+- Betrokken callables gedeployed:
+    - `transitionPrintQueueJobStatus`
+    - `requeuePrintQueueJob`
+    - `deletePrintQueueJob`
+- Recente runtime-calls bevestigd met status `200` (geen nieuwe `500` in recente logruns).
+
+**3. Firestore 403 counter-ruis opgelost**
+- In `firestore.rules` expliciete permissieregel toegevoegd voor `future-factory/production/counters/{counterId}`.
+- Rules succesvol gedeployed (`firebase deploy --only firestore:rules`).
+- Doel: client-side lotnummer counter-transacties niet langer blokkeren met `permission-denied` noise.
+
+**4. BH18 businessregel voor labelaantal doorgevoerd**
+- Nieuwe regel in `ProductionStartModal`: op BH18 en diameter `> 200` altijd `2` labels.
+- Zowel als UI-default (`labelCount`) als in effectieve printquantity (`labelsToPrint`) afgedwongen.
+
+**5. Print Queue herprint flow functioneel verbeterd**
+- Herprint zoekfunctie (`Label Herprinten / Beschadigd`) uitgebreid:
+    - normalisatie van input
+    - meerdere zoekvarianten (`N/P` prefixed)
+    - archiefzoeking over meerdere jaren
+    - bredere fallback op relevante velden/paden
+- Preview-paneel in herprint-sectie verwijderd op user-verzoek.
+- Herprintlogica omgezet naar **exacte queue-kopie**:
+    - geen templatekeuze meer
+    - laatst passende queue-job wordt geselecteerd
+    - exacte opgeslagen printdata (`zpl`/`printData`/`labelZPL`) opnieuw geprint
+    - originele quantity wordt meegenomen indien aanwezig.
+
+### Operationele observaties
+- Meldingen zoals `background.js window is not defined`, `serviceWorker frame removed` en `rokt-icons preload` zijn geclassificeerd als browser/extensie-ruis, niet als app-blocker.
+- Dev-server lock op poort `3000` tijdens sessie verholpen door proces-opruiming en herstart.
+
+### Huidige status
+- Queue aanmaak en statusovergangen functioneren weer stabiel.
+- Herprint vindt records terug en print exacte eerdere queue-kopie zonder template-interactie.
+- BH18 labelregel voor diameter `> 200` staat actief.
+
+## Update sessie 30 mei 2026 (Wavistrong labelpositie gefinaliseerd)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Wavistrong label-layout gericht bijgesteld**
+- Verticale tekst op de rechterzijde is 1 mm naar links gezet voor de Wavistrong-layout.
+- `WAVISTRONG`-kop is verder omhoog gezet (eindwaarde: `-1.5 mm` verticale nudge).
+- Vergelijking met referentieprint (`27-5-c.png`) en recente printfoto gebruikt als richtlijn.
+
+**2. Aanpassing technisch verankerd in gedeelde renderlaag**
+- Nieuwe helper toegevoegd voor label-specifieke layout-correcties:
+    - `src/utils/labelLayoutAdjustments.ts`
+- Deze correctie wordt toegepast in zowel:
+    - `src/components/printer/LabelVisualPreview.tsx` (print/preview pad)
+    - `src/components/admin/AdminLabelDesigner.tsx` (designer-preview en exportpad)
+- Daardoor blijft gedrag consistent tussen ontwerp, preview en fysieke print.
+
+**3. PSI-vraag uitgezocht en bevestigd**
+- Conclusie: de PSI-conversie is correct en blijft ongewijzigd.
+- Huidige formule in `labelHelpers.tsx`: `bar * 14.5038`, afgerond op heel getal.
+- Voor `EST 8` resulteert dit in `116 psi` (niet 115), en dit is bewust zo gelaten op verzoek van user.
+
+### Validatie
+- Type/error checks op aangepaste bestanden: geen nieuwe errors.
+
+### Huidige status
+- User heeft bevestigd tevreden te zijn met de labelpositie.
+- Wavistrong-offsets en PSI-gedrag zijn nu vastgelegd als huidige baseline.
+
+## Update sessie 30 mei 2026 (Printer fontgrootte finetuning voortgezet)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Oude payload-routes verder afgedicht (oorzaak: geen zichtbaar effect op papier)**
+- In queue/reprint flows werd op meerdere plekken oude opgeslagen `labelZPL`/job-payload hergebruikt.
+- Aangepast zodat waar template + variabelen beschikbaar zijn, opnieuw live bitmap-rendering wordt gedaan via de actuele engine.
+- Doorgevoerd in:
+    - `src/components/printer/PrintQueueAdminView.tsx`
+    - `src/components/digitalplanning/modals/ProductDossierModal.tsx`
+
+**2. Print-tuning verplaatst van “bolder” naar “groter”**
+- `strokeBoost` voor print weer uitgezet om kleine tekens niet dicht te laten lopen.
+- Focus verlegd naar schaalvergroting via `textScaleFactor` in `unifiedLabelRenderEngine.tsx`.
+- Geleidelijk verhoogd in meerdere stappen: `1.30` → `1.45` → `1.55` → `1.60`.
+
+**3. Runtime-signature toegevoegd voor pipeline-verificatie**
+- Bitmap payload krijgt nu een herkenbare ZPL comment-signature (`^FX...`) zodat traceerbaar is welke render-versie de print heeft opgebouwd.
+- Signature bijgewerkt mee met schaalstappen (o.a. `BITMAP_V3_TS160`).
+
+### Validatie
+- Type/error checks uitgevoerd op de aangepaste printbestanden: geen nieuwe errors.
+- User feedback bevestigd dat output zichtbaar de goede kant op gaat (letters merkbaar beter/groter dan eerdere prints).
+
+### Huidige status
+- Printeroutput is aantoonbaar verbeterd en beweegt richting gewenste grootte.
+- Nog niet definitief vastgesteld als eindinstelling; laatste stap is fine-tunen rond de huidige schaal (nu `1.60`).
+
+### Eerstvolgende stap
+1. Volgende fysieke testprint op dezelfde flow om te bepalen of `1.60` de sweet spot is.
+2. Indien nét te groot: terugzetten naar `1.58` (of `1.55`) als compromis.
+3. Indien nog te klein: beperkte verhoging naar `1.62` met behoud van `strokeBoost: 0`.
+
+## Update sessie 29 mei 2026 (Nieuwe openstaande punten & wensen verzameld)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### 📝 Actuele Takenlijst / Wensen voor komende sessies:
+1. ~~**Productdossier:** Brekingsindex waarden en volgorde aanpassen.~~ (✅ Afgerond)
+2. ~~**Gereedmeld schermen (Nabewerken/BM01/Mazak/etc.):** Duidelijkere productbenamingen tonen.~~ (✅ Afgerond)
+3. ~~**Terminal / Wikkelstap:** Productnaam prominenter weergeven.~~ (✅ Afgerond)
+4. ~~**Teamleader Dashboard:** Oude LN-verwijzingen eruit halen.~~ (✅ Afgerond)
+5. **QC / Rapportages:** Duidelijkere rapportages genereren voor QC-metingen (inclusief productiemetingen).
+6. **Teamleader Personeel Dashboard:** Betere en duidelijkere indeling maken voor het personeelsdashboard.
+
+---
+
+## Update sessie 29 mei 2026 (Teamleader Dashboard opschoning - Punt 4 afgerond)
+
+### Uitgevoerd in deze sessie
+**1. Oude LN-verwijzingen en KPI's verwijderd**
+- De oude LN-export voor Stationdetails en de LN-vergelijkingsexport uit de Teamleader pop-ups zijn verwijderd.
+- In `TeamleaderDashboard.tsx` zijn de 3 specifieke "LN vs FF" (mismatch) KPI-tegels weggehaald.
+- Het label "Aanmaakdatum LN" is in het dossier en de terminal aangepast naar het logischere **"Aanmaakdatum Order"**.
+
+**2. Weegschalen/Harskeukens uit Live Station Monitor gefilterd**
+- Stations beginnend met "WE" (zoals `WE22`, `WE25`) worden nu uit de "Live Station Monitor" grid gefilterd in het Teamleader Dashboard.
+- Hierdoor toont het dashboard netjes alleen de fysieke productiestations (zoals BH/BA/Mazak/Nabewerken).
+
+---
+
 ## Update sessie 29 mei 2026 (Externe review verwerkt naar actiepunten)
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
