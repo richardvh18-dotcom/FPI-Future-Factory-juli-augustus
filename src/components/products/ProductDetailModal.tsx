@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import {
   X,
   Ruler,
@@ -352,7 +353,7 @@ const ProductDetailModal = ({ product, onClose, userRole }: ProductDetailModalPr
                       }}
                     />
                   </label>
-                  {uploading && <span className="ml-2 text-xs text-blue-500">Uploaden...</span>}
+                  {uploading && <span className="ml-2 text-xs text-blue-500">{i18n.t('common.uploading', 'Uploaden...')}</span>}
                   {uploadError && <span className="ml-2 text-xs text-red-500">{uploadError}</span>}
                 </form>
               )}

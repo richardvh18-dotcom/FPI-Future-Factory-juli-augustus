@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import i18n from 'i18next';
 import {
   DatabaseZap,
   AlertTriangle,
@@ -147,8 +148,8 @@ const PilotMigrationTool = () => {
       <div className="p-6 flex items-start gap-4 bg-rose-50 border border-rose-200 rounded-2xl max-w-xl mx-auto mt-10">
         <ShieldAlert className="text-rose-600 shrink-0 mt-0.5" size={24} />
         <div>
-          <h3 className="font-black text-rose-800 uppercase text-sm tracking-widest">Geen toegang</h3>
-          <p className="text-rose-700 text-sm mt-1">Alleen admins kunnen de migratie tool gebruiken.</p>
+          <h3 className="font-black text-rose-800 uppercase text-sm tracking-widest">{i18n.t('pilotMigration.noAccess', 'Geen toegang')}</h3>
+          <p className="text-rose-700 text-sm mt-1">{i18n.t('pilotMigration.adminOnly', 'Alleen admins kunnen de migratie tool gebruiken.')}</p>
         </div>
       </div>
     );
@@ -162,7 +163,7 @@ const PilotMigrationTool = () => {
           <DatabaseZap size={24} className="text-rose-600" />
         </div>
         <div>
-          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Doc-ID Migratie Tool</h2>
+          <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">{i18n.t('pilotMigration.title', 'Doc-ID Migratie Tool')}</h2>
           <p className="text-slate-500 text-sm">
             Scant en herstelt omgenummerde lots waarbij de doc-id prefix niet overeenkomt met het orderId veld.
           </p>
@@ -173,14 +174,14 @@ const PilotMigrationTool = () => {
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex gap-3">
         <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
         <div className="text-amber-800 text-sm">
-          <strong>Let op:</strong> "Repareer alles" verplaatst documenten permanent. Elke operatie wordt gelogd in het audit-log.
-          Gebruik eerst altijd de dry-run scan.
+          <strong>{i18n.t('pilotMigration.warning', 'Let op')}:</strong> {i18n.t('pilotMigration.repairAllWarning', '"Repareer alles" verplaatst documenten permanent. Elke operatie wordt gelogd in het audit-log.')}
+          {i18n.t('pilotMigration.useDryRunFirst', 'Gebruik eerst altijd de dry-run scan.')}
         </div>
       </div>
 
       {/* Scan controls */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-        <h3 className="font-black text-slate-700 uppercase text-[11px] tracking-widest">1. Scan</h3>
+        <h3 className="font-black text-slate-700 uppercase text-[11px] tracking-widest">{i18n.t('pilotMigration.step1Scan', '1. Scan')}</h3>
         <div className="flex gap-3 items-end">
           <div className="flex-1">
             <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5">
@@ -190,7 +191,7 @@ const PilotMigrationTool = () => {
               type="text"
               value={orderIdInput}
               onChange={(e) => setOrderIdInput(e.target.value.toUpperCase())}
-              placeholder="bijv. N20024782"
+              placeholder={i18n.t('placeholders.adminPilotOrderExample', 'bijv. N20024782')}
               className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-300"
             />
           </div>
@@ -200,7 +201,7 @@ const PilotMigrationTool = () => {
             className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-700 transition-all disabled:opacity-50 shrink-0"
           >
             {scanning ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-            {scanning ? 'Scannen...' : 'Scan (dry-run)'}
+            {scanning ? i18n.t('pilotMigration.scanning', 'Scannen...') : i18n.t('pilotMigration.scanDryRun', 'Scan (dry-run)')}
           </button>
         </div>
       </div>
@@ -217,7 +218,7 @@ const PilotMigrationTool = () => {
       {scanResult && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-black text-slate-700 uppercase text-[11px] tracking-widest">2. Scan resultaat</h3>
+            <h3 className="font-black text-slate-700 uppercase text-[11px] tracking-widest">{i18n.t('pilotMigration.step2ScanResult', '2. Scan resultaat')}</h3>
             <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${
               scanResult.mismatches.length === 0
                 ? 'bg-emerald-50 text-emerald-700'
@@ -232,7 +233,7 @@ const PilotMigrationTool = () => {
           {scanResult.mismatches.length === 0 ? (
             <div className="flex items-center gap-3 text-emerald-700 py-4">
               <CheckCircle2 size={20} />
-              <p className="text-sm font-bold">Alle doc-ids zijn correct. Geen actie nodig.</p>
+              <p className="text-sm font-bold">{i18n.t('pilotMigration.noActionNeeded', 'Alle doc-ids zijn correct. Geen actie nodig.')}</p>
             </div>
           ) : (
             <>
@@ -254,11 +255,11 @@ const PilotMigrationTool = () => {
                     </button>
                     {expandedRows.has(idx) && (
                       <div className="px-4 pb-3 pt-0 bg-slate-50 border-t border-slate-100 text-xs text-slate-600 space-y-1">
-                        <div><strong>Collectie:</strong> <span className="font-mono">{m.collection}</span></div>
-                        {m.lotNumber && <div><strong>Lot:</strong> {m.lotNumber}</div>}
-                        {m.machine && <div><strong>Machine:</strong> {m.machine}</div>}
-                        {m.staleFieldsId && <div className="text-amber-700"><strong>Stale fields.id:</strong> {m.staleFieldsId} → wordt ook hersteld naar {m.newDocId}</div>}
-                        <div className="pt-1 text-slate-400 italic">Rollback: bewaar de oude doc-id <span className="font-mono">{m.oldDocId}</span> als referentie.</div>
+                        <div><strong>{i18n.t('pilotMigration.collection', 'Collectie')}:</strong> <span className="font-mono">{m.collection}</span></div>
+                        {m.lotNumber && <div><strong>{i18n.t('pilotMigration.lot', 'Lot')}:</strong> {m.lotNumber}</div>}
+                        {m.machine && <div><strong>{i18n.t('pilotMigration.machine', 'Machine')}:</strong> {m.machine}</div>}
+                        {m.staleFieldsId && <div className="text-amber-700"><strong>{i18n.t('pilotMigration.staleFieldsId', 'Stale fields.id')}:</strong> {m.staleFieldsId} {i18n.t('pilotMigration.alsoRestoredTo', '→ wordt ook hersteld naar')} {m.newDocId}</div>}
+                        <div className="pt-1 text-slate-400 italic">{i18n.t('pilotMigration.rollbackPrefix', 'Rollback: bewaar de oude doc-id')} <span className="font-mono">{m.oldDocId}</span> {i18n.t('pilotMigration.rollbackSuffix', 'als referentie.')}</div>
                       </div>
                     )}
                   </div>
@@ -291,7 +292,7 @@ const PilotMigrationTool = () => {
       {applyResult && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="font-black text-slate-700 uppercase text-[11px] tracking-widest">3. Resultaat</h3>
+            <h3 className="font-black text-slate-700 uppercase text-[11px] tracking-widest">{i18n.t('pilotMigration.step3Result', '3. Resultaat')}</h3>
             <span className="text-[10px] font-black px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 uppercase tracking-widest">
               {applyResult.totalFixed} hersteld
             </span>
@@ -324,7 +325,7 @@ const PilotMigrationTool = () => {
           </div>
 
           <p className="text-xs text-slate-400 pt-1">
-            Alle operaties zijn gelogd in het audit-log onder actie <code className="font-mono">MIGRATION_DOC_ID_REPAIR</code>.
+            {i18n.t('pilotMigration.allOperationsLogged', 'Alle operaties zijn gelogd in het audit-log onder actie')} <code className="font-mono">{i18n.t('pilotMigration.auditActionCode', 'MIGRATION_DOC_ID_REPAIR')}</code>.
           </p>
 
           <button

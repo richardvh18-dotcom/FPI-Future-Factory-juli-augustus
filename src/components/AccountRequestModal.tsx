@@ -117,7 +117,7 @@ const AccountRequestModal = ({ isOpen, onClose }: AccountRequestModalProps) => {
                   <User size={12} /> {t('accountRequest.form.name', 'Name')}
                 </label>
                 <input type="text" name="name" required value={formData.name} onChange={handleChange}
-                  placeholder="bijv. Jan Jansen"
+                  placeholder={t("placeholders.accountNameExample", "bijv. Jan Jansen")}
                   className="w-full px-4 py-4 bg-white border-2 border-slate-200 rounded-2xl font-bold outline-none focus:border-cyan-500 transition-all text-sm text-slate-900 placeholder:text-slate-400" />
               </div>
 
@@ -126,7 +126,7 @@ const AccountRequestModal = ({ isOpen, onClose }: AccountRequestModalProps) => {
                   <Mail size={12} /> {t('accountRequest.form.email', 'Email')}
                 </label>
                 <input type="email" name="email" required value={formData.email} onChange={handleChange}
-                  placeholder="naam@futurepipe.com"
+                  placeholder={t("placeholders.accountEmailExample", "naam@futurepipe.com")}
                   className="w-full px-4 py-4 bg-white border-2 border-slate-200 rounded-2xl font-bold outline-none focus:border-cyan-500 transition-all text-sm text-slate-900 placeholder:text-slate-400" />
               </div>
 

@@ -179,7 +179,7 @@ const AiAssistantView = () => {
           loadingFlashcards ? (
             <div className="flex flex-col items-center justify-center h-full gap-4">
               <Loader2 className="animate-spin text-purple-500" size={40} />
-              <p className="text-xs text-slate-500 font-medium">Flashcards laden...</p>
+              <p className="text-xs text-slate-500 font-medium">{t('ai.flashcardsLoading', 'Flashcards laden...')}</p>
             </div>
           ) : (
             <FlashcardViewer 

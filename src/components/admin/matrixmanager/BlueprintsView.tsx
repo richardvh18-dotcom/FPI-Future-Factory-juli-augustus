@@ -1,6 +1,7 @@
 /* eslint-disable */
 import { useNotifications } from '../../../contexts/NotificationContext';
 import React, { useState, useMemo, useRef } from "react";
+import i18n from "i18next";
 import {
   Layers,
   Plus,
@@ -273,7 +274,7 @@ const BlueprintsView = ({
             />
             <input
               className="w-full pl-11 pr-4 py-3 bg-white border-2 border-slate-100 rounded-2xl text-xs font-bold outline-none focus:border-purple-400 transition-all shadow-inner"
-              placeholder="Zoek template..."
+              placeholder={i18n.t("placeholders.adminMatrixTemplateSearch", "Zoek template...")}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -425,7 +426,7 @@ const BlueprintsView = ({
                   }
                   disabled={!!selectedBlueprintKey}
                 >
-                  <option value="">- Kies Type -</option>
+                  <option value="">{i18n.t('blueprints.chooseType', '- Kies Type -')}</option>
                   {availableTypes.map((p) => (
                     <option key={p} value={p}>
                       {p}
@@ -452,7 +453,7 @@ const BlueprintsView = ({
                   }
                   disabled={!!selectedBlueprintKey}
                 >
-                  <option value="">- Kies Mof -</option>
+                  <option value="">{i18n.t('blueprints.chooseSocket', '- Kies Mof -')}</option>
                   {availableConnections.map((c) => (
                     <option key={c} value={c}>
                       {c}
@@ -479,7 +480,7 @@ const BlueprintsView = ({
                   }
                   disabled={!!selectedBlueprintKey}
                 >
-                  <option value="-">- Standaard (Geen code) -</option>
+                  <option value="-">{i18n.t('blueprints.defaultNoCode', '- Standaard (Geen code) -')}</option>
                   {availableExtraCodes.map((code) => (
                     <option key={code} value={code}>
                       {code}
@@ -506,7 +507,7 @@ const BlueprintsView = ({
                 }
                 disabled={!!selectedBlueprintKey}
               >
-                <option value="">- Kies een boringstype -</option>
+                <option value="">{i18n.t('blueprints.chooseDrillingType', '- Kies een boringstype -')}</option>
                 {availableBorings.map((b) => (
                   <option key={b} value={b}>
                     {b}
@@ -532,7 +533,7 @@ const BlueprintsView = ({
                 value={copySourceKey}
                 onChange={(e) => setCopySourceKey(e.target.value)}
               >
-                <option value="">- Kies een bron template -</option>
+                <option value="">{i18n.t('blueprints.chooseSourceTemplate', '- Kies een bron template -')}</option>
                 {allExistingKeys.map((key) => (
                   <option key={key} value={key}>
                     {key.startsWith("BORE_")
@@ -646,7 +647,7 @@ const BlueprintsView = ({
               />
               <p className="text-[11px] font-bold text-slate-500 uppercase leading-relaxed tracking-wider opacity-80">
                 Zodra je een template bevestigt, verschijnen de variabelen
-                direct in de <strong>Maatvoering</strong> tab voor alle ID's
+                direct in de <strong>{i18n.t('blueprints.dimensioningTab', 'Maatvoering')}</strong> tab voor alle ID's
                 binnen die configuratie.
               </p>
             </div>

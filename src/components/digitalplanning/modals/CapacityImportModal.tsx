@@ -1,4 +1,5 @@
 import React, { useState, useRef } from "react";
+import i18n from "i18next";
 import {
   X,
   Upload,
@@ -151,7 +152,7 @@ const CapacityImportModal = ({ isOpen, onClose, onSuccess }: CapacityImportModal
               <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
                 <CheckCircle2 size={40} />
               </div>
-              <h3 className="text-2xl font-black text-slate-900 mb-2">Import Succesvol!</h3>
+              <h3 className="text-2xl font-black text-slate-900 mb-2">{i18n.t('capacityImport.importSuccessful', 'Import Succesvol!')}</h3>
               <p className="text-slate-500 mb-8">
                 Er zijn <b>{stats.countMatched}</b> orders gematcht met de planning.<br />
                 Hiervan zijn er <b>{stats.countUpdated}</b> bijgewerkt en <b>{stats.countDeleted}</b> gearchiveerd.
@@ -175,7 +176,7 @@ const CapacityImportModal = ({ isOpen, onClose, onSuccess }: CapacityImportModal
                 </div>
               )}
 
-              <button onClick={onClose} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold uppercase tracking-widest hover:bg-slate-800">Sluiten</button>
+              <button onClick={onClose} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold uppercase tracking-widest hover:bg-slate-800">{i18n.t('common.close', 'Sluiten')}</button>
             </div>
           )}
         </div>

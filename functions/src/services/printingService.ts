@@ -2,7 +2,9 @@
 
 const { db, admin } = require('../config/firebase');
 
-const MAX_ZPL_LENGTH = 120000;
+// Bitmap-gebaseerde labels kunnen aanzienlijk groter zijn dan legacy tekst-ZPL.
+// Blijf ruim onder Firestore documentlimiet (~1 MiB) maar voorkom onnodige rejects.
+const MAX_ZPL_LENGTH = 700000;
 const MAX_METADATA_LENGTH = 16000;
 const MAX_PRINT_QUANTITY = 200;
 const PRINTER_ID_PATTERN = /^[a-zA-Z0-9._:-]{2,80}$/;
@@ -138,7 +140,10 @@ async function queuePrintJobService(printerId, zplData, metadata = {}, context) 
     _scopeType: 'print_queue',
   };
 
-  await scopedRef.set(jobData, { merge: true });
+  await Promise.all([
+    docRef.set(jobData, { merge: true }),
+    scopedRef.set(jobData, { merge: true }),
+  ]);
 
   console.log(`[Printing] Print job queued: ${docRef.id} (printer: ${printerId}, machine: ${scopedMachine})`);
   return docRef.id;

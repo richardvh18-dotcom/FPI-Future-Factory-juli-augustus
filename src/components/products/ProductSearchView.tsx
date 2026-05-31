@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
+import i18n from "i18next";
 import { useProductsData } from "../../hooks/useProductsData";
 import ProductFilterSidebar from "./ProductFilterSidebar";
 import ProductCard from "./ProductCard";
@@ -345,7 +346,7 @@ const ProductSearchView = ({ showFilters, setShowFilters }: { showFilters: boole
   // --- Render ---
   if (loading)
     return (
-      <div className="p-10 text-center text-slate-500">Catalogus laden...</div>
+      <div className="p-10 text-center text-slate-500">{i18n.t('products.catalogLoading', 'Catalogus laden...')}</div>
     );
   if (error)
     return (
@@ -398,7 +399,7 @@ const ProductSearchView = ({ showFilters, setShowFilters }: { showFilters: boole
               size={16}
               className={showFilters ? "fill-emerald-600/20" : ""}
             />
-            <span className="hidden sm:inline">Filters</span>
+            <span className="hidden sm:inline">{i18n.t('common.filters', 'Filters')}</span>
           </button>
 
           {/* Midden: Zoekbalk */}
@@ -408,7 +409,7 @@ const ProductSearchView = ({ showFilters, setShowFilters }: { showFilters: boole
             </div>
             <input
               type="text"
-              placeholder="Zoek op artikelnummer, type of omschrijving..."
+              placeholder={i18n.t("placeholders.productSearch", "Zoek op artikelnummer, type of omschrijving...")}
               className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all text-sm font-medium"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}

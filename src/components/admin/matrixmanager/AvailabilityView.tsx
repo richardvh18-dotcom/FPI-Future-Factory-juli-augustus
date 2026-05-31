@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import i18n from "i18next";
 import { Check, Layers, Activity, Hash, Info, AlertCircle, Copy, ArrowRight } from "lucide-react";
 import { useNotifications } from "../../../contexts/NotificationContext";
 
@@ -187,14 +188,14 @@ const AvailabilityView = ({
       <div className="bg-slate-50 p-4 rounded-[25px] border border-slate-200 flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
             <Copy size={16} />
-            <span>Kopieer configuratie van:</span>
+          <span>{i18n.t('availability.copyConfigurationFrom', 'Kopieer configuratie van:')}</span>
         </div>
         <select 
             className="bg-white border border-slate-300 text-slate-700 text-xs rounded-lg px-3 py-2 outline-none focus:border-blue-500 cursor-pointer"
             value={copySourceConn}
             onChange={(e) => setCopySourceConn(e.target.value)}
         >
-            <option value="">- Selecteer Bron -</option>
+          <option value="">{i18n.t('availability.selectSource', '- Selecteer Bron -')}</option>
             {libraryData.connections.filter(c => c !== selectedConn).map(c => (
                 <option key={c} value={c}>{c}</option>
             ))}

@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Layers,
   Zap,
@@ -53,6 +54,7 @@ type TeamleaderDashboardProps = {
 };
 
 const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }: TeamleaderDashboardProps) => {
+  const { t } = useTranslation();
   const [planningKpiMode, setPlanningKpiMode] = useState<"products" | "orders">("products");
 
   const planningProducts = Number(metrics.totalPlanned || 0);
@@ -111,27 +113,6 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }: Teamleade
               icon: Star,
               color: "text-amber-500",
             },
-            {
-              id: "geleverd_mismatch",
-              label: "LN vs FF",
-              val: metrics.deliveryInspectionMismatchCount || 0,
-              icon: AlertTriangle,
-              color: "text-rose-600",
-            },
-            {
-              id: "geleverd_mismatch_plus",
-              label: "LN > FF",
-              val: metrics.deliveryInspectionOverCount || 0,
-              icon: AlertTriangle,
-              color: "text-orange-600",
-            },
-            {
-              id: "geleverd_mismatch_min",
-              label: "LN < FF",
-              val: metrics.deliveryInspectionUnderCount || 0,
-              icon: AlertTriangle,
-              color: "text-amber-700",
-            },
           ].map((item) => (
             <div
               key={item.id}
@@ -179,10 +160,10 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }: Teamleade
               Man-uren
             </p>
             <p className="text-2xl font-black text-slate-800 italic">
-              {metrics.bezettingAantal ? metrics.bezettingAantal.toFixed(1) : "0.0"} <span className="text-xs text-slate-400 not-italic">u</span>
+              {metrics.bezettingAantal ? metrics.bezettingAantal.toFixed(1) : "0.0"} <span className="text-xs text-slate-400 not-italic">{t("teamleaderDashboard.hoursUnit", "u")}</span>
             </p>
             <div className="flex justify-between items-center mt-1 pt-1 border-t border-slate-100">
-                <p className="text-[8px] font-bold text-slate-400 uppercase">Vandaag</p>
+                <p className="text-[8px] font-bold text-slate-400 uppercase">{t("teamleaderDashboard.today", "Vandaag")}</p>
                 <p className="text-[9px] font-bold text-indigo-600 uppercase">Week: {metrics.weeklyTotalHours?.toFixed(1) || "0.0"}u</p>
             </div>
           </div>
@@ -193,10 +174,10 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }: Teamleade
               BH Stations
             </p>
             <p className="text-2xl font-black text-slate-800 italic">
-              {metrics.productionHours ? metrics.productionHours.toFixed(1) : "0.0"} <span className="text-xs text-slate-400 not-italic">u</span>
+              {metrics.productionHours ? metrics.productionHours.toFixed(1) : "0.0"} <span className="text-xs text-slate-400 not-italic">{t("teamleaderDashboard.hoursUnit", "u")}</span>
             </p>
             <div className="flex justify-between items-center mt-1 pt-1 border-t border-slate-100">
-                <p className="text-[8px] font-bold text-slate-400 uppercase">Vandaag</p>
+                <p className="text-[8px] font-bold text-slate-400 uppercase">{t("teamleaderDashboard.today", "Vandaag")}</p>
                 <p className="text-[9px] font-bold text-emerald-600 uppercase">Week: {metrics.weeklyProductionHours?.toFixed(1) || "0.0"}u</p>
             </div>
           </div>
@@ -207,10 +188,10 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }: Teamleade
               Overig
             </p>
             <p className="text-2xl font-black text-slate-800 italic">
-              {metrics.supportHours ? metrics.supportHours.toFixed(1) : "0.0"} <span className="text-xs text-slate-400 not-italic">u</span>
+              {metrics.supportHours ? metrics.supportHours.toFixed(1) : "0.0"} <span className="text-xs text-slate-400 not-italic">{t("teamleaderDashboard.hoursUnit", "u")}</span>
             </p>
             <div className="flex justify-between items-center mt-1 pt-1 border-t border-slate-100">
-                <p className="text-[8px] font-bold text-slate-400 uppercase">Vandaag</p>
+                <p className="text-[8px] font-bold text-slate-400 uppercase">{t("teamleaderDashboard.today", "Vandaag")}</p>
                 <p className="text-[9px] font-bold text-blue-600 uppercase">Week: {metrics.weeklySupportHours?.toFixed(1) || "0.0"}u</p>
             </div>
           </div>
@@ -224,7 +205,7 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }: Teamleade
               {metrics.efficiency ? metrics.efficiency.toFixed(0) : "0"}%
             </p>
             <div className="flex justify-between items-center mt-1 pt-1 border-t border-slate-100">
-                <p className="text-[8px] font-bold text-slate-400 uppercase">Vandaag</p>
+                <p className="text-[8px] font-bold text-slate-400 uppercase">{t("teamleaderDashboard.today", "Vandaag")}</p>
                 <p className="text-[9px] font-bold text-purple-600 uppercase">Week: {metrics.weeklyEfficiency?.toFixed(0) || "0"}%</p>
             </div>
           </div>
@@ -237,7 +218,9 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }: Teamleade
           Live Station Monitor
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-          {metrics.machineGridData.map((machine) => (
+          {metrics.machineGridData
+            .filter((machine) => !machine.id.toUpperCase().startsWith("WE"))
+            .map((machine) => (
             <div
               key={machine.id}
               onClick={() => onStationSelect(machine.id)}
@@ -262,7 +245,7 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }: Teamleade
                   </div>
                 ) : (
                   <div className="mt-1.5 flex items-center gap-1.5 text-[9px] font-bold text-slate-300 px-2 py-1">
-                    <span className="italic">Geen operator</span>
+                    <span className="italic">{t("teamleaderDashboard.noOperator", "Geen operator")}</span>
                   </div>
                 )}
               </div>
@@ -302,11 +285,11 @@ const TeamleaderDashboard = ({ metrics, onKpiClick, onStationSelect }: Teamleade
                 </div>
                 <div className="flex justify-between items-center mt-3 pt-2 border-t border-slate-50">
                   <div>
-                    <span className="text-[7px] font-black text-slate-400 uppercase block">Plan Uren</span>
+                    <span className="text-[7px] font-black text-slate-400 uppercase block">{t("teamleaderDashboard.plannedHours", "Plan Uren")}</span>
                     <span className="text-[10px] font-bold text-slate-600">{machine.plannedHours?.toFixed(1) || "0.0"}u</span>
                   </div>
                   <div className="text-right">
-                    <span className="text-[7px] font-black text-indigo-400 uppercase block">Gew. Uren (Week)</span>
+                    <span className="text-[7px] font-black text-indigo-400 uppercase block">{t("teamleaderDashboard.workedHoursWeek", "Gew. Uren (Week)")}</span>
                     <span className="text-[10px] font-bold text-indigo-600">{machine.workedHoursThisWeek?.toFixed(1) || "0.0"}u</span>
                   </div>
                 </div>

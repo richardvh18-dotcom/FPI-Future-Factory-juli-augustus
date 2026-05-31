@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import { useLocation } from "react-router-dom";
 import {
   X,
@@ -250,7 +251,7 @@ const StationAssignmentModal = ({ stationId, onClose, department }: StationAssig
                 onChange={(e) => setSelectedOperator(e.target.value)}
                 className="flex-1 px-3 py-2 border-2 border-slate-200 rounded-lg text-sm focus:border-blue-500 outline-none"
               >
-                <option value="">Selecteer...</option>
+                <option value="">{i18n.t('common.select', 'Selecteer...')}</option>
                 {availableOperators.map(op => (
                   <option key={op.id} value={op.id}>
                     {op.name} ({op.employeeNumber})
@@ -275,7 +276,7 @@ const StationAssignmentModal = ({ stationId, onClose, department }: StationAssig
           </label>
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {assignments.length === 0 ? (
-              <p className="text-xs text-slate-500 italic">Geen toewijzingen</p>
+              <p className="text-xs text-slate-500 italic">{i18n.t('stationAssignment.noAssignments', 'Geen toewijzingen')}</p>
             ) : (
               assignments.map(assignment => (
                 <div

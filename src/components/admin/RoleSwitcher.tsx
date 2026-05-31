@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect } from 'react';
+import i18n from 'i18next';
 import { useAdminAuth } from '../../hooks/useAdminAuth';
 import { UserCog, Check, Users, Search, ChevronRight, Loader2, LogOut } from 'lucide-react';
 import { collection, getDocs, query, limit } from 'firebase/firestore';
@@ -162,7 +163,7 @@ const RoleSwitcher = () => {
                         onClick={() => setShowUserSelect(true)}
                         className="w-full flex items-center justify-between p-3 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition-all"
                     >
-                        <span className="flex items-center gap-2"><Users size={14}/> Specifieke Gebruiker</span>
+                      <span className="flex items-center gap-2"><Users size={14}/> {i18n.t('roleSwitcher.specificUser', 'Specifieke Gebruiker')}</span>
                         <ChevronRight size={14} />
                     </button>
                 </div>
@@ -172,7 +173,7 @@ const RoleSwitcher = () => {
                 <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
                     <button onClick={() => setShowUserSelect(false)} className="p-1 hover:bg-slate-200 rounded-full"><ChevronRight size={16} className="rotate-180"/></button>
                     <h4 className="font-black text-slate-800 uppercase text-xs tracking-widest">
-                    Kies Gebruiker
+                  {i18n.t('roleSwitcher.chooseUser', 'Kies Gebruiker')}
                     </h4>
                 </div>
                 <div className="p-2 border-b border-slate-100">
@@ -180,7 +181,7 @@ const RoleSwitcher = () => {
                         <Search size={14} className="text-slate-400"/>
                         <input 
                             className="bg-transparent text-xs outline-none w-full" 
-                            placeholder="Zoek naam..." 
+                            placeholder={i18n.t('placeholders.adminRoleSearchName', 'Zoek naam...')} 
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                             autoFocus
@@ -189,7 +190,7 @@ const RoleSwitcher = () => {
                 </div>
                 <div className="max-h-64 overflow-y-auto p-2 space-y-1 custom-scrollbar">
                     {loadingUsers ? (
-                        <div className="text-center py-8 text-xs text-slate-400 flex flex-col items-center gap-2"><Loader2 className="animate-spin" size={20}/> Gebruikers laden...</div>
+                    <div className="text-center py-8 text-xs text-slate-400 flex flex-col items-center gap-2"><Loader2 className="animate-spin" size={20}/> {i18n.t('roleSwitcher.loadingUsers', 'Gebruikers laden...')}</div>
                     ) : (
                         filteredUsers.length > 0 ? filteredUsers.map(u => (
                             <button
@@ -211,7 +212,7 @@ const RoleSwitcher = () => {
                                 {user?.uid === u.id && <Check size={14} />}
                             </button>
                         )) : (
-                            <div className="text-center py-4 text-xs text-slate-400 italic">Geen gebruikers gevonden</div>
+                          <div className="text-center py-4 text-xs text-slate-400 italic">{i18n.t('roleSwitcher.noUsersFound', 'Geen gebruikers gevonden')}</div>
                         )
                     )}
                 </div>

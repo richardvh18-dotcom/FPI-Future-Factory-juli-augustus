@@ -8,6 +8,7 @@ import {
   Activity,
   ShieldCheck,
 } from "lucide-react";
+import i18n from "i18next";
 import { PATHS } from "../../config/dbPaths";
 
 /**
@@ -80,7 +81,7 @@ const FirestoreDebugger: FC = () => {
           </div>
           <div className="text-left">
             <h3 className="text-sm font-black uppercase italic tracking-widest text-white leading-none">
-              Path <span className="text-blue-400">Debugger</span>
+              {i18n.t('debug.path', 'Path')} <span className="text-blue-400">{i18n.t('debug.debugger', 'Debugger')}</span>
             </h3>
             <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mt-1">
               Systeem Integriteit Monitor

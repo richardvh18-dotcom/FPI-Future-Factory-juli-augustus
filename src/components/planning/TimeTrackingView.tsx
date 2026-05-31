@@ -17,6 +17,7 @@ import { calculateDuration } from "../../utils/efficiencyCalculator";
 import { calculateWorkingMinutes } from "../../utils/workingTimeUtils";
 import { subscribeScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
 import { normalizeMachine } from "../../utils/hubHelpers";
+import { useTranslation } from "react-i18next";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -161,6 +162,7 @@ const toEpochMs = (value: unknown): number => {
  * Shows time variance and identifies bottlenecks
  */
 const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
+  const { t } = useTranslation();
   const readPaths = PATHS;
   const [orders, setOrders] = useState<PlanningOrder[]>([]);
   const [, setOccupancy] = useState<AnyRecord[]>([]);
@@ -1221,10 +1223,10 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-black text-slate-800">
-              Time <span className="text-blue-600">Tracking</span>
+              {t("timeTrackingView.title", "Time Tracking")}
             </h1>
             <p className="text-sm text-slate-600 mt-1">
-              Vergelijk daadwerkelijke vs geplande tijd per order
+              {t("timeTrackingView.subtitle", "Vergelijk daadwerkelijke vs geplande tijd per order")}
             </p>
           </div>
 
@@ -1237,19 +1239,19 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
                   onClick={() => setPeriodMode("day")}
                   className={`px-2.5 py-1.5 rounded-md text-xs font-bold ${periodMode === "day" ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-700"}`}
                 >
-                  Dag
+                  {t("timeTrackingView.day", "Dag")}
                 </button>
                 <button
                   onClick={() => setPeriodMode("week")}
                   className={`px-2.5 py-1.5 rounded-md text-xs font-bold ${periodMode === "week" ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-700"}`}
                 >
-                  Week
+                  {t("timeTrackingView.week", "Week")}
                 </button>
                 <button
                   onClick={() => setPeriodMode("month")}
                   className={`px-2.5 py-1.5 rounded-md text-xs font-bold ${periodMode === "month" ? "bg-blue-500 text-white" : "bg-slate-100 text-slate-700"}`}
                 >
-                  Maand
+                  {t("timeTrackingView.month", "Maand")}
                 </button>
               </div>
 
@@ -1281,7 +1283,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
               )}
 
               <button onClick={navigatePrevious} className="px-2 py-1.5 rounded-md bg-slate-100 text-slate-700 text-xs font-bold">
-                Vorige
+                {t("timeTrackingView.previous", "Vorige")}
               </button>
               <span className="text-sm font-bold text-slate-700 min-w-[180px] text-center">
                 {periodMode === "day"
@@ -1291,10 +1293,10 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
                     : `Week ${getISOWeek(selectedDate)} - ${format(selectedDate, "yyyy")}`}
               </span>
               <button onClick={navigateNext} className="px-2 py-1.5 rounded-md bg-slate-100 text-slate-700 text-xs font-bold">
-                Volgende
+                {t("timeTrackingView.next", "Volgende")}
               </button>
               <button onClick={jumpToToday} className="px-2 py-1.5 rounded-md bg-blue-500 text-white text-xs font-bold">
-                Vandaag
+                {t("timeTrackingView.today", "Vandaag")}
               </button>
             </div>
 
@@ -1319,7 +1321,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
                 onChange={(e) => setSelectedMachine(e.target.value)}
                 className="px-3 py-1.5 border-2 border-slate-200 rounded-lg text-sm font-bold"
               >
-                <option value="ALLES">Alle Machines</option>
+                <option value="ALLES">{t("timeTrackingView.allMachines", "Alle Machines")}</option>
                 {machineOptions.map((machine) => (
                   <option key={machine} value={machine}>{machine}</option>
                 ))}
@@ -1332,9 +1334,9 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
               onChange={(e) => setFilterStatus(e.target.value)}
               className="px-3 py-1.5 border-2 border-slate-200 rounded-lg text-sm font-bold"
             >
-              <option value="all">Alle status</option>
-              <option value="in_behandeling">In behandeling</option>
-              <option value="gereed">Gereed (incl. archief)</option>
+              <option value="all">{t("timeTrackingView.allStatuses", "Alle status")}</option>
+              <option value="in_behandeling">{t("timeTrackingView.inTreatment", "In behandeling")}</option>
+              <option value="gereed">{t("timeTrackingView.readyIncludingArchive", "Gereed (incl. archief)")}</option>
             </select>
           </div>
         </div>
@@ -1344,7 +1346,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       <div className="grid grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 border-2 border-slate-200">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-600 uppercase">Totaal Gepland</span>
+            <span className="text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.totalPlanned", "Totaal Gepland")}</span>
             <Clock className="text-blue-600" size={20} />
           </div>
           <div className="text-3xl font-black text-slate-800">{Math.round(summary.totalPlanned)}h</div>
@@ -1352,7 +1354,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
 
         <div className="bg-white rounded-xl p-4 border-2 border-slate-200">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-600 uppercase">Totaal Daadwerkelijk</span>
+            <span className="text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.totalActual", "Totaal Daadwerkelijk")}</span>
             <BarChart3 className="text-purple-600" size={20} />
           </div>
           <div className="text-3xl font-black text-slate-800">{Math.round(summary.totalActual)}h</div>
@@ -1360,7 +1362,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
 
         <div className="bg-white rounded-xl p-4 border-2 border-slate-200">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-600 uppercase">Variance</span>
+            <span className="text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.variance", "Variance")}</span>
             {summary.totalVariance >= 0 ? (
               <TrendingUp className="text-red-600" size={20} />
             ) : (
@@ -1377,21 +1379,21 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
 
         <div className="bg-white rounded-xl p-4 border-2 border-slate-200">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-slate-600 uppercase">Status</span>
+            <span className="text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.status", "Status")}</span>
             <CheckCircle className="text-emerald-600" size={20} />
           </div>
           <div className="flex gap-2 mt-2">
             <div className="text-center flex-1">
               <div className="text-xl font-black text-emerald-600">{summary.onTrack}</div>
-              <div className="text-xs text-slate-500">On Track</div>
+              <div className="text-xs text-slate-500">{t("timeTrackingView.onTrack", "On Track")}</div>
             </div>
             <div className="text-center flex-1">
               <div className="text-xl font-black text-red-600">{summary.over}</div>
-              <div className="text-xs text-slate-500">Over</div>
+              <div className="text-xs text-slate-500">{t("timeTrackingView.over", "Over")}</div>
             </div>
             <div className="text-center flex-1">
               <div className="text-xl font-black text-blue-600">{summary.under}</div>
-              <div className="text-xs text-slate-500">Under</div>
+              <div className="text-xs text-slate-500">{t("timeTrackingView.under", "Under")}</div>
             </div>
           </div>
         </div>
@@ -1400,23 +1402,23 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       {/* Orders Table */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
         <div className="bg-white rounded-xl p-4 border-2 border-slate-200">
-          <div className="text-xs font-bold text-slate-600 uppercase mb-1">Totaal Wikkelen</div>
+          <div className="text-xs font-bold text-slate-600 uppercase mb-1">{t("timeTrackingView.totalWinding", "Totaal Wikkelen")}</div>
           <div className="text-2xl font-black text-slate-800">{stationTotals.wikkelen.toFixed(1)}h</div>
         </div>
         <div className="bg-white rounded-xl p-4 border-2 border-slate-200">
-          <div className="text-xs font-bold text-slate-600 uppercase mb-1">Totaal Lossen</div>
+          <div className="text-xs font-bold text-slate-600 uppercase mb-1">{t("timeTrackingView.totalUnloading", "Totaal Lossen")}</div>
           <div className="text-2xl font-black text-slate-800">{stationTotals.lossen.toFixed(1)}h</div>
         </div>
         <div className="bg-white rounded-xl p-4 border-2 border-slate-200">
-          <div className="text-xs font-bold text-slate-600 uppercase mb-1">Totaal Nabewerken</div>
+          <div className="text-xs font-bold text-slate-600 uppercase mb-1">{t("timeTrackingView.totalPostProcessing", "Totaal Nabewerken")}</div>
           <div className="text-2xl font-black text-slate-800">{stationTotals.nabewerking.toFixed(1)}h</div>
         </div>
         <div className="bg-white rounded-xl p-4 border-2 border-slate-200">
-          <div className="text-xs font-bold text-slate-600 uppercase mb-1">Totaal Eindinspectie</div>
+          <div className="text-xs font-bold text-slate-600 uppercase mb-1">{t("timeTrackingView.totalFinalInspection", "Totaal Eindinspectie")}</div>
           <div className="text-2xl font-black text-slate-800">{stationTotals.bm01.toFixed(1)}h</div>
         </div>
         <div className="bg-white rounded-xl p-4 border-2 border-amber-200">
-          <div className="text-xs font-bold text-amber-700 uppercase mb-1">Totaal Reparatie</div>
+          <div className="text-xs font-bold text-amber-700 uppercase mb-1">{t("timeTrackingView.totalRepair", "Totaal Reparatie")}</div>
           <div className="text-2xl font-black text-amber-700">{stationTotals.repair.toFixed(1)}h</div>
         </div>
       </div>
@@ -1424,32 +1426,32 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
       <div className="bg-white rounded-2xl shadow-sm border-2 border-slate-200">
         <div className="p-4 border-b-2 border-slate-200 bg-slate-50">
           <h3 className="text-sm font-bold text-slate-800">
-            Order Time Analysis ({orderMetrics.length} orders)
+            {t("timeTrackingView.orderTimeAnalysis", "Order Time Analysis")} ({orderMetrics.length} {t("timeTrackingView.orders", "orders")})
           </h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50 border-b-2 border-slate-200">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">Order</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">Item</th>
-                <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">Machine</th>
-                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">Wikkelen</th>
-                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">Lossen</th>
-                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">Nabewerken</th>
-                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">Eindinspectie</th>
-                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">Reparatie</th>
-                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">Gepland</th>
-                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">Daadwerkelijk</th>
-                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">Variance</th>
-                <th className="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.order", "Order")}</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.item", "Item")}</th>
+                <th className="px-4 py-3 text-left text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.machine", "Machine")}</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.winding", "Wikkelen")}</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.unloading", "Lossen")}</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.postProcessing", "Nabewerken")}</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.finalInspection", "Eindinspectie")}</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.repair", "Reparatie")}</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.planned", "Gepland")}</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.actual", "Daadwerkelijk")}</th>
+                <th className="px-4 py-3 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.variance", "Variance")}</th>
+                <th className="px-4 py-3 text-center text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.status", "Status")}</th>
               </tr>
             </thead>
             <tbody>
               {orderMetrics.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="px-4 py-12 text-center text-slate-400">
-                    Geen orders in geselecteerde {periodMode === "day" ? "dag" : periodMode === "month" ? "maand" : "week"}
+                    {t("timeTrackingView.noOrdersInSelected", "Geen orders in geselecteerde")} {periodMode === "day" ? t("timeTrackingView.day", "dag") : periodMode === "month" ? t("timeTrackingView.month", "maand") : t("timeTrackingView.week", "week")}
                   </td>
                 </tr>
               ) : (
@@ -1463,7 +1465,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
                           onClick={() => setSelectedOrderDetail(order)}
                           className="mt-1 text-xs font-bold text-blue-600 hover:text-blue-800"
                         >
-                          Bekijk lots ({order.lotCount || 0})
+                          {t("timeTrackingView.viewLots", "Bekijk lots")} ({order.lotCount || 0})
                         </button>
                       )}
                     </td>
@@ -1507,7 +1509,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
                       <div className="text-sm font-bold text-slate-700">
                         {Math.round(order.planned)}h
                         {order.hasEfficiency && (
-                          <span className="text-[9px] text-purple-600 ml-1 font-black" title="Gebaseerd op Infor LN efficiency">(LN)</span>
+                          <span className="text-[9px] text-purple-600 ml-1 font-black" title={t("timeTrackingView.basedOnLnEfficiency", "Gebaseerd op Infor LN efficiency")}>({t("timeTrackingView.ln", "LN")})</span>
                         )}
                       </div>
                     </td>
@@ -1545,35 +1547,35 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
           <div className="w-[min(98vw,1800px)] max-h-[92vh] overflow-hidden rounded-3xl bg-white shadow-2xl border border-slate-200 flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
               <div>
-                <div className="text-lg font-black text-slate-800">Order {selectedOrderDetail.orderId}</div>
-                <div className="text-sm text-slate-500">Lotdetails en stationtijden ({selectedOrderDetail.lotCount || 0} lots)</div>
+                <div className="text-lg font-black text-slate-800">{t("timeTrackingView.order", "Order")} {selectedOrderDetail.orderId}</div>
+                <div className="text-sm text-slate-500">{t("timeTrackingView.lotDetailsAndStationTimes", "Lotdetails en stationtijden")} ({selectedOrderDetail.lotCount || 0} {t("timeTrackingView.lots", "lots")})</div>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedOrderDetail(null)}
                 className="px-3 py-1.5 rounded-lg bg-slate-200 text-slate-700 text-sm font-bold hover:bg-slate-300"
               >
-                Sluiten
+                {t("common.close", "Sluiten")}
               </button>
             </div>
             <div className="overflow-y-auto overflow-x-hidden p-4">
               <table className="w-full table-fixed">
                 <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
                   <tr>
-                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">Lot</th>
-                    <th className="w-20 px-2 py-2 text-left text-xs font-bold text-slate-600 uppercase">Machine</th>
-                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">Status</th>
-                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">Wikkelen</th>
-                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">Lossen</th>
-                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">Nabew.</th>
-                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">Inspectie</th>
-                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">Reparatie</th>
-                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">Totaal</th>
-                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">Wikkel Tijd</th>
-                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">Lossen Tijd</th>
-                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">Nabew. Tijd</th>
-                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">Reparatie Tijd</th>
-                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">BM01 Tijd</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.lot", "Lot")}</th>
+                    <th className="w-20 px-2 py-2 text-left text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.machine", "Machine")}</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.status", "Status")}</th>
+                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.winding", "Wikkelen")}</th>
+                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.unloading", "Lossen")}</th>
+                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.postProcessShort", "Nabew.")}</th>
+                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.inspection", "Inspectie")}</th>
+                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.repair", "Reparatie")}</th>
+                    <th className="px-3 py-2 text-right text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.total", "Totaal")}</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.windingTime", "Wikkel Tijd")}</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.unloadingTime", "Lossen Tijd")}</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.postProcessTime", "Nabew. Tijd")}</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.repairTime", "Reparatie Tijd")}</th>
+                    <th className="px-3 py-2 text-left text-xs font-bold text-slate-600 uppercase">{t("timeTrackingView.bm01Time", "BM01 Tijd")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1636,7 +1638,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
         <div className="mt-6 bg-white rounded-2xl shadow-sm border-2 border-red-200 p-6">
           <h3 className="text-lg font-bold text-red-600 mb-4 flex items-center gap-2">
             <AlertTriangle size={20} />
-            Bottlenecks (Orders die langer duren dan gepland)
+            {t("timeTrackingView.bottlenecksTitle", "Bottlenecks (Orders die langer duren dan gepland)")}
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {orderMetrics
@@ -1668,12 +1670,12 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
         <div className="flex items-start gap-4">
           <Clock className="text-blue-600 flex-shrink-0" size={24} />
           <div>
-            <h3 className="text-lg font-bold text-slate-800 mb-2">Time Tracking Analysis</h3>
+            <h3 className="text-lg font-bold text-slate-800 mb-2">{t("timeTrackingView.analysisTitle", "Time Tracking Analysis")}</h3>
             <div className="text-sm text-slate-700 space-y-1">
-              <p>✅ <strong>On Track:</strong> Variance binnen ±10% van gepland</p>
-              <p>⚠️ <strong>Over:</strong> Daadwerkelijke tijd is meer dan 10% hoger dan gepland</p>
-              <p>📉 <strong>Under:</strong> Daadwerkelijke tijd is meer dan 10% lager dan gepland</p>
-              <p>💡 <strong>Tip:</strong> Gebruik bottleneck analyse om orders te identificeren die extra aandacht nodig hebben</p>
+              <p>✅ <strong>{t("timeTrackingView.onTrack", "On Track")}:</strong> {t("timeTrackingView.analysisOnTrack", "Variance binnen ±10% van gepland")}</p>
+              <p>⚠️ <strong>{t("timeTrackingView.over", "Over")}:</strong> {t("timeTrackingView.analysisOver", "Daadwerkelijke tijd is meer dan 10% hoger dan gepland")}</p>
+              <p>📉 <strong>{t("timeTrackingView.under", "Under")}:</strong> {t("timeTrackingView.analysisUnder", "Daadwerkelijke tijd is meer dan 10% lager dan gepland")}</p>
+              <p>💡 <strong>{t("timeTrackingView.tip", "Tip")}:</strong> {t("timeTrackingView.analysisTip", "Gebruik bottleneck analyse om orders te identificeren die extra aandacht nodig hebben")}</p>
             </div>
           </div>
         </div>

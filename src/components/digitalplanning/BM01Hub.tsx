@@ -957,7 +957,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                                                 <section class="qrBlock">
                                                     ${row.orderQr ? `<img src="${row.orderQr}" alt="QR Order ${escapeHtml(row.orderId)}" />` : ""}
                                                     <div>
-                                                        <div class="label">Ordernummer</div>
+                                                        <div class="label">${t('common.orderNumber', 'Ordernummer')}</div>
                                                         <div class="value">${escapeHtml(row.orderId)}</div>
                                                     </div>
                                                 </section>
@@ -965,7 +965,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                                                 <section class="qrBlock">
                                                     ${row.lotQr ? `<img src="${row.lotQr}" alt="QR Lot ${escapeHtml(row.lotNumber)}" />` : ""}
                                                     <div>
-                                                        <div class="label">Lotnummer</div>
+                                                        <div class="label">${t('common.lotNumber', 'Lotnummer')}</div>
                                                         <div class="value">${escapeHtml(row.lotNumber)}</div>
                                                     </div>
                                                 </section>
@@ -979,10 +979,10 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                                 <thead>
                                     <tr>
                                         <th>#</th>
-                                        <th>Lotnummer</th>
-                                        <th>Ordernummer</th>
-                                        <th>Product</th>
-                                        <th>Tijd</th>
+                                        <th>${t('common.lotNumber', 'Lotnummer')}</th>
+                                        <th>${t('common.orderNumber', 'Ordernummer')}</th>
+                                        <th>${t('common.product', 'Product')}</th>
+                                        <th>${t('common.time', 'Tijd')}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -1010,7 +1010,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
 <html lang="nl">
     <head>
         <meta charset="utf-8" />
-        <title>BM01 QR Overzicht</title>
+        <title>${t('bm01.qrOverviewTitle', 'BM01 QR Overzicht')}</title>
         <style>
             @page { size: A4 portrait; margin: 8mm; }
             * { box-sizing: border-box; }
@@ -1038,11 +1038,11 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
         <main class="sheet">
             <header class="header" style="display: flex; justify-content: space-between; align-items: flex-end;">
                 <div>
-                    <h1>${activeTab === "naharding_batch" ? "QR Overzicht Naharding" : "Gereedlijst Overzicht"}</h1>
+                    <h1>${activeTab === "naharding_batch" ? t('bm01.nahardingOverview', 'QR Overzicht Naharding') : t('bm01.readyListOverview', 'Gereedlijst Overzicht')}</h1>
                     <p>${escapeHtml(reportDate)}</p>
                 </div>
                 <div style="text-align: right;">
-                    <span style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Aantal lots:</span>
+                    <span style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">${t('bm01.lotCount', 'Aantal lots')}:</span>
                     <span style="font-size: 24px; font-weight: 900; margin-left: 6px; color: #0f172a;">${itemsWithQr.length}</span>
                 </div>
             </header>
@@ -1204,7 +1204,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                         <div className="h-full flex flex-col p-8 lg:p-10 text-left overflow-y-auto">
                             <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-6">
                                 <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">History / Archief</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-600">{t('bm01.historyArchive', 'History / Archief')}</p>
                                     <h3 className="text-2xl font-black text-slate-900 italic tracking-tight mt-1">{selectedSidebarEntry.orderId || selectedSidebarEntry.id || '-'}</h3>
                                     <p className="text-sm font-bold text-slate-500 mt-1">{selectedSidebarEntry.item || selectedSidebarEntry.itemDescription || '-'}</p>
                                 </div>
@@ -1212,21 +1212,21 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                                     onClick={() => { setSelectedOrderId(null); setSelectedSidebarEntry(null); }}
                                     className="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 text-xs font-black uppercase tracking-widest hover:bg-slate-200"
                                 >
-                                    Sluiten
+                                    {t('common.close', 'Sluiten')}
                                 </button>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
                                 <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Status</p>
-                                    <p className="text-sm font-bold text-slate-800 mt-1">Voltooid (Archief)</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t('common.status', 'Status')}</p>
+                                    <p className="text-sm font-bold text-slate-800 mt-1">{t('bm01.completedArchive', 'Voltooid (Archief)')}</p>
                                 </div>
                                 <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Machine</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t('common.machine', 'Machine')}</p>
                                     <p className="text-sm font-bold text-slate-800 mt-1">{selectedSidebarEntry.machine || selectedSidebarEntry.originMachine || '-'}</p>
                                 </div>
                                 <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 md:col-span-2">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Lotnummers</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t('bm01.lotNumbers', 'Lotnummers')}</p>
                                     {Array.isArray(selectedSidebarEntry.lotNumbers) && selectedSidebarEntry.lotNumbers.length > 0 ? (
                                         <div className="mt-2 space-y-2">
                                             {selectedSidebarEntry.lotNumbers.map((lot) => (
@@ -1236,7 +1236,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                                                         onClick={() => handleOpenArchivedLotDossier(lot)}
                                                         className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"
                                                     >
-                                                        Open dossier
+                                                        {t('bm01.openDossier', 'Open dossier')}
                                                     </button>
                                                 </div>
                                             ))}
@@ -1248,7 +1248,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                                                 onClick={() => handleOpenArchivedLotDossier(String(selectedSidebarEntry.lotNumber || ""))}
                                                 className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"
                                             >
-                                                Open dossier
+                                                {t('bm01.openDossier', 'Open dossier')}
                                             </button>
                                         </div>
                                     )}
@@ -1283,10 +1283,10 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                             <button 
                                 onClick={() => setScannerMode(!scannerMode)}
                                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 font-black text-[9px] uppercase tracking-tighter transition-all ${scannerMode ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-white border-slate-200 text-slate-400'}`}
-                                title={scannerMode ? "Toetsenbord verborgen (Scanner Modus)" : "Normale invoer"}
+                                title={scannerMode ? t('bm01.scannerModeKeyboardHidden', 'Toetsenbord verborgen (Scanner Modus)') : t('bm01.normalInput', 'Normale invoer')}
                             >
                                 {scannerMode ? <ScanBarcode size={14} /> : <Keyboard size={14} />}
-                                {scannerMode ? "Scanner" : "Keyboard"}
+                                {scannerMode ? t('bm01.scanner', 'Scanner') : t('bm01.keyboard', 'Keyboard')}
                             </button>
                         </div>
                         {/* Scan Input */}
@@ -1300,7 +1300,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                                 onChange={(e) => setScanInput(e.target.value)}
                                 inputMode={scannerMode ? "none" : "text"}
                                 onKeyDown={handleScan}
-                                placeholder="Scan lotnummer voor inspectie..."
+                                placeholder={t("placeholders.dpScanLotForInspection", "Scan lotnummer voor inspectie...")}
                                 className="w-full pl-14 pr-4 py-4 bg-white border-2 border-purple-100 focus:border-purple-500 focus:ring-2 focus:ring-purple-300 rounded-2xl font-bold text-lg shadow-sm outline-none transition-all placeholder:text-slate-300"
                             />
                         </div>
@@ -1393,7 +1393,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                         <button 
                             onClick={handleExport}
                             className="p-2 bg-white hover:bg-emerald-50 text-emerald-600 border border-slate-100 rounded-lg transition-colors shadow-sm"
-                            title="Export CSV"
+                            title={t('bm01.exportCsv', 'Export CSV')}
                         >
                             <Download size={18} />
                         </button>
@@ -1411,7 +1411,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                 <div className="text-center mb-3">
                     <div className="inline-block bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100 shadow-sm">
                         <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">
-                            Gevonden lots in deze periode: <span className="text-emerald-600 font-black text-xl ml-2">{completedProducts.length}</span>
+                            {t('bm01.foundLotsInPeriod', 'Gevonden lots in deze periode')}: <span className="text-emerald-600 font-black text-xl ml-2">{completedProducts.length}</span>
                         </p>
                     </div>
                 </div>
@@ -1439,7 +1439,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                                         <p className="text-xs text-slate-500 font-bold uppercase truncate">{item.item}</p>
                                         <div className="flex items-center gap-2 mt-1">
                                             <span className="text-[10px] text-emerald-600 font-bold uppercase">
-                                                Gereedgemeld om {item.timestamps?.finished ? format(toDateFromMixed(item.timestamps.finished) || new Date(), "HH:mm") : "--:--"}
+                                                {t('bm01.reportedReadyAt', 'Gereedgemeld om')} {item.timestamps?.finished ? format(toDateFromMixed(item.timestamps.finished) || new Date(), "HH:mm") : "--:--"}
                                             </span>
                                             <button
                                                 onClick={(e) => {
@@ -1463,7 +1463,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 flex flex-col justify-between shadow-sm">
                         <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">Naharding Batch</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">{t('bm01.nahardingBatch', 'Naharding Batch')}</p>
                             <p className="text-sm font-bold text-slate-700 mt-1">
                                 {t("bm01.naharding_batch_desc", "Meld in 1x alle Naharding lots gereed zodra de oven is geleegd.")}
                             </p>
@@ -1493,9 +1493,9 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                         <div>
                             <div className="flex justify-between items-start gap-2">
                                 <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">Print Labels</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">{t('bm01.printLabels', 'Print Labels')}</p>
                                     <p className="text-sm font-bold text-slate-700 mt-1">
-                                        Print het QR-overzicht voor de Naharding batch van een specifieke dag of week.
+                                        {t('bm01.printLabelsHelp', 'Print het QR-overzicht voor de Naharding batch van een specifieke dag of week.')}
                                     </p>
                                 </div>
                                 <div className="flex bg-white p-0.5 rounded-lg border border-blue-100 shadow-sm shrink-0">
@@ -1515,7 +1515,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                             </div>
                             <div className="flex justify-between items-end mt-4">
                                 <p className="text-xs font-bold text-blue-800 bg-blue-100/50 px-3 py-1.5 rounded-lg border border-blue-200 shadow-sm">
-                                    Aantal lots: <span className="font-black text-lg ml-1">{nahardingPrintList.length}</span>
+                                    {t('bm01.lotCount', 'Aantal lots')}: <span className="font-black text-lg ml-1">{nahardingPrintList.length}</span>
                                 </p>
                                 <div className="flex items-center bg-white p-1.5 rounded-xl shadow-md border-2 border-blue-200 shrink-0">
                                     <button onClick={() => setSelectedDate(d => viewMode === 'day' ? subDays(d, 1) : subDays(d, 7))} className="p-2 hover:bg-blue-50 rounded-lg text-slate-500 hover:text-blue-700 transition-colors">
@@ -1524,7 +1524,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                                     <div 
                                         className="flex items-center px-4 cursor-pointer select-none min-w-[120px] justify-center"
                                         onDoubleClick={() => setSelectedDate(new Date())}
-                                        title="Dubbelklik voor vandaag"
+                                        title={t('bm01.doubleClickForToday', 'Dubbelklik voor vandaag')}
                                     >
                                         <Calendar size={14} className="text-blue-500 mr-2 inline-block" />
                                         <span className="font-black text-slate-800 text-xs uppercase tracking-wider">
@@ -1550,7 +1550,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                             }`}
                         >
                             <Printer size={16} className="inline-block mr-2 -mt-0.5" />
-                            <span>QR Print Overzicht</span>
+                            <span>{t('bm01.qrPrintOverview', 'QR Print Overzicht')}</span>
                         </button>
                     </div>
                 </div>
@@ -1585,8 +1585,8 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                         <div className="flex items-center gap-3 text-rose-700">
                             <AlertTriangle size={20} className="shrink-0" />
                             <div className="text-left">
-                                <p className="text-xs font-black uppercase tracking-widest leading-none">LN Mismatch</p>
-                                <p className="text-[10px] font-bold opacity-60 mt-1 uppercase">Geleverd vs Goedgekeurd</p>
+                                <p className="text-xs font-black uppercase tracking-widest leading-none">{t('bm01.lnMismatch', 'LN Mismatch')}</p>
+                                <p className="text-[10px] font-bold opacity-60 mt-1 uppercase">{t('bm01.deliveredVsApproved', 'Geleverd vs Goedgekeurd')}</p>
                             </div>
                         </div>
                         <span className="px-2.5 py-1 rounded-xl bg-white border border-rose-200 text-rose-700 text-[11px] font-black italic">
@@ -1600,7 +1600,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                             onClick={() => setDeliveryMismatchFilter("all")}
                             className={`px-4 py-2 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all ${deliveryMismatchFilter === "all" ? "bg-white border-rose-300 text-rose-700 shadow-sm" : "bg-rose-100/60 border-rose-200 text-rose-600 hover:bg-white"}`}
                         >
-                            Alles ({deliveryInspectionMismatches.length})
+                            {t('common.all', 'Alles')} ({deliveryInspectionMismatches.length})
                         </button>
                         <button
                             type="button"
@@ -1624,7 +1624,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                         <div className="rounded-2xl bg-slate-50 border border-dashed border-slate-200 px-6 py-12 text-center">
                             <CheckCircle2 size={40} className="mx-auto mb-3 text-slate-300" />
                             <p className="text-xs font-black uppercase tracking-widest text-slate-400 italic">
-                                Geen mismatch-orders gevonden.
+                                {t('bm01.noMismatchOrdersFound', 'Geen mismatch-orders gevonden.')}
                             </p>
                         </div>
                     ) : (
@@ -1718,7 +1718,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                     </div>
                     <div className="flex items-center gap-6">
                         <div className="bg-slate-100 px-4 py-2 rounded-xl border border-slate-200 text-right">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 block">Aantal lots</span>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 block">{t('bm01.lotCount', 'Aantal lots')}</span>
                             <span className="text-2xl font-black text-slate-800 leading-none">{(activeTab === "naharding_batch" ? nahardingPrintList : completedProducts).length}</span>
                         </div>
                         <div className="flex gap-4">
@@ -1749,7 +1749,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                         </p>
                     </div>
                     <div className="text-right">
-                        <span className="text-slate-500 text-sm font-bold uppercase tracking-widest">Aantal lots:</span>
+                        <span className="text-slate-500 text-sm font-bold uppercase tracking-widest">{t('bm01.lotCount', 'Aantal lots')}:</span>
                         <span className="ml-2 text-3xl font-black text-slate-900">{(activeTab === "naharding_batch" ? nahardingPrintList : completedProducts).length}</span>
                     </div>
                 </div>
@@ -1809,10 +1809,10 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                                 <thead>
                                     <tr className="border-b-2 border-slate-200">
                                         <th className="py-2 px-2 text-slate-500 uppercase">#</th>
-                                        <th className="py-2 px-2 text-slate-500 uppercase">Lotnummer</th>
-                                        <th className="py-2 px-2 text-slate-500 uppercase">Ordernummer</th>
-                                        <th className="py-2 px-2 text-slate-500 uppercase">Product</th>
-                                        <th className="py-2 px-2 text-slate-500 uppercase">Tijd</th>
+                                        <th className="py-2 px-2 text-slate-500 uppercase">{t('common.lotNumber', 'Lotnummer')}</th>
+                                        <th className="py-2 px-2 text-slate-500 uppercase">{t('common.orderNumber', 'Ordernummer')}</th>
+                                        <th className="py-2 px-2 text-slate-500 uppercase">{t('common.product', 'Product')}</th>
+                                        <th className="py-2 px-2 text-slate-500 uppercase">{t('common.time', 'Tijd')}</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">

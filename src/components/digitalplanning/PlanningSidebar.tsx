@@ -1748,7 +1748,7 @@ const PlanningSidebar = ({
           {/* Totaal Gereed & Leverdata Blok */}
           <div className="mb-1 rounded-xl border border-slate-100 bg-slate-50/70 p-2 space-y-1">
             <div className="flex items-center justify-between">
-              <p className="text-[8px] font-black uppercase tracking-tighter text-blue-600">Totaal Gereed</p>
+              <p className="text-[8px] font-black uppercase tracking-tighter text-blue-600">{t("planningSidebar.totalReady", "Totaal Gereed")}</p>
               <p className="text-[8px] font-black text-blue-900 bg-blue-100/50 px-1 py-0 rounded">
                 {getFinishedUnitsForOrder(order)} / {Math.max(0, getEffectivePlanQty(order))}
               </p>
@@ -1760,7 +1760,7 @@ const PlanningSidebar = ({
               <div className="flex items-start justify-between gap-2 text-slate-500">
                 <div className="flex items-center gap-1.5">
                   <Calendar size={10} className="mt-0.5 text-slate-400 shrink-0" />
-                  <span className="uppercase text-slate-400 text-[7px] font-bold">Lever:</span>
+                  <span className="uppercase text-slate-400 text-[7px] font-bold">{t("planningSidebar.delivery", "Lever:")}</span>
                 </div>
                 <span className="text-right text-[7px] font-black text-slate-700 ml-1">{formatDeliveryDate(order)}</span>
               </div>
@@ -1837,11 +1837,11 @@ const PlanningSidebar = ({
                   onChange={(e) => setRejectPeriod(e.target.value)}
                   className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
                 >
-                  <option value="this_week">Deze week</option>
-                  <option value="previous_week">Vorige week</option>
-                  <option value="this_month">Deze maand</option>
-                  <option value="this_year">Dit jaar</option>
-                  <option value="all">Alles</option>
+                  <option value="this_week">{t("planningSidebar.thisWeek", "Deze week")}</option>
+                  <option value="previous_week">{t("planningSidebar.previousWeek", "Vorige week")}</option>
+                  <option value="this_month">{t("planningSidebar.thisMonth", "Deze maand")}</option>
+                  <option value="this_year">{t("planningSidebar.thisYear", "Dit jaar")}</option>
+                  <option value="all">{t("planningSidebar.all", "Alles")}</option>
                 </select>
               ) : isCompletedScope ? (
                 <select
@@ -1849,8 +1849,8 @@ const PlanningSidebar = ({
                   onChange={(e) => setCompletedRangeMode(e.target.value)}
                   className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
                 >
-                  <option value="day">Per dag</option>
-                  <option value="week">Per week</option>
+                  <option value="day">{t("planningSidebar.perDay", "Per dag")}</option>
+                  <option value="week">{t("planningSidebar.perWeek", "Per week")}</option>
                 </select>
               ) : (
                 <select
@@ -1913,7 +1913,7 @@ const PlanningSidebar = ({
         {filteredOrders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center opacity-40 w-full">
             {loadingArchive && isHistoryScope ? (
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Archief laden...</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t("planningSidebar.loadingArchive", "Archief laden...")}</p>
             ) : (
               <>
                 <AlertCircle size={32} className="mb-2 text-slate-300" />

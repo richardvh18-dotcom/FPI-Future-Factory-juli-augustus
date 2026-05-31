@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ShieldCheck, Send, Loader2, Camera, Keyboard, Hash, RefreshCw, Printer } from "lucide-react";
 import QRCode from "qrcode";
-import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, doc, getDoc, collectionGroup } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
@@ -72,7 +72,7 @@ const getMachineCode = (station: string): string => {
   return `4${digits.slice(-2).padStart(2, "0")}`;
 };
 
-const QsheVirtualLotsView = () => {
+const QcSampleView = () => {
   const { t } = useTranslation();
   const { user } = useAdminAuth() as { user: AuthUser | null };
   const { showSuccess, showWarning } = useNotifications() as {
@@ -148,28 +148,51 @@ const QsheVirtualLotsView = () => {
           
           let maxSeq = 0;
           
-          // 1. Controleer orders uit planning (inclusief geïmporteerde LN orders)
-          (rawOrders || []).forEach(order => {
-            const lot = String((order as any).lotNumber || (order as any).activeLot || (order as any).lotStart || "");
-            if (lot.startsWith(prefix)) {
-              const seq = parseInt(lot.slice(-4), 10);
-              if (seq > maxSeq) maxSeq = seq;
-            }
-          });
-          
-          // 2. Controleer actieve tracking database (live producten op de vloer)
+          // 1. Controleer root tracking
           try {
             const trackingRef = collection(db, getPathString(PATHS.TRACKING));
-            const q = query(trackingRef, where("lotNumber", ">=", prefix), where("lotNumber", "<=", prefix + "\uf8ff"));
-            const snap = await getDocs(q);
-            snap.docs.forEach(docSnap => {
+            const qRoot = query(trackingRef, where("lotNumber", ">=", prefix), where("lotNumber", "<=", prefix + "\uf8ff"));
+            const snapRoot = await getDocs(qRoot);
+            snapRoot.docs.forEach(docSnap => {
               const lot = docSnap.data().lotNumber;
               if (lot && lot.startsWith(prefix)) {
                 const seq = parseInt(lot.slice(-4), 10);
                 if (seq > maxSeq) maxSeq = seq;
               }
             });
-          } catch(e) { console.warn(e); }
+          } catch(e) { console.warn("Root query faalde", e); }
+          
+          // 2. Controleer scoped tracking/archief
+          try {
+            const itemsGroup = collectionGroup(db, "items");
+            const qScoped = query(itemsGroup, where("lotNumber", ">=", prefix), where("lotNumber", "<=", prefix + "\uf8ff"));
+            const snapScoped = await getDocs(qScoped);
+            snapScoped.docs.forEach(docSnap => {
+              const lot = docSnap.data().lotNumber;
+              if (lot && lot.startsWith(prefix)) {
+                const seq = parseInt(lot.slice(-4), 10);
+                if (seq > maxSeq) maxSeq = seq;
+              }
+            });
+          } catch(e) { console.warn("Scoped query faalde", e); }
+
+          // 3. Controleer backend teller als extra vangnet
+          try {
+            const normStation = getNormalizedMachine(targetStation);
+            const res = await reserveAutoLotNumberRange({
+              stationId: normStation,
+              station: normStation,
+              count: 1,
+              reserve: false,
+              actorLabel: user?.email || "QC",
+              source: "QcSampleView_Preview"
+            });
+            const backendLot = res?.startLot || res?.lotStart || res?.lots?.[0] || res?.firstLot || res?.lotNumber;
+            if (backendLot && backendLot.startsWith(prefix)) {
+              const backendSeq = parseInt(backendLot.slice(-4), 10);
+              if (backendSeq - 1 > maxSeq) maxSeq = backendSeq - 1;
+            }
+          } catch(e) { console.warn("Backend counter query faalde", e); }
           
           const nextSeq = maxSeq + 1;
           setAutoLotPreview(`${prefix}${String(nextSeq).padStart(4, '0')}`);
@@ -255,15 +278,6 @@ const QsheVirtualLotsView = () => {
       }
       finalLot = autoLotPreview;
       setSubmitting(true);
-      
-      // Update the counter in the background just in case it needs to advance
-      reserveAutoLotNumberRange({
-        stationId: effectiveMachine,
-        count: 1,
-        reserve: true,
-        actorLabel: user?.email || "QC",
-        source: "QsheVirtualLotsView"
-      }).catch(console.error);
     } else {
       if (!finalLot) {
         showWarning(t("qshe.virtualLots.lotRequired", "Lotnummer is verplicht."));
@@ -304,14 +318,14 @@ const QsheVirtualLotsView = () => {
       });
 
       showSuccess(
-        t("qshe.virtualLots.success", "Virtueel lot {{lot}} uitgegeven voor order {{order}}.", {
+        t("qshe.virtualLots.success", "QC Steekproef lot {{lot}} aangemaakt voor order {{order}}.", {
           lot: finalLot,
           order: selectedOrder?.orderId,
         })
       );
     } catch (error: unknown) {
       console.error("Fout bij uitgeven virtueel lot:", error);
-      const message = error instanceof Error ? error.message : t("qshe.virtualLots.error", "Kon virtueel lot niet uitgeven.");
+      const message = error instanceof Error ? error.message : t("qshe.virtualLots.error", "Kon QC Steekproef niet aanmaken.");
       showWarning(message);
     } finally {
       setSubmitting(false);
@@ -324,13 +338,13 @@ const QsheVirtualLotsView = () => {
       const qrDataUrl = await QRCode.toDataURL(issued.lot, { errorCorrectionLevel: 'H', margin: 1, width: 200 });
       const printWindow = window.open('', '_blank');
       if (!printWindow) {
-        showWarning("Pop-up geblokkeerd. Sta pop-ups toe om direct te kunnen printen.");
+        showWarning(t("qcSample.popupBlocked", "Pop-up geblokkeerd. Sta pop-ups toe om direct te kunnen printen."));
         return;
       }
       printWindow.document.write(`
         <html>
           <head>
-            <title>Print Virtueel Lot - ${issued.lot}</title>
+            <title>${t("qcSample.printTitle", "Print QC Steekproef")} - ${issued.lot}</title>
             <style>
               body { font-family: sans-serif; text-align: center; padding: 20px; }
               .label-box { border: 2px solid #000; padding: 15px; display: inline-block; border-radius: 8px; min-width: 250px; }
@@ -342,12 +356,12 @@ const QsheVirtualLotsView = () => {
           </head>
           <body>
             <div class="label-box">
-              <h2>Virtueel Lot (QC)</h2>
-              <p>Order: <strong>${issued.orderId}</strong></p>
+              <h2>${t("qcSample.sample", "QC Steekproef")}</h2>
+              <p>${t("qcSample.order", "Order")}<strong>: ${issued.orderId}</strong></p>
               <p>${issued.itemDescription}</p>
               <img src="${qrDataUrl}" width="150" height="150" />
               <div class="lot">${issued.lot}</div>
-              <div class="footer">FPi Future Factory</div>
+              <div class="footer">${t("qcSample.footerBrand", "FPi Future Factory")}</div>
             </div>
             <script>window.onload = () => { window.print(); setTimeout(() => window.close(), 500); };</script>
           </body>
@@ -356,7 +370,7 @@ const QsheVirtualLotsView = () => {
       printWindow.document.close();
     } catch (e) {
       console.error(e);
-      showWarning("Kon label niet genereren om te printen.");
+      showWarning(t("qcSample.couldNotGenerateLabel", "Kon label niet genereren om te printen."));
     }
   };
 
@@ -368,10 +382,10 @@ const QsheVirtualLotsView = () => {
             <ShieldCheck size={22} />
           </div>
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-700">QC</p>
-            <h2 className="text-2xl font-black italic text-slate-900 mt-1">Virtuele Lotuitgifte</h2>
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-orange-700">{t("qcSample.qc", "QC")}</p>
+            <h2 className="text-2xl font-black italic text-slate-900 mt-1">{t("qcSample.sample", "QC Steekproef")}</h2>
             <p className="text-sm font-bold text-slate-600 mt-2">
-              Geef lotnummers uit zonder fysiek product. Deze lots blijven volledig traceerbaar en worden zichtbaar op de order.
+              Trek een steekproef-lot voor inspectie zonder de productie-teller te beïnvloeden. Deze lots blijven volledig traceerbaar in het systeem.
             </p>
           </div>
         </div>
@@ -379,7 +393,7 @@ const QsheVirtualLotsView = () => {
         <form onSubmit={handleSubmit} className="mt-6 space-y-3">
           <div className="flex flex-col gap-3">
             <div className="rounded-xl border border-orange-200 bg-white p-2">
-              <p className="text-[10px] font-black uppercase tracking-widest text-orange-700 px-1 pb-2">Kies machine</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-orange-700 px-1 pb-2">{t("qcSample.chooseMachine", "Kies machine")}</p>
               <select
                 value={machine}
                 onChange={(e) => {
@@ -388,7 +402,7 @@ const QsheVirtualLotsView = () => {
                 }}
                 className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 outline-none focus:border-orange-400"
               >
-                <option value="">- Selecteer een machine -</option>
+                <option value="">{t('qcSample.selectMachine', '- Selecteer een machine -')}</option>
                 {machineOptions.map((entry) => (
                   <option key={entry} value={entry}>
                     {entry}
@@ -399,7 +413,7 @@ const QsheVirtualLotsView = () => {
 
             {machine && (
               <div className="rounded-xl border border-orange-200 bg-white p-2 animate-in fade-in">
-                <p className="text-[10px] font-black uppercase tracking-widest text-orange-700 px-1 pb-2">Kies actieve order</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-orange-700 px-1 pb-2">{t("qcSample.chooseActiveOrder", "Kies actieve order")}</p>
                 <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
                   {orderOptions.map((entry) => {
                     const entryOrderId = String(entry?.orderId || "").trim();
@@ -420,14 +434,14 @@ const QsheVirtualLotsView = () => {
                       >
                         <div className="flex justify-between items-start mb-1">
                           <p className="text-xs font-black text-slate-900 leading-tight">{entryOrderId || "-"}</p>
-                          {isActive && <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold uppercase tracking-wider">Actief</span>}
+                          {isActive && <span className="text-[8px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-bold uppercase tracking-wider">{t("qcSample.active", "Actief")}</span>}
                         </div>
                         <p className="text-[11px] font-bold text-slate-600 leading-tight break-words">{entryLabel}</p>
                       </button>
                     );
                   })}
                   {orderOptions.length === 0 && (
-                    <p className="px-2 py-3 text-[11px] font-bold text-slate-500">Geen actieve orders gevonden voor deze machine.</p>
+                    <p className="px-2 py-3 text-[11px] font-bold text-slate-500">{t("qcSample.noActiveOrdersForMachine", "Geen actieve orders gevonden voor deze machine.")}</p>
                   )}
                 </div>
               </div>
@@ -533,7 +547,7 @@ const QsheVirtualLotsView = () => {
                   {isDecodingImage ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
                   {isDecodingImage ? "Scannen..." : "Open mobiele camera"}
                 </button>
-                <span className="text-[10px] font-bold text-slate-500">Na scannen wordt lotnummer automatisch ingevuld.</span>
+                <span className="text-[10px] font-bold text-slate-500">{t("qcSample.autoFilledAfterScan", "Na scannen wordt lotnummer automatisch ingevuld.")}</span>
               </div>
             )}
           </div>
@@ -542,7 +556,7 @@ const QsheVirtualLotsView = () => {
             type="text"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Optionele reden (QC aanvraag)"
+            placeholder={t("placeholders.adminQcSampleReasonOptional", "Steekproef reden (optioneel)")}
             className="w-full px-3 py-2 rounded-xl border border-orange-200 bg-white text-xs font-bold text-slate-700 outline-none focus:border-orange-400"
           />
 
@@ -553,7 +567,7 @@ const QsheVirtualLotsView = () => {
               className="px-4 py-2 rounded-xl bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-orange-600 disabled:opacity-60 flex items-center gap-2"
             >
               {submitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-              {submitting ? "Bezig..." : "Geef Virtueel Lot Uit"}
+              {submitting ? "Bezig..." : "Maak QC Steekproef"}
             </button>
           </div>
         </form>
@@ -561,7 +575,7 @@ const QsheVirtualLotsView = () => {
         {lastIssued && (
           <div className="mt-4 p-4 rounded-xl border border-emerald-200 bg-emerald-50 flex items-center justify-between animate-in slide-in-from-bottom-2">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">Laatst uitgegeven (QC Lot)</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-emerald-700">{t("qcSample.lastCreated", "Laatst aangemaakt (QC Steekproef)")}</p>
               <p className="text-sm font-bold text-emerald-900 mt-1">{lastIssued.lot} <span className="opacity-50 text-xs font-medium">({lastIssued.orderId})</span></p>
             </div>
             <button
@@ -578,4 +592,4 @@ const QsheVirtualLotsView = () => {
   );
 };
 
-export default QsheVirtualLotsView;
+export default QcSampleView;

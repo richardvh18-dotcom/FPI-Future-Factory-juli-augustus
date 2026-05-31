@@ -11,7 +11,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { nl } from 'date-fns/locale';
 import {
   Loader2, RefreshCw, Trash2, AlertTriangle, CheckCircle,
-  Printer, Usb, Play, ArrowLeft, Zap, Search, Hash,
+  Printer, Usb, Play, ArrowLeft, Zap, Search,
   RotateCcw, Eye, X, Tag
 } from 'lucide-react';
 import { generateLotBatchZPL } from '../../utils/zplHelper';
@@ -159,6 +159,14 @@ const normalizeQueuePrintPayload = (content: unknown, quantity: unknown) => {
   return Array.from({ length: qty }, () => base).join("\n");
 };
 
+const getTimestampMillis = (value: unknown): number => {
+  if (!value) return 0;
+  if (value instanceof Date) return value.getTime();
+  if (typeof (value as any)?.toDate === 'function') return (value as any).toDate().getTime();
+  const parsed = new Date(String(value));
+  return Number.isFinite(parsed.getTime()) ? parsed.getTime() : 0;
+};
+
 // --- Helper voor Tijdelijke Labels ---
 const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, handleTempLegacyPrint }: TempLabelItemProps) => {
   const itemDisplay = getOrderLabelDescription(item) || getOrderLabelItemCode(item);
@@ -192,7 +200,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, han
           <p className="text-sm font-black text-slate-800 truncate">{getOrderLabelOrder(item)}</p>
           <p className="text-xs font-bold text-slate-500 truncate">{itemDisplay}</p>
           <div className="mt-3">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Template</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("common.template", "Template")}</label>
             {topOptions.length > 0 ? (
               <select
                 className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
@@ -204,7 +212,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, han
                 ))}
               </select>
             ) : (
-              <p className="text-xs italic text-amber-600">Geen passende tijdelijke template gevonden.</p>
+              <p className="text-xs italic text-amber-600">{t("printer.noMatchingTemporaryTemplate", "Geen passende tijdelijke template gevonden.")}</p>
             )}
           </div>
           <button
@@ -212,14 +220,14 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, han
             disabled={!selectedTemplate || topOptions.length === 0}
             className="mt-3 px-3 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-amber-600 disabled:opacity-50"
           >
-            Print
+            {t("common.print", "Print")}
           </button>
         </div>
         <div className="w-full lg:w-64 h-36 bg-white border border-slate-200 rounded-xl p-2 flex items-center justify-center">
           {selectedTemplate ? (
             <AutoScaledLabelPreview label={selectedTemplate as any} data={previewData} maxScale={1} exactBitmapPreview />
           ) : (
-            <p className="text-xs text-slate-400 italic">Geen preview</p>
+            <p className="text-xs text-slate-400 italic">{t("printer.noPreview", "Geen preview")}</p>
           )}
         </div>
       </div>
@@ -688,10 +696,10 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
               </div>
               <div>
                 <h3 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-1">
-                  Order <span className="text-emerald-600">Labels</span>
+                  {t("printer.orderLabels", "Order Labels")}
                 </h3>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  Legacy / Nood-etiketten zoeken
+                  {t("printer.legacyEmergencyLabelsSearch", "Legacy / Nood-etiketten zoeken")}
                 </p>
               </div>
             </div>
@@ -723,7 +731,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
               onClick={handleRefresh}
               disabled={loadingInitialList || loading}
               className="px-4 py-4 bg-slate-50 border-2 border-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-100 hover:text-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Ververs lijst"
+              title={t("common.refresh", "Ververs lijst")}
             >
               <RefreshCw size={18} className={loadingInitialList ? 'animate-spin' : ''} />
             </button>
@@ -749,8 +757,8 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
             {!orderStr.trim() && (
               <div className="py-12 border-2 border-dashed border-slate-200 rounded-[30px] flex flex-col items-center justify-center text-center bg-slate-50/50">
                 <Search className="text-slate-400 mb-3" size={32} />
-                <p className="text-sm font-bold text-slate-600">Zoek een order of lotnummer</p>
-                <p className="text-xs text-slate-400 font-medium mt-1">Typ een referentie in de zoekbalk om labels te bekijken.</p>
+                <p className="text-sm font-bold text-slate-600">{t("printer.searchOrderOrLot", "Zoek een order of lotnummer")}</p>
+                <p className="text-xs text-slate-400 font-medium mt-1">{t("printer.typeReferenceToViewLabels", "Typ een referentie in de zoekbalk om labels te bekijken.")}</p>
               </div>
             )}
 
@@ -964,7 +972,7 @@ const PrintQueueAdminView = () => {
   const [loading, setLoading] = useState(true);
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
   const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
-  const [autoPrint, setAutoPrint] = useState(false);
+  const [autoPrint, setAutoPrint] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
 
@@ -976,9 +984,9 @@ const PrintQueueAdminView = () => {
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
   const [reprintSearch, setReprintSearch] = useState('');
   const [reprintResult, setReprintResult] = useState<AnyRecord | null>(null);
+  const [exactReprintJob, setExactReprintJob] = useState<PrintJob | null>(null);
   const { labelTemplates, labelRules } = useLabelCatalog();
   const [isSearching, setIsSearching] = useState(false);
-  const [selectedLabelId, setSelectedLabelId] = useState('');
   const [previewJob, setPreviewJob] = useState<PrintJob | null>(null);
   const [previewSize, setPreviewSize] = useState("3.54x5.91");
   const [previewSizeLabel, setPreviewSizeLabel] = useState("90x150 mm");
@@ -1206,6 +1214,11 @@ const PrintQueueAdminView = () => {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 203;
   }, [activeQueuePrinter]);
 
+  const printerDarkness = useMemo(() => {
+    const parsed = parseInt(String(activeQueuePrinter?.darkness ?? ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 15;
+  }, [activeQueuePrinter]);
+
   const printerZplTextFont = useMemo(() => {
     const raw = String(activeQueuePrinter?.zplTextFont || '').trim().toUpperCase();
     return raw === 'A' ? 'A' : '0';
@@ -1237,6 +1250,29 @@ const PrintQueueAdminView = () => {
     setError('');
   };
 
+  const regenerateBitmapPayloadFromJob = useCallback(async (job: PrintJob): Promise<string | null> => {
+    const templateId = String(job.metadata?.templateId || '').trim();
+    const template = templateId ? labelTemplates.find((entry) => String(entry.id) === templateId) : null;
+    const variables = job.metadata?.variables;
+
+    if (!template || !variables || typeof variables !== 'object' || Array.isArray(variables)) {
+      return null;
+    }
+
+    const widthMm = Number((template as any)?.width) || 90;
+    const heightMm = Number((template as any)?.height) || 40;
+
+    return renderLabelToBitmapZpl({
+      template: template as any,
+      data: variables as AnyRecord,
+      printerDpi,
+      darkness: Math.max(15, Number(printerDarkness) || 15),
+      printSpeed: 3,
+      widthMm,
+      heightMm,
+    });
+  }, [labelTemplates, printerDpi, printerDarkness]);
+
   const handlePrintJob = async (job: PrintJob) => {
     if (!usbDevice) throw new Error("Geen USB printer verbonden.");
     await transitionPrintQueueJobStatus({
@@ -1245,8 +1281,8 @@ const PrintQueueAdminView = () => {
       source: 'PrintQueueAdminView',
     });
     try {
-      // Use printData (standard) or zpl field
-      const content = job.printData || job.zpl;
+      const regeneratedContent = await regenerateBitmapPayloadFromJob(job);
+      const content = regeneratedContent || job.printData || job.zpl;
       if (!content) throw new Error("Geen printdata gevonden in job.");
       const quantity = getJobQuantity(job) || 1;
       const payload = normalizeQueuePrintPayload(content, quantity);
@@ -1319,36 +1355,95 @@ const PrintQueueAdminView = () => {
     
     setIsSearching(true);
     setReprintResult(null);
+    setExactReprintJob(null);
     setError('');
 
-    const searchStr = reprintSearch.trim().toUpperCase();
+    let searchStr = reprintSearch.trim().toUpperCase();
+    if (searchStr.includes('/')) {
+      searchStr = searchStr.split('/').filter(Boolean).pop() || searchStr;
+    }
+
+    const searchOptions = new Set<string>([searchStr]);
+    const digitsMatch = searchStr.match(/\d+/);
+    if (digitsMatch?.[0]) {
+      const digits = digitsMatch[0];
+      searchOptions.add(digits);
+      if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
+        searchOptions.add(`N${digits}`);
+        searchOptions.add(`N20${digits}`);
+        searchOptions.add(`N200${digits}`);
+        searchOptions.add(`N21${digits}`);
+        searchOptions.add(`N210${digits}`);
+        searchOptions.add(`P${digits}`);
+      }
+    }
+
+    const optionList = Array.from(searchOptions).slice(0, 10);
+
+    const searchCollectionByFields = async (colRef: any, fields: string[]) => {
+      for (const field of fields) {
+        try {
+          const snap = await getDocs(query(colRef, where(field, 'in', optionList), limit(1)));
+          if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() } as AnyRecord;
+        } catch {
+          // best-effort query, probeer volgende veld
+        }
+      }
+      return null;
+    };
+
     try {
       let foundDoc: AnyRecord | null = null;
 
       // 1. Actieve productie (Lotnummer)
       try {
         const trackingRef = collection(db, getPathString(PATHS.TRACKING));
-        const snap = await getDocs(query(trackingRef, where("lotNumber", "==", searchStr), limit(1)));
-        if (!snap.empty) foundDoc = { id: snap.docs[0].id, ...snap.docs[0].data(), source: 'active' };
+        const match = await searchCollectionByFields(trackingRef, [
+          'lotNumber',
+          'orderId',
+          'orderNumber',
+          'Order',
+          'originalOrderId',
+          'itemCode',
+          'productCode',
+        ]);
+        if (match) foundDoc = { ...match, source: 'active' };
       } catch (e) { console.warn(e); }
 
-      // 2. Archief (Lotnummer)
+      // 2. Archief (Lotnummer / order) - meerdere jaren
       if (!foundDoc) {
-        try {
-          const currentYear = new Date().getFullYear();
-          const archiveRef = collection(db, "future-factory", "production", "archive", String(currentYear), "items");
-          const snapArch = await getDocs(query(archiveRef, where("lotNumber", "==", searchStr), limit(1)));
-          if (!snapArch.empty) foundDoc = { id: snapArch.docs[0].id, ...snapArch.docs[0].data(), source: 'archive' };
-        } catch (e) { console.warn(e); }
+        const currentYear = new Date().getFullYear();
+        for (let year = currentYear; year >= currentYear - 4; year--) {
+          try {
+            const archiveRef = collection(db, 'future-factory', 'production', 'archive', String(year), 'items');
+            const match = await searchCollectionByFields(archiveRef, [
+              'lotNumber',
+              'orderId',
+              'orderNumber',
+              'Order',
+              'originalOrderId',
+              'itemCode',
+              'productCode',
+            ]);
+            if (match) {
+              foundDoc = { ...match, source: 'archive' };
+              break;
+            }
+          } catch (e) {
+            console.warn(e);
+          }
+        }
       }
 
       // 3. Fallback: Zoek in orders via collectionGroup
       if (!foundDoc) {
         try {
           const orderQueries = [
-            getDocs(query(collectionGroup(db, 'orders'), where('orderId', '==', searchStr), limit(1))),
-            getDocs(query(collectionGroup(db, 'orders'), where('orderNumber', '==', searchStr), limit(1))),
-            getDocs(query(collectionGroup(db, 'orders'), where('Order', '==', searchStr), limit(1)))
+            getDocs(query(collectionGroup(db, 'orders'), where('orderId', 'in', optionList), limit(1))),
+            getDocs(query(collectionGroup(db, 'orders'), where('orderNumber', 'in', optionList), limit(1))),
+            getDocs(query(collectionGroup(db, 'orders'), where('Order', 'in', optionList), limit(1))),
+            getDocs(query(collectionGroup(db, 'orders'), where('originalOrderId', 'in', optionList), limit(1))),
+            getDocs(query(collectionGroup(db, 'orders'), where('itemCode', 'in', optionList), limit(1)))
           ];
           const snaps = await Promise.all(orderQueries.map(p => p.catch(() => null)));
           for (const snap of snaps) {
@@ -1369,19 +1464,75 @@ const PrintQueueAdminView = () => {
           getPathString(PATHS.PLANNING)
         ];
         for (const path of targetedPaths) {
-          try {
-            const docRef = doc(db, path, searchStr);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-              foundDoc = { id: docSnap.id, ...docSnap.data(), source: 'legacy_path' };
-              break;
+          for (const option of optionList) {
+            try {
+              const docRef = doc(db, path, option);
+              const docSnap = await getDoc(docRef);
+              if (docSnap.exists()) {
+                foundDoc = { id: docSnap.id, ...docSnap.data(), source: 'legacy_path' };
+                break;
+              }
+            } catch (e) {
+              console.warn(e);
             }
-          } catch (e) { console.warn(e); }
+          }
+          if (foundDoc) break;
         }
       }
 
       if (foundDoc) {
         setReprintResult(foundDoc);
+
+        const lotCandidates = new Set<string>(
+          [
+            String((foundDoc as AnyRecord)?.lotNumber || ''),
+            ...optionList,
+          ]
+            .map((v) => String(v || '').trim().toUpperCase())
+            .filter(Boolean)
+        );
+
+        const orderCandidates = new Set<string>(
+          [
+            getOrderLabelOrder(foundDoc),
+            String((foundDoc as AnyRecord)?.orderId || ''),
+            String((foundDoc as AnyRecord)?.orderNumber || ''),
+            String((foundDoc as AnyRecord)?.Order || ''),
+            String((foundDoc as AnyRecord)?.originalOrderId || ''),
+            ...optionList,
+          ]
+            .map((v) => String(v || '').trim().toUpperCase())
+            .filter(Boolean)
+        );
+
+        const matchedQueueJob = [...printJobs]
+          .filter((job) => {
+            const content = String(job?.zpl || job?.printData || job?.labelZPL || '').trim();
+            if (!content) return false;
+
+            const metadata = (job?.metadata || {}) as AnyRecord;
+            const lot = String(metadata?.lotNumber || '').trim().toUpperCase();
+            const orderId = String(metadata?.orderId || '').trim().toUpperCase();
+            const orderNumber = String(metadata?.orderNumber || '').trim().toUpperCase();
+            const originalOrderId = String(metadata?.originalOrderId || '').trim().toUpperCase();
+            const description = String(metadata?.description || job?.description || '').toUpperCase();
+
+            if (lot && lotCandidates.has(lot)) return true;
+            if (orderId && orderCandidates.has(orderId)) return true;
+            if (orderNumber && orderCandidates.has(orderNumber)) return true;
+            if (originalOrderId && orderCandidates.has(originalOrderId)) return true;
+
+            return Array.from(new Set([...lotCandidates, ...orderCandidates]))
+              .filter((token) => token.length >= 4)
+              .some((token) => description.includes(token));
+          })
+          .sort((a, b) => getTimestampMillis(b?.createdAt) - getTimestampMillis(a?.createdAt))[0] || null;
+
+        setExactReprintJob(matchedQueueJob);
+
+        if (!matchedQueueJob) {
+          setError('Product gevonden, maar geen eerdere queue-job met exacte printdata gevonden.');
+        }
       } else {
         setError(`Order of Lotnummer '${searchStr}' niet gevonden.`);
       }
@@ -1394,71 +1545,35 @@ const PrintQueueAdminView = () => {
     }
   };
 
-  const reprintOptions = useMemo(() => {
-    if (!reprintResult) return labelTemplates;
-    return filterTempOrderLabelsByProduct(labelTemplates || [], buildOrderLabelTemplateProduct(reprintResult)) as LabelTemplate[];
-  }, [reprintResult, labelTemplates]);
-
-  useEffect(() => {
-    if (reprintOptions.length > 0) {
-      const isValidSelection = reprintOptions.some((t) => String(t.id) === selectedLabelId);
-      if (!selectedLabelId || !isValidSelection) {
-        setSelectedLabelId(String(reprintOptions[0]?.id || ""));
-      }
-    }
-  }, [reprintOptions, selectedLabelId]);
-
-  const selectedReprintTemplate = reprintOptions.find(t => String(t.id) === selectedLabelId) || reprintOptions[0];
-
-  const reprintPreviewData = useMemo(() => {
-    if (!reprintResult) return {};
-    return buildOrderLabelPreviewData(reprintResult, labelRules);
-  }, [reprintResult, labelRules]);
-
-  const handleReprintLabel = async (type: 'simple' | 'full') => {
+  const handleReprintLabel = async () => {
     if (!reprintResult || !usbDevice) {
-      setError("Geen product gevonden of geen printer verbonden.");
+      setError('Geen product gevonden of geen printer verbonden.');
+      return;
+    }
+
+    if (!exactReprintJob) {
+      setError('Geen eerdere queue-job met exacte printdata gevonden voor dit product.');
       return;
     }
 
     setIsProcessing(true);
     try {
-      let zpl = "";
-      
-      const order = getOrderLabelOrder(reprintResult);
-      const item = getOrderLabelItemCode(reprintResult);
-      const desc = getOrderLabelDescription(reprintResult);
-      const lot = reprintResult.lotNumber || order;
-      
-      if (type === 'simple') {
-        zpl = `^XA\n^FO50,50^BQN,2,6^FDQA,${lot}^FS\n^FO50,200^A0N,50,50^FD${lot}^FS\n^FO50,260^A0N,30,30^FD${item}^FS\n^XZ`;
-      } else if (reprintResult.labelZPL) {
-        zpl = String(reprintResult.labelZPL);
-        console.log("Herdruk via opgeslagen ZPL.");
-      } else {
-        const template = selectedReprintTemplate || labelTemplates[0];
-        if (!template) throw new Error("Geen label template beschikbaar.");
-
-        const widthMm = Number((template as any)?.width) || 90;
-        const heightMm = Number((template as any)?.height) || 40;
-        zpl = await renderLabelToBitmapZpl({
-          template: template as any,
-          data: (reprintPreviewData as AnyRecord) || {},
-          printerDpi,
-          darkness: Math.max(15, Number(printerDarkness) || 15),
-          printSpeed: 3,
-          widthMm,
-          heightMm,
-        });
+      const basePayload = String(exactReprintJob.zpl || exactReprintJob.printData || exactReprintJob.labelZPL || '').trim();
+      if (!basePayload) {
+        throw new Error('De gevonden queue-job bevat geen printdata.');
       }
 
-      await printRawUsb(usbDevice, zpl);
-      setReprintSearch("");
+      const quantity = getJobQuantity(exactReprintJob) || 1;
+      const payload = normalizeQueuePrintPayload(basePayload, quantity);
+
+      await printRawUsb(usbDevice, payload);
+      setReprintSearch('');
       setReprintResult(null);
-      notify("Label geprint!");
+      setExactReprintJob(null);
+      notify(`Exacte kopie geprint (x${quantity}).`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setError("Print fout: " + message);
+      setError('Print fout: ' + message);
     } finally {
       setIsProcessing(false);
     }
@@ -1479,8 +1594,8 @@ const PrintQueueAdminView = () => {
               </button>
             )}
             <div>
-              <h1 className="text-3xl font-bold mb-1">{selectedStation ? `Station: ${selectedStation}` : 'Print Stations'}</h1>
-              <p className="text-slate-600 text-sm">Beheer printopdrachten en herprint labels.</p>
+              <h1 className="text-3xl font-bold mb-1">{selectedStation ? `${t("printer.station", "Station")}: ${selectedStation}` : t("printer.printStations", "Print Stations")}</h1>
+              <p className="text-slate-600 text-sm">{t("printer.managePrintJobsAndReprints", "Beheer printopdrachten en herprint labels.")}</p>
             </div>
           </div>
         </div>
@@ -1588,7 +1703,7 @@ const PrintQueueAdminView = () => {
                   )}
                 </div>
                 <h3 className="font-black text-xl text-slate-800 mt-4 uppercase tracking-tight">{station}</h3>
-                <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Print Queue</p>
+                <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">{t("printer.printQueue", "Print Queue")}</p>
               </button>
             );
           })}
@@ -1615,7 +1730,7 @@ const PrintQueueAdminView = () => {
                     type="text" 
                     value={reprintSearch}
                     onChange={(e) => setReprintSearch(e.target.value.toUpperCase())}
-                    placeholder="Scan of typ lotnummer..."
+                    placeholder={t("placeholders.scanOrTypeLot", "Scan of typ lotnummer...")}
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-300 focus:border-blue-500 outline-none font-bold uppercase"
                   />
                 </div>
@@ -1627,47 +1742,34 @@ const PrintQueueAdminView = () => {
 
             {reprintResult && (
               <div className="mt-4 p-6 bg-white rounded-xl border border-blue-100 shadow-sm animate-in fade-in">
-                <div className="flex flex-col md:flex-row gap-6">
-                    <div className="flex-1">
-                        <h4 className="font-black text-lg text-slate-800 mb-2">{String(reprintResult.lotNumber || '')}</h4>
-                        <div className="space-y-1 text-sm text-slate-600">
-                          <p><span className="font-bold text-slate-400 w-20 inline-block">Item:</span> {getOrderLabelDescription(reprintResult)}</p>
-                          <p><span className="font-bold text-slate-400 w-20 inline-block">Code:</span> {getOrderLabelItemCode(reprintResult)}</p>
-                          <p><span className="font-bold text-slate-400 w-20 inline-block">Order:</span> {getOrderLabelOrder(reprintResult)}</p>
-                        </div>
-                        
-                        <div className="mt-4">
-                            <label className="text-xs font-bold text-slate-400 uppercase block mb-1">Template</label>
-                            <select 
-                                value={selectedLabelId || String(selectedReprintTemplate?.id || '')}
-                                onChange={(e) => setSelectedLabelId(e.target.value)}
-                                className="w-full p-2 border rounded-lg text-sm"
-                            >
-                                {reprintOptions.map((l) => <option key={String(l.id)} value={String(l.id)}>{String(l.name || l.id)} ({String(l.width || '-')}x{String(l.height || '-')}mm)</option>)}
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div className="border-l border-slate-100 pl-6 flex flex-col items-center justify-center bg-slate-50/50 rounded-r-xl">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Preview</p>
-                      <AutoScaledLabelPreview label={selectedReprintTemplate as any} data={reprintPreviewData} className="w-64" printerDpi={printerDpi} maxScale={1} exactBitmapPreview />
-                    </div>
+              <div className="flex-1">
+                <h4 className="font-black text-lg text-slate-800 mb-2">{String(reprintResult.lotNumber || '')}</h4>
+                <div className="space-y-1 text-sm text-slate-600">
+                  <p><span className="font-bold text-slate-400 w-20 inline-block">{t("printer.item", "Item")}:</span> {getOrderLabelDescription(reprintResult)}</p>
+                  <p><span className="font-bold text-slate-400 w-20 inline-block">{t("printer.code", "Code")}:</span> {getOrderLabelItemCode(reprintResult)}</p>
+                  <p><span className="font-bold text-slate-400 w-20 inline-block">{t("printer.order", "Order")}:</span> {getOrderLabelOrder(reprintResult)}</p>
+                </div>
+
+                <div className="mt-4">
+                  {exactReprintJob ? (
+                    <p className="text-xs font-bold text-emerald-600 uppercase tracking-wide">
+                      Exacte queue-kopie gevonden: {String(exactReprintJob.id)} (x{getJobQuantity(exactReprintJob) || 1})
+                    </p>
+                  ) : (
+                    <p className="text-xs font-bold text-amber-600 uppercase tracking-wide">
+                      Geen exacte queue-kopie gevonden voor deze zoekopdracht.
+                    </p>
+                  )}
+                </div>
                 </div>
 
                 <div className="flex gap-2 mt-4">
                   <button 
-                    onClick={() => handleReprintLabel('simple')}
-                    disabled={!usbDevice || isProcessing}
-                    className="px-4 py-2 bg-white border-2 border-slate-200 text-slate-600 hover:border-blue-500 hover:text-blue-600 rounded-lg font-bold text-xs uppercase tracking-wider transition-all"
-                  >
-                    <Hash size={14} className="inline mr-1" /> Alleen Nummer
-                  </button>
-                  <button 
-                    onClick={() => handleReprintLabel('full')}
-                    disabled={!usbDevice || isProcessing}
+                    onClick={handleReprintLabel}
+                    disabled={!usbDevice || isProcessing || !exactReprintJob}
                     className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-bold text-xs uppercase tracking-wider transition-all shadow-md"
                   >
-                    <Printer size={14} className="inline mr-1" /> Volledig Label
+                    <Printer size={14} className="inline mr-1" /> Exacte Kopie Printen
                   </button>
                 </div>
               </div>
@@ -1676,22 +1778,22 @@ const PrintQueueAdminView = () => {
 
           {/* QUEUE LIST */}
           <div>
-      <h2 className="text-xl font-bold mb-3">Print Taken</h2>
+      <h2 className="text-xl font-bold mb-3">{t("printer.printTasks", "Print Taken")}</h2>
       <div className="bg-white shadow-md rounded-lg overflow-x-auto">
         <table className="w-full text-sm text-left text-slate-500">
           <thead className="text-xs text-slate-700 uppercase bg-slate-50">
             <tr>
-              <th scope="col" className="px-6 py-3">Status</th>
-              <th scope="col" className="px-6 py-3">Beschrijving</th>
-              <th scope="col" className="px-6 py-3">Printer</th>
-              <th scope="col" className="px-6 py-3">Aangevraagd door</th>
-              <th scope="col" className="px-6 py-3">Tijdstip</th>
-              <th scope="col" className="px-6 py-3">Acties</th>
+              <th scope="col" className="px-6 py-3">{t("printer.status", "Status")}</th>
+              <th scope="col" className="px-6 py-3">{t("printer.description", "Beschrijving")}</th>
+              <th scope="col" className="px-6 py-3">{t("printer.printer", "Printer")}</th>
+              <th scope="col" className="px-6 py-3">{t("printer.requestedBy", "Aangevraagd door")}</th>
+              <th scope="col" className="px-6 py-3">{t("printer.timestamp", "Tijdstip")}</th>
+              <th scope="col" className="px-6 py-3">{t("printer.actions", "Acties")}</th>
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={6} className="text-center p-8"><Loader2 className="animate-spin inline-block" /></td></tr>}
-            {!loading && filteredJobs.length === 0 && <tr><td colSpan={6} className="text-center p-8">De wachtrij voor uw stations is leeg.</td></tr>}
+            {!loading && filteredJobs.length === 0 && <tr><td colSpan={6} className="text-center p-8">{t("printer.queueEmptyForStations", "De wachtrij voor uw stations is leeg.")}</td></tr>}
             {filteredJobs.map(job => (
               <tr key={job.id} className="bg-white border-b hover:bg-slate-50">
                 <td className="px-6 py-4">
@@ -1702,7 +1804,7 @@ const PrintQueueAdminView = () => {
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     {Boolean(job.metadata?.stationId) && <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold">{String(job.metadata?.stationId)}</span>}
                     {getJobSizeLabel(job) && <span className="text-[10px] bg-blue-50 px-2 py-0.5 rounded text-blue-700 font-bold">{getJobSizeLabel(job)}</span>}
-                    {getJobQuantity(job) && <span className="text-[10px] bg-emerald-50 px-2 py-0.5 rounded text-emerald-700 font-bold">Aantal: {getJobQuantity(job)}</span>}
+                    {getJobQuantity(job) && <span className="text-[10px] bg-emerald-50 px-2 py-0.5 rounded text-emerald-700 font-bold">{t("common.amount", "Aantal")}: {getJobQuantity(job)}</span>}
                   </div>
                   {job.status === 'error' && <p className="text-red-600 text-xs mt-1">{String(job.error || '')}</p>}
                 </td>
@@ -1719,7 +1821,7 @@ const PrintQueueAdminView = () => {
                   <div className="flex items-center gap-2">
                     {job.status === 'pending' && (
                       <>
-                      <button onClick={() => setPreviewJob(job)} className="p-2 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-full" title="Bekijk Label">
+                      <button onClick={() => setPreviewJob(job)} className="p-2 text-slate-500 hover:text-purple-600 hover:bg-purple-50 rounded-full" title={t("printer.viewLabel", "Bekijk Label")}>
                         <Eye size={16} />
                       </button>
                       <button 
@@ -1731,16 +1833,16 @@ const PrintQueueAdminView = () => {
                         }} 
                         disabled={!usbDevice || isProcessing || !canManage} 
                         className="p-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed" 
-                        title="Nu Printen"
+                        title={t("printer.printNow", "Nu Printen")}
                       >
                         <Play size={16} />
                       </button>
                       </>
                     )}
-                    <button onClick={() => handleReprint(job.id)} disabled={!canManage} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-100 rounded-full disabled:opacity-50" title="Opnieuw printen">
+                    <button onClick={() => handleReprint(job.id)} disabled={!canManage} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-100 rounded-full disabled:opacity-50" title={t("printer.reprint", "Opnieuw printen")}>
                       <RefreshCw size={16} />
                     </button>
-                    <button onClick={() => handleDelete(job.id)} disabled={!canManage} className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-100 rounded-full disabled:opacity-50" title="Verwijderen">
+                    <button onClick={() => handleDelete(job.id)} disabled={!canManage} className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-100 rounded-full disabled:opacity-50" title={t("common.delete", "Verwijderen")}>
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -1760,7 +1862,7 @@ const PrintQueueAdminView = () => {
             <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden">
                 <div className="p-4 border-b flex justify-between items-center bg-slate-50">
                      <div className="flex items-center gap-3">
-                        <h3 className="font-bold text-slate-800">Label Voorbeeld</h3>
+                        <h3 className="font-bold text-slate-800">{t("printer.labelPreview", "Label Voorbeeld")}</h3>
                         <span className="text-[10px] font-bold uppercase text-slate-500">{previewSizeLabel}</span>
                      </div>
                     <button onClick={() => setPreviewJob(null)} className="p-1 hover:bg-slate-200 rounded-full"><X size={20}/></button>

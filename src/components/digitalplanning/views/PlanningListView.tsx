@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import i18n from "i18next";
 import {
   Calendar,
   Search,
@@ -408,7 +409,7 @@ const PlanningListView = ({
               />
               <input
                 type="text"
-                placeholder="Zoek order, project of item..."
+                placeholder={i18n.t("placeholders.dpPlanningListSearch", "Zoek order, project of item...")}
                 className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border-none rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}

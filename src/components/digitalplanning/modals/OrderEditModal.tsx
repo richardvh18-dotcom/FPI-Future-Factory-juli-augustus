@@ -1,4 +1,5 @@
 import React, { FC } from "react";
+import i18n from "i18next";
 import { useLocation } from "react-router-dom";
 import { X, Settings2, Loader2, Save, Trash2 } from "lucide-react";
 
@@ -113,7 +114,7 @@ const OrderEditModal: FC<OrderEditModalProps> = ({
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-3 text-sm font-bold outline-none focus:border-blue-500 transition-all"
                 value={formData.activeLot || ""}
                 onChange={(e) => setFormData({ ...formData, activeLot: e.target.value })}
-                placeholder="Bijv. 26-01-0001"
+                placeholder={i18n.t("placeholders.dpActiveLotExample", "Bijv. 26-01-0001")}
               />
             </div>
           </div>

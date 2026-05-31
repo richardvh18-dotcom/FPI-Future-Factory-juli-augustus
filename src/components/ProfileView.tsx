@@ -293,7 +293,7 @@ const ProfileView = () => {
                     }`}
                     value={displayName}
                     onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Bijv. Richard van Heerde"
+                    placeholder={t("placeholders.profileNameExample", "Bijv. Richard van Heerde")}
                   />
                 </div>
                 <p className="text-[9px] text-slate-500 italic ml-1">
@@ -331,7 +331,7 @@ const ProfileView = () => {
                   rows={3}
                   value={preferences.signature || ""}
                   onChange={(e) => setPreferences({ ...preferences, signature: e.target.value })}
-                  placeholder="Met vriendelijke groet..."
+                  placeholder={t("placeholders.profileSignatureExample", "Met vriendelijke groet...")}
                 />
               </div>
             </div>
@@ -671,7 +671,7 @@ const ProfileView = () => {
                     type={showPw ? "text" : "password"}
                     required
                     className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-12 outline-none focus:border-blue-500 transition-all font-mono text-sm text-white"
-                    placeholder="••••••••"
+                    placeholder={t("placeholders.passwordMask", "••••••••")}
                     value={passwordData.newPassword}
                     onChange={(e) =>
                       setPasswordData({
@@ -702,7 +702,7 @@ const ProfileView = () => {
                     type={showPw ? "text" : "password"}
                     required
                     className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-blue-500 transition-all font-mono text-sm text-white"
-                    placeholder="••••••••"
+                    placeholder={t("placeholders.passwordMask", "••••••••")}
                     value={passwordData.confirmPassword}
                     onChange={(e) =>
                       setPasswordData({

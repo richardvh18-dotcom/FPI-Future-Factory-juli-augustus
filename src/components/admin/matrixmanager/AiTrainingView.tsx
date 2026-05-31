@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import {
   AlertTriangle,
   BrainCircuit,
@@ -195,7 +196,7 @@ const AiTrainingView = () => {
                         className="w-full bg-blue-50/50 border-2 border-blue-200 rounded-2xl p-4 text-sm font-medium outline-none focus:bg-white focus:border-blue-500 transition-all min-h-[100px]"
                         value={correction}
                         onChange={(e) => setCorrection(e.target.value)}
-                        placeholder="Voer het juiste technische antwoord in..."
+                        placeholder={i18n.t("placeholders.aiTrainingCorrectAnswer", "Voer het juiste technische antwoord in...")}
                       />
                       <div className="flex gap-2">
                         <button

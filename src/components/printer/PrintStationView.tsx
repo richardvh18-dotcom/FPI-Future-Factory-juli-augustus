@@ -101,6 +101,7 @@ const getErrMsg = (err: unknown): string => {
 
 // --- Helper voor Tijdelijke Labels ---
 const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi = 203 }: TempLabelItemProps) => {
+  const { t } = useTranslation();
   const itemDisplay = getOrderLabelDescription(item) || getOrderLabelItemCode(item);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
@@ -132,7 +133,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
           <p className="text-sm font-black text-slate-800 truncate">{getOrderLabelOrder(item)}</p>
           <p className="text-xs font-bold text-slate-500 truncate">{itemDisplay}</p>
           <div className="mt-3">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Template</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t('common.template', 'Template')}</label>
             {topOptions.length > 0 ? (
               <select
                 className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
@@ -144,7 +145,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
                 ))}
               </select>
             ) : (
-              <p className="text-xs italic text-amber-600">Geen passende tijdelijke template gevonden.</p>
+              <p className="text-xs italic text-amber-600">{t('printStationView.noMatchingTemporaryTemplateFound', 'Geen passende tijdelijke template gevonden.')}</p>
             )}
           </div>
           <button
@@ -159,7 +160,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
           {selectedTemplate ? (
             <AutoScaledLabelPreview label={selectedTemplate} data={previewData} maxScale={1} exactBitmapPreview />
           ) : (
-            <p className="text-xs text-slate-400 italic">Geen preview</p>
+            <p className="text-xs text-slate-400 italic">{t('printStationView.noPreview', 'Geen preview')}</p>
           )}
         </div>
       </div>
@@ -314,9 +315,7 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
                 <Tag size={28} strokeWidth={2.5} />
               </div>
               <div>
-                <h3 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-1">
-                  Order <span className="text-amber-600">Labels</span>
-                </h3>
+                <h3 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-1">{t('printStationView.orderLabels', 'Order Labels')}</h3>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   Legacy / Nood-etiketten zoeken
                 </p>
@@ -350,7 +349,7 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
               onClick={handleRefresh}
               disabled={loadingInitialList || loading}
               className="px-4 py-4 bg-slate-50 border-2 border-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-100 hover:text-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Ververs lijst"
+              title={t('printStationView.refreshList', 'Ververs lijst')}
             >
               <RefreshCw size={18} className={loadingInitialList ? 'animate-spin' : ''} />
             </button>
@@ -390,7 +389,7 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
                 
                 {searchDiagnostics.length > 0 && (
                   <div className="mt-4 mx-auto max-w-xl text-[11px] font-mono bg-slate-100 border border-slate-200 rounded-xl p-3 text-slate-600">
-                    <p className="font-black mb-1">Zoekdiagnostiek</p>
+                    <p className="font-black mb-1">{t('printStationView.searchDiagnostics', 'Zoekdiagnostiek')}</p>
                     {searchDiagnostics.map((line, idx) => (
                       <p key={`${line}-${idx}`} className="break-all">{line}</p>
                     ))}
@@ -983,7 +982,7 @@ const PrintStationView = () => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
           <div className="flex items-center gap-3">
             <Printer className="text-slate-800" size={32} />
-            <h1 className="text-3xl font-bold text-slate-800">Centraal Printstation</h1>
+            <h1 className="text-3xl font-bold text-slate-800">{t('printStationView.centralPrintStation', 'Centraal Printstation')}</h1>
           </div>
           <div className="flex items-center gap-3">
             {('usb' in navigator) && (
@@ -994,7 +993,7 @@ const PrintStationView = () => {
                 }`}
               >
                 <Usb size={16} className={usbDevice ? "text-green-500" : ""} />
-                <span className="hidden sm:inline">{usbDevice ? `USB: ${usbDevice.productName}` : 'Koppel USB Printer'}</span>
+                <span className="hidden sm:inline">{usbDevice ? `USB: ${usbDevice.productName}` : t('printStationView.connectUsbPrinter', 'Koppel USB Printer')}</span>
               </button>
             )}
             <button
@@ -1007,12 +1006,12 @@ const PrintStationView = () => {
               onClick={() => setShowTempModal(true)}
               className="bg-amber-500 text-white px-4 py-2 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-2 hover:bg-amber-600 transition-all shadow-sm w-fit"
             >
-              <Tag size={16} /> Order Labels
+              <Tag size={16} /> {t('printStationView.orderLabels', 'Order Labels')}
             </button>
           </div>
         </div>
         
-        <p className="text-slate-600 mb-8">Scan of typ een lotnummer om een label te (her)printen. De printopdracht wordt naar de centrale printer bij BH18 gestuurd.</p>
+        <p className="text-slate-600 mb-8">{t('printStationView.scanOrTypeLotForPrint', 'Scan of typ een lotnummer om een label te (her)printen. De printopdracht wordt naar de centrale printer bij BH18 gestuurd.')}</p>
 
         <form onSubmit={handleLotNumberSearch} className="flex gap-2 mb-8">
           <div className="relative flex-grow">
@@ -1021,13 +1020,13 @@ const PrintStationView = () => {
               type="text"
               value={lotNumber}
               onChange={(e) => setLotNumber(e.target.value.toUpperCase())}
-              placeholder="Scan of typ lotnummer..."
+              placeholder={t("placeholders.scanOrTypeLot", "Scan of typ lotnummer...")}
               className="w-full p-3 pl-10 border-2 border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
             />
           </div>
           <button type="submit" disabled={isLoading || !lotNumber} className="bg-slate-800 text-white px-6 py-3 rounded-lg font-semibold hover:bg-slate-700 disabled:bg-slate-400 flex items-center gap-2">
             {isLoading ? <Loader2 className="animate-spin" /> : <Search size={20} />}
-            <span>Zoek</span>
+            <span>{t('common.search', 'Zoek')}</span>
           </button>
         </form>
 
@@ -1035,15 +1034,15 @@ const PrintStationView = () => {
 
         {productData && (
           <div className="bg-white p-6 rounded-lg shadow-md animate-in fade-in">
-            <h2 className="text-2xl font-bold mb-4">Product Gevonden: {String(productData.lotNumber || '')}</h2>
+            <h2 className="text-2xl font-bold mb-4">{t('printStationView.productFound', 'Product Gevonden')}: {String(productData.lotNumber || '')}</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <p><strong>Order:</strong> {String(productData.orderId || '')}</p>
-                <p><strong>Artikel:</strong> {String(productData.itemCode || '')}</p>
-                <p><strong>Omschrijving:</strong> {String(productData.item || '')}</p>
+                <p><strong>{t('common.order', 'Order')}:</strong> {String(productData.orderId || '')}</p>
+                <p><strong>{t('common.article', 'Artikel')}:</strong> {String(productData.itemCode || '')}</p>
+                <p><strong>{t('common.description', 'Omschrijving')}:</strong> {String(productData.item || '')}</p>
                 
                 <div className="mt-4">
-                  <label htmlFor="label-select" className="block text-sm font-medium text-slate-700 mb-1">Kies Label Template</label>
+                  <label htmlFor="label-select" className="block text-sm font-medium text-slate-700 mb-1">{t('printStationView.chooseLabelTemplate', 'Kies Label Template')}</label>
                   <select
                     id="label-select"
                     value={selectedLabelId}
@@ -1056,13 +1055,13 @@ const PrintStationView = () => {
 
                 <button onClick={handlePrint} disabled={isLoading} className="mt-6 w-full bg-blue-600 text-white px-6 py-4 rounded-lg font-bold text-lg hover:bg-blue-500 disabled:bg-blue-300 flex items-center justify-center gap-3">
                   {isLoading ? <Loader2 className="animate-spin" /> : <Send size={24} />}
-                  <span>Stuur naar Printer</span>
+                  <span>{t('printStationView.sendToPrinter', 'Stuur naar Printer')}</span>
                 </button>
               </div>
               <div className="bg-slate-800 p-4 rounded-lg">
-                <h3 className="text-white font-bold mb-2">Label Preview</h3>
+                <h3 className="text-white font-bold mb-2">{t('printStationView.labelPreview', 'Label Preview')}</h3>
                 <div ref={previewRef}>
-                  {selectedLabel ? <AutoScaledLabelPreview label={selectedLabel} data={previewData} className="mx-auto" printerDpi={printerDpi} maxScale={1} exactBitmapPreview /> : <p className="text-slate-400">Selecteer een label</p>}
+                  {selectedLabel ? <AutoScaledLabelPreview label={selectedLabel} data={previewData} className="mx-auto" printerDpi={printerDpi} maxScale={1} exactBitmapPreview /> : <p className="text-slate-400">{t('printStationView.selectALabel', 'Selecteer een label')}</p>}
                 </div>
               </div>
             </div>

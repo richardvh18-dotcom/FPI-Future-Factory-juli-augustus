@@ -15,7 +15,8 @@ import {
   Users,
   Link2,
   BarChart3,
-  Upload
+  Upload,
+  Beaker
 } from "lucide-react";
 import { collection, onSnapshot, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
@@ -234,7 +235,8 @@ const AutomationRulesView = () => {
       // Migrated from WorkstationHub
       inspection_overdue: t("planning.automationRules.triggers.inspection_overdue", "Inspectie Overdue"),
       // Migrated from autoLearningService
-      standard_deviation: t("planning.automationRules.triggers.standard_deviation", "Standaard Afwijking")
+      standard_deviation: t("planning.automationRules.triggers.standard_deviation", "Standaard Afwijking"),
+      qc_sample_percentage: t("planning.automationRules.triggers.qc_sample_percentage", "QC Steekproef (Percentage)")
     };
     return labels[trigger.type] || trigger.type;
   };
@@ -249,7 +251,8 @@ const AutomationRulesView = () => {
       create_log: t("planning.automationRules.actions.create_log", "Maak Log Entry"),
       // New migrated actions
       auto_learning_update: t("planning.automationRules.actions.auto_learning_update", "Update Standaarden (AI)"),
-      inspection_reminder: t("planning.automationRules.actions.inspection_reminder", "Stuur Inspectie Reminder")
+      inspection_reminder: t("planning.automationRules.actions.inspection_reminder", "Stuur Inspectie Reminder"),
+      create_qc_sample_task: t("planning.automationRules.actions.create_qc_sample_task", "Maak QC Steekproef Taak")
     };
     return labels[action.type] || action.type;
   };
@@ -285,6 +288,12 @@ const AutomationRulesView = () => {
       });
     }
 
+    if (rule.trigger.type === "qc_sample_percentage") {
+      return t("planning.automationRules.summaries.qcSamplePercentage", "Steekproef: {{value}}%", { 
+        value: rule.trigger.conditions.samplePercentage || 0 
+      });
+    }
+
     return null;
   };
 
@@ -297,7 +306,8 @@ const AutomationRulesView = () => {
       dependency_blocked: <Link2 className="text-blue-600" size={14} />,
       inspection_overdue: <Clock className="text-red-600" size={14} />,
       standard_deviation: <BarChart3 className="text-indigo-600" size={14} />,
-      order_status_change: <CheckCircle className="text-emerald-600" size={14} />
+      order_status_change: <CheckCircle className="text-emerald-600" size={14} />,
+      qc_sample_percentage: <Beaker className="text-teal-600" size={14} />
     };
     return icons[type] || <Zap className="text-slate-600" size={14} />;
   };
@@ -558,6 +568,7 @@ const AutomationRulesView = () => {
                       </optgroup>
                       <optgroup label={t("planning.automationRules.groups.quality", "🔍 Kwaliteit & Inspectie")}>
                         <option value="inspection_overdue">{t("planning.automationRules.triggers.inspection_overdue", "Inspectie Overdue")}</option>
+                        <option value="qc_sample_percentage">{t("planning.automationRules.triggers.qc_sample_percentage", "QC Steekproef (Percentage)")}</option>
                       </optgroup>
                       <optgroup label={t("planning.automationRules.groups.ai", "🤖 AI & Learning")}>
                         <option value="standard_deviation">{t("planning.automationRules.triggers.standard_deviation", "Standaard Afwijking")}</option>
@@ -747,6 +758,29 @@ const AutomationRulesView = () => {
                       </div>
                     )}
 
+                    {/* QC Sample Percentage Conditions */}
+                    {newRule.trigger.type === "qc_sample_percentage" && (
+                      <div className="space-y-2">
+                        <label className="text-xs text-slate-600">{t("planning.automationRules.conditions.samplePercentage", "Steekproef percentage (%)")}</label>
+                        <input
+                          type="number"
+                          placeholder={t("planning.automationRules.placeholders.example5", "Bijv: 5")}
+                          value={newRule.trigger.conditions?.samplePercentage || ""}
+                          onChange={(e) => setNewRule({ 
+                            ...newRule, 
+                            trigger: { 
+                              ...newRule.trigger, 
+                              conditions: { 
+                                ...newRule.trigger.conditions,
+                                samplePercentage: parseFloat(e.target.value) || 5 
+                              } 
+                            } 
+                          })}
+                          className="w-full px-3 py-2 border-2 border-slate-200 rounded-lg text-sm"
+                        />
+                      </div>
+                    )}
+
                     {/* Order Status Change Conditions */}
                     {newRule.trigger.type === "order_status_change" && (
                       <div className="space-y-2">
@@ -794,6 +828,7 @@ const AutomationRulesView = () => {
                       <option value="update_status">{t("planning.automationRules.actions.update_status", "Update Status")}</option>
                       <option value="assign_operator">{t("planning.automationRules.actions.assign_operator", "Wijs Operator Toe")}</option>
                       <option value="reschedule_order">{t("planning.automationRules.actions.reschedule_order", "Herplan Order")}</option>
+                      <option value="create_qc_sample_task">{t("planning.automationRules.actions.create_qc_sample_task", "Maak QC Steekproef Taak")}</option>
                     </select>
 
                     {newRule.action.type === "send_resend_email" && (
@@ -1142,9 +1177,9 @@ const AutomationRulesView = () => {
             <div className="mt-3 p-3 bg-white/50 rounded-lg border border-purple-200">
               <p className="text-xs font-bold text-purple-700 mb-1">{t("planning.automationRules.info.migrationSuccessTitle", "🎯 Migratie Succesvol:")}</p>
               <p className="text-xs text-slate-600">
-                <strong>NotificationRulesView:</strong> {t("planning.automationRules.info.notificationRulesViewText", "5 trigger types → Automation Rules")}<br />
-                <strong>WorkstationHub:</strong> {t("planning.automationRules.info.workstationHubText", "Inspection reminders → Automation Rules")}<br />
-                <strong>autoLearningService:</strong> {t("planning.automationRules.info.autoLearningServiceText", "AI standard updates → Automation Rules")}
+                <strong>{t("planning.automationRules.info.notificationRulesViewLabel", "NotificationRulesView:")}</strong> {t("planning.automationRules.info.notificationRulesViewText", "5 trigger types → Automation Rules")}<br />
+                <strong>{t("planning.automationRules.info.workstationHubLabel", "WorkstationHub:")}</strong> {t("planning.automationRules.info.workstationHubText", "Inspection reminders → Automation Rules")}<br />
+                <strong>{t("planning.automationRules.info.autoLearningServiceLabel", "autoLearningService:")}</strong> {t("planning.automationRules.info.autoLearningServiceText", "AI standard updates → Automation Rules")}
               </p>
             </div>
           </div>

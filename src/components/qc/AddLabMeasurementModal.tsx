@@ -309,10 +309,10 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "brix" }: AddLabMeasure
             </div>
             <div>
               <h3 className="font-black text-slate-800 uppercase text-lg italic tracking-tight">
-                {defaultType === "brix" ? "Nieuwe Brekingsindex Meting" : "Nieuwe Tg Meting"}
+                {defaultType === "brix" ? t("addLabMeasurementModal.newRefractiveIndexMeasurement", "Nieuwe Brekingsindex Meting") : t("addLabMeasurementModal.newTgMeasurement", "Nieuwe Tg Meting")}
               </h3>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                {defaultType === "brix" ? "Brekingsindex & Mengverhouding" : "Laboratorium analyse"}
+                {defaultType === "brix" ? t("addLabMeasurementModal.refractiveIndexAndMixRatio", "Brekingsindex & Mengverhouding") : t("addLabMeasurementModal.labAnalysis", "Laboratorium analyse")}
               </p>
             </div>
           </div>
@@ -324,14 +324,14 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "brix" }: AddLabMeasure
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
           {/* 1. Personeelsnummer (Operator) */}
           <div>
-            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Personeelsnummer (Operator)</label>
-            <input type="text" required value={formData.operatorId} onChange={(e) => setFormData({ ...formData, operatorId: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder="Bijv. 1234 of Naam" />
+            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.operatorEmployeeNumber", "Personeelsnummer (Operator)")}</label>
+            <input type="text" required value={formData.operatorId} onChange={(e) => setFormData({ ...formData, operatorId: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcOperatorExample", "Bijv. 1234 of Naam")} />
           </div>
 
           {/* 2. Meetstation */}
           {defaultType === "brix" && (
             <div>
-              <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Harskeuken / Meetpunt</label>
+              <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.resinKitchenMeasurementPoint", "Harskeuken / Meetpunt")}</label>
               <select
                 value={formData.kitchen}
                 onChange={(e) => {
@@ -345,7 +345,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "brix" }: AddLabMeasure
                 className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500 appearance-none"
                 required
               >
-                <option value="">-- Selecteer Meetpunt --</option>
+                <option value="">{t("addLabMeasurementModal.selectMeasurementPoint", "-- Selecteer Meetpunt --")}</option>
                 {availableLabStations.map((st) => (
                   <option key={st.id} value={st.name}>{st.name} ({st.departmentName})</option>
                 ))}
@@ -356,7 +356,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "brix" }: AddLabMeasure
           {/* 3. Datum, Tijd en Ploeg */}
           <div className={`grid gap-4 ${defaultType === "brix" ? "grid-cols-1 md:grid-cols-3" : "grid-cols-2"}`}>
             <div className="space-y-1">
-              <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">Datum</label>
+              <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">{t("common.date", "Datum")}</label>
               <input 
                 type="date" 
                 value={measurementDate}
@@ -366,7 +366,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "brix" }: AddLabMeasure
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">Tijd</label>
+              <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">{t("common.time", "Tijd")}</label>
               <input 
                 type="time" 
                 value={measurementTime}
@@ -377,11 +377,11 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "brix" }: AddLabMeasure
             </div>
             {defaultType === "brix" && (
               <div className="space-y-1">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">Ploeg (Auto)</label>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest block">{t("addLabMeasurementModal.shiftAuto", "Ploeg (Auto)")}</label>
                 <input 
                   type="text" 
                   disabled 
-                  value={formData.shift === "Mo" ? "☀️ Vroeg (Mo)" : formData.shift === "Mi" ? "🌤️ Middag (Mi)" : "🌙 Nacht (Na)"} 
+                  value={formData.shift === "Mo" ? t("addLabMeasurementModal.shiftMorning", "☀️ Vroeg (Mo)") : formData.shift === "Mi" ? t("addLabMeasurementModal.shiftAfternoon", "🌤️ Middag (Mi)") : t("addLabMeasurementModal.shiftNight", "🌙 Nacht (Na)")}
                   className="w-full p-3 bg-slate-100 border-2 border-slate-100 rounded-xl font-bold text-slate-500 cursor-not-allowed" 
                 />
               </div>
@@ -390,45 +390,45 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "brix" }: AddLabMeasure
 
           {/* 4. Lotnummer */}
           <div>
-            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Lotnummer</label>
-            <input type="text" required value={formData.lotNumber} onChange={(e) => setFormData({ ...formData, lotNumber: e.target.value.toUpperCase() })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder="Bijv. 4026..." />
+            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("common.lotNumber", "Lotnummer")}</label>
+            <input type="text" required value={formData.lotNumber} onChange={(e) => setFormData({ ...formData, lotNumber: e.target.value.toUpperCase() })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcLabLotExample", "Bijv. 4026...")} />
           </div>
 
           {defaultType === "brix" && (
             <>
               {/* 5. Afgewogen Hars */}
               <div>
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Afgewogen Hars (gr &rarr; kg)</label>
-                <input type="text" inputMode="numeric" required value={formData.resinWeight} onChange={(e) => setFormData({ ...formData, resinWeight: formatWeight(e.target.value) })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder="3.275" />
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.weighedResin", "Afgewogen Hars (gr → kg)")}</label>
+                <input type="text" inputMode="numeric" required value={formData.resinWeight} onChange={(e) => setFormData({ ...formData, resinWeight: formatWeight(e.target.value) })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcResinWeightExample", "3.275")} />
                 {parseFloat(formData.resinWeight) > activeStationLimits.maxResin && (
-                  <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1 animate-in fade-in"><AlertTriangle size={12} /> Ongebruikelijk hoog harsgewicht (&gt; {activeStationLimits.maxResin} kg). Controleer de invoer.</p>
+                  <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1 animate-in fade-in"><AlertTriangle size={12} /> {t("addLabMeasurementModal.unusuallyHighResinWeight", "Ongebruikelijk hoog harsgewicht")}&nbsp;(&gt; {activeStationLimits.maxResin} kg). {t("addLabMeasurementModal.checkInput", "Controleer de invoer.")}</p>
                 )}
               </div>
 
               {/* 6. Afgewogen IPD */}
               <div>
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Afgewogen IPD (gr &rarr; kg)</label>
-                <input type="text" inputMode="numeric" required value={formData.hardenerWeight} onChange={(e) => setFormData({ ...formData, hardenerWeight: formatWeight(e.target.value) })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder="0.800" />
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.weighedIpd", "Afgewogen IPD (gr → kg)")}</label>
+                <input type="text" inputMode="numeric" required value={formData.hardenerWeight} onChange={(e) => setFormData({ ...formData, hardenerWeight: formatWeight(e.target.value) })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcHardenerWeightExample", "0.800")} />
                 {parseFloat(formData.hardenerWeight) > activeStationLimits.maxHardener && (
-                  <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1 animate-in fade-in"><AlertTriangle size={12} /> Ongebruikelijk hoog IPD-gewicht (&gt; {activeStationLimits.maxHardener} kg). Controleer de invoer.</p>
+                  <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1 animate-in fade-in"><AlertTriangle size={12} /> {t("addLabMeasurementModal.unusuallyHighIpdWeight", "Ongebruikelijk hoog IPD-gewicht")}&nbsp;(&gt; {activeStationLimits.maxHardener} kg). {t("addLabMeasurementModal.checkInput", "Controleer de invoer.")}</p>
                 )}
               </div>
 
               {/* 7. Gemeten Brekingsindex */}
               <div>
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Gemeten Brekingsindex</label>
-                <input type="text" inputMode="numeric" required value={formData.refractiveIndex} onChange={(e) => setFormData({ ...formData, refractiveIndex: formatRefractiveIndex(e.target.value) })} className="w-full p-3 bg-blue-50 border-2 border-blue-200 rounded-xl font-bold outline-none focus:border-blue-500 text-blue-900" placeholder="1.5559" />
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.measuredRefractiveIndex", "Gemeten Brekingsindex")}</label>
+                <input type="text" inputMode="numeric" required value={formData.refractiveIndex} onChange={(e) => setFormData({ ...formData, refractiveIndex: formatRefractiveIndex(e.target.value) })} className="w-full p-3 bg-blue-50 border-2 border-blue-200 rounded-xl font-bold outline-none focus:border-blue-500 text-blue-900" placeholder={t("placeholders.qcRefractiveIndexExample", "1.5559")} />
                 {parseFloat(formData.refractiveIndex) > 1.0 && (parseFloat(formData.refractiveIndex) < 1.52 || parseFloat(formData.refractiveIndex) > 1.58) && (
-                  <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1 animate-in fade-in"><AlertTriangle size={12} /> Waarde ligt ver buiten het gemiddelde (normaal ~1.55). Controleer op typefouten.</p>
+                  <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1 animate-in fade-in"><AlertTriangle size={12} /> {t("addLabMeasurementModal.valueFarOutsideAverage", "Waarde ligt ver buiten het gemiddelde (normaal ~1.55). Controleer op typefouten.")}</p>
                 )}
               </div>
               
               {/* 8. Tabel Referentie (Vast volgens werkinstructie) */}
               <div>
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1">Tabel Referentie</label>
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-1">{t("addLabMeasurementModal.tableReference", "Tabel Referentie")}</label>
                 <input
                   type="text"
-                  value="Tabel 1 (vast voor huidige harscontrole)"
+                  value={t("addLabMeasurementModal.table1Fixed", "Tabel 1 (vast voor huidige harscontrole)")}
                   disabled
                   className="w-full p-3 bg-slate-100 border-2 border-slate-100 rounded-xl font-bold text-slate-500 cursor-not-allowed"
                 />
@@ -438,20 +438,20 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "brix" }: AddLabMeasure
               <div className="pt-2">
                 <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl border-2 border-slate-100 bg-slate-50 hover:bg-slate-100 transition-colors">
                   <input type="checkbox" checked={formData.visualCheckOk} onChange={(e) => setFormData({ ...formData, visualCheckOk: e.target.checked })} className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
-                  <span className="text-sm font-bold text-slate-700">Visuele Check OK (Mixer & Emmers schoon/droog)</span>
+                  <span className="text-sm font-bold text-slate-700">{t("addLabMeasurementModal.visualCheckOk", "Visuele Check OK (Mixer & Emmers schoon/droog)")}</span>
                 </label>
               </div>
 
               {/* Berekend Resultaat Blok */}
               <div className="mt-4 p-4 rounded-2xl border-2 border-slate-100 bg-slate-50 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Berekende Verhouding</p>
+                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest">{t("addLabMeasurementModal.calculatedRatio", "Berekende Verhouding")}</p>
                   <p className="text-xl font-black text-slate-800">100:{calculation ? calculation.measuredRatio : "- -"}</p>
                 </div>
                 {calculation && (
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Acceptatieniveau</p>
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">{t("addLabMeasurementModal.acceptanceLevel", "Acceptatieniveau")}</p>
                       <p className={`text-xl font-black ${calculation.area === "A" ? "text-emerald-600" : calculation.area === "B" ? "text-amber-500" : "text-rose-600"}`}>
                         Area {calculation.area}
                       </p>
@@ -470,26 +470,26 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "brix" }: AddLabMeasure
           {defaultType === "tg" && (
             <>
               <div>
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Harsbatch (Resin)</label>
-                <input type="text" required value={formData.resinBatch} onChange={(e) => setFormData({ ...formData, resinBatch: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder="Bijv. RES-2026-041" />
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.resinBatch", "Harsbatch (Resin)")}</label>
+                <input type="text" required value={formData.resinBatch} onChange={(e) => setFormData({ ...formData, resinBatch: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcResinBatchExample", "Bijv. RES-2026-041")} />
               </div>
               <div>
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Tg</label>
-                <input type="number" step="0.1" required value={formData.tg} onChange={(e) => setFormData({ ...formData, tg: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder="128.5" />
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.tg", "Tg")}</label>
+                <input type="number" step="0.1" required value={formData.tg} onChange={(e) => setFormData({ ...formData, tg: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcTgExample", "128.5")} />
               </div>
             </>
           )}
 
           <div>
-            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Notitie (Optioneel)</label>
-            <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-medium outline-none focus:border-blue-500 resize-none min-h-[60px]" placeholder="Opmerkingen over de test..." />
+            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.noteOptional", "Notitie (Optioneel)")}</label>
+            <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-medium outline-none focus:border-blue-500 resize-none min-h-[60px]" placeholder={t("placeholders.qcLabTestNote", "Opmerkingen over de test...")} />
           </div>
 
           <div className="pt-4 flex gap-3 sticky bottom-0 bg-white">
-            <button type="button" onClick={onClose} className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors text-xs uppercase tracking-wider flex-1">Annuleren</button>
+            <button type="button" onClick={onClose} className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors text-xs uppercase tracking-wider flex-1">{t("common.cancel", "Annuleren")}</button>
             <button type="submit" disabled={loading} className={`px-6 py-3 text-white rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 flex-[2] ${defaultType === "brix" ? "bg-blue-600 hover:bg-blue-700 shadow-blue-200" : "bg-purple-600 hover:bg-purple-700 shadow-purple-200"}`}>
               {loading ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
-              Opslaan
+              {t("common.save", "Opslaan")}
             </button>
           </div>
         </form>

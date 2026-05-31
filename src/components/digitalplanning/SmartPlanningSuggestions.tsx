@@ -1,4 +1,5 @@
 import React, { useState, FC } from "react";
+import i18n from "i18next";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { BrainCircuit, Loader2, Sparkles, ArrowRight, X } from "lucide-react";
 import { aiService } from "../../services/aiService";
@@ -98,7 +99,7 @@ Geef een korte, professionele en menselijke verklaring (maximaal 2 of 3 zinnen) 
             <BrainCircuit className="w-3.5 h-3.5 text-indigo-500 group-hover:animate-pulse" />
             AI Planningsassistent
           </h3>
-          <p className="text-[9px] text-indigo-700/70 mt-0.5 font-medium group-hover:text-indigo-600 transition-colors">Klantlevering t.o.v. voorraad</p>
+          <p className="text-[9px] text-indigo-700/70 mt-0.5 font-medium group-hover:text-indigo-600 transition-colors">{i18n.t('smartPlanning.customerDeliveryVsStock', 'Klantlevering t.o.v. voorraad')}</p>
         </div>
         <button
           onClick={() => setShowModal(true)}
@@ -150,7 +151,7 @@ Geef een korte, professionele en menselijke verklaring (maximaal 2 of 3 zinnen) 
               </button>
             </div>
             <div className="p-5 overflow-y-auto custom-scrollbar">
-              <p className="text-sm font-bold text-slate-500 mb-4">Voor welk onderdeel wil je de AI planning optimaliseren?</p>
+              <p className="text-sm font-bold text-slate-500 mb-4">{i18n.t('smartPlanning.optimizeWhichPart', 'Voor welk onderdeel wil je de AI planning optimaliseren?')}</p>
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={() => handleGenerateSuggestions(null)} className="col-span-2 p-3 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-xl font-black uppercase text-xs tracking-wider transition-all active:scale-95 shadow-sm">
                   Hele Afdeling

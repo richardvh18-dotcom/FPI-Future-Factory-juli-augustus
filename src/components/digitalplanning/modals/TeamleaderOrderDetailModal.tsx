@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   X,
   Calendar,
@@ -61,6 +62,7 @@ type TeamleaderOrderDetailModalProps = {
 };
 
 const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailModalProps) => {
+  const { t } = useTranslation();
   const [units, setUnits] = useState<AnyRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showOnlyRejects, setShowOnlyRejects] = useState(false);
@@ -327,7 +329,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
             {canEditPriority && (
               <div className="flex gap-4 mt-4 p-3 bg-slate-50 rounded-xl border border-slate-200">
                 <div className="flex-1">
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Slimme Sync Controle</p>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">{t("teamleaderOrderDetailModal.smartSyncControl", "Slimme Sync Controle")}</p>
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleToggleSyncExclusion(false)}
@@ -338,7 +340,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
                       }`}
                     >
                       <CheckCircle size={14} />
-                      Sync Opnemen
+                      {t("teamleaderOrderDetailModal.syncInclude", "Sync Opnemen")}
                     </button>
                     <button
                       onClick={() => handleToggleSyncExclusion(true)}
@@ -349,7 +351,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
                       }`}
                     >
                       <XCircle size={14} />
-                      Sync Uitsluiten
+                      {t("teamleaderOrderDetailModal.syncExclude", "Sync Uitsluiten")}
                     </button>
                   </div>
                 </div>
@@ -373,27 +375,27 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
             {/* Planning & Tijd */}
             <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
               <h3 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <Calendar size={14} /> Planning & Tijd
+                <Calendar size={14} /> {t("teamleaderOrderDetailModal.planningTime", "Planning & Tijd")}
               </h3>
               <div className="space-y-3">
                 <div>
-                  <p className="text-[10px] text-gray-500 uppercase font-bold">Geplande Datum (Deadline)</p>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">{t("teamleaderOrderDetailModal.plannedDateDeadline", "Geplande Datum (Deadline)")}</p>
                   <p className="text-sm font-medium text-gray-900">
-                    {order.plannedDate ? formatDate(order.plannedDate) : "Niet ingesteld"}
+                    {order.plannedDate ? formatDate(order.plannedDate) : t("teamleaderOrderDetailModal.notSet", "Niet ingesteld")}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-gray-500 uppercase font-bold">Startdatum Productie</p>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">{t("teamleaderOrderDetailModal.productionStartDate", "Startdatum Productie")}</p>
                   <p className="text-sm font-medium text-gray-900">
-                    {order.startDate ? formatDate(order.startDate) : units.length > 0 ? formatDate(units[0].startTime) : "Nog niet gestart"}
+                    {order.startDate ? formatDate(order.startDate) : units.length > 0 ? formatDate(units[0].startTime) : t("teamleaderOrderDetailModal.notStartedYet", "Nog niet gestart")}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-gray-500 uppercase font-bold">Week</p>
-                  <p className="text-sm font-medium text-gray-900">Week {order.weekNumber || "?"} ({order.year || new Date().getFullYear()})</p>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">{t("common.week", "Week")}</p>
+                  <p className="text-sm font-medium text-gray-900">{t("common.week", "Week")} {order.weekNumber || "?"} ({order.year || new Date().getFullYear()})</p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-gray-500 uppercase font-bold">Tekening</p>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">{t("common.drawing", "Tekening")}</p>
                   <p className="text-sm font-medium text-gray-900">{order.drawing || "-"}</p>
                 </div>
               </div>
@@ -402,18 +404,18 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
             {/* Locatie & Status */}
             <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100">
               <h3 className="text-xs font-bold text-purple-800 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <MapPin size={14} /> Locatie & Proces
+                <MapPin size={14} /> {t("teamleaderOrderDetailModal.locationProcess", "Locatie & Proces")}
               </h3>
               <div className="space-y-3">
                 <div>
-                  <p className="text-[10px] text-gray-500 uppercase font-bold">Huidige Machine/Station</p>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">{t("teamleaderOrderDetailModal.currentMachineStation", "Huidige Machine/Station")}</p>
                   <p className="text-sm font-black text-gray-900 flex items-center gap-2">
-                    {order.machine?.replace("_INBOX", "") || "Onbekend"}
+                    {order.machine?.replace("_INBOX", "") || t("common.unknown", "Onbekend")}
                     {order.status === 'in_progress' && <span className="flex h-2 w-2 relative"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span></span>}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-gray-500 uppercase font-bold">Voortgang</p>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">{t("common.progress", "Voortgang")}</p>
                   <div className="flex items-center gap-2">
                     <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
                       <div 
@@ -428,15 +430,15 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
                 </div>
                 {rejectedCount > 0 && (
                   <div>
-                    <p className="text-[10px] text-gray-500 uppercase font-bold">Kwaliteit (Afkeur)</p>
+                    <p className="text-[10px] text-gray-500 uppercase font-bold">{t("teamleaderOrderDetailModal.qualityReject", "Kwaliteit (Afkeur)")}</p>
                     <div className="flex items-center gap-2 mt-1 text-rose-600 font-bold text-sm">
                         <AlertOctagon size={16} />
-                        <span>{rejectedCount} {rejectedCount === 1 ? 'stuk' : 'stuks'} afgekeurd</span>
+                        <span>{t("teamleaderOrderDetailModal.rejectedCount", "{{count}} {{unit}} afgekeurd", { count: rejectedCount, unit: rejectedCount === 1 ? t("teamleaderOrderDetailModal.piece", "stuk") : t("teamleaderOrderDetailModal.pieces", "stuks") })}</span>
                     </div>
                   </div>
                 )}
                 <div>
-                  <p className="text-[10px] text-gray-500 uppercase font-bold">Vervolgstappen</p>
+                  <p className="text-[10px] text-gray-500 uppercase font-bold">{t("teamleaderOrderDetailModal.nextSteps", "Vervolgstappen")}</p>
                   <div className="text-xs text-gray-700 flex flex-wrap gap-1 mt-1 items-center">
                     {processSteps.map((step, index) => {
                         const isActive = index === currentStepIndex;
@@ -467,7 +469,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
             {/* Opmerkingen & Specs */}
             <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-100">
               <h3 className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <FileText size={14} /> PO Text / Opmerkingen
+                <FileText size={14} /> {t("teamleaderOrderDetailModal.poTextNotes", "PO Text / Opmerkingen")}
               </h3>
               <div className="h-full">
                 {order.notes ? (
@@ -476,18 +478,18 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
                   </p>
                 ) : (
                   <p className="text-sm text-gray-400 italic bg-white/50 p-3 rounded-lg border border-dashed border-amber-200 min-h-[80px] flex items-center justify-center">
-                    Geen opmerkingen toegevoegd.
+                    {t("teamleaderOrderDetailModal.noNotesAdded", "Geen opmerkingen toegevoegd.")}
                   </p>
                 )}
                 {/* Waarschuwingen automatisch tonen */}
                 {matInfo.type === "CST" && (
                   <div className="mt-3 bg-orange-100 text-orange-800 p-2 rounded text-xs font-bold flex items-center gap-2">
-                    <AlertTriangle size={14} /> LET OP: Carbon Toevoegen!
+                    <AlertTriangle size={14} /> {t("teamleaderOrderDetailModal.warningAddCarbon", "LET OP: Carbon Toevoegen!")}
                   </div>
                 )}
                 {matInfo.type === "EWT" && (
                   <div className="mt-3 bg-cyan-100 text-cyan-800 p-2 rounded text-xs font-bold flex items-center gap-2">
-                    <AlertTriangle size={14} /> LET OP: EWT Specificaties!
+                    <AlertTriangle size={14} /> {t("teamleaderOrderDetailModal.warningEwtSpecs", "LET OP: EWT Specificaties!")}
                   </div>
                 )}
               </div>
@@ -499,7 +501,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
                 <Activity size={20} className="text-blue-600" /> 
-                Productie Details & Metingen
+                {t("teamleaderOrderDetailModal.productionDetailsMeasurements", "Productie Details & Metingen")}
               </h3>
               <label className="flex items-center gap-2 cursor-pointer bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors select-none">
                 <input 
@@ -509,30 +511,30 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
                   className="rounded text-rose-600 focus:ring-rose-500 border-gray-300 w-4 h-4"
                 />
                 <span className={`text-[10px] font-black uppercase tracking-wide ${showOnlyRejects ? "text-rose-600" : "text-slate-500"}`}>
-                  Alleen Afkeur
+                  {t("teamleaderOrderDetailModal.onlyReject", "Alleen Afkeur")}
                 </span>
               </label>
             </div>
             
             {loading ? (
-              <div className="p-8 text-center text-gray-400 animate-pulse">Laden van details...</div>
+              <div className="p-8 text-center text-gray-400 animate-pulse">{t("common.loadingDetails", "Laden van details...")}</div>
             ) : units.length > 0 ? (
               <div className="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200 text-xs uppercase text-gray-500 font-bold">
                     <tr>
-                      <th className="px-4 py-3">Lotnummer</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Locatie</th>
-                      <th className="px-4 py-3">Laatste Update</th>
-                      <th className="px-4 py-3 flex items-center gap-1"><Ruler size={12}/> Metingen (Ø / WD)</th>
+                      <th className="px-4 py-3">{t("common.lotNumber", "Lotnummer")}</th>
+                      <th className="px-4 py-3">{t("common.status", "Status")}</th>
+                      <th className="px-4 py-3">{t("common.location", "Locatie")}</th>
+                      <th className="px-4 py-3">{t("teamleaderOrderDetailModal.lastUpdate", "Laatste Update")}</th>
+                      <th className="px-4 py-3 flex items-center gap-1"><Ruler size={12}/> {t("teamleaderOrderDetailModal.measurementsDiameterWd", "Metingen (Ø / WD)")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
                     {units.filter(u => !showOnlyRejects || ['rejected', 'Rejected'].includes(u.status)).length === 0 && showOnlyRejects && (
                       <tr>
                         <td colSpan={5} className="p-8 text-center text-slate-400 text-xs italic">
-                          Geen afgekeurde producten gevonden in deze order.
+                          {t("teamleaderOrderDetailModal.noRejectedProductsInOrder", "Geen afgekeurde producten gevonden in deze order.")}
                         </td>
                       </tr>
                     )}
@@ -548,7 +550,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
                             isRejected ? 'bg-rose-100 text-rose-700' :
                             'bg-gray-100 text-gray-600'
                           }`}>
-                            {unit.status === 'in_progress' ? 'Actief' : unit.status === 'completed' ? 'Gereed' : isRejected ? 'Afkeur' : unit.status}
+                            {unit.status === 'in_progress' ? t("common.active", "Actief") : unit.status === 'completed' ? t("common.ready", "Gereed") : isRejected ? t("common.reject", "Afkeur") : unit.status}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-gray-600">{unit.currentStation || "-"}</td>
@@ -564,7 +566,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
                               {Object.entries(unit.measurements).map(([k, v]) => `${k}: ${v}`).join(" | ")}
                             </span>
                           ) : (
-                            <span className="text-xs text-gray-400 italic">Geen data</span>
+                            <span className="text-xs text-gray-400 italic">{t("common.noData", "Geen data")}</span>
                           )}
                         </td>
                       </tr>
@@ -574,7 +576,7 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
               </div>
             ) : (
               <div className="p-8 text-center bg-gray-50 rounded-xl border border-dashed border-gray-300 text-gray-500">
-                Nog geen productie-units gestart voor deze order.
+                {t("teamleaderOrderDetailModal.noProductionUnitsStarted", "Nog geen productie-units gestart voor deze order.")}
               </div>
             )}
           </div>
@@ -589,14 +591,14 @@ const TeamleaderOrderDetailModal = ({ order, onClose }: TeamleaderOrderDetailMod
                onClick={() => setShowCancelModal(true)}
                className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 rounded-lg font-bold text-sm transition-colors mr-auto"
              >
-               <Ban size={16} /> Order Annuleren
+               <Ban size={16} /> {t("teamleaderOrderDetailModal.cancelOrder", "Order Annuleren")}
              </button>
            )}
           <button 
             onClick={onClose}
             className="px-6 py-2 bg-white border border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-100 transition-colors"
           >
-            Sluiten
+            {t("common.close", "Sluiten")}
           </button>
         </div>
 

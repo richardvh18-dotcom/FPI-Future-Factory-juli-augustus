@@ -1,4 +1,5 @@
 import React, { useState, FC, FormEvent, ChangeEvent } from 'react';
+import i18n from 'i18next';
 import { generateAuthQR } from '../../utils/qrAuth';
 import { Printer, QrCode } from 'lucide-react';
 import InternalQrImage from '../../utils/InternalQrImage';
@@ -48,10 +49,10 @@ const AdminBadgeGenerator: FC<AdminBadgeGeneratorProps> = () => {
         </head>
         <body>
           <div class="badge">
-            <h2>FPi Future Factory</h2>
+            <h2>${i18n.t('adminBadge.brand', 'FPi Future Factory')}</h2>
             <img src="${qrSrc}" width="150" height="150" />
             <p><strong>${email}</strong></p>
-            <div class="footer">Operator Login Badge</div>
+            <div class="footer">${i18n.t('adminBadge.operatorLoginBadge', 'Operator Login Badge')}</div>
           </div>
           <script>
             window.onload = () => {
@@ -76,24 +77,24 @@ const AdminBadgeGenerator: FC<AdminBadgeGeneratorProps> = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <form onSubmit={handleGenerate} className="space-y-4 bg-slate-50 p-6 rounded-lg border border-slate-100">
           <div>
-            <label className="block text-sm font-medium mb-1 text-slate-700">Gebruiker Email</label>
+            <label className="block text-sm font-medium mb-1 text-slate-700">{i18n.t('adminBadge.userEmail', 'Gebruiker Email')}</label>
             <input
               type="email"
               value={email}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
               className="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-              placeholder="operator@fpi.com"
+              placeholder={i18n.t('placeholders.adminBadgeEmailExample', 'operator@fpi.com')}
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1 text-slate-700">Wachtwoord (voor badge)</label>
+            <label className="block text-sm font-medium mb-1 text-slate-700">{i18n.t('adminBadge.passwordForBadge', 'Wachtwoord (voor badge)')}</label>
             <input
               type="password"
               value={password}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
               className="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-              placeholder="Wachtwoord van deze user"
+              placeholder={i18n.t('placeholders.adminBadgePasswordHint', 'Wachtwoord van deze user')}
               required
             />
             <p className="text-xs text-slate-500 mt-2">
@@ -101,13 +102,13 @@ const AdminBadgeGenerator: FC<AdminBadgeGeneratorProps> = () => {
             </p>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1 text-slate-700">Startpagina na scan</label>
+            <label className="block text-sm font-medium mb-1 text-slate-700">{i18n.t('adminBadge.startPageAfterScan', 'Startpagina na scan')}</label>
             <input
               type="text"
               value={redirectPath}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setRedirectPath(e.target.value)}
               className="w-full p-2 border rounded focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-              placeholder="bijv. /planning of specifieke route"
+              placeholder={i18n.t('placeholders.adminBadgeRouteExample', 'bijv. /planning of specifieke route')}
             />
             <p className="text-xs text-slate-500 mt-2">
               Hiermee stuur je de operator direct naar het juiste scherm na het scannen.
@@ -138,7 +139,7 @@ const AdminBadgeGenerator: FC<AdminBadgeGeneratorProps> = () => {
           ) : (
             <div className="text-center text-slate-400">
               <QrCode size={48} className="mx-auto mb-2 opacity-20" />
-              <p>Vul de gegevens in om een<br />badge te genereren</p>
+              <p>{i18n.t('adminBadge.fillDataToGenerate', 'Vul de gegevens in om een')}<br />{i18n.t('adminBadge.generateBadge', 'badge te genereren')}</p>
             </div>
           )}
         </div>

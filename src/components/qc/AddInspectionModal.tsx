@@ -52,8 +52,8 @@ const AddInspectionModal = ({ onClose }: AddInspectionModalProps) => {
               <ClipboardCheck size={24} />
             </div>
             <div>
-              <h3 className="font-black text-slate-800 uppercase text-lg italic tracking-tight">Nieuwe Inspectie</h3>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Kwaliteitscontrole Vloer</p>
+              <h3 className="font-black text-slate-800 uppercase text-lg italic tracking-tight">{t("addInspectionModal.newInspection", "Nieuwe Inspectie")}</h3>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{t("addInspectionModal.shopfloorQualityControl", "Kwaliteitscontrole Vloer")}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
@@ -63,27 +63,27 @@ const AddInspectionModal = ({ onClose }: AddInspectionModalProps) => {
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Lotnummer</label>
-            <input type="text" required value={formData.lotNumber} onChange={(e) => setFormData({ ...formData, lotNumber: e.target.value.toUpperCase() })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder="Bijv. 4026..." />
+            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("common.lotNumber", "Lotnummer")}</label>
+            <input type="text" required value={formData.lotNumber} onChange={(e) => setFormData({ ...formData, lotNumber: e.target.value.toUpperCase() })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcInspectionLotExample", "Bijv. 4026...")} />
           </div>
           <div>
-            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Type Controle</label>
-            <input type="text" required value={formData.checkType} onChange={(e) => setFormData({ ...formData, checkType: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder="Bijv. Visueel / Wanddikte / Destructief" />
+            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addInspectionModal.checkType", "Type Controle")}</label>
+            <input type="text" required value={formData.checkType} onChange={(e) => setFormData({ ...formData, checkType: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcInspectionTypeExample", "Bijv. Visueel / Wanddikte / Destructief")} />
           </div>
           <div>
-            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Resultaat</label>
+            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("common.result", "Resultaat")}</label>
             <select value={formData.result} onChange={(e) => setFormData({ ...formData, result: e.target.value as "OK" | "NOK" })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500">
-              <option value="OK">OK (Goedgekeurd)</option>
-              <option value="NOK">NOK (Afgekeurd)</option>
+              <option value="OK">{t("addInspectionModal.okApproved", "OK (Goedgekeurd)")}</option>
+              <option value="NOK">{t("addInspectionModal.nokRejected", "NOK (Afgekeurd)")}</option>
             </select>
           </div>
           <div>
-            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">Notitie (Optioneel)</label>
-            <textarea value={formData.note} onChange={(e) => setFormData({ ...formData, note: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-medium outline-none focus:border-blue-500 resize-none min-h-[80px]" placeholder="Opmerkingen over de inspectie..." />
+            <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addInspectionModal.noteOptional", "Notitie (Optioneel)")}</label>
+            <textarea value={formData.note} onChange={(e) => setFormData({ ...formData, note: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-medium outline-none focus:border-blue-500 resize-none min-h-[80px]" placeholder={t("placeholders.qcInspectionNote", "Opmerkingen over de inspectie...")} />
           </div>
 
           <div className="pt-4 flex gap-3">
-            <button type="button" onClick={onClose} className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors text-xs uppercase tracking-wider flex-1">Annuleren</button>
+            <button type="button" onClick={onClose} className="px-6 py-3 rounded-xl font-bold text-slate-500 hover:bg-slate-100 transition-colors text-xs uppercase tracking-wider flex-1">{t("common.cancel", "Annuleren")}</button>
             <button type="submit" disabled={loading} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 flex-[2]">
               {loading ? <Loader2 className="animate-spin" size={16} /> : <Save size={16} />}
               Opslaan

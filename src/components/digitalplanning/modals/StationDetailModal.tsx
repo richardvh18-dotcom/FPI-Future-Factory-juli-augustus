@@ -64,7 +64,6 @@ const StationDetailModal = ({
     now.setHours(0, 0, 0, 0);
     return now;
   });
-  const [exportingLnPdf, setExportingLnPdf] = useState(false);
   const historyFilterLabels: Record<string, string> = {
     week: t("common.week", "Deze week"),
     "2weeks": t("digitalplanning.station_detail.two_weeks", "2 weken"),
@@ -72,7 +71,6 @@ const StationDetailModal = ({
     all: t("common.all", "Alles"),
   };
   const stationNorm = normalizeMachine(stationId);
-  const LN_EXPORT_DELAY_MINUTES = 5;
 
   const toDateValue = (value: DateLikeInput) => {
     if (!value) return null;
@@ -210,137 +208,6 @@ const StationDetailModal = ({
     return null;
   };
 
-  const lnWikkelenRows = useMemo(() => {
-    if (!stationNorm.startsWith("BH")) return [];
-
-    const now = new Date();
-    const currentDay = new Date();
-    currentDay.setHours(0, 0, 0, 0);
-    const isToday = currentDay.getTime() === selectedDayStart.getTime();
-    const cutoff = new Date(now.getTime() - LN_EXPORT_DELAY_MINUTES * 60 * 1000);
-
-    const perOrder = new Map<string, { orderId: string; refOpsText: string; count: number }>();
-    const sourceProducts = [...(allProducts || []), ...(allArchivedProducts || [])];
-
-    sourceProducts.forEach((product: AnyRecord) => {
-      const productStationNorm = normalizeMachine(
-        product?.originMachine || product?.machine || product?.lastStation || product?.currentStation || ""
-      );
-      if (productStationNorm !== stationNorm) return;
-
-        const statusNorm = String(product?.status || "").trim().toLowerCase();
-        if (statusNorm === "rejected" || statusNorm === "deleted" || statusNorm === "cancelled" || statusNorm === "geannuleerd") return;
-
-      const orderId = String(product?.orderId || "").trim();
-      if (!orderId) return;
-
-        const startDate = getStationStartTime(product);
-        if (!startDate) return;
-
-        if (startDate < selectedDayStart || startDate > selectedDayEnd) return;
-        if (isToday && startDate > cutoff) return;
-
-      const order = allOrdersByOrderId.get(orderId);
-        const refOpsText = "20";
-
-      const existing = perOrder.get(orderId) || {
-        orderId,
-        refOpsText,
-        count: 0,
-      };
-
-      existing.count += 1;
-      perOrder.set(orderId, existing);
-    });
-
-    return Array.from(perOrder.values())
-      .sort((a, b) => a.orderId.localeCompare(b.orderId))
-      .map((row) => {
-        const orderQr = `ORDER:${row.orderId}`;
-        const refQr = `REFOPS:${row.refOpsText}`;
-        const countQr = `COUNT:${row.count}|DATE:${selectedDayIso}|STATION:${stationNorm}`;
-        return {
-          ...row,
-          orderQr,
-          refQr,
-          countQr,
-        };
-      });
-  }, [allProducts, allArchivedProducts, allOrdersByOrderId, selectedDayEnd, selectedDayIso, selectedDayStart, stationNorm]);
-
-  const handleExportLnWikkelenPdf = async () => {
-    if (lnWikkelenRows.length === 0 || exportingLnPdf) return;
-
-    setExportingLnPdf(true);
-    try {
-      const [{ jsPDF }, qrModule] = await Promise.all([
-        import("jspdf"),
-        import("qrcode"),
-      ]);
-      const QRCode = qrModule?.default || qrModule;
-      const doc = new jsPDF("p", "mm", "a4");
-
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text(`LN Wikkelen Export - ${stationId}`, 12, 12);
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Datum: ${selectedDayIso} | Buffer: ${LN_EXPORT_DELAY_MINUTES} min`, 12, 18);
-
-      let y = 24;
-      const qrSize = 22;
-      const blockHeight = 44;
-      const qrOrderX = 68;
-      const qrRefX = 110;
-      const qrCountX = 152;
-
-      for (const row of lnWikkelenRows) {
-        if (y + blockHeight > 285) {
-          doc.addPage();
-          y = 14;
-        }
-
-        const [orderDataUrl, refDataUrl, countDataUrl] = await Promise.all([
-          QRCode.toDataURL(String(row.orderQr || ""), { width: 220, margin: 1 }),
-          QRCode.toDataURL(String(row.refQr || ""), { width: 220, margin: 1 }),
-          QRCode.toDataURL(String(row.countQr || ""), { width: 220, margin: 1 }),
-        ]);
-
-        doc.setDrawColor(225, 230, 238);
-        doc.roundedRect(10, y - 2, 190, blockHeight - 2, 2, 2);
-
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "bold");
-        doc.text(`Order ${row.orderId}`, 12, y + 3);
-        doc.setFont("helvetica", "normal");
-        doc.text(`RefOps: ${row.refOpsText}`, 12, y + 8);
-        doc.text(`Aantal: ${row.count}`, 12, y + 13);
-
-        doc.addImage(orderDataUrl, "PNG", qrOrderX, y, qrSize, qrSize);
-        doc.addImage(refDataUrl, "PNG", qrRefX, y, qrSize, qrSize);
-        doc.addImage(countDataUrl, "PNG", qrCountX, y, qrSize, qrSize);
-
-        doc.setFontSize(7);
-        doc.text("ORDER", qrOrderX + qrSize / 2, y + qrSize + 3, { align: "center" });
-        doc.text("REF OPS", qrRefX + qrSize / 2, y + qrSize + 3, { align: "center" });
-        doc.text("AANTAL", qrCountX + qrSize / 2, y + qrSize + 3, { align: "center" });
-
-        doc.setFontSize(8);
-        doc.text(String(row.orderId || "-"), qrOrderX + qrSize / 2, y + qrSize + 7, { align: "center" });
-        doc.text(String(row.refOpsText || "-"), qrRefX + qrSize / 2, y + qrSize + 7, { align: "center" });
-        doc.text(String(row.count || 0), qrCountX + qrSize / 2, y + qrSize + 7, { align: "center" });
-
-        y += blockHeight;
-      }
-
-      doc.save(`ln_wikkelen_export_${stationNorm}_${selectedDayIso}.pdf`);
-    } catch (error) {
-      console.error("LN Wikkelen PDF export mislukt", error);
-      alert(t("digitalplanning.station_detail.ln_export_failed", "LN export mislukt."));
-    } finally {
-      setExportingLnPdf(false);
-    }
-  };
 
   // Failsafe: als stationNorm een BA-station is en de parent scope is 'fittings', render niets
   const urlParams = new URLSearchParams(window.location.search);
@@ -638,18 +505,6 @@ const StationDetailModal = ({
                 >
                   <ChevronRight size={16} className="text-slate-600" />
                 </button>
-                <button
-                  type="button"
-                  onClick={handleExportLnWikkelenPdf}
-                  disabled={lnWikkelenRows.length === 0 || exportingLnPdf}
-                  className="px-3 py-2 rounded-lg bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  title={t("digitalplanning.station_detail.export_ln_wikkelen", "Export LN Wikkelen PDF")}
-                >
-                  <FileDown size={14} />
-                  {exportingLnPdf
-                    ? t("common.loading", "Laden...")
-                    : t("digitalplanning.station_detail.export_ln_wikkelen", "Export LN Wikkelen")}
-                </button>
               </>
             )}
             <button
@@ -693,18 +548,6 @@ const StationDetailModal = ({
           >
             <History size={16} /> {t("digitalplanning.station_detail.history", "Historie")}
           </button>
-          {stationNorm.startsWith("BH") && (
-            <button
-              onClick={() => setActiveTab("ln_export")}
-              className={`py-4 text-sm font-bold uppercase tracking-wider border-b-2 transition-colors flex items-center gap-2 ${
-                activeTab === "ln_export"
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-400 hover:text-gray-600"
-              }`}
-            >
-              <QrCode size={16} /> INFOR-LN
-            </button>
-          )}
         </div>
 
         {/* Content */}
@@ -853,63 +696,6 @@ const StationDetailModal = ({
                   </p>
                 </div>
               )}
-            </div>
-          )}
-
-          {activeTab === "ln_export" && stationNorm.startsWith("BH") && (
-            <div className="space-y-6">
-              <div className="bg-white border border-slate-200 rounded-2xl p-4">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <div>
-                    <h4 className="text-xs font-black uppercase tracking-widest text-slate-600">
-                      {t("digitalplanning.station_detail.ln_wikkelen_daily", "LN Wikkelen Dagoverzicht")}
-                    </h4>
-                    <p className="text-[11px] font-bold text-slate-400">
-                      {t("digitalplanning.station_detail.ln_wikkelen_rows", {
-                        count: lnWikkelenRows.length,
-                        defaultValue: "{{count}} orderregels voor {{date}}",
-                        date: selectedDayIso,
-                      })}
-                    </p>
-                  </div>
-                </div>
-
-                {lnWikkelenRows.length === 0 ? (
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                    {t("digitalplanning.station_detail.no_wikkelen_records_day", "Geen afgeronde wikkelstappen op deze dag.")}
-                  </p>
-                ) : (
-                  <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                    {lnWikkelenRows.map((row) => (
-                      <div key={row.orderId} className="border border-slate-100 rounded-xl p-3 bg-slate-50/50">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <p className="text-sm font-black text-slate-800">{row.orderId}</p>
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">RefOps: {row.refOpsText} | Aantal: {row.count}</p>
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Order</p>
-                            <InternalQrImage value={String(row.orderQr || "")} size={140} alt="Order QR" className="w-full aspect-square object-contain" />
-                            <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.orderId}</p>
-                          </div>
-                          <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Ref Ops</p>
-                            <InternalQrImage value={String(row.refQr || "")} size={140} alt="Reference operations QR" className="w-full aspect-square object-contain" />
-                            <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.refOpsText}</p>
-                          </div>
-                          <div className="bg-white border border-slate-200 rounded-lg p-2 text-center">
-                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">Aantal</p>
-                            <InternalQrImage value={String(row.countQr || "")} size={140} alt="Dag aantal QR" className="w-full aspect-square object-contain" />
-                            <p className="text-[10px] font-black text-slate-700 mt-1 break-all">{row.count}</p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
           )}
 

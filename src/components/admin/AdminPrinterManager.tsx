@@ -373,6 +373,7 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
     printerId: string;
   }) => void;
 }) => {
+  const { t } = useTranslation();
   const [config, setConfig] = useState<{
     station: string;
     weekOffset: number;
@@ -407,7 +408,7 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
       <div className="bg-white w-full max-w-2xl rounded-[30px] shadow-2xl p-8 my-auto">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-black text-slate-800 uppercase italic flex items-center gap-2">
-            <Hash className="text-blue-600" /> Lotnummers Printen
+            <Hash className="text-blue-600" /> {t("adminPrinterManager.printLotNumbers", "Lotnummers Printen")}
           </h3>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full"><X size={20} /></button>
         </div>
@@ -415,7 +416,7 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Station</label>
+              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.station", "Station")}</label>
               <select 
                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
                 value={config.station}
@@ -425,23 +426,23 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
               </select>
             </div>
             <div>
-              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Week</label>
+              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.week", "Week")}</label>
               <select
                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
                 value={String(config.weekOffset)}
                 onChange={e => setConfig({ ...config, weekOffset: parseInt(e.target.value, 10) || 0 })}
               >
-                <option value="-1">Vorige week</option>
-                <option value="0">Huidige week</option>
-                <option value="1">Volgende week</option>
+                <option value="-1">{t("adminPrinterManager.previousWeek", "Vorige week")}</option>
+                <option value="0">{t("adminPrinterManager.currentWeek", "Huidige week")}</option>
+                <option value="1">{t("adminPrinterManager.nextWeek", "Volgende week")}</option>
               </select>
-              <p className="mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">ISO week {iso.week}</p>
+              <p className="mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t("adminPrinterManager.isoWeek", "ISO week")} {iso.week}</p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Start Volgnummer</label>
+              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.startSequenceNumber", "Start Volgnummer")}</label>
               <input 
                 type="number" 
                 min="1"
@@ -453,7 +454,7 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
               />
             </div>
             <div>
-              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Aantal Labels</label>
+              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.numberOfLabels", "Aantal Labels")}</label>
               <input 
                 type="number" 
                 min="1"
@@ -466,21 +467,21 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
           </div>
 
           <div>
-            <label className="text-xs font-bold uppercase text-slate-500 mb-2 block">Print Modus</label>
+            <label className="text-xs font-bold uppercase text-slate-500 mb-2 block">{t("adminPrinterManager.printMode", "Print Modus")}</label>
             <div className="flex gap-4">
               <label className="flex items-center gap-2 cursor-pointer bg-slate-50 p-3 rounded-xl border border-slate-200 flex-1">
                 <input type="radio" name="mode" checked={config.mode === 'sequential'} onChange={() => setConfig({...config, mode: 'sequential'})} />
-                <span className="text-sm font-bold">Oplopend</span>
+                <span className="text-sm font-bold">{t("adminPrinterManager.sequential", "Oplopend")}</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer bg-slate-50 p-3 rounded-xl border border-slate-200 flex-1">
                 <input type="radio" name="mode" checked={config.mode === 'identical'} onChange={() => setConfig({...config, mode: 'identical'})} />
-                <span className="text-sm font-bold">Identiek</span>
+                <span className="text-sm font-bold">{t("adminPrinterManager.identical", "Identiek")}</span>
               </label>
             </div>
           </div>
 
           <div>
-            <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Printer</label>
+            <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.printer", "Printer")}</label>
             <select 
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
               value={config.printerId}
@@ -491,7 +492,7 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
           </div>
 
           <div className="bg-slate-50 p-6 rounded-2xl border-2 border-slate-100 flex flex-col items-center">
-            <p className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest w-full text-left">Live Preview (max 5)</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase mb-4 tracking-widest w-full text-left">{t("adminPrinterManager.livePreviewMax", "Live Preview (max 5)")}</p>
             <div className="w-full border border-slate-200 rounded-xl overflow-hidden bg-white" style={{ maxWidth: '90mm' }}>
               {previewLots.map((lot) => (
                 <div key={lot} className="w-full h-[13mm] px-2 flex items-center gap-2 border-b border-dashed border-slate-300 last:border-b-0" style={{ maxWidth: '90mm' }}>
@@ -502,7 +503,7 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
                 </div>
               ))}
               {parsedCount > 5 && (
-                <p className="text-[11px] font-bold text-slate-500 text-center">+{parsedCount - 5} extra labels worden geprint</p>
+                <p className="text-[11px] font-bold text-slate-500 text-center">+{parsedCount - 5} {t("adminPrinterManager.extraLabelsPrinted", "extra labels worden geprint")}</p>
               )}
             </div>
           </div>
@@ -515,7 +516,7 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
             })}
             className="w-full py-4 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg"
           >
-            <Printer size={20} /> Start Printopdracht
+            <Printer size={20} /> {t("adminPrinterManager.startPrintJob", "Start Printopdracht")}
           </button>
         </div>
       </div>
@@ -703,12 +704,12 @@ const TempLabelModal = ({ onClose, printers, labelTemplates, labelRules, onPrint
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
           />
           <button onClick={handleSearch} disabled={loading} className="px-6 bg-slate-900 text-white rounded-2xl font-black uppercase text-sm hover:bg-slate-800 transition-all flex items-center gap-2">
-            <Search size={18} /> Zoek
+            <Search size={18} /> {t("common.search", "Zoek")}
           </button>
         </div>
 
         <div className="mb-4">
-          <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Printer</label>
+          <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.printer", "Printer")}</label>
           <select 
             className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
             value={printerId}
@@ -740,7 +741,7 @@ const TempLabelModal = ({ onClose, printers, labelTemplates, labelRules, onPrint
                       <p className="text-xs font-bold text-slate-500 truncate">{productDisplay}</p>
 
                       <div className="mt-3">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Template</label>
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t("common.template", "Template")}</label>
                         {templateOptions.length > 0 ? (
                           <select
                             className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
@@ -755,7 +756,7 @@ const TempLabelModal = ({ onClose, printers, labelTemplates, labelRules, onPrint
                             ))}
                           </select>
                         ) : (
-                          <p className="text-xs italic text-amber-600">Geen passende tijdelijke template gevonden.</p>
+                          <p className="text-xs italic text-amber-600">{t("adminPrinterManager.noMatchingTemporaryTemplate", "Geen passende tijdelijke template gevonden.")}</p>
                         )}
                       </div>
 
@@ -777,7 +778,7 @@ const TempLabelModal = ({ onClose, printers, labelTemplates, labelRules, onPrint
                           exactBitmapPreview
                         />
                       ) : (
-                        <p className="text-xs text-slate-400 italic">Geen preview</p>
+                        <p className="text-xs text-slate-400 italic">{t("adminPrinterManager.noPreview", "Geen preview")}</p>
                       )}
                     </div>
                   </div>
@@ -788,15 +789,15 @@ const TempLabelModal = ({ onClose, printers, labelTemplates, labelRules, onPrint
         )}
 
         {loadingInitialList && !orderStr.trim() && (
-          <p className="text-center py-8 text-slate-400 font-bold italic">Lijst laden...</p>
+          <p className="text-center py-8 text-slate-400 font-bold italic">{t("common.loading", "Lijst laden...")}</p>
         )}
 
         {results.length === 0 && orderStr.trim() && !loading && (
           <div className="py-6 space-y-2">
-            <p className="text-center text-slate-400 font-bold italic">Geen order gevonden in tijdelijke import.</p>
+            <p className="text-center text-slate-400 font-bold italic">{t("adminPrinterManager.noOrderFoundInTemporaryImport", "Geen order gevonden in tijdelijke import.")}</p>
             {searchDiagnostics.length > 0 && (
               <div className="mx-auto max-w-xl text-[11px] font-mono bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-600">
-                <p className="font-black mb-1">Zoekdiagnostiek</p>
+                <p className="font-black mb-1">{t("adminPrinterManager.searchDiagnostics", "Zoekdiagnostiek")}</p>
                 {searchDiagnostics.map((line, idx) => (
                   <p key={`${line}-${idx}`} className="break-all">{line}</p>
                 ))}
@@ -815,6 +816,7 @@ const CalibrationModal = ({ printer, onClose, onPrint, onApply }: {
   onPrint: (config: { labelHeightMm: number }) => void;
   onApply: (payload: { calibrationOffsetXMm: number; calibrationOffsetYMm: number }) => void;
 }) => {
+  const { t } = useTranslation();
   const [labelHeightMm, setLabelHeightMm] = useState(40);
   const [manualXMm, setManualXMm] = useState(String(parseMm(printer?.calibrationOffsetXMm, 0)));
   const [manualYMm, setManualYMm] = useState(String(parseMm(printer?.calibrationOffsetYMm, 0)));
@@ -866,14 +868,14 @@ const CalibrationModal = ({ printer, onClose, onPrint, onApply }: {
       <div className="bg-white w-full max-w-2xl rounded-[30px] shadow-2xl p-8 my-auto">
         <div className="flex justify-between items-center mb-5">
           <h3 className="text-xl font-black text-slate-800 uppercase italic flex items-center gap-2">
-            <Crosshair className="text-blue-600" /> Print Calibratie - {printer?.name || "Printer"}
+            <Crosshair className="text-blue-600" /> {t("adminPrinterManager.printCalibration", "Print Calibratie")} - {printer?.name || t("adminPrinterManager.printer", "Printer")}
           </h3>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full"><X size={20} /></button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
-            <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Calibratie Labelformaat</label>
+            <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.calibrationLabelFormat", "Calibratie Labelformaat")}</label>
             <select
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
               value={String(labelHeightMm)}
@@ -888,52 +890,52 @@ const CalibrationModal = ({ printer, onClose, onPrint, onApply }: {
               onClick={() => onPrint({ labelHeightMm })}
               className="w-full py-3 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center justify-center gap-2"
             >
-              <Printer size={18} /> Print Kruisjes
+              <Printer size={18} /> {t("adminPrinterManager.printCrosses", "Print Kruisjes")}
             </button>
           </div>
         </div>
 
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-4">
-          <p className="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-3">Snel berekenen op basis van marges</p>
+          <p className="text-[11px] font-black text-slate-500 uppercase tracking-wider mb-3">{t("adminPrinterManager.quickCalculateMargins", "Snel berekenen op basis van marges")}</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Gemeten vrije marge links (mm)</label>
+              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.measuredFreeMarginLeft", "Gemeten vrije marge links (mm)")}</label>
               <input type="number" step="0.1" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm" value={measuredLeftMm} onChange={(e) => setMeasuredLeftMm(e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Gemeten vrije marge rechts (mm)</label>
+              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.measuredFreeMarginRight", "Gemeten vrije marge rechts (mm)")}</label>
               <input type="number" step="0.1" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm" value={measuredRightMm} onChange={(e) => setMeasuredRightMm(e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Gemeten vrije marge boven (mm)</label>
+              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.measuredFreeMarginTop", "Gemeten vrije marge boven (mm)")}</label>
               <input type="number" step="0.1" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm" value={measuredTopMm} onChange={(e) => setMeasuredTopMm(e.target.value)} />
             </div>
             <div>
-              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Gemeten vrije marge onder (mm)</label>
+              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.measuredFreeMarginBottom", "Gemeten vrije marge onder (mm)")}</label>
               <input type="number" step="0.1" className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm" value={measuredBottomMm} onChange={(e) => setMeasuredBottomMm(e.target.value)} />
             </div>
           </div>
           {suggestionX !== null && (
             <p className="mt-3 text-sm font-bold text-blue-700">
-              Suggestie X-correctie: {suggestionX > 0 ? '+' : ''}{suggestionX.toFixed(2)} mm
-              <span className="text-slate-500 font-semibold"> (positief = naar rechts)</span>
+              {t("adminPrinterManager.suggestionXCorrection", "Suggestie X-correctie")}: {suggestionX > 0 ? '+' : ''}{suggestionX.toFixed(2)} mm
+              <span className="text-slate-500 font-semibold"> ({t("adminPrinterManager.positiveMeansRight", "positief = naar rechts")})</span>
             </p>
           )}
           {suggestionY !== null && (
             <p className="mt-1 text-sm font-bold text-blue-700">
-              Suggestie Y-correctie: {suggestionY > 0 ? '+' : ''}{suggestionY.toFixed(2)} mm
-              <span className="text-slate-500 font-semibold"> (positief = naar beneden)</span>
+              {t("adminPrinterManager.suggestionYCorrection", "Suggestie Y-correctie")}: {suggestionY > 0 ? '+' : ''}{suggestionY.toFixed(2)} mm
+              <span className="text-slate-500 font-semibold"> ({t("adminPrinterManager.positiveMeansDown", "positief = naar beneden")})</span>
             </p>
           )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
           <div>
-            <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Offset X (mm)</label>
+            <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.offsetX", "Offset X (mm)")}</label>
             <input type="number" step="0.1" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm" value={manualXMm} onChange={(e) => setManualXMm(e.target.value)} />
           </div>
           <div>
-            <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">Offset Y (mm)</label>
+            <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.offsetY", "Offset Y (mm)")}</label>
             <input type="number" step="0.1" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm" value={manualYMm} onChange={(e) => setManualYMm(e.target.value)} />
           </div>
         </div>
@@ -944,30 +946,30 @@ const CalibrationModal = ({ printer, onClose, onPrint, onApply }: {
             disabled={suggestionX === null && suggestionY === null}
             className="px-4 py-2 bg-white border border-slate-300 rounded-lg font-black text-xs uppercase tracking-wider hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Gebruik suggesties
+            {t("adminPrinterManager.useSuggestions", "Gebruik suggesties")}
           </button>
         </div>
 
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-5">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <p className="text-xs font-bold uppercase text-slate-500">Preview vóór printen</p>
+            <p className="text-xs font-bold uppercase text-slate-500">{t("adminPrinterManager.previewBeforePrint", "Preview vóór printen")}</p>
             <button
               onClick={handlePreview}
               className="px-4 py-2 bg-white border border-slate-300 rounded-lg font-black text-xs uppercase tracking-wider hover:bg-slate-100"
             >
-              Preview Genereren
+              {t("adminPrinterManager.generatePreview", "Preview Genereren")}
             </button>
           </div>
           {previewError && <p className="mt-2 text-xs font-bold text-rose-600">{previewError}</p>}
           {previewUrl && (
             <div className="mt-3 bg-white border border-slate-200 rounded-xl p-3 overflow-auto">
-              <img src={previewUrl} alt="Calibratie preview" className="max-w-full h-auto" />
+              <img src={previewUrl} alt={t("adminPrinterManager.calibrationPreview", "Calibratie preview")} className="max-w-full h-auto" />
             </div>
           )}
         </div>
 
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">Sluiten</button>
+          <button onClick={onClose} className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">{t("common.close", "Sluiten")}</button>
           <button
             onClick={() => onApply({
               calibrationOffsetXMm: parseMm(manualXMm, 0),
@@ -975,7 +977,7 @@ const CalibrationModal = ({ printer, onClose, onPrint, onApply }: {
             })}
             className="px-5 py-2 bg-emerald-600 text-white font-black rounded-lg hover:bg-emerald-700"
           >
-            Opslaan als Printer Offset
+            {t("adminPrinterManager.saveAsPrinterOffset", "Opslaan als Printer Offset")}
           </button>
         </div>
       </div>
@@ -1826,7 +1828,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">Tijdelijke Pilot Modus</p>
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">{t("adminPrinterManager.temporaryPilotMode", "Tijdelijke Pilot Modus")}</p>
             <h3 className="text-base font-black text-slate-800 uppercase flex items-center gap-2">
               <Server size={16} /> Windows Print Host
             </h3>
@@ -1902,23 +1904,23 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                   value={formData.type}
                   onChange={e => setFormData({...formData, type: normalizePrinterType(e.target.value)})}
                 >
-                  <option value={CONNECTION_TYPES.WEBUSB}>WebUSB / Zadig</option>
-                  <option value={CONNECTION_TYPES.WINDOWS_HOST}>Direct via Windows Host</option>
-                  <option value={CONNECTION_TYPES.NETWORK}>Netwerk (IP)</option>
+                  <option value={CONNECTION_TYPES.WEBUSB}>{t("adminPrinterManager.webUsbZadig", "WebUSB / Zadig")}</option>
+                  <option value={CONNECTION_TYPES.WINDOWS_HOST}>{t("adminPrinterManager.directWindowsHost", "Direct via Windows Host")}</option>
+                  <option value={CONNECTION_TYPES.NETWORK}>{t("adminPrinterManager.networkIp", "Netwerk (IP)")}</option>
                 </select>
               </div>
               
               {normalizePrinterType(formData.type) === CONNECTION_TYPES.WEBUSB && (
                   <div className="mt-2 p-3 bg-slate-100 border border-slate-200 rounded-xl font-bold text-slate-500 italic flex flex-col justify-center">
                   <div className="flex items-center justify-between gap-2">
-                        <span>{formData.deviceName ? `Gekoppeld: ${formData.deviceName}` : "Directe USB Print"}</span>
+                        <span>{formData.deviceName ? `${t("adminPrinterManager.paired", "Gekoppeld")}: ${formData.deviceName}` : t("adminPrinterManager.directUsbPrint", "Directe USB Print")}</span>
                     <div className="flex items-center gap-2">
                       <button onClick={handlePairUsb} className="text-xs bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-blue-50 text-blue-600 font-bold flex items-center gap-1">
                         <Usb size={14} />
-                        {formData.vendorId ? "Opnieuw Koppelen" : "Koppel Printer"}
+                        {formData.vendorId ? t("adminPrinterManager.pairAgain", "Opnieuw Koppelen") : t("adminPrinterManager.pairPrinter", "Koppel Printer")}
                       </button>
                       <button onClick={handleUsbResetReconnect} className="text-xs bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-amber-50 text-amber-700 font-bold">
-                        USB Reset + Reconnect
+                        {t("adminPrinterManager.usbResetReconnect", "USB Reset + Reconnect")}
                       </button>
                     </div>
                     </div>
@@ -1934,17 +1936,17 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
               {normalizePrinterType(formData.type) === CONNECTION_TYPES.NETWORK && (
                 <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">IP Adres</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t("adminPrinterManager.ipAddress", "IP Adres")}</label>
                     <input
                       type="text"
-                      placeholder="Bijv. 192.168.1.120"
+                      placeholder={t("placeholders.adminPrinterIpExample", "Bijv. 192.168.1.120")}
                       className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500"
                       value={formData.ip}
                       onChange={(e) => setFormData({ ...formData, ip: e.target.value })}
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Poort</label>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t("adminPrinterManager.port", "Poort")}</label>
                     <input
                       type="number"
                       min="1"
@@ -1981,27 +1983,27 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                     </select>
                 </div>
                 <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Rol Breedte (mm)</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t("adminPrinterManager.rollWidthMm", "Rol Breedte (mm)")}</label>
                 <input
                   type="number"
                   min="20"
                   step="1"
                   className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold"
-                  placeholder="90"
+                  placeholder={t("placeholders.adminPrinterDpiExample", "90")}
                   value={formData.rollWidthMm}
                   onChange={e => setFormData({ ...formData, rollWidthMm: e.target.value, width: e.target.value })}
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Rol Type</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t("adminPrinterManager.rollType", "Rol Type")}</label>
                 <select
                   className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold"
                   value={normalizeRollType(formData.rollType)}
                   onChange={e => setFormData({ ...formData, rollType: normalizeRollType(e.target.value) })}
                 >
-                  <option value="gap">Stickerrol met onderbreking (GAP)</option>
-                  <option value="continuous">Continue rol</option>
-                  <option value="mark">Black mark rol</option>
+                  <option value="gap">{t("adminPrinterManager.rollTypeGap", "Stickerrol met onderbreking (GAP)")}</option>
+                  <option value="continuous">{t("adminPrinterManager.rollTypeContinuous", "Continue rol")}</option>
+                  <option value="mark">{t("adminPrinterManager.rollTypeMark", "Black mark rol")}</option>
                 </select>
                 </div>
                 <div>
@@ -2009,25 +2011,25 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                     <input type="number" min="0" max="30" className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold" value={formData.darkness} onChange={e => setFormData({...formData, darkness: e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Speed (ips)</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t("adminPrinterManager.speedIps", "Speed (ips)")}</label>
                   <input type="number" min="1" max="14" className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold" value={formData.speed} onChange={e => setFormData({...formData, speed: e.target.value})} />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">ZPL Font</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t("adminPrinterManager.zplFont", "ZPL Font")}</label>
                   <select
                     className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold"
                     value={normalizeZplTextFont(formData.zplTextFont)}
                     onChange={e => setFormData({ ...formData, zplTextFont: normalizeZplTextFont(e.target.value) })}
                   >
-                    <option value="0">Font 0 (standaard)</option>
-                    <option value="A">Font A</option>
+                    <option value="0">{t("adminPrinterManager.font0Default", "Font 0 (standaard)")}</option>
+                    <option value="A">{t("adminPrinterManager.fontA", "Font A")}</option>
                   </select>
                 </div>
             </div>
 
             {/* Driver Model Selector */}
             <div className="md:col-span-2">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Driver Model</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t("adminPrinterManager.driverModel", "Driver Model")}</label>
                 <select
                     className="w-full p-2 bg-slate-50 border rounded-lg text-xs font-bold"
                     value={formData.driverModel}
@@ -2046,19 +2048,19 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                         });
                     }}
                 >
-                    <option value="">— Automatisch detecteren (op naam/DPI) —</option>
+                    <option value="">{t("adminPrinterManager.autoDetectDriver", "— Automatisch detecteren (op naam/DPI) —")}</option>
                     {Object.values(PRINTER_DRIVERS).map(d => (
                         <option key={d.id} value={d.id}>{d.label}</option>
                     ))}
                 </select>
                 <p className="text-[9px] text-slate-400 mt-1">
-                    Selecteer een driver voor correcte DPI, cut-commando en backfeed-gedrag. Laat leeg voor automatische detectie op naamhint.
+                    {t("adminPrinterManager.driverHelp", "Selecteer een driver voor correcte DPI, cut-commando en backfeed-gedrag. Laat leeg voor automatische detectie op naamhint.")}
                 </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 md:col-span-2">
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Calibratie X Offset (mm)</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t("adminPrinterManager.calibrationXOffset", "Calibratie X Offset (mm)")}</label>
                 <input
                   type="number"
                   step="0.1"
@@ -2068,7 +2070,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Calibratie Y Offset (mm)</label>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">{t("adminPrinterManager.calibrationYOffset", "Calibratie Y Offset (mm)")}</label>
                 <input
                   type="number"
                   step="0.1"
@@ -2088,9 +2090,9 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                   className="w-4 h-4 mt-0.5"
                 />
                 <span>
-                  <span className="block text-xs font-black text-slate-700 uppercase tracking-wider">Bitmap print voor deze printer</span>
+                  <span className="block text-xs font-black text-slate-700 uppercase tracking-wider">{t("adminPrinterManager.bitmapPrintForPrinter", "Bitmap print voor deze printer")}</span>
                   <span className="block text-xs text-slate-500 mt-1">
-                    Print labels als 1-op-1 rasterbitmap vanaf de preview. Deze instelling geldt alleen voor deze opgeslagen printer.
+                    {t("adminPrinterManager.bitmapPrintHelp", "Print labels als 1-op-1 rasterbitmap vanaf de preview. Deze instelling geldt alleen voor deze opgeslagen printer.")}
                   </span>
                 </span>
               </label>
@@ -2174,28 +2176,28 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                   )}
                 </div>
                 <p className="text-xs font-bold text-slate-400 font-mono mt-0.5">
-                  {printerType === CONNECTION_TYPES.WEBUSB && (printer.deviceName ? `USB: ${printer.deviceName}` : "WebUSB / Zadig")}
-                  {printerType === CONNECTION_TYPES.WINDOWS_HOST && "Windows Host Print"}
-                  {printerType === CONNECTION_TYPES.NETWORK && (printer.ip ? `IP: ${printer.ip}:${printer.port || '9100'}` : "Netwerk printer (IP nog leeg)")}
+                  {printerType === CONNECTION_TYPES.WEBUSB && (printer.deviceName ? `USB: ${printer.deviceName}` : t("adminPrinterManager.webUsbZadig", "WebUSB / Zadig"))}
+                  {printerType === CONNECTION_TYPES.WINDOWS_HOST && t("adminPrinterManager.windowsHostPrint", "Windows Host Print")}
+                  {printerType === CONNECTION_TYPES.NETWORK && (printer.ip ? `IP: ${printer.ip}:${printer.port || '9100'}` : t("adminPrinterManager.networkPrinterIpEmpty", "Netwerk printer (IP nog leeg)"))}
                   {printer.dpi && <span className="ml-2 opacity-60 text-[10px]">({printer.dpi} DPI)</span>}
                 </p>
                 <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
                   {t('adminPrinterManager.protocol')}: {((printer.protocol || 'zpl')).toUpperCase()} | {getConnectionLabel(printer.type)}
                 </p>
                 <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
-                  Calibratie: X {parseMm(printer.calibrationOffsetXMm, 0)}mm | Y {parseMm(printer.calibrationOffsetYMm, 0)}mm
+                  {t("adminPrinterManager.calibration", "Calibratie")}: X {parseMm(printer.calibrationOffsetXMm, 0)}mm | Y {parseMm(printer.calibrationOffsetYMm, 0)}mm
                 </p>
                 <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
-                  Rol: {resolveRollWidthMm(printer)}mm | Type: {normalizeRollType(printer.rollType)}
+                  {t("adminPrinterManager.roll", "Rol")}: {resolveRollWidthMm(printer)}mm | {t("adminPrinterManager.type", "Type")}: {normalizeRollType(printer.rollType)}
                 </p>
                 <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
-                  Print: Darkness {printer.darkness || getDriver(printer).defaultDarkness} | Speed {printer.speed || getDriver(printer).defaultSpeed} ips
+                  {t("adminPrinterManager.print", "Print")}: {t("adminPrinterManager.darkness", "Darkness")} {printer.darkness || getDriver(printer).defaultDarkness} | {t("adminPrinterManager.speed", "Speed")} {printer.speed || getDriver(printer).defaultSpeed} ips
                 </p>
                 <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
-                  ZPL tekstfont: {normalizeZplTextFont(printer.zplTextFont)}
+                  {t("adminPrinterManager.zplTextFont", "ZPL tekstfont")}: {normalizeZplTextFont(printer.zplTextFont)}
                 </p>
                 <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
-                  Bitmap print: {printer.bitmapPrintEnabled ? 'Aan' : 'Uit'}
+                  {t("adminPrinterManager.bitmapPrint", "Bitmap print")}: {printer.bitmapPrintEnabled ? t("common.on", "Aan") : t("common.off", "Uit")}
                 </p>
                 <p className="text-[10px] text-slate-400 mt-1 flex flex-wrap gap-1">
                     {printer.linkedStations && printer.linkedStations.length > 0 
@@ -2220,19 +2222,19 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                   onClick={() => setShowTestMenu(printer.id === showTestMenu ? null : printer.id)}
                   disabled={printerType !== CONNECTION_TYPES.WEBUSB}
                   className="p-2 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                  title={printerType === CONNECTION_TYPES.WEBUSB ? t('adminPrinterManager.testPrint') : 'Testprint is alleen beschikbaar voor WebUSB/Zadig printers'}
+                  title={printerType === CONNECTION_TYPES.WEBUSB ? t('adminPrinterManager.testPrint') : t("adminPrinterManager.testPrintWebUsbOnly", "Testprint is alleen beschikbaar voor WebUSB/Zadig printers")}
                 >
                   <Play size={18} />
                 </button>
                 {showTestMenu === printer.id && (
                   <div className="absolute right-0 bottom-full mb-2 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-10 py-1">
-                    <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase">Test Lengtes</div>
-                    <button onClick={() => handleLengthTestPrint(printer, 25)} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">Test 90x25mm</button>
-                    <button onClick={() => handleLengthTestPrint(printer, 50)} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">Test 90x50mm</button>
-                    <button onClick={() => handleLengthTestPrint(printer, 100)} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">Test 90x100mm</button>
+                    <div className="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase">{t("adminPrinterManager.testLengths", "Test Lengtes")}</div>
+                    <button onClick={() => handleLengthTestPrint(printer, 25)} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">{t("adminPrinterManager.test90x25", "Test 90x25mm")}</button>
+                    <button onClick={() => handleLengthTestPrint(printer, 50)} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">{t("adminPrinterManager.test90x50", "Test 90x50mm")}</button>
+                    <button onClick={() => handleLengthTestPrint(printer, 100)} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">{t("adminPrinterManager.test90x100", "Test 90x100mm")}</button>
                     <div className="h-px bg-slate-100 my-1"></div>
-                    <button onClick={() => handleTestPrint(printer)} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">Standaard Testlabel</button>
-                    <button onClick={() => { setShowTestMenu(null); setCalibrationPrinter(printer); }} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">Calibratie print + offsets</button>
+                    <button onClick={() => handleTestPrint(printer)} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">{t("adminPrinterManager.standardTestLabel", "Standaard Testlabel")}</button>
+                    <button onClick={() => { setShowTestMenu(null); setCalibrationPrinter(printer); }} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">{t("adminPrinterManager.calibrationPrintOffsets", "Calibratie print + offsets")}</button>
                   </div>
                 )}
               </div>
@@ -2261,13 +2263,13 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
 
       {activeTab === "queue-stations" && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-          <h3 className="text-lg font-black text-slate-800 uppercase mb-1">Queue Stations</h3>
+          <h3 className="text-lg font-black text-slate-800 uppercase mb-1">{t("adminPrinterManager.queueStations", "Queue Stations")}</h3>
           <p className="text-sm text-slate-500 font-semibold mb-4">
-            Koppel stations per printer voor Print Stations en Print Wachtrij. Stations komen uit factory config.
+            {t("adminPrinterManager.queueStationsHelp", "Koppel stations per printer voor Print Stations en Print Wachtrij. Stations komen uit factory config.")}
           </p>
 
           <div className="mb-4">
-            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Printer</label>
+            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">{t("adminPrinterManager.printer", "Printer")}</label>
             <select
               value={selectedQueuePrinterId}
               onChange={(e) => {
@@ -2277,7 +2279,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
               disabled={printers.length === 0 || isSavingQueueStations}
             >
-              {printers.length === 0 && <option value="">Geen printers</option>}
+              {printers.length === 0 && <option value="">{t("adminPrinterManager.noPrinters", "Geen printers")}</option>}
               {printers.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -2291,7 +2293,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
               className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
               disabled={availableStations.length === 0 || isSavingQueueStations || !selectedQueuePrinterId}
             >
-              <option value="">Selecteer station uit factory config...</option>
+              <option value="">{t("adminPrinterManager.selectStationFromFactoryConfig", "Selecteer station uit factory config...")}</option>
               {availableStations
                 .filter((s) => !queueStations.includes(s))
                 .map((s) => (
@@ -2303,13 +2305,13 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
               disabled={!queueStationToAdd || isSavingQueueStations || !selectedQueuePrinterId}
               className="px-4 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSavingQueueStations ? "Opslaan..." : "Toevoegen"}
+              {isSavingQueueStations ? t("common.saving", "Opslaan...") : t("common.add", "Toevoegen")}
             </button>
           </div>
 
           <div className="flex flex-wrap gap-2">
             {queueStations.length === 0 && (
-              <p className="text-sm text-slate-400 italic">Nog geen queue stations geselecteerd.</p>
+              <p className="text-sm text-slate-400 italic">{t("adminPrinterManager.noQueueStationsSelected", "Nog geen queue stations geselecteerd.")}</p>
             )}
             {queueStations.map((station) => (
               <span key={station} className="bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 border border-blue-200">
@@ -2318,7 +2320,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                   onClick={() => handleRemoveQueueStation(station)}
                   className="hover:text-blue-900"
                   disabled={isSavingQueueStations}
-                  title="Verwijderen"
+                  title={t("common.delete", "Verwijderen")}
                 >
                   <X size={12} />
                 </button>

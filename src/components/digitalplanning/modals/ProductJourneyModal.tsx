@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, MapPin, User, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { nl } from 'date-fns/locale';
+import i18n from "i18next";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../../../config/firebase";
 import { getPathString, PATHS } from "../../../config/dbPaths";
@@ -136,7 +137,7 @@ const ProductJourneyModal = ({ product, onClose }: ProductJourneyModalProps) => 
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
           <div>
             <h3 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">
-              Product <span className="text-blue-600">Route</span>
+              {i18n.t('common.product', 'Product')} <span className="text-blue-600">{i18n.t('common.route', 'Route')}</span>
             </h3>
             <div className="flex items-center gap-2 mt-1">
                 <span className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded text-[10px] font-black uppercase">

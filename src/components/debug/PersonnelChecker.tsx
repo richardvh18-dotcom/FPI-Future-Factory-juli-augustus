@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import i18n from 'i18next';
 import { db } from '../../config/firebase';
 import { collection, getDocs } from 'firebase/firestore';
 import { PATHS } from '../../config/dbPaths';
@@ -67,7 +68,7 @@ const PersonnelChecker: React.FC = () => {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Database size={20} className="text-blue-600" />
-          <h3 className="font-black text-sm uppercase">Personnel Check</h3>
+          <h3 className="font-black text-sm uppercase">{i18n.t('personnelChecker.title', 'Personnel Check')}</h3>
         </div>
         <button onClick={checkData} disabled={loading}>
           <Loader2 size={16} className={loading ? 'animate-spin text-blue-600' : 'text-slate-400'} />
@@ -84,7 +85,7 @@ const PersonnelChecker: React.FC = () => {
         <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl">
           <div className="flex items-center gap-2 mb-2">
             <XCircle size={16} className="text-rose-600" />
-            <span className="font-bold text-xs text-rose-900">ERROR</span>
+            <span className="font-bold text-xs text-rose-900">{i18n.t('common.error', 'ERROR')}</span>
           </div>
           <p className="text-xs text-rose-700 font-mono">{error}</p>
         </div>
@@ -93,7 +94,7 @@ const PersonnelChecker: React.FC = () => {
       {data && !loading && (
         <div className="space-y-4">
           <div className="p-3 bg-slate-50 rounded-xl">
-            <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Firestore Path</div>
+            <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">{i18n.t('personnelChecker.firestorePath', 'Firestore Path')}</div>
             <div className="text-xs font-mono text-slate-900">{data.path}</div>
           </div>
 

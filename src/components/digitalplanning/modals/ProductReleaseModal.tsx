@@ -532,7 +532,7 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
                   value={val}
                   onChange={(e) => handleMeasurementChange(fieldKey, e.target.value)}
                   className={`w-full pl-4 pr-10 py-3 rounded-xl border-2 font-bold focus:border-blue-500 outline-none transition-colors ${statusClass}`}
-                  placeholder="Waarde..."
+                  placeholder={t("placeholders.dpValue", "Waarde...")}
               />
               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 pointer-events-none uppercase italic opacity-60">
                 mm
@@ -772,9 +772,16 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
             <h2 className="text-xl md:text-2xl font-black uppercase italic">
               {status === 'approved' ? 'Vrijgeven' : status === 'temp_reject' ? 'Tijdelijke Afkeur' : 'Definitieve Afkeur'}
             </h2>
-            <p className="text-white/80 text-xs md:text-sm font-bold mt-1">
-              {product?.lotNumber} • {product?.item}
-            </p>
+            <div className="mt-2">
+              <span className="inline-block px-3 py-1 bg-white/25 text-white rounded-lg text-sm sm:text-base font-black uppercase tracking-widest border border-white/40 shadow-sm mb-1.5">
+                Lot: {product?.lotNumber || product?.id}
+              </span>
+              {(product?.item || product?.itemDescription || product?.itemCode) && (
+                <p className="text-lg md:text-xl font-black text-white mt-1.5 leading-tight max-w-sm md:max-w-md">
+                  {product.item || product.itemDescription || product.itemCode}
+                </p>
+              )}
+            </div>
           </div>
           <button onClick={onClose} className="text-white/80 hover:text-white">
             <X size={24} />
@@ -868,7 +875,7 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
           {/* Rejection Reasons (Only if not approved) */}
           {status !== "approved" && (
             <div className="mb-4 md:mb-6">
-              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 md:mb-3">Reden van afkeur</h4>
+              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 md:mb-3">{t("productRelease.reasonForRejection", "Reden van afkeur")}</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {REJECTION_REASONS.map((r) => (
                   <button
@@ -892,7 +899,7 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               className="w-full p-3 md:p-4 rounded-xl border border-slate-200 font-medium text-sm text-slate-700 focus:border-blue-500 outline-none min-h-[80px] md:min-h-[100px]"
-              placeholder="Voeg eventueel een opmerking toe..."
+              placeholder={t("placeholders.dpOptionalNote", "Voeg eventueel een opmerking toe...")}
             />
           </div>
 
@@ -900,12 +907,12 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
           {status === "approved" && (
             <div className="flex items-center justify-center gap-4 mb-4 md:mb-6 opacity-60">
               <div className="text-center">
-                <div className="text-[10px] font-bold text-slate-400 uppercase">Huidig</div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase">{t("common.current", "Huidig")}</div>
                 <div className="font-black text-slate-800">{currentStep}</div>
               </div>
               <ArrowRight className="text-slate-300" size={20} />
               <div className="text-center">
-                <div className="text-[10px] font-bold text-emerald-600 uppercase">Volgend</div>
+                <div className="text-[10px] font-bold text-emerald-600 uppercase">{t("common.next", "Volgend")}</div>
                 <div className="font-black text-emerald-600">{nextStepDisplay}</div>
               </div>
             </div>

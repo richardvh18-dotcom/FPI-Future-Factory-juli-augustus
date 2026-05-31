@@ -630,10 +630,10 @@ const ImportExportDashboard = ({
             <div className="space-y-6">
               <div className="bg-white p-8 rounded-[30px] border border-slate-200 shadow-sm">
                  <h3 className="text-lg font-black uppercase text-slate-800 flex items-center gap-3 mb-2">
-                   <FileSpreadsheet className="text-emerald-600" /> Excel Import (Infor LN)
+                   <FileSpreadsheet className="text-emerald-600" /> {t("importExportDashboard.excelImportTitle", "Excel Import (Infor LN)")}
                  </h3>
                  <p className="text-sm text-slate-500 mb-6">
-                   Upload de actuele productieplanning vanuit Excel om de digitale werkvloer te voeden.
+                   {t("importExportDashboard.excelImportSubtitle", "Upload de actuele productieplanning vanuit Excel om de digitale werkvloer te voeden.")}
                  </p>
 
                  <div className="mb-6 flex justify-end">
@@ -647,23 +647,23 @@ const ImportExportDashboard = ({
                  
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100">
-                     <h4 className="font-bold text-emerald-900 text-sm mb-2">Hybride Transitie</h4>
+                     <h4 className="font-bold text-emerald-900 text-sm mb-2">{t("importExportDashboard.hybridTransition", "Hybride Transitie")}</h4>
                      <p className="text-xs text-emerald-700 mb-6">
-                       We zitten momenteel in een hybride fase. Je kunt handmatig data inladen voor machines die al digitaal zijn.
+                       {t("importExportDashboard.hybridTransitionBody", "We zitten momenteel in een hybride fase. Je kunt handmatig data inladen voor machines die al digitaal zijn.")}
                      </p>
                      <button 
                        onClick={() => setShowLegacyModal(true)}
                        className="w-full py-4 bg-emerald-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-200"
                      >
-                       <Upload size={18} /> Start Import Flow
+                       <Upload size={18} /> {t("importExportDashboard.startImportFlow", "Start Import Flow")}
                      </button>
                    </div>
 
                    <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 flex flex-col justify-center items-center text-center opacity-60">
                      <Database size={32} className="text-slate-400 mb-3" />
-                     <h4 className="font-bold text-slate-700 text-sm mb-1">Automatische Sync</h4>
+                     <h4 className="font-bold text-slate-700 text-sm mb-1">{t("importExportDashboard.automaticSync", "Automatische Sync")}</h4>
                      <p className="text-xs text-slate-500">
-                       Binnenkort beschikbaar via directe API koppeling met LN.
+                       {t("importExportDashboard.automaticSyncBody", "Binnenkort beschikbaar via directe API koppeling met LN.")}
                      </p>
                    </div>
                  </div>
@@ -673,10 +673,10 @@ const ImportExportDashboard = ({
             <div className="space-y-6">
               <div className="bg-white p-8 rounded-[30px] border border-slate-200 shadow-sm">
                  <h3 className="text-lg font-black uppercase text-slate-800 flex items-center gap-3 mb-2">
-                   <Database className="text-blue-600" /> Werkvloer Exports
+                   <Database className="text-blue-600" /> {t("importExportDashboard.shopFloorExports", "Werkvloer Exports")}
                  </h3>
                  <p className="text-sm text-slate-500 mb-6">
-                   Genereer overzichten voor controle, administratie of machines die nog op papier werken.
+                   {t("importExportDashboard.shopFloorExportsSubtitle", "Genereer overzichten voor controle, administratie of machines die nog op papier werken.")}
                  </p>
                  
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -685,8 +685,8 @@ const ImportExportDashboard = ({
                        <FileText size={24} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
                        <ArrowRight size={20} className="text-slate-300 group-hover:text-blue-500 transform group-hover:translate-x-1 transition-all" />
                      </div>
-                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Actuele To Do Lijst</h4>
-                     <p className="text-[10px] text-slate-500 font-medium">Lijst van alle nog niet gestarte orders binnen jouw afdeling</p>
+                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">{t("importExportDashboard.currentTodoList", "Actuele To Do Lijst")}</h4>
+                     <p className="text-[10px] text-slate-500 font-medium">{t("importExportDashboard.currentTodoListBody", "Lijst van alle nog niet gestarte orders binnen jouw afdeling")}</p>
                    </button>
 
                    <button
@@ -698,8 +698,8 @@ const ImportExportDashboard = ({
                        <FileSpreadsheet size={24} className="text-slate-400 group-hover:text-emerald-500 transition-colors" />
                        <ArrowRight size={20} className="text-slate-300 group-hover:text-emerald-500 transform group-hover:translate-x-1 transition-all" />
                      </div>
-                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Gereed voor LN</h4>
-                     <p className="text-[10px] text-slate-500 font-medium">Export van gereedgemelde producten om terug te boeken in ERP</p>
+                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">{t("importExportDashboard.readyForLn", "Gereed voor LN")}</h4>
+                     <p className="text-[10px] text-slate-500 font-medium">{t("importExportDashboard.readyForLnBody", "Export van gereedgemelde producten om terug te boeken in ERP")}</p>
                    </button>
 
                    <button
@@ -711,8 +711,8 @@ const ImportExportDashboard = ({
                        <FileSpreadsheet size={24} className="text-slate-400 group-hover:text-emerald-500 transition-colors" />
                        <ArrowRight size={20} className="text-slate-300 group-hover:text-emerald-500 transform group-hover:translate-x-1 transition-all" />
                      </div>
-                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Eindinspectie Gereedlijst</h4>
-                     <p className="text-[10px] text-slate-500 font-medium">Open popup voor dag- of weekexport naar PDF of Excel met kolommen en headers</p>
+                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">{t("importExportDashboard.finalInspectionReadyList", "Eindinspectie Gereedlijst")}</h4>
+                     <p className="text-[10px] text-slate-500 font-medium">{t("importExportDashboard.finalInspectionReadyListBody", "Open popup voor dag- of weekexport naar PDF of Excel met kolommen en headers")}</p>
                    </button>
 
                    <button
@@ -724,8 +724,8 @@ const ImportExportDashboard = ({
                        <Download size={24} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
                        <ArrowRight size={20} className="text-slate-300 group-hover:text-blue-500 transform group-hover:translate-x-1 transition-all" />
                      </div>
-                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Machine Export - Planning</h4>
-                     <p className="text-[10px] text-slate-500 font-medium">Open planningexport direct met machinefilter en statusfilters</p>
+                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">{t("importExportDashboard.machineExportPlanning", "Machine Export - Planning")}</h4>
+                     <p className="text-[10px] text-slate-500 font-medium">{t("importExportDashboard.machineExportPlanningBody", "Open planningexport direct met machinefilter en statusfilters")}</p>
                    </button>
 
                    <button
@@ -737,8 +737,8 @@ const ImportExportDashboard = ({
                        <Download size={24} className="text-slate-400 group-hover:text-blue-500 transition-colors" />
                        <ArrowRight size={20} className="text-slate-300 group-hover:text-blue-500 transform group-hover:translate-x-1 transition-all" />
                      </div>
-                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Machine Export - Lotnummers</h4>
-                     <p className="text-[10px] text-slate-500 font-medium">Open werkvoorraadexport voor actieve lotnummers per machine</p>
+                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">{t("importExportDashboard.machineExportLots", "Machine Export - Lotnummers")}</h4>
+                     <p className="text-[10px] text-slate-500 font-medium">{t("importExportDashboard.machineExportLotsBody", "Open werkvoorraadexport voor actieve lotnummers per machine")}</p>
                    </button>
 
                    <button
@@ -750,8 +750,8 @@ const ImportExportDashboard = ({
                        <ClipboardCheck size={24} className="text-slate-400 group-hover:text-purple-500 transition-colors" />
                        <ArrowRight size={20} className="text-slate-300 group-hover:text-purple-500 transform group-hover:translate-x-1 transition-all" />
                      </div>
-                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Vloercontrole (Ronde)</h4>
-                     <p className="text-[10px] text-slate-500 font-medium">Controleer fysieke lotnummers per station via tablet/scanner</p>
+                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">{t("importExportDashboard.floorCheckRound", "Vloercontrole (Ronde)")}</h4>
+                     <p className="text-[10px] text-slate-500 font-medium">{t("importExportDashboard.floorCheckRoundBody", "Controleer fysieke lotnummers per station via tablet/scanner")}</p>
                    </button>
                  </div>
               </div>
@@ -774,8 +774,8 @@ const ImportExportDashboard = ({
           <div className="bg-white w-full max-w-6xl rounded-[24px] sm:rounded-[32px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]">
             <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-slate-100 bg-emerald-50/70 flex items-start justify-between gap-4 shrink-0">
               <div>
-                <h3 className="text-2xl font-black text-slate-900 italic">Eindinspectie Gereedlijst</h3>
-                <p className="text-sm font-bold text-slate-500 mt-1">Export van wat bij Eindinspectie gereed is gemeld, gefilterd op dag of week.</p>
+                <h3 className="text-2xl font-black text-slate-900 italic">{t("importExportDashboard.finalInspectionReadyList", "Eindinspectie Gereedlijst")}</h3>
+                <p className="text-sm font-bold text-slate-500 mt-1">{t("importExportDashboard.finalInspectionReadyListExportHelp", "Export van wat bij Eindinspectie gereed is gemeld, gefilterd op dag of week.")}</p>
               </div>
               <button
                 onClick={() => setShowCompletedExportModal(false)}
@@ -794,8 +794,8 @@ const ImportExportDashboard = ({
                     onChange={(e) => setCompletedRangeMode(e.target.value)}
                     className="w-full pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-emerald-500"
                   >
-                    <option value="day">Per dag</option>
-                    <option value="week">Per week</option>
+                    <option value="day">{t("importExportDashboard.perDay", "Per dag")}</option>
+                    <option value="week">{t("importExportDashboard.perWeek", "Per week")}</option>
                   </select>
                 </div>
                 <div className="flex gap-2">
@@ -824,9 +824,9 @@ const ImportExportDashboard = ({
                       setCompletedWeekValue(formatWeekInputValue(new Date()));
                     }}
                     className="px-4 py-3 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 transition-colors shrink-0"
-                    title="Terug naar vandaag"
+                    title={t("importExportDashboard.backToToday", "Terug naar vandaag")}
                   >
-                    Vandaag
+                    {t("importExportDashboard.today", "Vandaag")}
                   </button>
                 </div>
                 <button
@@ -848,23 +848,23 @@ const ImportExportDashboard = ({
               </div>
 
               <div className="flex items-center justify-between gap-4 text-xs font-black uppercase tracking-widest text-slate-400">
-                <span>Periode: {completedPeriodLabel}</span>
-                <span>{completedInspectionRows.length} regels</span>
+                <span>{t("importExportDashboard.period", "Periode")}: {completedPeriodLabel}</span>
+                <span>{completedInspectionRows.length} {t("importExportDashboard.rows", "regels")}</span>
               </div>
 
               <div className="rounded-2xl border border-slate-200 overflow-hidden">
                 <div className="grid grid-cols-[9rem_6rem_8rem_8rem_minmax(0,1fr)_8rem] gap-3 bg-slate-100 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  <span>Datum</span>
-                  <span>Tijd</span>
-                  <span>Order</span>
-                  <span>Lot</span>
-                  <span>Product</span>
-                  <span>Code</span>
+                  <span>{t("importExportDashboard.date", "Datum")}</span>
+                  <span>{t("importExportDashboard.time", "Tijd")}</span>
+                  <span>{t("importExportDashboard.order", "Order")}</span>
+                  <span>{t("importExportDashboard.lot", "Lot")}</span>
+                  <span>{t("importExportDashboard.product", "Product")}</span>
+                  <span>{t("importExportDashboard.code", "Code")}</span>
                 </div>
                 <div className="max-h-[22rem] overflow-y-auto custom-scrollbar divide-y divide-slate-100">
                   {completedInspectionRows.length === 0 ? (
                     <div className="px-4 py-10 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
-                      Geen gereedmeldingen gevonden voor deze selectie.
+                      {t("importExportDashboard.noReadyMessagesForSelection", "Geen gereedmeldingen gevonden voor deze selectie.")}
                     </div>
                   ) : (
                     completedInspectionRows.map((row) => (
@@ -890,8 +890,8 @@ const ImportExportDashboard = ({
           <div className="bg-white w-full max-w-6xl rounded-[24px] sm:rounded-[32px] shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]">
             <div className="px-5 sm:px-8 py-5 sm:py-6 border-b border-slate-100 bg-emerald-50/70 flex items-start justify-between gap-4 shrink-0">
               <div>
-                <h3 className="text-2xl font-black text-slate-900 italic">Gereed voor LN</h3>
-                <p className="text-sm font-bold text-slate-500 mt-1">Export van gereedgemelde producten om terug te boeken in ERP.</p>
+                <h3 className="text-2xl font-black text-slate-900 italic">{t("importExportDashboard.readyForLn", "Gereed voor LN")}</h3>
+                <p className="text-sm font-bold text-slate-500 mt-1">{t("importExportDashboard.readyForLnBody", "Export van gereedgemelde producten om terug te boeken in ERP.")}</p>
               </div>
               <button
                 onClick={() => setShowLnReadyExportModal(false)}
@@ -910,8 +910,8 @@ const ImportExportDashboard = ({
                     onChange={(e) => setCompletedRangeMode(e.target.value)}
                     className="w-full pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest outline-none focus:border-emerald-500"
                   >
-                    <option value="day">Per dag</option>
-                    <option value="week">Per week</option>
+                    <option value="day">{t("importExportDashboard.perDay", "Per dag")}</option>
+                    <option value="week">{t("importExportDashboard.perWeek", "Per week")}</option>
                   </select>
                 </div>
                 <div className="flex gap-2">
@@ -940,9 +940,9 @@ const ImportExportDashboard = ({
                       setCompletedWeekValue(formatWeekInputValue(new Date()));
                     }}
                     className="px-4 py-3 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 transition-colors shrink-0"
-                    title="Terug naar vandaag"
+                    title={t("importExportDashboard.backToToday", "Terug naar vandaag")}
                   >
-                    Vandaag
+                    {t("importExportDashboard.today", "Vandaag")}
                   </button>
                 </div>
                 <button
@@ -951,7 +951,7 @@ const ImportExportDashboard = ({
                   disabled={lnReadyQrRows.length === 0}
                   className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-blue-600 hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  <FileText size={14} /> Lijst PDF
+                  <FileText size={14} /> {t("importExportDashboard.listPdf", "Lijst PDF")}
                 </button>
                 <button
                   type="button"
@@ -959,27 +959,27 @@ const ImportExportDashboard = ({
                   disabled={lnReadyQrRows.length === 0}
                   className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  <Printer size={14} /> QR PDF
+                  <Printer size={14} /> {t("importExportDashboard.qrPdf", "QR PDF")}
                 </button>
               </div>
 
               <div className="flex items-center justify-between gap-4 text-xs font-black uppercase tracking-widest text-slate-400">
-                <span>Periode: {completedPeriodLabel}</span>
-                <span>{lnReadyQrRows.length} orderregels</span>
+                <span>{t("importExportDashboard.period", "Periode")}: {completedPeriodLabel}</span>
+                <span>{lnReadyQrRows.length} {t("importExportDashboard.orderRows", "orderregels")}</span>
               </div>
 
               <div className="rounded-2xl border border-slate-200 overflow-hidden">
                 <div className="grid grid-cols-[6rem_8rem_6rem_5rem_minmax(0,1fr)] gap-3 bg-slate-100 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500">
-                  <span>Station</span>
-                  <span>Order</span>
-                  <span>Ref ops</span>
-                  <span>Aantal</span>
-                  <span>Product</span>
+                  <span>{t("importExportDashboard.station", "Station")}</span>
+                  <span>{t("importExportDashboard.order", "Order")}</span>
+                  <span>{t("importExportDashboard.refOps", "Ref ops")}</span>
+                  <span>{t("importExportDashboard.amount", "Aantal")}</span>
+                  <span>{t("importExportDashboard.product", "Product")}</span>
                 </div>
                 <div className="max-h-[22rem] overflow-y-auto custom-scrollbar divide-y divide-slate-100">
                   {lnReadyQrRows.length === 0 ? (
                     <div className="px-4 py-10 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
-                      Geen LN QR-exportregels gevonden voor deze selectie.
+                      {t("importExportDashboard.noLnQrRulesForSelection", "Geen LN QR-exportregels gevonden voor deze selectie.")}
                     </div>
                   ) : (
                     lnReadyQrRows.map((row) => (

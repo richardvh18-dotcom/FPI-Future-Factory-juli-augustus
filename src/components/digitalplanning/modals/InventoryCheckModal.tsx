@@ -123,7 +123,7 @@ Onverwacht gevonden (${extraLots.size}): ${extraLots.size > 0 ? Array.from(extra
         <div className="p-5 sm:p-8 flex-1 overflow-hidden flex flex-col min-h-0 bg-slate-50">
             <div className="flex flex-col h-full bg-white rounded-[24px] border border-slate-200 shadow-sm p-4 sm:p-6 overflow-hidden">
               <div className="flex justify-between items-center mb-4 shrink-0">
-                <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">Actieve Producten</h4>
+                  <h4 className="text-xs font-black uppercase tracking-widest text-slate-400">{t('inventoryCheck.activeProducts', 'Actieve Producten')}</h4>
               </div>
 
               <div className="relative mb-4 shrink-0">
@@ -134,22 +134,22 @@ Onverwacht gevonden (${extraLots.size}): ${extraLots.size > 0 ? Array.from(extra
                   value={scanInput}
                   onChange={(e) => setScanInput(e.target.value)}
                   onKeyDown={handleScan}
-                  placeholder="Scan of typ lotnummer..."
+                  placeholder={t("placeholders.dpScanOrTypeLot", "Scan of typ lotnummer...")}
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-purple-100 rounded-2xl font-bold text-lg outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
                 />
               </div>
 
               <div className="flex gap-4 mb-4 shrink-0">
                 <div className="flex-1 bg-emerald-50 p-4 rounded-2xl border border-emerald-100 flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-widest text-emerald-600">Gevonden</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-emerald-600">{t('inventoryCheck.found', 'Gevonden')}</span>
                   <span className="text-2xl font-black text-emerald-700">{checkedLots.size} / {expectedProducts.length}</span>
                 </div>
                 <div className="flex-1 bg-rose-50 p-4 rounded-2xl border border-rose-100 flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-widest text-rose-600">Missend</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-rose-600">{t('inventoryCheck.missing', 'Missend')}</span>
                   <span className="text-2xl font-black text-rose-700">{expectedProducts.length - checkedLots.size}</span>
                 </div>
                 <div className="flex-1 bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-center justify-between">
-                  <span className="text-xs font-black uppercase tracking-widest text-amber-600">Onverwacht</span>
+                  <span className="text-xs font-black uppercase tracking-widest text-amber-600">{t('inventoryCheck.unexpected', 'Onverwacht')}</span>
                   <span className="text-2xl font-black text-amber-700">{extraLots.size}</span>
                 </div>
               </div>
@@ -171,7 +171,7 @@ Onverwacht gevonden (${extraLots.size}): ${extraLots.size > 0 ? Array.from(extra
 
               <div className="flex-1 overflow-y-auto border-t border-slate-100 mt-2 pt-2 custom-scrollbar pr-2">
                 {expectedProducts.length === 0 ? (
-                  <div className="p-8 text-center text-slate-400 font-bold">Geen actieve producten verwacht op dit station.</div>
+                  <div className="p-8 text-center text-slate-400 font-bold">{t('inventoryCheck.noActiveProductsExpected', 'Geen actieve producten verwacht op dit station.')}</div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {expectedProducts.map(p => {

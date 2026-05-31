@@ -173,7 +173,7 @@ const EmailManagementView = () => {
                         <button onClick={() => handleDelete(tpl.id, tpl.name)} className="text-slate-400 hover:text-red-600"><Trash2 size={16}/></button>
                       </div>
                     </div>
-                    <p className="text-xs text-slate-500 mb-1"><strong>Onderwerp:</strong> {tpl.subject}</p>
+                    <p className="text-xs text-slate-500 mb-1"><strong>{t("common.subject", "Onderwerp")}:</strong> {tpl.subject}</p>
                     <div className="text-xs text-slate-400 truncate mt-2 bg-slate-50 p-2 rounded">{tpl.html.replace(/<[^>]*>?/gm, '').substring(0, 50)}...</div>
                   </div>
                 ))}
@@ -195,7 +195,7 @@ const EmailManagementView = () => {
                       type="text" 
                       value={formData.name} 
                       onChange={e => setFormData({...formData, name: e.target.value})} 
-                      placeholder="Bijv. Machine Storing Alert" 
+                      placeholder={t("placeholders.emailTemplateNameExample", "Bijv. Machine Storing Alert")} 
                       className="w-full p-2 border-2 border-slate-200 rounded-lg"
                     />
                   </div>
@@ -205,7 +205,7 @@ const EmailManagementView = () => {
                       type="text" 
                       value={formData.subject} 
                       onChange={e => setFormData({...formData, subject: e.target.value})} 
-                      placeholder="Bijv. Let op: {{machine}} heeft een storing!" 
+                      placeholder={t("placeholders.emailSubjectExample", "Bijv. Let op: {{machine}} heeft een storing!")} 
                       className="w-full p-2 border-2 border-slate-200 rounded-lg"
                     />
                   </div>
@@ -214,7 +214,7 @@ const EmailManagementView = () => {
                     <textarea 
                       value={formData.html} 
                       onChange={e => setFormData({...formData, html: e.target.value})} 
-                      placeholder="Typ hier de tekst. Je kunt HTML tags zoals <b>, <i>, <br> gebruiken." 
+                      placeholder={t("placeholders.emailHtmlHelp", "Typ hier de tekst. Je kunt HTML tags zoals <b>, <i>, <br> gebruiken.")} 
                       rows={8}
                       className="w-full p-2 border-2 border-slate-200 rounded-lg font-mono text-sm"
                     />
@@ -230,10 +230,10 @@ const EmailManagementView = () => {
                   <h3 className="font-bold text-slate-700 mb-2">💡 {t("email.management.tipsTitle", "Variabelen & Tips")}</h3>
                   <p className="text-xs text-slate-600 mb-4">{t("email.management.tipsText", "Je kunt in het onderwerp of de tekst variabelen gebruiken. Deze worden automatisch ingevuld door de Automation Engine.")}</p>
                   <ul className="text-xs text-slate-600 space-y-2 font-mono">
-                    <li><span className="font-bold text-blue-600">{"{{trigger_message}}"}</span> = Het standaard waarschuwingsbericht</li>
-                    <li><span className="font-bold text-blue-600">{"{{machine}}"}</span> = De desbetreffende machine</li>
-                    <li><span className="font-bold text-blue-600">{"{{order}}"}</span> = Order ID (indien van toepassing)</li>
-                    <li><span className="font-bold text-blue-600">{"{{time}}"}</span> = Huidige tijd/datum</li>
+                    <li><span className="font-bold text-blue-600">{"{{trigger_message}}"}</span> = {t('email.management.variableTriggerMessage', 'Het standaard waarschuwingsbericht')}</li>
+                    <li><span className="font-bold text-blue-600">{"{{machine}}"}</span> = {t('email.management.variableMachine', 'De desbetreffende machine')}</li>
+                    <li><span className="font-bold text-blue-600">{"{{order}}"}</span> = {t('email.management.variableOrder', 'Order ID (indien van toepassing)')}</li>
+                    <li><span className="font-bold text-blue-600">{"{{time}}"}</span> = {t('email.management.variableTime', 'Huidige tijd/datum')}</li>
                   </ul>
                   <div className="mt-4 p-3 bg-blue-50 text-blue-800 rounded border border-blue-100 text-xs">
                     Voorbeeld tekst:<br/>
@@ -252,11 +252,11 @@ const EmailManagementView = () => {
            <table className="w-full text-left text-sm">
             <thead className="bg-slate-50 text-slate-600 border-b-2 border-slate-200">
               <tr>
-                <th className="p-4 font-bold">Status</th>
-                <th className="p-4 font-bold">Datum & Tijd</th>
-                <th className="p-4 font-bold">Ontvanger</th>
-                <th className="p-4 font-bold">Onderwerp</th>
-                <th className="p-4 font-bold">Template Gebruikt</th>
+                <th className="p-4 font-bold">{t("common.status", "Status")}</th>
+                <th className="p-4 font-bold">{t("email.management.dateTime", "Datum & Tijd")}</th>
+                <th className="p-4 font-bold">{t("email.management.recipient", "Ontvanger")}</th>
+                <th className="p-4 font-bold">{t("common.subject", "Onderwerp")}</th>
+                <th className="p-4 font-bold">{t("email.management.templateUsed", "Template Gebruikt")}</th>
               </tr>
             </thead>
             <tbody>

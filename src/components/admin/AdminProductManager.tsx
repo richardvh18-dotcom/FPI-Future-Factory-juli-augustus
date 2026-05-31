@@ -214,7 +214,7 @@ const AdminProductManager = ({ user }: AdminProductManagerProps) => {
             <Zap size={14} className="text-emerald-500" /> {t('adminProductManager.active_sync_realtime')}
           </span>
         </div>
-        <span className="opacity-30">Future Factory MES Core v6.11</span>
+        <span className="opacity-30">{t('adminProductManager.mesCoreVersion', 'Future Factory MES Core v6.11')}</span>
       </div>
     </div>
   );

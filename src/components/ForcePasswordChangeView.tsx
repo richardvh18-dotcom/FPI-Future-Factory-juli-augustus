@@ -69,7 +69,7 @@ const ForcePasswordChangeView = ({ user: _user, onComplete }: ForcePasswordChang
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-blue-500 transition-all font-bold"
                 value={newPass}
                 onChange={(e) => setNewPass(e.target.value)}
-                placeholder="••••••••"
+                placeholder={t("placeholders.passwordMask", "••••••••")}
                 required
               />
             </div>
@@ -86,7 +86,7 @@ const ForcePasswordChangeView = ({ user: _user, onComplete }: ForcePasswordChang
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 pl-12 pr-4 outline-none focus:border-blue-500 transition-all font-bold"
                 value={confirmPass}
                 onChange={(e) => setConfirmPass(e.target.value)}
-                placeholder="••••••••"
+                placeholder={t("placeholders.passwordMask", "••••••••")}
                 required
               />
             </div>

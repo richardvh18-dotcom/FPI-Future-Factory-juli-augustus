@@ -140,7 +140,7 @@ const ProductMoveModal: FC<ProductMoveModalProps> = ({
               type="text"
               value={customStation}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCustomStation(e.target.value)}
-              placeholder="Station naam..."
+              placeholder={t("placeholders.dpStationName", "Station naam...")}
               className="flex-1 p-3 rounded-xl border-2 border-slate-100 focus:border-blue-500 outline-none font-bold text-slate-700"
             />
             <button

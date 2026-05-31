@@ -2392,7 +2392,7 @@ const queuePrintJob = withAudit('PRINT_JOB', async (data, context) => {
       },
       { category: 'SYSTEM', severity: 'WARNING' }
     );
-    throw error;
+    handleCallableError(error);
   }
 });
 

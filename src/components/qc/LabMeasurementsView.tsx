@@ -1,10 +1,14 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Beaker, Thermometer, CheckCircle2, XCircle, Pencil, Save, Loader2 } from "lucide-react";
 import AddLabMeasurementModal from "./AddLabMeasurementModal";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { updateQcMeasurement } from "../../services/qcSecurityService";
+import { collection, onSnapshot, getDoc, doc, query, where, getDocs, collectionGroup } from "firebase/firestore";
+import { db } from "../../config/firebase";
+import { PATHS, getPathString } from "../../config/dbPaths";
+import ProductDossierModal from "../digitalplanning/modals/ProductDossierModal";
 
 export type LabMeasurement = {
   id: string;
@@ -99,10 +103,10 @@ const normalizeDepartment = (department?: string): string => {
   return value;
 };
 
-const getShiftLabel = (shift?: string): string => {
-  if (shift === "Mo") return "Vroeg (Mo)";
-  if (shift === "Mi") return "Middag (Mi)";
-  if (shift === "Na") return "Nacht (Na)";
+const getShiftLabel = (shift: string | undefined, t: any): string => {
+  if (shift === "Mo") return t("qc.shift_morning_short", "Vroeg (Mo)");
+  if (shift === "Mi") return t("qc.shift_afternoon_short", "Middag (Mi)");
+  if (shift === "Na") return t("qc.shift_night_short", "Nacht (Na)");
   return "-";
 };
 
@@ -137,6 +141,61 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
   const [editingMeasurementId, setEditingMeasurementId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<BrixEditDraft | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
+  
+  const [personnelMap, setPersonnelMap] = useState<Record<string, string>>({});
+  const [dossierProduct, setDossierProduct] = useState<any>(null);
+  const [loadingDossierLot, setLoadingDossierLot] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, getPathString(PATHS.PERSONNEL as string[])), (snap) => {
+      const map: Record<string, string> = {};
+      snap.docs.forEach((d) => {
+        const data = d.data();
+        if (data.employeeNumber) map[String(data.employeeNumber)] = data.name;
+      });
+      setPersonnelMap(map);
+    });
+    return () => unsub();
+  }, []);
+
+  const handleOpenDossier = async (row: LabMeasurement) => {
+    setLoadingDossierLot(row.lotNumber);
+    try {
+      let foundDoc = null;
+      if (row.trackedProductPath) {
+        const docSnap = await getDoc(doc(db, row.trackedProductPath));
+        if (docSnap.exists()) {
+          foundDoc = { id: docSnap.id, ...docSnap.data() };
+        }
+      }
+      if (!foundDoc) {
+        const q = query(collection(db, getPathString(PATHS.TRACKING as string[])), where("lotNumber", "==", row.lotNumber));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          foundDoc = { id: snap.docs[0].id, ...snap.docs[0].data() };
+        } else {
+          const sq = query(collectionGroup(db, "items"), where("lotNumber", "==", row.lotNumber));
+          const sSnap = await getDocs(sq);
+          const valid = sSnap.docs.filter(d => d.ref.path.includes("/tracked_products/"));
+          if (valid.length > 0) {
+            foundDoc = { id: valid[0].id, ...valid[0].data() };
+          }
+        }
+      }
+      
+      if (foundDoc) {
+        setDossierProduct(foundDoc);
+      } else {
+        setDossierProduct({ id: row.lotNumber, lotNumber: row.lotNumber });
+        showError("Volledig dossier niet gevonden, toont beperkte weergave.");
+      }
+    } catch (error) {
+      console.error("Fout bij ophalen dossier:", error);
+      showError("Kon dossier niet openen.");
+    } finally {
+      setLoadingDossierLot(null);
+    }
+  };
 
   const startEditing = (row: LabMeasurement) => {
     const refractiveValue = row.refractiveIndex ?? row.brix;
@@ -313,9 +372,9 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
           </div>
           <div>
             <h3 className={`text-lg font-black uppercase tracking-tight ${activeTile === "brix" ? "text-blue-900" : "text-slate-700"}`}>
-              Brekingsindex Metingen
+              {t("qc.refractive_index_measurements", "Brekingsindex Metingen")}
             </h3>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Mengverhoudingen & Index</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">{t("qc.mix_ratios_and_index", "Mengverhoudingen & Index")}</p>
           </div>
         </button>
 
@@ -332,9 +391,9 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
           </div>
           <div>
             <h3 className={`text-lg font-black uppercase tracking-tight ${activeTile === "tg" ? "text-purple-900" : "text-slate-700"}`}>
-              Tg Metingen
+              {t("qc.tg_measurements", "Tg Metingen")}
             </h3>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Laboratorium analyse</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">{t("qc.laboratory_analysis", "Laboratorium analyse")}</p>
           </div>
         </button>
       </div>
@@ -357,7 +416,7 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
                       active ? `${style} shadow-md` : "bg-white border-slate-200 text-slate-700 hover:border-slate-300"
                     }`}
                   >
-                    <p className="text-xs font-black uppercase tracking-widest opacity-70">Afdeling</p>
+                    <p className="text-xs font-black uppercase tracking-widest opacity-70">{t("common.department", "Afdeling")}</p>
                     <p className="text-lg font-black tracking-tight">{department}</p>
                     <p className="text-xs font-bold mt-1 opacity-80">{brixCountByDepartment[department] || 0} meting(en)</p>
                   </button>
@@ -367,7 +426,7 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Harskeuken</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">{t("qc.resin_kitchen", "Harskeuken")}</label>
                 <select
                   value={kitchenFilter}
                   onChange={(e) => setKitchenFilter(e.target.value)}
@@ -379,12 +438,12 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
                 </select>
               </div>
               <div className="md:col-span-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Zoeken</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">{t("common.search", "Zoeken")}</label>
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Zoek op lot, ploeg, aftappunt, verhouding of operator"
+                  placeholder={t("placeholders.qcBrixSearch", "Zoek op lot, ploeg, aftappunt, verhouding of operator")}
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 outline-none focus:border-blue-500"
                 />
               </div>
@@ -392,12 +451,12 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
           </>
         ) : (
           <div>
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">Zoeken</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1 block">{t("common.search", "Zoeken")}</label>
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Zoek op lot, harsbatch of operator"
+              placeholder={t("placeholders.qcTgSearch", "Zoek op lot, harsbatch of operator")}
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 outline-none focus:border-purple-500"
             />
           </div>
@@ -425,11 +484,11 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
                     <details key={row.id} className="group rounded-xl border border-slate-200 bg-slate-50 open:bg-white open:shadow-sm">
                       <summary className="list-none cursor-pointer p-4">
                         <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-xs">
-                          <p className="font-black text-slate-700">Week: <span className="text-slate-900">{row.week ? `${row.week}${row.year ? ` (${row.year})` : ""}` : weekLabel}</span></p>
-                          <p className="font-black text-slate-700">Tijd: <span className="text-slate-900">{getTimePart(row.measuredAt)}</span></p>
-                          <p className="font-black text-slate-700">Datum: <span className="text-slate-900">{getDatePart(row.measuredAt)}</span></p>
-                          <p className="font-black text-slate-700">Meetpunt: <span className="text-slate-900">{row.kitchen || "-"}</span></p>
-                          <p className="font-black text-slate-700">Ploeg: <span className="text-slate-900">{getShiftLabel(row.shift)}</span></p>
+                            <p className="font-black text-slate-700">{t("common.week", "Week")}: <span className="text-slate-900">{row.week ? `${row.week}${row.year ? ` (${row.year})` : ""}` : weekLabel}</span></p>
+                            <p className="font-black text-slate-700">{t("common.time", "Tijd")}: <span className="text-slate-900">{getTimePart(row.measuredAt)}</span></p>
+                            <p className="font-black text-slate-700">{t("common.date", "Datum")}: <span className="text-slate-900">{getDatePart(row.measuredAt)}</span></p>
+                            <p className="font-black text-slate-700">{t("qc.meas_tappoint", "Meetpunt")}: <span className="text-slate-900">{row.kitchen || "-"}</span></p>
+                            <p className="font-black text-slate-700">{t("qc.meas_shift", "Ploeg")}: <span className="text-slate-900">{getShiftLabel(row.shift, t)}</span></p>
                         </div>
                       </summary>
 
@@ -469,95 +528,114 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
                           </div>
                         )}
 
-                        <div className="pt-3 grid grid-cols-1 md:grid-cols-2 gap-y-2 gap-x-4 text-sm">
-                          <p><span className="font-black text-slate-500">Lot:</span> <span className="font-bold text-slate-900">{row.lotNumber || "-"}</span></p>
-                          <p><span className="font-black text-slate-500">Afdeling:</span> <span className="font-bold text-slate-800">{row.department || "-"}</span></p>
-                          <p>
-                            <span className="font-black text-slate-500">Harskeuken:</span>{" "}
+                        <div className="pt-3 grid grid-cols-1 md:grid-cols-2 gap-y-3 gap-x-6 text-sm">
+                          <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                            <span className="font-black text-slate-500">{t("qc.lot", "Lot")}:</span>
+                            <button
+                              onClick={() => handleOpenDossier(row)}
+                              disabled={loadingDossierLot === row.lotNumber}
+                              className="font-bold text-blue-600 hover:text-blue-800 hover:underline text-left flex items-center gap-2"
+                              title={t("qc.open_dossier", "Open Productdossier")}
+                            >
+                              {row.lotNumber || "-"}
+                              {loadingDossierLot === row.lotNumber && <Loader2 size={12} className="animate-spin" />}
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                            <span className="font-black text-slate-500">{t("qc.meas_department", "Afdeling")}:</span>
+                            <span className="font-bold text-slate-800">{row.department || "-"}</span>
+                          </div>
+                          <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                            <span className="font-black text-slate-500">{t("qc.meas_kitchen", "Harskeuken")}:</span>
                             {editingMeasurementId === row.id && editDraft ? (
                               <input
                                 value={editDraft.kitchen}
                                 onChange={(e) => setEditDraft({ ...editDraft, kitchen: e.target.value })}
-                                className="mt-1 w-full p-2 bg-white border border-slate-300 rounded-md font-bold text-slate-800"
+                                className="w-full p-1.5 bg-white border border-slate-300 rounded-md font-bold text-slate-800"
                               />
                             ) : (
                               <span className="font-bold text-slate-800">{row.kitchen || "-"}</span>
                             )}
-                          </p>
-                          {row.tapPoint && <p><span className="font-black text-slate-500">Aftappunt:</span> <span className="font-bold text-slate-800">{row.tapPoint}</span></p>}
-                          <p>
-                            <span className="font-black text-slate-500">Ploeg:</span>{" "}
+                          </div>
+                          {row.tapPoint && (
+                            <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                              <span className="font-black text-slate-500">{t("qc.meas_tappoint", "Aftappunt")}:</span>
+                              <span className="font-bold text-slate-800">{row.tapPoint}</span>
+                            </div>
+                          )}
+                          <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                            <span className="font-black text-slate-500">{t("qc.meas_shift", "Ploeg")}:</span>
                             {editingMeasurementId === row.id && editDraft ? (
                               <select
                                 value={editDraft.shift}
                                 onChange={(e) => setEditDraft({ ...editDraft, shift: e.target.value })}
-                                className="mt-1 w-full p-2 bg-white border border-slate-300 rounded-md font-bold text-slate-800"
+                                className="w-full p-1.5 bg-white border border-slate-300 rounded-md font-bold text-slate-800"
                               >
-                                <option value="Mo">Vroeg (Mo)</option>
-                                <option value="Mi">Middag (Mi)</option>
-                                <option value="Na">Nacht (Na)</option>
+                                <option value="Mo">{t("qc.shift_morning_short", "Vroeg (Mo)")}</option>
+                                <option value="Mi">{t("qc.shift_afternoon_short", "Middag (Mi)")}</option>
+                                <option value="Na">{t("qc.shift_night_short", "Nacht (Na)")}</option>
                               </select>
                             ) : (
-                              <span className="font-bold text-slate-800">{getShiftLabel(row.shift)}</span>
+                              <span className="font-bold text-slate-800">{getShiftLabel(row.shift, t)}</span>
                             )}
-                          </p>
-                          <p>
-                            <span className="font-black text-slate-500">Meettijd:</span>{" "}
+                          </div>
+                          <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                            <span className="font-black text-slate-500">{t("qc.meas_time", "Meettijd")}:</span>
                             {editingMeasurementId === row.id && editDraft ? (
                               <input
                                 value={editDraft.measuredAt}
                                 onChange={(e) => setEditDraft({ ...editDraft, measuredAt: e.target.value })}
-                                className="mt-1 w-full p-2 bg-white border border-slate-300 rounded-md font-bold text-slate-800"
+                                className="w-full p-1.5 bg-white border border-slate-300 rounded-md font-bold text-slate-800"
                               />
                             ) : (
                               <span className="font-bold text-slate-800">{row.measuredAt || "-"}</span>
                             )}
-                          </p>
-                          <p>
-                            <span className="font-black text-slate-500">Brekingsindex:</span>{" "}
+                          </div>
+                          <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                            <span className="font-black text-slate-500">{t("qc.meas_brix", "Brekingsindex")}:</span>
                             {editingMeasurementId === row.id && editDraft ? (
                               <input
                                 value={editDraft.refractiveIndex}
                                 onChange={(e) => setEditDraft({ ...editDraft, refractiveIndex: e.target.value })}
-                                className="mt-1 w-full p-2 bg-white border border-slate-300 rounded-md font-mono font-black text-blue-700"
+                                className="w-full p-1.5 bg-white border border-slate-300 rounded-md font-mono font-black text-blue-700"
                               />
                             ) : (
                               <span className="font-mono font-black text-blue-700">
                                 {row.refractiveIndex || row.brix ? Number(row.refractiveIndex || row.brix).toFixed(4) : "-"}
                               </span>
                             )}
-                          </p>
-                          <p>
-                            <span className="font-black text-slate-500">Verhouding:</span>{" "}
+                          </div>
+                          <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                            <span className="font-black text-slate-500">{t("qc.meas_ratio", "Mengverhouding")}:</span>
                             {editingMeasurementId === row.id && editDraft ? (
                               <input
                                 value={editDraft.mixingRatio}
                                 onChange={(e) => setEditDraft({ ...editDraft, mixingRatio: e.target.value })}
-                                className="mt-1 w-full p-2 bg-white border border-slate-300 rounded-md font-black text-slate-800"
+                                className="w-full p-1.5 bg-white border border-slate-300 rounded-md font-black text-slate-800"
                               />
                             ) : (
                               <span className="font-black text-slate-800">{row.mixingRatio || "-"}</span>
                             )}
-                          </p>
-                          <p>
-                            <span className="font-black text-slate-500">Gewicht Hars/IPD:</span>{" "}
+                          </div>
+                          <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                            <span className="font-black text-slate-500">{t("qc.meas_weight_resin_ipd", "Gewicht Hars/IPD")}:</span>
                             <span className="font-bold text-slate-800">
-                              {row.resinWeight && row.hardenerWeight
-                                ? `${row.resinWeight.toFixed(3)} kg / ${row.hardenerWeight.toFixed(3)} kg`
+                              {row.resinWeight !== undefined && row.hardenerWeight !== undefined
+                                ? `${Number(row.resinWeight).toFixed(3)} kg / ${Number(row.hardenerWeight).toFixed(3)} kg`
                                 : "-"}
                             </span>
-                          </p>
-                          <p>
-                            <span className="font-black text-slate-500">Acceptatieniveau:</span>{" "}
+                          </div>
+                          <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                            <span className="font-black text-slate-500">{t("qc.meas_area", "Acceptatieniveau")}:</span>
                             {editingMeasurementId === row.id && editDraft ? (
                               <select
                                 value={editDraft.area}
                                 onChange={(e) => setEditDraft({ ...editDraft, area: e.target.value as "A" | "B" | "C" })}
-                                className="mt-1 w-full p-2 bg-white border border-slate-300 rounded-md font-black text-slate-800"
+                                className="w-full p-1.5 bg-white border border-slate-300 rounded-md font-black text-slate-800"
                               >
-                                <option value="A">Area A</option>
-                                <option value="B">Area B</option>
-                                <option value="C">Area C</option>
+                                <option value="A">{t("qc.areaA", "Area A")}</option>
+                                <option value="B">{t("qc.areaB", "Area B")}</option>
+                                <option value="C">{t("qc.areaC", "Area C")}</option>
                               </select>
                             ) : (
                               <span
@@ -574,17 +652,17 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
                                 {row.area ? `Area ${row.area}` : "-"}
                               </span>
                             )}
-                          </p>
-                          <p>
-                            <span className="font-black text-slate-500">Visuele check:</span>{" "}
+                          </div>
+                          <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                            <span className="font-black text-slate-500">{t("qc.meas_visual", "Visuele Check")}:</span>
                             {editingMeasurementId === row.id && editDraft ? (
                               <select
                                 value={editDraft.visualCheckOk ? "OK" : "NOK"}
                                 onChange={(e) => setEditDraft({ ...editDraft, visualCheckOk: e.target.value === "OK" })}
-                                className="mt-1 w-full p-2 bg-white border border-slate-300 rounded-md font-black text-slate-800"
+                                className="w-full p-1.5 bg-white border border-slate-300 rounded-md font-black text-slate-800"
                               >
-                                <option value="OK">OK</option>
-                                <option value="NOK">NOK</option>
+                                <option value="OK">{t("qc.ok", "OK")}</option>
+                                <option value="NOK">{t("qc.nok", "NOK")}</option>
                               </select>
                             ) : (
                               <span className="inline-flex items-center gap-2 font-black text-slate-800">
@@ -593,19 +671,24 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
                                 {row.visualCheckOk === true ? "OK" : row.visualCheckOk === false ? "NOK" : "-"}
                               </span>
                             )}
-                          </p>
-                          <p>
-                            <span className="font-black text-slate-500">Operator:</span>{" "}
+                          </div>
+                          <div className="grid grid-cols-[140px_1fr] gap-2 items-center">
+                            <span className="font-black text-slate-500">{t("qc.meas_operator_short", "Operator")}:</span>
                             {editingMeasurementId === row.id && editDraft ? (
                               <input
                                 value={editDraft.measuredBy}
                                 onChange={(e) => setEditDraft({ ...editDraft, measuredBy: e.target.value })}
-                                className="mt-1 w-full p-2 bg-white border border-slate-300 rounded-md font-bold text-slate-800"
+                                className="w-full p-1.5 bg-white border border-slate-300 rounded-md font-bold text-slate-800"
                               />
                             ) : (
-                              <span className="font-bold text-slate-800">{row.measuredBy || "-"}</span>
+                            <span 
+                              className="font-bold text-slate-800 cursor-help border-b border-dashed border-slate-400"
+                              title={personnelMap[row.measuredBy] || t("common.name_unknown", "Naam onbekend")}
+                            >
+                              {row.measuredBy || "-"}
+                            </span>
                             )}
-                          </p>
+                          </div>
                         </div>
                       </div>
                     </details>
@@ -615,21 +698,38 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
                 <table className="w-full min-w-[700px] text-sm">
                   <thead className="bg-slate-50 text-slate-600 uppercase text-[10px] tracking-widest">
                     <tr>
-                      <th className="px-4 py-3 text-left">Lot</th>
-                      <th className="px-4 py-3 text-left">Harsbatch</th>
-                      <th className="px-4 py-3 text-left">Tg</th>
-                      <th className="px-4 py-3 text-left">Tijd</th>
-                      <th className="px-4 py-3 text-left">Door</th>
+                      <th className="px-4 py-3 text-left">{t("qc.lot", "Lot")}</th>
+                      <th className="px-4 py-3 text-left">{t("qc.resin_batch", "Harsbatch")}</th>
+                      <th className="px-4 py-3 text-left">{t("qc.tg", "Tg")}</th>
+                      <th className="px-4 py-3 text-left">{t("common.time", "Tijd")}</th>
+                      <th className="px-4 py-3 text-left">{t("common.by", "Door")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((row) => (
                       <tr key={row.id} className="border-t border-slate-100 hover:bg-slate-50">
-                        <td className="px-4 py-3 font-bold text-slate-800">{row.lotNumber}</td>
+                        <td className="px-4 py-3 font-bold text-slate-800">
+                            <button
+                              onClick={() => handleOpenDossier(row)}
+                              disabled={loadingDossierLot === row.lotNumber}
+                              className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-2"
+                              title={t("qc.open_dossier", "Open Productdossier")}
+                            >
+                              {row.lotNumber}
+                              {loadingDossierLot === row.lotNumber && <Loader2 size={12} className="animate-spin" />}
+                            </button>
+                        </td>
                         <td className="px-4 py-3 text-slate-700">{row.resinBatch || "-"}</td>
                         <td className="px-4 py-3 font-mono font-bold text-purple-600">{row.tg ? row.tg.toFixed(1) : "-"}</td>
                         <td className="px-4 py-3 text-slate-500 text-xs font-medium">{row.measuredAt}</td>
-                        <td className="px-4 py-3 text-slate-700 text-xs">{row.measuredBy}</td>
+                        <td className="px-4 py-3 text-slate-700 text-xs">
+                          <span 
+                            className="cursor-help border-b border-dashed border-slate-400"
+                            title={personnelMap[row.measuredBy] || t("common.name_unknown", "Naam onbekend")}
+                          >
+                            {row.measuredBy}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -641,6 +741,14 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements }: LabMeasureme
       )}
 
       {showAddModal && <AddLabMeasurementModal onClose={() => setShowAddModal(false)} defaultType={activeTile} />}
+
+      {dossierProduct && (
+        <ProductDossierModal
+          isOpen={!!dossierProduct}
+          product={dossierProduct}
+          onClose={() => setDossierProduct(null)}
+        />
+      )}
     </div>
   );
 };

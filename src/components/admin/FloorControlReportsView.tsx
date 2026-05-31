@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import i18n from "i18next";
 import {
   ClipboardCheck,
   Loader2,
@@ -216,7 +217,7 @@ export default function FloorControlReportsView() {
           </div>
           <div>
             <h2 className="text-3xl font-black text-slate-900 uppercase italic tracking-tighter leading-none">
-              Vloercontrole <span className="text-cyan-600">Rapporten</span>
+              {i18n.t("floorControlReports.floorCheck", "Vloercontrole")} <span className="text-cyan-600">{i18n.t("floorControlReports.reports", "Rapporten")}</span>
             </h2>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">
               Overzicht van uitgevoerde rondes op de fabrieksvloer
@@ -231,7 +232,7 @@ export default function FloorControlReportsView() {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Zoek op station of gebruiker..."
+              placeholder={i18n.t("placeholders.adminFloorControlSearch", "Zoek op station of gebruiker...")}
               className="pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold outline-none focus:border-cyan-500 transition-all"
             />
           </div>
@@ -308,15 +309,15 @@ export default function FloorControlReportsView() {
                       <div className="grid grid-cols-3 gap-2 mt-6">
                         <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-2xl text-center">
                           <p className="text-xl font-black text-emerald-600">{log.foundCount}</p>
-                          <p className="text-[8px] font-black text-emerald-700 uppercase tracking-widest mt-1">Gevonden</p>
+                          <p className="text-[8px] font-black text-emerald-700 uppercase tracking-widest mt-1">{i18n.t("inventoryCheck.found", "Gevonden")}</p>
                         </div>
                         <div className="bg-rose-50 border border-rose-100 p-3 rounded-2xl text-center">
                           <p className="text-xl font-black text-rose-600">{log.missingCount}</p>
-                          <p className="text-[8px] font-black text-rose-700 uppercase tracking-widest mt-1">Missend</p>
+                          <p className="text-[8px] font-black text-rose-700 uppercase tracking-widest mt-1">{i18n.t("inventoryCheck.missing", "Missend")}</p>
                         </div>
                         <div className="bg-amber-50 border border-amber-100 p-3 rounded-2xl text-center">
                           <p className="text-xl font-black text-amber-600">{log.unexpectedCount}</p>
-                          <p className="text-[8px] font-black text-amber-700 uppercase tracking-widest mt-1">Onverwacht</p>
+                          <p className="text-[8px] font-black text-amber-700 uppercase tracking-widest mt-1">{i18n.t("inventoryCheck.unexpected", "Onverwacht")}</p>
                         </div>
                       </div>
                     </div>

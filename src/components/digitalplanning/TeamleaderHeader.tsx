@@ -130,8 +130,8 @@ export const TeamleaderHeader = ({
             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex items-center gap-2 ${currentTab === "import_export" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
           >
             <FileSpreadsheet size={14} />
-            <span className="hidden sm:inline">Import / Export</span>
-            <span className="sm:hidden">Data</span>
+            <span className="hidden sm:inline">{t("teamleader.tab_import_export", "Import / Export")}</span>
+            <span className="sm:hidden">{t("common.data", "Data")}</span>
           </button>
         </div>
 

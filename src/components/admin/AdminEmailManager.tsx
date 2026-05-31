@@ -236,7 +236,7 @@ const AdminEmailManager = () => {
                     </div>
                   </div>
                   <div className="text-sm text-slate-500 dark:text-slate-400 mb-4 h-10 overflow-hidden line-clamp-2">
-                    <span className="font-semibold text-slate-700 dark:text-slate-300">Subject:</span> {String(template.subject || "")}
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">{t('emails.subject', 'Subject')}:</span> {String(template.subject || "")}
                   </div>
                   <div className="flex items-center justify-between text-xs text-slate-400">
                     <span>{template.updatedAt?.toDate?.().toLocaleDateString() || 'Nieuw'}</span>
@@ -275,12 +275,12 @@ const AdminEmailManager = () => {
                       {String(log.status || "") === 'success' ? (
                         <div className="flex items-center text-green-600 space-x-1">
                           <CheckCircle2 size={16} />
-                          <span className="text-sm font-medium">OK</span>
+                          <span className="text-sm font-medium">{t('common.ok', 'OK')}</span>
                         </div>
                       ) : (
                         <div className="flex items-center text-red-600 space-x-1">
                           <AlertCircle size={16} />
-                          <span className="text-sm font-medium">Error</span>
+                          <span className="text-sm font-medium">{t('common.error', 'Error')}</span>
                         </div>
                       )}
                     </td>
@@ -328,7 +328,7 @@ const AdminEmailManager = () => {
                   required
                   name="name"
                   defaultValue={editingTemplate?.name}
-                  placeholder="bijv. Order Vertraagd"
+                  placeholder={t("placeholders.adminEmailSubjectExample", "bijv. Order Vertraagd")}
                   className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -338,7 +338,7 @@ const AdminEmailManager = () => {
                   required
                   name="subject"
                   defaultValue={editingTemplate?.subject}
-                  placeholder="Update over uw order {{orderNumber}}"
+                  placeholder={t("placeholders.adminEmailBodyOrderUpdate", "Update over uw order {{orderNumber}}")}
                   className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>

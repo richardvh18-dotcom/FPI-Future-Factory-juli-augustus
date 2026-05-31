@@ -494,7 +494,7 @@ const AdminLocationsView = ({ canEdit = false }: { canEdit?: boolean }) => {
                   />
                   <input
                     className="w-full pl-16 pr-6 py-5 bg-emerald-50/30 border-2 border-emerald-100 rounded-[25px] font-black text-xl text-slate-900 outline-none focus:border-emerald-500 shadow-inner tracking-widest"
-                    placeholder="S-00-A"
+                    placeholder={t("placeholders.adminLocationCodeExample", "S-00-A")}
                     value={formState.location}
                     onChange={(e) =>
                       setFormState({

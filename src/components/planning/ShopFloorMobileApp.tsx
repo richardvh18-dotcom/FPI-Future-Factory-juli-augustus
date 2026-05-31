@@ -749,7 +749,7 @@ const ShopFloorMobileApp = () => {
                <ScanLine size={20} />
              </div>
              <div>
-               <h1 className="font-black text-lg text-slate-800 leading-none">Operator</h1>
+               <h1 className="font-black text-lg text-slate-800 leading-none">{t("planning.shopFloor.operator", "Operator")}</h1>
                <p className="text-[10px] font-bold text-slate-400 uppercase">{t("planning.shopFloor.scanner", "Scanner")}</p>
              </div>
            </div>
@@ -780,7 +780,6 @@ const ShopFloorMobileApp = () => {
                      <>
                        {scanResult.data.lotNumber && (
                          <div>
-                           <span className="text-[10px] font-bold text-slate-400 uppercase block">Lotnummer</span>
                            <span className="text-[10px] font-bold text-slate-400 uppercase block">{t("planning.shopFloor.lotNumber", "Lotnummer")}</span>
                            <span className="text-lg font-bold text-slate-900">{scanResult.data.lotNumber}</span>
                          </div>
@@ -1082,7 +1081,6 @@ const ShopFloorMobileApp = () => {
               {/* Info Grid */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Product</div>
                   <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{t("planning.shopFloor.product", "Product")}</div>
                   <div className="font-bold text-slate-800 text-sm">{selectedOrder.itemCode || selectedOrder.item}</div>
                 </div>
@@ -1160,7 +1158,7 @@ const ShopFloorMobileApp = () => {
             <div className={`text-white font-black transition-all duration-300 ${isHeaderCollapsed ? "text-lg" : "text-2xl"}`}>{t("planning.shopFloor.mobileInspector", "Mobile Inspector")}</div>
             <div className={`text-indigo-200 font-bold mt-1 transition-all duration-300 overflow-hidden ${isHeaderCollapsed ? "text-[0px] max-h-0 opacity-0 mt-0" : "text-sm max-h-10 opacity-100"}`}>
               {activeView === "planning"
-                ? "Planning, afkeur en doorstroom in je broekzak"
+                ? t("planning.shopFloor.planningRejectFlowPocket", "Planning, afkeur en doorstroom in je broekzak")
                 : t("planning.shopFloor.floorOverview", "Werkvloer Overzicht")}
             </div>
           </div>
@@ -1172,7 +1170,7 @@ const ShopFloorMobileApp = () => {
               <ScanLine className="text-white" size={isHeaderCollapsed ? 18 : 24} />
             </button>
             <div className={`bg-white/20 px-4 py-2 rounded-xl transition-all duration-300 overflow-hidden ${isHeaderCollapsed ? "max-w-0 opacity-0 px-0 py-0" : "max-w-32 opacity-100"}`}>
-              <div className="text-white text-xs font-bold">{userDisplayName.split(' ')[0] || 'Inspector'}</div>
+              <div className="text-white text-xs font-bold">{userDisplayName.split(' ')[0] || t("planning.shopFloor.inspector", "Inspector")}</div>
             </div>
           </div>
         </div>
@@ -1182,9 +1180,9 @@ const ShopFloorMobileApp = () => {
             onClick={() => setActiveView("planning")}
             className="bg-white/10 text-left backdrop-blur-sm rounded-2xl p-2.5 border border-white/10"
           >
-            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">Alle orders</div>
+            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">{t("planning.shopFloor.allOrders", "Alle orders")}</div>
             <div className="text-white text-xl font-black">{planningSummary.totalOrders}</div>
-            <div className="text-[10px] text-white/50 font-bold mt-1">Afdeling / machinefilter actief</div>
+            <div className="text-[10px] text-white/50 font-bold mt-1">{t("planning.shopFloor.departmentMachineFilterActive", "Afdeling / machinefilter actief")}</div>
           </button>
           <button
             onClick={() => {
@@ -1193,9 +1191,9 @@ const ShopFloorMobileApp = () => {
             }}
             className="bg-white/10 text-left backdrop-blur-sm rounded-2xl p-2.5 border border-white/10"
           >
-            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">Lopende orders</div>
+            <div className="text-white/60 text-[10px] font-bold uppercase mb-1">{t("planning.shopFloor.runningOrders", "Lopende orders")}</div>
             <div className="text-white text-xl font-black">{planningSummary.activeOrders}</div>
-            <div className="text-[10px] text-white/50 font-bold mt-1">In productie of in voortgang</div>
+            <div className="text-[10px] text-white/50 font-bold mt-1">{t("planning.shopFloor.inProductionOrProgress", "In productie of in voortgang")}</div>
           </button>
           <button
             onClick={() => {
@@ -1204,17 +1202,17 @@ const ShopFloorMobileApp = () => {
             }}
             className="bg-amber-500/20 text-left backdrop-blur-sm rounded-2xl p-2.5 border border-amber-300/20"
           >
-            <div className="text-amber-100 text-[10px] font-bold uppercase mb-1">Tijdelijke afkeur</div>
+            <div className="text-amber-100 text-[10px] font-bold uppercase mb-1">{t("planning.shopFloor.temporaryReject", "Tijdelijke afkeur")}</div>
             <div className="text-white text-xl font-black">{planningSummary.temporaryRejectedOrders}</div>
-            <div className="text-[10px] text-amber-100/80 font-bold mt-1">Orders met herstel of tijdelijke blokkade</div>
+            <div className="text-[10px] text-amber-100/80 font-bold mt-1">{t("planning.shopFloor.ordersWithRepairOrTemporaryBlock", "Orders met herstel of tijdelijke blokkade")}</div>
           </button>
           <button
             onClick={() => setActiveView("quality")}
             className="bg-rose-500/20 text-left backdrop-blur-sm rounded-2xl p-2.5 border border-rose-300/20"
           >
-            <div className="text-rose-100 text-[10px] font-bold uppercase mb-1">Definitieve afkeur</div>
+            <div className="text-rose-100 text-[10px] font-bold uppercase mb-1">{t("planning.shopFloor.finalReject", "Definitieve afkeur")}</div>
             <div className="text-white text-xl font-black">{planningSummary.finalRejectedOrders}</div>
-            <div className="text-[10px] text-rose-100/80 font-bold mt-1">Definitief afgekeurde orders</div>
+            <div className="text-[10px] text-rose-100/80 font-bold mt-1">{t("planning.shopFloor.finalRejectedOrdersLabel", "Definitief afgekeurde orders")}</div>
           </button>
         </div>
 
@@ -1266,7 +1264,7 @@ const ShopFloorMobileApp = () => {
                       : "bg-slate-100 text-slate-600"
                   }`}
                 >
-                  Alle ({machineStats.length})
+                  {t("common.all", "Alle")} ({machineStats.length})
                 </button>
                 <button
                   onClick={() => setFilterStatus("active")}
@@ -1276,7 +1274,7 @@ const ShopFloorMobileApp = () => {
                       : "bg-slate-100 text-slate-600"
                   }`}
                 >
-                  Actief ({issuesSummary.activeMachines})
+                  {t("common.active", "Actief")} ({issuesSummary.activeMachines})
                 </button>
                 <button
                   onClick={() => setFilterStatus("issues")}
@@ -1286,7 +1284,7 @@ const ShopFloorMobileApp = () => {
                       : "bg-slate-100 text-slate-600"
                   }`}
                 >
-                  Issues ({issuesSummary.machinesWithIssues})
+                  {t("planning.shopFloor.issues", "Issues")} ({issuesSummary.machinesWithIssues})
                 </button>
               </div>
             </>
@@ -1301,7 +1299,7 @@ const ShopFloorMobileApp = () => {
                 : "text-slate-500 hover:bg-slate-50"
             }`}
           >
-            📋 Planning
+            📋 {t("planning.shopFloor.planning", "Planning")}
           </button>
           <button
             onClick={() => setActiveView("overview")}
@@ -1311,7 +1309,7 @@ const ShopFloorMobileApp = () => {
                 : "text-slate-500 hover:bg-slate-50"
             }`}
           >
-            🔧 Machines
+            🔧 {t("planning.shopFloor.machines", "Machines")}
           </button>
           <button
             onClick={() => setActiveView("downtime")}
@@ -1321,7 +1319,7 @@ const ShopFloorMobileApp = () => {
                 : "text-slate-500 hover:bg-slate-50"
             }`}
           >
-            ⏸️ Stilstand {issuesSummary.totalDowntime > 0 && (
+            ⏸️ {t("planning.shopFloor.downtime", "Stilstand")} {issuesSummary.totalDowntime > 0 && (
               <span className="bg-orange-500 text-white text-[10px] px-2 py-0.5 rounded-full">
                 {issuesSummary.totalDowntime}
               </span>
@@ -1335,7 +1333,7 @@ const ShopFloorMobileApp = () => {
                 : "text-slate-500 hover:bg-slate-50"
             }`}
           >
-            🚩 QC {issuesSummary.totalDefects > 0 && (
+            🚩 {t("planning.shopFloor.qc", "QC")} {issuesSummary.totalDefects > 0 && (
               <span className="bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full">
                 {issuesSummary.totalDefects}
               </span>
@@ -1356,7 +1354,7 @@ const ShopFloorMobileApp = () => {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input
                   type="text"
-                  placeholder="Zoek order ID, item code, machine..."
+                  placeholder={t("planning.shopFloor.orderSearchPlaceholder", "Zoek order ID, item code, machine...")}
                   className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-indigo-500 transition-all"
                   value={planningSearchTerm}
                   onChange={(e) => setPlanningSearchTerm(e.target.value)}
@@ -1390,7 +1388,7 @@ const ShopFloorMobileApp = () => {
             {getDashboardOrders.length === 0 ? (
               <div className="text-center py-12 text-slate-400">
                 <Package size={48} className="mx-auto mb-4 opacity-30" />
-                <div className="font-bold text-sm">Geen orders gevonden</div>
+                <div className="font-bold text-sm">{t("planning.shopFloor.noOrdersFound", "Geen orders gevonden")}</div>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1446,7 +1444,7 @@ const ShopFloorMobileApp = () => {
                       <div className="flex items-center gap-1.5 text-sm text-slate-600 font-bold">
                         <UserCheck size={14} className={machine.operatorName ? "text-emerald-600" : "text-slate-300"} />
                         <span className={machine.operatorName ? "text-slate-800" : "text-slate-400 italic"}>
-                          {machine.operatorName || "Geen operator"}
+                          {machine.operatorName || t("planning.shopFloor.noOperator", "Geen operator")}
                           {machine.operatorName || t("planning.shopFloor.noOperator", "Geen operator")}
                         </span>
                       </div>
@@ -1538,7 +1536,7 @@ const ShopFloorMobileApp = () => {
             {downtimeReports.filter(d => d.status === "active").length === 0 ? (
               <div className="text-center py-12 text-slate-400">
                 <CheckCircle size={48} className="mx-auto mb-4 text-emerald-300" />
-                <div className="font-bold text-sm">Geen actieve stilstand meldingen</div>
+                <div className="font-bold text-sm">{t("planning.shopFloor.noActiveDowntimeReports", "Geen actieve stilstand meldingen")}</div>
               </div>
             ) : (
               downtimeReports
@@ -1559,14 +1557,14 @@ const ShopFloorMobileApp = () => {
                     </div>
                     
                     <div className="text-xs text-slate-500 mb-3">
-                      Gemeld door: {downtime.operatorName || "Onbekend"}
+                      {t("planning.shopFloor.reportedBy", "Gemeld door")}: {downtime.operatorName || t("planning.shopFloor.unknown", "Onbekend")}
                     </div>
 
                     <button
                       onClick={() => resolveDowntime(downtime.id)}
                       className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold transition-colors"
                     >
-                      ✅ Opgelost
+                      ✅ {t("planning.shopFloor.resolved", "Opgelost")}
                     </button>
                   </div>
                 ))
@@ -1579,7 +1577,7 @@ const ShopFloorMobileApp = () => {
             {defectReports.filter(d => d.status === "open").length === 0 ? (
               <div className="text-center py-12 text-slate-400">
                 <CheckCircle size={48} className="mx-auto mb-4 text-emerald-300" />
-                <div className="font-bold text-sm">Geen openstaande QC issues</div>
+                <div className="font-bold text-sm">{t("planning.shopFloor.noOpenQcIssues", "Geen openstaande QC issues")}</div>
               </div>
             ) : (
               defectReports
@@ -1601,7 +1599,7 @@ const ShopFloorMobileApp = () => {
                             ? "bg-orange-100 text-orange-700"
                             : "bg-yellow-100 text-yellow-700"
                       }`}>
-                        {defect.severity || "medium"}
+                        {defect.severity || t("planning.shopFloor.medium", "medium")}
                       </div>
                     </div>
                     
@@ -1612,14 +1610,14 @@ const ShopFloorMobileApp = () => {
                     )}
 
                     <div className="text-xs text-slate-500 mb-3">
-                      Order: {defect.orderId || "Onbekend"} • Gemeld door: {defect.operatorName || "Onbekend"}
+                      {t("planning.shopFloor.order", "Order")}: {defect.orderId || t("planning.shopFloor.unknown", "Onbekend")} • {t("planning.shopFloor.reportedBy", "Gemeld door")}: {defect.operatorName || t("planning.shopFloor.unknown", "Onbekend")}
                     </div>
 
                     <button
                       onClick={() => resolveDefect(defect.id)}
                       className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold transition-colors"
                     >
-                      ✅ Opgelost
+                      ✅ {t("planning.shopFloor.resolved", "Opgelost")}
                     </button>
                   </div>
                 ))
@@ -1648,7 +1646,7 @@ const ShopFloorMobileApp = () => {
             {filteredOrders.filter(o => ["in_production", "in_progress", "planned", "delegated", "pending"].includes(o.status)).length === 0 ? (
               <div className="text-center py-12 text-slate-400">
                 <Package size={48} className="mx-auto mb-4 opacity-30" />
-                <div className="font-bold text-sm">Geen actieve orders</div>
+                <div className="font-bold text-sm">{t("planning.shopFloor.noActiveOrders", "Geen actieve orders")}</div>
               </div>
             ) : (
               filteredOrders
@@ -1711,7 +1709,7 @@ const ShopFloorMobileApp = () => {
           }`}
         >
           <ClipboardCheck size={20} />
-          <span className="text-[10px] font-bold">Planning</span>
+          <span className="text-[10px] font-bold">{t("planning.shopFloor.planning", "Planning")}</span>
         </button>
         <button
           onClick={() => setActiveView("overview")}
@@ -1722,7 +1720,7 @@ const ShopFloorMobileApp = () => {
           }`}
         >
           <Eye size={22} />
-          <span className="text-[10px] font-bold">Machines</span>
+          <span className="text-[10px] font-bold">{t("planning.shopFloor.machines", "Machines")}</span>
         </button>
         <button
           onClick={() => setActiveView("downtime")}
@@ -1738,7 +1736,7 @@ const ShopFloorMobileApp = () => {
             </div>
           )}
           <XCircle size={22} />
-          <span className="text-[10px] font-bold">Stilstand</span>
+          <span className="text-[10px] font-bold">{t("planning.shopFloor.downtime", "Stilstand")}</span>
         </button>
         <button
           onClick={() => setActiveView("quality")}
@@ -1754,7 +1752,7 @@ const ShopFloorMobileApp = () => {
             </div>
           )}
           <AlertTriangle size={22} />
-          <span className="text-[10px] font-bold">QC</span>
+          <span className="text-[10px] font-bold">{t("planning.shopFloor.qc", "QC")}</span>
         </button>
       </div>
 
@@ -1821,11 +1819,11 @@ const ShopFloorMobileApp = () => {
                 "REPAIR_START",
                 `Reparatie gestart voor product ${repairMode} door ${userDisplayName || 'TeamLeader'}`
               );
-              notify("Reparatie gestart");
+              notify(t("planning.shopFloor.repairStarted", "Reparatie gestart"));
               setRepairMode(null);
             } catch (err) {
               console.error("Error starting repair:", err);
-              notify("Fout bij starten reparatie");
+              notify(t("planning.shopFloor.repairStartError", "Fout bij starten reparatie"));
             }
           }}
           t={t}
@@ -1864,7 +1862,7 @@ const MachineDetailModal = ({ machine, orders, onClose, onProductSelect, onProdu
             <h2 className="text-3xl font-black mb-1">{machine.machine}</h2>
             <div className="flex items-center gap-3 flex-wrap text-sm">
               <div className="flex items-center gap-1 bg-white/20 px-2 py-1 rounded">
-                <UserCheck size={14} /> {machine.operatorName || 'Geen operator'}
+                <UserCheck size={14} /> {machine.operatorName || t("planning.shopFloor.noOperator", "Geen operator")}
               </div>
               <div className={`px-2 py-1 rounded font-bold text-xs ${
                 machine.status === "issue" 
@@ -1873,7 +1871,7 @@ const MachineDetailModal = ({ machine, orders, onClose, onProductSelect, onProdu
                     ? "bg-emerald-500"
                     : "bg-slate-500"
               }`}>
-                {machine.status === "issue" ? "🔴 Issue" : machine.status === "active" ? "🟢 Actief" : "⚪ Idle"}
+                {machine.status === "issue" ? t("planning.shopFloor.issueStatus", "🔴 Issue") : machine.status === "active" ? t("planning.shopFloor.activeStatus", "🟢 Actief") : t("planning.shopFloor.idleStatus", "⚪ Idle")}
               </div>
               {machine.hasIssues && (
                 <div className="flex items-center gap-1 bg-red-500/20 text-red-100 px-2 py-1 rounded text-xs font-bold">
@@ -1912,7 +1910,7 @@ const MachineDetailModal = ({ machine, orders, onClose, onProductSelect, onProdu
           {activeOrders.length === 0 ? (
             <div className="text-center py-8 text-slate-400">
               <Package size={40} className="mx-auto mb-2 opacity-30" />
-              <div className="text-sm font-bold">Geen orders in productie</div>
+              <div className="text-sm font-bold">{t("planning.shopFloor.noOrdersInProduction", "Geen orders in productie")}</div>
             </div>
           ) : (
             activeOrders.map((order: AnyRecord) => (
@@ -1931,7 +1929,7 @@ const MachineDetailModal = ({ machine, orders, onClose, onProductSelect, onProdu
           {/* Planned Orders */}
           {plannedOrders.length > 0 && (
             <div className="pt-4 border-t border-slate-200">
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">📋 Geplande Orders</h3>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">📋 {t("planning.shopFloor.plannedOrders", "Geplande Orders")}</h3>
               <div className="space-y-2">
                   {plannedOrders.map((order: AnyRecord) => (
                   <div key={order.id} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
@@ -1953,7 +1951,7 @@ const MachineDetailModal = ({ machine, orders, onClose, onProductSelect, onProdu
             onClick={onClose}
             className="flex-1 py-3 bg-slate-200 text-slate-700 rounded-xl font-bold hover:bg-slate-300 transition-colors"
           >
-            Sluiten
+            {t("planning.shopFloor.close", "Sluiten")}
           </button>
         </div>
       </div>
@@ -1975,7 +1973,7 @@ const OrderDetailCard = ({ order, products, onProductSelect, onProductMove, onRe
           </div>
           <div className="text-right">
             <div className="font-black text-indigo-600 text-xl">{order.plan || 0}</div>
-            <div className="text-xs text-slate-500">stuks</div>
+            <div className="text-xs text-slate-500">{t("planning.shopFloor.pieces", "stuks")}</div>
           </div>
         </div>
         {order.notes && (
@@ -1988,7 +1986,7 @@ const OrderDetailCard = ({ order, products, onProductSelect, onProductMove, onRe
       {/* Products List */}
       <div className="p-4 space-y-2">
         {products.length === 0 ? (
-          <div className="text-sm text-slate-500 italic">Geen producten getrackt voor deze order</div>
+          <div className="text-sm text-slate-500 italic">{t("planning.shopFloor.noProductsTrackedForOrder", "Geen producten getrackt voor deze order")}</div>
         ) : (
           products.map((product: AnyRecord) => (
             <div key={product.id} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-center justify-between">
@@ -2002,7 +2000,7 @@ const OrderDetailCard = ({ order, products, onProductSelect, onProductMove, onRe
                 <button
                   onClick={() => onProductSelect(product)}
                   className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
-                  title="Product dossier"
+                  title={t("planning.shopFloor.productDossier", "Product dossier")}
                 >
                   <Eye size={16} />
                 </button>
@@ -2011,14 +2009,14 @@ const OrderDetailCard = ({ order, products, onProductSelect, onProductMove, onRe
                     <button
                       onClick={() => onProductMove(product)}
                       className="p-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors"
-                      title="Verplaatsen"
+                      title={t("planning.shopFloor.move", "Verplaatsen")}
                     >
                       <ArrowRightLeft size={16} />
                     </button>
                     <button
                       onClick={() => onRepairMode(product.id)}
                       className="p-2 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors"
-                      title="Reparatie"
+                      title={t("planning.shopFloor.repair", "Reparatie")}
                     >
                       <AlertTriangle size={16} />
                     </button>
@@ -2043,7 +2041,7 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }: any) => 
         
         <div className="p-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white flex justify-between items-start">
           <div>
-            <h2 className="text-2xl font-black mb-1">Product Dossier</h2>
+            <h2 className="text-2xl font-black mb-1">{t("planning.shopFloor.productDossier", "Product Dossier")}</h2>
             <p className="text-blue-100 text-sm">{product.lotNumber}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg">
@@ -2057,19 +2055,19 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }: any) => 
           <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <div className="text-xs font-bold text-slate-500 uppercase mb-1">Lotnummer</div>
+                <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.lotNumber", "Lotnummer")}</div>
                 <div className="text-lg font-black text-slate-800">{product.lotNumber}</div>
               </div>
               <div>
-                <div className="text-xs font-bold text-slate-500 uppercase mb-1">Order</div>
+                <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.order", "Order")}</div>
                 <div className="text-lg font-black text-slate-800">{product.orderId || "N/A"}</div>
               </div>
               <div>
-                <div className="text-xs font-bold text-slate-500 uppercase mb-1">Status</div>
+                <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.status", "Status")}</div>
                 <div className="font-bold text-sm">{product.status}</div>
               </div>
               <div>
-                <div className="text-xs font-bold text-slate-500 uppercase mb-1">Huidige Station</div>
+                <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.currentStation", "Huidige Station")}</div>
                 <div className="font-bold text-sm">{product.currentStation || "Onbekend"}</div>
               </div>
             </div>
@@ -2078,7 +2076,7 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }: any) => 
           {/* Timeline */}
           {product.history && (
             <div>
-              <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">📍 Geschiedenis</h3>
+              <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">📍 {t("planning.shopFloor.history", "Geschiedenis")}</h3>
               <div className="space-y-2 text-sm">
                 {product.history.slice(-5).reverse().map((entry: AnyRecord, i: number) => (
                   <div key={i} className="flex gap-2 text-slate-600">
@@ -2095,7 +2093,7 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }: any) => 
           {/* Defects */}
           {product.defects && product.defects.length > 0 && (
             <div className="bg-red-50 p-4 rounded-xl border border-red-100">
-              <h3 className="text-xs font-black text-red-700 uppercase mb-2">🚩 Geregistreerde Defecten</h3>
+              <h3 className="text-xs font-black text-red-700 uppercase mb-2">🚩 {t("planning.shopFloor.registeredDefects", "Geregistreerde Defecten")}</h3>
               <div className="space-y-2">
                 {product.defects.map((defect: AnyRecord, i: number) => (
                   <div key={i} className="text-sm text-red-800">
@@ -2110,13 +2108,13 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }: any) => 
 
         <div className="p-4 border-t border-slate-200 bg-slate-50 flex gap-2">
           <button onClick={onMove} className="flex-1 py-3 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
-            <ArrowRightLeft size={18} /> Verplaatsen
+            <ArrowRightLeft size={18} /> {t("planning.shopFloor.move", "Verplaatsen")}
           </button>
           <button onClick={onRepair} className="flex-1 py-3 bg-orange-600 text-white rounded-lg font-bold hover:bg-orange-700 transition-colors flex items-center justify-center gap-2">
-            <AlertTriangle size={18} /> Reparatie
+            <AlertTriangle size={18} /> {t("planning.shopFloor.repair", "Reparatie")}
           </button>
           <button onClick={onClose} className="flex-1 py-3 bg-slate-300 text-slate-700 rounded-lg font-bold hover:bg-slate-400 transition-colors">
-            Sluiten
+            {t("planning.shopFloor.close", "Sluiten")}
           </button>
         </div>
       </div>
@@ -2135,17 +2133,17 @@ const RepairModal = ({ productId, product, onClose, onSubmit, t }: any) => {
       <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
         
         <div className="p-6 bg-orange-600 text-white">
-          <h2 className="text-2xl font-black mb-1">🔧 Reparatie Starten</h2>
+          <h2 className="text-2xl font-black mb-1">🔧 {t("planning.shopFloor.startRepair", "Reparatie Starten")}</h2>
           <p className="text-orange-100">{product?.lotNumber || productId}</p>
         </div>
 
         <div className="p-6 space-y-4">
           <div>
-            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">Reparatie Reden</label>
+            <label className="text-xs font-bold text-slate-500 uppercase block mb-2">{t("planning.shopFloor.repairReason", "Reparatie Reden")}</label>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Beschrijf het probleem..."
+              placeholder={t("planning.shopFloor.describeProblem", "Beschrijf het probleem...")}
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg focus:border-orange-500 outline-none resize-none"
               rows={4}
             />
@@ -2157,13 +2155,13 @@ const RepairModal = ({ productId, product, onClose, onSubmit, t }: any) => {
             onClick={onClose}
             className="flex-1 py-3 bg-slate-200 text-slate-700 rounded-lg font-bold hover:bg-slate-300 transition-colors"
           >
-            Annuleren
+            {t("planning.shopFloor.cancel", "Annuleren")}
           </button>
           <button 
             onClick={() => onSubmit({ reason })}
             className="flex-1 py-3 bg-orange-600 text-white rounded-lg font-bold hover:bg-orange-700 transition-colors"
           >
-            Start Reparatie
+            {t("planning.shopFloor.startRepair", "Start Reparatie")}
           </button>
         </div>
       </div>
@@ -2199,11 +2197,11 @@ const PlanningOrderCard = ({ order, onSelectOrder, onScanReady, t }: any) => {
       <div className="flex items-start justify-between mb-3 gap-3">
         <div className="flex-1 min-w-0 space-y-2">
           <div>
-            <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Ordernummer</div>
+            <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{t("planning.shopFloor.orderNumber", "Ordernummer")}</div>
             <h3 className="text-lg font-black text-slate-800 break-words">{order.orderId || "Onbekend"}</h3>
           </div>
           <div>
-            <div className="text-[10px] font-black text-slate-400 uppercase mb-1">Productnaam</div>
+            <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{t("planning.shopFloor.productName", "Productnaam")}</div>
             <p className="text-sm text-slate-700 font-bold break-words">{order.item || order.itemCode || "Onbekend product"}</p>
           </div>
         </div>
@@ -2252,6 +2250,7 @@ const PlanningOrderCard = ({ order, onSelectOrder, onScanReady, t }: any) => {
             className="flex-1 py-2 px-3 bg-emerald-500 text-white text-xs font-bold rounded-lg hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2"
           >
             <CheckCircle size={16} /> Gereed volgende stap
+            <CheckCircle size={16} /> {t("planning.shopFloor.readyNextStep", "Gereed volgende stap")}
           </button>
         </div>
       )}
@@ -2271,23 +2270,21 @@ const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady,
       <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in">
         <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
           <div className="p-6 bg-emerald-600 text-white">
-            <h2 className="text-2xl font-black mb-1">✅ Gereed voor volgende stap</h2>
+            <h2 className="text-2xl font-black mb-1">✅ {t("planning.shopFloor.readyForNextStep", "Gereed voor volgende stap")}</h2>
             <p className="text-emerald-100">{selectedProduct.lotNumber}</p>
           </div>
 
           <div className="p-6 space-y-4">
             <div>
-              <div className="text-sm font-bold text-slate-700 mb-2">Order:</div>
+              <div className="text-sm font-bold text-slate-700 mb-2">{t("planning.shopFloor.order", "Order")}:</div>
               <div className="text-lg font-black text-slate-800">{order?.orderId}</div>
             </div>
             <div>
-              <div className="text-sm font-bold text-slate-700 mb-2">Huide Station:</div>
+              <div className="text-sm font-bold text-slate-700 mb-2">{t("planning.shopFloor.currentStation", "Huidige Station")}:</div>
               <div className="text-lg font-black text-slate-800">{selectedProduct.currentStation}</div>
             </div>
             <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-lg">
-              <p className="text-sm text-emerald-800">
-                Status wordt ingesteld op <strong>"Gereed voor volgende stap"</strong> en kan verplaatst worden naar de volgende werkstation.
-              </p>
+              <p className="text-sm text-emerald-800">{t("planning.shopFloor.readyForNextStepDescription", "Status wordt ingesteld op \"Gereed voor volgende stap\" en kan verplaatst worden naar de volgende werkstation.")}</p>
             </div>
           </div>
 
@@ -2296,7 +2293,7 @@ const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady,
               onClick={() => setMarkMode(false)}
               className="flex-1 py-3 bg-slate-200 text-slate-700 rounded-lg font-bold hover:bg-slate-300 transition-colors"
             >
-              Terug
+              {t("common.back", "Terug")}
             </button>
             <button 
               onClick={() => {
@@ -2305,7 +2302,7 @@ const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady,
               }}
               className="flex-1 py-3 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700 transition-colors"
             >
-              Bevestig ✅
+              {t("common.confirm", "Bevestig")} ✅
             </button>
           </div>
         </div>
@@ -2318,7 +2315,7 @@ const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady,
       <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95">
         <div className="p-6 bg-emerald-600 text-white flex justify-between items-start">
           <div>
-            <h2 className="text-2xl font-black mb-1">Selecteer Product</h2>
+            <h2 className="text-2xl font-black mb-1">{t("planning.shopFloor.selectProduct", "Selecteer Product")}</h2>
             <p className="text-emerald-100">{order?.orderId}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg">
@@ -2330,7 +2327,7 @@ const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady,
           {products.length === 0 ? (
             <div className="text-center py-8 text-slate-400">
               <Package size={40} className="mx-auto mb-2 opacity-30" />
-              <div className="text-sm font-bold">Geen producten in deze order</div>
+              <div className="text-sm font-bold">{t("planning.shopFloor.noProductsInOrder", "Geen producten in deze order")}</div>
             </div>
           ) : (
             products.map((product: AnyRecord) => (
@@ -2359,7 +2356,7 @@ const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady,
             onClick={onClose}
             className="w-full py-3 bg-slate-300 text-slate-700 rounded-lg font-bold hover:bg-slate-400 transition-colors"
           >
-            Annuleren
+            {t("planning.shopFloor.cancel", "Annuleren")}
           </button>
         </div>
       </div>

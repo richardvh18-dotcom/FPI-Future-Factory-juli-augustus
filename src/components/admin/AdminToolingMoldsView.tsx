@@ -1,5 +1,6 @@
 /* eslint-disable */
 import React, { useEffect, useMemo, useState } from "react";
+import i18n from "i18next";
 import {
   CheckCircle2,
   AlertCircle,
@@ -309,7 +310,7 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow }:
         <div className="p-6 md:p-8">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-2xl font-black text-slate-900 uppercase italic">
-              Items via <span className="text-blue-600">Ordernummer</span>
+              {i18n.t('adminTooling.itemsVia', 'Items via')} <span className="text-blue-600">{i18n.t('common.orderNumber', 'Ordernummer')}</span>
             </h3>
             <button
               onClick={onClose}
@@ -325,7 +326,7 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow }:
               value={orderStr}
               onChange={(e) => setOrderStr(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearchOrder()}
-              placeholder="Typ ordernummer (bijv. N20024783)..."
+              placeholder={i18n.t("placeholders.adminToolingOrderSearch", "Typ ordernummer (bijv. N20024783)...")}
               className="flex-1 p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
             />
             <button
@@ -655,19 +656,19 @@ const AdminToolingMoldsView = () => {
             <input
               value={newRow.itemCode}
               onChange={(e) => setNewRow((prev) => ({ ...prev, itemCode: e.target.value.toUpperCase() }))}
-              placeholder="ItemCode"
+              placeholder={i18n.t("placeholders.adminToolingItemCode", "ItemCode")}
               className="col-span-12 md:col-span-2 p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold"
             />
             <input
               value={newRow.matcher}
               onChange={(e) => setNewRow((prev) => ({ ...prev, matcher: e.target.value.toUpperCase() }))}
-              placeholder="Matcher (bijv FL 50 PN 40)"
+              placeholder={i18n.t("placeholders.adminToolingMatcher", "Matcher (bijv FL 50 PN 40)")}
               className="col-span-12 md:col-span-3 p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold"
             />
             <input
               value={newRow.stations}
               onChange={(e) => setNewRow((prev) => ({ ...prev, stations: e.target.value }))}
-              placeholder="Stations: BH12, MAZAK"
+              placeholder={i18n.t("placeholders.adminToolingStations", "Stations: BH12, MAZAK")}
               className="col-span-12 md:col-span-3 p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold"
             />
             <input
@@ -750,8 +751,8 @@ const AdminToolingMoldsView = () => {
                 onChange={(e) => handleRowChange(entry.id, "application", e.target.value)}
                 className="col-span-4 md:col-span-1 p-2 bg-white border border-slate-200 rounded-lg text-[10px] font-black uppercase"
               >
-                <option value="general">Algemeen</option>
-                <option value="flange_series">Flenzen</option>
+                <option value="general">{i18n.t('common.general', 'Algemeen')}</option>
+                <option value="flange_series">{i18n.t('adminTooling.flanges', 'Flenzen')}</option>
               </select>
               <button
                 onClick={() => handleRowChange(entry.id, "active", !entry.active)}

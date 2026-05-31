@@ -53,16 +53,16 @@ const TerminalGereedItemCard = ({ item }: TerminalGereedItemCardProps) => {
 
   return (
     <div key={item.id || item.lotNumber} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-base font-black text-slate-900 leading-snug">{productName}</div>
+      <div className="text-base sm:text-lg font-black text-slate-900 leading-snug">{productName}</div>
       {productCode && <div className="text-xs font-mono text-slate-400 mt-0.5 mb-2">{productCode}</div>}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         {item.orderId && (
-          <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-100 text-xs font-black text-blue-700 uppercase tracking-wide">
+          <span className="px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-100 text-sm font-black text-blue-700 uppercase tracking-wide">
             {item.orderId}
           </span>
         )}
         {item.lotNumber && (
-          <span className="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-xs font-black text-slate-700 uppercase tracking-wide">
+          <span className="px-3 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-sm font-black text-slate-700 uppercase tracking-wide">
             {item.lotNumber}
           </span>
         )}

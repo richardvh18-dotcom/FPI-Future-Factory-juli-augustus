@@ -64,7 +64,7 @@ export const TeamleaderModals = () => {
           >
             <div className="px-6 py-5 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Teamleader</p>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{t('common.teamleader', 'Teamleader')}</p>
                 <h3 className="text-xl font-black text-slate-900 italic mt-1">{t('teamleader.new_order', 'Nieuwe order')}</h3>
               </div>
               <button
@@ -78,43 +78,43 @@ export const TeamleaderModals = () => {
 
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">Order ID</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('common.orderId', 'Order ID')}</label>
                 <input
                   type="text"
                   value={newOrderData.orderId}
                   onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, orderId: e.target.value.toUpperCase() }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
-                  placeholder="Bijv. N20030001"
+                  placeholder={t("placeholders.dpOrderIdExample", "Bijv. N20030001")}
                   required
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">Machine</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('common.machine', 'Machine')}</label>
                 <input
                   type="text"
                   value={newOrderData.machine}
                   onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, machine: e.target.value }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
-                  placeholder="Bijv. 40BH18"
+                  placeholder={t("placeholders.dpMachineExample", "Bijv. 40BH18")}
                   required
                 />
               </div>
 
               <div className="md:col-span-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">Item / Omschrijving</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.itemDescriptionLabel', 'Item / Omschrijving')}</label>
                 <input
                   type="text"
                   value={newOrderData.item}
                   onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, item: e.target.value }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
-                  placeholder="Product omschrijving"
+                  placeholder={t("placeholders.dpItemDescription", "Product omschrijving")}
                   required
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">Plan / Aantal</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.planQuantity', 'Plan / Aantal')}</label>
                 <input
                   type="number"
                   min="1"
@@ -122,7 +122,7 @@ export const TeamleaderModals = () => {
                   value={newOrderData.plan}
                   onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, plan: String(e.target.value || '').replace(/[^0-9]/g, '') }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
-                  placeholder="Bijv. 10"
+                  placeholder={t("placeholders.dpPlanExample", "Bijv. 10")}
                   required
                 />
               </div>
@@ -324,8 +324,8 @@ export const TeamleaderModals = () => {
                         >
                           <option value="">{t('teamleader.choose_station', 'Choose station...')}</option>
                           <option value="Nabewerking">{t('teamleader.station_finishing', 'Finishing')}</option>
-                          <option value="Mazak">Mazak</option>
-                          <option value="BM01">BM01</option>
+                          <option value="Mazak">{t('teamleader.stationMazak', 'Mazak')}</option>
+                          <option value="BM01">{t('teamleader.stationBm01', 'BM01')}</option>
                         </select>
                       </div>
                     )}

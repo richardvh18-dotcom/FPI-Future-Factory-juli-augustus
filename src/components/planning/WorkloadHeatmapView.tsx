@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import i18n from "i18next";
 import { 
   TrendingUp, 
   AlertTriangle,
@@ -286,7 +287,7 @@ const WorkloadHeatmapView = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-black text-slate-800">
-              Workload <span className="text-purple-600">Heatmap</span>
+              {i18n.t('workloadHeatmap.workload', 'Workload')} <span className="text-purple-600">{i18n.t('workloadHeatmap.heatmap', 'Heatmap')}</span>
             </h1>
             <p className="text-sm text-slate-600 mt-1">
               Visueel overzicht van machine/operator belasting
@@ -444,7 +445,7 @@ const WorkloadHeatmapView = () => {
 
       {/* Legend */}
       <div className="mt-6 bg-white rounded-2xl p-6 shadow-sm border-2 border-slate-200">
-        <h3 className="text-sm font-bold text-slate-700 mb-3">Bezettingsgraad:</h3>
+        <h3 className="text-sm font-bold text-slate-700 mb-3">{i18n.t('workloadHeatmap.utilizationRate', 'Bezettingsgraad:')}</h3>
         <div className="flex items-center gap-4">
           {[
             { range: "0%", label: "Geen data", color: "bg-slate-100 text-slate-400" },
@@ -560,7 +561,7 @@ const WorkloadHeatmapView = () => {
                   </h4>
                   <div className="space-y-3">
                     {selectedCell.occupancy.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic">Geen personeel ingepland.</p>
+                      <p className="text-xs text-slate-400 italic">{i18n.t('workloadHeatmap.noPersonnelPlanned', 'Geen personeel ingepland.')}</p>
                     ) : (
                       selectedCell.occupancy.map((occ, idx) => (
                         <div key={idx} className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 flex justify-between items-center">
@@ -591,7 +592,7 @@ const WorkloadHeatmapView = () => {
                   </h4>
                   <div className="space-y-3">
                     {selectedCell.planning.length === 0 ? (
-                      <p className="text-xs text-slate-400 italic">Geen orders gepland.</p>
+                      <p className="text-xs text-slate-400 italic">{i18n.t('workloadHeatmap.noOrdersPlanned', 'Geen orders gepland.')}</p>
                     ) : (
                       selectedCell.planning.map((order, idx) => (
                         <div key={idx} className="bg-blue-50/50 p-3 rounded-xl border border-blue-100">

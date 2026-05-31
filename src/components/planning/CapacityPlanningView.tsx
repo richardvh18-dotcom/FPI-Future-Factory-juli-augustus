@@ -1203,7 +1203,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
                 className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors text-xs font-bold"
               >
                 <FileDown size={16} />
-                <span className="hidden sm:inline">PDF</span>
+                <span className="hidden sm:inline">{t("common.pdf", "PDF")}</span>
               </button>
             </div>
             </>
@@ -1818,7 +1818,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
           <div className="flex items-start gap-2">
             <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" size={14} />
             <div className="text-xs text-blue-800">
-              <strong>Let op:</strong> Deze voorspelling is gebaseerd op historische trends en aannames. 
+              <strong>{t("common.note", "Let op")}:</strong> {t("planning.capacity.prediction.noticeLead", "Deze voorspelling is gebaseerd op historische trends en aannames.")} 
               Gebruik dit als indicatie, niet als absolute waarheid. Houd rekening met seizoensinvloeden, 
               geplande stilstand, en externe factoren.
             </div>

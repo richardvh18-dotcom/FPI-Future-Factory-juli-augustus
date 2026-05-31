@@ -127,14 +127,14 @@ const PortalView = () => {
                 onClick={() => handleLanguageSelect('nl')}
                 className={`w-full px-4 py-3 text-left text-sm font-bold flex items-center justify-between hover:bg-white/5 ${i18n.language === 'nl' ? 'text-cyan-400' : 'text-slate-400'}`}
               >
-                <span>🇳🇱 Nederlands</span>
+                <span>{t('portal.languageDutch', '🇳🇱 Nederlands')}</span>
                 {i18n.language === 'nl' && <Check size={14} />}
               </button>
               <button
                 onClick={() => handleLanguageSelect('en')}
                 className={`w-full px-4 py-3 text-left text-sm font-bold flex items-center justify-between hover:bg-white/5 ${i18n.language === 'en' ? 'text-cyan-400' : 'text-slate-400'}`}
               >
-                <span>🇬🇧 English</span>
+                <span>{t('portal.languageEnglish', '🇬🇧 English')}</span>
                 {i18n.language === 'en' && <Check size={14} />}
               </button>
               <button
@@ -148,7 +148,7 @@ const PortalView = () => {
                 onClick={() => handleLanguageSelect('de')}
                 className={`w-full px-4 py-3 text-left text-sm font-bold flex items-center justify-between hover:bg-white/5 ${i18n.language === 'de' ? 'text-cyan-400' : 'text-slate-400'}`}
               >
-                <span>🇩🇪 Deutsch</span>
+                <span>{t('portal.languageGerman', '🇩🇪 Deutsch')}</span>
                 {i18n.language === 'de' && <Check size={14} />}
               </button>
             </div>
@@ -384,7 +384,7 @@ const PortalView = () => {
                   {t('portal.tiles.qc_stations.title', 'QC Stations')}
                   </h2>
                   <p className="text-slate-400 text-xs md:text-sm font-medium leading-relaxed max-w-xs">
-                  {t('portal.tiles.qc_stations.desc', 'Kwaliteitscontroles, labmetingen en virtuele lotuitgifte.')}
+                  {t('portal.tiles.qc_stations.desc', 'Kwaliteitscontroles, labmetingen en QC steekproeven.')}
                   </p>
                 </div>
                 <div className="mt-4 md:mt-6 flex items-center text-cyan-400 font-bold text-xs uppercase tracking-widest gap-2 group-hover:gap-4 transition-all">

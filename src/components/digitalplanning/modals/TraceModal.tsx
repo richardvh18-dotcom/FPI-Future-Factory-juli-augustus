@@ -255,7 +255,7 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction
               className="p-3 sm:px-4 bg-white text-slate-600 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 rounded-xl transition-colors shadow-sm flex items-center justify-center gap-2 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
               title={t('common.export_pdf', 'Exporteer naar PDF')}
             >
-              <FileText size={16} /> <span className="text-xs font-bold uppercase tracking-widest hidden sm:inline">PDF</span>
+              <FileText size={16} /> <span className="text-xs font-bold uppercase tracking-widest hidden sm:inline">{t('common.pdf', 'PDF')}</span>
             </button>
           </div>
 

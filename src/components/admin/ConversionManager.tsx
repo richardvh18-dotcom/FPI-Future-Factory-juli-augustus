@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import i18n from "i18next";
 import type { WorkBook } from "xlsx";
 import {
   Upload,
@@ -653,7 +654,7 @@ export default function ConversionManager() {
           </div>
           <div className="text-left">
             <h1 className="text-3xl font-black text-slate-900 tracking-tighter uppercase italic leading-none">
-              Conversie <span className="text-teal-600">Matrix</span>
+              {i18n.t("conversionManager.title", "Conversie Matrix")}
             </h1>
             <div className="mt-3 flex items-center gap-3">
               <span className="flex items-center gap-1.5 text-[9px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded border border-emerald-100 uppercase italic">
@@ -729,7 +730,7 @@ export default function ConversionManager() {
 
             {/* Cross-collection search */}
             <div className="space-y-4">
-              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Zoeken in alle collecties</h4>
+              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{i18n.t("conversionManager.searchAllCollections", "Zoeken in alle collecties")}</h4>
               <div className="flex gap-3">
                 <div className="relative flex-1">
                   <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -738,7 +739,7 @@ export default function ConversionManager() {
                     value={syncSearchTerm}
                     onChange={(e) => setSyncSearchTerm(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSyncSearch()}
-                    placeholder="Zoek op code, artikelnr, naam... (min 3 tekens)"
+                    placeholder={i18n.t("placeholders.adminConversionSyncSearch", "Zoek op code, artikelnr, naam... (min 3 tekens)")}
                     className="w-full pl-11 pr-4 py-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
                   />
                 </div>
@@ -772,9 +773,9 @@ export default function ConversionManager() {
                     {syncSearchResults.conversions.length > 0 ? (
                       <div className="border border-teal-100 rounded-xl overflow-hidden mt-2">
                         <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-4 py-2 bg-teal-50 text-[8px] font-black uppercase text-teal-400 tracking-widest">
-                          <span>Source (Old Code)</span>
-                          <span>Target (New Code)</span>
-                          <span>Omschrijving</span>
+                          <span>{i18n.t("conversionManager.sourceOldCode", "Source (Old Code)")}</span>
+                          <span>{i18n.t("conversionManager.targetNewCode", "Target (New Code)")}</span>
+                          <span>{i18n.t("conversionManager.description", "Omschrijving")}</span>
                         </div>
                         <div className="max-h-[200px] overflow-y-auto custom-scrollbar divide-y divide-teal-50">
                           {syncSearchResults.conversions.slice(0, 50).map((c, i) => (
@@ -787,7 +788,7 @@ export default function ConversionManager() {
                         </div>
                       </div>
                     ) : (
-                      <p className="text-xs text-slate-400 italic mt-1">Geen resultaten in conversie matrix</p>
+                      <p className="text-xs text-slate-400 italic mt-1">{i18n.t("conversionManager.noResultsConversionMatrix", "Geen resultaten in conversie matrix")}</p>
                     )}
                   </details>
 
@@ -803,10 +804,10 @@ export default function ConversionManager() {
                     {syncSearchResults.planning.length > 0 ? (
                       <div className="border border-blue-100 rounded-xl overflow-hidden mt-2">
                         <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 px-4 py-2 bg-blue-50 text-[8px] font-black uppercase text-blue-400 tracking-widest">
-                          <span>Doc ID</span>
-                          <span>Item Code</span>
-                          <span>Omschrijving</span>
-                          <span>Tekening</span>
+                          <span>{i18n.t("conversionManager.docId", "Doc ID")}</span>
+                          <span>{i18n.t("conversionManager.itemCode", "Item Code")}</span>
+                          <span>{i18n.t("conversionManager.description", "Omschrijving")}</span>
+                          <span>{i18n.t("conversionManager.drawing", "Tekening")}</span>
                         </div>
                         <div className="max-h-[200px] overflow-y-auto custom-scrollbar divide-y divide-blue-50">
                           {syncSearchResults.planning.slice(0, 50).map((p, i) => (
@@ -822,7 +823,7 @@ export default function ConversionManager() {
                         </div>
                       </div>
                     ) : (
-                      <p className="text-xs text-slate-400 italic mt-1">Geen resultaten in planning</p>
+                      <p className="text-xs text-slate-400 italic mt-1">{i18n.t("conversionManager.noResultsPlanning", "Geen resultaten in planning")}</p>
                     )}
                   </details>
 
@@ -838,9 +839,9 @@ export default function ConversionManager() {
                     {syncSearchResults.products.length > 0 ? (
                       <div className="border border-purple-100 rounded-xl overflow-hidden mt-2">
                         <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-4 py-2 bg-purple-50 text-[8px] font-black uppercase text-purple-400 tracking-widest">
-                          <span>Doc ID</span>
-                          <span>Article Code</span>
-                          <span>Naam</span>
+                          <span>{i18n.t("conversionManager.docId", "Doc ID")}</span>
+                          <span>{i18n.t("conversionManager.articleCode", "Article Code")}</span>
+                          <span>{i18n.t("conversionManager.name", "Naam")}</span>
                         </div>
                         <div className="max-h-[200px] overflow-y-auto custom-scrollbar divide-y divide-purple-50">
                           {syncSearchResults.products.slice(0, 50).map((p, i) => (
@@ -853,7 +854,7 @@ export default function ConversionManager() {
                         </div>
                       </div>
                     ) : (
-                      <p className="text-xs text-slate-400 italic mt-1">Geen resultaten in product catalogus</p>
+                      <p className="text-xs text-slate-400 italic mt-1">{i18n.t("conversionManager.noResultsProductCatalog", "Geen resultaten in product catalogus")}</p>
                     )}
                   </details>
 
@@ -872,7 +873,7 @@ export default function ConversionManager() {
                           ))}
                           {syncSearchResults.chain.variantCodes?.length > 0 && (
                             <>
-                              <span className="text-[9px] text-amber-500 font-bold uppercase">+ materiaalvariant</span>
+                              <span className="text-[9px] text-amber-500 font-bold uppercase">{i18n.t('conversionManager.materialVariant', '+ materiaalvariant')}</span>
                               {syncSearchResults.chain.variantCodes.map((vc, i) => (
                                 <span key={i} className="font-mono bg-amber-100 text-amber-700 px-2 py-1 rounded font-bold border border-amber-300">{vc}</span>
                               ))}
@@ -913,7 +914,7 @@ export default function ConversionManager() {
             {isSyncing && syncProgress.total > 0 && (
               <div className="space-y-3">
                 <div className="flex justify-between text-xs font-bold text-slate-500">
-                  <span>Voortgang</span>
+                  <span>{i18n.t("conversionManager.progress", "Voortgang")}</span>
                   <span>{syncProgress.current} / {syncProgress.total}</span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
@@ -932,25 +933,25 @@ export default function ConversionManager() {
                 <div className="grid grid-cols-3 gap-4">
                   <div className="bg-emerald-50 rounded-2xl p-5 text-center border border-emerald-100">
                     <p className="text-3xl font-black text-emerald-600">{syncResults.filter(r => r.found).length}</p>
-                    <p className="text-[9px] font-bold uppercase text-emerald-500 tracking-widest mt-1">Gekoppeld</p>
+                    <p className="text-[9px] font-bold uppercase text-emerald-500 tracking-widest mt-1">{i18n.t("conversionManager.linked", "Gekoppeld")}</p>
                   </div>
                   <div className="bg-orange-50 rounded-2xl p-5 text-center border border-orange-100">
                     <p className="text-3xl font-black text-orange-600">{syncResults.filter(r => !r.found && !r.error).length}</p>
-                    <p className="text-[9px] font-bold uppercase text-orange-500 tracking-widest mt-1">Geen match</p>
+                    <p className="text-[9px] font-bold uppercase text-orange-500 tracking-widest mt-1">{i18n.t("conversionManager.noMatch", "Geen match")}</p>
                   </div>
                   <div className="bg-slate-50 rounded-2xl p-5 text-center border border-slate-200">
                     <p className="text-3xl font-black text-slate-600">{syncResults.length}</p>
-                    <p className="text-[9px] font-bold uppercase text-slate-500 tracking-widest mt-1">Totaal</p>
+                    <p className="text-[9px] font-bold uppercase text-slate-500 tracking-widest mt-1">{i18n.t("common.total", "Totaal")}</p>
                   </div>
                 </div>
 
                 {/* Detail list */}
                 <div className="border border-slate-200 rounded-2xl overflow-hidden">
                   <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-3 px-5 py-3 bg-slate-50 text-[9px] font-black uppercase text-slate-400 tracking-widest">
-                    <span>Planning Code</span>
-                    <span>Conversie Target</span>
-                    <span>Product</span>
-                    <span>Status</span>
+                    <span>{i18n.t("conversionManager.planningCode", "Planning Code")}</span>
+                    <span>{i18n.t("conversionManager.conversionTarget", "Conversie Target")}</span>
+                    <span>{i18n.t("common.product", "Product")}</span>
+                    <span>{i18n.t("common.status", "Status")}</span>
                   </div>
                   <div className="max-h-[400px] overflow-y-auto custom-scrollbar divide-y divide-slate-100">
                     {syncResults.map((r, i) => (
@@ -1047,7 +1048,7 @@ export default function ConversionManager() {
                             : "bg-white border-slate-100 hover:border-teal-300"
                         }`}
                       >
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">Sheet</span>
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{i18n.t("common.sheet", "Sheet")}</span>
                         <span className={`font-bold ${isSelected ? "text-teal-700" : "text-slate-800"}`}>{name}</span>
                         {isSelected && (
                           <div className="absolute top-2 right-2 text-teal-600">
@@ -1117,7 +1118,7 @@ export default function ConversionManager() {
                   />
                   <input
                     type="text"
-                    placeholder="Voer een planning-code in..."
+                    placeholder={i18n.t("placeholders.adminConversionPlanningCode", "Voer een planning-code in...")}
                     className="w-full pl-14 pr-14 py-5 bg-slate-50 border-2 border-slate-100 rounded-[25px] font-bold outline-none focus:border-blue-500 focus:bg-white transition-all shadow-inner text-sm uppercase"
                     value={testCode}
                     onChange={(e) => setTestCode(e.target.value)}
@@ -1201,7 +1202,7 @@ export default function ConversionManager() {
                 />
                 <input
                   type="text"
-                  placeholder="Filter op code of tekening..."
+                  placeholder={i18n.t("placeholders.adminConversionFilter", "Filter op code of tekening...")}
                   className="pl-12 pr-4 py-3.5 w-full bg-white border-2 border-slate-100 rounded-[22px] outline-none focus:border-teal-500 shadow-sm font-bold text-sm"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -1238,12 +1239,12 @@ export default function ConversionManager() {
               <table className="w-full text-left border-collapse">
                 <thead className="bg-slate-50/80 font-black text-[10px] text-slate-400 uppercase tracking-[0.2em] sticky top-0 z-10 border-b border-slate-100 backdrop-blur-md shadow-sm">
                   <tr>
-                    <th className="px-10 py-5">Planning Code (Source)</th>
+                    <th className="px-10 py-5">{i18n.t("conversionManager.planningCodeSource", "Planning Code (Source)")}</th>
                     <th className="px-10 py-5 text-teal-600">
-                      Tekening Code (Target)
+                      {i18n.t("conversionManager.drawingCodeTarget", "Tekening Code (Target)")}
                     </th>
-                    <th className="px-10 py-5">Configuratie</th>
-                    <th className="px-10 py-5 text-right">Beheer</th>
+                    <th className="px-10 py-5">{i18n.t("common.configuration", "Configuratie")}</th>
+                    <th className="px-10 py-5 text-right">{i18n.t("common.management", "Beheer")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
@@ -1362,7 +1363,7 @@ export default function ConversionManager() {
             <div className="bg-slate-950 p-10 flex justify-between items-start text-left">
               <div className="text-left">
                 <h3 className="text-3xl font-black text-white italic tracking-tighter uppercase leading-none">
-                  Mapping <span className="text-teal-400">Detail</span>
+                  {i18n.t("conversionManager.mappingDetail", "Mapping Detail")}
                 </h3>
                 <p className="text-slate-500 text-[10px] font-bold uppercase mt-3 tracking-widest italic">
                   Conversie Matrix Node Integrity
@@ -1469,8 +1470,8 @@ export default function ConversionManager() {
             <div className="p-10 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
               <div className="text-left">
                 <h3 className="text-3xl font-black text-slate-900 italic tracking-tighter uppercase leading-none">
-                  {isCreating ? "Nieuwe" : "Mapping"}{" "}
-                  <span className="text-teal-600">Config</span>
+                  {isCreating ? i18n.t("conversionManager.new", "Nieuwe") : i18n.t("conversionManager.mapping", "Mapping")}{" "}
+                  <span className="text-teal-600">{i18n.t("common.configuration", "Config")}</span>
                 </h3>
                 <p className="text-slate-400 text-[10px] font-bold uppercase mt-3 tracking-widest italic leading-none">
                   Record Editor v6.0
@@ -1507,7 +1508,7 @@ export default function ConversionManager() {
                         ? "bg-slate-100 border-slate-200 text-slate-400 italic"
                         : "bg-slate-50 border-slate-100 focus:border-teal-500 focus:bg-white shadow-inner"
                     }`}
-                    placeholder="CODE..."
+                    placeholder={i18n.t("placeholders.adminConversionCode", "CODE...")}
                   />
                 </div>
                 <div className="space-y-2 text-left">
@@ -1523,7 +1524,7 @@ export default function ConversionManager() {
                       })
                     }
                     className="w-full p-5 bg-teal-50/30 border-2 border-teal-100 rounded-[22px] text-lg font-black font-mono text-teal-700 outline-none focus:border-teal-500 focus:bg-white transition-all shadow-inner"
-                    placeholder="DRAWING..."
+                    placeholder={i18n.t("placeholders.adminConversionDrawing", "DRAWING...")}
                   />
                 </div>
               </div>
@@ -1565,7 +1566,7 @@ export default function ConversionManager() {
                     setEditingItem({ ...editingItem, label: e.target.value })
                   }
                   className="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-xl font-bold outline-none focus:border-blue-500"
-                  placeholder="Bijv. Wavistrong"
+                  placeholder={i18n.t("placeholders.adminConversionLabelExample", "Bijv. Wavistrong")}
                 />
               </div>
 
@@ -1630,7 +1631,7 @@ export default function ConversionManager() {
                     })
                   }
                   className="w-full bg-slate-50 border-2 border-slate-100 p-6 rounded-[30px] font-bold text-sm italic outline-none focus:border-blue-500 resize-none shadow-inner"
-                  placeholder="..."
+                  placeholder={i18n.t("placeholders.adminConversionDescription", "...")}
                 />
               </div>
 

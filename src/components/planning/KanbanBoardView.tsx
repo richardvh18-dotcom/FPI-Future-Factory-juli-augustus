@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import i18n from "i18next";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "react-beautiful-dnd";
 import { 
   Clock, 
@@ -166,7 +167,7 @@ const KanbanBoardView = () => {
       {/* Header */}
       <div className="mb-6 shrink-0">
         <h1 className="text-3xl font-black text-slate-800">
-          Kanban Board <span className="text-blue-600">Planning</span>
+          {i18n.t('kanban.board', 'Kanban Board')} <span className="text-blue-600">{i18n.t('planning.title', 'Planning')}</span>
         </h1>
         <p className="text-sm text-slate-600 mt-1">
           Sleep orders tussen kolommen om status te wijzigen
@@ -198,9 +199,9 @@ const KanbanBoardView = () => {
                   
                   {column.wipLimit && (
                     <div className="text-xs text-slate-600">
-                      WIP Limiet: {columnOrders.length}/{column.wipLimit}
+                      {i18n.t('kanban.wipLimit', 'WIP Limiet')}: {columnOrders.length}/{column.wipLimit}
                       {columnOrders.length >= column.wipLimit && (
-                        <span className="text-red-600 font-bold ml-1">⚠️ VOL</span>
+                        <span className="text-red-600 font-bold ml-1">⚠️ {i18n.t('kanban.full', 'VOL')}</span>
                       )}
                     </div>
                   )}

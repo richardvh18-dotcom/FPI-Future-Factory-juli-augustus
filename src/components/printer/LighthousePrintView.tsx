@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react";
+import i18n from "i18next";
 import { X, Printer, Loader2 } from "lucide-react";
 import {
   resolveLabelContent,
@@ -177,7 +178,7 @@ const LighthousePrintView = ({ label, data, onClose }: LighthousePrintViewProps)
         </div>
 
         <div className="p-6 border-t border-slate-100 flex gap-3">
-          <button onClick={onClose} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl">Annuleren</button>
+          <button onClick={onClose} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl">{i18n.t('common.cancel', 'Annuleren')}</button>
           <button onClick={handlePrint} disabled={printing} className="flex-[2] py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-blue-700 transition-all shadow-lg flex items-center justify-center gap-2">
             {printing ? <Loader2 className="animate-spin" size={16} /> : <Printer size={16} />}
             Afdrukken

@@ -1573,7 +1573,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
             <div className="bg-blue-600 p-3 rounded-[1.1rem] text-white shadow-xl"><Database size={22} /></div>
             <div>
               <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight italic leading-none">{t("digitalplanning.planning_import.title", "Planning Import")}</h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">v4.7 • Extended Dossier Support</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{t('digitalplanning.planning_import.version_support', 'v4.7 • Extended Dossier Support')}</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-all"><X size={24} /></button>

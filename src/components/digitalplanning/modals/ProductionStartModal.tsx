@@ -115,6 +115,20 @@ const getNormalizedPrinterDpi = (printer: any, fallback = 203) => {
   return fallback;
 };
 
+const normalizeStationCode = (station: unknown): string => {
+  const normalized = String(station || "").trim().toUpperCase();
+  return normalized.startsWith("40") ? normalized.slice(2) : normalized;
+};
+
+const isBh18Station = (station: unknown): boolean => normalizeStationCode(station) === "BH18";
+
+const getOrderNominalDiameter = (order: any): number => {
+  const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
+  const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
+  const parsed = match ? parseInt(match[1], 10) : parseInt(String(order?.diameter || order?.dn || "0"), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 const ProductionStartModal = ({
   order,
   isOpen,
@@ -271,15 +285,17 @@ const ProductionStartModal = ({
     if (isOpen) {
       let initialCount = parseInt(stringCount, 10) || 1;
 
-      if (stationId === 'BH18') {
+      if (isBh18Station(stationId)) {
         const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(' ').toUpperCase();
         const isElbow = itemIdentifier.includes("ELBOW") || itemIdentifier.includes("BOCHT") || itemIdentifier.includes("ELB");
         const isSpecialElbow = itemIdentifier.includes("AB/AB") || itemIdentifier.includes("SB/SB");
-        
-        const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
-        const dia = match ? parseInt(match[1], 10) : parseInt(order?.diameter || order?.dn || 0, 10);
-        
-        if (dia > 0 && dia < 125) {
+
+        const dia = getOrderNominalDiameter(order);
+
+        // BH18-regel: alle diameters > 200 krijgen altijd 2 labels.
+        if (dia > 200) {
+          initialCount = 2;
+        } else if (dia > 0 && dia < 125) {
           initialCount = 1;
         } else if (dia >= 125 && isElbow && !isSpecialElbow) {
           initialCount = 2;
@@ -1169,7 +1185,9 @@ const ProductionStartModal = ({
         : isFlangeOrder
         ? Math.max(1, Number(flangeSeriesInfo?.cavityCount || 1))
         : Math.max(1, parseInt(stringCount, 10) || 1);
-      const labelsToPrint = isFlangeOrder ? 0 : Math.max(1, parseInt(labelCount, 10) || 1);
+      const requestedLabelsToPrint = isFlangeOrder ? 0 : Math.max(1, parseInt(labelCount, 10) || 1);
+      const bh18ForcedLabels = isBh18Station(stationId) && getOrderNominalDiameter(order) > 200 ? 2 : null;
+      const labelsToPrint = bh18ForcedLabels ?? requestedLabelsToPrint;
       const normalizedRunStationId = String(stationId || "").toUpperCase();
       const shouldPrintStringLotBatch = (normalizedRunStationId === "BH11" || normalizedRunStationId === "BH12") && totalToProduce > 1;
       let lotBatchLots: string[] = [];
@@ -1310,10 +1328,15 @@ const ProductionStartModal = ({
 
       if (!isFlangeOrder && printConfig.mode === "queue" && labelsToPrint > 0 && selectedLabel && printData) {
         try {
+          const normalizedPrintData = String(printData || "").trim();
+          if (!normalizedPrintData) {
+            throw new Error("Lege printpayload opgebouwd; label niet in queue geplaatst.");
+          }
+
           if (targetPrinter) {
             const queueJobId = await queuePrintJob(
               targetPrinter.id,
-              printData,
+              normalizedPrintData,
               {
                 description: `Label voor ${order.orderId} (Lot: ${effectiveLotNumber}) (x${labelsToPrint})`,
                 quantity: labelsToPrint,
@@ -1327,7 +1350,7 @@ const ProductionStartModal = ({
                 templateId: selectedLabel.id
               }
             );
-            console.log("[ProductionStartModal] Queue print job created:", queueJobId, "printer:", targetPrinter.id);
+            console.log("[ProductionStartModal] Queue print job created:", queueJobId, "printer:", targetPrinter.id, "zplLength:", normalizedPrintData.length);
             showSuccess(t("productionStartModal.notifications.labelsQueued", { count: labelsToPrint, printer: targetPrinter.name }));
           } else {
             showError(t("productionStartModal.errors.noPrinterConfigured", { stationId }));
@@ -1342,10 +1365,15 @@ const ProductionStartModal = ({
 
       if (printConfig.mode === "queue" && shouldPrintStringLotBatch && lotBatchPrintData) {
         try {
+          const normalizedLotBatchData = String(lotBatchPrintData || "").trim();
+          if (!normalizedLotBatchData) {
+            throw new Error("Lege string-lot payload opgebouwd; batch niet in queue geplaatst.");
+          }
+
           if (targetPrinter) {
             const queueJobId = await queuePrintJob(
               targetPrinter.id,
-              lotBatchPrintData,
+              normalizedLotBatchData,
               {
                 description: `String lotnummers voor ${order.orderId} (${lotBatchLots.length} + orderregel)` ,
                 quantity: lotBatchLots.length + 1,
@@ -1358,7 +1386,7 @@ const ProductionStartModal = ({
                 lots: lotBatchLots,
               }
             );
-            console.log("[ProductionStartModal] String lot batch queue job created:", queueJobId, "printer:", targetPrinter.id);
+            console.log("[ProductionStartModal] String lot batch queue job created:", queueJobId, "printer:", targetPrinter.id, "zplLength:", normalizedLotBatchData.length);
             showSuccess(t("productionStartModal.notifications.stringLotsQueued", { count: lotBatchLots.length, printer: targetPrinter.name }));
           } else {
             showError(t("productionStartModal.errors.noPrinterConfigured", { stationId }));

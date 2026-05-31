@@ -458,7 +458,7 @@ const ProductionTimeStandardsManager = () => {
               <FileSpreadsheet size={16} className="mt-0.5 flex-shrink-0" />
               <div>
                 <div className="font-bold">{t('productionStandards.csv_format', 'CSV Format:')}</div>
-                <code className="text-[10px] block mt-1">itemCode,machine,standardMinutes,description</code>
+                <code className="text-[10px] block mt-1">{t('productionStandards.csv_columns', 'itemCode,machine,standardMinutes,description')}</code>
                 <div className="text-[10px] mt-1">{t('productionStandards.example', 'Voorbeeld: A2E5,BH11,45,Wavistrong 160mm DN125')}</div>
               </div>
             </div>
@@ -484,7 +484,7 @@ const ProductionTimeStandardsManager = () => {
               <div>
                 <div className="font-bold">{t('productionStandards.self_learning_system', 'Zelflerend Systeem:')}</div>
                 <div className="text-[10px] mt-1">
-                  <span dangerouslySetInnerHTML={{ __html: t('productionStandards.click_analysis', { analysis: t('productionStandards.analysis'), defaultValue: 'Klik op <strong>Analyse</strong> om het systeem historische data te laten analyseren.' }) }} />
+                  <span dangerouslySetInnerHTML={{ __html: t('productionStandards.click_analysis', { analysis: t('productionStandards.analysis'), defaultValue: 'Klik op <strong>{{analysis}}</strong> om het systeem historische data te laten analyseren.' }) }} />
                   {t('productionStandards.system_comparison', 'Het systeem vergelijkt standaard tijden met werkelijke gemeten tijden en stelt updates voor.')}
                 </div>
               </div>
