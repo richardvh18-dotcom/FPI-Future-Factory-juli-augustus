@@ -59,6 +59,17 @@ type LabelOption = {
   tags?: string[];
 };
 
+type OperatorPrintRule = {
+  id?: string;
+  enabled?: boolean;
+  productType?: string;
+  minDiameter?: number;
+  maxDiameter?: number;
+  angle?: number;
+  labelCount?: number;
+  labelSize?: "large" | "small";
+};
+
 const isPermissionDeniedError = (error: any) => {
   const code = String(error?.code || "").toLowerCase();
   const message = String(error?.message || "").toLowerCase();
@@ -122,11 +133,82 @@ const normalizeStationCode = (station: unknown): string => {
 
 const isBh18Station = (station: unknown): boolean => normalizeStationCode(station) === "BH18";
 
+const isLargeLabelOption = (label: LabelOption): boolean =>
+  (Number(label.height) >= 45 && !String(label.name || "").toLowerCase().includes("smal")) ||
+  String(label.name || "").toLowerCase().includes("groot") ||
+  String(label.name || "").toLowerCase().includes("standard");
+
+const isSmallLabelOption = (label: LabelOption): boolean =>
+  String(label.name || "").toLowerCase().includes("smal") || Number(label.height) < 45;
+
+const getNormalizedLabelTags = (label: LabelOption): string[] =>
+  (Array.isArray(label.tags) ? label.tags : [])
+    .map((tag) => String(tag || "").trim().toUpperCase())
+    .filter(Boolean);
+
+const getOrderCodeTags = (order: any): string[] => {
+  const orderText = [order?.item, order?.itemCode, order?.itemDescription, order?.description, order?.extraCode]
+    .map((value) => String(value || "").toUpperCase())
+    .join(" ");
+  return Array.from(new Set(orderText.match(/\bA\d[A-Z]\d\b/g) || []));
+};
+
+const hasSpecificOrderCodeTag = (label: LabelOption): boolean =>
+  getNormalizedLabelTags(label).some((tag) => /^A\d[A-Z]\d$/.test(tag));
+
 const getOrderNominalDiameter = (order: any): number => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
   const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
   const parsed = match ? parseInt(match[1], 10) : parseInt(String(order?.diameter || order?.dn || "0"), 10);
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getOrderAngle = (order: any): number | null => {
+  const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
+  const degreeMatch = itemIdentifier.match(/\b(11\.25|22\.5|30|45|60|90)\s*(?:DEG|GR|°)?\b/);
+  if (!degreeMatch) return null;
+  const angle = Number.parseFloat(degreeMatch[1]);
+  return Number.isFinite(angle) ? angle : null;
+};
+
+const getOrderProductTypeKey = (order: any): string => {
+  const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
+  if (itemIdentifier.includes("ELB") || itemIdentifier.includes("BOCHT")) return "ELBOW";
+  if (itemIdentifier.includes("FLANGE") || itemIdentifier.includes("FLENS")) return "FLANGE";
+  if (itemIdentifier.includes("UNEQUAL") || itemIdentifier.includes("VERLOOP TEE")) return "UNEQUAL-TEE";
+  if (itemIdentifier.includes("TEE")) return "EQUAL-TEE";
+  if (itemIdentifier.includes("REDUCER") || itemIdentifier.includes("VERLOOP")) return "REDUCER";
+  if (itemIdentifier.includes("COUPLER") || itemIdentifier.includes("MOF")) return "COUPLER";
+  if (itemIdentifier.includes("ADAPTOR") || itemIdentifier.includes("ADAPTER")) return "ADAPTOR";
+  return "OTHER";
+};
+
+const resolveOperatorPrintRule = (order: any, rules: OperatorPrintRule[] | null | undefined): OperatorPrintRule | null => {
+  const list = Array.isArray(rules) ? rules : [];
+  if (list.length === 0) return null;
+
+  const diameter = getOrderNominalDiameter(order);
+  const angle = getOrderAngle(order);
+  const productType = getOrderProductTypeKey(order);
+
+  return (
+    list.find((rule) => {
+      if (rule?.enabled === false) return false;
+
+      const ruleType = String(rule?.productType || "ANY").toUpperCase();
+      if (ruleType !== "ANY" && ruleType !== productType) return false;
+
+      if (typeof rule?.minDiameter === "number" && diameter < rule.minDiameter) return false;
+      if (typeof rule?.maxDiameter === "number" && diameter > rule.maxDiameter) return false;
+
+      if (typeof rule?.angle === "number") {
+        if (angle === null) return false;
+        if (Math.abs(angle - rule.angle) > 0.001) return false;
+      }
+
+      return true;
+    }) || null
+  );
 };
 
 const ProductionStartModal = ({
@@ -194,6 +276,8 @@ const ProductionStartModal = ({
   const [isCheckingLot, setIsCheckingLot] = useState(false);
   const [lotError, setLotError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
+  const [manualMinimumSeq, setManualMinimumSeq] = useState<number | null>(null);
+  const [manualPoolHint, setManualPoolHint] = useState("");
   const isManualMode = mode === "manual";
   const flangeSeriesInfo = useMemo(
     () =>
@@ -280,12 +364,20 @@ const ProductionStartModal = ({
   }), [order, isManualMode, manualOrderInput, manualLotInput, lotNumber]);
 
   const { selectedLabel, previewData, availableLabels: allLabels, loadingLabels } = useLabelPreview(productForPreview, selectedLabelId);
+  const matchedOperatorPrintRule = useMemo(
+    () => resolveOperatorPrintRule(order, generalSettings?.labelPrintRules as OperatorPrintRule[] | undefined),
+    [order, generalSettings?.labelPrintRules]
+  );
 
   useEffect(() => {
     if (isOpen) {
       let initialCount = parseInt(stringCount, 10) || 1;
 
-      if (isBh18Station(stationId)) {
+      if (!isFlangeOrder && typeof matchedOperatorPrintRule?.labelCount === "number" && matchedOperatorPrintRule.labelCount > 0) {
+        initialCount = matchedOperatorPrintRule.labelCount;
+      }
+
+      if (isBh18Station(stationId) && !matchedOperatorPrintRule) {
         const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(' ').toUpperCase();
         const isElbow = itemIdentifier.includes("ELBOW") || itemIdentifier.includes("BOCHT") || itemIdentifier.includes("ELB");
         const isSpecialElbow = itemIdentifier.includes("AB/AB") || itemIdentifier.includes("SB/SB");
@@ -304,9 +396,9 @@ const ProductionStartModal = ({
         }
       }
 
-      setLabelCount((prev) => normalizePositiveIntInput(prev, initialCount));
+      setLabelCount(String(Math.max(1, initialCount)));
     }
-  }, [isOpen, stringCount, stationId, order]);
+  }, [isOpen, stringCount, stationId, order, isFlangeOrder, matchedOperatorPrintRule]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -392,6 +484,22 @@ const ProductionStartModal = ({
   const availableLabels = useMemo(() => {
     if (!allLabels || allLabels.length === 0) return [];
     let filteredLabels = filterLabelsByProduct(allLabels, order, { excludeTempOrderLabels: true }) as LabelOption[];
+    const orderCodeTags = getOrderCodeTags(order);
+
+    // Zorg dat exacte A-code templates (bijv. A1Q1) zichtbaar blijven in de modal.
+    if (orderCodeTags.length > 0) {
+      const exactCodeLabels = allLabels.filter((label: LabelOption) => {
+        const normalizedTags = getNormalizedLabelTags(label);
+        return orderCodeTags.some((codeTag) => normalizedTags.includes(codeTag));
+      }) as LabelOption[];
+
+      if (exactCodeLabels.length > 0) {
+        const merged = [...filteredLabels, ...exactCodeLabels];
+        filteredLabels = merged.filter(
+          (label, index, array) => index === array.findIndex((candidate) => String(candidate.id) === String(label.id))
+        );
+      }
+    }
     
     // Sortering voor BH18: Grote labels eerst
     if (stationId === 'BH18') {
@@ -477,20 +585,12 @@ const ProductionStartModal = ({
             return;
           }
 
-          // NIEUW: Kies bij voorkeur een code label
-          const preferred = availableLabels.find((t: LabelOption) => 
-            Array.isArray(t.tags) && t.tags.includes("CODE")
-          );
-
-          if (preferred) {
-            if (preferred.id !== selectedLabelId) setSelectedLabelId(preferred.id);
-            return;
-          }
-
-          // Voor niet-FL: BH18 krijgt standaard groot, overige stations klein.
-          let preferLarge = stationId === 'BH18';
+          // Voor niet-FL: eerst operatorregel (groot/klein), daarna BH18 fallback.
+          let preferLarge = matchedOperatorPrintRule?.labelSize
+            ? matchedOperatorPrintRule.labelSize === "large"
+            : stationId === 'BH18';
           
-          if (stationId === 'BH18') {
+          if (stationId === 'BH18' && !matchedOperatorPrintRule?.labelSize) {
              const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(' ').toUpperCase();
              const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
              const dia = match ? parseInt(match[1], 10) : parseInt(order?.diameter || order?.dn || 0, 10);
@@ -499,13 +599,32 @@ const ProductionStartModal = ({
              }
           }
           
-          let defaultLabel = preferLarge ? availableLabels.find(
-                 (l: LabelOption) => (Number(l.height) >= 45 && !String(l.name || "").toLowerCase().includes("smal")) || 
-                   String(l.name || "").toLowerCase().includes("groot") || 
-                   String(l.name || "").toLowerCase().includes("standard")
-          ) : availableLabels.find(
-                 (l: LabelOption) => String(l.name || "").toLowerCase().includes("smal") || Number(l.height) < 45
+          const orderCodeTags = getOrderCodeTags(order);
+          const exactCodeLabels = availableLabels.filter((label: LabelOption) => {
+            const normalizedTags = getNormalizedLabelTags(label);
+            return orderCodeTags.some((codeTag) => normalizedTags.includes(codeTag));
+          });
+          const codeLabels = availableLabels.filter((label: LabelOption) =>
+            getNormalizedLabelTags(label).includes("CODE")
           );
+          const genericCodeLabels = codeLabels.filter((label: LabelOption) => !hasSpecificOrderCodeTag(label));
+          const nonSpecificLabels = availableLabels.filter((label: LabelOption) => !hasSpecificOrderCodeTag(label));
+          const candidateLabels =
+            exactCodeLabels.length > 0
+              ? exactCodeLabels
+              : genericCodeLabels.length > 0
+                ? genericCodeLabels
+                : nonSpecificLabels.length > 0
+                  ? nonSpecificLabels
+                  : availableLabels;
+
+          let defaultLabel = preferLarge
+            ? candidateLabels.find((label: LabelOption) => isLargeLabelOption(label))
+            : candidateLabels.find((label: LabelOption) => isSmallLabelOption(label));
+
+          if (!defaultLabel) {
+            defaultLabel = candidateLabels[0] || availableLabels[0];
+          }
 
           const labelToSelect = defaultLabel?.id || availableLabels[0]?.id;
           
@@ -518,7 +637,7 @@ const ProductionStartModal = ({
       }
     };
     setDefaultLabel();
-  }, [isOpen, order, availableLabels, loadingLabels, stationId, isFlangeOrder, hasFlInArticle, selectedLabelId]);
+  }, [isOpen, order, availableLabels, loadingLabels, stationId, isFlangeOrder, hasFlInArticle, selectedLabelId, matchedOperatorPrintRule]);
   
   // 1b. Operators ophalen voor dit station
   useEffect(() => {
@@ -976,25 +1095,38 @@ const ProductionStartModal = ({
   }, [isOpen, order, mode, stationId, isFlangeOrder, hasFlInArticle, normalizedStationNoPrefix]);
 
   const updateCounterOnStart = async (usedLotNumber: string, count: number) => {
-      if (!usedLotNumber || mode !== "auto") return;
+      if (!usedLotNumber) return;
       try {
+          const normalizedLot = String(usedLotNumber || "").replace(/\D/g, "");
           const d = new Date();
           const iso = getIsoWeekAndYear(d);
-          const year = iso.year.slice(-2);
-          const week = iso.week;
+          const lotWeekSuffix = normalizedLot.length >= 6 ? normalizedLot.slice(2, 6) : "";
+          const weekSuffix = /^\d{4}$/.test(lotWeekSuffix)
+            ? lotWeekSuffix
+            : `${iso.year.slice(-2)}${iso.week}`;
           
           const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
-          const counterDocId = `${safeStationId}_${year}${week}`;
+          const counterDocId = `${safeStationId}_${weekSuffix}`;
           const counterRef = doc(db, "future-factory", "production", "counters", counterDocId);
           
-          const currentSeq = parseInt(usedLotNumber.slice(-5), 10);
-          const newMax = currentSeq + (count - 1);
+          const currentSeq = parseInt(usedLotNumber.slice(-4), 10);
+          if (!Number.isFinite(currentSeq)) {
+            throw new Error("Kan volgnummer uit lotnummer niet bepalen.");
+          }
+
+          const candidateMax = currentSeq + (Math.max(1, Number(count) || 1) - 1);
           const counterSnap = await getDoc(counterRef);
           const counterData = counterSnap.exists() ? (counterSnap.data() || {}) : {};
+          const lastSequence = Number.isFinite(Number(counterData.lastSequence))
+            ? Number(counterData.lastSequence)
+            : 0;
+          const newMax = Math.max(lastSequence, candidateMax);
           const recycled = Array.isArray(counterData.recycledSequences)
             ? counterData.recycledSequences.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
             : [];
-          const nextRecycled = recycled.filter((n: number) => n !== currentSeq);
+          const rangeStart = currentSeq;
+          const rangeEnd = candidateMax;
+          const nextRecycled = recycled.filter((n: number) => n < rangeStart || n > rangeEnd);
 
           await setDoc(counterRef, { lastSequence: newMax, recycledSequences: nextRecycled, updatedAt: serverTimestamp() }, { merge: true });
 
@@ -1156,6 +1288,57 @@ const ProductionStartModal = ({
     lastLotInputAtRef.current = now;
   };
 
+  useEffect(() => {
+    if (!isOpen || !isManualMode || !orderValidated) {
+      setManualMinimumSeq(null);
+      setManualPoolHint("");
+      return;
+    }
+
+    const normalizedManualLot = String(manualLotInput || "").replace(/\D/g, "");
+    if (normalizedManualLot.length !== 15) {
+      setManualMinimumSeq(null);
+      setManualPoolHint("");
+      return;
+    }
+
+    const manualBaseLot = normalizedManualLot.slice(0, -4);
+    const manualWeekSuffix = normalizedManualLot.slice(2, 6);
+    const enteredSeq = parseInt(normalizedManualLot.slice(-4), 10);
+    if (!manualBaseLot || !/^\d{4}$/.test(manualWeekSuffix)) {
+      setManualMinimumSeq(null);
+      setManualPoolHint("");
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const highestSeq = await getHighestSequenceForBaseLot(manualBaseLot, stationId, manualWeekSuffix);
+        if (cancelled) return;
+
+        const minimumNextSeq = Math.max(1, highestSeq + 1);
+        setManualMinimumSeq(minimumNextSeq);
+
+        if (Number.isFinite(enteredSeq) && enteredSeq < minimumNextSeq) {
+          setManualPoolHint(`Minimaal toegestaan volgnummer: ${String(minimumNextSeq).padStart(4, "0")}`);
+        } else {
+          setManualPoolHint(`Pool loopt door. Minimaal: ${String(minimumNextSeq).padStart(4, "0")}`);
+        }
+      } catch {
+        if (!cancelled) {
+          setManualMinimumSeq(null);
+          setManualPoolHint("");
+        }
+      }
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isOpen, isManualMode, orderValidated, manualLotInput, stationId, existingProducts]);
+
   const canStartManual = isManualMode && orderValidated && !!manualLotInput.trim() && !orderError && !lotError && !isCheckingLot;
   const canStartAuto = !isManualMode && !!lotNumber && !isCheckingLot && !lotError;
 
@@ -1186,8 +1369,11 @@ const ProductionStartModal = ({
         ? Math.max(1, Number(flangeSeriesInfo?.cavityCount || 1))
         : Math.max(1, parseInt(stringCount, 10) || 1);
       const requestedLabelsToPrint = isFlangeOrder ? 0 : Math.max(1, parseInt(labelCount, 10) || 1);
-      const bh18ForcedLabels = isBh18Station(stationId) && getOrderNominalDiameter(order) > 200 ? 2 : null;
-      const labelsToPrint = bh18ForcedLabels ?? requestedLabelsToPrint;
+      const operatorForcedLabels = !isFlangeOrder && typeof matchedOperatorPrintRule?.labelCount === "number" && matchedOperatorPrintRule.labelCount > 0
+        ? matchedOperatorPrintRule.labelCount
+        : null;
+      const bh18ForcedLabels = operatorForcedLabels === null && isBh18Station(stationId) && getOrderNominalDiameter(order) > 200 ? 2 : null;
+      const labelsToPrint = operatorForcedLabels ?? bh18ForcedLabels ?? requestedLabelsToPrint;
       const normalizedRunStationId = String(stationId || "").toUpperCase();
       const shouldPrintStringLotBatch = (normalizedRunStationId === "BH11" || normalizedRunStationId === "BH12") && totalToProduce > 1;
       let lotBatchLots: string[] = [];
@@ -1197,22 +1383,28 @@ const ProductionStartModal = ({
 
       if (!isManualMode) {
         targetPrinter = await resolveTargetPrinterAsync();
-        try {
-          effectiveLotNumber = await claimAutoLotRange(totalToProduce);
-        } catch (counterErr: any) {
-          if (!isPermissionDeniedError(counterErr)) {
-            throw counterErr;
-          }
+        const previewLotCandidate = String(lotNumber || "").trim();
+        // Gebruik eerst het lot dat al in auto-preview staat om verspringen te voorkomen.
+        if (previewLotCandidate) {
+          effectiveLotNumber = previewLotCandidate;
+        } else {
+          try {
+            effectiveLotNumber = await claimAutoLotRange(totalToProduce);
+            counterClaimed = true;
+          } catch (counterErr: any) {
+            if (!isPermissionDeniedError(counterErr)) {
+              throw counterErr;
+            }
 
-          if (!counterPermissionWarnedRef.current) {
-            counterPermissionWarnedRef.current = true;
-            console.warn("Counter transactie geweigerd; fallback lot-allocatie zonder counter wordt gebruikt.");
-          }
+            if (!counterPermissionWarnedRef.current) {
+              counterPermissionWarnedRef.current = true;
+              console.warn("Counter transactie geweigerd; fallback lot-allocatie zonder counter wordt gebruikt.");
+            }
 
-          notify("Beperkte rechten op counters gedetecteerd. Fallback lot-allocatie actief.");
-          effectiveLotNumber = await claimAutoLotRangeWithoutCounter(totalToProduce);
+            notify("Beperkte rechten op counters gedetecteerd. Fallback lot-allocatie actief.");
+            effectiveLotNumber = await claimAutoLotRangeWithoutCounter(totalToProduce);
+          }
         }
-        counterClaimed = true;
         setLotNumber(effectiveLotNumber);
 
         // Failsafe: ook na counter-claim expliciet controleren op bestaand lot (tracking + archief).
@@ -1225,7 +1417,24 @@ const ProductionStartModal = ({
           const candidateLot = `${String(effectiveLotNumber).slice(0, -4)}${String(autoStartSeq + i).padStart(4, "0")}`;
           const exists = await checkLotNumberExists(candidateLot);
           if (exists) {
-            throw new Error(t("productionStartModal.errors.lotAlreadyExistsRetry", { lot: candidateLot }));
+            try {
+              effectiveLotNumber = await claimAutoLotRange(totalToProduce);
+              counterClaimed = true;
+            } catch (counterErr: any) {
+              if (!isPermissionDeniedError(counterErr)) {
+                throw counterErr;
+              }
+
+              if (!counterPermissionWarnedRef.current) {
+                counterPermissionWarnedRef.current = true;
+                console.warn("Counter transactie geweigerd na collision; fallback lot-allocatie zonder counter wordt gebruikt.");
+              }
+
+              notify("Beperkte rechten op counters gedetecteerd. Fallback lot-allocatie actief.");
+              effectiveLotNumber = await claimAutoLotRangeWithoutCounter(totalToProduce);
+            }
+            setLotNumber(effectiveLotNumber);
+            break;
           }
         }
 
@@ -1250,6 +1459,24 @@ const ProductionStartModal = ({
         if (machineCodeError) {
           setLotError(machineCodeError);
           throw new Error(machineCodeError);
+        }
+
+        // Manual mode moet uit dezelfde tellerpool komen en altijd doorlopen.
+        const normalizedManualLot = String(effectiveLotNumber || "").replace(/\D/g, "");
+        const manualBaseLot = String(effectiveLotNumber || "").slice(0, -4);
+        const manualSeq = parseInt(String(effectiveLotNumber || "").slice(-4), 10);
+        const manualWeekSuffix = normalizedManualLot.length >= 6
+          ? normalizedManualLot.slice(2, 6)
+          : "";
+
+        if (!manualBaseLot || !Number.isFinite(manualSeq) || !/^\d{4}$/.test(manualWeekSuffix)) {
+          throw new Error(t("productionStartModal.errors.manualLotMustEndWith4Digits"));
+        }
+
+        const highestSeq = await getHighestSequenceForBaseLot(manualBaseLot, stationId, manualWeekSuffix);
+        const minimumNextSeq = Math.max(1, highestSeq + 1);
+        if (manualSeq < minimumNextSeq) {
+          throw new Error(`Lotnummer sequence ${String(manualSeq).padStart(4, "0")} is lager dan de huidige pool (${String(minimumNextSeq).padStart(4, "0")}). Gebruik een hoger volgnummer.`);
         }
 
         // Manual mode moet ook altijd uniciteit afdwingen voor we starten.
@@ -1485,14 +1712,15 @@ const ProductionStartModal = ({
   }, [showPreviewPane, supportsStringLotBatch, previewStringCount, lotNumber]);
 
   const shouldShowStringLotPreview = showPreviewPane && supportsStringLotBatch && previewStringCount > 1;
+  const isCompactAutoLayout = mode === "auto" && !isFlangeOrder;
 
   if (!isOpen || !order || location.pathname.includes("/login")) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/90 z-[100] flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in fade-in">
-      <div className={`bg-white w-full max-w-6xl h-full md:h-[85vh] rounded-[40px] shadow-2xl flex flex-col md:flex-row overflow-hidden border border-white/10 transition-all duration-300`}>
+    <div className="fixed inset-0 bg-slate-900/90 z-[100] flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in fade-in overflow-hidden">
+      <div className={`bg-white w-full max-w-6xl h-[calc(100dvh-1rem)] md:h-[85dvh] rounded-[40px] shadow-2xl flex flex-col md:flex-row overflow-hidden border border-white/10 transition-all duration-300`}>
         {/* LINKS: CONFIGURATIE */}
-        <div className={`${showPreviewPane ? "w-full md:w-1/3" : "w-full"} p-4 ${showPreviewPane ? "border-r" : ""} border-slate-100 flex flex-col bg-slate-50/50 overflow-y-auto custom-scrollbar`}>
+        <div className={`${showPreviewPane ? "w-full md:w-1/3" : "w-full"} ${isCompactAutoLayout ? "p-3 md:p-3.5" : "p-4"} ${showPreviewPane ? "border-r" : ""} border-slate-100 flex flex-col bg-slate-50/50 overflow-y-auto custom-scrollbar`}>
           <div className="flex justify-between items-start mb-4">
             <div className="text-left">
               <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">
@@ -1510,9 +1738,9 @@ const ProductionStartModal = ({
             </button>
           </div>
 
-          <div className="space-y-4 flex-1 text-left">
+          <div className={`${isCompactAutoLayout ? "space-y-2.5" : "space-y-4"} flex-1 text-left`}>
             {/* Dossier info kaart */}
-            <div className="bg-white p-4 rounded-2xl border-2 border-slate-100 shadow-sm text-left">
+            <div className={`bg-white ${isCompactAutoLayout ? "p-3" : "p-4"} rounded-2xl border-2 border-slate-100 shadow-sm text-left`}>
               <div className="flex items-center gap-2 mb-1.5">
                 <div className="p-1.5 bg-slate-900 text-white rounded-lg">
                   <FileText size={14} />
@@ -1537,7 +1765,9 @@ const ProductionStartModal = ({
               {order.notes && (
                 <div className="mt-2 pt-2 border-t border-slate-100">
                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{t("productionStartModal.labels.poTextNotes", "PO-tekst / opmerkingen")}</span>
-                  <p className="text-xs font-medium text-slate-600 italic">{order.notes}</p>
+                  <p className="text-xs font-medium text-slate-600 italic mt-1 max-h-20 overflow-y-auto pr-1 leading-snug break-words custom-scrollbar">
+                    {order.notes}
+                  </p>
                 </div>
               )}
             </div>
@@ -1602,8 +1832,8 @@ const ProductionStartModal = ({
 
             {/* Lot invoer sectie */}
             {mode === "auto" ? (
-              <div className="space-y-3 animate-in slide-in-from-top-2 text-left">
-                <div className="bg-slate-900 p-4 rounded-2xl text-center shadow-xl border border-white/5 relative overflow-hidden">
+              <div className={`${isCompactAutoLayout ? "space-y-2" : "space-y-3"} animate-in slide-in-from-top-2 text-left`}>
+                <div className={`bg-slate-900 ${isCompactAutoLayout ? "p-3" : "p-4"} rounded-2xl text-center shadow-xl border border-white/5 relative overflow-hidden`}>
                   <div className="absolute top-0 right-0 p-3 opacity-5">
                     <QrCode size={48} />
                   </div>
@@ -1618,11 +1848,11 @@ const ProductionStartModal = ({
                   </div>
                   {lotError && <p className="text-red-400 text-xs mt-2 font-bold">{lotError}</p>}
                 </div>
-                <div className="space-y-1 text-left">
+                <div className={`${isCompactAutoLayout ? "space-y-0.5" : "space-y-1"} text-left`}>
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2 block">
                     {t("productionStartModal.labels.totalQuantity", "Totaal aantal")}
                   </label>
-                  <div className="flex items-center gap-3 bg-white p-3 rounded-xl border-2 border-slate-100 focus-within:border-blue-500 transition-all shadow-sm">
+                  <div className={`flex items-center gap-3 bg-white ${isCompactAutoLayout ? "p-2.5" : "p-3"} rounded-xl border-2 border-slate-100 focus-within:border-blue-500 transition-all shadow-sm`}>
                     <Layers size={18} className="text-blue-500" />
                     <input
                       type="number"
@@ -1645,11 +1875,11 @@ const ProductionStartModal = ({
                   )}
                 </div>
                 {!isFlangeOrder && (
-                  <div className="space-y-1 text-left">
+                  <div className={`${isCompactAutoLayout ? "space-y-0.5" : "space-y-1"} text-left`}>
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2 block">
                       {t("productionStartModal.labels.labelsToPrint", "Aantal labels printen")}
                     </label>
-                    <div className="flex items-center gap-3 bg-white p-3 rounded-xl border-2 border-slate-100 focus-within:border-blue-500 transition-all shadow-sm">
+                    <div className={`flex items-center gap-3 bg-white ${isCompactAutoLayout ? "p-2.5" : "p-3"} rounded-xl border-2 border-slate-100 focus-within:border-blue-500 transition-all shadow-sm`}>
                       <Printer size={18} className="text-blue-500" />
                       <input
                         type="number"
@@ -1761,12 +1991,15 @@ const ProductionStartModal = ({
                   {lotError && (
                     <p className="text-xs font-bold text-red-500 mt-1 pl-2">{lotError}</p>
                   )}
+                  {!lotError && manualMinimumSeq !== null && manualPoolHint && (
+                    <p className="text-[11px] font-bold text-slate-500 mt-1 pl-2">{manualPoolHint}</p>
+                  )}
                 </div>
               </div>
             )}
 
             {/* Label selectie */}
-            {!isManualMode && !isFlangeOrder && <div className="pt-3 border-t border-slate-200 text-left">
+            {!isManualMode && !isFlangeOrder && <div className={`${isCompactAutoLayout ? "pt-2" : "pt-3"} border-t border-slate-200 text-left`}>
               <label className="text-[9px] font-black text-slate-400 uppercase block mb-1.5 ml-2 flex items-center gap-2">
                 {t("productionStartModal.labels.labelFormat", "Labelformaat")}
               </label>
@@ -1801,10 +2034,10 @@ const ProductionStartModal = ({
             </div>}
           </div>
 
-          <div className="mt-4 pt-4 border-t border-slate-200 flex gap-3">
+          <div className={`${isCompactAutoLayout ? "mt-3 pt-3" : "mt-4 pt-4"} border-t border-slate-200 flex gap-3`}>
             <button
               onClick={onClose}
-              className="flex-1 py-5 bg-white border-2 border-slate-100 text-slate-400 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 transition-all"
+              className={`flex-1 ${isCompactAutoLayout ? "py-3.5" : "py-5"} bg-white border-2 border-slate-100 text-slate-400 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-100 transition-all`}
             >
               {t("common.cancel")}
             </button>
@@ -1815,7 +2048,7 @@ const ProductionStartModal = ({
                 (isManualMode && !canStartManual) ||
                 (!isManualMode && !canStartAuto)
               }
-              className={`flex-[2] py-5 rounded-2xl font-black uppercase text-[10px] tracking-[0.15em] shadow-xl transition-all flex items-center justify-center gap-3 active:scale-95 ${
+              className={`flex-[2] ${isCompactAutoLayout ? "py-3.5" : "py-5"} rounded-2xl font-black uppercase text-[10px] tracking-[0.15em] shadow-xl transition-all flex items-center justify-center gap-3 active:scale-95 ${
                 isManualMode && canStartManual
                   ? "bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-600/50 animate-pulse"
                   : "bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"

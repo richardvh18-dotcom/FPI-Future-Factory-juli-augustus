@@ -6,7 +6,7 @@ import { PATHS, getPathString } from '../../config/dbPaths';
 import { Loader2, Printer, Search, RefreshCw, Send, X, Tag, Usb } from 'lucide-react';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { generateLotBatchZPL } from '../../utils/zplHelper';
-import { getDriver } from '../../utils/printerDrivers';
+import { resolvePrinterDpi } from '../../utils/printerDrivers';
 import { getISOWeekInfo, getStationMachineCode } from '../../utils/lotLogic';
 import AutoScaledLabelPreview from './AutoScaledLabelPreview';
 import { useLabelCatalog } from '../../hooks/useLabelCatalog';
@@ -454,11 +454,7 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: Lot
         lots.push(`${baseLot}${currentNum}`);
       }
 
-      const driverDpi = Number(getDriver(printer)?.nativeDpi);
-      const parsedDpi = printer?.dpi ? parseInt(String(printer.dpi), 10) : NaN;
-      const dpi = Number.isFinite(driverDpi) && driverDpi > 0
-        ? driverDpi
-        : (Number.isFinite(parsedDpi) && parsedDpi > 0 ? parsedDpi : 203);
+      const dpi = resolvePrinterDpi(printer as Record<string, unknown>, 203);
       const darkness = printer?.darkness ? parseInt(String(printer.darkness), 10) : 15;
       const zplBatch = generateLotBatchZPL({
         lots,
@@ -738,13 +734,7 @@ const PrintStationView = () => {
   }, [factoryConfig, stationGroups]);
 
   const printerDpi = useMemo(() => {
-    const parsed = parseInt(String(activeQueuePrinter?.dpi ?? ''), 10);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-
-    const driverDpi = Number(getDriver(activeQueuePrinter)?.nativeDpi);
-    if (Number.isFinite(driverDpi) && driverDpi > 0) return driverDpi;
-
-    return 203;
+    return resolvePrinterDpi(activeQueuePrinter as Record<string, unknown>, 203);
   }, [activeQueuePrinter]);
 
   const printerDarkness = useMemo(() => {

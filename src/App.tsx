@@ -25,6 +25,7 @@ import ToastContainer from "./components/notifications/ToastContainer";
 import ConfirmDialog from "./components/notifications/ConfirmDialog";
 import BackgroundTaskOverlay from "./components/notifications/BackgroundTaskOverlay";
 import ProgressToast from "./components/digitalplanning/ProgressToast";
+import PrintQueueAutoProcessor from "./components/printer/PrintQueueAutoProcessor";
 
 // Hooks
 import { useAdminAuth } from "./hooks/useAdminAuth";
@@ -504,6 +505,7 @@ const App = () => {
           <ConfirmDialog />
           <BackgroundTaskOverlay />
           <ProgressToast />
+          <PrintQueueAutoProcessor enabled={Boolean(user && role !== "guest" && pathname !== "/printer-queue")} />
           {content}
         </BackgroundTaskProvider>
     </NotificationProvider>

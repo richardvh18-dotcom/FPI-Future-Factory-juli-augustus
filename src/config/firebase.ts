@@ -29,6 +29,39 @@ const getErrorMessage = (error: unknown): string => {
   return "";
 };
 
+const sanitizeForFirestore = (value: unknown, seen = new WeakSet<object>()): unknown => {
+  if (value === undefined || value === null) return null;
+
+  const valueType = typeof value;
+  if (valueType === "string" || valueType === "number" || valueType === "boolean") {
+    return value;
+  }
+  if (valueType === "bigint") return String(value);
+  if (valueType === "function" || valueType === "symbol") return String(value);
+
+  if (value instanceof Date) return value;
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeForFirestore(entry, seen));
+  }
+
+  if (valueType === "object") {
+    const obj = value as Record<string, unknown>;
+    if (seen.has(obj)) return "[circular]";
+    seen.add(obj);
+
+    const cleaned: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(obj)) {
+      cleaned[key] = sanitizeForFirestore(entry, seen);
+    }
+
+    seen.delete(obj);
+    return cleaned;
+  }
+
+  return String(value);
+};
+
 /**
  * Firebase Configuratie - Project: future-factory-377ef
  */
@@ -108,7 +141,7 @@ export const logActivity = async (userId: string, action: string, details: unkno
       userId,
       userEmail: auth.currentUser?.email || "Systeem",
       action,
-      details,
+      details: sanitizeForFirestore(details),
       year,
       month,
       yearMonth,
