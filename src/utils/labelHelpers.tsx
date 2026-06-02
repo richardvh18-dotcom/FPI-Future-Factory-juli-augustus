@@ -44,22 +44,84 @@ export const LABEL_SIZES = {
 
 // --- HULPFUNCTIES VOOR PARSING ---
 
-// Converteert mm naar inches (afgerond op halve inches)
-const toInches = (mm: unknown): string => {
-  if (!mm) return "";
-  const num = parseFloat(String(mm));
-  if (isNaN(num)) return "";
-  const inches = num / 25.4;
-  // Rond af op 0.5: (x * 2 -> round -> / 2)
-  const rounded = Math.round(inches * 2) / 2;
-  return `(${rounded}")`;
+const MM_TO_INCH_TABLE: Record<number, number> = {
+  25: 1,
+  40: 1.5,
+  50: 2,
+  65: 2.5,
+  80: 3,
+  100: 4,
+  125: 5,
+  150: 6,
+  200: 8,
+  250: 10,
+  300: 12,
+  350: 14,
+  400: 16,
+  450: 18,
+  500: 20,
+  600: 24,
+  700: 28,
+  750: 30,
+  800: 32,
+  900: 36,
 };
 
-// Converteert Bar naar PSI (afgerond op geheel getal)
+const EST_BAR_TO_PSI_TABLE: Array<{ bar: number; psi: number; estLabel: string }> = [
+  { bar: 50, psi: 725, estLabel: "50" },
+  { bar: 40, psi: 575, estLabel: "40" },
+  { bar: 32, psi: 450, estLabel: "32" },
+  { bar: 25, psi: 350, estLabel: "25" },
+  { bar: 20, psi: 275, estLabel: "20" },
+  { bar: 16, psi: 225, estLabel: "16" },
+  { bar: 12.5, psi: 175, estLabel: "12.5" },
+  { bar: 10, psi: 145, estLabel: "10" },
+  { bar: 8, psi: 115, estLabel: "08" },
+];
+
+const formatInchValue = (value: number): string => {
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+};
+
+const toRoundedInchValue = (mm: unknown): number | null => {
+  const num = parseFloat(String(mm));
+  if (isNaN(num) || num <= 0) return null;
+
+  if (Object.prototype.hasOwnProperty.call(MM_TO_INCH_TABLE, num)) {
+    return MM_TO_INCH_TABLE[num as keyof typeof MM_TO_INCH_TABLE];
+  }
+
+  // Businessregel: inch = mm * 4 / 100, met 0.5 stap tot ID 80 en anders op hele inch.
+  const inchRaw = (num * 4) / 100;
+  if (num <= 80) return Math.round(inchRaw * 2) / 2;
+  return Math.round(inchRaw);
+};
+
+const getMappedPsi = (bar: number): number | null => {
+  const mapped = EST_BAR_TO_PSI_TABLE.find((entry) => Math.abs(entry.bar - bar) < 0.0001);
+  return mapped ? mapped.psi : null;
+};
+
+const getEstBarDisplay = (bar: number): string => {
+  const mapped = EST_BAR_TO_PSI_TABLE.find((entry) => Math.abs(entry.bar - bar) < 0.0001);
+  return mapped ? mapped.estLabel : String(bar);
+};
+
+// Converteert mm naar inches volgens tabel + business-afronding
+const toInches = (mm: unknown): string => {
+  const inchValue = toRoundedInchValue(mm);
+  if (inchValue === null) return "";
+  return `(${formatInchValue(inchValue)}")`;
+};
+
+// Converteert Bar naar PSI met EST-tabel als primaire bron
 const barToPsi = (bar: unknown): number | string => {
   const num = parseFloat(String(bar));
   if (isNaN(num)) return "";
-  return Math.round(num * 14.5038);
+  const mappedPsi = getMappedPsi(num);
+  if (mappedPsi !== null) return mappedPsi;
+  return Math.round(num * 14.5);
 };
 
 // Zoekt drukklasse (EST20, CST16, EMT25, EDF11)
@@ -70,6 +132,7 @@ const parsePressure = (text: string): string => {
   if (match) {
     let type = match[1].toUpperCase();
     const bar = match[2];
+    const barNum = parseFloat(bar);
 
     // Correctie: Als het EDF is (of iets anders dan de standaard 3), map naar EST?
     if (!["EST", "CST", "EMT", "EWT"].includes(type)) {
@@ -77,16 +140,18 @@ const parsePressure = (text: string): string => {
     }
 
     const psi = barToPsi(bar);
-    // Formaat: EST 20 (290psi)
-    return `${type} ${bar} (${psi}psi)`;
+    const barDisplay = type === "EST" && Number.isFinite(barNum) ? getEstBarDisplay(barNum) : bar;
+    return `${type} ${barDisplay} (${psi} psi)`;
   }
 
   // Fallback: Zoek naar PN of BAR
-  const fallbackMatch = text.match(/\b(?:PN|BAR)\s*(\d+)\b/i);
+  const fallbackMatch = text.match(/\b(?:PN|BAR)\s*(\d+(?:\.\d+)?)\b/i);
   if (fallbackMatch) {
     const bar = fallbackMatch[1];
+    const barNum = parseFloat(bar);
     const psi = barToPsi(bar);
-    return `EST ${bar} (${psi}psi)`;
+    const barDisplay = Number.isFinite(barNum) ? getEstBarDisplay(barNum) : bar;
+    return `EST ${barDisplay} (${psi} psi)`;
   }
 
   // Als alleen klasse-token aanwezig is (bijv. "EST ABAB"), toon alleen type zonder waarde.
@@ -188,9 +253,12 @@ const parseDimensions = (
     const d1 = reducerMatch[1];
     const d2 = reducerMatch[2];
     if (parseInt(d1) >= 25 && parseInt(d2) >= 25) {
-      const inch1 = Math.round((parseFloat(d1) / 25.4) * 2) / 2;
-      const inch2 = Math.round((parseFloat(d2) / 25.4) * 2) / 2;
-      return `ID: ${d1}x${d2}mm (${inch1}"x${inch2}")`;
+      const inch1 = toRoundedInchValue(d1);
+      const inch2 = toRoundedInchValue(d2);
+      if (inch1 !== null && inch2 !== null) {
+        return `ID: ${d1}x${d2}mm (${formatInchValue(inch1)}"x${formatInchValue(inch2)}")`;
+      }
+      return `ID: ${d1}x${d2}mm`;
     }
   }
 
@@ -314,15 +382,21 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
       let t = fPressMatch[1].toUpperCase();
       if (t === "EDF") t = "EST";
       const b = fPressMatch[2];
-      flangePressureLine = `${t} ${b} (${barToPsi(b)} PSI)`;
+      const barNum = parseFloat(b);
+      const barDisplay = t === "EST" && Number.isFinite(barNum) ? getEstBarDisplay(barNum) : b;
+      flangePressureLine = `${t} ${barDisplay} (${barToPsi(b)} PSI)`;
     } else {
-      const fPnMatch = desc.match(/\b(?:PN|BAR)\s*(\d+)\b/i);
+      const fPnMatch = desc.match(/\b(?:PN|BAR)\s*(\d+(?:\.\d+)?)\b/i);
       if (fPnMatch) {
         const b = fPnMatch[1];
-        flangePressureLine = `EST ${b} (${barToPsi(b)} PSI)`;
+        const barNum = parseFloat(b);
+        const barDisplay = Number.isFinite(barNum) ? getEstBarDisplay(barNum) : b;
+        flangePressureLine = `EST ${barDisplay} (${barToPsi(b)} PSI)`;
       } else if (specs?.pressure) {
         const b = specs.pressure;
-        flangePressureLine = `EST ${b} (${barToPsi(b)} PSI)`;
+        const barNum = parseFloat(String(b));
+        const barDisplay = Number.isFinite(barNum) ? getEstBarDisplay(barNum) : String(b);
+        flangePressureLine = `EST ${barDisplay} (${barToPsi(b)} PSI)`;
       }
     }
 

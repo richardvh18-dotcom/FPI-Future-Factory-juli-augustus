@@ -185,6 +185,23 @@ export const mmToDriverDots = (
   return Math.round((Number(mm) || 0) * dotsPerMm);
 };
 
+/**
+ * Bepaal de effectieve DPI voor rendering/bitmap-print.
+ * Prioriteit: expliciete printer.dpi -> driver nativeDpi -> fallback.
+ */
+export const resolvePrinterDpi = (
+  printerProfile: PrinterProfile | null,
+  fallback = 203
+): number => {
+  const parsed = Number.parseInt(String(printerProfile?.dpi ?? ''), 10);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+
+  const driverDpi = Number(getDriver(printerProfile)?.nativeDpi);
+  if (Number.isFinite(driverDpi) && driverDpi > 0) return driverDpi;
+
+  return fallback;
+};
+
 /** Normaliseer de rol-/media-instellingen uit een printerprofiel. */
 export const getPrinterRollSettings = (printer: Record<string, any> = {}) => {
   const parsedWidth = Number.parseFloat(String(printer.rollWidthMm ?? printer.width ?? '').replace(',', '.'));

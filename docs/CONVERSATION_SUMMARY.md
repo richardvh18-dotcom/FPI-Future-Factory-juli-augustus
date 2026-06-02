@@ -1,3 +1,223 @@
+## Update sessie 2 juni 2026 (Auto-print route-onafhankelijk + lotnummerpool auto/manual geharmoniseerd)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Auto-print losgekoppeld van zichtbare Print Queue pagina**
+- Root cause: printqueue-verwerking draaide alleen wanneer `PrintQueueAdminView` gemount was.
+- Oplossing: globale achtergrondprocessor toegevoegd:
+    - `src/components/printer/PrintQueueAutoProcessor.tsx`
+- Processor in `App.tsx` gemount voor ingelogde gebruikers en uitgezet op `/printer-queue` om dubbele verwerking te voorkomen.
+
+**2. ProductionStartModal: auto-preview en start gebruiken nu hetzelfde lotnummer**
+- Root cause: bij klikken op Start in auto-modus werd opnieuw een lot geclaimd, waardoor het getoonde volgnummer kon verspringen.
+- Oplossing: startflow gebruikt eerst het lot uit de preview; alleen bij echte collision wordt opnieuw geclaimd.
+- Daarnaast sequence parsing geharmoniseerd op de laatste 4 cijfers van het lotnummer.
+
+**3. Auto en manueel delen nu hard dezelfde lotnummerpool (altijd doortellen)**
+- Counter-update wordt nu voor beide modi uitgevoerd.
+- Counter-week wordt afgeleid uit het gebruikte lotnummer (niet alleen uit huidige datum), zodat writes in de juiste weekpool terechtkomen.
+- `lastSequence` wordt monotonic bijgewerkt (`max(huidig, nieuw)`), zodat de teller niet kan terugvallen.
+- Bij handmatige start is een extra guard toegevoegd: handmatig ingevoerd sequence mag niet lager zijn dan de volgende sequence uit de actieve pool.
+
+**4. UI-hint toegevoegd voor operators in manuele lotinvoer**
+- In `ProductionStartModal` verschijnt onder het handmatige lotveld nu een live hint met minimaal toegestaan volgnummer.
+- Hint wordt debounced berekend op basis van de actuele poolstand.
+
+### Relevante bestanden
+- `src/App.tsx`
+- `src/components/printer/PrintQueueAutoProcessor.tsx`
+- `src/components/digitalplanning/modals/ProductionStartModal.tsx`
+
+### Validatie
+- Gerichte error-checks op alle aangepaste bestanden uitgevoerd: geen nieuwe errors.
+- Gebruikersbevestiging ontvangen dat auto-print nu werkt.
+
+### Huidige status
+- Printqueue wordt nu ook verwerkt wanneer de printpagina niet open staat.
+- Lotnummers in auto-modus verspringen niet meer tussen preview en start.
+- Handmatige en auto-lotnummers komen uit één doorlopende pool en blijven betrouwbaar doortellen.
+
+---
+
+## Update sessie 2 juni 2026 (Mazak vrije labels uitgebreid + templates opgeslagen)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Vrij label als losse Mazak-tab naast Gereedmelden**
+- De vrije-label functionaliteit is verplaatst naar een aparte tab `Vrij label` naast `Gereedmelden`.
+- De order/reprint modal blijft daardoor schoon voor reguliere productlabels.
+
+**2. Vrije-label opmaak uitgebreid voor operators**
+- Uitlijning toegevoegd met directe keuze: `Links`, `Midden`, `Rechts`.
+- Lettergrootte is nu vrij invoerbaar als getal (geen vaste dropdown meer).
+- Lettergrootte ondersteunt nu grote waarden tot **maximaal 75 pt**.
+- Preview en daadwerkelijke bitmap-print gebruiken exact dezelfde uitlijning + fontgrootte instellingen.
+
+**3. Vrije-label templates opgeslagen en links kiesbaar gemaakt**
+- Opslaan als template toegevoegd in de vrije-label tab (met template-naam).
+- Templates worden persistent opgeslagen in Firestore op `GENERAL_SETTINGS` onder `mazakFreeLabelTemplates`.
+- Linkerpaneel toont opgeslagen vrije-label templates; operator kan met 1 klik een template toepassen.
+- Verwijderen van opgeslagen template is toegevoegd vanuit de linker lijst.
+
+**4. Printmetadata/logging uitgebreid**
+- Queue metadata bevat nu ook vrije-label context zoals template-id, template-naam, uitlijning en fontgrootte.
+- Activity logging uitgebreid voor traceerbaarheid van vrije-label prints.
+
+### Relevante bestanden
+- `src/components/digitalplanning/MazakView.tsx`
+
+### Validatie
+- Gerichte error-check op `MazakView.tsx` uitgevoerd: geen nieuwe errors.
+
+### Huidige status
+- Mazak operators kunnen nu losse vrije labels maken, opmaken (align + grote fonts), hergebruiken via opgeslagen templates en direct printen op 90x35.
+
+---
+
+## Update sessie 2 juni 2026 (Lighthouse 203 DPI bitmap-fix + A2G3 jointcode verificatie)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Bitmap print-DPI geharmoniseerd voor Lighthouse/Zebra flows**
+- Root cause: in een deel van de printflows kreeg driver-DPI voorrang op een handmatig ingestelde printer-DPI, waardoor een Lighthouse-profiel nog op 300 DPI kon renderen.
+- Oplossing: gedeelde helper `resolvePrinterDpi` toegevoegd met vaste prioriteit:
+    - expliciete `printer.dpi`
+    - daarna `driver.nativeDpi`
+    - daarna fallback `203`
+- Toegepast in de actieve bitmap-printflows zodat ingestelde 203 DPI overal consistent wordt gebruikt.
+
+**2. A2G3 jointcode regels opgezocht en bevestigd**
+- Locatie bevestigd in `src/utils/labelHelpers.tsx`.
+- Detectie: A2G3 wordt herkend op gecombineerde context (`itemCode`, `productId`, `desc`, `orderId`, `extraCode`, `articleCode`).
+- ID-bepaling: eerst uit `idLine` (eerste numerieke match), anders fallback op `innerDiameter` of `diameter`.
+- Mapping bevestigd:
+    - `ID < 100` → `Joint code : EST50`
+    - `100 <= ID < 150` → `Joint code : EST40`
+    - `ID >= 150` → `Joint code : EST32`
+
+### Relevante bestanden
+- `src/utils/printerDrivers.ts`
+- `src/components/printer/PrintStationView.tsx`
+- `src/components/printer/PrintQueueAdminView.tsx`
+- `src/utils/labelHelpers.tsx` (verificatie jointcode-logica)
+
+### Validatie
+- Gerichte error-check op aangepaste bestanden uitgevoerd: geen nieuwe errors.
+
+### Huidige status
+- Bitmap print houdt nu rekening met expliciet ingestelde 203 DPI op printerprofielniveau, ook in Lighthouse-gerelateerde routes.
+- A2G3 jointcode-regels zijn functioneel bevestigd en traceerbaar in de code.
+
+---
+
+## Update sessie 1 juni 2026 (Vercel productie-deploy)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Productie-deploy naar Vercel uitgevoerd**
+- Deploy gestart vanuit projectroot met `vercel --prod`.
+- Deploystatus succesvol afgerond op Vercel.
+
+**2. Resultaat en endpoints**
+- Inspect URL:
+    - `https://vercel.com/richard-van-heerdes-projects/futurefactoryapp/CBpg9gggaHCyLUTTJdBnJsaNed2b`
+- Production deployment URL:
+    - `https://futurefactoryapp-214dxabws-richard-van-heerdes-projects.vercel.app`
+- Productie-alias (live):
+    - `https://future-factory.vercel.app`
+
+**3. CLI-upgrade prompt na deploy**
+- Na succesvolle deploy gaf de CLI een updateprompt (`v53.1.1 -> v54.4.1`).
+- Upgrade gestart op verzoek (`yes`), maar bleef hangen op `Upgrading Vercel CLI...`.
+- Terminal daarna handmatig gestopt; dit had geen impact op de reeds geslaagde productie-deploy.
+
+---
+
+## Update sessie 1 juni 2026 (Operator printregels + ProductionStartModal koppeling)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Operator printregels UX herwerkt in Admin Label Logic**
+- De sectienaam is opgeschoond; de ongewenste suffix `(eenvoudig)` is al eerder verwijderd en de operatorregels zijn verder verfijnd.
+- De backendlijst `Opgeslagen regels (backend)` staat nu onder het invulformulier in plaats van erboven.
+- Opgeslagen regels worden nu compacter weergegeven als kaartjes met losse velden voor status, producttype, Min ID, Max ID, Hoek, Labels en Formaat.
+- De bewerk- en verwijderacties zijn uit het invulformulier gehaald en vervangen door twee kleine icoontjes naast de naam in de opgeslagen kaart.
+
+**2. Opslag- en bewerkflow van printregels robuuster gemaakt**
+- Root cause opgelost waarbij een tweede opgeslagen regel de eerste kon overschrijven.
+- De conceptregels in het invulformulier worden nu als aparte draft behandeld; opslaan merge’t met bestaande backendregels op ID.
+- Bewerken vanuit de opgeslagen backendlijst maakt nu bewust een kopie met een nieuw ID, zodat een bestaande regel als basis gebruikt kan worden voor een tweede variant zonder de originele regel te vervangen.
+- Na opslaan wordt het invulformulier weer leeggemaakt en blijven de backendregels zichtbaar in de opgeslagen lijst.
+
+**3. Firestore save-fout opgelost voor lege hoek / wildcard-regels**
+- De fout `Function setDoc() called with invalid data. Unsupported field value: undefined` trad op wanneer bijvoorbeeld `Hoek` leeg werd gelaten.
+- In `AdminLabelLogic.tsx` is de payload voor `labelPrintRules` nu opgeschoond voordat deze naar Firestore gaat, zodat `undefined` velden niet meer de write blokkeren.
+- Het hoekveld ondersteunt daarmee nu veilig wildcard-gedrag; in de UI staat hiervoor een duidelijke hint (`Any / open`).
+
+**4. Koppeling naar ProductionStartModal hersteld en aangescherpt**
+- `ProductionStartModal.tsx` leest de operatorregels live uit `generalSettings.labelPrintRules` en matcht op producttype, diameter-range en optionele hoek.
+- Een bug is opgelost waarbij de modal wel de juiste `labelCount` berekende uit de operatorregel, maar daarna de oude waarde (`1`) liet staan.
+- Hierdoor worden regels zoals `ELBOW / 200-450 / 90 / 2 / groot` nu daadwerkelijk toegepast op de teller in de startmodal.
+
+**5. Labeltemplate-keuze gecorrigeerd op basis van operatorregel (small/large)**
+- Root cause opgelost waarbij de modal bij niet-flens orders eerst blind een label met tag `CODE` koos, waardoor de operatorregel voor `small` of `large` genegeerd kon worden.
+- De keuzevolgorde is nu aangepast:
+    - eerst bepalen of de operatorregel `small` of `large` voorschrijft,
+    - daarna binnen de beschikbare `CODE`-labels de juiste variant kiezen,
+    - en pas daarna terugvallen op algemene labels als er geen aparte codevarianten bestaan.
+- Hierdoor hoort een order zoals `A2G3` met diameter `150` nu automatisch het kleine label te kiezen en `1` label te printen wanneer de operatorregel dat voorschrijft.
+
+### Relevante bestanden
+- `src/components/admin/AdminLabelLogic.tsx`
+- `src/components/digitalplanning/modals/ProductionStartModal.tsx`
+
+### Validatie
+- Gerichte error-checks uitgevoerd op beide aangepaste bestanden: geen nieuwe errors.
+
+### Huidige status
+- Operator printregels kunnen nu betrouwbaar worden toegevoegd, opgeslagen, gekopieerd, verwijderd en teruggezien vanuit de backendlijst.
+- Lege hoekvelden blokkeren de opslag niet meer.
+- `ProductionStartModal` gebruikt nu zowel het correcte labelaantal als de correcte klein/groot labelvoorkeur uit de operatorregels.
+
+### Eerstvolgende stap bij vervolg
+1. In de UI live verifiëren dat een order als `ELB 350 90` automatisch op `2` labels groot uitkomt.
+2. In de UI live verifiëren dat een order als `A2G3` met diameter `150` automatisch op `1` klein label uitkomt.
+3. Indien nog nodig: een kleine debug-indicator toevoegen in `ProductionStartModal` die laat zien welke operatorregel precies gematcht is.
+
+---
+
+## Update sessie 1 juni 2026 (MT presentatie i18n + voortgang opgeslagen)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. MT presentatie volledig vertaalbaar gemaakt via i18n-keys**
+- `mtPresentation` sleutelset toegevoegd in alle taalbestanden:
+    - `src/lang/nl.ts`
+    - `src/lang/en.ts`
+    - `src/lang/de.ts`
+    - `src/lang/ar.ts`
+- Alle keys die in `MTPresentation.tsx` gebruikt worden, zijn nu aanwezig in dictionaries, zodat de presentatie niet meer afhankelijk is van fallback-teksten.
+
+**2. Validatie uitgevoerd**
+- Gerichte error-checks op de vier bijgewerkte taalbestanden: geen fouten.
+- Productiebouw gedraaid met `npm run build`: succesvol.
+
+**3. Voortgang opgeslagen in git**
+- Checkpoint-commit aangemaakt op verzoek van user met boodschap:
+    - `WIP: sla voortgang op`
+- Commit hash:
+    - `b8152ac`
+- Resultaat commit:
+    - 23 files changed, 2719 insertions(+), 201 deletions(-)
+
+---
+
 ## Update sessie 31 mei 2026 (RI-canonisatie + typed path migratie afgerond)
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
@@ -99,12 +319,16 @@
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
-**1. Queue payload en zichtbaarheid gestabiliseerd**
+**1. BH18 businessregel voor labelaantal doorgevoerd**
+- Nieuwe regel in `ProductionStartModal`: op BH18 en diameter `> 200` altijd `2` labels.
+- Zowel als UI-default (`labelCount`) als in effectieve printquantity (`labelsToPrint`) afgedwongen.
+
+**2. Queue payload en zichtbaarheid gestabiliseerd**
 - `queuePrintJob` flow aangescherpt met payload-normalisatie/guarding in `ProductionStartModal` zodat lege payloads niet meer worden ingestuurd.
 - Backend limiet voor queue ZPL verhoogd (`MAX_ZPL_LENGTH` naar `700000`) voor bitmap-gebaseerde labels.
 - Queue write-pad backward-compatible gemaakt: jobs worden zowel op root print_queue als scoped print_queue pad opgeslagen.
 
-**2. 500 op `transitionPrintQueueJobStatus` opgelost**
+**3. 500 op `transitionPrintQueueJobStatus` opgelost**
 - Root cause uit Cloud Functions logs geïdentificeerd: ongeldige `collectionGroup + documentId` query met losse id.
 - Lookup in `planningTransitionService` aangepast naar veilige root-first lookup met scoped fallback op veld `id`.
 - Betrokken callables gedeployed:
@@ -113,14 +337,10 @@
     - `deletePrintQueueJob`
 - Recente runtime-calls bevestigd met status `200` (geen nieuwe `500` in recente logruns).
 
-**3. Firestore 403 counter-ruis opgelost**
+**4. Firestore 403 counter-ruis opgelost**
 - In `firestore.rules` expliciete permissieregel toegevoegd voor `future-factory/production/counters/{counterId}`.
 - Rules succesvol gedeployed (`firebase deploy --only firestore:rules`).
 - Doel: client-side lotnummer counter-transacties niet langer blokkeren met `permission-denied` noise.
-
-**4. BH18 businessregel voor labelaantal doorgevoerd**
-- Nieuwe regel in `ProductionStartModal`: op BH18 en diameter `> 200` altijd `2` labels.
-- Zowel als UI-default (`labelCount`) als in effectieve printquantity (`labelsToPrint`) afgedwongen.
 
 **5. Print Queue herprint flow functioneel verbeterd**
 - Herprint zoekfunctie (`Label Herprinten / Beschadigd`) uitgebreid:
@@ -152,8 +372,21 @@
 **1. Wavistrong label-layout gericht bijgesteld**
 - Verticale tekst op de rechterzijde is 1 mm naar links gezet voor de Wavistrong-layout.
 - `WAVISTRONG`-kop is verder omhoog gezet (eindwaarde: `-1.5 mm` verticale nudge).
-- Vergelijking met referentieprint (`27-5-c.png`) en recente printfoto gebruikt als richtlijn.
+- Vergelijking met referentieprint#1
+AAN
+ELBOW
 
+
+Min ID
+200
+Max ID
+450
+Hoek
+90
+Labels
+2
+Formaat
+Groot
 **2. Aanpassing technisch verankerd in gedeelde renderlaag**
 - Nieuwe helper toegevoegd voor label-specifieke layout-correcties:
     - `src/utils/labelLayoutAdjustments.ts`
