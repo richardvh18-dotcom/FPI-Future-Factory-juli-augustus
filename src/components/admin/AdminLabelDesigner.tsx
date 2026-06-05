@@ -121,6 +121,7 @@ type SavedLabel = {
   productCode?: string;
   variables?: LabelVariable[];
   stations?: string[];
+  linkedTemplateId?: string | null;
 };
 
 type LabelLogicRule = {
@@ -280,6 +281,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
   const [labelHeight, setLabelHeight] = useState(LABEL_SIZES.Standard.height);
   const [labelTags, setLabelTags] = useState<string[]>([]);
   const [labelFolder, setLabelFolder] = useState("");
+  const [linkedTemplateId, setLinkedTemplateId] = useState("");
   const [showTagManager, setShowTagManager] = useState(false);
   const [tagSearch, setTagSearch] = useState("");
 
@@ -340,6 +342,13 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     });
     return Array.from(stations).sort();
   }, [departments]);
+
+  const currentLabelId = useMemo(() => {
+    return String(labelName || "")
+      .trim()
+      .replace(/[^a-zA-Z0-9-_]/g, "_")
+      .toLowerCase();
+  }, [labelName]);
 
   useEffect(() => {
     const restoreUsbConnection = async () => {
@@ -467,6 +476,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     setAssignedDepartment(label.department || "All");
     setLabelTags(label.tags || []);
     setLabelFolder(label.folder || inferFolderFromTags(label.tags || []));
+    const linkedId = String(label.linkedTemplateId || (label as Record<string, unknown>).linkedLabelTemplateId || "").trim();
+    setLinkedTemplateId(linkedId);
     setElements(label.elements || []);
     setSelectedElementIds([]);
     setHasUnsavedChanges(false);
@@ -1046,6 +1057,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
         department: assignedDepartment,
         tags: tagsToSave,
         folder: labelFolder || null,
+        linkedTemplateId: linkedTemplateId || null,
         lastUpdated: serverTimestamp(),
         updatedBy: "Admin Designer",
       });
@@ -1202,6 +1214,25 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
               {departments.map((d) => (
                 <option key={d.id || d.name || 'unknown-department'} value={d.id || d.name || 'unknown-department'}>{d.name || d.id || 'Onbekend'}</option>
               ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1">
+            <select
+              value={linkedTemplateId}
+              onChange={(e) => {
+                setLinkedTemplateId(e.target.value);
+                setHasUnsavedChanges(true);
+              }}
+              className="bg-transparent text-[10px] font-black uppercase outline-none px-4 py-2 cursor-pointer max-w-[220px]"
+              title={t('adminLabelDesigner.linkedFollowupLabel', 'Gekoppeld vervolglabel')}
+            >
+              <option value="">{t('adminLabelDesigner.noLinkedFollowupLabel', 'Geen vervolglabel')}</option>
+              {savedLabels
+                .filter((l) => l.id !== currentLabelId)
+                .map((l) => (
+                  <option key={l.id} value={l.id}>{l.name || l.id}</option>
+                ))}
             </select>
           </div>
 

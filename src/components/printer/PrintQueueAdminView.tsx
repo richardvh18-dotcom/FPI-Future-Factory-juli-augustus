@@ -35,6 +35,7 @@ import {
   getOrderLabelDescription,
   getOrderLabelItemCode,
   getOrderLabelOrder,
+  resolveLinkedTemplateChain,
 } from '../../utils/orderLabelTemplateUtils';
 
 type AnyRecord = Record<string, unknown>;
@@ -189,6 +190,11 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, han
   }, [topOptions, selectedTemplateId]);
 
   const selectedTemplate = topOptions.find((t) => String(t.id) === selectedTemplateId) || topOptions[0];
+  const selectedTemplateChain = useMemo<LabelTemplate[]>(() => {
+    if (!selectedTemplate) return [];
+    return resolveLinkedTemplateChain(labelTemplates as any[], selectedTemplate.id, { maxDepth: 4 }) as LabelTemplate[];
+  }, [labelTemplates, selectedTemplate]);
+  const previewTemplates = selectedTemplateChain.length > 0 ? selectedTemplateChain : (selectedTemplate ? [selectedTemplate] : []);
 
   const previewData = useMemo(() => {
     return buildOrderLabelPreviewData(item, labelRules);
@@ -224,9 +230,20 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, han
             {t("common.print", "Print")}
           </button>
         </div>
-        <div className="w-full lg:w-64 h-36 bg-white border border-slate-200 rounded-xl p-2 flex items-center justify-center">
-          {selectedTemplate ? (
-            <AutoScaledLabelPreview label={selectedTemplate as any} data={previewData} maxScale={1} exactBitmapPreview />
+        <div className="w-full lg:w-64 h-56 bg-white border border-slate-200 rounded-xl p-2 overflow-y-auto">
+          {previewTemplates.length > 0 ? (
+            <div className="space-y-2">
+              {previewTemplates.map((template, idx) => (
+                <div key={String(template.id || idx)} className="bg-slate-50 border border-slate-200 rounded-lg p-1">
+                  {previewTemplates.length > 1 && (
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-1 pb-1">
+                      {t("printer.labelStep", "Label {{index}}", { index: idx + 1 })}
+                    </p>
+                  )}
+                  <AutoScaledLabelPreview label={template as any} data={previewData} maxScale={1} exactBitmapPreview />
+                </div>
+              ))}
+            </div>
           ) : (
             <p className="text-xs text-slate-400 italic">{t("printer.noPreview", "Geen preview")}</p>
           )}
@@ -251,20 +268,29 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     const desc = getOrderLabelDescription(orderData);
 
     let zpl;
-    const widthMm = Number(template?.width || 90);
-    const heightMm = Number(template?.height || 40);
+    const templateChain = template
+      ? (resolveLinkedTemplateChain(labelTemplates as any[], template.id, { maxDepth: 4 }) as LabelTemplate[])
+      : [];
+    const templatesToPrint = templateChain.length > 0 ? templateChain : (template ? [template as LabelTemplate] : []);
 
     if (template) {
       try {
-        zpl = await renderLabelToBitmapZpl({
-          template: template as any,
-          data: processedData as AnyRecord,
-          printerDpi: dpi,
-          darkness,
-          printSpeed: 3,
-          widthMm,
-          heightMm,
-        });
+        const zplChunks: string[] = [];
+        for (const currentTemplate of templatesToPrint) {
+          const widthMm = Number((currentTemplate as any)?.width || 90);
+          const heightMm = Number((currentTemplate as any)?.height || 40);
+          const rendered = await renderLabelToBitmapZpl({
+            template: currentTemplate as any,
+            data: processedData as AnyRecord,
+            printerDpi: dpi,
+            darkness,
+            printSpeed: 3,
+            widthMm,
+            heightMm,
+          });
+          zplChunks.push(rendered);
+        }
+        zpl = zplChunks.join('\n');
       } catch (bitmapErr) {
         throw new Error(`Bitmap print mislukt: ${bitmapErr instanceof Error ? bitmapErr.message : String(bitmapErr)}`);
       }
@@ -303,33 +329,76 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
 
       if (deviceToUse) {
         await printRawUsb(deviceToUse, zpl);
-        notify(t("common.printLabelDirectUsb", { order }));
+        notify(t("common.printLabelDirectUsb", { order }) + ` (${Math.max(1, templatesToPrint.length || 1)}x)`);
         return;
       }
 
       if (activeQueuePrinter?.id) {
-        await queuePrintJob(
-          activeQueuePrinter.id,
-          zpl,
-          {
-            description: `Order label voor ${order}`,
-            quantity: 1,
-            orderId: order,
-            lotNumber: orderData.lotNumber || order,
-            stationId: selectedStation || 'PRINT_QUEUE_ADMIN',
-            targetPrinterName: activeQueuePrinter.name,
-            width: parseInt(String(template?.width || 90), 10),
-            height: parseInt(String(template?.height || 40), 10),
-            renderMode: 'bitmap',
-            variables: {
-              orderNumber: order,
-              productId: item,
-              description: desc,
-            },
-            templateId: template?.id || null,
-            source: 'temp_order_labels'
+        if (template && templatesToPrint.length > 0) {
+          for (let idx = 0; idx < templatesToPrint.length; idx++) {
+            const currentTemplate = templatesToPrint[idx];
+            const widthMm = Number((currentTemplate as any)?.width || 90);
+            const heightMm = Number((currentTemplate as any)?.height || 40);
+            const currentZpl = await renderLabelToBitmapZpl({
+              template: currentTemplate as any,
+              data: processedData as AnyRecord,
+              printerDpi: dpi,
+              darkness,
+              printSpeed: 3,
+              widthMm,
+              heightMm,
+            });
+
+            await queuePrintJob(
+              activeQueuePrinter.id,
+              currentZpl,
+              {
+                description: `Order label voor ${order}`,
+                quantity: 1,
+                orderId: order,
+                lotNumber: orderData.lotNumber || order,
+                stationId: selectedStation || 'PRINT_QUEUE_ADMIN',
+                targetPrinterName: activeQueuePrinter.name,
+                width: parseInt(String(widthMm), 10),
+                height: parseInt(String(heightMm), 10),
+                renderMode: 'bitmap',
+                variables: {
+                  orderNumber: order,
+                  productId: item,
+                  description: desc,
+                },
+                templateId: currentTemplate?.id || null,
+                source: 'temp_order_labels',
+                linkedSequenceIndex: idx + 1,
+                linkedSequenceTotal: templatesToPrint.length,
+                linkedRootTemplateId: template?.id || null,
+              }
+            );
           }
-        );
+        } else {
+          await queuePrintJob(
+            activeQueuePrinter.id,
+            zpl,
+            {
+              description: `Order label voor ${order}`,
+              quantity: 1,
+              orderId: order,
+              lotNumber: orderData.lotNumber || order,
+              stationId: selectedStation || 'PRINT_QUEUE_ADMIN',
+              targetPrinterName: activeQueuePrinter.name,
+              width: parseInt(String(template?.width || 90), 10),
+              height: parseInt(String(template?.height || 40), 10),
+              renderMode: 'bitmap',
+              variables: {
+                orderNumber: order,
+                productId: item,
+                description: desc,
+              },
+              templateId: template?.id || null,
+              source: 'temp_order_labels'
+            }
+          );
+        }
         notify(t("common.printLabelQueued", { order, printer: activeQueuePrinter.name }));
         return;
       }
@@ -1380,7 +1449,10 @@ const PrintQueueAdminView = () => {
       for (const field of fields) {
         try {
           const snap = await getDocs(query(colRef, where(field, 'in', optionList), limit(1)));
-          if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() } as AnyRecord;
+          if (!snap.empty) {
+            const row = snap.docs[0].data() as Record<string, unknown>;
+            return { id: snap.docs[0].id, ...row } as AnyRecord;
+          }
         } catch {
           // best-effort query, probeer volgende veld
         }

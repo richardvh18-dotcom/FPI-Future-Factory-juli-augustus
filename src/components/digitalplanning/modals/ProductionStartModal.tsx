@@ -279,6 +279,14 @@ const ProductionStartModal = ({
   const [manualMinimumSeq, setManualMinimumSeq] = useState<number | null>(null);
   const [manualPoolHint, setManualPoolHint] = useState("");
   const isManualMode = mode === "manual";
+  const shouldAutoFocusInputs = useMemo(() => {
+    if (typeof window === "undefined") return true;
+    const hasCoarsePointer = typeof window.matchMedia === "function"
+      ? window.matchMedia("(pointer: coarse)").matches
+      : false;
+    const hasTouch = typeof navigator !== "undefined" && Number(navigator.maxTouchPoints || 0) > 0;
+    return !(hasCoarsePointer || hasTouch);
+  }, []);
   const flangeSeriesInfo = useMemo(
     () =>
       getFlangeSeriesInfo(
@@ -517,7 +525,7 @@ const ProductionStartModal = ({
 
   // Autofocus naar ordernummer (of lotnummer) bij openen in manuele modus
   useEffect(() => {
-    if (isOpen && mode === "manual") {
+    if (isOpen && mode === "manual" && shouldAutoFocusInputs) {
       setTimeout(() => {
         if (orderValidated && lotInputRef.current) {
           lotInputRef.current?.focus();
@@ -526,7 +534,7 @@ const ProductionStartModal = ({
         }
       }, 300);
     }
-  }, [isOpen, mode, orderValidated]);
+  }, [isOpen, mode, orderValidated, shouldAutoFocusInputs]);
 
   // 1. Label Templates & Rules Laden
   useEffect(() => {
@@ -1208,9 +1216,11 @@ const ProductionStartModal = ({
       if (expectedOrderId && value.trim() === expectedOrderId) {
         setOrderValidated(true);
         setOrderError("");
-        setTimeout(() => {
-          lotInputRef.current?.focus();
-        }, 100);
+        if (shouldAutoFocusInputs) {
+          setTimeout(() => {
+            lotInputRef.current?.focus();
+          }, 100);
+        }
       } else if (value.trim().length >= expectedOrderId?.length) {
         setOrderError(t("productionStartModal.errors.orderMismatch"));
       }

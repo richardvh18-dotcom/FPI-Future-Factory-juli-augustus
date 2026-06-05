@@ -2409,7 +2409,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
 
   return (
     <>
-    <div className="flex flex-col w-full h-[100dvh] bg-gray-50/50">
+    <div className="flex flex-col w-full h-[100dvh] bg-white">
       {/* HEADER */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
         <div className="w-full px-4 sm:px-6 lg:px-8">
@@ -2670,8 +2670,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       {/* CONTENT AREA */}
       <div 
         ref={contentRef}
-        className={`flex-1 overflow-y-auto w-full ${activeTab === 'terminal' ? 'p-0' : 'p-2 sm:p-6 lg:p-8'} relative`}
-        style={{ paddingBottom: "max(8rem, env(safe-area-inset-bottom))" }}
+        className={`flex-1 overflow-y-auto w-full bg-white ${activeTab === 'terminal' ? 'p-0' : 'p-2 sm:p-6 lg:p-8'} relative`}
+        style={{ paddingBottom: "calc(1rem + env(safe-area-inset-bottom))" }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}

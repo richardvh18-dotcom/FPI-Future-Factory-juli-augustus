@@ -164,7 +164,8 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
 
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedTrackedId, setSelectedTrackedId] = useState<string | null>(null);
-  const [sidebarSearch, setSidebarSearch] = useState("");
+  const [planningSearch, setPlanningSearch] = useState("");
+  const [wikkelenSearch, setWikkelenSearch] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
   const [manualInputValue, setManualInputValue] = useState("");
   const [showStartModal, setShowStartModal] = useState(false);
@@ -628,10 +629,10 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       })
       .filter((p) => isTrackedProductionActive(p));
     
-    if (!sidebarSearch) return active;
-    const term = sidebarSearch.toLowerCase();
+    if (!wikkelenSearch) return active;
+    const term = wikkelenSearch.toLowerCase();
     return active.filter(p => (p.lotNumber || "").toLowerCase().includes(term) || (p.orderId || "").toLowerCase().includes(term));
-  }, [allTracked, normalizedStationId, sidebarSearch]);
+  }, [allTracked, normalizedStationId, wikkelenSearch]);
 
   const lotConflictMeta = useMemo(() => {
     const buckets = new Map<string, { productSignatures: Set<string>; orderIds: Set<string> }>();
@@ -774,7 +775,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       // FIX: BH31 (Reparatie) orders verdwijnen uit planning zodra ze in behandeling zijn
       // Tenzij er specifiek naar gezocht wordt
       const isRepairStation = normalizedStationId === "BH31" || normalizedStationId.includes("REPARATIE") || normalizedStationId.includes("SPECIAL");
-      if (isRepairStation && !sidebarSearch) {
+      if (isRepairStation && !planningSearch) {
           const oid = String(o.orderId || "").trim();
           const started = productionProgressMap[oid] || 0;
           if (started > 0 || ["in_progress", "in production", "in productie"].includes(String(o.status || "").trim().toLowerCase())) return false;
@@ -783,7 +784,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       // BM01: Geen week filter, toon alles (behalve als search actief is, wat hieronder gebeurt)
       if (isBM01) return true;
 
-      if (showAllWeeks || sidebarSearch) return true;
+      if (showAllWeeks || planningSearch) return true;
       
       // FORCEER ZICHTBAARHEID ALS ER ACTIVITEIT IS (ZELFS ALS WEEK NIET MATCHT)
       if (hasStationActivity || hasActiveTracked) return true;
@@ -804,7 +805,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       return false;
     });
 
-    if (!sidebarSearch) {
+    if (!planningSearch) {
       return base.sort((a, b) => {
         const priorityRank = (order: EnrichedPlanningOrder) => {
           const normalizedPriority =
@@ -846,7 +847,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       });
     }
     
-    const searchValue = String(sidebarSearch || "").toLowerCase().trim();
+    const searchValue = String(planningSearch || "").toLowerCase().trim();
     const tokens = searchValue.split(/\s+/).filter(Boolean);
 
     if (tokens.length === 0) return base;
@@ -887,7 +888,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
         return combinedText.includes(token);
       });
     });
-  }, [myOrders, madeCountMap, stationCounterField, targetWeekNum, targetYearNum, showAllWeeks, sidebarSearch, isBM01, isBH18, normalizedStationId, productionProgressMap, waitingForLossenMap, readyForReturnMap, absCurrentReal]);
+  }, [myOrders, madeCountMap, stationCounterField, targetWeekNum, targetYearNum, showAllWeeks, planningSearch, isBM01, isBH18, normalizedStationId, productionProgressMap, waitingForLossenMap, readyForReturnMap, absCurrentReal]);
 
   // LOSSEN 12/18: gefilterde planning per machine (filter via filterbar)
   const lossenFilteredOrders = useMemo(() => {
@@ -1009,11 +1010,6 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
   // Handlers
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
-    // Zoekfilter wissen bij switch naar wikkelen of gereed
-    // zodat de wikkellijst niet leeg lijkt door een planning-zoekterm
-    if (tab === "wikkelen" || tab === "gereed" || tab === "lossen") {
-      setSidebarSearch("");
-    }
   };
 
   const handleOpenReleaseModal = (product: TrackedProductDoc, bulkProducts: TrackedProductDoc[] = []) => {
@@ -1284,8 +1280,8 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
                     orders={lossenFilteredOrders as any}
                     selectedOrderId={selectedOrderId}
                     onSelectOrder={(id: string | null | undefined) => setSelectedOrderId(id || null)}
-                    searchTerm={sidebarSearch}
-                    onSearchChange={setSidebarSearch}
+                    searchTerm={planningSearch}
+                    onSearchChange={setPlanningSearch}
                     referenceDate={referenceDate}
                     onDateChange={(direction: 'reset' | 'prev' | 'next') => {
                       if (direction === 'reset') setReferenceDate(new Date());
@@ -1319,8 +1315,8 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
                 orders={filteredOrders as any}
                 selectedOrderId={selectedOrderId}
                 onSelectOrder={(id: string | null | undefined) => setSelectedOrderId(id || null)}
-                searchTerm={sidebarSearch}
-                onSearchChange={setSidebarSearch}
+                searchTerm={planningSearch}
+                onSearchChange={setPlanningSearch}
                 referenceDate={referenceDate}
                 onDateChange={(direction: 'reset' | 'prev' | 'next') => {
                   if (direction === 'reset') setReferenceDate(new Date());
@@ -1393,7 +1389,11 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
         value={manualInputValue}
         onChange={setManualInputValue}
         onSearch={() => {
-          setSidebarSearch(manualInputValue);
+          if (activeTab === "wikkelen") {
+            setWikkelenSearch(manualInputValue);
+          } else {
+            setPlanningSearch(manualInputValue);
+          }
           setShowManualInput(false);
         }}
       />

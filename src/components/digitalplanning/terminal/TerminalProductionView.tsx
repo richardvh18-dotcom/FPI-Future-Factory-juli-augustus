@@ -297,8 +297,8 @@ const TerminalProductionView = ({
           </div>
         </div>
         <div
-          className="flex-1 overflow-y-auto space-y-3 custom-scrollbar text-left text-left pb-24"
-          style={{ paddingBottom: "max(6rem, env(safe-area-inset-bottom))" }}
+          className="flex-1 overflow-y-auto space-y-3 custom-scrollbar text-left text-left pb-6"
+          style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
         >
           {displayRows.map((prod: AnyRecord) => {
             if (prod.isSeriesHeader) {
@@ -407,8 +407,8 @@ const TerminalProductionView = ({
         </div>
       </div>
       <div
-        className={`flex-1 p-6 md:p-8 bg-slate-50 flex flex-col overflow-y-auto custom-scrollbar ${!selectedTrackedId ? "hidden lg:flex" : "flex"} text-left pb-24`}
-        style={{ paddingBottom: "max(6rem, env(safe-area-inset-bottom))" }}
+        className={`flex-1 p-6 md:p-8 bg-slate-50 flex flex-col overflow-y-auto custom-scrollbar ${!selectedTrackedId ? "hidden lg:flex" : "flex"} text-left pb-6`}
+        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
       >
          {selectedWikkeling ? (() => {
            const isMultiSelected = selectedMultiLots.includes(selectedWikkeling.id);

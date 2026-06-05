@@ -21,6 +21,7 @@ import {
   getOrderLabelItemCode,
   getOrderLabelOrder,
   normalizeOrderLabelProductData,
+  resolveLinkedTemplateChain,
 } from '../../utils/orderLabelTemplateUtils';
 
 type AnyRecord = Record<string, unknown>;
@@ -121,6 +122,11 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
   }, [topOptions, selectedTemplateId]);
 
   const selectedTemplate = topOptions.find((t: LabelTemplate) => t.id === selectedTemplateId) || topOptions[0];
+  const selectedTemplateChain = useMemo<LabelTemplate[]>(() => {
+    if (!selectedTemplate) return [];
+    return resolveLinkedTemplateChain(labelTemplates as any[], selectedTemplate.id, { maxDepth: 4 }) as LabelTemplate[];
+  }, [labelTemplates, selectedTemplate]);
+  const previewTemplates = selectedTemplateChain.length > 0 ? selectedTemplateChain : (selectedTemplate ? [selectedTemplate] : []);
 
   const previewData = useMemo<Record<string, unknown>>(() => {
     return buildOrderLabelPreviewData(item, labelRules);
@@ -156,9 +162,20 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
             Print
           </button>
         </div>
-        <div className="w-full lg:w-64 h-36 bg-white border border-slate-200 rounded-xl p-2 flex items-center justify-center">
-          {selectedTemplate ? (
-            <AutoScaledLabelPreview label={selectedTemplate} data={previewData} maxScale={1} exactBitmapPreview />
+        <div className="w-full lg:w-64 h-56 bg-white border border-slate-200 rounded-xl p-2 overflow-y-auto">
+          {previewTemplates.length > 0 ? (
+            <div className="space-y-2">
+              {previewTemplates.map((template: LabelTemplate, idx: number) => (
+                <div key={String(template.id || idx)} className="bg-slate-50 border border-slate-200 rounded-lg p-1">
+                  {previewTemplates.length > 1 && (
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-1 pb-1">
+                      {t('printStationView.labelStep', 'Label {{index}}', { index: idx + 1 })}
+                    </p>
+                  )}
+                  <AutoScaledLabelPreview label={template} data={previewData} maxScale={1} exactBitmapPreview />
+                </div>
+              ))}
+            </div>
           ) : (
             <p className="text-xs text-slate-400 italic">{t('printStationView.noPreview', 'Geen preview')}</p>
           )}
@@ -606,6 +623,13 @@ const PrintStationView = () => {
   }, [productData]);
 
   const { selectedLabel, previewData, availableLabels } = useLabelPreview(normalizedProductData, selectedLabelId);
+  const selectedLabelPreviewChain = useMemo<LabelTemplate[]>(() => {
+    if (!selectedLabel) return [];
+    return resolveLinkedTemplateChain(labelTemplates as any[], (selectedLabel as any).id, { maxDepth: 4 }) as LabelTemplate[];
+  }, [labelTemplates, selectedLabel]);
+  const selectedPreviewTemplates = selectedLabelPreviewChain.length > 0
+    ? selectedLabelPreviewChain
+    : (selectedLabel ? [selectedLabel as LabelTemplate] : []);
 
   const filteredLabels = useMemo(() => {
     if (!normalizedProductData) return availableLabels;
@@ -866,6 +890,10 @@ const PrintStationView = () => {
 
   const handleTempLegacyPrint = async (orderData: AnyRecord, templateId: string) => {
     const template = labelTemplates.find((t: LabelTemplate) => t.id === templateId);
+    const templateChain = template
+      ? (resolveLinkedTemplateChain(labelTemplates as any[], template.id, { maxDepth: 4 }) as LabelTemplate[])
+      : [];
+    const templatesToPrint = templateChain.length > 0 ? templateChain : (template ? [template] : []);
     const dpi = printerDpi;
     const bitmapDarkness = Math.max(15, Number(printerDarkness) || 15);
 
@@ -887,17 +915,24 @@ const PrintStationView = () => {
             lotNumber: orderData.lotNumber || order
         });
         const processedData = applyLabelLogic(labelData, labelRules);
-        const widthMm = Number((template as any)?.width) || 90;
-        const heightMm = Number((template as any)?.height) || 40;
-        zpl = await renderLabelToBitmapZpl({
-          template: template as any,
-          data: processedData as AnyRecord,
-          printerDpi: dpi,
-          darkness: bitmapDarkness,
-          printSpeed: 3,
-          widthMm,
-          heightMm,
-        });
+        const zplChunks: string[] = [];
+
+        for (const currentTemplate of templatesToPrint) {
+          const widthMm = Number((currentTemplate as any)?.width) || 90;
+          const heightMm = Number((currentTemplate as any)?.height) || 40;
+          const rendered = await renderLabelToBitmapZpl({
+            template: currentTemplate as any,
+            data: processedData as AnyRecord,
+            printerDpi: dpi,
+            darkness: bitmapDarkness,
+            printSpeed: 3,
+            widthMm,
+            heightMm,
+          });
+          zplChunks.push(rendered);
+        }
+
+        zpl = zplChunks.join('\n');
     } else {
       const fallbackTemplate = {
         width: 90,
@@ -933,7 +968,8 @@ const PrintStationView = () => {
       }
 
       await printRawUsb(deviceToUse, zpl);
-      showSuccess(`Label voor ${order} direct geprint via USB!`);
+      const labelsPrinted = Math.max(1, templatesToPrint.length || 1);
+      showSuccess(`${labelsPrinted} label(s) voor ${order} direct geprint via USB!`);
       setShowTempModal(false);
       return;
     } catch (e) {
@@ -949,18 +985,25 @@ const PrintStationView = () => {
     }
     setIsLoading(true);
     try {
-      const widthMm = Number((selectedLabel as any)?.width) || 90;
-      const heightMm = Number((selectedLabel as any)?.height) || 40;
       const bitmapDarkness = Math.max(15, Number(printerDarkness) || 15);
-      const printData = await renderLabelToBitmapZpl({
-        template: selectedLabel as any,
-        data: (previewData as AnyRecord) || {},
-        printerDpi,
-        darkness: bitmapDarkness,
-        printSpeed: 3,
-        widthMm,
-        heightMm,
-      });
+      const templateChain = resolveLinkedTemplateChain(labelTemplates as any[], (selectedLabel as any)?.id, { maxDepth: 4 }) as LabelTemplate[];
+      const templatesToPrint = templateChain.length > 0 ? templateChain : [selectedLabel as LabelTemplate];
+
+      const printDataChunks: string[] = [];
+      for (const template of templatesToPrint) {
+        const widthMm = Number((template as any)?.width) || 90;
+        const heightMm = Number((template as any)?.height) || 40;
+        const printData = await renderLabelToBitmapZpl({
+          template: template as any,
+          data: (previewData as AnyRecord) || {},
+          printerDpi,
+          darkness: bitmapDarkness,
+          printSpeed: 3,
+          widthMm,
+          heightMm,
+        });
+        printDataChunks.push(printData);
+      }
       
       let deviceToUse = usbDevice;
       if (!deviceToUse) {
@@ -970,8 +1013,8 @@ const PrintStationView = () => {
         localStorage.setItem('usb_printer_product', String(deviceToUse.productId));
       }
 
-      await printRawUsb(deviceToUse, printData);
-      showSuccess(`Label voor lot ${productData.lotNumber} direct geprint via USB!`);
+  await printRawUsb(deviceToUse, printDataChunks.join('\n'));
+  showSuccess(`${templatesToPrint.length} label(s) voor lot ${productData.lotNumber} direct geprint via USB!`);
       
       setProductData(null);
       setLotNumber('');
@@ -1082,7 +1125,22 @@ const PrintStationView = () => {
               <div className="bg-slate-800 p-4 rounded-lg">
                 <h3 className="text-white font-bold mb-2">{t('printStationView.labelPreview', 'Label Preview')}</h3>
                 <div ref={previewRef}>
-                  {selectedLabel ? <AutoScaledLabelPreview label={selectedLabel} data={previewData} className="mx-auto" printerDpi={printerDpi} maxScale={1} exactBitmapPreview /> : <p className="text-slate-400">{t('printStationView.selectALabel', 'Selecteer een label')}</p>}
+                  {selectedPreviewTemplates.length > 0 ? (
+                    <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                      {selectedPreviewTemplates.map((template: LabelTemplate, idx: number) => (
+                        <div key={String(template.id || idx)} className="bg-slate-700/40 border border-slate-600 rounded-lg p-2">
+                          {selectedPreviewTemplates.length > 1 && (
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-300 mb-1">
+                              {t('printStationView.labelStep', 'Label {{index}}', { index: idx + 1 })}
+                            </p>
+                          )}
+                          <AutoScaledLabelPreview label={template as any} data={previewData} className="mx-auto" printerDpi={printerDpi} maxScale={1} exactBitmapPreview />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-400">{t('printStationView.selectALabel', 'Selecteer een label')}</p>
+                  )}
                 </div>
               </div>
             </div>

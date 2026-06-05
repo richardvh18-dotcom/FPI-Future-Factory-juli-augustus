@@ -1,3 +1,100 @@
+## Update sessie 5 juni 2026 (Tablet UX fixes: toetsenbord-popups + onderbalk ruimteherstel)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+**Tijdstip update:** 2026-06-05 09:15:00 UTC
+
+### Uitgevoerd in deze sessie
+**1. Ongewenste tablet keyboard-popups teruggedrongen**
+- `ProductionStartModal` autofocus-gedrag is beperkt op touch/coarse-pointer devices.
+- In manuele flow wordt niet meer agressief automatisch gefocust op order/lot input op tablets.
+- `TraceModal` (KPI detail vanuit Teamleader Hub) opent niet langer met `autoFocus` op het zoekveld.
+
+**2. Grijze onderbalk/afgekapt schermgevoel in workstation-shell opgelost**
+- Hoofdcontainer van `WorkstationHub` aangepast van semi-transparant grijs naar wit.
+- Content area heeft expliciet witte achtergrond gekregen zodat onderaan geen grijze overlay meer zichtbaar is.
+
+**3. Onderruimte geoptimaliseerd zodat onderkant content zichtbaar blijft**
+- Overmatige onderpadding op tablet/workstation is verlaagd:
+    - van vaste grote marges (`max(8rem, ...)` / `max(6rem, ...)`)
+    - naar compacte safe-area marges (`calc(... + env(safe-area-inset-bottom))`).
+- Hierdoor blijven onderkant planning en onderste deel van de Start-productie knop zichtbaar.
+
+### Relevante bestanden
+- `src/components/digitalplanning/modals/ProductionStartModal.tsx`
+- `src/components/digitalplanning/modals/TraceModal.tsx`
+- `src/components/digitalplanning/WorkstationHub.tsx`
+- `src/components/digitalplanning/terminal/TerminalProductionView.tsx`
+
+### Validatie
+- Gerichte error-checks uitgevoerd op alle aangepaste bestanden.
+- Geen nieuwe errors gevonden.
+
+### Huidige status
+- Tablet keyboard opent niet meer onnodig bij KPI modal en manuele startflow.
+- De storende onderbalk/onderruimte is visueel en functioneel teruggebracht.
+
+---
+
+## Update sessie 5 juni 2026 (Gekoppelde labels A/B + verticale preview-stack)
+
+**Branch:** `FPiFF-18-12-May` (actuele werkbranch)
+
+**Tijdstip update:** 2026-06-05 08:30:13 UTC
+
+### Uitgevoerd in deze sessie
+**1. Planning en Wikkelen zoekstate ontkoppeld in terminal-flow**
+- In de workstation terminal is de gedeelde zoekstate opgesplitst:
+    - `planningSearch` voor Planning-tab
+    - `wikkelenSearch` voor Wikkelen-tab
+- Hierdoor wordt een zoekfilter uit Planning niet meer meegenomen naar Wikkelen.
+
+**2. Gekoppelde labelketen toegevoegd (A -> B -> ...)**
+- Generieke resolver toegevoegd om gekoppelde templates sequentieel op te halen met lusbescherming.
+- Ondersteuning voor velden:
+    - `linkedTemplateId`
+    - `linkedLabelTemplateId` (legacy alias)
+- Printvolgorde is per product sequentieel: eerst hoofdlabel (A), daarna gekoppeld label (B), enzovoort.
+
+**3. Label Designer uitgebreid met koppeling voor vervolglabel**
+- In Admin Label Designer is een selector toegevoegd om een vervolglabel te koppelen.
+- De koppeling wordt opgeslagen op template-records als `linkedTemplateId`.
+
+**4. Mazak printflow uitgebreid voor gekoppelde labels**
+- Mazak print verwerkt nu templateketens in plaats van alleen 1 template.
+- Voor serieprint (bijv. 8 flenzen) worden alle jobs correct uitgezet als 8xA + 8xB.
+- Queue metadata bevat sequence-info (`linkedSequenceIndex`, `linkedSequenceTotal`, `linkedRootTemplateId`).
+
+**5. Centrale printflows uitgebreid voor gekoppelde labels**
+- Zowel Print Station als Print Queue Admin tijdelijke labels printen nu gekoppelde templates sequentieel mee.
+- USB direct print en queue-print ondersteunen beide de keten.
+
+**6. Preview gedrag aangepast voor kleine labels (onder elkaar)**
+- Verticale preview-stack (in plaats van naast elkaar) doorgevoerd voor gekoppelde labels:
+    - Mazak printmodal
+    - Print Station (temp label cards + hoofdpreview)
+    - Print Queue Admin (temp label cards)
+- Hierdoor is de leesbaarheid beter bij kleine labelmaten.
+
+### Relevante bestanden
+- `src/components/digitalplanning/Terminal.tsx`
+- `src/utils/orderLabelTemplateUtils.ts`
+- `src/components/admin/AdminLabelDesigner.tsx`
+- `src/components/digitalplanning/MazakView.tsx`
+- `src/components/printer/PrintStationView.tsx`
+- `src/components/printer/PrintQueueAdminView.tsx`
+
+### Validatie
+- Gerichte error-checks uitgevoerd op alle aangepaste bestanden.
+- Geen nieuwe errors gevonden.
+
+### Huidige status
+- Gekoppelde labels zijn configureerbaar in de labelmaker.
+- Printflows sturen gekoppelde labels nu automatisch sequentieel naar de queue/USB.
+- Previews tonen gekoppelde kleine labels als verticale stack voor betere operator-bruikbaarheid.
+
+---
+
 ## Update sessie 2 juni 2026 (Auto-print route-onafhankelijk + lotnummerpool auto/manual geharmoniseerd)
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)

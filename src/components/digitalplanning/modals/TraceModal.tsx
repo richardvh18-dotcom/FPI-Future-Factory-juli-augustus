@@ -245,7 +245,6 @@ const TraceModal = ({ isOpen, onClose, title, data = [], onRowClick, onRowAction
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 transition-all shadow-sm"
-                autoFocus
               />
             </div>
             
