@@ -40,6 +40,7 @@ import StatusBadge from "./common/StatusBadge";
 import { getISOWeek, addWeeks, subWeeks } from "date-fns";
 import { filterLabelsByProduct, processLabelData } from "../../utils/labelHelpers";
 import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
+import { resolveLinkedTemplateChain } from "../../utils/orderLabelTemplateUtils";
 import { useNotifications } from '../../contexts/NotificationContext';
 
 const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
@@ -460,6 +461,16 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const inboxItems = useMemo(() => items.filter((i: ProductItem) => !i.mazakLabelPrinted), [items]);
   const processItems = useMemo(() => items.filter((i: ProductItem) => i.mazakLabelPrinted), [items]);
   const isBulkInboxMode = activeTab === "inbox" && bulkSeriesProducts.length > 1;
+  const selectedTemplateChain = useMemo<LabelTemplate[]>(() => {
+    if (!selectedLabelId) return [];
+    return resolveLinkedTemplateChain(availableLabels as any[], selectedLabelId, { maxDepth: 4 }) as LabelTemplate[];
+  }, [availableLabels, selectedLabelId]);
+  const effectiveTemplateChain = selectedTemplateChain.length > 0
+    ? selectedTemplateChain
+    : ((selectedLabelId ? availableLabels.filter((t) => String(t.id) === String(selectedLabelId)) : []) as LabelTemplate[]);
+  const labelsPerItem = Math.max(1, effectiveTemplateChain.length);
+  const itemPrintCount = isBulkInboxMode ? bulkSeriesProducts.length : 1;
+  const totalLabelCount = itemPrintCount * labelsPerItem;
 
   useEffect(() => {
     if (activeTab !== "inbox" && bulkSeriesProducts.length > 0) {
@@ -620,47 +631,54 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     
     try {
       const isReprint = activeTab === "process";
-      const templateToUse = availableLabels.find(l => l.id === selectedLabelId);
       const itemsToPrint = isBulkInboxMode ? bulkSeriesProducts : [selectedProduct];
+      const templatesToPrint = effectiveTemplateChain;
 
-      const batchTasks = itemsToPrint.map(async (item) => {
+      if (templatesToPrint.length === 0) {
+        throw new Error("Geen geldig template geselecteerd.");
+      }
+
+      for (const item of itemsToPrint) {
         const processedData = processLabelData(item);
-        
-        // Genereer bitmap-ZPL code voor deze label + product combinatie
-        let zplCode = "";
-        try {
-          if (templateToUse?.elements) {
-            zplCode = await renderLabelToBitmapZpl({
-              template: templateToUse as any,
-              data: processedData as any,
-              printerDpi: DEFAULT_MAZAK_DPI,
-              darkness: 15,
-              printSpeed: 3,
-              widthMm: Number((templateToUse as any)?.width) || 90,
-              heightMm: Number((templateToUse as any)?.height) || 40,
-            });
+
+        for (let idx = 0; idx < templatesToPrint.length; idx++) {
+          const templateToUse = templatesToPrint[idx];
+          let zplCode = "";
+
+          try {
+            if (templateToUse?.elements) {
+              zplCode = await renderLabelToBitmapZpl({
+                template: templateToUse as any,
+                data: processedData as any,
+                printerDpi: DEFAULT_MAZAK_DPI,
+                darkness: 15,
+                printSpeed: 3,
+                widthMm: Number((templateToUse as any)?.width) || 90,
+                heightMm: Number((templateToUse as any)?.height) || 40,
+              });
+            }
+          } catch (zplErr) {
+            console.warn("Bitmap generatie fout:", zplErr);
+            zplCode = "";
           }
-        } catch (zplErr) {
-          console.warn("Bitmap generatie fout:", zplErr);
-          zplCode = ""; // Fallback: lege ZPL
+
+          await queuePrintJob(
+            "MAZAK-DEFAULT",
+            zplCode,
+            {
+              templateId: String(templateToUse?.id || selectedLabelId),
+              templateName: templateToUse?.name || "Mazak Label",
+              targetStation: stationId,
+              orderId: item?.orderId,
+              lotNumber: item?.lotNumber,
+              isReprint,
+              linkedSequenceIndex: idx + 1,
+              linkedSequenceTotal: templatesToPrint.length,
+              linkedRootTemplateId: String(selectedLabelId || ""),
+            }
+          );
         }
-
-        // Stuur de print job naar de queue met gegenereerde ZPL
-        return await queuePrintJob(
-          "MAZAK-DEFAULT", // Printer ID voor Mazak station
-          zplCode,
-          {
-            templateId: selectedLabelId,
-            templateName: templateToUse?.name || "Mazak Label",
-            targetStation: stationId,
-            orderId: item?.orderId,
-            lotNumber: item?.lotNumber,
-            isReprint: isReprint,
-          }
-        );
-      });
-
-      await Promise.all(batchTasks);
+      }
 
       await markMazakLabelsPrinted({
         productIds: itemsToPrint.map((item) => item.id || item.lotNumber).filter(Boolean),
@@ -673,7 +691,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       await logActivity(
         user?.uid || "system",
         isReprint ? "REPRINT_LABELS" : "PRINT_LABELS",
-        `Mazak: ${itemsToPrint.length} label(s) naar queue gestuurd voor ${selectedProduct.orderId} (Herprint: ${isReprint})`
+        `Mazak: ${totalLabelCount} label(s) naar queue gestuurd voor ${selectedProduct.orderId} (Herprint: ${isReprint})`
       );
 
       setShowPrintModal(false);
@@ -686,7 +704,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
         t(
           "mazak.labels_queued_success",
           "{{count}} label(s) succesvol naar de print wachtrij verstuurd!",
-          { count: itemsToPrint.length }
+          { count: totalLabelCount }
         )
       );
     } catch (err) {
@@ -1106,10 +1124,10 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                </h3>
                <p className="text-sm font-bold text-slate-500 mb-8">
                   {isBulkInboxMode
-                    ? t("mazak.bulk_labels_printing", "{{count}} labels worden geprint voor deze bulk-serie.", { count: bulkSeriesProducts.length }) 
+                ? t("mazak.bulk_labels_printing", "{{count}} labels worden geprint voor deze bulk-serie.", { count: totalLabelCount }) 
                     : activeTab === "process"
-                    ? t("mazak.one_label_reprint", "1 label wordt opnieuw geprint voor dit product.")
-                    : t("mazak.one_label_print", "1 label wordt geprint voor dit product.")}
+                ? t("mazak.one_label_reprint", "{{count}} label(s) worden opnieuw geprint voor dit product.", { count: totalLabelCount })
+                : t("mazak.one_label_print", "{{count}} label(s) worden geprint voor dit product.", { count: totalLabelCount })}
                </p>
 
                <div className="space-y-6 flex-1">
@@ -1131,6 +1149,11 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                     <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">{t("mazak.selected_order", "Geselecteerde order")}</p>
                     <p className="font-bold text-blue-900">{selectedProduct.orderId}</p>
                     <p className="text-xs text-blue-700 mt-1">{selectedProduct.item}</p>
+                    {labelsPerItem > 1 && (
+                      <p className="text-xs text-blue-700 mt-2">
+                        {t("mazak.linked_labels_active", "Gekoppelde labels actief: {{count}} per product", { count: labelsPerItem })}
+                      </p>
+                    )}
                  </div>
                </div>
 
@@ -1144,7 +1167,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                      ? t("common.loading", "Laden...")
                      : activeTab === "process"
                        ? t("mazak.reprint_label", "Label herprinten")
-                       : t("mazak.print_count_labels", "Print {{count}} label(s)", { count: isBulkInboxMode ? bulkSeriesProducts.length : 1 })}
+                       : t("mazak.print_count_labels", "Print {{count}} label(s)", { count: totalLabelCount })}
                  </button>
                </div>
             </div>
@@ -1155,13 +1178,27 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                </div>
                
                {selectedLabelId ? (
-                 <div className="flex-1 w-full h-full flex items-center justify-center mt-4 px-4">
-                   <AutoScaledLabelPreview
-                     label={availableLabels.find(l => l.id === selectedLabelId)}
-                     data={processLabelData(selectedProduct)}
-                     className="w-full"
-                     printerDpi={DEFAULT_MAZAK_DPI}
-                   />
+                 <div className="flex-1 w-full h-full mt-4 px-4 overflow-y-auto">
+                   <div className="max-w-3xl mx-auto space-y-5">
+                     {effectiveTemplateChain.map((template, idx) => (
+                       <div key={String(template?.id || idx)} className="bg-white border border-slate-200 rounded-2xl p-3 sm:p-4">
+                         <div className="mb-2 flex items-center justify-between">
+                           <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                             {t("mazak.preview_label_step", "Label {{index}}", { index: idx + 1 })}
+                           </p>
+                           <p className="text-[10px] font-bold text-slate-400">
+                             {String(template?.name || template?.id || "-")}
+                           </p>
+                         </div>
+                         <AutoScaledLabelPreview
+                           label={template}
+                           data={processLabelData(selectedProduct)}
+                           className="w-full"
+                           printerDpi={DEFAULT_MAZAK_DPI}
+                         />
+                       </div>
+                     ))}
+                   </div>
                  </div>
                ) : (
                  <p className="text-slate-400 font-bold text-sm">{t("mazak.select_template_for_preview", "Selecteer een template voor preview")}</p>
