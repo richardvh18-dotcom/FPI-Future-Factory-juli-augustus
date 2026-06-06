@@ -16,6 +16,16 @@ const isUnderPath = (docRef, prefix) => {
   return Boolean(docPath && safePrefix && docPath.startsWith(`${safePrefix}/`));
 };
 
+const parseOverridePath = (rawValue) => {
+  const value = String(rawValue || '').trim();
+  if (!value) return null;
+  const segments = value.split('/').map((segment) => segment.trim()).filter(Boolean);
+  if (!segments.length) return null;
+  const root = segments[0];
+  if (root !== BASE && root !== 'artifacts') return null;
+  return segments.join('/');
+};
+
 const normalizeDocPathInput = (value) => String(value || '').trim().replace(/^\/+/, '');
 
 const extractDocId = (value) => {
@@ -194,13 +204,15 @@ const getPlanningOrderDocById = async (orderDocId) => {
  * Resolves database collection paths.
  * Runtime switching is verwijderd; alle paden wijzen nu naar productie.
  */
-const resolveDbContext = () => {
+const resolveDbContext = (runtimeDataSource = null) => {
   const prodBase = `${BASE}/production`;
+  const planningPathOverride = parseOverridePath(runtimeDataSource?.planningPath);
+  const planningLegacyOverride = parseOverridePath(runtimeDataSource?.planningLegacyPath);
   return {
     trackingPath: TRACKING_COLLECTION,
-    planningPath: PLANNING_COLLECTION,
+    planningPath: planningPathOverride || PLANNING_COLLECTION,
     eventsPath: `${prodBase}/events`,
-    planningLegacyPath: PLANNING_COLLECTION_LEGACY,
+    planningLegacyPath: planningLegacyOverride || PLANNING_COLLECTION_LEGACY,
     efficiencyPath: `${prodBase}/efficiency_hours`,
     standardsPath: `${prodBase}/time_standards`,
     archiveItemsPath: (year) => `${prodBase}/archive/${year}/items`,

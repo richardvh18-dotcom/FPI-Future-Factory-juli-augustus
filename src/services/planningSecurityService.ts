@@ -1,5 +1,6 @@
 import { getFunctions, httpsCallable } from "firebase/functions";
 import app from "../config/firebase";
+import { PATHS, getPathString } from "../config/dbPaths";
 
 const functions = getFunctions(app);
 
@@ -1266,6 +1267,10 @@ export const importPlanningOrders = async ({ orders, importMode = "new_only", ho
     orders: safeOrders,
     importMode: safeMode,
     hoursOnlyMode: Boolean(hoursOnlyMode),
+    runtimeDataSource: {
+      planningPath: getPathString(PATHS.PLANNING),
+      planningLegacyPath: getPathString(PATHS.PLANNING_LEGACY),
+    },
   });
 
   return result?.data || { ok: false };
