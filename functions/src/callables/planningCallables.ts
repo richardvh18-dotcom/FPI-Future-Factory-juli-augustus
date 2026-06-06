@@ -115,7 +115,11 @@ const IMPORT_ALLOWED_MODES = new Set(['new_only', 'overwrite', 'smart_update']);
 const REFERENCE_OPS_ALLOWED_ROLES = new Set(['admin']);
 const REFERENCE_OPS_ALLOWED_TYPES = new Set(['production', 'post', 'qc']);
 
-const extractRds = () => null;
+const extractRds = (data) => {
+  const source = data?.runtimeDataSource;
+  if (!source || typeof source !== 'object') return null;
+  return source;
+};
 
 const extractRdsFromSourcePath = () => null;
 
@@ -2241,7 +2245,7 @@ const importPlanningOrders = withAudit('IMPORT_PLANNING_ORDERS', async (data, co
     orders,
     importMode,
     hoursOnlyMode,
-    dbCtx: resolveDbContext(),
+    dbCtx: resolveDbContext(extractRds(data)),
   });
 });
 
