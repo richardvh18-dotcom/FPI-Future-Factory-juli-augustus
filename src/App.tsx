@@ -103,7 +103,7 @@ const App = () => {
   // Versie-check: forceer refresh bij nieuwe versie
   const currentVersion = import.meta.env.VITE_APP_VERSION || "dev";
   const versionRef = useRef(currentVersion);
-  
+
   useEffect(() => {
     const host = typeof window !== "undefined" ? window.location.hostname : "";
     const isLocalDevHost =
@@ -116,7 +116,23 @@ const App = () => {
     // Dit voorkomt reload-loops bij verschil tussen lokale buildversie en remote config.
     if (isLocalDevHost) return () => {};
 
-    const requestVersionReload = (remoteVersionRaw: unknown) => {
+    const clearBrowserAppCaches = async () => {
+      try {
+        if (typeof window !== "undefined" && "caches" in window) {
+          const cacheKeys = await window.caches.keys();
+          await Promise.all(cacheKeys.map((cacheKey) => window.caches.delete(cacheKey)));
+        }
+
+        if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map((registration) => registration.unregister()));
+        }
+      } catch (error) {
+        console.warn("Kon browsercaches niet volledig leegmaken:", error);
+      }
+    };
+
+    const requestVersionReload = async (remoteVersionRaw: unknown) => {
       const remoteVersion = String(remoteVersionRaw || "").trim();
       if (!remoteVersion || remoteVersion === versionRef.current) return;
 
@@ -125,12 +141,30 @@ const App = () => {
       const alreadyReloadedFor = window.sessionStorage.getItem(reloadKey);
       if (alreadyReloadedFor === remoteVersion) return;
 
+      // Controleer of de gebruiker momenteel actief ergens in aan het typen is
+      const activeEl = document.activeElement as HTMLElement | null;
+      const isUserTyping = activeEl && (
+        activeEl.tagName === "INPUT" ||
+        activeEl.tagName === "TEXTAREA" ||
+        activeEl.tagName === "SELECT" ||
+        activeEl.isContentEditable
+      );
+
+      if (isUserTyping) {
+        console.log("Update beschikbaar, maar gebruiker is actief. Herlaad 30s uitgesteld...");
+        setTimeout(() => {
+          void requestVersionReload(remoteVersionRaw);
+        }, 30000);
+        return;
+      }
+
       window.sessionStorage.setItem(reloadKey, remoteVersion);
+      await clearBrowserAppCaches();
       window.location.reload();
     };
 
     const unsubscribe = listenToAppVersion((remoteVersion: string) => {
-      requestVersionReload(remoteVersion);
+      void requestVersionReload(remoteVersion);
     });
 
     // Fallback voor omgevingen waar de Firestore versie-write niet draait.
@@ -144,7 +178,7 @@ const App = () => {
         if (!response.ok) return;
         const payload = await response.json();
         const hostedVersion = String(payload?.version || "").trim();
-        if (!cancelled) requestVersionReload(hostedVersion);
+        if (!cancelled) void requestVersionReload(hostedVersion);
       } catch {
         // Niet kritisch: app blijft werken zonder endpoint.
       }

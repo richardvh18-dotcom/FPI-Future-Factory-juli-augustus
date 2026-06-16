@@ -31,6 +31,7 @@ import { generateLotBatchZPL } from "../../../utils/zplHelper";
 import { renderLabelToBitmapZpl } from "../../../utils/unifiedLabelRenderEngine";
 import { getDriver } from "../../../utils/printerDrivers";
 import { queuePrintJob } from "../../../services/planningSecurityService";
+import { resolvePrinterForRouting } from "../../../utils/printRouting";
 import LabelVisualPreview from "../../printer/LabelVisualPreview";
 import { useLabelPreview } from "../../../hooks/useLabelPreview";
 import InternalQrImage from "../../../utils/InternalQrImage";
@@ -314,8 +315,8 @@ const ProductionStartModal = ({
     ]
       .map((value) => String(value || "").toUpperCase())
       .join(" ")
-  );
-  const shouldUseFlangeLabelFlow = isFlangeOrder || (isBh11OrBh15Station && hasFlInArticle);
+      ) || String(order?.itemCode || "").trim().toUpperCase().startsWith("FL") || String(order?.item || "").trim().toUpperCase().startsWith("FL");
+      const shouldUseFlangeLabelFlow = isFlangeOrder || hasFlInArticle;
 
   const sanitizePositiveIntInput = (value: any) => {
     const digitsOnly = String(value ?? "").replace(/\D/g, "");
@@ -334,16 +335,16 @@ const ProductionStartModal = ({
     return [...linked, ...queue].includes(station);
   };
 
-  const resolveTargetPrinter = (printerList: any[], station: string) => {
-    const globalDefault = (printerList || []).find((p: any) => p.isDefault);
-    const stationPrinter = (printerList || []).find((p: any) => printerHasStation(p, station));
-    // Prioriteit: expliciete standaardprinter > station-mapping
-    // Dit voorkomt dat oude stationkoppelingen (bijv. Lighthouse) de nieuwe standaard (ZM400) overrulen.
-    return globalDefault || stationPrinter || null;
+  const resolveTargetPrinter = (printerList: any[], station: string, routeKey: string) => {
+    return resolvePrinterForRouting(printerList, {
+      stationId: station,
+      routeKey,
+      labelRoute: routeKey,
+    });
   };
 
   const resolveTargetPrinterAsync = async () => {
-    const currentResolved = resolveTargetPrinter(savedPrinters, stationId);
+    const currentResolved = resolveTargetPrinter(savedPrinters, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
     if (currentResolved) return currentResolved;
 
     const currentById = printConfig.printerId
@@ -354,7 +355,7 @@ const ProductionStartModal = ({
     const prnPaths = PATHS.PRINTERS;
     const snap = await getDocs(collection(db, getPathString(prnPaths as string[])));
     const fetchedPrinters = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-    const fetchedResolved = resolveTargetPrinter(fetchedPrinters, stationId);
+    const fetchedResolved = resolveTargetPrinter(fetchedPrinters, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
     if (fetchedResolved) return fetchedResolved;
 
     const fetchedById = printConfig.printerId
@@ -686,7 +687,7 @@ const ProductionStartModal = ({
         const unsub = onSnapshot(printersRef, (snap) => {
           const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
           setSavedPrinters(list);
-          const targetPrinter = resolveTargetPrinter(list, stationId);
+          const targetPrinter = resolveTargetPrinter(list, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
 
           if (targetPrinter) {
             // Default naar 'queue' als er een printer is geconfigureerd voor dit station.
@@ -1331,9 +1332,9 @@ const ProductionStartModal = ({
         setManualMinimumSeq(minimumNextSeq);
 
         if (Number.isFinite(enteredSeq) && enteredSeq < minimumNextSeq) {
-          setManualPoolHint(`Minimaal toegestaan volgnummer: ${String(minimumNextSeq).padStart(4, "0")}`);
+          setManualPoolHint(`Lagere volgnummers zijn toegestaan als ze nog vrij zijn. Volgende vrije nummer is meestal vanaf ${String(minimumNextSeq).padStart(4, "0")}.`);
         } else {
-          setManualPoolHint(`Pool loopt door. Minimaal: ${String(minimumNextSeq).padStart(4, "0")}`);
+          setManualPoolHint(`Pool loopt door. Volgende vrije nummer is meestal vanaf ${String(minimumNextSeq).padStart(4, "0")}.`);
         }
       } catch {
         if (!cancelled) {
@@ -1469,20 +1470,16 @@ const ProductionStartModal = ({
         // Manual mode moet uit dezelfde tellerpool komen en altijd doorlopen.
         const normalizedManualLot = String(effectiveLotNumber || "").replace(/\D/g, "");
         const manualBaseLot = String(effectiveLotNumber || "").slice(0, -4);
-        const manualSeq = parseInt(String(effectiveLotNumber || "").slice(-4), 10);
         const manualWeekSuffix = normalizedManualLot.length >= 6
           ? normalizedManualLot.slice(2, 6)
           : "";
 
-        if (!manualBaseLot || !Number.isFinite(manualSeq) || !/^\d{4}$/.test(manualWeekSuffix)) {
+        if (!manualBaseLot || !/^\d{4}$/.test(manualWeekSuffix)) {
           throw new Error(t("productionStartModal.errors.manualLotMustEndWith4Digits"));
         }
 
-        const highestSeq = await getHighestSequenceForBaseLot(manualBaseLot, stationId, manualWeekSuffix);
-        const minimumNextSeq = Math.max(1, highestSeq + 1);
-        if (manualSeq < minimumNextSeq) {
-          throw new Error(`Lotnummer sequence ${String(manualSeq).padStart(4, "0")} is lager dan de huidige pool (${String(minimumNextSeq).padStart(4, "0")}). Gebruik een hoger volgnummer.`);
-        }
+        // Lagere volgnummers mogen handmatig gebruikt worden zolang ze uniek zijn.
+        // Zo kunnen tijdelijk overgeslagen nummers later alsnog worden ingezet.
 
         // Manual mode moet ook altijd uniciteit afdwingen voor we starten.
         const manualExists = await checkLotNumberExists(effectiveLotNumber);

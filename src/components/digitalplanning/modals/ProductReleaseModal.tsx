@@ -8,6 +8,7 @@ import { REJECTION_REASONS, resolvePostLossenStation } from "../../../utils/work
 import { useNotifications } from '../../../contexts/NotificationContext';
 import { useProgressOperationsStore } from '../../../contexts/ProgressOperationContext';
 import { rejectTrackedProductFinal, tempRejectTrackedProduct, advanceTrackedProduct } from "../../../services/planningSecurityService";
+import { useFormPersistence } from "../../../hooks/useFormPersistence";
 
 const PILOT_ALLOW_INCOMPLETE_LOSSEN_MEASUREMENTS = true;
 
@@ -269,14 +270,26 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
   const lastAutoApproveRef = useRef(0);
   
   // Form state
-  const [status, setStatus] = useState("approved"); // approved, temp_reject, rejected
-  const [measurements, setMeasurements] = useState<Record<string, any>>({});
+  const [formState, setFormState, clearPersistedForm] = useFormPersistence<{
+    status: string;
+    measurements: Record<string, any>;
+    selectedReasons: string[];
+    comment: string;
+  }>("product_release_modal_form", {
+    status: "approved",
+    measurements: {},
+    selectedReasons: [],
+    comment: "",
+  });
   const [errors, setErrors] = useState<Record<string, boolean>>({});
-  const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
-  const [comment, setComment] = useState("");
   const [selectedBulkLotIds, setSelectedBulkLotIds] = useState<string[]>([]);
   const [toleranceConfig, setToleranceConfig] = useState<any>(null);
   const [nominalValues, setNominalValues] = useState<Record<string, number>>({});
+
+  const status = formState.status;
+  const measurements = formState.measurements;
+  const selectedReasons = formState.selectedReasons;
+  const comment = formState.comment;
 
   const isBulkMode = Array.isArray(bulkProducts) && bulkProducts.length > 1;
 
@@ -301,11 +314,12 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
   };
 
   const toggleReason = (reasonKey: string) => {
-    setSelectedReasons((prev) =>
-      prev.includes(reasonKey)
-        ? prev.filter((r) => r !== reasonKey)
-        : [...prev, reasonKey]
-    );
+    setFormState((prev) => ({
+      ...prev,
+      selectedReasons: prev.selectedReasons.includes(reasonKey)
+        ? prev.selectedReasons.filter((r) => r !== reasonKey)
+        : [...prev.selectedReasons, reasonKey],
+    }));
   };
 
   // Determine product/connectie type for measurements
@@ -440,10 +454,18 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
   if (product?.isManualMove) {
     nextStepDisplay = "Nabewerking";
   } else if (isLossenStep) {
-    nextStepDisplay = resolvePostLossenStation(
-      `${product?.item || ""} ${product?.itemDescription || ""} ${product?.description || ""}`,
-      product?.originMachine || product?.machine
-    );
+    const itemIdentifier = `${product?.item || ""} ${product?.itemDescription || ""} ${product?.description || ""} ${product?.itemCode || ""}`.toUpperCase();
+    const compactItem = itemIdentifier.trim().replace(/\s+/g, " ");
+    const isFlangeItem = compactItem.startsWith("FL") || itemIdentifier.includes("FLENS") || /\bFLANGE\b/.test(itemIdentifier);
+    
+    if (isFlangeItem) {
+      nextStepDisplay = "Mazak";
+    } else {
+      nextStepDisplay = resolvePostLossenStation(
+        `${product?.item || ""} ${product?.itemDescription || ""} ${product?.description || ""}`,
+        product?.originMachine || product?.machine
+      );
+    }
   } else if (currentStep === "Nabewerking" || currentStep === "Mazak") {
     nextStepDisplay = "Eindinspectie";
   } else if (currentStep === "Eindinspectie" || currentStep === "Inspectie" || product?.currentStation === "BM01") {
@@ -544,7 +566,10 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
   };
 
   const handleMeasurementChange = (field: string, value: string) => {
-    setMeasurements(prev => ({ ...prev, [field]: value }));
+    setFormState((prev) => ({
+      ...prev,
+      measurements: { ...prev.measurements, [field]: value },
+    }));
     if (errors[field]) {
       setErrors(prev => {
         const newErrors = { ...prev };
@@ -640,10 +665,20 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
               let targetStation = nextStep;
 
               if (isLossenStep) {
-                const routedStep = resolvePostLossenStation(
-                  `${target?.item || ""} ${target?.itemDescription || ""} ${target?.description || ""} ${target?.itemCode || ""}`,
-                  target?.originMachine || target?.machine || product?.originMachine || product?.machine
-                );
+                const itemIdentifier = `${target?.item || ""} ${target?.itemDescription || ""} ${target?.description || ""} ${target?.itemCode || ""}`.toUpperCase();
+                const compactItem = itemIdentifier.trim().replace(/\s+/g, " ");
+                const isFlangeTarget = compactItem.startsWith("FL") || itemIdentifier.includes("FLENS") || /\bFLANGE\b/.test(itemIdentifier);
+                
+                let routedStep = "Nabewerking";
+                if (isFlangeTarget) {
+                  routedStep = "Mazak";
+                } else {
+                  routedStep = resolvePostLossenStation(
+                    `${target?.item || ""} ${target?.itemDescription || ""} ${target?.description || ""} ${target?.itemCode || ""}`,
+                    target?.originMachine || target?.machine || product?.originMachine || product?.machine
+                  );
+                }
+                
                 nextStep = routedStep;
                 nextStatus = `Wacht op ${routedStep}`;
                 targetStation = routedStep;
@@ -727,6 +762,14 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
           `Release modal: ${selectedTargets.length} lot(s), station ${product?.currentStation || product?.machine || "onbekend"}, status ${status}${measurementsStr}`
         );
 
+        clearPersistedForm();
+        setFormState({
+          status: "approved",
+          measurements: {},
+          selectedReasons: [],
+          comment: "",
+        });
+
         if (status === "approved" && isLossenStep) {
           await maybeShowLossen1218MoldNotice(selectedTargets);
         }
@@ -794,19 +837,19 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
           {requiresMeasurements && (
             <div className="grid grid-cols-3 gap-2 md:gap-3 mb-4 md:mb-6">
               <button
-                onClick={() => setStatus("approved")}
+                onClick={() => setFormState((prev) => ({ ...prev, status: "approved" }))}
                 className={`p-2 md:p-3 rounded-xl border-2 font-black uppercase text-[10px] md:text-xs flex flex-col items-center gap-1 md:gap-2 ${status === "approved" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-100 text-slate-400 hover:border-emerald-200"}`}
               >
                 <CheckCircle size={20} className="md:w-6 md:h-6" /> Goed
               </button>
               <button
-                onClick={() => setStatus("temp_reject")}
+                onClick={() => setFormState((prev) => ({ ...prev, status: "temp_reject" }))}
                 className={`p-2 md:p-3 rounded-xl border-2 font-black uppercase text-[10px] md:text-xs flex flex-col items-center gap-1 md:gap-2 ${status === "temp_reject" ? "border-orange-500 bg-orange-50 text-orange-700" : "border-slate-100 text-slate-400 hover:border-orange-200"}`}
               >
                 <AlertTriangle size={20} className="md:w-6 md:h-6" /> Tijdelijke afkeur
               </button>
               <button
-                onClick={() => setStatus("rejected")}
+                onClick={() => setFormState((prev) => ({ ...prev, status: "rejected" }))}
                 className={`p-2 md:p-3 rounded-xl border-2 font-black uppercase text-[10px] md:text-xs flex flex-col items-center gap-1 md:gap-2 ${status === "rejected" ? "border-rose-500 bg-rose-50 text-rose-700" : "border-slate-100 text-slate-400 hover:border-rose-200"}`}
               >
                 <AlertOctagon size={20} className="md:w-6 md:h-6" /> Definitieve afkeur
@@ -898,7 +941,7 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
             </h4>
             <textarea
               value={comment}
-              onChange={(e) => setComment(e.target.value)}
+              onChange={(e) => setFormState((prev) => ({ ...prev, comment: e.target.value }))}
               className="w-full p-3 md:p-4 rounded-xl border border-slate-200 font-medium text-sm text-slate-700 focus:border-blue-500 outline-none min-h-[80px] md:min-h-[100px]"
               placeholder={t("placeholders.dpOptionalNote", "Voeg eventueel een opmerking toe...")}
             />

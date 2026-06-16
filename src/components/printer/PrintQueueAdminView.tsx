@@ -29,6 +29,7 @@ import AutoScaledLabelPreview from './AutoScaledLabelPreview';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useLabelCatalog } from '../../hooks/useLabelCatalog';
 import { renderLabelToBitmapZpl } from '../../utils/unifiedLabelRenderEngine';
+import { resolvePrinterForRouting } from '../../utils/printRouting';
 import {
   buildOrderLabelPreviewData,
   buildOrderLabelTemplateProduct,
@@ -211,9 +212,11 @@ const printRawUsb = async (device: USBDevice, content: string) => {
   return printRawUsbToDevice({ device, content });
 };
 
-const normalizeQueuePrintPayload = (content: unknown, quantity: unknown) => {
+const normalizeQueuePrintPayload = (content: unknown, quantity: unknown, isPreBatchedJob: boolean = false) => {
   const base = String(content || "").trim();
   if (!base) return "";
+  if (isPreBatchedJob) return base;
+
   const qty = Number.isFinite(Number(quantity)) && Number(quantity) > 0
     ? Math.max(1, Math.floor(Number(quantity)))
     : 1;
@@ -1333,7 +1336,10 @@ const PrintQueueAdminView = () => {
       );
       if (matched) return matched;
     }
-    return printers.find((p) => p.isDefault) || printers[0] || null;
+    return resolvePrinterForRouting(printers, {
+      stationId: selectedStation,
+      routeKey: selectedStation,
+    });
   }, [printers, usbDevice]);
 
   const stationGroups = useMemo(() => {
@@ -1476,7 +1482,7 @@ const PrintQueueAdminView = () => {
       const batchSeqTotal = Number(job?.metadata?.batchSequenceTotal);
       const hasBatchSequence = Number.isFinite(batchSeqIndex) && Number.isFinite(batchSeqTotal) && batchSeqTotal > 0;
       const shouldCutAtEnd = hasBatchSequence ? batchSeqIndex === batchSeqTotal : true;
-      const basePayload = normalizeQueuePrintPayload(content, quantity);
+      const basePayload = normalizeQueuePrintPayload(content, quantity, isPreBatchedJob);
       const payload = isPreBatchedJob
         ? String(basePayload)
         : String(basePayload)

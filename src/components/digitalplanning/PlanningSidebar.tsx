@@ -40,7 +40,12 @@ type SidebarRecord = {
   updatedAt?: unknown;
   completedAt?: Date | unknown;
   rejectDate?: unknown;
-  timestamps?: { finished?: unknown; started?: unknown };
+  timestamps?: {
+    finished?: unknown;
+    started?: unknown;
+    station_start?: unknown;
+    wikkelen_start?: unknown;
+  };
   inspection?: { status?: string; timestamp?: unknown; reasons?: string[] };
   isArchivedOrder?: boolean;
   isTrackingDerivedOrder?: boolean;

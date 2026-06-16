@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Search,
@@ -17,6 +17,8 @@ import {
   PauseCircle,
   History,
   Calendar,
+  Keyboard,
+  X,
 } from "lucide-react";
 import { collection, getDocs, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../../../config/firebase";
@@ -27,6 +29,7 @@ import { nl } from "date-fns/locale";
 import { toDateSafe } from "../../../utils/dateUtils";
 import StatusBadge from "../common/StatusBadge";
 import { useNotifications } from '../../../contexts/NotificationContext';
+import { useTouchKeyboardPreference } from "../../../hooks/useTouchKeyboardPreference";
 
 type AnyRecord = Record<string, any>;
 
@@ -77,7 +80,14 @@ const TerminalPlanningView = ({
   referenceDate,
 }: TerminalPlanningViewProps) => {
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const { t } = useTranslation();
+  const { touchKeyboardPreferred, setTouchKeyboardPreferred } = useTouchKeyboardPreference();
+  const isTouchDevice = useMemo(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(pointer: coarse)").matches;
+  }, []);
+  const suppressSoftKeyboard = isTouchDevice && !touchKeyboardPreferred;
 
   const [toolingMolds, setToolingMolds] = React.useState<any[]>([]);
 
@@ -640,12 +650,41 @@ const TerminalPlanningView = ({
               size={18}
             />
             <input
+              ref={searchInputRef}
               type="text"
               placeholder={t("digitalplanning.terminal.search_order_product_project", "Zoek order, product of project...")}
-              className="w-full pl-12 pr-10 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-base font-bold outline-none focus:border-blue-500 transition-all shadow-sm"
+              className="w-full pl-12 pr-24 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-base font-bold outline-none focus:border-blue-500 transition-all shadow-sm"
               value={searchTerm}
               onChange={(e) => onSearchChange(e.target.value)}
+              inputMode={suppressSoftKeyboard ? "none" : "text"}
             />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {searchTerm ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSearchChange("");
+                    searchInputRef.current?.focus();
+                  }}
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+                  title={t("common.clear", "Wissen")}
+                >
+                  <X size={14} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTouchKeyboardPreferred(true);
+                    requestAnimationFrame(() => searchInputRef.current?.focus());
+                  }}
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-blue-600 hover:text-blue-700"
+                  title={t("digitalplanning.terminal.keyboard", "Toetsenbord")}
+                >
+                  <Keyboard size={14} />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex gap-2 shrink-0 items-center">

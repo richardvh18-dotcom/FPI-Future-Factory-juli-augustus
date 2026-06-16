@@ -33,6 +33,7 @@ import {
   VERIFICATION_STATUS,
 } from "../../data/constants";
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useFormPersistence } from "../../hooks/useFormPersistence";
 
 type ProductSpecMap = Record<string, unknown>;
 
@@ -203,7 +204,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }: ProductFormProps
   const configDiameters: number[] = Array.isArray(generalConfig?.diameters) ? (generalConfig.diameters as number[]) : [];
 
   // State voor het formulier
-  const [formData, setFormData] = useState<ProductFormState>({
+  const [formData, setFormData, clearPersistedProductForm] = useFormPersistence<ProductFormState>("admin_product_form", {
     name: "",
     displayId: "",
     type: "",
@@ -241,6 +242,23 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }: ProductFormProps
   const [pickerMode, setPickerMode] = useState<"image" | "pdf" | null>(null); // 'image' or 'pdf'
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [verifiers, setVerifiers] = useState<Verifier[]>([]);
+
+  // Bestandsobjecten zijn niet betrouwbaar serializeerbaar; herstel altijd naar lege file-state na laden uit storage.
+  useEffect(() => {
+    setFormData((prev) => {
+      let changed = false;
+      const next: ProductFormState = { ...prev };
+      if (prev.imageFile && !(prev.imageFile instanceof File)) {
+        next.imageFile = null;
+        changed = true;
+      }
+      if (!Array.isArray(prev.pdfFiles) || prev.pdfFiles.some((f) => !(f instanceof File))) {
+        next.pdfFiles = [];
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [setFormData]);
 
   // Fetch verifiers
   useEffect(() => {
@@ -835,6 +853,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }: ProductFormProps
         }
       }
 
+      clearPersistedProductForm();
       if (onSubmit) onSubmit();
     } catch (err) {
       console.error("Save failed:", err);

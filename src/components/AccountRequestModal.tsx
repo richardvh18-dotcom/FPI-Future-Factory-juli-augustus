@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X, UserPlus, Mail, User, Globe, Building2, Send, CheckCircle } from "lucide-react";
 import { submitAccountRequest } from '../services/planningSecurityService';
+import { useFormPersistence } from "../hooks/useFormPersistence";
 
 interface AccountRequestModalProps {
   isOpen: boolean;
@@ -20,7 +21,10 @@ interface FormData {
  */
 const AccountRequestModal = ({ isOpen, onClose }: AccountRequestModalProps) => {
   const { t } = useTranslation();
-  const [formData, setFormData] = useState<FormData>({ name: "", email: "", country: "", department: "" });
+  const [formData, setFormData, clearPersistedForm] = useFormPersistence<FormData>(
+    "account_request_modal_form",
+    { name: "", email: "", country: "", department: "" }
+  );
   const [loading, setLoading] = useState<boolean>(false);
   const [submitted, setSubmitted] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +57,7 @@ const AccountRequestModal = ({ isOpen, onClose }: AccountRequestModalProps) => {
       setSubmitted(true);
 
       setTimeout(() => {
+        clearPersistedForm();
         setFormData({ name: "", email: "", country: "", department: "" });
         setSubmitted(false);
         onClose();

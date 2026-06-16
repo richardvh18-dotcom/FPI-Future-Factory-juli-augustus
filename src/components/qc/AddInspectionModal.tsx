@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { saveQcInspection } from "../../services/qcSecurityService";
 import { auth } from "../../config/firebase";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useFormPersistence } from "../../hooks/useFormPersistence";
 
 type AddInspectionModalProps = {
   onClose: () => void;
@@ -14,7 +15,7 @@ const AddInspectionModal = ({ onClose }: AddInspectionModalProps) => {
   const { showSuccess, showError } = useNotifications();
   const [loading, setLoading] = useState(false);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData, clearPersistedForm] = useFormPersistence("add_inspection_modal_form", {
     lotNumber: "",
     checkType: "",
     result: "OK" as "OK" | "NOK",
@@ -34,6 +35,13 @@ const AddInspectionModal = ({ onClose }: AddInspectionModalProps) => {
         source: "AddInspectionModal"
       });
       showSuccess(t("qc.inspection_saved", "Inspectie succesvol opgeslagen via backend en gelogd."));
+      clearPersistedForm();
+      setFormData({
+        lotNumber: "",
+        checkType: "",
+        result: "OK",
+        note: "",
+      });
       onClose();
     } catch (err: any) {
       console.error(err);

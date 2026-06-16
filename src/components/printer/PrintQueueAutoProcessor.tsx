@@ -115,9 +115,11 @@ const tsToMillis = (value: unknown): number => {
   return Number.isFinite(parsed.getTime()) ? parsed.getTime() : 0;
 };
 
-const normalizeQueuePrintPayload = (content: unknown, quantity: unknown) => {
+const normalizeQueuePrintPayload = (content: unknown, quantity: unknown, isPreBatchedJob: boolean = false) => {
   const base = String(content || '').trim();
   if (!base) return '';
+  if (isPreBatchedJob) return base;
+
   const qty = Number.isFinite(Number(quantity)) && Number(quantity) > 0
     ? Math.max(1, Math.floor(Number(quantity)))
     : 1;
@@ -162,8 +164,7 @@ const getCurrentPrinterId = (printers: PrinterConfig[], usbDevice: USBDevice | n
     if (match?.id) return match.id;
   }
 
-  const fallback = printers.find((p) => p.isDefault) || printers[0];
-  return fallback?.id || null;
+  return null;
 };
 
 const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
@@ -344,7 +345,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             const batchSeqTotal = Number(job?.metadata?.batchSequenceTotal);
             const hasBatchSequence = Number.isFinite(batchSeqIndex) && Number.isFinite(batchSeqTotal) && batchSeqTotal > 0;
             const shouldCutAtEnd = hasBatchSequence ? batchSeqIndex === batchSeqTotal : true;
-            const basePayload = normalizeQueuePrintPayload(content, getJobQuantity(job));
+            const basePayload = normalizeQueuePrintPayload(content, getJobQuantity(job), isPreBatchedJob);
             const payload = isPreBatchedJob
               ? String(basePayload)
               : String(basePayload)

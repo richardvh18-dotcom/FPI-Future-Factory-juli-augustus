@@ -16,6 +16,8 @@ import {
 import { db, auth, logActivity } from "../../../config/firebase";
 import { PATHS, getPathString } from "../../../config/dbPaths";
 import { importPlanningOrders } from "../../../services/planningSecurityService";
+import { normalizeMachine } from "../../../utils/hubHelpers";
+import { useNotifications } from "../../../contexts/NotificationContext";
 import * as XLSX from "xlsx";
 import { getISOWeek, format, startOfISOWeek, differenceInCalendarWeeks, parse, parseISO, isValid, subWeeks } from "date-fns";
 
@@ -81,11 +83,11 @@ type PlanningImportAggregate = PlanningImportEntry & {
  */
 const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "all" }: PlanningImportModalProps) => {
   const { t } = useTranslation();
+  const { showSuccess, showError } = useNotifications();
   const [fileData, setFileData] = useState<PlanningImportEntry[]>([]);
   const [rawWorkbook, setRawWorkbook] = useState<XLSX.WorkBook | null>(null);
   const [loading, setLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [existingIds, setExistingIds] = useState<Set<string>>(new Set());
   const [existingOrderMap, setExistingOrderMap] = useState<Map<string, PlanningImportEntry>>(new Map());
   const [importMode, setImportMode] = useState("smart_update");
@@ -97,6 +99,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [toDoOverrides, setToDoOverrides] = useState<Record<string, unknown>>({});
   const [pasteMode, setPasteMode] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [importProgressPct, setImportProgressPct] = useState(0);
   const [importProgressLabel, setImportProgressLabel] = useState("");
   const [importEtaLabel, setImportEtaLabel] = useState("");
@@ -104,6 +107,9 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pasteTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Bepaal of deze import alleen voor Fittings is
+  const isFittingsScoped = useMemo(() => currentDepartment === "fittings", [currentDepartment]);
 
   // Tijdelijke businessguard: deze orders staan bevestigd in DB en mogen niet via slimme sync worden bijgewerkt.
   const SMART_SYNC_EXCLUDED_ORDER_IDS = useMemo(
@@ -217,84 +223,42 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
   };
 
   const clean = (val: unknown) => String(val || "").trim();
-  const buildImportDocId = (orderId: unknown, ...suffixCandidates: unknown[]) => {
-    const safeOrderId = clean(orderId);
-    const suffix = suffixCandidates
-      .map((value: unknown) => clean(value))
-      .find((value: string) => value.length > 0);
-    const raw = suffix ? `${safeOrderId}_${suffix}` : safeOrderId;
-    return raw.replace(/[^a-zA-Z0-9]/g, "_");
-  };
-  const toKeyVariants = (value: unknown) => {
-    const base = clean(value).toUpperCase();
-    if (!base) return [];
-
-    const variants = [base, base.replace(/\s+/g, "")].filter(Boolean);
-    const idPrefix = base.includes("_") ? clean(base.split("_")[0]).toUpperCase() : "";
-    if (idPrefix) {
-      variants.push(idPrefix, idPrefix.replace(/\s+/g, ""));
-    }
-
-    return Array.from(new Set(variants.filter(Boolean)));
+  const getOrderKeys = (order: Partial<PlanningImportEntry> | null | undefined) => {
+    const keys = new Set<string>();
+    [order?.id, order?.orderId, order?.orderNumber, order?.sourceDataId].forEach((value) => {
+      const key = clean(value).toUpperCase();
+      if (key) keys.add(key);
+    });
+    return Array.from(keys);
   };
 
-  const getOrderKeys = (entry: PlanningImportEntry) => {
-    const rawValues = [entry?.orderId, entry?.orderNumber, entry?.sourceDataId, entry?.id];
-    const keys = rawValues.flatMap((value) => toKeyVariants(value));
-    return Array.from(new Set(keys));
-  };
-  const getPreferredLookupKeys = (entry: PlanningImportEntry) => {
-    // Eerst zo specifiek mogelijk matchen (doc-id/sourceDataId), daarna pas op ordernummer.
-    const exactValues = [entry?.id, entry?.sourceDataId];
-    const broadValues = [entry?.orderId, entry?.orderNumber];
-    const keys = [...exactValues, ...broadValues].flatMap((value) => toKeyVariants(value));
-    return Array.from(new Set(keys));
-  };
-  const getOrderKey = (entry: PlanningImportEntry) => getOrderKeys(entry)[0] || "";
-  const isExistingOrder = (order: PlanningImportEntry) => getOrderKeys(order).some((key) => existingIds.has(key));
-  const isSmartSyncExcludedOrder = (order: PlanningImportEntry) => {
-    const orderId = clean(order?.orderId || order?.orderNumber || order?.id).toUpperCase();
-    
-    // 1. Check hardcoded exclusion list
-    if (SMART_SYNC_EXCLUDED_ORDER_IDS.has(orderId)) return true;
-
-    // 2. Check dynamic exclusion field from Firestore
-    const existing = getExistingOrder(order);
-    if (existing?.smartSyncExcluded === true) return true;
-    if (existing?.smartSyncIncluded === false) return true;
-
-    return false;
-  };
-  const getExistingOrder = (order: PlanningImportEntry) => {
-    const keys = getPreferredLookupKeys(order);
+  const getExistingOrder = (order: Partial<PlanningImportEntry> | null | undefined) => {
+    const keys = getOrderKeys(order);
     for (const key of keys) {
-      const hit = existingOrderMap.get(key);
-      if (hit) return hit;
+      const existing = existingOrderMap.get(key);
+      if (existing) return existing;
     }
     return null;
   };
-  const normalizeDepartment = (value: unknown) => String(value || "").trim().toLowerCase();
-  const departmentScope = normalizeDepartment(currentDepartment);
-  const isFittingsScoped = departmentScope === "fittings";
 
-  useEffect(() => {
-    if (!isOpen) return;
-    setImportMode("smart_update");
-    setPasteMode(false);
-    setSelectedMachines(["BH18"]);
-    setToDoOverrides({});
-    setMachineGroupFilter(isFittingsScoped ? "fittings" : "all");
-    setImportProgressPct(0);
-    setImportProgressLabel("");
-    setImportEtaLabel("");
-  }, [isOpen, isFittingsScoped]);
-
-  const normalizeMachineCodeForFilter = (machineCode: unknown) => {
-    const raw = clean(machineCode).toUpperCase();
-    if (!raw) return "-";
-    return raw.startsWith("40") ? raw.slice(2) : raw;
+  const isExistingOrder = (order: Partial<PlanningImportEntry> | null | undefined) => {
+    return getOrderKeys(order).some((key) => existingIds.has(key));
   };
 
+  const isSmartSyncExcludedOrder = (order: Partial<PlanningImportEntry> | null | undefined) => {
+    return getOrderKeys(order).some((key) => SMART_SYNC_EXCLUDED_ORDER_IDS.has(key));
+  };
+
+  const buildImportDocId = (orderId: unknown, ...suffixCandidates: unknown[]) => {
+    const safeOrderId = clean(orderId);
+    const suffix = suffixCandidates
+      .map((value) => clean(value))
+      .find((value) => value.length > 0);
+    const raw = suffix ? `${safeOrderId}_${suffix}` : safeOrderId;
+    return raw.replace(/[^a-zA-Z0-9]/g, "_");
+  };
+
+  if (!isOpen) return null;
   const parseNum = (val: unknown) => {
     if (val === null || val === undefined || val === "") return 0;
     const s = String(val).replace(/\s/g, "").replace(",", ".");
@@ -528,6 +492,12 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     if (s.includes("production completed") || s.includes("completed")) return false;
     const allowed = ["released", "planned", "active", "created", "vrijgegeven", "aangemaakt", "actief"];
     return allowed.some(keyword => s.includes(keyword));
+  };
+
+  const normalizeMachineCodeForFilter = (machineCode: unknown) => {
+    const normalized = normalizeMachine(machineCode);
+    if (normalized === "BM18") return "BH18";
+    return normalized;
   };
 
   const getMachinePriority = (machineCode: unknown) => {
@@ -1111,12 +1081,22 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     return machines;
   }, [effectiveValidOrders, isFittingsScoped]);
 
+  const getDefaultMachineSelection = (machines: string[]) => {
+    const bh18Machines = machines.filter((machine) => {
+      const normalized = normalizeMachineCodeForFilter(machine);
+      return normalized === "BH18" || normalized === "40BH18";
+    });
+
+    if (bh18Machines.length > 0) return bh18Machines.sort();
+    return [];
+  };
+
   useEffect(() => {
     setSelectedMachines((prev) => {
       const filtered = prev.filter((machine) => availableMachines.includes(machine));
-      // Auto-select BH18 if nothing is selected yet and it's available
-      if (filtered.length === 0 && availableMachines.includes("BH18")) {
-        return ["BH18"];
+      if (filtered.length === 0) {
+        const defaultSelection = getDefaultMachineSelection(availableMachines);
+        if (defaultSelection.length > 0) return defaultSelection;
       }
       return filtered;
     });
@@ -1531,12 +1511,24 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       setImportProgressLabel(t("digitalplanning.planning_import.progress_done", "Import voltooid"));
       setImportEtaLabel("");
       addLog(t("digitalplanning.planning_import.logs.import_success", "Import succesvol!"), "success");
+      showSuccess(
+        importMode === "smart_update"
+          ? t("digitalplanning.planning_import.toasts.sync_success", {
+              count: toImport.length,
+              defaultValue: "Slimme import voltooid: {{count}} orders verwerkt.",
+            })
+          : t("digitalplanning.planning_import.toasts.import_success", {
+              count: toImport.length,
+              defaultValue: "Import voltooid: {{count}} orders verwerkt.",
+            })
+      );
       await logActivity(auth.currentUser?.uid || "system", "PLANNING_IMPORT", logMsg);
       setTimeout(() => { onSuccess?.(); onClose(); }, 1000);
     } catch {
       addLog(t("digitalplanning.planning_import.logs.database_error", "Database fout."), "error");
       setImportProgressLabel(t("digitalplanning.planning_import.progress_failed", "Import mislukt"));
       setImportEtaLabel("");
+      showError(t("digitalplanning.planning_import.toasts.import_failed", "Import mislukt. Controleer de logs en probeer opnieuw."));
     } finally {
       setImporting(false);
     }
@@ -1547,28 +1539,6 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/95 backdrop-blur-md">
       <div className="bg-white w-full max-w-[96vw] h-[96vh] rounded-[3rem] shadow-2xl flex flex-col overflow-hidden border border-white/20 text-left relative">
-        {importing && (
-          <div className="absolute inset-0 z-[120] flex items-center justify-center bg-slate-900/60 backdrop-blur-md rounded-[3rem]">
-            <div className="bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-2xl w-full max-w-2xl flex flex-col gap-8">
-              <div className="flex items-center gap-4 text-blue-600">
-                <Loader2 className="animate-spin" size={40} />
-                <h3 className="text-3xl font-black uppercase tracking-tight">{t("digitalplanning.planning_import.progress_busy", "Importeren...")}</h3>
-              </div>
-              <div className="flex justify-between items-end text-base font-black uppercase tracking-widest text-slate-500">
-                <span className="text-slate-700">{importProgressLabel}</span>
-                <span className="flex items-center gap-4">
-                  {importEtaLabel ? <span className="text-slate-400 bg-slate-100 px-4 py-1.5 rounded-xl">{importEtaLabel}</span> : null}
-                  <span className="text-blue-600 text-3xl leading-none">{importProgressPct}%</span>
-                </span>
-              </div>
-              <div className="h-8 w-full bg-slate-100 rounded-full overflow-hidden border-2 border-slate-200/60 shadow-inner">
-                <div className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-300 ease-out flex items-center justify-end pr-3 shadow-lg" style={{ width: `${importProgressPct}%` }}>
-                   {importProgressPct > 5 && <div className="w-3 h-3 rounded-full bg-white/50 animate-pulse" />}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
         <div className="p-5 border-b flex justify-between items-center bg-slate-50">
           <div className="flex items-center gap-4">
             <div className="bg-blue-600 p-3 rounded-[1.1rem] text-white shadow-xl"><Database size={22} /></div>
@@ -1916,12 +1886,10 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
              <button onClick={() => setImportMode("overwrite")} className={`px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${importMode === "overwrite" ? "bg-orange-600 text-white shadow-xl" : "text-slate-400 hover:bg-slate-50"}`}>{t("digitalplanning.planning_import.overwrite_all", "Overschrijf Alles")}</button>
           </div>
           <div className="flex gap-5">
-            <button onClick={onClose} disabled={importing} className="px-10 py-4 bg-white border-2 border-slate-200 text-slate-400 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-100 transition-all disabled:opacity-60 disabled:cursor-not-allowed">{t("digitalplanning.planning_import.cancel", "Annuleren")}</button>
-            <button onClick={startImport} disabled={importableCount === 0 || importing} className="px-12 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-sm tracking-widest shadow-2xl shadow-blue-200 hover:bg-blue-700 transition-all flex items-center gap-4 disabled:opacity-50 disabled:bg-slate-300">
-              {importing ? <Loader2 className="animate-spin" size={24} /> : <ShieldCheck size={24} />}
-              {importing
-                ? t("digitalplanning.planning_import.importing_with_progress", { progress: importProgressPct, defaultValue: "Importeren... {{progress}}%" })
-                : t("digitalplanning.planning_import.import_orders", { count: importableCount, defaultValue: "Importeer {{count}} Orders" })}
+            <button onClick={onClose} className="px-10 py-4 bg-white border-2 border-slate-200 text-slate-400 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-100 transition-all">{t("digitalplanning.planning_import.cancel", "Annuleren")}</button>
+            <button onClick={startImport} disabled={importableCount === 0} className="px-12 py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-sm tracking-widest shadow-2xl shadow-blue-200 hover:bg-blue-700 transition-all flex items-center gap-4 disabled:opacity-50 disabled:bg-slate-300">
+              <ShieldCheck size={24} />
+              {t("digitalplanning.planning_import.import_orders", { count: importableCount, defaultValue: "Importeer {{count}} Orders" })}
             </button>
           </div>
         </div>

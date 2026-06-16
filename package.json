@@ -1,6 +1,6 @@
 {
   "name": "fpi-future-factory",
-  "version": "0.1.12",
+  "version": "0.1.22",
   "private": true,
   "type": "module",
   "dependencies": {
@@ -32,7 +32,6 @@
     "react-router-dom": "^6.21.1",
     "react-window": "^2.2.7",
     "terser": "^5.36.0",
-    "vercel": "^54.6.1",
     "web-vitals": "^2.1.4",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.13"
@@ -62,6 +61,9 @@
     "dev": "vite",
     "start": "vite",
     "build": "NODE_OPTIONS=--max-old-space-size=4096 vite build",
+    "version:bump:patch": "node scripts/bump-version.cjs",
+    "version:bump:patch:dry": "node scripts/bump-version.cjs --dry-run",
+    "deploy": "npm run version:bump:patch && npm run build && firebase deploy --only hosting",
     "preview": "vite preview",
     "lint": "eslint src --ext .js,.jsx,.ts,.tsx",
     "lint:strict": "eslint src --ext .js,.jsx,.ts,.tsx --max-warnings=0",

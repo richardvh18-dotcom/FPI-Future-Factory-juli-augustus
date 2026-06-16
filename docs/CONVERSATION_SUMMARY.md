@@ -1,3 +1,151 @@
+## Update sessie 15 juni 2026 (Import modal fixes + deploy 0.1.21 + performance notitie)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Planning import modal gestabiliseerd**
+- Crash bij Excel-selectie opgelost in `PlanningImportModal.tsx` door ontbrekende helpers te herstellen (`getExistingOrder`, `isSmartSyncExcludedOrder`, `buildImportDocId`).
+- Standaardselectie voor machinefilter hersteld zodat BH18 weer automatisch geselecteerd wordt wanneer die in de importset beschikbaar is.
+
+**2. Frontend release afgerond**
+- Eerdere mislukte releasepoging had versie `0.1.21` al voorbereid in `package.json` en `public/version.json`.
+- Daarna succesvol afgerond met:
+    - `npm run build`
+    - `firebase deploy --only hosting`
+- Hosting live bevestigd op:
+    - `https://future-factory-377ef.web.app`
+
+**3. Performance-aandachtspunt vastgelegd voor later**
+- Tijdens de Vite productiebuild verscheen de waarschuwing: `Some chunks are larger than 500 kB after minification`.
+- Dit blokkeert deploy niet, maar is een performance-signaal dat sommige JavaScript-bundles relatief groot zijn.
+- Mogelijke latere optimalisaties:
+    - dynamic import toepassen op zware views/modules
+    - `manualChunks` configureren in Vite/Rollup
+    - alleen indien bewust acceptabel: `chunkSizeWarningLimit` verhogen
+
+### Resultaat
+- Import modal crasht niet meer op ontbrekende helperfuncties.
+- BH18 staat weer standaard geselecteerd in de import modal.
+- Frontend release `0.1.21` staat live.
+- Chunk-size waarschuwing is expliciet opgeslagen als later performance-werkpunt.
+
+## Update sessie 15 juni 2026 (Form persistence rollout + versiebump + deploy status)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Form persistence breed uitgerold in frontend**
+- `useFormPersistence` geïmplementeerd op de belangrijkste QC-, planning- en admin-formulieren.
+- Migraties uitgevoerd in o.a. inspection, repair, post-processing, product release, inventory check, QC sample, label logic, account request, email management, bore/drilling beheer, printer manager, compose message modal, personnel add/edit modal en product form.
+- In formulieren met submit-flow is persisted data na succesvolle save/submit opgeschoond om stale invoer te voorkomen.
+
+**2. Veiligheidsaanpassingen rondom form-state**
+- Bij complexe formulieren met niet-serialiseerbare velden (zoals file inputs) is sanitizing toegevoegd zodat herladen uit localStorage geen typeproblemen geeft.
+- Tijdelijke UI-state (loading, modal-open flags, previews) is bewust op normale `useState` gebleven.
+
+**3. Versiebump voorbereid voor release**
+- Frontend versie verhoogd naar `0.1.13` in:
+    - `package.json`
+    - `public/version.json`
+
+### Huidige status deploy
+- Buildblokkades in `src/App.tsx` zijn opgelost en file bevat geen TypeScript/compile errors volgens editor-check.
+- Op dit moment is nog geen harde bevestiging vastgelegd van een volledig afgeronde Firebase Hosting deploy in de terminalhistorie van deze sessie.
+- Volgende stap blijft: `npm run build` en daarna `firebase deploy --only hosting` uitvoeren en uitkomst loggen.
+
+---
+
+## Update sessie 15 juni 2026 (Full deploy frontend + backend afgerond)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Full release uitgevoerd met versie bump**
+- Commando uitgevoerd: `npm run version:bump:patch && npm run build && firebase deploy`
+- Versie automatisch verhoogd van `0.1.18` naar `0.1.19`.
+- Frontend build succesvol afgerond (Vite productiebuild).
+
+**2. Volledige Firebase deploy succesvol**
+- Deploy scope: `firestore`, `functions`, `hosting`.
+- Hosting succesvol gepubliceerd op:
+    - `https://future-factory-377ef.web.app`
+- Firestore rules en indexes succesvol uitgerold.
+- Functions predeploy build (`npm --prefix functions run build`) succesvol.
+- Functions deployment zelf: geen codewijzigingen gedetecteerd, daardoor functies correct als `Skipped (No changes detected)` afgehandeld.
+
+**3. Firestore cleanup tijdens deploy bevestigd**
+- Tijdens deploy zijn op prompt bevestigd en verwijderd:
+    - 2 oude/overbodige indexes (`tasks`, `logs`) die niet meer in `firestore.indexes.json` stonden.
+    - 1 field override (`orders.itemCode`) die niet meer in index-config stond.
+
+### Resultaat
+- Full deployment is afgerond en live.
+- Frontend en backend draaien op de nieuwste release met versie `0.1.19`.
+
+---
+
+## Update sessie 14 juni 2026 (Onderzoek Samenvatting.docx - Prioriteitenlijst)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Top 10 prioriteiten (impact vs effort)
+1. **Firestore rules hardenen**
+    - Impact: Zeer hoog
+    - Effort: Laag (0.5-1 dag)
+    - Actie: Brede toegangslogica met OR vervangen door rolgebaseerde checks met AND, startend bij productie- en ordercollecties.
+
+2. **RBAC via custom claims invoeren**
+    - Impact: Zeer hoog
+    - Effort: Middel (2-4 dagen)
+    - Actie: Rollen server-side afdwingen via auth claims in plaats van alleen via client-zichtbare Firestore-data.
+
+3. **Security rule tests toevoegen**
+    - Impact: Hoog
+    - Effort: Laag-middel (1-2 dagen)
+    - Actie: Testmatrix per rol en collectie opzetten om regressies te voorkomen.
+
+4. **Audit logging activeren**
+    - Impact: Hoog
+    - Effort: Middel (2-3 dagen)
+    - Actie: Onveranderbare audit-events toevoegen voor kritieke mutaties en admin-acties.
+
+5. **Monitoring en alerting inrichten**
+    - Impact: Hoog
+    - Effort: Middel (2-3 dagen)
+    - Actie: Error tracking plus alerts op latency en foutpercentages voor frontend en functions.
+
+6. **Backups en restore-procedure formaliseren**
+    - Impact: Hoog
+    - Effort: Laag-middel (1-2 dagen)
+    - Actie: Geplande Firestore-exports en periodieke restore-test inbouwen.
+
+7. **Secrets naar managed secret store migreren**
+    - Impact: Hoog
+    - Effort: Laag-middel (1-2 dagen)
+    - Actie: Gevoelige keys centraliseren in een secret manager.
+
+8. **Console logs en TODO's opruimen in productiepaden**
+    - Impact: Middel
+    - Effort: Laag (1-2 dagen)
+    - Actie: Debug logging reduceren, log-levels structureren en open TODO's triageren.
+
+9. **Cloud Functions modulair opsplitsen**
+    - Impact: Middel-hoog
+    - Effort: Middel-hoog (1-3 weken, gefaseerd)
+    - Actie: Domeinen scheiden (planning, QC, printing, admin) voor snellere releases en lager wijzigingsrisico.
+
+10. **UX workflow-upgrades (drag-and-drop planning en notificaties)**
+     - Impact: Middel-hoog
+     - Effort: Hoog (4-8 weken)
+     - Actie: Eerst planner-MVP, daarna event-notificaties en samenwerkingselementen.
+
+### Aanpak in 3 fasen
+1. **Week 1:** items 1, 3, 6, 8
+2. **Week 2-3:** items 2, 4, 5, 7
+3. **Maand 2+:** items 9 en 10 (parallel met integratievoorbereiding)
+
+---
+
 ## Update sessie 14 juni 2026 (Machine Storing & Live Monitor)
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
@@ -369,6 +517,160 @@
 1. Virtueel lot aanmaken -> moet direct op Naharding verschijnen.
 2. Naharding batch openen -> nieuw lot + legacy `QC_VIRTUAL` lots moeten zichtbaar zijn.
 3. Batch Naharding gereedmelden -> lot gaat naar Gereed/archief zonder `produced`-verhoging.
+
+---
+
+## Update sessie 16 juni 2026 (Firebase cache-optimalisatie + release refresh + cold-start reductie)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Firebase Hosting caching expliciet geoptimaliseerd**
+- In `firebase.json` zijn gerichte cache headers toegevoegd.
+- Statische build-assets onder `/assets/**` krijgen lange immutable caching.
+- Kritieke updatebestanden zoals `index.html`, `manifest.json`, `firebase-messaging-sw.js` en `version.json` zijn op no-cache/no-store gezet.
+
+**2. Browser refresh-flow bij nieuwe release aangescherpt**
+- In `src/App.tsx` wist de app nu bij een versieverschil eerst browser cache-opslag en service workers voordat de pagina opnieuw laadt.
+- Dit voorkomt dat een versie-bump wel gedetecteerd wordt maar oude PWA-assets of workbox-caches blijven hangen.
+- Extra UX-verbetering: als de gebruiker actief in een invoerveld typt, wordt de reload kort uitgesteld om invoerverlies te beperken.
+
+**3. Backend startup geoptimaliseerd voor zware AI-runtime**
+- In `functions/src/services/aiInvisibleWorkerService.ts` is `minInstances: 1` toegevoegd aan de zware AI worker runtime.
+- Doel: cold starts verminderen op Firebase Functions voor de meest trage backend-service.
+
+### Resultaat
+- Firebase Hosting updategedrag is voorspelbaarder en agressieve stale cacheproblemen zijn sterk verminderd.
+- De zwaarste AI backend heeft minder last van slaapstand/cold start vertraging.
+
+---
+
+## Update sessie 16 juni 2026 (Mazak batch cut fix + queue batch-awareness)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Mazak labels worden nu als echte batch afgehandeld**
+- In `src/components/digitalplanning/MazakView.tsx` is de batch-opbouw aangepast zodat de payload als gebundelde printjob wordt opgebouwd.
+- Cut-gedrag is gecorrigeerd zodat niet ieder label afzonderlijk wordt geknipt, maar pas aan het einde van de batch.
+
+**2. Queue processors respecteren pre-batched jobs**
+- In `src/components/printer/PrintQueueAutoProcessor.tsx` en `src/components/printer/PrintQueueAdminView.tsx` is de payload-normalisatie batch-aware gemaakt.
+- Wanneer een job al als batch is opgebouwd (`queuedAsBatch` / pre-batched flow), wordt de inhoud niet opnieuw opgesplitst of herschreven.
+
+**3. Reprint/admin paden blijven hetzelfde batchgedrag volgen**
+- Door de queue-normalisatie centraal te corrigeren blijft ook admin queue-herprint consistent met de Mazak batchflow.
+
+### Resultaat
+- Mazak batchlabels worden niet meer per stuk geknipt.
+- Zowel automatische queue-verwerking als admin/reprint blijven in lijn met dezelfde batchlogica.
+
+---
+
+## Update sessie 16 juni 2026 (Tablet input UX en touch-invoer verbeterd)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Numerieke velden beter bruikbaar op tablets**
+- In `src/styles.css` zijn de native number spinners op touch-apparaten uitgeschakeld.
+- Doel: velden met standaard numerieke waarden eenvoudiger laten selecteren en overschrijven.
+
+**2. Soft keyboard bediening verbeterd op scan-schermen**
+- Nieuwe hook `src/hooks/useTouchKeyboardPreference.ts` toegevoegd.
+- In diverse scan- en terminalschermen is nu expliciete toggling mogelijk tussen scanner-first invoer en handmatig toetsenbordgebruik.
+- Op touchdevices verschijnen extra knoppen voor wissen en toetsenbord openen in relevante scan/search velden.
+
+### Resultaat
+- Invoer op tablets is minder foutgevoelig en sneller te corrigeren.
+- Operators kunnen gemakkelijker wisselen tussen scanners en handmatige touch-invoer.
+
+---
+
+## Update sessie 16 juni 2026 (Printerroutering meerdere pc's + geen default-printer afhankelijkheid)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Gedeelde printerroutering ingevoerd**
+- Nieuwe helper `src/utils/printRouting.ts` toegevoegd voor centrale routering op basis van station, labelroute en routing tags.
+- Printerrecords ondersteunen nu expliciete `routingKeys` / routeringstags.
+
+**2. Core printflows overgezet op expliciete routering**
+- De volgende paden zijn naar route-aware printerselectie omgezet:
+    - `src/components/digitalplanning/MazakView.tsx`
+    - `src/components/digitalplanning/modals/ProductionStartModal.tsx`
+    - `src/components/digitalplanning/modals/ProductDossierModal.tsx`
+    - `src/components/admin/QcSampleView.tsx`
+    - `src/components/printer/PrintStationView.tsx`
+    - `src/components/printer/PrintQueueAdminView.tsx`
+    - `src/components/printer/PrintQueueAutoProcessor.tsx`
+- Historische fallback op een globale default printer is hiermee grotendeels verwijderd uit runtime-selectie.
+
+**3. Multi-computer setup voor identieke printers vastgelegd**
+- In `src/utils/printRouting.ts` zijn extra generieke routes toegevoegd voor grote labels, waaronder `GENERAL`, `LARGE`, `BIGLABEL` en `STATION:BH18`.
+- In `src/components/admin/AdminPrinterManager.tsx` is expliciet gemaakt dat iedere fysieke printer zijn eigen routeringstags krijgt.
+- De admin UI kiest niet meer stil de eerste printer als queue-doel wanneer er geen geldige selectie is.
+
+**4. Praktische setup voor Mazak-pc en grote-labels-pc gedocumenteerd**
+- Nieuwe documentatie toegevoegd in `docs/PRINTER_ROUTING_SETUP.md`.
+- Hierin is uitgewerkt hoe twee identieke printers op twee verschillende computers toch apart worden aangestuurd.
+- Ook is vastgelegd dat een niet-beheerdersaccount op de Mazak-pc in de praktijk bruikbaar blijft zodra driverinstallatie en browserautorisatie eenmaal geregeld zijn.
+
+### Aanbevolen voorbeeldroutering
+- `ZM400 Mazak` -> routing keys: `MAZAK, FLANGE`
+- `ZM400 BH18 Groot` -> routing keys: `GENERAL, LARGE, STATION:BH18`
+
+### Resultaat
+- FL/Mazak labels kunnen naar de Mazak-pc.
+- Grote labels zoals BH18 kunnen naar een andere computer/printer.
+- Identieke printermodellen zijn nu logisch te scheiden zonder afhankelijk te zijn van één standaardprinter.
+
+---
+
+## Update sessie 16 juni 2026 (Build-validatie na routeringsrefactor)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Build uitgevoerd na printerroutering-aanpassingen**
+- `npm run build` succesvol uitgevoerd.
+- Eerder gevonden duplicate key probleem rond `routingKeysText` in `AdminPrinterManager.tsx` is tijdens de refactor opgelost.
+
+### Resultaat
+- De nieuwe routering compileert correct in de frontend build.
+- De samengevoegde wijzigingen zijn build-technisch groen gevalideerd.
+
+---
+
+## Update sessie 16 juni 2026 (Versie bump 0.1.22 + Firebase Hosting deploy)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Patch release uitgevoerd via bestaand deployscript**
+- Commando uitgevoerd: `npm run deploy`
+- Dit script heeft automatisch de patchversie verhoogd, een productiebuild gemaakt en vervolgens Firebase Hosting gedeployed.
+
+**2. Versie bump succesvol verwerkt**
+- Versie verhoogd van `0.1.21` naar `0.1.22`.
+- Bijgewerkt in:
+    - `package.json`
+    - `public/version.json`
+    - `package-lock.json` (indien aanwezig via het bumpscript)
+
+**3. Build succesvol afgerond**
+- Vite productiebuild succesvol uitgevoerd.
+- Chunk-waarschuwing blijft aanwezig voor enkele grote bundles, maar blokkeerde de release niet.
+
+**4. Firebase Hosting release succesvol gepubliceerd**
+- Deploytarget: `future-factory-377ef`
+- Hostingrelease succesvol afgerond op:
+    - `https://future-factory-377ef.web.app`
+
+### Resultaat
+- Frontend release `0.1.22` staat live op Firebase Hosting.
+- Nieuwe printerroutering, cache-updates en UI-verbeteringen zijn hiermee publiek uitgerold.
 
 ---
 

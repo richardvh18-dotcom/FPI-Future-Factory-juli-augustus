@@ -41,6 +41,7 @@ import { db, storage, logActivity } from "../../config/firebase";
 import { PATHS, isValidPath, getPathString } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useFormPersistence } from "../../hooks/useFormPersistence";
 import { format } from "date-fns";
 import { nl } from "date-fns/locale";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -796,12 +797,15 @@ type ComposeFormState = {
 const ComposeModal = ({ onClose, user, replyTo }: ComposeModalProps) => {
   const { t } = useTranslation();
   const { showSuccess, showError } = useNotifications();
-  const [formData, setFormData] = useState<ComposeFormState>({
-    to: replyTo?.from || "admin",
-    subject: replyTo ? (String(replyTo.subject || "").startsWith("RE:") ? String(replyTo.subject || "") : `RE: ${String(replyTo.subject || "")}`) : "",
-    content: `\n\n${t('adminMessagesView.kindRegards')}\n${user?.name || user?.displayName || user?.email || t('common.employee')}`,
-    priority: "normal",
-  });
+  const [formData, setFormData, clearPersistedComposeForm] = useFormPersistence<ComposeFormState>(
+    "admin_messages_compose_form",
+    {
+      to: replyTo?.from || "admin",
+      subject: replyTo ? (String(replyTo.subject || "").startsWith("RE:") ? String(replyTo.subject || "") : `RE: ${String(replyTo.subject || "")}`) : "",
+      content: `\n\n${t('adminMessagesView.kindRegards')}\n${user?.name || user?.displayName || user?.email || t('common.employee')}`,
+      priority: "normal",
+    }
+  );
   const [sending, setSending] = useState(false);
   const [userList, setUserList] = useState<AppUser[]>([]);
   const [attachment, setAttachment] = useState<File | null>(null);
@@ -887,6 +891,7 @@ const ComposeModal = ({ onClose, user, replyTo }: ComposeModalProps) => {
         `Bericht verzonden aan ${formData.to} met onderwerp '${formData.subject}'`
       );
       showSuccess(t('adminMessagesView.messageSent'));
+      clearPersistedComposeForm();
       onClose();
     } catch (err: unknown) {
       showError(t('adminMessagesView.sendFailed') + getErrorMessage(err));

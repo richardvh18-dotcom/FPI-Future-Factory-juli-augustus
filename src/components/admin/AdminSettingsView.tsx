@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Settings,
   Rocket,
+  Zap,
 } from "lucide-react";
 import {
   doc,

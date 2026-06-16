@@ -107,8 +107,8 @@ export const queuePrintJob = async (printerId: string, zplData: string, metadata
  * @param {string} stationId - Het station (bijv. "BH18", "BM01")
  * @param {Object} printerMapping - Mapping van stationId naar printerId, afkomstig
  *   uit factoryConfig (Firestore). Voorbeeld: { BH18: "BH18-ZEBRA-USB" }
- *   Wanneer niet meegegeven valt de functie terug op 'DEFAULT-PRINTER'.
+ *   Wanneer niet meegegeven wordt een lege string teruggegeven.
  */
 export const getPrinterIdForStation = (stationId: string, printerMapping: Record<string, string> = {}) => {
-  return printerMapping[stationId] || 'DEFAULT-PRINTER';
+  return printerMapping[stationId] || '';
 };

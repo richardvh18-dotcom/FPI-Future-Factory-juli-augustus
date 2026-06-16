@@ -26,6 +26,7 @@ import {
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
+import { useFormPersistence } from "../../hooks/useFormPersistence";
 
 type BoreDimensionRecord = {
   id: string;
@@ -76,7 +77,7 @@ const BoreDimensionsManager = () => {
   const [status, setStatus] = useState<StatusState | null>(null);
 
   // Formulier state
-  const [formData, setFormData] = useState<FormState>({
+  const [formData, setFormData] = useFormPersistence<FormState>("bore_dimensions_manager_form", {
     type: "", // Bijv. "ASA 150"
     diameter: "", // Bijv. "200"
     BoltCircle: "",

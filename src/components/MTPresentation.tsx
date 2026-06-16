@@ -456,23 +456,23 @@ export const MTPresentation = () => {
           </div>
         </div>
 
-        {/* Slide 6 - Vercel */}
+        {/* Slide 6 - Firebase Hosting */}
         <div className={`slide ${current === 6 ? 'active' : ''} bg-slate-900`}>
           <h2 className="font-black uppercase text-[clamp(40px,3.5vw,85px)] leading-none mb-[3vh] border-l-[1vw] border-blue-500 pl-[2.5vw]">
-            {t('mtPresentation.vercelHostTitle', '1. Vercel: De Gastheer')}
+            {t('mtPresentation.vercelHostTitle', '1. Firebase Hosting: De Gastheer')}
           </h2>
           <div className="grid grid-cols-2 gap-12 items-center">
             <div className="space-y-8">
               <div className="bg-slate-800/50 border-l-[1vw] border-blue-500 rounded-[2.5rem] p-[2.5vw] backdrop-blur-[12px]">
                 <h3 className="mb-4 text-[clamp(22px,2vw,50px)] font-bold">{t('mtPresentation.lightHardware', 'Lichte Hardware')}</h3>
                 <p className="text-[1.3vw]">
-                  {t('mtPresentation.vercelCloudHeavyLifting', 'Vercel doet het denkwerk in de cloud. Onze tablets op de vloer hoeven niet hard te werken.')}
+                  {t('mtPresentation.vercelCloudHeavyLifting', 'Firebase en Google Cloud doen het denkwerk in de cloud. Onze tablets op de vloer hoeven niet hard te werken.')}
                 </p>
               </div>
               <div className="bg-slate-800/50 border-l-[1vw] border-emerald-500 rounded-[2.5rem] p-[2.5vw] backdrop-blur-[12px]">
                 <h3 className="mb-4 text-[clamp(22px,2vw,50px)] font-bold">{t('mtPresentation.timeMachine', 'De Tijdmachine')}</h3>
                 <p className="text-[1.3vw]">
-                  {t('mtPresentation.vercelRollback', 'Een update gedaan met een foutje? Met een druk op de knop draaien we het hele systeem terug.')}
+                  {t('mtPresentation.vercelRollback', 'Een update gedaan met een foutje? Met een druk op de knop draaien we het hele systeem terug via Firebase releasebeheer.')}
                 </p>
               </div>
             </div>
@@ -504,7 +504,7 @@ export const MTPresentation = () => {
               ))}
             </div>
             <p className="mt-16 text-slate-500 italic text-[1.4vw] max-w-3xl text-center">
-              {t('mtPresentation.vercelFoundationQuote', '"Door te kiezen voor Vercel, gebruikt de Future Factory hetzelfde fundament als de meest veeleisende platforms ter wereld."')}
+              {t('mtPresentation.vercelFoundationQuote', '"Door te kiezen voor Firebase en Google Cloud, gebruikt de Future Factory hetzelfde fundament als de meest veeleisende platforms ter wereld."')}
             </p>
           </div>
         </div>
@@ -635,11 +635,11 @@ export const MTPresentation = () => {
             </div>
             <div className="flex justify-between items-center bg-slate-800/50 border-2 border-white/10 rounded-[2rem] p-8 backdrop-blur-[12px] hover:bg-slate-800/80 transition-all">
               <div className="flex flex-col text-left">
-                <span className="text-2xl font-bold text-white">{t('mtPresentation.vercelPro', 'Vercel Pro')}</span>
-                <span className="text-slate-400 text-sm mt-1">{t('mtPresentation.vercelProDesc', 'Hosting, performance en Enterprise-level beveiliging')}</span>
+                <span className="text-2xl font-bold text-white">{t('mtPresentation.vercelPro', 'Firebase Hosting')}</span>
+                <span className="text-slate-400 text-sm mt-1">{t('mtPresentation.vercelProDesc', 'Firebase Hosting + Google Cloud diensten')}</span>
               </div>
               <span className="px-6 py-3 bg-emerald-500/20 text-emerald-400 rounded-full font-black text-lg border border-emerald-500/30">
-                EUR 20 / mnd
+                EUR 0 - 40 / mnd
               </span>
             </div>
             <div className="flex justify-between items-center bg-slate-800/50 border-2 border-white/10 rounded-[2rem] p-8 backdrop-blur-[12px] hover:bg-slate-800/80 transition-all">
@@ -690,7 +690,7 @@ export const MTPresentation = () => {
                 <Globe size={32} className="shrink-0" /> {t('mtPresentation.customDomain', 'Eigen Domeinnaam')}
               </h3>
               <p className="text-[1.3vw] leading-relaxed">
-                {t('mtPresentation.linkOfficialDomainToVercel', 'Koppel een officieel domein (bijv. fpi-future-factory.com) aan Vercel.')}
+                {t('mtPresentation.linkOfficialDomainToVercel', 'Koppel een officieel domein (bijv. fpi-future-factory.com) aan Firebase Hosting.')}
               </p>
               <ul className="text-slate-400 text-[1.1vw] space-y-3 font-semibold list-disc pl-5">
                 <li>{t('mtPresentation.professionalMemorableUrl', 'Professionele en makkelijk te onthouden URL.')}</li>

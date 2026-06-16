@@ -106,6 +106,8 @@
  * @property {Record<string, string>} [printerMapping]
  *   Mapping van stationId naar printerId (bijv. `{ BH18: "BH18-ZEBRA-USB" }`).
  *   Wordt meegegeven aan `getPrinterIdForStation()`.
+ * @property {string[]}               [routingKeys]
+ *   Routeringstags voor printerselectie (bijv. `["MAZAK", "ROUTE:MAZAK"]`).
  * @property {string[]}              [allowedMachines]
  *   Lijst van toegestane machines per afdeling.
  * @property {Record<string, number>} [productionStandards]

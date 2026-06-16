@@ -259,7 +259,7 @@ const getProjectStructure = (t: any): TreeNodeData[] => [
     icon: <Layers className="w-4 h-4 text-gray-500" />,
     children: [
       "firestore.rules",
-      "vercel.json",
+      "firebase.json",
       "package.json",
       "vite.config.ts",
       "ROADMAP.md"

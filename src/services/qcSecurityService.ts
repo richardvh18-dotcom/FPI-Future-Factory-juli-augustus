@@ -1,4 +1,4 @@
-import { getFunctions, httpsCallable, httpsCallableFromURL } from "firebase/functions";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { onAuthStateChanged, User } from "firebase/auth";
 import app from "../config/firebase";
 import { auth } from "../config/firebase";
@@ -7,24 +7,14 @@ const functions = getFunctions(app, 'europe-west1');
 
 type QcCallableName = "saveQcMeasurement" | "saveQcInspection" | "updateQcMeasurement";
 
-const shouldUseVercelCallableProxy = (): boolean => {
-  if (typeof window === "undefined") return false;
-  const host = String(window.location.hostname || "").toLowerCase();
-  return host.endsWith(".vercel.app");
-};
-
 const getQcCallable = <TRequest extends object>(name: QcCallableName) => {
-  if (shouldUseVercelCallableProxy()) {
-    return httpsCallableFromURL<TRequest, unknown>(functions, `${window.location.origin}/api/callables/${name}`);
-  }
-
   return httpsCallable<TRequest, unknown>(functions, name);
 };
 
 const isPreviewCorsEnvironment = (): boolean => {
   if (typeof window === "undefined") return false;
   const host = String(window.location.hostname || "").toLowerCase();
-  return host.endsWith(".vercel.app") || host.endsWith(".app.github.dev");
+  return host.endsWith(".app.github.dev");
 };
 
 const waitForAuthenticatedUser = async (timeoutMs = 2500): Promise<User | null> => {
@@ -53,7 +43,7 @@ const ensureQcUserAuth = async (): Promise<void> => {
   const user = await waitForAuthenticatedUser();
   if (!user) {
     throw new Error(
-      "Je bent niet ingelogd voor QC opslaan. Log opnieuw in en herlaad de pagina. Op Vercel preview moet je zowel Vercel toegang als Firebase login actief hebben."
+      "Je bent niet ingelogd voor QC opslaan. Log opnieuw in en herlaad de pagina."
     );
   }
 

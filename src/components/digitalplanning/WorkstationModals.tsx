@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { ScanBarcode, X, Pencil, Nfc, Loader2, LogOut } from "lucide-react";
+import { ScanBarcode, X, Pencil, Nfc, Loader2, LogOut, Keyboard } from "lucide-react";
 import { useWorkstationStore } from "./useWorkstationStore";
 import PostProcessingFinishModal from "./modals/PostProcessingFinishModal";
 import RepairModal from "./modals/RepairModal";
@@ -8,6 +8,7 @@ import ProductDetailModal from "../products/ProductDetailModal";
 import ProductionStartModal from "./modals/ProductionStartModal";
 import OperatorLinkModal from "./modals/OperatorLinkModal";
 import { NFC_STATUS } from "../../hooks/useNFCReader";
+import { useTouchKeyboardPreference } from "../../hooks/useTouchKeyboardPreference";
 
 export const WorkstationModals = ({
   stationId,
@@ -33,6 +34,12 @@ export const WorkstationModals = ({
 }: any) => {
   const { t } = useTranslation();
   const store = useWorkstationStore();
+  const operatorInputRef = React.useRef<HTMLInputElement | null>(null);
+  const { touchKeyboardPreferred, setTouchKeyboardPreferred } = useTouchKeyboardPreference();
+  const isTouchDevice = React.useMemo(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(pointer: coarse)").matches;
+  }, []);
 
   return (
     <>
@@ -151,20 +158,50 @@ export const WorkstationModals = ({
               {t("digitalplanning.workstation.checkin_help", "Scan badge/QR of vul personeelsnummer in om de shift op deze machine te starten. Je kunt meerdere operators achter elkaar aanmelden.")}
             </p>
 
-            <input
-              type="text"
-              value={store.operatorBadgeInput}
-              onChange={(e) => store.setOperatorBadgeInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleOperatorShiftCheckin();
-                }
-              }}
-              placeholder={t("personnelOccupancy.labels.employeeNumber", "Personeelsnummer")}
-              autoFocus
-              className="w-full p-3 rounded-xl border-2 border-slate-200 bg-white font-bold text-slate-800 outline-none focus:border-blue-500"
-            />
+            <div className="relative">
+              <input
+                ref={operatorInputRef}
+                type="text"
+                value={store.operatorBadgeInput}
+                onChange={(e) => store.setOperatorBadgeInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleOperatorShiftCheckin();
+                  }
+                }}
+                placeholder={t("personnelOccupancy.labels.employeeNumber", "Personeelsnummer")}
+                autoFocus
+                inputMode={isTouchDevice && !touchKeyboardPreferred ? "none" : "text"}
+                className="w-full p-3 pr-24 rounded-xl border-2 border-slate-200 bg-white font-bold text-slate-800 outline-none focus:border-blue-500"
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {store.operatorBadgeInput ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      store.setOperatorBadgeInput("");
+                      operatorInputRef.current?.focus();
+                    }}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+                    title={t("common.clear", "Wissen")}
+                  >
+                    <X size={14} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTouchKeyboardPreferred(true);
+                    requestAnimationFrame(() => operatorInputRef.current?.focus());
+                  }}
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-blue-600 hover:text-blue-700"
+                  title={t("digitalplanning.terminal.keyboard", "Toetsenbord")}
+                >
+                  <Keyboard size={14} />
+                </button>
+              </div>
+            </div>
 
             <button
               onClick={() => handleOperatorShiftCheckin()}

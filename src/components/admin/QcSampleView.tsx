@@ -12,6 +12,8 @@ import { startProductionLots, reserveAutoLotNumberRange, queuePrintJob } from ".
 import { useTeamleaderFirestore } from "../digitalplanning/useTeamleaderFirestore";
 import { isOpenOrRunningOrder } from "../../utils/teamleaderDerived";
 import { generateLotBatchZPL } from "../../utils/zplHelper";
+import { useFormPersistence } from "../../hooks/useFormPersistence";
+import { resolvePrinterForRouting } from "../../utils/printRouting";
 
 type TeamleaderOrder = {
   id?: string;
@@ -89,9 +91,10 @@ const printerHasStation = (printer: unknown, station: string) => {
 const resolveBm01Printer = async () => {
   const snap = await getDocs(collection(db, getPathString(PATHS.PRINTERS as unknown as string[])));
   const printers = snap.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
-  const stationMatch = printers.find((printer) => printerHasStation(printer, "BM01"));
-  if (stationMatch) return stationMatch;
-  return printers.find((printer) => Boolean((printer as { isDefault?: unknown }).isDefault)) || null;
+  return resolvePrinterForRouting(printers, {
+    stationId: "BM01",
+    routeKey: "STATION:BM01",
+  });
 };
 
 const QcSampleView = () => {
@@ -102,17 +105,31 @@ const QcSampleView = () => {
     showWarning: (message: string) => void;
   };
 
-  const [machine, setMachine] = useState("");
-  const [orderId, setOrderId] = useState("");
-  const [lotNumber, setLotNumber] = useState("");
-  const [reason, setReason] = useState("");
-  const [scanMode, setScanMode] = useState("auto"); // Standaard op auto gezet
+  const [formState, setFormState, clearPersistedForm] = useFormPersistence<{
+    machine: string;
+    orderId: string;
+    lotNumber: string;
+    reason: string;
+    scanMode: string;
+  }>("qc_sample_view_form", {
+    machine: "",
+    orderId: "",
+    lotNumber: "",
+    reason: "",
+    scanMode: "auto",
+  });
   const [autoLotPreview, setAutoLotPreview] = useState("");
   const [isDecodingImage, setIsDecodingImage] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const [lastIssued, setLastIssued] = useState<{lot: string, orderId: string, itemCode: string, itemDescription: string} | null>(null);
+
+  const machine = formState.machine;
+  const orderId = formState.orderId;
+  const lotNumber = formState.lotNumber;
+  const reason = formState.reason;
+  const scanMode = formState.scanMode;
 
   const { rawOrders } = useTeamleaderFirestore({ user: user as any }) as { rawOrders: TeamleaderOrder[] };
 
@@ -208,7 +225,13 @@ const QcSampleView = () => {
               reserve: false,
               actorLabel: user?.email || "QC",
               source: "QcSampleView_Preview"
-            });
+            }) as {
+              startLot?: string;
+              lotStart?: string;
+              lots?: string[];
+              firstLot?: string;
+              lotNumber?: string;
+            };
             const backendLot = res?.startLot || res?.lotStart || res?.lots?.[0] || res?.firstLot || res?.lotNumber;
             if (backendLot && backendLot.startsWith(prefix)) {
               const backendSeq = parseInt(backendLot.slice(-4), 10);
@@ -263,7 +286,7 @@ const QcSampleView = () => {
         showWarning("Geen barcode/lotnummer gedetecteerd. Probeer opnieuw of typ handmatig.");
         return;
       }
-      setLotNumber(detected);
+      setFormState((prev) => ({ ...prev, lotNumber: detected }));
       showSuccess(`Lotnummer gescand: ${detected}`);
     } catch (error: unknown) {
       console.error("Fout bij camera scan:", error);
@@ -352,7 +375,12 @@ const QcSampleView = () => {
         showWarning("Virtueel lot is aangemaakt, maar label kon niet naar BM01 printqueue worden verstuurd.");
       }
 
-      setLotNumber("");
+      clearPersistedForm();
+      setFormState((prev) => ({
+        ...prev,
+        lotNumber: "",
+        reason: "",
+      }));
       
       if (scanMode === "auto") {
         setAutoLotPreview("Laden...");
@@ -446,8 +474,7 @@ const QcSampleView = () => {
               <select
                 value={machine}
                 onChange={(e) => {
-                  setMachine(e.target.value);
-                  setOrderId("");
+                  setFormState((prev) => ({ ...prev, machine: e.target.value, orderId: "" }));
                 }}
                 className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 outline-none focus:border-orange-400"
               >
@@ -474,7 +501,7 @@ const QcSampleView = () => {
                       <button
                         key={entry.id || entryOrderId}
                         type="button"
-                        onClick={() => setOrderId(entryOrderId)}
+                        onClick={() => setFormState((prev) => ({ ...prev, orderId: entryOrderId }))}
                         className={`w-full px-3 py-2 rounded-lg border text-left transition-colors ${
                           isSelected
                             ? "bg-orange-100 border-orange-300"
@@ -513,7 +540,7 @@ const QcSampleView = () => {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setScanMode("auto")}
+                onClick={() => setFormState((prev) => ({ ...prev, scanMode: "auto" }))}
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
                   scanMode === "auto"
                     ? "bg-orange-100 text-orange-700 border-orange-300"
@@ -524,7 +551,7 @@ const QcSampleView = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setScanMode("manual")}
+                onClick={() => setFormState((prev) => ({ ...prev, scanMode: "manual" }))}
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
                   scanMode === "manual"
                     ? "bg-orange-100 text-orange-700 border-orange-300"
@@ -535,7 +562,7 @@ const QcSampleView = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setScanMode("camera")}
+                onClick={() => setFormState((prev) => ({ ...prev, scanMode: "camera" }))}
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest border ${
                   scanMode === "camera"
                     ? "bg-orange-100 text-orange-700 border-orange-300"
@@ -571,7 +598,7 @@ const QcSampleView = () => {
               <input
                 type="text"
                 value={lotNumber}
-                onChange={(e) => setLotNumber(e.target.value.toUpperCase())}
+                onChange={(e) => setFormState((prev) => ({ ...prev, lotNumber: e.target.value.toUpperCase() }))}
                 placeholder={scanMode === "camera" ? "Scan via camera of typ handmatig" : "Typ of scan lotnummer"}
                 className="w-full px-3 py-2 rounded-xl border border-orange-300 bg-white text-xs font-black text-slate-800 outline-none focus:border-orange-500"
               />
@@ -604,7 +631,7 @@ const QcSampleView = () => {
           <input
             type="text"
             value={reason}
-            onChange={(e) => setReason(e.target.value)}
+            onChange={(e) => setFormState((prev) => ({ ...prev, reason: e.target.value }))}
             placeholder={t("placeholders.adminQcSampleReasonOptional", "Steekproef reden (optioneel)")}
             className="w-full px-3 py-2 rounded-xl border border-orange-200 bg-white text-xs font-bold text-slate-700 outline-none focus:border-orange-400"
           />

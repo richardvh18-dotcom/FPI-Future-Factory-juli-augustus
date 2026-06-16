@@ -447,7 +447,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     try {
       const printerSnap = await getDocs(collection(db, getPathString(PATHS.PRINTERS)));
       const printers: PrinterRecord[] = printerSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PrinterRecord, 'id'>) }));
-      targetPrinter = printers.find((p) => p.isDefault) || printers[0] || null;
+      targetPrinter = null;
       const driver = getDriver(targetPrinter as any);
       if (Number.isFinite(driver?.nativeDpi) && driver.nativeDpi > 0) {
         resolvedDpi = driver.nativeDpi;

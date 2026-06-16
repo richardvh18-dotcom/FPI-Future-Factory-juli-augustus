@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import app from "../../../config/firebase";
 import { PATHS } from "../../../config/dbPaths";
+import { useNotifications } from "../../../contexts/NotificationContext";
 
 /**
  * ReferenceOpsImportModal
@@ -25,12 +26,14 @@ import { PATHS } from "../../../config/dbPaths";
  */
 const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }: { isOpen: boolean; onClose: () => void; onSuccess?: () => void }) => {
   const { t } = useTranslation();
+  const { showSuccess, showError } = useNotifications();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<any>(null); // { records: [...], site: "101" }
   const [result, setResult] = useState<any>(null);  // { written, skipped }
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importInFlightRef = useRef(false);
   const functions = getFunctions(app, 'europe-west1');
   const importReferenceOperationsCallable = httpsCallable(functions, "importReferenceOperations");
 
@@ -153,26 +156,45 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }: { isOpen: boole
   };
 
   const handleSave = async () => {
-    if (!preview?.records?.length) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await importReferenceOperationsCallable({
-        records: preview.records,
-      });
+    if (!preview?.records?.length || importInFlightRef.current) return;
 
-      const payload = (res?.data || {}) as { written?: number; overwritten?: number };
-      setResult({
-        written: Number(payload.written || preview.records.length),
-        skipped: Number(payload.overwritten || 0),
-      });
-      onSuccess?.();
-    } catch (err: any) {
-      const backendMsg = err?.message || err?.details?.message || err;
-      setError("Fout bij backend import: " + backendMsg);
-    } finally {
-      setSaving(false);
-    }
+    importInFlightRef.current = true;
+    const recordsSnapshot = [...preview.records];
+
+    handleClose();
+
+    void (async () => {
+      try {
+        const res = await importReferenceOperationsCallable({
+          records: recordsSnapshot,
+        });
+
+        const payload = (res?.data || {}) as { written?: number; overwritten?: number };
+        const written = Number(payload.written || recordsSnapshot.length);
+        const overwritten = Number(payload.overwritten || 0);
+
+        onSuccess?.();
+        showSuccess(
+          t("referenceOpsImport.notifications.done", {
+            written,
+            overwritten,
+            defaultValue: "Reference operations import klaar: {{written}} opgeslagen, {{overwritten}} overschreven.",
+          }),
+          t("referenceOpsImport.notifications.title", "Reference Operations")
+        );
+      } catch (err: any) {
+        const backendMsg = err?.message || err?.details?.message || err;
+        showError(
+          t("referenceOpsImport.notifications.failed", {
+            message: String(backendMsg || "Onbekende fout"),
+            defaultValue: "Fout bij backend import: {{message}}",
+          }),
+          t("referenceOpsImport.notifications.title", "Reference Operations")
+        );
+      } finally {
+        importInFlightRef.current = false;
+      }
+    })();
   };
 
   const handleClose = () => {
@@ -215,7 +237,6 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }: { isOpen: boole
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
-            {result ? t('common.close', 'Sluiten') : t('common.cancel', 'Annuleren')}
           <div className="bg-violet-50 border border-violet-100 rounded-2xl p-4 text-sm text-violet-800">
             <p className="font-bold mb-1">{t("referenceOpsImport.whatDoesThisImportDo", "Wat doet deze import?")}</p>
             <p className="text-xs leading-relaxed">

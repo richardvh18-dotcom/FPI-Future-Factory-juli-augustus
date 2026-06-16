@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import ProductionStartModal from "./ProductionStartModal";
 import { auth, logActivity } from "../../../config/firebase";
+import { useFormPersistence } from "../../../hooks/useFormPersistence";
 
 /**
  * InspectionModal V2.0 - Final Quality Assurance
@@ -36,9 +37,14 @@ type InspectionModalProps = {
 };
 
 const InspectionModal = ({ isOpen, onClose, order, onInspect }: InspectionModalProps) => {
-  const [status, setStatus] = useState<InspectionStatus>("approved");
-  const [notes, setNotes] = useState("");
+  const [formState, setFormState, clearPersistedForm] = useFormPersistence<{ status: InspectionStatus; notes: string }>(
+    "inspection_modal_form",
+    { status: "approved", notes: "" }
+  );
   const [showLabelModal, setShowLabelModal] = useState(false);
+
+  const status = formState.status;
+  const notes = formState.notes;
 
   if (!isOpen || !order) return null;
 
@@ -50,6 +56,8 @@ const InspectionModal = ({ isOpen, onClose, order, onInspect }: InspectionModalP
       console.error("Log error", error);
     }
     onInspect(order.id, status, notes);
+    clearPersistedForm();
+    setFormState({ status: "approved", notes: "" });
     onClose();
   };
 
@@ -112,7 +120,7 @@ const InspectionModal = ({ isOpen, onClose, order, onInspect }: InspectionModalP
               </label>
               <div className="grid grid-cols-2 gap-6">
                 <button
-                  onClick={() => setStatus("approved")}
+                  onClick={() => setFormState((prev) => ({ ...prev, status: "approved" }))}
                   className={`p-6 rounded-[30px] border-2 flex flex-col items-center gap-3 transition-all active:scale-95 shadow-sm ${
                     status === "approved"
                       ? "border-emerald-500 bg-emerald-50 text-emerald-700 ring-8 ring-emerald-500/5 shadow-emerald-100"
@@ -126,7 +134,7 @@ const InspectionModal = ({ isOpen, onClose, order, onInspect }: InspectionModalP
                 </button>
 
                 <button
-                  onClick={() => setStatus("rejected")}
+                  onClick={() => setFormState((prev) => ({ ...prev, status: "rejected" }))}
                   className={`p-6 rounded-[30px] border-2 flex flex-col items-center gap-3 transition-all active:scale-95 shadow-sm ${
                     status === "rejected"
                       ? "border-rose-500 bg-rose-50 text-rose-700 ring-8 ring-rose-500/5 shadow-rose-100"
@@ -148,7 +156,7 @@ const InspectionModal = ({ isOpen, onClose, order, onInspect }: InspectionModalP
               </label>
               <textarea
                 value={notes}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setNotes(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormState((prev) => ({ ...prev, notes: e.target.value }))}
                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-[25px] p-5 text-sm font-medium text-slate-700 focus:border-blue-500 focus:bg-white outline-none min-h-[120px] transition-all shadow-inner placeholder:text-slate-300 italic"
                 placeholder={i18n.t("placeholders.dpInspectionNotes", "Beschrijf eventuele afwijkingen of bijzonderheden...")}
               />

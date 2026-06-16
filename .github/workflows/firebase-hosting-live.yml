@@ -1,4 +1,4 @@
-name: Firebase Hosting Live
+name: Firebase Live Deploy
 
 "on":
   push:
@@ -42,10 +42,8 @@ jobs:
           VITE_GOOGLE_AI_KEY: ${{ secrets.VITE_GOOGLE_AI_KEY }}
           VITE_DB_PATH_PLANNING: ${{ secrets.VITE_DB_PATH_PLANNING }}
 
-      - name: Deploy to Firebase Hosting (live)
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_FUTURE_FACTORY_377EF }}
-          projectId: future-factory-377ef
-          channelId: live
+      - name: Deploy Firebase Hosting + Functions (live)
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_FUTURE_FACTORY_377EF }}' > "$HOME/firebase-service-account.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$HOME/firebase-service-account.json"
+          npx firebase-tools deploy --project future-factory-377ef --only hosting,functions --non-interactive
