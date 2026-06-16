@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useFormPersistence } from "../../hooks/useFormPersistence";
 
 type RuleVariable = {
   name: string;
@@ -173,14 +174,24 @@ const AdminLabelLogic: React.FC = () => {
   const [availableCodes, setAvailableCodes] = useState<string[]>([]);
 
   // Form state
-  const [formCode, setFormCode] = useState("");
-  const [variables, setVariables] = useState<RuleVariable[]>([]);
-  const [testInputs, setTestInputs] = useState<Record<string, any>>({});
+  const [formState, setFormState, clearPersistedForm] = useFormPersistence<{
+    formCode: string;
+    variables: RuleVariable[];
+    testInputs: Record<string, any>;
+  }>("admin_label_logic_form", {
+    formCode: "",
+    variables: [],
+    testInputs: {},
+  });
   const [printRules, setPrintRules] = useState<OperatorPrintRule[]>([]);
   const [savedPrintRules, setSavedPrintRules] = useState<OperatorPrintRule[]>([]);
   const [hasUnsavedPrintRuleChanges, setHasUnsavedPrintRuleChanges] = useState(false);
   const [activeEditSavedRuleId, setActiveEditSavedRuleId] = useState<string | null>(null);
   const [isSavingPrintRules, setIsSavingPrintRules] = useState(false);
+
+  const formCode = formState.formCode;
+  const variables = formState.variables;
+  const testInputs = formState.testInputs;
 
   const labelLogicCollectionPath = getPathString(PATHS.LABEL_LOGIC);
 
@@ -234,16 +245,16 @@ const AdminLabelLogic: React.FC = () => {
 
   const handleSelect = (rule: Rule) => {
     setSelectedRule(rule);
-    setFormCode(rule.productCode || "");
-    setVariables(rule.variables || []);
-    setTestInputs({});
+    setFormState({
+      formCode: rule.productCode || "",
+      variables: rule.variables || [],
+      testInputs: {},
+    });
   };
 
   const handleNew = () => {
     setSelectedRule({ id: "new" });
-    setFormCode("");
-    setVariables([]);
-    setTestInputs({});
+    setFormState({ formCode: "", variables: [], testInputs: {} });
   };
 
   const getNewVariable = (): RuleVariable => ({
@@ -254,24 +265,31 @@ const AdminLabelLogic: React.FC = () => {
   });
 
   const updateVariable = (index: number, patch: Partial<RuleVariable>) => {
-    setVariables((prev) => prev.map((v, i) => (i === index ? { ...v, ...patch } : v)));
+    setFormState((prev) => ({
+      ...prev,
+      variables: prev.variables.map((v, i) => (i === index ? { ...v, ...patch } : v)),
+    }));
   };
 
   const removeVariable = (index: number) => {
-    setVariables((prev) => prev.filter((_, i) => i !== index));
+    setFormState((prev) => ({
+      ...prev,
+      variables: prev.variables.filter((_, i) => i !== index),
+    }));
   };
 
   const addMapping = (index: number) => {
-    setVariables((prev) =>
-      prev.map((v, i) =>
+    setFormState((prev) => ({
+      ...prev,
+      variables: prev.variables.map((v, i) =>
         i === index
           ? {
               ...v,
               mappings: [...(Array.isArray(v.mappings) ? v.mappings : []), { condition: "", value: "" }],
             }
           : v
-      )
-    );
+      ),
+    }));
   };
 
   const updateMapping = (
@@ -279,27 +297,29 @@ const AdminLabelLogic: React.FC = () => {
     mappingIndex: number,
     patch: Partial<{ condition: string; value: string }>
   ) => {
-    setVariables((prev) =>
-      prev.map((v, i) => {
+    setFormState((prev) => ({
+      ...prev,
+      variables: prev.variables.map((v, i) => {
         if (i !== variableIndex) return v;
         const mappings = Array.isArray(v.mappings) ? [...v.mappings] : [];
         const current = mappings[mappingIndex] || { condition: "", value: "" };
         mappings[mappingIndex] = { ...current, ...patch };
         return { ...v, mappings };
       })
-    );
+    }));
   };
 
   const removeMapping = (variableIndex: number, mappingIndex: number) => {
-    setVariables((prev) =>
-      prev.map((v, i) => {
+    setFormState((prev) => ({
+      ...prev,
+      variables: prev.variables.map((v, i) => {
         if (i !== variableIndex) return v;
         return {
           ...v,
           mappings: (Array.isArray(v.mappings) ? v.mappings : []).filter((_, mi) => mi !== mappingIndex),
         };
       })
-    );
+    }));
   };
 
   const evaluateCondition = (conditionRaw: string, inputRaw: unknown): boolean => {
@@ -388,12 +408,18 @@ const AdminLabelLogic: React.FC = () => {
         { merge: true }
       );
 
-      await logActivity("label_logic_saved", {
+      await logActivity(auth.currentUser?.uid || "unknown", "label_logic_saved", {
         productCode,
         variableCount: cleanVariables.length,
       });
 
       setSelectedRule({ id: docId, productCode, variables: cleanVariables });
+      clearPersistedForm();
+      setFormState({
+        formCode: productCode,
+        variables: cleanVariables,
+        testInputs: {},
+      });
       showSuccess(t("adminLabelLogic.saved", "Label logica opgeslagen."));
     } catch (error) {
       console.error("Error saving label logic:", error);
@@ -417,7 +443,7 @@ const AdminLabelLogic: React.FC = () => {
 
     try {
       await deleteDoc(doc(db, labelLogicCollectionPath, selectedRule.id));
-      await logActivity("label_logic_deleted", {
+      await logActivity(auth.currentUser?.uid || "unknown", "label_logic_deleted", {
         id: selectedRule.id,
         productCode: formCode,
       });
@@ -442,21 +468,24 @@ const AdminLabelLogic: React.FC = () => {
     }
 
     setSelectedRule({ id: "new_example" });
-    setFormCode("A1S1");
-    setVariables([
-      {
-        name: "id_mm",
-        triggerField: "innerDiameter",
-        defaultValue: t("adminLabelLogic.idMmDefault"),
-        mappings: [
-          { condition: "> 0", value: t("adminLabelLogic.idSpecMm") },
-        ],
-      },
-      {
-        name: "nprs_bar",
-        triggerField: "nprs",
-      },
-    ]);
+    setFormState({
+      formCode: "A1S1",
+      variables: [
+        {
+          name: "id_mm",
+          triggerField: "innerDiameter",
+          defaultValue: t("adminLabelLogic.idMmDefault"),
+          mappings: [
+            { condition: "> 0", value: t("adminLabelLogic.idSpecMm") },
+          ],
+        },
+        {
+          name: "nprs_bar",
+          triggerField: "nprs",
+        },
+      ],
+      testInputs: {},
+    });
   };
 
   const addPrintRule = () => {
@@ -524,7 +553,7 @@ const AdminLabelLogic: React.FC = () => {
         setActiveEditSavedRuleId(null);
       }
 
-      await logActivity("label_print_rule_deleted", {
+      await logActivity(auth.currentUser?.uid || "unknown", "label_print_rule_deleted", {
         count: updatedSavedRules.length,
       });
 
@@ -560,7 +589,7 @@ const AdminLabelLogic: React.FC = () => {
       setHasUnsavedPrintRuleChanges(false);
       setActiveEditSavedRuleId(null);
 
-      await logActivity("label_print_rules_saved", {
+      await logActivity(auth.currentUser?.uid || "unknown", "label_print_rules_saved", {
         count: dedupedRules.length,
         duplicatesRemoved: removedCount,
       });
@@ -662,7 +691,7 @@ const AdminLabelLogic: React.FC = () => {
             <input
               list="admin-label-logic-codes"
               value={formCode}
-              onChange={(e) => setFormCode(e.target.value.toUpperCase())}
+              onChange={(e) => setFormState((prev) => ({ ...prev, formCode: e.target.value.toUpperCase() }))}
               placeholder="A1S1"
               className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm font-bold outline-none focus:border-blue-500"
             />
@@ -699,7 +728,7 @@ const AdminLabelLogic: React.FC = () => {
             </h3>
             <button
               type="button"
-              onClick={() => setVariables((prev) => [...prev, getNewVariable()])}
+              onClick={() => setFormState((prev) => ({ ...prev, variables: [...prev.variables, getNewVariable()] }))}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold"
             >
               <Plus size={13} /> {t("adminLabelLogic.addVariable", "Variabele")}
@@ -797,7 +826,10 @@ const AdminLabelLogic: React.FC = () => {
                 <input
                   key={field}
                   value={String(testInputs[field] ?? "")}
-                  onChange={(e) => setTestInputs((prev) => ({ ...prev, [field]: e.target.value }))}
+                  onChange={(e) => setFormState((prev) => ({
+                    ...prev,
+                    testInputs: { ...prev.testInputs, [field]: e.target.value },
+                  }))}
                   placeholder={field}
                   className="px-3 py-2 rounded-lg border border-blue-200 text-sm font-semibold outline-none focus:border-blue-500 bg-white"
                 />

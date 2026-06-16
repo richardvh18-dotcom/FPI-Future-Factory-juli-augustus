@@ -39,7 +39,8 @@ type ListenerItem = {
   [key: string]: unknown;
 };
 
-const StatusBadge = ({ status, t }: { status?: string; t: (key: string, fallback?: string) => string }) => {
+const StatusBadge = ({ status }: { status?: string }) => {
+  const { t } = useTranslation();
   const config: Record<string, { icon: React.ReactNode; text: string; color: string }> = {
     pending: { icon: <Loader2 className="animate-spin text-yellow-500" size={16} />, text: t('printQueue.waiting', 'Wachtend'), color: 'bg-yellow-100 text-yellow-800' },
     printing: { icon: <RefreshCw className="animate-spin text-blue-500" size={16} />, text: t('printQueue.printing', 'Printen'), color: 'bg-blue-100 text-blue-800' },
@@ -223,7 +224,7 @@ const PrintQueueAdminView = () => {
             {printJobs.map((job) => (
               <tr key={job.id} className="bg-white border-b hover:bg-slate-50">
                 <td className="px-6 py-4">
-                  <StatusBadge status={job.status} t={t} />
+                  <StatusBadge status={job.status} />
                 </td>
                 <td className="px-6 py-4 font-medium text-slate-900">
                   {job.description}

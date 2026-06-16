@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Zap, ChevronRight, ChevronDown, ArrowLeft, ClipboardCheck, ScanBarcode, Trash2, FileText, AlertTriangle } from "lucide-react";
+import { Zap, ChevronRight, ChevronDown, ArrowLeft, ClipboardCheck, ScanBarcode, Trash2, FileText, AlertTriangle, Keyboard, X } from "lucide-react";
 import { useNotifications } from "../../../contexts/NotificationContext";
+import { useTouchKeyboardPreference } from "../../../hooks/useTouchKeyboardPreference";
 
 type AnyRecord = Record<string, any>;
 
@@ -40,6 +41,11 @@ const TerminalProductionView = ({
   const { showConfirm } = useNotifications();
   const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const { touchKeyboardPreferred, setTouchKeyboardPreferred } = useTouchKeyboardPreference();
+  const isTouchDevice = useMemo(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(pointer: coarse)").matches;
+  }, []);
 
   const isSeriesEligibleItem = useMemo(() => (item: AnyRecord) => {
     const statusUpper = String(item?.status || "").toUpperCase();
@@ -217,6 +223,23 @@ const TerminalProductionView = ({
     document.addEventListener("click", handleDocumentClick);
     return () => document.removeEventListener("click", handleDocumentClick);
   }, [scannerMode, scanInputRef]);
+
+  const shouldSuppressSoftKeyboard = scannerMode && isTouchDevice && !touchKeyboardPreferred;
+
+  const openManualKeyboard = () => {
+    setTouchKeyboardPreferred(true);
+    requestAnimationFrame(() => {
+      const input = scanInputRef?.current;
+      if (!input) return;
+      input.focus();
+      const end = input.value.length;
+      try {
+        input.setSelectionRange(end, end);
+      } catch {
+        // Niet alle inputtypes ondersteunen selectie-posities.
+      }
+    });
+  };
   
   return (
     <>
@@ -254,11 +277,35 @@ const TerminalProductionView = ({
               type="text"
               value={scanInput}
               onChange={(e) => setScanInput(e.target.value)}
-              inputMode={scannerMode ? "none" : "text"}
+              inputMode={shouldSuppressSoftKeyboard ? "none" : "text"}
               onKeyDown={onScan}
               placeholder={t("digitalplanning.terminal.scan_lot_placeholder", "Scan lotnummer...")}
-              className="w-full pl-14 pr-4 py-4 bg-white border-2 border-orange-100 focus:border-orange-500 focus:ring-2 focus:ring-orange-300 rounded-2xl font-bold text-lg shadow-sm outline-none transition-all placeholder:text-slate-300"
+              className="w-full pl-14 pr-28 py-4 bg-white border-2 border-orange-100 focus:border-orange-500 focus:ring-2 focus:ring-orange-300 rounded-2xl font-bold text-lg shadow-sm outline-none transition-all placeholder:text-slate-300"
             />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {scanInput ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScanInput("");
+                    scanInputRef?.current?.focus();
+                  }}
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+                  title={t("common.clear", "Wissen")}
+                >
+                  <X size={16} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={openManualKeyboard}
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-orange-200 bg-white text-orange-600 hover:text-orange-700"
+                  title={t("digitalplanning.terminal.keyboard", "Toetsenbord")}
+                >
+                  <Keyboard size={16} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

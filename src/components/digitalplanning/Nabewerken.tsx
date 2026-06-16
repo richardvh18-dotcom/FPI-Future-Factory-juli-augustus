@@ -1,11 +1,12 @@
 import React, { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import PostProcessingFinishModal from "./modals/PostProcessingFinishModal";
 import { useTranslation } from "react-i18next";
-import { Package } from "lucide-react";
+import { Package, Keyboard, X } from "lucide-react";
 import { getDeliveryPlanningState, resolveDeliveryDate } from "../../utils/dateUtils";
 import { completeTrackedProduct, rejectTrackedProductFinal, tempRejectTrackedProduct } from "../../services/planningSecurityService";
 import { auth, logActivity } from "../../config/firebase";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useTouchKeyboardPreference } from "../../hooks/useTouchKeyboardPreference";
 
 const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
 
@@ -50,6 +51,15 @@ interface Order {
 const Nabewerken = ({ products = [], orders = [] }: { products?: NabewerkingProduct[]; orders?: Order[] }) => {
   const { t } = useTranslation();
   const { showError, showSuccess } = useNotifications();
+
+  const resolveSystemStation = useCallback((product: NabewerkingProduct | undefined | null) => {
+    if (!product) return "Onbekend";
+    const station = String(product.currentStation || "").trim();
+    if (station) return station;
+    const step = String(product.currentStep || "").trim();
+    if (step) return step;
+    return "Onbekend";
+  }, []);
 
   const getDeliveryDate = (product: NabewerkingProduct): Date | null => {
     if (!product || typeof product !== "object") return null;
@@ -111,6 +121,11 @@ const Nabewerken = ({ products = [], orders = [] }: { products?: NabewerkingProd
   const [selectedProduct, setSelectedProduct] = useState<NabewerkingProduct | null>(null);
   const [showModal, setShowModal] = useState(false);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
+  const { touchKeyboardPreferred, setTouchKeyboardPreferred } = useTouchKeyboardPreference();
+  const isTouchDevice = useMemo(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(pointer: coarse)").matches;
+  }, []);
 
   const focusScanInput = useCallback(() => {
     const input = scanInputRef.current;
@@ -232,8 +247,23 @@ const Nabewerken = ({ products = [], orders = [] }: { products?: NabewerkingProd
         setShowModal(true);
         setScanInput("");
       } else {
+        const foundElsewhere = products.find(
+          (p) => String(p?.lotNumber || "").trim().toUpperCase() === code
+        );
         setScanInput("");
         setSelectedProduct(null);
+
+        if (foundElsewhere) {
+          const systemStation = resolveSystemStation(foundElsewhere);
+          showError(
+            t(
+              "nabewerking.wrong_station_scan",
+              "Lot {{lot}} ligt niet op Nabewerking. Volgens het systeem staat dit lot op: {{station}}.",
+              { lot: code, station: systemStation }
+            ),
+            t("nabewerking.wrong_station_title", "Verkeerd station")
+          );
+        }
       }
       scheduleScanFocus();
     }
@@ -258,15 +288,41 @@ const Nabewerken = ({ products = [], orders = [] }: { products?: NabewerkingProd
               autoFocus
               value={scanInput}
               onChange={e => setScanInput(e.target.value)}
-              inputMode="none"
+              inputMode={isTouchDevice && !touchKeyboardPreferred ? "none" : "text"}
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="none"
               spellCheck={false}
               onKeyDown={handleScan}
               placeholder={t("digitalplanning.terminal.scan_lot_or_order", "Scan lotnummer...")}
-              className="w-full pl-4 pr-4 py-4 border-2 border-blue-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-300 rounded-2xl font-bold text-lg shadow-sm outline-none placeholder:text-slate-300"
+              className="w-full pl-4 pr-24 py-4 border-2 border-blue-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-300 rounded-2xl font-bold text-lg shadow-sm outline-none placeholder:text-slate-300"
             />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {scanInput ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setScanInput("");
+                    scanInputRef.current?.focus();
+                  }}
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+                  title={t("common.clear", "Wissen")}
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setTouchKeyboardPreferred(true);
+                  requestAnimationFrame(() => scanInputRef.current?.focus());
+                }}
+                className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-blue-600 hover:text-blue-700"
+                title={t("digitalplanning.terminal.keyboard", "Toetsenbord")}
+              >
+                <Keyboard size={14} />
+              </button>
+            </div>
           </div>
         </div>
 

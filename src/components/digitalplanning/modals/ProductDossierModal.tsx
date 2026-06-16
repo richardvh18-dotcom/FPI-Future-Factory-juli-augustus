@@ -28,6 +28,7 @@ import { format } from "date-fns";
 import { findDrawingForOrder, syncOrderDrawing } from "../../../utils/drawingLinker";
 import { collection, query, where, getDocs, getDoc, doc, arrayUnion, limit } from "firebase/firestore";
 import { db, logActivity } from "../../../config/firebase";
+import { resolvePrinterForRouting } from "../../../utils/printRouting";
 import { PATHS, getPathString } from "../../../config/dbPaths";
 import { useAdminAuth } from "../../../hooks/useAdminAuth";
 import ProductDetailModal from "../../products/ProductDetailModal";
@@ -867,12 +868,13 @@ const ProductDossierModal = ({
       const snap = await getDocs(collection(db, getPathString(prnPaths as string[])));
       const printers = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
 
-      const stationPrinter = printers.find((p) => printerHasStation(p, BM01_STATION));
-      const fallbackDefault = printers.find((p: any) => p.isDefault);
-      const targetPrinter = stationPrinter || fallbackDefault || null;
+      const targetPrinter = resolvePrinterForRouting(printers, {
+        stationId: BM01_STATION,
+        routeKey: `STATION:${BM01_STATION}`,
+      });
 
       if (!targetPrinter) {
-        throw new Error("Geen BM01/default printer gevonden in Printer Beheer.");
+        throw new Error("Geen printer gevonden voor BM01 routing in Printer Beheer.");
       }
 
       if (dossierLabel && dossierPreviewData) {

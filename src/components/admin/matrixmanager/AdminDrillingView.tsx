@@ -14,6 +14,7 @@ import {
 import { db, auth, logActivity } from "../../../config/firebase";
 import { PATHS, getPathString } from "../../../config/dbPaths";
 import { useNotifications } from "../../../contexts/NotificationContext";
+import { useFormPersistence } from "../../../hooks/useFormPersistence";
 import {
   Ruler,
   Plus,
@@ -80,7 +81,7 @@ const AdminDrillingView = () => {
   const [searchTerm, setSearchTerm] = useState("");
 
   // Form voor nieuwe dimensie
-  const [formData, setFormData] = useState<DrillingFormData>({
+  const [formData, setFormData] = useFormPersistence<DrillingFormData>("admin_drilling_view_form", {
     dn: "100",
     pn: "10",
     pcd: "",

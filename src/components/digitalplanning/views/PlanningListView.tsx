@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import i18n from "i18next";
 import {
   Calendar,
@@ -20,6 +20,7 @@ import {
   Printer,
   ExternalLink,
   MapPin,
+  Keyboard,
 } from "lucide-react";
 import {
   format,
@@ -30,6 +31,7 @@ import {
 } from "date-fns";
 import { nl } from "date-fns/locale";
 import { getDeliveryPlanningState, resolveDeliveryDate, toDateSafe } from "../../../utils/dateUtils";
+import { useTouchKeyboardPreference } from "../../../hooks/useTouchKeyboardPreference";
 
 // Importeer de centrale StatusBadge (vanuit ../common/)
 import StatusBadge from "../common/StatusBadge";
@@ -253,6 +255,12 @@ const PlanningListView = ({
   activeTab?: string;
   onTabChange?: (tab: string) => void;
 }) => {
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const { touchKeyboardPreferred, setTouchKeyboardPreferred } = useTouchKeyboardPreference();
+  const isTouchDevice = useMemo(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(pointer: coarse)").matches;
+  }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
   const [showAllWeeks, setShowAllWeeks] = useState(false);
@@ -408,12 +416,40 @@ const PlanningListView = ({
                 size={16}
               />
               <input
+                ref={searchInputRef}
                 type="text"
                 placeholder={i18n.t("placeholders.dpPlanningListSearch", "Zoek order, project of item...")}
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border-none rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+                className="w-full pl-9 pr-20 py-2.5 bg-slate-50 border-none rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                inputMode={isTouchDevice && !touchKeyboardPreferred ? "none" : "text"}
               />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {searchTerm ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchTerm("");
+                      searchInputRef.current?.focus();
+                    }}
+                    className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+                    title={i18n.t("common.clear", "Wissen")}
+                  >
+                    <X size={12} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTouchKeyboardPreferred(true);
+                    requestAnimationFrame(() => searchInputRef.current?.focus());
+                  }}
+                  className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-slate-200 bg-white text-blue-600 hover:text-blue-700"
+                  title={i18n.t("digitalplanning.terminal.keyboard", "Toetsenbord")}
+                >
+                  <Keyboard size={12} />
+                </button>
+              </div>
             </div>
             <button
               onClick={() => setShowAllWeeks(!showAllWeeks)}

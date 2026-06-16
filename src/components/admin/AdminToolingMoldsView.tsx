@@ -164,6 +164,7 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow }:
       const planRef = colPath(PATHS.PLANNING);
       const trackRef = colPath(PATHS.TRACKING);
       const convRef = colPath(PATHS.CONVERSION_MATRIX);
+      const scopedRef = collectionGroup(db, "orders");
 
       const foundDocs = new Map<string, ToolingDoc>();
       const addDocs = (snap: QuerySnapshot<DocumentData> | null) => {
@@ -176,44 +177,6 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow }:
       };
 
       console.log(`🔍 Zoeken naar: "${searchStr}" met opties: [${uniqueOptions.join(", ")}]`);
-
-      // Search in scoped orders - load all and filter client-side since they might have complex doc IDs
-      try {
-        const allScopedSnap = await getDocs(collectionGroup(db, "orders"));
-        console.log(`📊 Totaal scoped orders gevonden: ${allScopedSnap.docs.length}`);
-        
-        allScopedSnap.docs.forEach((d) => {
-          const docId = d.id.toUpperCase();
-          const data = d.data() as DocumentData;
-          
-          // Check if any search option matches in doc ID or fields
-          const matches = uniqueOptions.some(opt => {
-            const searchOpt = opt.toUpperCase();
-            // Check document ID
-            if (docId.includes(searchOpt)) return true;
-            // Check common fields
-            const fieldsToCheck = [
-              data.orderId?.toString().toUpperCase(),
-              data.orderNumber?.toString().toUpperCase(),
-              data.Order?.toString().toUpperCase(),
-              data.Productieorder?.toString().toUpperCase(),
-              data.order?.toString().toUpperCase(),
-              data.itemCode?.toString().toUpperCase(),
-              data.productCode?.toString().toUpperCase(),
-              data.articleCode?.toString().toUpperCase(),
-            ];
-            return fieldsToCheck.some(f => f?.includes(searchOpt));
-          });
-          
-          if (matches) {
-            foundDocs.set(d.id, { id: d.id, ...data });
-            console.log(`✓ Matched in scoped orders: ${d.id}`);
-          }
-        });
-        console.log(`✓ Scoped orders search completed. Found: ${foundDocs.size}`);
-      } catch (err: unknown) {
-        console.warn("Fout bij zoeken in scoped orders:", err);
-      }
 
       // Direct doc ID lookup
       for (const opt of uniqueOptions) {
@@ -235,18 +198,28 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow }:
         }
       }
 
-      // Exact field queries for root collections - search all relevant fields
+      // Targeted field queries for collections - limit results for maximum performance
       try {
-        const fieldNames = ["orderId", "orderNumber", "Order", "Productieorder", "order", "originalOrderId", "itemCode", "productCode", "articleCode", "manufacturedId", "targetProductId"];
+        const fieldNames = ["orderId", "orderNumber", "itemCode", "productCode", "articleCode", "manufacturedId", "targetProductId", "item"];
         const exactQueries: Array<Promise<QuerySnapshot<DocumentData> | null>> = [];
         
         for (const field of fieldNames) {
           exactQueries.push(
-            getDocs(query(planRef, where(field, "==", searchStr))).catch(() => null),
-            getDocs(query(trackRef, where(field, "==", searchStr))).catch(() => null),
-            getDocs(query(colRef, where(field, "==", searchStr))).catch(() => null),
-            getDocs(query(convRef, where(field, "==", searchStr))).catch(() => null)
+            getDocs(query(planRef, where(field, "==", searchStr), limit(10))).catch(() => null),
+            getDocs(query(scopedRef, where(field, "==", searchStr), limit(10))).catch(() => null),
+            getDocs(query(trackRef, where(field, "==", searchStr), limit(10))).catch(() => null),
+            getDocs(query(convRef, where(field, "==", searchStr), limit(10))).catch(() => null)
           );
+          
+          // Voeg prefix/starts-with zoeken toe voor itemcodes en beschrijvingen
+          if (["itemCode", "productCode", "articleCode", "manufacturedId", "targetProductId", "item"].includes(field) && searchStr.length >= 3) {
+             exactQueries.push(
+                getDocs(query(planRef, where(field, ">=", searchStr), where(field, "<=", searchStr + "\uf8ff"), limit(10))).catch(() => null),
+                getDocs(query(scopedRef, where(field, ">=", searchStr), where(field, "<=", searchStr + "\uf8ff"), limit(10))).catch(() => null),
+                getDocs(query(trackRef, where(field, ">=", searchStr), where(field, "<=", searchStr + "\uf8ff"), limit(10))).catch(() => null),
+                getDocs(query(convRef, where(field, ">=", searchStr), where(field, "<=", searchStr + "\uf8ff"), limit(10))).catch(() => null)
+             );
+          }
         }
         
         const exactSnaps = await Promise.all(exactQueries);
@@ -313,7 +286,7 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow }:
         <div className="p-6 md:p-8">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-2xl font-black text-slate-900 uppercase italic">
-              {i18n.t('adminTooling.itemsVia', 'Items via')} <span className="text-blue-600">{i18n.t('common.orderNumber', 'Ordernummer')}</span>
+              {i18n.t('adminTooling.itemsVia', 'Items via')} <span className="text-blue-600">Order of Itemcode</span>
             </h3>
             <button
               onClick={onClose}
@@ -329,7 +302,7 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow }:
               value={orderStr}
               onChange={(e) => setOrderStr(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSearchOrder()}
-              placeholder={i18n.t("placeholders.adminToolingOrderSearch", "Typ ordernummer (bijv. N20024783)...")}
+              placeholder={i18n.t("placeholders.adminToolingOrderSearch", "Typ ordernummer of itemcode...")}
               className="flex-1 p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
             />
             <button
@@ -697,7 +670,7 @@ const AdminToolingMoldsView = () => {
               onClick={() => setShowOrderSearch(true)}
               className="px-6 py-3 bg-blue-600 text-white rounded-xl text-sm font-black hover:bg-blue-700 shadow-lg flex gap-2 items-center"
             >
-              <Search size={18} /> Zoeken op ordernummer
+              <Search size={18} /> Zoeken op order / itemcode
             </button>
           </div>
         </div>

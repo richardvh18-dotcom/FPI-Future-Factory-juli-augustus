@@ -41,7 +41,7 @@ export const pwaConfig: Partial<VitePWAOptions> = {
     name: 'FPi Future Factory Hub',
     short_name: 'FPi Factory',
     description: 'Manufacturing Execution System voor FPi Future Factory',
-    theme_color: '#ffffff',
+    theme_color: '#0f172a',
     background_color: '#ffffff',
     display: 'standalone',
     orientation: 'any',

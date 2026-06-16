@@ -43,6 +43,7 @@ import { filterLabelsByProduct, processLabelData } from "../../utils/labelHelper
 import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
 import { resolveLinkedTemplateChain } from "../../utils/orderLabelTemplateUtils";
 import { useNotifications } from '../../contexts/NotificationContext';
+import { resolvePrinterForRouting } from '../../utils/printRouting';
 
 const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
 const DEFAULT_MAZAK_DPI = 300;
@@ -228,28 +229,11 @@ const selectQueuePrinterForStation = (
   stationId: string
 ): PrinterConfig | null => {
   if (!Array.isArray(printers) || printers.length === 0) return null;
-  const stationNorm = normalizeMachine(stationId || "");
-
-  const stationMatched = printers.find((printer) => {
-    const linkedStations = [
-      ...(Array.isArray(printer?.queueStations) ? printer.queueStations : []),
-      ...(Array.isArray(printer?.linkedStations) ? printer.linkedStations : []),
-    ]
-      .map(stationNameFromValue)
-      .map((name) => normalizeMachine(name || ""))
-      .filter(Boolean);
-
-    return linkedStations.includes(stationNorm);
+  return resolvePrinterForRouting(printers, {
+    stationId,
+    routeKey: 'MAZAK',
+    labelRoute: 'mazak',
   });
-  if (stationMatched) return stationMatched;
-
-  const mazakByName = printers.find((printer) =>
-    String(printer?.name || "").toUpperCase().includes("MAZAK")
-  );
-  if (mazakByName) return mazakByName;
-
-  // Veilige fallback zodat printjobs nooit stil uitvallen door ontbrekende stationkoppeling.
-  return printers.find((printer) => printer?.isDefault) || printers[0] || null;
 };
 
 const templateExtraCodeTokens = (template: LabelTemplate): string[] => {
@@ -274,6 +258,13 @@ const templateExtraCodeTokens = (template: LabelTemplate): string[] => {
   return Array.from(new Set(flattened.map((entry) => entry.toUpperCase()).filter(Boolean)));
 };
 
+const getItemNominalDiameter = (item: any): number => {
+  const itemIdentifier = [item?.item, item?.itemCode, item?.itemDescription].join(" ").toUpperCase();
+  const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
+  const parsed = match ? parseInt(match[1], 10) : parseInt(String(item?.diameter || item?.dn || "0"), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 const extractQueuedJobId = (value: unknown): string => {
   if (typeof value === "string") return value.trim();
   if (!value || typeof value !== "object") return "";
@@ -286,25 +277,32 @@ const extractQueuedJobId = (value: unknown): string => {
   return String(nested?.jobId || nested?.id || "").trim();
 };
 
-const applyBatchCutMode = (zpl: string, shouldCut: boolean): string => {
-  const cutMedia = shouldCut ? "^MMC" : "^MMT";
-  const cutPq = shouldCut ? "^PQ1,0,1,Y" : "^PQ1,0,1,N";
-  return String(zpl || "")
-    .replace(/\^MM[CT]/g, cutMedia)
-    .replace(/\^PQ1,0,1,[YN]/g, cutPq);
-};
-
-const buildMazakBatchPayload = (chunks: string[]): string => {
-  const safeChunks = chunks.map((chunk) => String(chunk || "").trim()).filter(Boolean);
-  if (safeChunks.length === 0) return "";
-
-  if (safeChunks.length === 1) {
-    return applyBatchCutMode(safeChunks[0], true);
+const applyBatchCutMode = (zpl: string, shouldCut: boolean, quantity: number = 1): string => {
+  // Gebruik ALTIJD ^MMT (Tear-off mode) om te voorkomen dat de printer automatisch knipt na elk label (^XZ).
+  // We sturen de knip-opdracht handmatig aan het einde van de batch met ~JK (Delayed Cut).
+  const cutMedia = "^MMT";
+  // Gebruik ^PQ altijd met N (no pause), omdat we geen pauzes willen tussen labels.
+  const cutPq = `^PQ${quantity},0,0,N`;
+  let modified = String(zpl || "");
+  
+  if (/\^MM[^^\n]*/.test(modified)) {
+    modified = modified.replace(/\^MM[^^\n]*/g, cutMedia);
+  } else {
+    modified = modified.replace(/\^XA/i, `^XA\n${cutMedia}`);
   }
 
-  return safeChunks
-    .map((chunk, index) => applyBatchCutMode(chunk, index === safeChunks.length - 1))
-    .join("\n");
+  if (/\^PQ[^^\n]*/.test(modified)) {
+    modified = modified.replace(/\^PQ[^^\n]*/g, cutPq);
+  } else {
+    modified = modified.replace(/\^XZ/i, `\n${cutPq}\n^XZ`);
+  }
+
+  // Als dit het allerlaatste label in de batch is, trigger de knipschaar met ~JK
+  if (shouldCut) {
+    modified += "\n~JK";
+  }
+
+  return modified;
 };
 
 const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
@@ -655,8 +653,12 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     ? selectedTemplateChain
     : ((selectedLabelId ? filteredLabels.filter((t) => String(t.id) === String(selectedLabelId)) : []) as LabelTemplate[]);
   const labelsPerItem = Math.max(1, effectiveTemplateChain.length);
-  const itemPrintCount = isBulkInboxMode ? bulkSeriesProducts.length : 1;
-  const totalLabelCount = itemPrintCount * labelsPerItem;
+  const effectiveItemsToPrint = isBulkInboxMode ? bulkSeriesProducts : (selectedProduct ? [selectedProduct] : []);
+  const totalLabelCount = effectiveItemsToPrint.reduce((acc, item) => {
+    const diameter = getItemNominalDiameter(item);
+    const copies = (diameter > 450 && diameter <= 700) ? 2 : 1;
+    return acc + (labelsPerItem * copies);
+  }, 0);
 
   useEffect(() => {
     if (activeTab !== "inbox" && bulkSeriesProducts.length > 0) {
@@ -894,9 +896,15 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       const zplChunks: string[] = [];
       const lotNumbersForBatch: string[] = [];
 
-      for (const item of itemsToPrint) {
+      for (let itemIdx = 0; itemIdx < itemsToPrint.length; itemIdx++) {
+        const item = itemsToPrint[itemIdx];
         const processedData = processLabelData(item);
         lotNumbersForBatch.push(String(item?.lotNumber || "").trim());
+
+        const diameter = getItemNominalDiameter(item);
+        const copies = (diameter > 450 && diameter <= 700) ? 2 : 1;
+
+        const itemZpls: Array<{ zpl: string; qty: number }> = [];
 
         for (let idx = 0; idx < templatesToPrint.length; idx++) {
           const templateToUse = templatesToPrint[idx];
@@ -914,11 +922,17 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
             throw new Error(`Lege ZPL gegenereerd voor template ${String(templateToUse?.name || templateToUse?.id || "onbekend")}.`);
           }
 
-          zplChunks.push(zplCode);
+          itemZpls.push({ zpl: zplCode, qty: copies });
+        }
+        
+        // Pas de knip (cut) toe voor de hele batch: knip pas na het allerlaatste label van het allerlaatste product
+        for (let i = 0; i < itemZpls.length; i++) {
+          const isLastInBatch = itemIdx === itemsToPrint.length - 1 && i === itemZpls.length - 1;
+          zplChunks.push(applyBatchCutMode(itemZpls[i].zpl, isLastInBatch, itemZpls[i].qty));
         }
       }
 
-      const batchPayload = buildMazakBatchPayload(zplChunks);
+      const batchPayload = zplChunks.join("\n");
       if (!batchPayload) {
         throw new Error("Geen geldige batchpayload voor Mazak print opgebouwd.");
       }
@@ -937,7 +951,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
           lotNumber: lotNumbersForBatch[0] || selectedProduct?.lotNumber,
           lotNumbers: lotNumbersForBatch.filter(Boolean),
           lotCount: itemsToPrint.length,
-          labelCount: zplChunks.length,
+          labelCount: totalLabelCount,
+          quantity: 1, // De ZPL payload bevat al het exacte aantal labels, we sturen de hele bundel 1x door
           isReprint,
           linkedSequenceTotal: templatesToPrint.length,
           linkedRootTemplateId: String(selectedLabelId || ""),

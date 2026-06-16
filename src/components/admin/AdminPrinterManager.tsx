@@ -20,7 +20,8 @@ import {
   Hash,
   Tag,
   Search,
-  Crosshair
+  Crosshair,
+  Loader2
 } from "lucide-react";
 import { 
   collection, 
@@ -56,6 +57,8 @@ import AutoScaledLabelPreview from "../printer/AutoScaledLabelPreview";
 import InternalQrImage from "../../utils/InternalQrImage";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { useLabelCatalog } from "../../hooks/useLabelCatalog";
+import { useFormPersistence } from "../../hooks/useFormPersistence";
+import { serializeRoutingKeys } from "../../utils/printRouting";
 import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
@@ -85,6 +88,7 @@ type PrinterRecord = {
   speed?: string;
   linkedStations?: string[];
   queueStations?: string[];
+  routingKeys?: string[];
   type?: string;
   isDefault?: boolean;
   vendorId?: number | string | null;
@@ -111,6 +115,7 @@ type PrinterFormData = {
   darkness: string;
   speed: string;
   linkedStations: string[];
+  routingKeysText: string;
   type: PrinterConnectionType;
   isDefault: boolean;
   vendorId: number | null;
@@ -209,6 +214,7 @@ const DEFAULT_PRINTER_FORM: PrinterFormData = {
   darkness: "15",
   speed: "3",
   linkedStations: [],
+  routingKeysText: "",
   type: CONNECTION_TYPES.WEBUSB,
   isDefault: false,
   vendorId: null,
@@ -1007,7 +1013,10 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
   const [savingWindowsHostMode, setSavingWindowsHostMode] = useState(false);
   
   // Form state
-  const [formData, setFormData] = useState<PrinterFormData>(DEFAULT_PRINTER_FORM);
+  const [formData, setFormData, clearPersistedPrinterForm] = useFormPersistence<PrinterFormData>(
+    "admin_printer_manager_form",
+    DEFAULT_PRINTER_FORM
+  );
 
   // Fetch printers
   useEffect(() => {
@@ -1020,11 +1029,8 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
   }, []);
 
   useEffect(() => {
-    if (!selectedQueuePrinterId && printers.length > 0) {
-      const defaultPrinter = printers.find((p) => p.isDefault) || printers[0];
-      if (defaultPrinter?.id) {
-        setSelectedQueuePrinterId(defaultPrinter.id);
-      }
+    if (selectedQueuePrinterId && !printers.some((printer) => printer.id === selectedQueuePrinterId)) {
+      setSelectedQueuePrinterId("");
     }
   }, [printers, selectedQueuePrinterId]);
 
@@ -1168,6 +1174,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         speed: normalizedSpeed,
         rollType: normalizeRollType(formData.rollType),
         zplTextFont: normalizeZplTextFont(formData.zplTextFont),
+        routingKeys: serializeRoutingKeys(formData.routingKeysText),
         // Legacy compat: bestaand veld blijft gevuld voor oude flows.
         width: normalizedRollWidth,
       };
@@ -1196,6 +1203,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
 
       setIsAdding(false);
       setEditingId(null);
+      clearPersistedPrinterForm();
       setFormData(DEFAULT_PRINTER_FORM);
     } catch (err: unknown) {
       console.error("Error saving printer:", err);
@@ -1741,6 +1749,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       darkness: printer.darkness || "15",
       speed: printer.speed || String(getDriver(printer).defaultSpeed),
       linkedStations: printer.linkedStations || [],
+      routingKeysText: Array.isArray(printer.routingKeys) ? printer.routingKeys.join(", ") : "",
       type: normalizePrinterType(printer.type),
       isDefault: printer.isDefault || false,
       vendorId: parseUsbId(printer.vendorId) ?? null,
@@ -1785,6 +1794,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
           <button 
             onClick={() => {
               setEditingId(null);
+              clearPersistedPrinterForm();
               setFormData(DEFAULT_PRINTER_FORM);
               setIsAdding(true);
             }}
@@ -1894,6 +1904,25 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                     <option value="">{t('adminPrinterManager.addStationPlaceholder')}</option>
                     {availableStations.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
+            </div>
+
+            <div className="md:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-2">
+                    <Tag size={14} /> {t('adminPrinterManager.routingKeys', 'Routeringstags')}
+                </label>
+                <input
+                  type="text"
+                  className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500"
+                  placeholder={t('adminPrinterManager.routingKeysPlaceholder', 'mazak, flange, station:bh12, general')}
+                  value={formData.routingKeysText}
+                  onChange={(e) => setFormData({ ...formData, routingKeysText: e.target.value })}
+                />
+                <p className="text-[10px] text-slate-400 mt-1 font-semibold uppercase tracking-widest">
+                  {t('adminPrinterManager.routingKeysHelp', 'Gebruik routecodes zoals MAZAK, FLANGE, STATION:BH12 of GENERAL.')} 
+                </p>
+                <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                  {t('adminPrinterManager.routingKeysHostHelp', 'Werk je met meerdere computers: geef iedere printer zijn eigen routeringstag en koppel op iedere pc alleen de lokale USB-printer. Bijvoorbeeld MAZAK op de Mazak-pc en GENERAL of STATION:BH18 op de pc voor grote labels.')}
+                </p>
             </div>
 
             <div className="md:col-span-2">
@@ -2198,6 +2227,9 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                 </p>
                 <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
                   {t("adminPrinterManager.bitmapPrint", "Bitmap print")}: {printer.bitmapPrintEnabled ? t("common.on", "Aan") : t("common.off", "Uit")}
+                </p>
+                <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
+                  {t("adminPrinterManager.routingKeys", "Routeringstags")}: {(Array.isArray(printer.routingKeys) ? printer.routingKeys : []).length > 0 ? (Array.isArray(printer.routingKeys) ? printer.routingKeys.join(", ") : "") : t("adminPrinterManager.noRoutingKeys", "Geen")}
                 </p>
                 <p className="text-[10px] text-slate-400 mt-1 flex flex-wrap gap-1">
                     {printer.linkedStations && printer.linkedStations.length > 0 

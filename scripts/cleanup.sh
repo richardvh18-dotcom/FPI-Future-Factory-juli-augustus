@@ -35,7 +35,7 @@ else
 fi
 
 # 4. Vite Config Consolidatie
-# We behouden vite.config.ts omdat deze de Vercel fixes en alias configuratie bevat
+# We behouden vite.config.ts als leidende configuratie met aliases
 if [ -f "vite.config.js" ] && [ -f "vite.config.ts" ]; then
     rm "vite.config.js"
     echo "✅ Verwijderd: vite.config.js (vite.config.ts is leidend)"

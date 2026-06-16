@@ -17,6 +17,7 @@ import { getStartedCounterField } from "../../utils/hubHelpers";
 import InternalQrImage from "../../utils/InternalQrImage";
 import PlanningSidebar from "./PlanningSidebar";
 import { useNotifications } from '../../contexts/NotificationContext';
+import { useTouchKeyboardPreference } from "../../hooks/useTouchKeyboardPreference";
 
 type TimestampLike = {
     toMillis?: () => number;
@@ -148,7 +149,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
     const { t } = useTranslation();
     const { user } = useAdminAuth();
   // AANGEPAST: Standaard view op 'inspectie' (Aan te bieden)
-  const { notify } = useNotifications();
+    const { notify, showError } = useNotifications();
   const [activeTab, setActiveTab] = useState("inspectie");
         const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
         const [selectedSidebarEntry, setSelectedSidebarEntry] = useState<SidebarEntry | null>(null);
@@ -167,6 +168,11 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
     const [isNahardingBatchProcessing, setIsNahardingBatchProcessing] = useState(false);
     const scanInputRef = useRef<HTMLInputElement | null>(null);
     const selectedProductRef = useRef<ProductRecord | null>(null); // Ref voor race-condition preventie
+        const { touchKeyboardPreferred, setTouchKeyboardPreferred } = useTouchKeyboardPreference();
+        const isTouchDevice = useMemo(() => {
+                if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+                return window.matchMedia("(pointer: coarse)").matches;
+        }, []);
 
     const focusScanInput = useCallback(() => {
         const input = scanInputRef.current;
@@ -184,6 +190,17 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
         }
         setTimeout(focusScanInput, 0);
     }, [focusScanInput]);
+
+    const resolveSystemStation = useCallback((product: ProductRecord | undefined | null) => {
+        if (!product) return "Onbekend";
+        const station = String(product.currentStation || "").trim();
+        if (station) return station;
+        const step = String(product.currentStep || "").trim();
+        if (step) return step;
+        const lastStation = String(product.lastStation || "").trim();
+        if (lastStation) return lastStation;
+        return "Onbekend";
+    }, []);
 
   // Sync ref met state
   useEffect(() => {
@@ -247,7 +264,20 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                 // Debug: log gevonden product
                 console.debug('[BM01] Product gevonden en popup geopend:', found);
             } else {
-                notify(`Item ${code} niet gevonden in de lijst 'Aan te bieden'.`);
+                const foundElsewhere = products.find((i: ProductRecord) => (i.lotNumber || "").toUpperCase() === code);
+                if (foundElsewhere) {
+                    const systemStation = resolveSystemStation(foundElsewhere);
+                    showError(
+                        t(
+                            "bm01.wrong_station_scan",
+                            "Lot {{lot}} ligt niet op BM01. Volgens het systeem staat dit lot op: {{station}}.",
+                            { lot: code, station: systemStation }
+                        ),
+                        t("bm01.wrong_station_title", "Verkeerd station")
+                    );
+                } else {
+                    notify(`Item ${code} niet gevonden in de lijst 'Aan te bieden'.`);
+                }
                 setScanInput("");
                 setSelectedProduct(null);
             }
@@ -1302,11 +1332,37 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                                 autoFocus
                                 value={scanInput}
                                 onChange={(e) => setScanInput(e.target.value)}
-                                inputMode={scannerMode ? "none" : "text"}
+                                inputMode={scannerMode && isTouchDevice && !touchKeyboardPreferred ? "none" : "text"}
                                 onKeyDown={handleScan}
                                 placeholder={t("placeholders.dpScanLotForInspection", "Scan lotnummer voor inspectie...")}
-                                className="w-full pl-14 pr-4 py-4 bg-white border-2 border-purple-100 focus:border-purple-500 focus:ring-2 focus:ring-purple-300 rounded-2xl font-bold text-lg shadow-sm outline-none transition-all placeholder:text-slate-300"
+                                className="w-full pl-14 pr-24 py-4 bg-white border-2 border-purple-100 focus:border-purple-500 focus:ring-2 focus:ring-purple-300 rounded-2xl font-bold text-lg shadow-sm outline-none transition-all placeholder:text-slate-300"
                             />
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                {scanInput ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setScanInput("");
+                                            scanInputRef.current?.focus();
+                                        }}
+                                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+                                        title={t("common.clear", "Wissen")}
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                ) : null}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setTouchKeyboardPreferred(true);
+                                        requestAnimationFrame(() => scanInputRef.current?.focus());
+                                    }}
+                                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-blue-600 hover:text-blue-700"
+                                    title={t("digitalplanning.terminal.keyboard", "Toetsenbord")}
+                                >
+                                    <Keyboard size={14} />
+                                </button>
+                            </div>
                         </div>
                     </div>
 

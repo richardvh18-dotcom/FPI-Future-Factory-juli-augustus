@@ -2,7 +2,7 @@
 // Schrijft de build-versie naar Firestore zodat alle browsers automatisch herladen.
 // Pad = future-factory/settings/general_configs/main (zelfde als PATHS.GENERAL_SETTINGS).
 //
-// Vereiste omgevingsvariabele in Vercel:
+// Vereiste omgevingsvariabele in CI:
 //   FIREBASE_SERVICE_ACCOUNT_JSON  →  inhoud van het Firebase service account JSON-bestand.
 //
 const { initializeApp, cert, applicationDefault } = require('firebase-admin/app');
@@ -10,7 +10,7 @@ const { getFirestore } = require('firebase-admin/firestore');
 
 const version = process.env.VITE_APP_VERSION || new Date().toISOString();
 
-// Gebruik service account JSON uit env (Vercel), of applicationDefault (lokaal / CI).
+// Gebruik service account JSON uit env (CI), of applicationDefault (lokaal / CI).
 const serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 if (serviceAccountJson) {
   initializeApp({ credential: cert(JSON.parse(serviceAccountJson)) });

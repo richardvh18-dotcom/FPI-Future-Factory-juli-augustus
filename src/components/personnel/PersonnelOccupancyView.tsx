@@ -16,6 +16,7 @@ import { PATHS, getPathString } from "../../config/dbPaths";
 import LoanPersonnelModal from "../digitalplanning/modals/LoanPersonnelModal";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { savePersonnelRecord, saveOccupancyAssignment, deleteOccupancyAssignment } from "../../services/planningSecurityService";
+import { useFormPersistence } from "../../hooks/useFormPersistence";
 
 export interface Department {
   id: string;
@@ -95,7 +96,7 @@ interface AddEditPersonModalProps {
 const AddEditPersonModal: React.FC<AddEditPersonModalProps> = ({ isOpen, onClose, onSave, initialData, departments, users = [] }) => {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState("profile");
-  const [formData, setFormData] = useState<Person>({
+  const [formData, setFormData] = useFormPersistence<Person>("personnel_add_edit_modal_form", {
     name: "",
     employeeNumber: "",
     departmentId: "",

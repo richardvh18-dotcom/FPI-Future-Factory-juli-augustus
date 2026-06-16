@@ -3,22 +3,12 @@ import i18n from "i18next";
 import {
   X,
   Upload,
-  CheckCircle2,
   Loader2,
   Zap,
-  AlertTriangle,
 } from "lucide-react";
 import { db } from "../../../config/firebase";
 import { processInforUpdate } from "../../../utils/infor_sync_service";
 import { useNotifications } from '../../../contexts/NotificationContext';
-
-type CapacityImportStats = {
-  countCreated: number;
-  countUpdated: number;
-  countDeleted: number;
-  countMatched: number;
-  unmatchedOrders: string[];
-};
 
 type CapacityImportModalProps = {
   isOpen: boolean;
@@ -27,71 +17,60 @@ type CapacityImportModalProps = {
 };
 
 const CapacityImportModal = ({ isOpen, onClose, onSuccess }: CapacityImportModalProps) => {
-  const { notify } = useNotifications() as { notify: (message: string) => void };
+  const { showSuccess, showError } = useNotifications();
   const [loading, setLoading] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [stats, setStats] = useState<CapacityImportStats | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const importInFlightRef = useRef(false);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (importInFlightRef.current) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
     setLoading(true);
-    setStats(null);
-    
-    const reader = new FileReader();
 
-    reader.onload = async (evt: ProgressEvent<FileReader>) => {
-      try {
-        const XLSX = await import("xlsx");
-        const bstr = evt.target?.result;
-        if (typeof bstr !== "string") {
-          notify("Kon bestand niet lezen als binary string.");
-          setLoading(false);
-          setProcessing(false);
-          return;
-        }
-        const wb = XLSX.read(bstr, { type: "binary" });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        
-        // We hebben de ruwe array van arrays nodig voor de service
-        const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 }) as unknown[];
+    try {
+      const XLSX = await import("xlsx");
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const wsname = wb.SheetNames[0];
+      const ws = wb.Sheets[wsname];
 
-        if (!rawData || rawData.length < 2) {
-          notify("Bestand lijkt leeg of ongeldig.");
-          setLoading(false);
-          return;
-        }
-
-        setProcessing(true);
-        
-        // Roep de service aan om de data te verwerken
-        // appId is niet strikt nodig omdat de service hardcoded paden gebruikt, maar we geven een default mee
-        const result = await processInforUpdate(db, "fittings-app-v1", rawData);
-
-        setStats({
-          ...result,
-          unmatchedOrders: Array.isArray(result.unmatchedOrders)
-            ? result.unmatchedOrders.map((value) => String(value))
-            : [],
-        });
-        if (onSuccess) onSuccess();
-
-      } catch (err: unknown) {
-        console.error("Import error:", err);
-        const message = err instanceof Error ? err.message : String(err);
-        notify("Fout bij verwerken bestand: " + message);
-      } finally {
+      const rawData = XLSX.utils.sheet_to_json(ws, { header: 1 }) as unknown[];
+      if (!rawData || rawData.length < 2) {
         setLoading(false);
-        setProcessing(false);
-        // Reset input
-        if (fileInputRef.current) fileInputRef.current.value = "";
+        showError("Bestand lijkt leeg of ongeldig.", "Uren & Normen Import");
+        return;
       }
-    };
 
-    reader.readAsBinaryString(file);
+      importInFlightRef.current = true;
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setLoading(false);
+      onClose();
+
+      void (async () => {
+        try {
+          const result = await processInforUpdate(db, "fittings-app-v1", rawData);
+          onSuccess?.();
+          showSuccess(
+            `Import klaar: ${result.countMatched || 0} gematcht, ${result.countUpdated || 0} bijgewerkt, ${result.countDeleted || 0} gearchiveerd.`,
+            "Uren & Normen Import"
+          );
+        } catch (err: unknown) {
+          console.error("Import error:", err);
+          const message = err instanceof Error ? err.message : String(err);
+          showError(`Fout bij verwerken bestand: ${message}`, "Uren & Normen Import");
+        } finally {
+          importInFlightRef.current = false;
+        }
+      })();
+    } catch (err: unknown) {
+      console.error("Import error:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      setLoading(false);
+      showError(`Fout bij verwerken bestand: ${message}`, "Uren & Normen Import");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   if (!isOpen) return null;
@@ -122,63 +101,30 @@ const CapacityImportModal = ({ isOpen, onClose, onSuccess }: CapacityImportModal
         </div>
 
         <div className="p-10">
-          {!stats ? (
-            <div
-              onClick={() => !loading && fileInputRef.current?.click()}
-              className={`border-4 border-dashed border-slate-100 rounded-[40px] p-16 text-center transition-all group ${loading ? 'opacity-50 cursor-wait' : 'hover:border-purple-400 hover:bg-purple-50/30 cursor-pointer'}`}
-            >
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden"
-                accept=".csv, .xlsx, .xls"
-                disabled={loading}
-              />
-              {loading || processing ? (
-                <Loader2 size={64} className="mx-auto text-purple-500 animate-spin mb-6" />
-              ) : (
-                <Upload size={64} className="mx-auto text-slate-200 group-hover:text-purple-400 transition-colors mb-6" />
-              )}
-              <h3 className="text-xl font-black text-slate-800 uppercase italic">
-                {loading ? "Verwerken..." : "Selecteer Infor Export"}
-              </h3>
-              <p className="text-slate-400 font-medium mt-2">
-                Upload het Excel bestand met uren en aantallen
-              </p>
-            </div>
-          ) : (
-            <div className="text-center py-10">
-              <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                <CheckCircle2 size={40} />
-              </div>
-              <h3 className="text-2xl font-black text-slate-900 mb-2">{i18n.t('capacityImport.importSuccessful', 'Import Succesvol!')}</h3>
-              <p className="text-slate-500 mb-8">
-                Er zijn <b>{stats.countMatched}</b> orders gematcht met de planning.<br />
-                Hiervan zijn er <b>{stats.countUpdated}</b> bijgewerkt en <b>{stats.countDeleted}</b> gearchiveerd.
-              </p>
-
-              {stats.unmatchedOrders && stats.unmatchedOrders.length > 0 && (
-                <div className="mb-8 text-left bg-amber-50 p-4 rounded-xl border border-amber-100">
-                  <h4 className="text-xs font-bold text-amber-800 uppercase mb-2 flex items-center gap-2">
-                    <AlertTriangle size={14} />
-                    Niet gevonden in planning ({stats.unmatchedOrders.length})
-                  </h4>
-                  <div className="max-h-32 overflow-y-auto custom-scrollbar pr-2">
-                    <div className="flex flex-wrap gap-2">
-                      {stats.unmatchedOrders.map((id) => (
-                        <span key={id} className="text-[10px] bg-white border border-amber-200 px-2 py-1 rounded text-amber-900 font-mono font-bold">
-                          {id}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <button onClick={onClose} className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold uppercase tracking-widest hover:bg-slate-800">{i18n.t('common.close', 'Sluiten')}</button>
-            </div>
-          )}
+          <div
+            onClick={() => !loading && fileInputRef.current?.click()}
+            className={`border-4 border-dashed border-slate-100 rounded-[40px] p-16 text-center transition-all group ${loading ? 'opacity-50 cursor-wait' : 'hover:border-purple-400 hover:bg-purple-50/30 cursor-pointer'}`}
+          >
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              className="hidden"
+              accept=".csv, .xlsx, .xls"
+              disabled={loading}
+            />
+            {loading ? (
+              <Loader2 size={64} className="mx-auto text-purple-500 animate-spin mb-6" />
+            ) : (
+              <Upload size={64} className="mx-auto text-slate-200 group-hover:text-purple-400 transition-colors mb-6" />
+            )}
+            <h3 className="text-xl font-black text-slate-800 uppercase italic">
+              {loading ? "Import starten..." : "Selecteer Infor Export"}
+            </h3>
+            <p className="text-slate-400 font-medium mt-2">
+              Upload het Excel bestand met uren en aantallen
+            </p>
+          </div>
         </div>
       </div>
     </div>

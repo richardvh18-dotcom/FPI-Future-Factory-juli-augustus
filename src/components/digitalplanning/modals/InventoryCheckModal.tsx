@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { logActivity, auth } from "../../../config/firebase";
 import { useNotifications } from "../../../contexts/NotificationContext";
 import { normalizeMachine } from "../../../utils/hubHelpers";
+import { useFormPersistence } from "../../../hooks/useFormPersistence";
 
 interface Props {
   isOpen: boolean;
@@ -14,10 +15,21 @@ interface Props {
 const InventoryCheckModal: React.FC<Props> = ({ isOpen, onClose, trackedProducts }) => {
   const { t } = useTranslation();
   const { showSuccess, showError, showConfirm } = useNotifications();
-  const [scanInput, setScanInput] = useState("");
-  const [checkedLots, setCheckedLots] = useState<Set<string>>(new Set());
-  const [extraLots, setExtraLots] = useState<Set<string>>(new Set());
+  const [formState, setFormState, clearPersistedForm] = useFormPersistence<{
+    scanInput: string;
+    checkedLots: string[];
+    extraLots: string[];
+  }>("inventory_check_modal_form", {
+    scanInput: "",
+    checkedLots: [],
+    extraLots: [],
+  });
   const scanInputRef = useRef<HTMLInputElement>(null);
+
+  const scanInput = formState.scanInput;
+  const checkedLots = formState.checkedLots;
+  const extraLots = formState.extraLots;
+  const checkedLotsSet = useMemo(() => new Set(checkedLots), [checkedLots]);
 
   useEffect(() => {
     if (isOpen) {
@@ -43,37 +55,43 @@ const InventoryCheckModal: React.FC<Props> = ({ isOpen, onClose, trackedProducts
       const isExpected = expectedProducts.some(p => String(p.lotNumber || p.id || "").toUpperCase() === code);
 
       if (isExpected) {
-        setCheckedLots(prev => new Set(prev).add(code));
+        setFormState((prev) => ({
+          ...prev,
+          checkedLots: prev.checkedLots.includes(code) ? prev.checkedLots : [...prev.checkedLots, code],
+        }));
         showSuccess(`Lot ${code} afgevinkt!`);
       } else {
-        setExtraLots(prev => new Set(prev).add(code));
+        setFormState((prev) => ({
+          ...prev,
+          extraLots: prev.extraLots.includes(code) ? prev.extraLots : [...prev.extraLots, code],
+        }));
         showSuccess(`Onverwacht lot ${code} toegevoegd!`);
       }
-      setScanInput("");
+      setFormState((prev) => ({ ...prev, scanInput: "" }));
       setTimeout(() => scanInputRef.current?.focus(), 50);
     }
   };
 
   const handleToggleLot = (lot: string) => {
-    setCheckedLots(prev => {
-      const next = new Set(prev);
-      if (next.has(lot)) next.delete(lot);
-      else next.add(lot);
-      return next;
-    });
+    setFormState((prev) => ({
+      ...prev,
+      checkedLots: prev.checkedLots.includes(lot)
+        ? prev.checkedLots.filter((entry) => entry !== lot)
+        : [...prev.checkedLots, lot],
+    }));
     setTimeout(() => scanInputRef.current?.focus(), 50);
   };
 
   const handleSaveReport = async () => {
-    const missing = expectedProducts.filter(p => !checkedLots.has(String(p.lotNumber || p.id || "").toUpperCase()));
+    const missing = expectedProducts.filter(p => !checkedLotsSet.has(String(p.lotNumber || p.id || "").toUpperCase()));
     const missingLots = missing.map(p => p.lotNumber || p.id);
     
     const confirm = await showConfirm({
       title: "Vloercontrole Afronden",
-      message: `Je hebt ${checkedLots.size} van de ${expectedProducts.length} actieve lots afgevinkt.\n${missing.length > 0 ? `\nEr missen volgens het systeem nog ${missing.length} lots!` : ''}${extraLots.size > 0 ? `\n\nEr zijn ${extraLots.size} extra (onverwachte) lots gescand.` : ''}\n\nWil je dit rapport opslaan in het logboek?`,
+      message: `Je hebt ${checkedLots.length} van de ${expectedProducts.length} actieve lots afgevinkt.\n${missing.length > 0 ? `\nEr missen volgens het systeem nog ${missing.length} lots!` : ''}${extraLots.length > 0 ? `\n\nEr zijn ${extraLots.length} extra (onverwachte) lots gescand.` : ''}\n\nWil je dit rapport opslaan in het logboek?`,
       confirmText: "Opslaan",
       cancelText: "Blijven scannen",
-      tone: missing.length > 0 || extraLots.size > 0 ? "warning" : "default"
+      tone: missing.length > 0 || extraLots.length > 0 ? "warning" : "default"
     });
 
     if (!confirm) {
@@ -83,9 +101,9 @@ const InventoryCheckModal: React.FC<Props> = ({ isOpen, onClose, trackedProducts
 
     try {
       const details = `Vloercontrole ronde uitgevoerd voor alle actieve producten.
-Gevonden (verwacht): ${checkedLots.size}/${expectedProducts.length}
+Gevonden (verwacht): ${checkedLots.length}/${expectedProducts.length}
 Missend (${missing.length}): ${missing.length > 0 ? missingLots.join(", ") : "-"}
-Onverwacht gevonden (${extraLots.size}): ${extraLots.size > 0 ? Array.from(extraLots).join(", ") : "-"}`;
+Onverwacht gevonden (${extraLots.length}): ${extraLots.length > 0 ? extraLots.join(", ") : "-"}`;
       
       await logActivity(
         auth.currentUser?.uid || "system",
@@ -94,6 +112,8 @@ Onverwacht gevonden (${extraLots.size}): ${extraLots.size > 0 ? Array.from(extra
       );
       
       showSuccess("Vloercontrole rapport succesvol opgeslagen in Audit Log.");
+      clearPersistedForm();
+      setFormState({ scanInput: "", checkedLots: [], extraLots: [] });
       onClose();
     } catch (err) {
       console.error("Fout bij opslaan inventarisatie:", err);
@@ -132,7 +152,7 @@ Onverwacht gevonden (${extraLots.size}): ${extraLots.size > 0 ? Array.from(extra
                   ref={scanInputRef}
                   type="text"
                   value={scanInput}
-                  onChange={(e) => setScanInput(e.target.value)}
+                  onChange={(e) => setFormState((prev) => ({ ...prev, scanInput: e.target.value }))}
                   onKeyDown={handleScan}
                   placeholder={t("placeholders.dpScanOrTypeLot", "Scan of typ lotnummer...")}
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-purple-100 rounded-2xl font-bold text-lg outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200 transition-all"
@@ -142,26 +162,26 @@ Onverwacht gevonden (${extraLots.size}): ${extraLots.size > 0 ? Array.from(extra
               <div className="flex gap-4 mb-4 shrink-0">
                 <div className="flex-1 bg-emerald-50 p-4 rounded-2xl border border-emerald-100 flex items-center justify-between">
                   <span className="text-xs font-black uppercase tracking-widest text-emerald-600">{t('inventoryCheck.found', 'Gevonden')}</span>
-                  <span className="text-2xl font-black text-emerald-700">{checkedLots.size} / {expectedProducts.length}</span>
+                  <span className="text-2xl font-black text-emerald-700">{checkedLots.length} / {expectedProducts.length}</span>
                 </div>
                 <div className="flex-1 bg-rose-50 p-4 rounded-2xl border border-rose-100 flex items-center justify-between">
                   <span className="text-xs font-black uppercase tracking-widest text-rose-600">{t('inventoryCheck.missing', 'Missend')}</span>
-                  <span className="text-2xl font-black text-rose-700">{expectedProducts.length - checkedLots.size}</span>
+                  <span className="text-2xl font-black text-rose-700">{expectedProducts.length - checkedLots.length}</span>
                 </div>
                 <div className="flex-1 bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-center justify-between">
                   <span className="text-xs font-black uppercase tracking-widest text-amber-600">{t('inventoryCheck.unexpected', 'Onverwacht')}</span>
-                  <span className="text-2xl font-black text-amber-700">{extraLots.size}</span>
+                  <span className="text-2xl font-black text-amber-700">{extraLots.length}</span>
                 </div>
               </div>
 
-              {extraLots.size > 0 && (
+              {extraLots.length > 0 && (
                 <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-2xl shrink-0">
                   <h4 className="text-xs font-black uppercase tracking-widest text-amber-700 flex items-center gap-2 mb-2">
                     <AlertTriangle size={16} /> Onverwacht gevonden (Niet actief verwacht):
                   </h4>
                   <div className="flex flex-wrap gap-2">
-                    {Array.from(extraLots).map(lot => (
-                      <span key={lot} onClick={() => setExtraLots(prev => { const n = new Set(prev); n.delete(lot); return n; })} className="px-2 py-1 bg-white border border-amber-300 text-amber-800 text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 cursor-pointer hover:bg-amber-100" title="Klik om scan te verwijderen">
+                    {extraLots.map(lot => (
+                      <span key={lot} onClick={() => setFormState((prev) => ({ ...prev, extraLots: prev.extraLots.filter((entry) => entry !== lot) }))} className="px-2 py-1 bg-white border border-amber-300 text-amber-800 text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 cursor-pointer hover:bg-amber-100" title="Klik om scan te verwijderen">
                         {lot} <X size={10} className="text-amber-500" />
                       </span>
                     ))}
@@ -176,7 +196,7 @@ Onverwacht gevonden (${extraLots.size}): ${extraLots.size > 0 ? Array.from(extra
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {expectedProducts.map(p => {
                       const lotId = String(p.lotNumber || p.id || "").toUpperCase();
-                      const isChecked = checkedLots.has(lotId);
+                      const isChecked = checkedLotsSet.has(lotId);
                       const stationLabel = normalizeMachine(p.currentStation || p.originMachine || p.machine) || "Onbekend";
                       const statusLabel = p.currentStep || p.status || "-";
                       return (

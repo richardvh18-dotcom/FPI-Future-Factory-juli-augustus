@@ -40,7 +40,7 @@ import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, parse, isValid } 
 import { nl } from "date-fns/locale";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { useNotifications } from "../../contexts/NotificationContext";
-import { PATHS } from "../../config/dbPaths";
+import { PATHS, getPathString } from "../../config/dbPaths";
 
 const WEEK_INPUT_FORMAT = "RRRR-'W'II";
 
@@ -149,7 +149,15 @@ const formatDiffValue = (value: unknown): string | null => {
   return String(value);
 };
 
-const SmartDiffView = ({ before, after }: { before?: unknown; after?: unknown }) => {
+const SmartDiffView = ({
+  before,
+  after,
+  t,
+}: {
+  before?: unknown;
+  after?: unknown;
+  t: (key: string, defaultValue?: string) => string;
+}) => {
   const beforeObj = before && typeof before === 'object' ? (before as UnknownRecord) : null;
   const afterObj = after && typeof after === 'object' ? (after as UnknownRecord) : null;
   const patchKeys = afterObj ? Object.keys(afterObj) : [];
@@ -433,7 +441,7 @@ const AdminLogView = () => {
     options: { includeYearMonth?: boolean } = {}
   ) => {
     const includeYearMonth = options?.includeYearMonth !== false;
-    const colRef = collection(db, ...LOG_PATH);
+    const colRef = collection(db, getPathString(LOG_PATH));
     const constraints: QueryConstraint[] = [];
 
     if (filterType !== "ALL") {
@@ -651,7 +659,7 @@ const AdminLogView = () => {
     try {
       const batch = writeBatch(db);
       logs.forEach((log) => {
-        const ref = doc(db, ...LOG_PATH, log.id);
+        const ref = doc(db, getPathString(LOG_PATH), log.id);
         batch.delete(ref);
       });
       await batch.commit();
@@ -684,8 +692,8 @@ const AdminLogView = () => {
 
     setIsClearing(true);
     try {
-      const colRef = collection(db, ...LOG_PATH);
-      const archiveRef = collection(db, ...ARCHIVE_PATH);
+      const colRef = collection(db, getPathString(LOG_PATH));
+      const archiveRef = collection(db, getPathString(ARCHIVE_PATH));
       
       // Query logs ouder dan cutoff
       const q = query(colRef, where("timestamp", "<", cutoffDate));
@@ -737,7 +745,7 @@ const AdminLogView = () => {
     });
     if (!confirmed) return;
     try {
-      await deleteDoc(doc(db, ...LOG_PATH, id));
+      await deleteDoc(doc(db, getPathString(LOG_PATH), id));
       await logActivity(auth.currentUser?.uid ?? "system", "LOG_DELETE", `Log deleted: ${id}`);
     } catch (err: unknown) {
       console.error("Delete error:", err);
@@ -747,7 +755,7 @@ const AdminLogView = () => {
   const handleSaveEdit = async () => {
     if (!editingId) return;
     try {
-      await updateDoc(doc(db, ...LOG_PATH, editingId), {
+      await updateDoc(doc(db, getPathString(LOG_PATH), editingId), {
         details: editValue
       });
       setEditingId(null);
@@ -1101,7 +1109,7 @@ const AdminLogView = () => {
                       <History size={12} /> {t('adminLogView.changeHistory')}
                     </h4>
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      <SmartDiffView before={diffPayload?.oldValue} after={diffPayload?.newValue} />
+                      <SmartDiffView before={diffPayload?.oldValue} after={diffPayload?.newValue} t={t} />
                     </div>
                   </div>
                 )}

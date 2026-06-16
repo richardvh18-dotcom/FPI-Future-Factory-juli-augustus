@@ -15,12 +15,13 @@ import {
   ShieldCheck,
   FlaskConical,
 } from "lucide-react";
-import { doc, getDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS } from "../config/dbPaths";
 import { updateUserLanguage } from "../services/planningSecurityService";
 import { useAdminAuth } from "../hooks/useAdminAuth";
 import { useMessages } from "../hooks/useMessages"; // Voor badge count
+import packageJson from '../../package.json';
 
 const PortalView = () => {
   const { t, i18n } = useTranslation();
@@ -28,6 +29,7 @@ const PortalView = () => {
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string>("");
 
   const normalizedRole = String(role || "").toLowerCase();
   const isTeamleader = normalizedRole === "teamleader";
@@ -68,6 +70,27 @@ const PortalView = () => {
     };
     loadLanguagePreference();
   }, [user, i18n]);
+
+  // Laad dynamisch logo uit Systeem Instellingen
+  useEffect(() => {
+    try {
+      const docRef = doc(db, ...(PATHS.GENERAL_SETTINGS as [string, ...string[]]));
+      const unsubscribe = onSnapshot(
+        docRef,
+        (snap) => {
+          if (snap.exists() && snap.data().logoUrl) {
+            setLogoUrl(snap.data().logoUrl);
+          } else {
+            setLogoUrl("");
+          }
+        },
+        (err) => console.error("Fout bij laden logo:", err)
+      );
+      return () => unsubscribe();
+    } catch (err) {
+      console.error("Kon logo instellingen niet laden:", err);
+    }
+  }, []);
 
   // Ophalen ongelezen berichten voor badge
   const firebaseUser = getAuth().currentUser;
@@ -423,6 +446,17 @@ const PortalView = () => {
             </button>
           )}
 
+        </div>
+
+        {/* Footer / Branding */}
+        <div className="mt-4 flex flex-col items-center justify-center text-center animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300 fill-mode-both">
+          <div className="flex items-center justify-center gap-2.5">
+            <img src={logoUrl || "/logo512.svg"} alt="Logo" className="h-5 w-auto object-contain brightness-125" />
+            <span className="text-lg font-black text-cyan-200/60 uppercase tracking-widest leading-none">Future Factory</span>
+          </div>
+          <p className="text-xs font-mono text-cyan-200/40 mt-1.5 opacity-70">
+            v{packageJson.version}
+          </p>
         </div>
       </div>
     </div>

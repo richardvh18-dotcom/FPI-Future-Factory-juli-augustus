@@ -99,6 +99,9 @@ type TrackedProductDoc = {
   reminderSent?: boolean;
   inspection?: { status?: string; timestamp?: unknown };
   timestamps?: {
+    station_start?: TimestampLike | string | number | Date | null;
+    started?: TimestampLike | string | number | Date | null;
+    wikkelen_start?: TimestampLike | string | number | Date | null;
     lossen_start?: TimestampLike | string | number | Date | null;
     wikkelen_end?: TimestampLike | string | number | Date | null;
     finished?: TimestampLike | string | number | Date | null;
@@ -365,7 +368,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       message: confirmMessage || `Weet je zeker dat je ${occ.operatorName} wilt uitloggen van ${occ.machineId || selectedStation}?`,
       confirmText: t("digitalplanning.workstation.logout", "Uitloggen"),
       cancelText: t("common.cancel", "Annuleren"),
-      tone: "destructive",
+      tone: "danger",
     });
 
     if (!confirmed) return;
@@ -429,7 +432,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
 
   // Mobiel menu state
   const isMobileMenuOpen = useWorkstationStore((state) => state.isMobileMenuOpen);
-  const setIsMobileMenuOpen = useWorkstationStore((state) => state.isMobileMenuOpen);
+  const setIsMobileMenuOpen = useWorkstationStore((state) => state.setIsMobileMenuOpen);
   const [checkedInOperator, setCheckedInOperator] = useState<PersonnelEntry | null>(null);
   const [dismissedPromptShift, setDismissedPromptShift] = useState<ShiftKey | null>(null);
   const [timeHeartbeat, setTimeHeartbeat] = useState<number>(Date.now());
@@ -460,7 +463,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         message: "Is de machine storing verholpen en kan de productie weer starten?",
         confirmText: "Ja, verholpen",
         cancelText: "Annuleren",
-        tone: "success",
+        tone: "default",
       });
       if (confirmed) {
         try {
@@ -1853,12 +1856,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
             }
           }
 
-        return (
-          o.machine === selectedStation ||
-            orderMachineNorm === currentStationNorm ||
-            hasRemainingPlan ||
-            hasStationActivity
-        );
+        const isStationMachineMatch =
+          o.machine === selectedStation || orderMachineNorm === currentStationNorm;
+
+        // Voorkom cross-station lekken: een order hoort alleen op dit workstation
+        // als de machine matcht of er aantoonbare lokale stationactiviteit is.
+        // Een generiek "remaining plan" op orderniveau is op zichzelf niet genoeg.
+        return isStationMachineMatch || hasStationActivity;
       })
       .map((o: PlanningOrder) => {
         const orderIdKey = String(o.orderId || "");

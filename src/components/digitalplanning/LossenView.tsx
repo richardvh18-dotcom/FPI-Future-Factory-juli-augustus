@@ -11,7 +11,8 @@ import { Package,
   ChevronDown,
   ChevronRight,
     ScanBarcode,
-    Keyboard } from "lucide-react";
+    Keyboard,
+    X } from "lucide-react";
 import ProductReleaseModal from "./modals/ProductReleaseModal";
 import PostProcessingFinishModal from "./modals/PostProcessingFinishModal";
 import { normalizeMachine } from "../../utils/hubHelpers";
@@ -19,6 +20,7 @@ import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { getNextFlowState } from "../../utils/workstationLogic";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
+import { useTouchKeyboardPreference } from "../../hooks/useTouchKeyboardPreference";
 
 type TimestampLike = { toDate?: () => Date; seconds?: number };
 
@@ -222,6 +224,11 @@ const LossenView = ({ stationId, appId, products = [] }: LossenViewProps) => {
   const [scannerMode, setScannerMode] = useState(true);
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const selectedProductRef = useRef<ProductItem | null>(null); // Ref om huidige selectie bij te houden tijdens async acties
+  const { touchKeyboardPreferred, setTouchKeyboardPreferred } = useTouchKeyboardPreference();
+  const isTouchDevice = useMemo(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(pointer: coarse)").matches;
+  }, []);
 
   const focusScanInput = useCallback(() => {
     const input = scanInputRef.current;
@@ -1011,11 +1018,37 @@ const LossenView = ({ stationId, appId, products = [] }: LossenViewProps) => {
                   autoFocus
                   value={scanInput}
                   onChange={(e) => setScanInput(e.target.value)}
-                  inputMode={scannerMode ? "none" : "text"}
+                  inputMode={scannerMode && isTouchDevice && !touchKeyboardPreferred ? "none" : "text"}
                   onKeyDown={handleScan}
                   placeholder={t("digitalplanning.terminal.scan_lot_or_order", "Scan lotnummer of order...")}
-                  className="w-full pl-14 pr-4 py-4 bg-white border-2 border-blue-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-300 rounded-2xl font-bold text-lg shadow-sm outline-none transition-all placeholder:text-slate-300"
+                  className="w-full pl-14 pr-24 py-4 bg-white border-2 border-blue-100 focus:border-blue-500 focus:ring-2 focus:ring-blue-300 rounded-2xl font-bold text-lg shadow-sm outline-none transition-all placeholder:text-slate-300"
               />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {scanInput ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScanInput("");
+                      scanInputRef.current?.focus();
+                    }}
+                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-700"
+                    title={t("common.clear", "Wissen")}
+                  >
+                    <X size={14} />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTouchKeyboardPreferred(true);
+                    requestAnimationFrame(() => scanInputRef.current?.focus());
+                  }}
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-blue-600 hover:text-blue-700"
+                  title={t("digitalplanning.terminal.keyboard", "Toetsenbord")}
+                >
+                  <Keyboard size={14} />
+                </button>
+              </div>
             </div>
           </div>
 

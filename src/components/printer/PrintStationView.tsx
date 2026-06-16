@@ -14,6 +14,7 @@ import { useLabelPreview } from '../../hooks/useLabelPreview';
 import { processLabelData, applyLabelLogic, filterTempOrderLabelsByProduct } from '../../utils/labelHelpers';
 import { executeOrderLabelSearch, loadFactoryMachinePaths, normalizeText } from "../../utils/orderLabelSearch";
 import { renderLabelToBitmapZpl } from '../../utils/unifiedLabelRenderEngine';
+import { resolvePrinterForRouting } from '../../utils/printRouting';
 import {
   buildOrderLabelPreviewData,
   buildOrderLabelTemplateProduct,
@@ -722,7 +723,10 @@ const PrintStationView = () => {
       );
       if (matched) return matched;
     }
-    return printers.find((p) => p.isDefault) || printers[0] || null;
+    return resolvePrinterForRouting(printers, {
+      stationId: selectedStation,
+      routeKey: selectedStation,
+    });
   }, [printers, usbDevice]);
 
   const stationGroups = useMemo<string[]>(() => {

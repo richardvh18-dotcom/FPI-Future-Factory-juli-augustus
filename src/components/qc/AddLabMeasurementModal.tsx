@@ -6,6 +6,7 @@ import { auth, db } from "../../config/firebase";
 import { doc, onSnapshot, collection, query, where, getDocs, collectionGroup, updateDoc } from "firebase/firestore";
 import { PATHS, getPathString } from "../../config/dbPaths";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useFormPersistence } from "../../hooks/useFormPersistence";
 
 type AddLabMeasurementModalProps = {
   onClose: () => void;
@@ -106,10 +107,9 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
     return stations;
   }, [departments]);
 
-  const [measurementDate, setMeasurementDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [measurementTime, setMeasurementTime] = useState(() => new Date().toTimeString().substring(0, 5));
-  
-  const [formData, setFormData] = useState({
+  const [formState, setFormState, clearPersistedForm] = useFormPersistence("add_lab_measurement_modal_form", {
+    measurementDate: new Date().toISOString().split('T')[0],
+    measurementTime: new Date().toTimeString().substring(0, 5),
     operatorId: "",
     lotNumber: "",
     department: "",
@@ -120,11 +120,28 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
     hardenerWeight: "",
     refractiveIndex: "",
     visualCheckOk: true,
-    // For Tg
     resinBatch: "",
     tg: "",
     notes: "",
   });
+
+  const measurementDate = formState.measurementDate;
+  const measurementTime = formState.measurementTime;
+  const formData = {
+    operatorId: formState.operatorId,
+    lotNumber: formState.lotNumber,
+    department: formState.department,
+    kitchen: formState.kitchen,
+    shift: formState.shift,
+    tableRef: formState.tableRef,
+    resinWeight: formState.resinWeight,
+    hardenerWeight: formState.hardenerWeight,
+    refractiveIndex: formState.refractiveIndex,
+    visualCheckOk: formState.visualCheckOk,
+    resinBatch: formState.resinBatch,
+    tg: formState.tg,
+    notes: formState.notes,
+  };
 
   // Automatische ploeg-selectie op basis van tijd
   useEffect(() => {
@@ -135,7 +152,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
       else if (hour >= 14 && hour < 22) newShift = "Mi";
       else newShift = "Na";
       
-      setFormData((prev) => prev.shift !== newShift ? { ...prev, shift: newShift } : prev);
+      setFormState((prev) => prev.shift !== newShift ? { ...prev, shift: newShift } : prev);
     }
   }, [measurementTime]);
 
@@ -275,6 +292,19 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
       }
 
       showSuccess(t("qc.measurement_saved", "Meting succesvol opgeslagen via backend en gelogd."));
+      clearPersistedForm();
+      setFormState((prev) => ({
+        ...prev,
+        measurementDate: new Date().toISOString().split('T')[0],
+        measurementTime: new Date().toTimeString().substring(0, 5),
+        lotNumber: "",
+        resinWeight: "",
+        hardenerWeight: "",
+        refractiveIndex: "",
+        resinBatch: "",
+        tg: "",
+        notes: "",
+      }));
       onClose();
     } catch (err: any) {
       console.error(err);
@@ -328,7 +358,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
           {/* 1. Personeelsnummer (Operator) */}
           <div>
             <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.operatorEmployeeNumber", "Personeelsnummer (Operator)")}</label>
-            <input type="text" required value={formData.operatorId} onChange={(e) => setFormData({ ...formData, operatorId: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcOperatorExample", "Bijv. 1234 of Naam")} />
+            <input type="text" required value={formData.operatorId} onChange={(e) => setFormState((prev) => ({ ...prev, operatorId: e.target.value }))} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcOperatorExample", "Bijv. 1234 of Naam")} />
           </div>
 
           {/* 2. Meetstation */}
@@ -339,11 +369,11 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
                 value={formData.kitchen}
                 onChange={(e) => {
                   const st = availableLabStations.find(s => s.name === e.target.value);
-                  setFormData({
-                    ...formData,
+                  setFormState((prev) => ({
+                    ...prev,
                     kitchen: e.target.value,
                     department: normalizeDepartmentName(st?.departmentName),
-                  });
+                  }));
                 }}
                 className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500 appearance-none"
                 required
@@ -363,7 +393,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
               <input 
                 type="date" 
                 value={measurementDate}
-                onChange={(e) => setMeasurementDate(e.target.value)}
+                onChange={(e) => setFormState((prev) => ({ ...prev, measurementDate: e.target.value }))}
                 required
                 className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500"
               />
@@ -373,7 +403,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
               <input 
                 type="time" 
                 value={measurementTime}
-                onChange={(e) => setMeasurementTime(e.target.value)}
+                onChange={(e) => setFormState((prev) => ({ ...prev, measurementTime: e.target.value }))}
                 required
                 className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500"
               />
@@ -394,7 +424,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
           {/* 4. Lotnummer */}
           <div>
             <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("common.lotNumber", "Lotnummer")}</label>
-            <input type="text" required value={formData.lotNumber} onChange={(e) => setFormData({ ...formData, lotNumber: e.target.value.toUpperCase() })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcLabLotExample", "Bijv. 4026...")} />
+            <input type="text" required value={formData.lotNumber} onChange={(e) => setFormState((prev) => ({ ...prev, lotNumber: e.target.value.toUpperCase() }))} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcLabLotExample", "Bijv. 4026...")} />
           </div>
 
           {defaultType === "ri" && (
@@ -402,7 +432,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
               {/* 5. Afgewogen Hars */}
               <div>
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.weighedResin", "Afgewogen Hars (gr → kg)")}</label>
-                <input type="text" inputMode="numeric" required value={formData.resinWeight} onChange={(e) => setFormData({ ...formData, resinWeight: formatWeight(e.target.value) })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcResinWeightExample", "3.275")} />
+                <input type="text" inputMode="numeric" required value={formData.resinWeight} onChange={(e) => setFormState((prev) => ({ ...prev, resinWeight: formatWeight(e.target.value) }))} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcResinWeightExample", "3.275")} />
                 {parseFloat(formData.resinWeight) > activeStationLimits.maxResin && (
                   <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1 animate-in fade-in"><AlertTriangle size={12} /> {t("addLabMeasurementModal.unusuallyHighResinWeight", "Ongebruikelijk hoog harsgewicht")}&nbsp;(&gt; {activeStationLimits.maxResin} kg). {t("addLabMeasurementModal.checkInput", "Controleer de invoer.")}</p>
                 )}
@@ -411,7 +441,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
               {/* 6. Afgewogen IPD */}
               <div>
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.weighedIpd", "Afgewogen IPD (gr → kg)")}</label>
-                <input type="text" inputMode="numeric" required value={formData.hardenerWeight} onChange={(e) => setFormData({ ...formData, hardenerWeight: formatWeight(e.target.value) })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcHardenerWeightExample", "0.800")} />
+                <input type="text" inputMode="numeric" required value={formData.hardenerWeight} onChange={(e) => setFormState((prev) => ({ ...prev, hardenerWeight: formatWeight(e.target.value) }))} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcHardenerWeightExample", "0.800")} />
                 {parseFloat(formData.hardenerWeight) > activeStationLimits.maxHardener && (
                   <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1 animate-in fade-in"><AlertTriangle size={12} /> {t("addLabMeasurementModal.unusuallyHighIpdWeight", "Ongebruikelijk hoog IPD-gewicht")}&nbsp;(&gt; {activeStationLimits.maxHardener} kg). {t("addLabMeasurementModal.checkInput", "Controleer de invoer.")}</p>
                 )}
@@ -420,7 +450,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
               {/* 7. Gemeten Brekingsindex */}
               <div>
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.measuredRefractiveIndex", "Gemeten Brekingsindex")}</label>
-                <input type="text" inputMode="numeric" required value={formData.refractiveIndex} onChange={(e) => setFormData({ ...formData, refractiveIndex: formatRefractiveIndex(e.target.value) })} className="w-full p-3 bg-blue-50 border-2 border-blue-200 rounded-xl font-bold outline-none focus:border-blue-500 text-blue-900" placeholder={t("placeholders.qcRefractiveIndexExample", "1.5559")} />
+                <input type="text" inputMode="numeric" required value={formData.refractiveIndex} onChange={(e) => setFormState((prev) => ({ ...prev, refractiveIndex: formatRefractiveIndex(e.target.value) }))} className="w-full p-3 bg-blue-50 border-2 border-blue-200 rounded-xl font-bold outline-none focus:border-blue-500 text-blue-900" placeholder={t("placeholders.qcRefractiveIndexExample", "1.5559")} />
                 {parseFloat(formData.refractiveIndex) > 1.0 && (parseFloat(formData.refractiveIndex) < 1.52 || parseFloat(formData.refractiveIndex) > 1.58) && (
                   <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1 animate-in fade-in"><AlertTriangle size={12} /> {t("addLabMeasurementModal.valueFarOutsideAverage", "Waarde ligt ver buiten het gemiddelde (normaal ~1.55). Controleer op typefouten.")}</p>
                 )}
@@ -440,7 +470,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
               {/* Visuele Check */}
               <div className="pt-2">
                 <label className="flex items-center gap-3 cursor-pointer p-3 rounded-xl border-2 border-slate-100 bg-slate-50 hover:bg-slate-100 transition-colors">
-                  <input type="checkbox" checked={formData.visualCheckOk} onChange={(e) => setFormData({ ...formData, visualCheckOk: e.target.checked })} className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                  <input type="checkbox" checked={formData.visualCheckOk} onChange={(e) => setFormState((prev) => ({ ...prev, visualCheckOk: e.target.checked }))} className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
                   <span className="text-sm font-bold text-slate-700">{t("addLabMeasurementModal.visualCheckOk", "Visuele Check OK (Mixer & Emmers schoon/droog)")}</span>
                 </label>
               </div>
@@ -474,18 +504,18 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
             <>
               <div>
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.resinBatch", "Harsbatch (Resin)")}</label>
-                <input type="text" required value={formData.resinBatch} onChange={(e) => setFormData({ ...formData, resinBatch: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcResinBatchExample", "Bijv. RES-2026-041")} />
+                <input type="text" required value={formData.resinBatch} onChange={(e) => setFormState((prev) => ({ ...prev, resinBatch: e.target.value }))} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcResinBatchExample", "Bijv. RES-2026-041")} />
               </div>
               <div>
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.tg", "Tg")}</label>
-                <input type="number" step="0.1" required value={formData.tg} onChange={(e) => setFormData({ ...formData, tg: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcTgExample", "128.5")} />
+                <input type="number" step="0.1" required value={formData.tg} onChange={(e) => setFormState((prev) => ({ ...prev, tg: e.target.value }))} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold outline-none focus:border-blue-500" placeholder={t("placeholders.qcTgExample", "128.5")} />
               </div>
             </>
           )}
 
           <div>
             <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1 block">{t("addLabMeasurementModal.noteOptional", "Notitie (Optioneel)")}</label>
-            <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-medium outline-none focus:border-blue-500 resize-none min-h-[60px]" placeholder={t("placeholders.qcLabTestNote", "Opmerkingen over de test...")} />
+            <textarea value={formData.notes} onChange={(e) => setFormState((prev) => ({ ...prev, notes: e.target.value }))} className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-medium outline-none focus:border-blue-500 resize-none min-h-[60px]" placeholder={t("placeholders.qcLabTestNote", "Opmerkingen over de test...")} />
           </div>
 
           <div className="pt-4 flex gap-3 sticky bottom-0 bg-white">

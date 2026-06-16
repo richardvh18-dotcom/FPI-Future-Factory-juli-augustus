@@ -2,19 +2,17 @@
 
 ## Deployment (actuele situatie)
 
-Deze repository gebruikt op dit moment een pilot-gerichte Vercel setup.
+Deze repository deployt via Firebase voor zowel frontend als backend.
 
-### Productiebranch
+### Frontend (Firebase Hosting)
 
-- Productiebranch in Vercel: pilot-dev
-- Deploy from Git staat aan voor pilot-dev
-- main staat momenteel niet als productiebranch ingesteld
+- Live deploy via GitHub Actions op pushes naar `main`.
+- Preview deploy via GitHub Actions op pull requests.
 
-### Huidige werkwijze
+### Backend (Firebase Functions)
 
-1. Werk op een feature branch.
-2. Merge of push naar pilot-dev wanneer de wijziging productie-klaar is.
-3. Vercel publiceert productie vanaf pilot-dev.
+- Live deploy van Cloud Functions via dezelfde Firebase live workflow op `main`.
+- Functions build draait automatisch via `functions` predeploy in `firebase.json`.
 
 ### Handmatige productie deploy (optioneel)
 
@@ -22,13 +20,13 @@ Gebruik dit wanneer je direct een productie-release wilt doen via CLI:
 
 ```bash
 npm run build
-npx vercel --prod --yes
+firebase deploy --only hosting,functions --project future-factory-377ef
 ```
 
 ### Belangrijk
 
-- Het script scripts/deploy.sh is gebaseerd op de oudere main/preview flow.
-- Gebruik voor de actuele setup vooral pilot-dev + Vercel CLI waar nodig.
+- Gebruik Firebase secrets en projectconfiguratie in GitHub Actions.
+- Er is geen alternatief deploypad meer in deze branch buiten Firebase.
 
 ## Projectstructuur (opgeschoond)
 

@@ -5,6 +5,7 @@ import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
 import { Mail, Plus, Edit, Trash2, CheckCircle, XCircle, LayoutTemplate, History } from "lucide-react";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useFormPersistence } from "../../hooks/useFormPersistence";
 
 interface EmailTemplate {
   id: string;
@@ -38,11 +39,14 @@ const EmailManagementView = () => {
   // Editor state
   const [showEditor, setShowEditor] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
-  const [formData, setFormData] = useState<EmailFormData>({
-    name: "",
-    subject: "",
-    html: "",
-  });
+  const [formData, setFormData, clearPersistedForm] = useFormPersistence<EmailFormData>(
+    "email_management_template_form",
+    {
+      name: "",
+      subject: "",
+      html: "",
+    }
+  );
 
   useEffect(() => {
     // Load Templates
@@ -88,6 +92,7 @@ const EmailManagementView = () => {
       }
       setShowEditor(false);
       setEditingTemplate(null);
+      clearPersistedForm();
       setFormData({ name: "", subject: "", html: "" });
     } catch (err) {
       console.error(err);
@@ -153,6 +158,7 @@ const EmailManagementView = () => {
                 <button
                   onClick={() => {
                     setEditingTemplate(null);
+                    clearPersistedForm();
                     setFormData({ name: "", subject: "", html: "" });
                     setShowEditor(true);
                   }}

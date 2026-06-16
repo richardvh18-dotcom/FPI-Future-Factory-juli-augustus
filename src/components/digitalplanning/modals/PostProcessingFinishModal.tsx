@@ -15,6 +15,7 @@ import { PATHS, getPathString } from "../../../config/dbPaths";
 import { REJECTION_REASONS } from "../../../utils/workstationLogic";
 import { useNotifications } from "../../../contexts/NotificationContext";
 import { useTranslation } from "react-i18next";
+import { useFormPersistence } from "../../../hooks/useFormPersistence";
 
 type ProductLike = {
   id?: string;
@@ -57,10 +58,20 @@ const PostProcessingFinishModal = ({
   const { showWarning } = useNotifications() as {
     showWarning: (message: string, title?: string) => void;
   };
-  const [status, setStatus] = useState<FinishStatus>("completed");
-  const [selectedReasons, setSelectedReasons] = useState<string[]>([]);
-  const [note, setNote] = useState("");
+  const [formState, setFormState, clearPersistedForm] = useFormPersistence<{
+    status: FinishStatus;
+    selectedReasons: string[];
+    note: string;
+  }>("post_processing_finish_modal_form", {
+    status: "completed",
+    selectedReasons: [],
+    note: "",
+  });
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const status = formState.status;
+  const selectedReasons = formState.selectedReasons;
+  const note = formState.note;
 
   const getReasonLabel = (reasonKey: string) => {
     const translated = t(reasonKey);
@@ -69,11 +80,12 @@ const PostProcessingFinishModal = ({
   };
 
   const toggleReason = (reason: string) => {
-    setSelectedReasons((prev) =>
-      prev.includes(reason)
-        ? prev.filter((r) => r !== reason)
-        : [...prev, reason]
-    );
+    setFormState((prev) => ({
+      ...prev,
+      selectedReasons: prev.selectedReasons.includes(reason)
+        ? prev.selectedReasons.filter((r) => r !== reason)
+        : [...prev.selectedReasons, reason],
+    }));
   };
 
   const handleConfirm = async () => {
@@ -82,32 +94,36 @@ const PostProcessingFinishModal = ({
       return;
     }
     setIsProcessing(true);
+    try {
+      // Definitieve afkeur + order-update lopen server-side via callable in onConfirm.
 
-    // Definitieve afkeur + order-update lopen server-side via callable in onConfirm.
+      // Stuur notificatie naar teamleider bij afkeur
+      if (status === "rejected" || status === "temp_reject") {
+        try {
+          await addDoc(collection(db, getPathString(PATHS.MESSAGES)), {
+            to: "FITTINGS_TEAM",
+            subject: status === "rejected" ? "Definitieve Afkeur Melding" : "Tijdelijke Afkeur Melding",
+            content: `Product ${product?.lotNumber} is ${status === "rejected" ? "afgekeurd" : "tijdelijk afgekeurd"} op station ${currentStation}. Reden: ${selectedReasons.map((r) => getReasonLabel(r)).join(", ")}`,
+            type: "alert",
+            priority: "high",
+            read: false,
+            timestamp: serverTimestamp()
+          });
+        } catch (error: unknown) { console.error("Kon notificatie niet versturen", error); }
+      }
 
-    // Stuur notificatie naar teamleider bij afkeur
-    if (status === "rejected" || status === "temp_reject") {
-      try {
-        await addDoc(collection(db, getPathString(PATHS.MESSAGES)), {
-          to: "FITTINGS_TEAM",
-          subject: status === "rejected" ? "Definitieve Afkeur Melding" : "Tijdelijke Afkeur Melding",
-          content: `Product ${product?.lotNumber} is ${status === "rejected" ? "afgekeurd" : "tijdelijk afgekeurd"} op station ${currentStation}. Reden: ${selectedReasons.map((r) => getReasonLabel(r)).join(", ")}`,
-          type: "alert",
-          priority: "high",
-          read: false,
-          timestamp: serverTimestamp()
-        });
-      } catch (error: unknown) { console.error("Kon notificatie niet versturen", error); }
+      await logActivity(
+        auth.currentUser?.uid || "system",
+        status === "completed" ? "POST_PROCESS_COMPLETE" : status === "temp_reject" ? "QUALITY_TEMP_REJECT" : "QUALITY_REJECT_FINAL",
+        `PostProcessing modal: lot ${product?.lotNumber || product?.id}, station ${currentStation}, status ${status}, reasons ${selectedReasons.join(", ") || "-"}`
+      );
+
+      await onConfirm(status, { reasons: selectedReasons, note });
+      clearPersistedForm();
+      setFormState({ status: "completed", selectedReasons: [], note: "" });
+    } finally {
+      setIsProcessing(false);
     }
-
-    await logActivity(
-      auth.currentUser?.uid || "system",
-      status === "completed" ? "POST_PROCESS_COMPLETE" : status === "temp_reject" ? "QUALITY_TEMP_REJECT" : "QUALITY_REJECT_FINAL",
-      `PostProcessing modal: lot ${product?.lotNumber || product?.id}, station ${currentStation}, status ${status}, reasons ${selectedReasons.join(", ") || "-"}`
-    );
-
-    await onConfirm(status, { reasons: selectedReasons, note });
-    setIsProcessing(false);
   };
 
   // Bepaal tekst voor de groene knop
@@ -146,7 +162,7 @@ const PostProcessingFinishModal = ({
         <div className="p-3 sm:p-6 space-y-3 sm:space-y-6 overflow-y-auto custom-scrollbar">
           <div className="grid grid-cols-1 min-[480px]:grid-cols-3 gap-2 sm:gap-3">
             <button
-              onClick={() => setStatus("completed")}
+              onClick={() => setFormState((prev) => ({ ...prev, status: "completed" }))}
               className={`p-2 sm:p-3 rounded-xl border-2 flex flex-row min-[480px]:flex-col items-center justify-start min-[480px]:justify-center gap-2 transition-all ${
                 status === "completed"
                   ? "border-green-500 bg-green-50 text-green-700 shadow-md transform scale-105"
@@ -157,7 +173,7 @@ const PostProcessingFinishModal = ({
               <span className="font-black text-[10px] sm:text-xs leading-tight uppercase text-left min-[480px]:text-center">{t("common.good", "Goed")}</span>
             </button>
             <button
-              onClick={() => setStatus("temp_reject")}
+              onClick={() => setFormState((prev) => ({ ...prev, status: "temp_reject" }))}
               className={`p-2 sm:p-3 rounded-xl border-2 flex flex-row min-[480px]:flex-col items-center justify-start min-[480px]:justify-center gap-2 transition-all ${
                 status === "temp_reject"
                   ? "border-orange-500 bg-orange-50 text-orange-700 shadow-md transform scale-105"
@@ -168,7 +184,7 @@ const PostProcessingFinishModal = ({
               <span className="font-black text-[10px] sm:text-xs leading-tight uppercase text-left min-[480px]:text-center">{t("status.tempRejected", "Tijdelijke afkeur")}</span>
             </button>
             <button
-              onClick={() => setStatus("rejected")}
+              onClick={() => setFormState((prev) => ({ ...prev, status: "rejected" }))}
               className={`p-2 sm:p-3 rounded-xl border-2 flex flex-row min-[480px]:flex-col items-center justify-start min-[480px]:justify-center gap-2 transition-all ${
                 status === "rejected"
                   ? "border-red-500 bg-red-50 text-red-700 shadow-md transform scale-105"
@@ -221,7 +237,7 @@ const PostProcessingFinishModal = ({
             </label>
             <textarea
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={(e) => setFormState((prev) => ({ ...prev, note: e.target.value }))}
               className="w-full p-3 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               placeholder={t("placeholders.dpPostProcessDefectExample", "Bijv. kras op flensvlak...")}
               rows={3}

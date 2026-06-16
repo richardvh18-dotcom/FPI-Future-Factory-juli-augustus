@@ -118,7 +118,7 @@ const slides: Slide[] = [
     title: "Techniek",
     bullets: [
       "GitHub en Codespaces",
-      "Vercel deployment",
+      "Firebase deployment",
       "Firebase realtime platform",
       "React frontend",
     ],

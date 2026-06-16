@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { X, Wrench, Save, Loader2, CheckSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useFormPersistence } from "../../../hooks/useFormPersistence";
 
 const getRepairActions = (t: (key: string, defaultValue: string) => string) => [
   t("digitalplanning.repair.action_new_label", "Nieuw etiket/volgnummer"),
@@ -23,21 +24,34 @@ type RepairModalProps = {
 
 const RepairModal = ({ product, onClose, onConfirm }: RepairModalProps) => {
   const { t } = useTranslation();
-  const [selectedActions, setSelectedActions] = useState<string[]>([]);
-  const [notes, setNotes] = useState("");
+  const [formState, setFormState, clearPersistedForm] = useFormPersistence<{ selectedActions: string[]; notes: string }>(
+    "repair_modal_form",
+    { selectedActions: [], notes: "" }
+  );
   const [isSaving, setIsSaving] = useState(false);
   const repairActions = getRepairActions(t as any);
 
+  const selectedActions = formState.selectedActions;
+  const notes = formState.notes;
+
   const toggleAction = (action: string) => {
-    setSelectedActions(prev => 
-      prev.includes(action) ? prev.filter(a => a !== action) : [...prev, action]
-    );
+    setFormState((prev) => ({
+      ...prev,
+      selectedActions: prev.selectedActions.includes(action)
+        ? prev.selectedActions.filter((a) => a !== action)
+        : [...prev.selectedActions, action],
+    }));
   };
 
   const handleSave = async () => {
     setIsSaving(true);
-    await onConfirm({ actions: selectedActions, notes });
-    setIsSaving(false);
+    try {
+      await onConfirm({ actions: selectedActions, notes });
+      clearPersistedForm();
+      setFormState({ selectedActions: [], notes: "" });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -83,7 +97,7 @@ const RepairModal = ({ product, onClose, onConfirm }: RepairModalProps) => {
             <label className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2 block">{t("digitalplanning.repair.notes_label", "Toelichting")}</label>
             <textarea
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(e) => setFormState((prev) => ({ ...prev, notes: e.target.value }))}
               className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-medium text-slate-700 outline-none focus:border-orange-500 transition-all min-h-[100px]"
               placeholder={t("digitalplanning.repair.notes_placeholder", "Beschrijf de reparatie...")}
             />
