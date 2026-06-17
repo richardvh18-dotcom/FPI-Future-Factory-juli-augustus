@@ -1,3 +1,196 @@
+## Update sessie 17 juni 2026 (Systeem Presentatie UI/UX & Animaties)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Systeem Presentatie (CompanyPresentation.tsx) Geoptimaliseerd voor TV's**
+- Teksten, hoofdtitels en iconen aanzienlijk vergroot voor optimale leesbaarheid op grote schermen.
+- Nieuwe openingsslide ontworpen met uitsluitend een reusachtig, vloeiend "ademend" (pulserend) FPi-logo.
+- Tekstuele verfijning doorgevoerd ("softwarepakket bedacht op een kantoor" i.p.v. "softwarepakket van kantoor").
+
+**2. Stap-voor-stap PowerPoint-stijl Animaties**
+- Presentatie-slides wachten nu op invoer (spatiebalk of pijltje naar rechts) voordat de inhoud verschijnt.
+- Opsommingspunten (zoals de 'uitdagingen van papier') schuiven nu soepel één voor één het scherm in.
+- Transition-fout verholpen door `key={currentSlide}` toe te passen op de main-container, waardoor nieuwe slides altijd correct onzichtbaar beginnen en niet direct in beeld flitsen bij de overgang.
+
+### Hervatpunt voor volgende sessie
+- De Systeem Presentatie is nu visueel en interactief strak getrokken.
+- Volgende stappen kunnen zijn: eventueel extra inhoudelijke slides toevoegen of de focus verleggen naar de openstaande prioriteitenlijst (zoals Firestore rules hardenen of RBAC via custom claims invoeren).
+
+---
+
+## Update sessie 17 juni 2026 (Print Queue Debugging)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Console logging toegevoegd voor print queue debugging**
+- In `ProductionStartModal.tsx` is een `console.log` toegevoegd in de `handlePrint` loop.
+- Deze log toont nu per printopdracht de naam en het ID van het template dat naar de wachtrij wordt gestuurd.
+
+### Doel
+- Zichtbaar maken welke `templateId`'s daadwerkelijk worden doorgegeven aan de `queuePrintJob` functie.
+- Hiermee kan direct in de browser console worden geverifieerd of de multi-template selectie uit de label-regel engine correct wordt verwerkt.
+
+### Hoe te testen
+1. Open de Developer Tools (F12) in de browser en ga naar de Console.
+2. Start een productieorder die meerdere labels zou moeten printen.
+3. Controleer de console op `🖨️ [Print Queue] ...` meldingen en verifieer de template ID's.
+
+---
+
+## Update sessie 16 juni 2026 (Labellogica BH12/Sleevless + Label Manager printmaat fix)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Productiestart labelregels aangescherpt (BH12 + flensflow)**
+- In `ProductionStartModal.tsx` is flensflow beperkt tot expliciete indicatoren:
+    - `FL`, `FLENS`, `FLANGE`, `STUB`
+- Alleen in die flensflow wordt een **klein flenslabel** gekozen.
+- Voor BH12 geldt nu: alle niet-flensproducten krijgen standaard **1 groot normaal label**.
+- `Sleevless/Sleeveless Coupler` wordt expliciet als coupler/fitting behandeld (niet als flensflow).
+
+**2. Labeldata parsing uitgebreid voor Sleevless Coupler + CMT**
+- In `labelHelpers.tsx` is de parsing uitgebreid voor input zoals:
+    - `Sleevless Coupler 300 CMT 20/10 FBLB`
+- Resultaat in labeldata:
+    - `productType`: `Sleevless Coupler`
+    - `connectionLine`: herkent ook compacte verbindingen zoals `FBLB`
+    - `idLine`: bevat correcte maat (`300`)
+    - `pressureLineEmt`: ondersteunt nu zowel `EMT` als `CMT` (bijv. `CMT 20/10`)
+    - `materialLine`: `Fibermar Conductive` bij CMT
+- Tagmatching is aangevuld zodat CMT-producten correct kunnen matchen met Fibermar/Conductive labels.
+
+**3. Label Manager printmaat bug opgelost (99x25 mm werd te klein geprint)**
+- Oorzaak: Label Manager viel effectief terug op 203 DPI door onjuiste default-printerresolutie.
+- Gevolg: labels op 300 DPI printers werden fysiek te klein geprint (ongeveer 70x20 i.p.v. 99x25).
+- Fix in `AdminLabelDesigner.tsx`:
+    - default printer wordt nu echt geselecteerd (`isDefault`, anders eerste printer),
+    - DPI wordt bepaald via `resolvePrinterDpi(defaultPrinter)`.
+- Resultaat: mm-afmetingen uit Label Manager blijven nu correct op print.
+
+### Resultaat
+- BH12 labelgedrag volgt de nieuwe operationele regelset.
+- Sleevless Coupler labels tonen de gewenste product-/materiaal-/verbinding-informatie.
+- Label Manager printformaten zijn gecorrigeerd voor juiste fysieke maatvoering.
+
+## Update sessie 16 juni 2026 (Print queue routing + batchprint fix bevestigd)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Print Station UX en routering verder aangescherpt**
+- In `PrintQueueAdminView.tsx` is de station->printer wizard toegevoegd en operationeel gemaakt voor operators.
+- Weergave is vereenvoudigd: geen lange stationslijst meer, alleen wizard + compacte actuele koppeling.
+- Stations in Print Stations worden nu gefilterd op de toegewezen gebruikersafdeling (bijv. alleen Fittings-stations voor een Fittings-user).
+
+**2. Dubbelprint in oude queue-flow opgelost**
+- Probleem: een batch van 3 labels werd soms 2x3 geprint.
+- Oorzaak: pre-batched ZPL payloads konden alsnog via `quantity` opnieuw vermenigvuldigd worden.
+- Oplossing in zowel `PrintQueueAdminView.tsx` als `PrintQueueAutoProcessor.tsx`:
+    - automatische detectie van pre-batched payloads (meerdere `^XA/^XZ`),
+    - geen extra quantity-replicatie voor pre-batched jobs,
+    - cut-mode expliciet geforceerd op alleen het laatste label van de batch.
+
+**3. Queue pad-fix voor Mazak/scoped write live gezet**
+- Backend `queuePrintJobService` (`functions/src/services/printingService.ts`) schrijft nu scoped-only naar:
+    - `/future-factory/production/print_queue/{department}/machines/{machine}/items/{jobId}`
+- Root mirror-write naar `/future-factory/production/print_queue/{jobId}` is verwijderd voor nieuwe jobs.
+- `MazakView.tsx` is aangepast om queue job-validatie ook scoped-only jobs te laten herkennen via `collectionGroup('items')` fallback.
+
+**4. Backend-only deploy succesvol afgerond**
+- Commando: `firebase deploy --only functions:queuePrintJob`
+- Resultaat: `queuePrintJob(europe-west1)` succesvol geüpdatet (`exit code 0`).
+
+### Resultaat
+- Batchprint gedraagt zich correct (geen dubbele batches, knip op einde batch).
+- Nieuwe printjobs landen op het gewenste scoped pad, inclusief Mazak onder:
+    - `/future-factory/production/print_queue/Fittings/machines/mazak/items/{jobId}`
+- Oude root docs kunnen nog bestaan als historische data; nieuwe jobs volgen de scoped-only write.
+
+## Update sessie 16 juni 2026 (Totaaloverzicht recente wijzigingen + release 0.1.22)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Samenvatting
+Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogopslag zichtbaar is wat er functioneel en operationeel is aangepast rond caching, printerroutering, tabletgebruik, form-persistence en release/deploy.
+
+### Uitgevoerd in deze sessies
+**1. Firebase Hosting en release-cachegedrag verbeterd**
+- `firebase.json` uitgebreid met expliciete cache headers voor app-shell, `version.json` en statische assets.
+- `src/App.tsx` aangepast zodat bij een remote versieverschil browsercaches worden gewist en service workers worden unregistered voordat de app herlaadt.
+- Herladen wordt kort uitgesteld als de gebruiker actief in een invoerveld bezig is, om ongewenst verlies van invoer te beperken.
+
+**2. Releaseflow vereenvoudigd en gestandaardiseerd**
+- Nieuw script toegevoegd: `scripts/bump-version.cjs`.
+- `package.json` uitgebreid met:
+    - `version:bump:patch`
+    - `version:bump:patch:dry`
+    - `deploy`
+- Hosting/releaseflow nu gericht op Firebase Hosting in plaats van de oude Vercel-route.
+- Vercel-specifieke configuratie en referenties zijn verwijderd of vervangen waar relevant.
+
+**3. Printerroutering fundamenteel verbeterd**
+- Nieuwe centrale helper toegevoegd: `src/utils/printRouting.ts`.
+- Printerselectie draait nu op `routingKeys` in plaats van op een globale default-printer.
+- Routering ondersteunt o.a.:
+    - `MAZAK`
+    - `FLANGE`
+    - `GENERAL`
+    - `LARGE`
+    - `STATION:BH18`
+    - `STATION:BM01`
+- Relevante printflows en beheerpagina's zijn aangepast om route-aware printers te kiezen.
+- Hierdoor kunnen identieke printers op verschillende pc's veilig naast elkaar gebruikt worden.
+
+**4. Mazak printbatch en knipgedrag gecorrigeerd**
+- `src/components/digitalplanning/MazakView.tsx` aangepast zodat labels in batchvorm worden opgebouwd zonder tussentijds per label te knippen.
+- De knip gebeurt pas op het allerlaatste label van de batch.
+- Flens/Mazak-routering is hierin meegenomen.
+
+**5. Tablet- en scannergebruik verbeterd**
+- Meerdere scan- en zoekvelden ondersteunen nu expliciet een soft-keyboard knop op touch devices.
+- Invoer kan op tablets makkelijker gewist worden via inline clear-knoppen.
+- `src/styles.css` aangepast zodat nummerinvoervelden op touchscreens geen lastige spinner-controls meer tonen.
+- Dit is doorgevoerd in meerdere shopfloor-, terminal- en modalflows.
+
+**6. Formulier-persistentie breed toegevoegd**
+- Nieuwe hook toegevoegd: `src/hooks/useFormPersistence.ts`.
+- Nieuwe hook toegevoegd: `src/hooks/useTouchKeyboardPreference.ts`.
+- Form persistence is uitgerold in meerdere admin-, QC-, planning- en productiemodals/views.
+- Na succesvolle save/submit wordt persisted state waar nodig opgeschoond om verouderde invoer te voorkomen.
+
+**7. Printerbeheer en operationele documentatie uitgebreid**
+- `src/components/admin/AdminPrinterManager.tsx` ondersteunt nu routeringstags in het formulier en de printerweergave.
+- Nieuw document toegevoegd: `docs/PRINTER_ROUTING_SETUP.md`.
+- Daarin staat de aanbevolen multi-pc opzet met lokale USB-koppeling, routing keys en gebruik zonder beheerdersaccount.
+
+**8. Backend/performance tuning aangebracht**
+- `functions/src/services/aiInvisibleWorkerService.ts` staat op `minInstances: 1` om cold starts te beperken.
+- Build/deploy is succesvol gebleven ondanks de bekende chunk-size waarschuwing uit Vite.
+
+**9. Release uitgevoerd**
+- Versie succesvol verhoogd van `0.1.21` naar `0.1.22`.
+- Productiebuild succesvol uitgevoerd.
+- Firebase Hosting deploy succesvol gepubliceerd op:
+    - `https://future-factory-377ef.web.app`
+
+**10. Git en PR-status afgerond**
+- Wijzigingen zijn gecommit en gepusht naar `origin/FPiFF-June-rolout`.
+- Pull request aangemaakt:
+    - PR `#1`
+    - titel: `Improve printer routing, tablet UX, and release 0.1.22`
+- Enige niet-gecommitte lokale restpost is het tijdelijke bestand `Tijdelijke Bestanden/Samenvatting.docx`.
+
+### Resultaat
+- Nieuwe frontend release `0.1.22` staat live.
+- Printerroutering werkt nu zonder afhankelijkheid van een globale standaardprinter.
+- Mazak batchlabels knippen pas op het einde van de batch.
+- Tabletinvoer is bruikbaarder geworden op de werkvloer.
+- Belangrijke formulieren verliezen minder snel invoer door refresh, routewissel of ongelukjes.
+- De volledige wijzigingsset staat nu bovenaan deze samenvatting zichtbaar.
+
 ## Update sessie 15 juni 2026 (Import modal fixes + deploy 0.1.21 + performance notitie)
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)

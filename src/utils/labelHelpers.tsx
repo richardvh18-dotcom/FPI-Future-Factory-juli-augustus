@@ -33,6 +33,30 @@ type LabelTemplate = {
   [key: string]: unknown;
 };
 
+// --- NIEUWE DYNAMISCHE REGEL ENGINE TYPES ---
+export type PrintRuleCondition = {
+  field: string; // bijv. "productType", "diameterVal" of "extraCode"
+  operator: "==" | "!=" | ">" | "<" | ">=" | "<=" | "contains";
+  value: string | number;
+};
+
+export type PrintRuleOutput = {
+  labelCount?: number;
+  labelSizeId?: string; // Verwijst naar LABEL_SIZES, bijv. "Standard", "Slim", "Large"
+  templateId?: string; // Verwijst naar een specifiek Label Template ID uit de Label Maker
+  templateIds?: string[]; // Verwijst naar meerdere specifieke Label Template ID's
+  requiredTags?: string[]; // Bijv. ["FLENS"] om een specifiek template af te dwingen
+};
+
+export type PrintRuleDef = {
+  id?: string;
+  name: string;
+  priority: number; // Hoge prioriteit (bijv. 100) overschrijft lage prioriteit (bijv. 10)
+  active: boolean;
+  conditions: PrintRuleCondition[];
+  output: PrintRuleOutput;
+};
+
 // Definieer de standaard formaten
 export const LABEL_SIZES = {
   Standard: { width: 90, height: 55, name: i18n.t("label.size_standard", "Standaard (90x55mm)") },
@@ -189,6 +213,7 @@ const parseConnections = (text: string): string => {
 // Bepaalt productnaam + graden (voor elbows)
 const parseProductType = (text: string): string => {
   const upper = text.toUpperCase();
+  const isSleevelessCoupler = /\bSLEEVE?LESS\b/.test(upper) && (upper.includes("COUPLER") || upper.includes("MOF"));
   const teePairMatch = upper.match(/(\d+)\s*[xX/]\s*(\d+)/);
   const hasTee = upper.includes("TEE");
   const isUnequalBySize = teePairMatch && teePairMatch[1] !== teePairMatch[2];
@@ -200,11 +225,11 @@ const parseProductType = (text: string): string => {
       ? "UNEQUAL-TEE"
       : upper.includes("TEE")
         ? "EQUAL-TEE"
-        : upper.includes("COUPLER") || upper.includes("MOF")
+        : isSleevelessCoupler || upper.includes("COUPLER") || upper.includes("MOF")
           ? "COUPLER"
           : upper.includes("BLIND")
             ? "BLIND FLANGE"
-                : upper.includes("FLANGE") || upper.includes("FLENS") || upper.match(/\bFL/)
+                : upper.includes("FLANGE") || upper.includes("FLENS") || /\b(?:FL|STUB)\b/.test(upper)
               ? "FLANGE"
               : upper.includes("CONC") || upper.includes("REDCON") || upper.includes("RED CON")
                 ? "CONCENTRIC REDUCER"
@@ -307,10 +332,15 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
 
   const rawData = data as Record<string, unknown>;
   const desc = String(rawData.item || rawData.description || "").trim();
+  const upperDesc = desc.toUpperCase();
   const lotNumber = String(rawData.lotNumber || "");
+  const isSleevelessCoupler = /\bSLEEVE?LESS\b/.test(upperDesc) && (upperDesc.includes("COUPLER") || upperDesc.includes("MOF"));
 
   // 1. Bepaal Product Type
   let productType = parseProductType(desc);
+  if (isSleevelessCoupler) {
+    productType = "Sleevless Coupler";
+  }
 
   // FIX: EWT Detectie - Als EWT in de tekst staat, en het is geen bekende vorm, zet type op EWT
   if (desc.toUpperCase().includes("EWT")) {
@@ -336,13 +366,33 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
 
   // Bepaal Pressure Line EMT (zoekt specifiek naar waarden zoals "EMT 30/10" of "EMT30/10")
   let pressureLineEmt = "";
-  const emtMatch = desc.match(/EMT\s*(\d+\/\d+)/i) || String(rawData.productId || "").match(/EMT\s*(\d+\/\d+)/i) || String(rawData.itemCode || "").match(/EMT\s*(\d+\/\d+)/i);
-  if (emtMatch) {
-      pressureLineEmt = `EMT ${emtMatch[1]}`;
+  const emtLikeMatch =
+    desc.match(/(EMT|CMT)\s*(\d+\/\d+)/i) ||
+    String(rawData.productId || "").match(/(EMT|CMT)\s*(\d+\/\d+)/i) ||
+    String(rawData.itemCode || "").match(/(EMT|CMT)\s*(\d+\/\d+)/i);
+  if (emtLikeMatch) {
+      const materialCode = String(emtLikeMatch[1] || "EMT").toUpperCase();
+      pressureLineEmt = `${materialCode} ${emtLikeMatch[2]}`;
+      if (!pressureLine) {
+        pressureLine = pressureLineEmt;
+      }
+  }
+
+  let materialLine = "";
+  if (upperDesc.includes("CMT")) {
+    materialLine = "Fibermar Conductive";
+  } else if (upperDesc.includes("EMT") || upperDesc.includes("FIBERMAR")) {
+    materialLine = "Fibermar";
   }
 
   // 3. Bepaal Connecties
   let connectionLine = parseConnections(desc);
+  if (!connectionLine) {
+    const compactConnectionMatch = upperDesc.match(/\b((?:FB|LB|TB|CB|FL|AM|AB|CS|CF){2,3})\b/);
+    if (compactConnectionMatch) {
+      connectionLine = compactConnectionMatch[1];
+    }
+  }
   if (!connectionLine) {
     if (specs?.connection) {
       connectionLine = String(specs.connection);
@@ -368,7 +418,7 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
   let flangeConnectionLine = "";
   let flangeDrillingLine = "";
 
-  if (productType === "FLANGE" || desc.toUpperCase().match(/\bFL/)) {
+  if (productType === "FLANGE" || /\b(?:FL|FLENS|FLANGE|STUB)\b/.test(desc.toUpperCase())) {
     // 1. Flange ID Line
     const fIdMatch = desc.match(/\bFL(?:ENS|ANGE)?\s*(\d+)\b/i) || desc.match(/\b(\d+)\b/);
     const fId = fIdMatch ? parseInt(fIdMatch[1], 10) : diameterVal;
@@ -487,6 +537,7 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
     productType: productType,
     pressureLine: pressureLine,
     pressureLineEmt: pressureLineEmt,
+    materialLine: materialLine,
     connectionLine: connectionLine,
     radiusText: radiusText,
 
@@ -711,7 +762,7 @@ export const filterLabelsByProduct = (
   });
 
     // Detecteer Flens varianten voor label filtering
-    if (type === "FLANGE" || desc.match(/\bFL/) || desc.includes("FLENS") || desc.includes("FLANGE")) {
+    if (type === "FLANGE" || /\b(?:FL|FLENS|FLANGE|STUB)\b/.test(desc)) {
       productTags.add("FLANGE");
       productTags.add("FLENZEN");
       productTags.add("FLENS");
@@ -728,7 +779,22 @@ export const filterLabelsByProduct = (
   if (desc.includes("EST")) productTags.add("EST");
   if (desc.includes("CST")) productTags.add("CST");
   if (desc.includes("EMT")) productTags.add("EMT");
+  if (desc.includes("CMT")) productTags.add("CMT");
   if (desc.includes("EWT")) productTags.add("EWT");
+
+  if (desc.includes("CMT")) {
+    productTags.add("FIBERMAR");
+    productTags.add("CONDUCTIVE");
+  }
+
+  // Sleeveless/Sleevless couplers lopen in productie als fitting/coupler met Wavistrong-label.
+  const isSleevelessCoupler = /\bSLEEVE?LESS\b/.test(desc) && (desc.includes("COUPLER") || desc.includes("MOF"));
+  if (isSleevelessCoupler) {
+    productTags.add("COUPLER");
+    productTags.add("WAVISTRONG");
+    productTags.add("FITTING");
+    productTags.add("FITTINGS");
+  }
   
   // 2. Filter logica
   return sourceLabels.filter((label: LabelTemplate) => {
@@ -874,6 +940,67 @@ export const getQRCodeDataUrl = async (data: unknown, size = 150): Promise<strin
 // Backward-compatible alias; returns a Promise<string> just like getQRCodeDataUrl.
 export const getQRCodeUrl = (data: unknown, size = 150): Promise<string> =>
   getQRCodeDataUrl(data, size);
+
+/**
+ * Evalueert dynamische printregels uit de database om het aantal labels, formaat en tags te bepalen.
+ */
+export const evaluatePrintRules = (
+  productData: Record<string, any>,
+  rules: PrintRuleDef[]
+): PrintRuleOutput => {
+  // Basis/Standaard instellingen als geen enkele regel triggert
+  const finalOutput: PrintRuleOutput = {
+    labelCount: 1,
+    labelSizeId: "Large",
+    requiredTags: [],
+  };
+
+  if (!rules || !Array.isArray(rules)) return finalOutput;
+
+  // Sorteer regels van lage naar hoge prioriteit, zodat een specifiekere regel de basis kan overschrijven
+  const activeRules = rules.filter((r) => r.active).sort((a, b) => a.priority - b.priority);
+
+  for (const rule of activeRules) {
+    let matchesAll = true;
+
+    for (const condition of rule.conditions) {
+      const prodVal = productData[condition.field];
+      if (prodVal === undefined) {
+        matchesAll = false;
+        break;
+      }
+
+      const numProdVal = parseFloat(String(prodVal));
+      const numCondVal = parseFloat(String(condition.value));
+      const isNumeric = !isNaN(numProdVal) && !isNaN(numCondVal);
+
+      switch (condition.operator) {
+        case "==": matchesAll = isNumeric ? numProdVal === numCondVal : String(prodVal).toUpperCase() === String(condition.value).toUpperCase(); break;
+        case "!=": matchesAll = isNumeric ? numProdVal !== numCondVal : String(prodVal).toUpperCase() !== String(condition.value).toUpperCase(); break;
+        case ">":  matchesAll = isNumeric ? numProdVal > numCondVal : false; break;
+        case ">=": matchesAll = isNumeric ? numProdVal >= numCondVal : false; break;
+        case "<":  matchesAll = isNumeric ? numProdVal < numCondVal : false; break;
+        case "<=": matchesAll = isNumeric ? numProdVal <= numCondVal : false; break;
+        case "contains": matchesAll = String(prodVal).toUpperCase().includes(String(condition.value).toUpperCase()); break;
+        default: matchesAll = false;
+      }
+      if (!matchesAll) break;
+    }
+
+    if (matchesAll) {
+      // Pas de output toe (overschrijf bestaande waarden)
+      if (rule.output.labelCount !== undefined) finalOutput.labelCount = rule.output.labelCount;
+      if (rule.output.labelSizeId) finalOutput.labelSizeId = rule.output.labelSizeId;
+      if (rule.output.templateId) finalOutput.templateId = rule.output.templateId;
+      if (rule.output.templateIds && rule.output.templateIds.length > 0) finalOutput.templateIds = rule.output.templateIds;
+      if (rule.output.requiredTags && rule.output.requiredTags.length > 0) {
+        finalOutput.requiredTags = rule.output.requiredTags;
+      }
+    }
+  }
+
+  return finalOutput;
+};
 
 export const getBarcodeUrl = (data: unknown): string =>
   `https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(

@@ -8,7 +8,6 @@ import {
   Plus, 
   Trash2, 
   Save, 
-  CheckCircle2, 
   Play,
   X,
   MapPin,
@@ -90,7 +89,6 @@ type PrinterRecord = {
   queueStations?: string[];
   routingKeys?: string[];
   type?: string;
-  isDefault?: boolean;
   vendorId?: number | string | null;
   productId?: number | string | null;
   deviceName?: string;
@@ -117,7 +115,6 @@ type PrinterFormData = {
   linkedStations: string[];
   routingKeysText: string;
   type: PrinterConnectionType;
-  isDefault: boolean;
   vendorId: number | null;
   productId: number | null;
   deviceName: string;
@@ -216,7 +213,6 @@ const DEFAULT_PRINTER_FORM: PrinterFormData = {
   linkedStations: [],
   routingKeysText: "",
   type: CONNECTION_TYPES.WEBUSB,
-  isDefault: false,
   vendorId: null,
   productId: null,
   deviceName: "",
@@ -393,7 +389,7 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
     startSeq: "1",
     count: "1",
     mode: 'sequential', // 'sequential' | 'identical'
-    printerId: printers.find((p) => p.isDefault)?.id || printers[0]?.id || ""
+    printerId: printers[0]?.id || ""
   });
 
   const parsedStartSeq = Math.max(1, Math.min(9999, parseInt(config.startSeq, 10) || 1));
@@ -547,7 +543,7 @@ const TempLabelModal = ({ onClose, printers, labelTemplates, labelRules, onPrint
   const [loadingInitialList, setLoadingInitialList] = useState(true);
   const [loading, setLoading] = useState(false);
   const [searchDiagnostics, setSearchDiagnostics] = useState<string[]>([]);
-  const [printerId, setPrinterId] = useState<string>(printers.find((p) => p.isDefault)?.id || printers[0]?.id || "");
+  const [printerId, setPrinterId] = useState<string>(printers[0]?.id || "");
   const [selectedTemplateByOrder, setSelectedTemplateByOrder] = useState<Record<string, string>>({});
 
 
@@ -1179,14 +1175,6 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         width: normalizedRollWidth,
       };
 
-      // Als deze default wordt, zet anderen uit
-      if (formData.isDefault) {
-        const updates = printers
-          .filter((p) => p.isDefault && p.id !== editingId)
-          .map((p) => updateDoc(docPath(PATHS.PRINTERS, p.id), { isDefault: false }));
-        await Promise.all(updates);
-      }
-
       if (editingId) {
         await updateDoc(docPath(PATHS.PRINTERS, editingId), {
           ...payload,
@@ -1232,21 +1220,6 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Printer deleted: ${id}`);
     } catch (err: unknown) {
       console.error("Error deleting:", err);
-    }
-  };
-
-  const handleSetDefault = async (id: string) => {
-    try {
-      // Zet alle anderen op false
-      const updates = printers.map((p) => 
-        updateDoc(docPath(PATHS.PRINTERS, p.id), { 
-          isDefault: p.id === id 
-        })
-      );
-      await Promise.all(updates);
-      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Printer default set to: ${id}`);
-    } catch (err: unknown) {
-      console.error("Error setting default:", err);
     }
   };
 
@@ -1751,7 +1724,6 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       linkedStations: printer.linkedStations || [],
       routingKeysText: Array.isArray(printer.routingKeys) ? printer.routingKeys.join(", ") : "",
       type: normalizePrinterType(printer.type),
-      isDefault: printer.isDefault || false,
       vendorId: parseUsbId(printer.vendorId) ?? null,
       productId: parseUsbId(printer.productId) ?? null,
       deviceName: printer.deviceName || "",
@@ -1913,12 +1885,12 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                 <input
                   type="text"
                   className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500"
-                  placeholder={t('adminPrinterManager.routingKeysPlaceholder', 'mazak, flange, station:bh12, general')}
+                  placeholder={t('adminPrinterManager.routingKeysPlaceholder', '#mazak, #lossen, station:bh12, general')}
                   value={formData.routingKeysText}
                   onChange={(e) => setFormData({ ...formData, routingKeysText: e.target.value })}
                 />
                 <p className="text-[10px] text-slate-400 mt-1 font-semibold uppercase tracking-widest">
-                  {t('adminPrinterManager.routingKeysHelp', 'Gebruik routecodes zoals MAZAK, FLANGE, STATION:BH12 of GENERAL.')} 
+                  {t('adminPrinterManager.routingKeysHelp', 'Gebruik routecodes zoals #MAZAK, #LOSSEN, STATION:BH12 of GENERAL. # is optioneel.')} 
                 </p>
                 <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
                   {t('adminPrinterManager.routingKeysHostHelp', 'Werk je met meerdere computers: geef iedere printer zijn eigen routeringstag en koppel op iedere pc alleen de lokale USB-printer. Bijvoorbeeld MAZAK op de Mazak-pc en GENERAL of STATION:BH18 op de pc voor grote labels.')}
@@ -2128,19 +2100,6 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
             </div>
           </div>
 
-          <div className="flex items-center gap-2 mb-6">
-            <input 
-              type="checkbox" 
-              id="isDefault"
-              checked={formData.isDefault}
-              onChange={e => setFormData({...formData, isDefault: e.target.checked})}
-              className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
-            />
-            <label htmlFor="isDefault" className="text-sm font-bold text-slate-700 cursor-pointer">
-              {t('adminPrinterManager.setAsDefaultPrinter')}
-            </label>
-          </div>
-
           <div className="flex justify-end gap-3">
             <button onClick={() => { setIsAdding(false); setEditingId(null); }} className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">{t('common.cancel')}</button>
             <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 flex items-center gap-2">
@@ -2192,7 +2151,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                 : 'bg-orange-50 text-orange-600';
 
             return (
-          <div key={printer.id} className={`bg-white p-4 rounded-2xl border-2 transition-all flex items-center justify-between ${printer.isDefault ? 'border-emerald-400 shadow-sm' : 'border-slate-100'}`}>
+          <div key={printer.id} className="bg-white p-4 rounded-2xl border-2 transition-all flex items-center justify-between border-slate-100">
             <div className="flex items-center gap-4">
               <div className={`p-3 rounded-xl ${iconColors}`}>
                 <Printer size={24} />
@@ -2200,9 +2159,6 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="font-black text-slate-800">{printer.name}</h3>
-                  {printer.isDefault && (
-                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase rounded-md border border-emerald-200">{t('adminPrinterManager.default', 'Standaard')}</span>
-                  )}
                 </div>
                 <p className="text-xs font-bold text-slate-400 font-mono mt-0.5">
                   {printerType === CONNECTION_TYPES.WEBUSB && (printer.deviceName ? `USB: ${printer.deviceName}` : t("adminPrinterManager.webUsbZadig", "WebUSB / Zadig"))}
@@ -2240,15 +2196,6 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
             </div>
 
             <div className="flex items-center gap-2">
-              {!printer.isDefault && (
-                <button 
-                  onClick={() => handleSetDefault(printer.id)}
-                  className="p-2 text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                  title={t('adminPrinterManager.makeDefault')}
-                >
-                  <CheckCircle2 size={18} />
-                </button>
-              )}
               <div className="relative">
                 <button 
                   onClick={() => setShowTestMenu(printer.id === showTestMenu ? null : printer.id)}

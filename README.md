@@ -35,6 +35,7 @@ firebase deploy --only hosting,functions --project future-factory-377ef
 	- `docs/02_ARCHITECTURE_AND_FEATURES.md`
 	- `docs/03_PROJECT_PLANNING.md`
 	- `docs/04_OPERATIONS_NOTES_AND_TASKS.md`
+	- `docs/05_ENVIRONMENTS_AND_DEPLOYMENT.md`
 	- `docs/CONVERSATION_SUMMARY.md`
 - Hulpscripts en operationele scripts: `scripts/`
 - Analyse notebooks: `notebooks/`

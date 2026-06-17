@@ -9,7 +9,6 @@ type AnyRecord = Record<string, unknown>;
 
 type PrinterConfig = {
   id: string;
-  isDefault?: boolean;
   vendorId?: number | string;
   productId?: number | string;
   name?: string;
@@ -32,6 +31,10 @@ type PrintJob = AnyRecord & {
 type Props = {
   enabled?: boolean;
 };
+
+const USB_PRINTER_VENDOR_KEY = 'usb_printer_vendor';
+const USB_PRINTER_PRODUCT_KEY = 'usb_printer_product';
+const USB_PRINTER_ID_KEY = 'usb_printer_id';
 
 const isInvalidPrintQueueTransitionError = (error: unknown): boolean => {
   const message = String(
@@ -139,6 +142,37 @@ const normalizeQueuePrintPayload = (content: unknown, quantity: unknown, isPreBa
   return Array.from({ length: qty }, (_, idx) => applyCutMode(base, idx === qty - 1)).join('\n');
 };
 
+const isLikelyPreBatchedZpl = (content: unknown): boolean => {
+  const raw = String(content || '');
+  if (!raw) return false;
+  const xaCount = (raw.match(/\^XA/g) || []).length;
+  const xzCount = (raw.match(/\^XZ/g) || []).length;
+  return xaCount > 1 || xzCount > 1;
+};
+
+const replaceLastLiteral = (source: string, searchValue: string, replaceValue: string): string => {
+  const idx = source.lastIndexOf(searchValue);
+  if (idx < 0) return source;
+  return `${source.slice(0, idx)}${replaceValue}${source.slice(idx + searchValue.length)}`;
+};
+
+const enforceCutModeOnBatchPayload = (payload: unknown, shouldCutAtEnd: boolean): string => {
+  let normalized = String(payload || '').trim();
+  if (!normalized) return '';
+
+  normalized = normalized
+    .replace(/\^MM[CT]/g, '^MMT')
+    .replace(/\^PQ1,0,1,[YN]/g, '^PQ1,0,1,N');
+
+  if (!shouldCutAtEnd) {
+    return normalized;
+  }
+
+  normalized = replaceLastLiteral(normalized, '^MMT', '^MMC');
+  normalized = replaceLastLiteral(normalized, '^PQ1,0,1,N', '^PQ1,0,1,Y');
+  return normalized;
+};
+
 const getJobQuantity = (job: PrintJob): number => {
   const quantity = Number(job?.metadata?.quantity ?? job?.quantity);
   if (Number.isFinite(quantity) && quantity > 0) return Math.floor(quantity);
@@ -157,11 +191,20 @@ const normalizeJob = (docSnap: { id: string; data: () => unknown }): PrintJob | 
 };
 
 const getCurrentPrinterId = (printers: PrinterConfig[], usbDevice: USBDevice | null): string | null => {
-  if (usbDevice) {
-    const match = printers.find(
-      (p) => Number(p.vendorId) === usbDevice.vendorId && Number(p.productId) === usbDevice.productId
-    );
-    if (match?.id) return match.id;
+  const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
+  if (savedPrinterId) {
+    const savedPrinter = printers.find((printer) => printer.id === savedPrinterId);
+    if (savedPrinter?.id) return savedPrinter.id;
+  }
+
+  if (!usbDevice) return null;
+
+  const matches = printers.filter(
+    (printer) => Number(printer.vendorId) === usbDevice.vendorId && Number(printer.productId) === usbDevice.productId
+  );
+
+  if (matches.length === 1) {
+    return matches[0].id || null;
   }
 
   return null;
@@ -182,8 +225,8 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
     let cancelled = false;
 
     const restoreUsbConnection = async () => {
-      const savedVendor = localStorage.getItem('usb_printer_vendor');
-      const savedProduct = localStorage.getItem('usb_printer_product');
+      const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
+      const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
       if (!savedVendor || !savedProduct) return;
 
       try {
@@ -287,6 +330,11 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
     [printers, usbDevice]
   );
 
+  useEffect(() => {
+    if (!currentPrinterId) return;
+    localStorage.setItem(USB_PRINTER_ID_KEY, currentPrinterId);
+  }, [currentPrinterId]);
+
   const currentPrinter = useMemo(
     () => printers.find((printer) => printer.id === currentPrinterId) || null,
     [printers, currentPrinterId]
@@ -340,17 +388,13 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             const content = job.printData || job.zpl;
             if (!content) throw new Error('Geen printdata gevonden in printtaak.');
 
-            const isPreBatchedJob = Boolean(job?.metadata?.queuedAsBatch);
+            const isPreBatchedJob = Boolean(job?.metadata?.queuedAsBatch) || isLikelyPreBatchedZpl(content);
             const batchSeqIndex = Number(job?.metadata?.batchSequenceIndex);
             const batchSeqTotal = Number(job?.metadata?.batchSequenceTotal);
             const hasBatchSequence = Number.isFinite(batchSeqIndex) && Number.isFinite(batchSeqTotal) && batchSeqTotal > 0;
             const shouldCutAtEnd = hasBatchSequence ? batchSeqIndex === batchSeqTotal : true;
             const basePayload = normalizeQueuePrintPayload(content, getJobQuantity(job), isPreBatchedJob);
-            const payload = isPreBatchedJob
-              ? String(basePayload)
-              : String(basePayload)
-                  .replace(/\^MM[CT]/g, shouldCutAtEnd ? '^MMC' : '^MMT')
-                  .replace(/\^PQ1,0,1,[YN]/g, shouldCutAtEnd ? '^PQ1,0,1,Y' : '^PQ1,0,1,N');
+            const payload = enforceCutModeOnBatchPayload(basePayload, shouldCutAtEnd);
             await printRawUsbToDevice({ device: usbDevice, content: payload });
 
             await transitionPrintQueueJobStatus({

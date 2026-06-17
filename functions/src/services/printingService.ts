@@ -61,21 +61,41 @@ const normalizeMachineToken = (rawValue = '') => {
   return '';
 };
 
+const normalizeTextStationToken = (rawValue = '') => {
+  const token = String(rawValue || '').trim().toUpperCase().replace(/\s+/g, '');
+  if (!token) return '';
+
+  if (token === 'MAZAK') return 'mazak';
+  if (token === 'NABEWERKING') return 'nabewerking';
+  if (token === 'LOSSEN') return 'lossen';
+
+  if (/^LOSSEN\d+(?:\/\d+)?$/.test(token)) {
+    return token.toLowerCase();
+  }
+
+  return '';
+};
+
 const inferScopedMachine = (printerId, metadata = {}) => {
-  const candidates = [
+  const metadataCandidates = [
     metadata?.machineId,
     metadata?.stationId,
     metadata?.station,
     metadata?.currentStation,
     metadata?.originMachine,
     metadata?.targetPrinterName,
-    printerId,
   ];
 
-  for (const candidate of candidates) {
+  for (const candidate of metadataCandidates) {
     const machine = normalizeMachineToken(candidate);
     if (machine) return sanitizeSegment(machine, DEFAULT_MACHINE);
+
+    const textStation = normalizeTextStationToken(candidate);
+    if (textStation) return sanitizeSegment(textStation, DEFAULT_MACHINE);
   }
+
+  const printerMachine = normalizeMachineToken(printerId);
+  if (printerMachine) return sanitizeSegment(printerMachine, DEFAULT_MACHINE);
 
   return DEFAULT_MACHINE;
 };
@@ -141,12 +161,9 @@ async function queuePrintJobService(printerId, zplData, metadata = {}, context) 
     _scopeType: 'print_queue',
   };
 
-  await Promise.all([
-    docRef.set(jobData, { merge: true }),
-    scopedRef.set(jobData, { merge: true }),
-  ]);
+  await scopedRef.set(jobData, { merge: true });
 
-  console.log(`[Printing] Print job queued: ${docRef.id} (printer: ${printerId}, machine: ${scopedMachine})`);
+  console.log(`[Printing] Print job queued (scoped): ${scopedRef.path} (printer: ${printerId}, machine: ${scopedMachine})`);
   return docRef.id;
 }
 
