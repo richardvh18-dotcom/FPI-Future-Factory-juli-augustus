@@ -22,6 +22,9 @@ import { db, auth, logActivity } from "../../../config/firebase";
 import { PATHS, getArchiveItemsPath, getPathString } from "../../../config/dbPaths";
 import {
   filterLabelsByProduct,
+  processLabelData,
+  evaluatePrintRules,
+  type PrintRuleDef
 } from "../../../utils/labelHelpers";
 import { getFlangeSeriesInfo } from "../../../utils/flangeSeriesHelper";
 import { lookupProductByManufacturedId } from "../../../utils/conversionLogic";
@@ -172,8 +175,18 @@ const getOrderAngle = (order: any): number | null => {
   return Number.isFinite(angle) ? angle : null;
 };
 
+const isSleevelessCouplerOrder = (order: any): boolean => {
+  const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription, order?.description]
+    .join(" ")
+    .toUpperCase();
+  const hasSleeveToken = /\bSLEEVE?LESS\b/.test(itemIdentifier);
+  const hasCouplerToken = itemIdentifier.includes("COUPLER") || itemIdentifier.includes("MOF");
+  return hasSleeveToken && hasCouplerToken;
+};
+
 const getOrderProductTypeKey = (order: any): string => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
+  if (isSleevelessCouplerOrder(order)) return "COUPLER";
   if (itemIdentifier.includes("ELB") || itemIdentifier.includes("BOCHT")) return "ELBOW";
   if (itemIdentifier.includes("FLANGE") || itemIdentifier.includes("FLENS")) return "FLANGE";
   if (itemIdentifier.includes("UNEQUAL") || itemIdentifier.includes("VERLOOP TEE")) return "UNEQUAL-TEE";
@@ -241,6 +254,7 @@ const ProductionStartModal = ({
   const [stringCount, setStringCount] = useState("1");
   const [labelCount, setLabelCount] = useState("1");
   const [manualLotInput, setManualLotInput] = useState("");
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
   const [manualOrderInput, setManualOrderInput] = useState("");
   const [assignedOperators, setAssignedOperators] = useState<Array<{ number: string; name: string }>>([]);
   const [operatorInput, setOperatorInput] = useState("");
@@ -262,6 +276,7 @@ const ProductionStartModal = ({
   
   const [savedPrinters, setSavedPrinters] = useState<any[]>([]);
   const [generalSettings, setGeneralSettings] = useState<any>({ flangeSeriesRules: [] });
+  const [dynamicPrintRules, setDynamicPrintRules] = useState<PrintRuleDef[]>([]);
   const [toolingMolds, setToolingMolds] = useState<any[]>([]);
   const [relatedItemCodes, setRelatedItemCodes] = useState<string[]>([]);
   const [printConfig, setPrintConfig] = useState({
@@ -305,7 +320,9 @@ const ProductionStartModal = ({
     ? normalizedStation.slice(2)
     : normalizedStation;
   const isBh11OrBh15Station = normalizedStationNoPrefix === "BH11" || normalizedStationNoPrefix === "BH15";
-  const hasFlInArticle = /\bFL(?:ENS|ANGE)?\b/.test(
+  const isBh12Station = normalizedStationNoPrefix === "BH12";
+  const isSleevelessCoupler = isSleevelessCouplerOrder(order);
+  const hasFlangeIndicator = /\b(?:FL|FLENS|FLANGE|STUB)\b/.test(
     [
       order?.item,
       order?.itemDescription,
@@ -316,7 +333,7 @@ const ProductionStartModal = ({
       .map((value) => String(value || "").toUpperCase())
       .join(" ")
       ) || String(order?.itemCode || "").trim().toUpperCase().startsWith("FL") || String(order?.item || "").trim().toUpperCase().startsWith("FL");
-      const shouldUseFlangeLabelFlow = isFlangeOrder || hasFlInArticle;
+  const shouldUseFlangeLabelFlow = !isSleevelessCoupler && (isFlangeOrder || hasFlangeIndicator);
 
   const sanitizePositiveIntInput = (value: any) => {
     const digitsOnly = String(value ?? "").replace(/\D/g, "");
@@ -372,7 +389,7 @@ const ProductionStartModal = ({
     lotNumber: isManualMode ? manualLotInput : (lotNumber || "LADEN..."),
   }), [order, isManualMode, manualOrderInput, manualLotInput, lotNumber]);
 
-  const { selectedLabel, previewData, availableLabels: allLabels, loadingLabels } = useLabelPreview(productForPreview, selectedLabelId);
+  const { selectedLabel, previewData, availableLabels: allLabels, loadingLabels } = useLabelPreview(productForPreview, selectedTemplateIds[0] || selectedLabelId || undefined);
   const matchedOperatorPrintRule = useMemo(
     () => resolveOperatorPrintRule(order, generalSettings?.labelPrintRules as OperatorPrintRule[] | undefined),
     [order, generalSettings?.labelPrintRules]
@@ -382,8 +399,12 @@ const ProductionStartModal = ({
     if (isOpen) {
       let initialCount = parseInt(stringCount, 10) || 1;
 
-      if (!isFlangeOrder && typeof matchedOperatorPrintRule?.labelCount === "number" && matchedOperatorPrintRule.labelCount > 0) {
+      if (!shouldUseFlangeLabelFlow && typeof matchedOperatorPrintRule?.labelCount === "number" && matchedOperatorPrintRule.labelCount > 0) {
         initialCount = matchedOperatorPrintRule.labelCount;
+      }
+
+      if (isBh12Station && !shouldUseFlangeLabelFlow) {
+        initialCount = 1;
       }
 
       if (isBh18Station(stationId) && !matchedOperatorPrintRule) {
@@ -407,7 +428,7 @@ const ProductionStartModal = ({
 
       setLabelCount(String(Math.max(1, initialCount)));
     }
-  }, [isOpen, stringCount, stationId, order, isFlangeOrder, matchedOperatorPrintRule]);
+  }, [isOpen, stringCount, stationId, order, shouldUseFlangeLabelFlow, matchedOperatorPrintRule, isBh12Station]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -537,20 +558,53 @@ const ProductionStartModal = ({
     }
   }, [isOpen, mode, orderValidated, shouldAutoFocusInputs]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsub = onSnapshot(
+      collection(db, "future-factory/settings/label_print_rules"),
+      (snap) => {
+        setDynamicPrintRules(snap.docs.map(d => ({ id: d.id, ...d.data() } as PrintRuleDef)));
+      },
+      (err) => console.error("Kon dynamische printregels niet laden:", err)
+    );
+    return () => unsub();
+  }, [isOpen]);
+
   // 1. Label Templates & Rules Laden
   useEffect(() => {
     const setDefaultLabel = () => {
       if (!isOpen || loadingLabels || availableLabels.length === 0) return;
       
+      // Nieuwe logica: Eerst de rule engine proberen
+      const productDataForRules = processLabelData(order);
+      const ruleOutput = evaluatePrintRules(productDataForRules, dynamicPrintRules);
+
+      if (ruleOutput.templateIds && ruleOutput.templateIds.length > 0) {
+        setSelectedTemplateIds(ruleOutput.templateIds);
+        if (ruleOutput.labelCount) {
+          setLabelCount(String(ruleOutput.labelCount));
+        }
+        // Als er maar één template is, zet die ook als de 'hoofd' geselecteerde voor de preview
+        if (ruleOutput.templateIds.length === 1) {
+          setSelectedLabelId(ruleOutput.templateIds[0]);
+        }
+        return; // Stop hier, de regel heeft het overgenomen
+      }
+
       try {
         if (availableLabels.length > 0) {
-          const isFlange = isFlangeOrder || hasFlInArticle || shouldUseFlangeLabelFlow;
+          const isFlange = shouldUseFlangeLabelFlow;
 
           if (isFlange) {
             // Zoek eerst naar labels met de tag FLANGE, FLENS of FLENZEN
             let flangeLabels = availableLabels.filter((l: LabelOption) =>
               Array.isArray(l.tags) && l.tags.some((tag: string) => /^(FLANGE|FLENS|FLENZEN)$/i.test(tag))
             );
+
+            const smallFlangeLabels = flangeLabels.filter((label: LabelOption) => isSmallLabelOption(label));
+            if (smallFlangeLabels.length > 0) {
+              flangeLabels = smallFlangeLabels;
+            }
 
             // Als er geen specifiek FLANGE label is, gebruik dan alle labels als fallback
             if (flangeLabels.length === 0) {
@@ -597,7 +651,7 @@ const ProductionStartModal = ({
           // Voor niet-FL: eerst operatorregel (groot/klein), daarna BH18 fallback.
           let preferLarge = matchedOperatorPrintRule?.labelSize
             ? matchedOperatorPrintRule.labelSize === "large"
-            : stationId === 'BH18';
+            : stationId === 'BH18' || isBh12Station;
           
           if (stationId === 'BH18' && !matchedOperatorPrintRule?.labelSize) {
              const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(' ').toUpperCase();
@@ -637,8 +691,11 @@ const ProductionStartModal = ({
 
           const labelToSelect = defaultLabel?.id || availableLabels[0]?.id;
           
-          if (labelToSelect && labelToSelect !== selectedLabelId) {
-             setSelectedLabelId(labelToSelect);
+          if (labelToSelect) {
+            if (labelToSelect !== selectedLabelId) {
+              setSelectedLabelId(labelToSelect);
+            }
+            setSelectedTemplateIds([labelToSelect]); // Fallback naar enkele selectie
           }
         }
       } catch (e) {
@@ -646,7 +703,7 @@ const ProductionStartModal = ({
       }
     };
     setDefaultLabel();
-  }, [isOpen, order, availableLabels, loadingLabels, stationId, isFlangeOrder, hasFlInArticle, selectedLabelId, matchedOperatorPrintRule]);
+  }, [isOpen, order, availableLabels, loadingLabels, stationId, shouldUseFlangeLabelFlow, selectedLabelId, matchedOperatorPrintRule, isBh12Station, dynamicPrintRules]);
   
   // 1b. Operators ophalen voor dit station
   useEffect(() => {
@@ -1083,7 +1140,7 @@ const ProductionStartModal = ({
       if (lastResetKeyRef.current !== resetKey) {
         if (mode === "manual") {
           const isSpecialFlangeStation = ["BH11", "BH12", "BH15"].includes(normalizedStationNoPrefix);
-          const isFlange = isFlangeOrder || hasFlInArticle;
+          const isFlange = shouldUseFlangeLabelFlow;
           if (isSpecialFlangeStation && isFlange) {
             setManualLotInput("");
             setManualOrderInput(order?.orderId || "");
@@ -1101,7 +1158,7 @@ const ProductionStartModal = ({
     }
 
     return () => { isMounted = false; };
-  }, [isOpen, order, mode, stationId, isFlangeOrder, hasFlInArticle, normalizedStationNoPrefix]);
+  }, [isOpen, order, mode, stationId, shouldUseFlangeLabelFlow, normalizedStationNoPrefix]);
 
   const updateCounterOnStart = async (usedLotNumber: string, count: number) => {
       if (!usedLotNumber) return;
@@ -1558,41 +1615,61 @@ const ProductionStartModal = ({
       updateOperation(startOpId, "Klaar ✓");
       setTimeout(() => removeOperation(startOpId), 3500);
 
-      if (!isFlangeOrder && printConfig.mode === "queue" && labelsToPrint > 0 && selectedLabel && printData) {
-        try {
-          const normalizedPrintData = String(printData || "").trim();
-          if (!normalizedPrintData) {
-            throw new Error("Lege printpayload opgebouwd; label niet in queue geplaatst.");
+      // --- NIEUWE PRINT LOOP VOOR MEERDERE TEMPLATES ---
+      if (!isFlangeOrder && printConfig.mode === "queue" && labelsToPrint > 0 && selectedTemplateIds.length > 0) {
+        if (!targetPrinter) {
+          showError(t("productionStartModal.errors.noPrinterConfigured", { stationId }));
+          return;
+        }
+
+        for (const templateId of selectedTemplateIds) {
+          const templateToPrint = allLabels.find(l => l.id === templateId);
+          if (!templateToPrint) {
+            console.warn(`Template met ID ${templateId} niet gevonden, wordt overgeslagen.`);
+            continue;
           }
 
-          if (targetPrinter) {
-            const queueJobId = await queuePrintJob(
-              targetPrinter.id,
-              normalizedPrintData,
-              {
-                description: `Label voor ${order.orderId} (Lot: ${effectiveLotNumber}) (x${labelsToPrint})`,
-                quantity: labelsToPrint,
-                orderId: order.orderId,
-                lotNumber: effectiveLotNumber,
-                stationId: stationId || t("common.unknown"),
-                targetPrinterName: targetPrinter.name,
-                width: parseInt(String((selectedLabel as any).width || 0), 10),
-                height: parseInt(String((selectedLabel as any).height || 0), 10),
-                variables: previewData,
-                templateId: selectedLabel.id
-              }
+          try {
+            const dpiForPrint = getNormalizedPrinterDpi(targetPrinter, 203);
+            const darkness = Number.parseInt(String((targetPrinter as any)?.darkness || '15'), 10);
+            const currentPrintData = await renderLabelToBitmapZpl({
+              template: templateToPrint as any,
+              data: { ...previewData, lotNumber: effectiveLotNumber } as Record<string, unknown>,
+              printerDpi: dpiForPrint,
+              darkness: Number.isFinite(darkness) ? darkness : 15,
+              printSpeed: 3,
+            });
+
+            const normalizedPrintData = String(currentPrintData || "").trim();
+            if (!normalizedPrintData) {
+              throw new Error(`Lege printpayload opgebouwd voor template ${templateToPrint.name}.`);
+            }
+
+            console.log(`🖨️ [Print Queue] Aanmaken job voor template: ${templateToPrint.name} (ID: ${templateToPrint.id}), Aantal: ${labelsToPrint}`);
+
+            await queuePrintJob(
+                targetPrinter.id,
+                normalizedPrintData,
+                {
+                  description: `Label ${templateToPrint.name} voor ${order.orderId} (Lot: ${effectiveLotNumber}) (x${labelsToPrint})`,
+                  quantity: labelsToPrint,
+                  orderId: order.orderId,
+                  lotNumber: effectiveLotNumber,
+                  stationId: stationId || t("common.unknown"),
+                  targetPrinterName: targetPrinter.name,
+                  width: parseInt(String(templateToPrint.width || 0), 10),
+                  height: parseInt(String(templateToPrint.height || 0), 10),
+                  variables: previewData,
+                  templateId: templateToPrint.id,
+                }
             );
-            console.log("[ProductionStartModal] Queue print job created:", queueJobId, "printer:", targetPrinter.id, "zplLength:", normalizedPrintData.length);
-            showSuccess(t("productionStartModal.notifications.labelsQueued", { count: labelsToPrint, printer: targetPrinter.name }));
-          } else {
-            showError(t("productionStartModal.errors.noPrinterConfigured", { stationId }));
+          } catch (printError: unknown) {
+            const printMessage = getErrorMessage(printError);
+            notify(t("productionStartModal.errors.printFailedForTemplate", { template: templateToPrint.name, message: printMessage }));
+            showError(t("productionStartModal.errors.printFailedForTemplate", { template: templateToPrint.name, message: printMessage }));
           }
-        } catch (printError: unknown) {
-          console.error(printError);
-          const printMessage = getErrorMessage(printError);
-          notify(t("productionStartModal.errors.printFailed", { message: printMessage }));
-          showError(t("productionStartModal.errors.printFailed", { message: printMessage }));
         }
+        showSuccess(t("productionStartModal.notifications.labelsQueued", { count: labelsToPrint * selectedTemplateIds.length, printer: targetPrinter.name }));
       }
 
       if (printConfig.mode === "queue" && shouldPrintStringLotBatch && lotBatchPrintData) {
@@ -2018,10 +2095,25 @@ const ProductionStartModal = ({
                   <span>{t("productionStartModal.labels.noSuitableLabels")}</span>
                 </div>
               ) : (
-                <div className="relative group">
+                selectedTemplateIds.length > 1 ? (
+                  <div className="space-y-1">
+                    {selectedTemplateIds.map(id => {
+                      const template = allLabels.find(l => l.id === id);
+                      return (
+                        <div key={id} className="text-xs font-bold text-slate-700 bg-white p-2 rounded border border-slate-200 shadow-sm">
+                          {template ? `${template.name} (${template.width}x${template.height}mm)` : id}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="relative group">
                   <select
                     value={selectedLabelId || ""}
-                    onChange={(e) => setSelectedLabelId(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedLabelId(e.target.value);
+                      setSelectedTemplateIds([e.target.value]);
+                    }}
                     className="w-full p-3 bg-white border-2 border-slate-100 rounded-xl text-xs font-black text-slate-700 outline-none focus:border-blue-600 shadow-sm appearance-none cursor-pointer group-hover:border-slate-300"
                   >
                     {availableLabels.map((l) => (
@@ -2035,6 +2127,7 @@ const ProductionStartModal = ({
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
                   />
                 </div>
+                )
               )}
             </div>}
           </div>

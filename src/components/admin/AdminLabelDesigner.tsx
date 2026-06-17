@@ -59,7 +59,7 @@ import {
 } from "../../utils/labelHelpers";
 import { generatePrintData, downloadZPL } from "../../utils/zplHelper";
 import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
-import { getDriver } from "../../utils/printerDrivers";
+import { resolvePrinterDpi } from "../../utils/printerDrivers";
 import { getWavistrongLayoutNudge } from "../../utils/labelLayoutAdjustments";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useLabelCatalog } from '../../hooks/useLabelCatalog';
@@ -447,11 +447,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     try {
       const printerSnap = await getDocs(collection(db, getPathString(PATHS.PRINTERS)));
       const printers: PrinterRecord[] = printerSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PrinterRecord, 'id'>) }));
-      targetPrinter = null;
-      const driver = getDriver(targetPrinter as any);
-      if (Number.isFinite(driver?.nativeDpi) && driver.nativeDpi > 0) {
-        resolvedDpi = driver.nativeDpi;
-      }
+      targetPrinter = printers.find((printer) => printer?.isDefault) || printers[0] || null;
+      resolvedDpi = resolvePrinterDpi((targetPrinter || null) as Record<string, unknown> | null, 203);
     } catch (e) {
       console.warn('Kon printer-DPI niet bepalen, fallback naar 203 DPI:', e);
     }
@@ -1557,12 +1554,15 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                   <div className="space-y-3">
                     <input
                       type="text" 
-                      placeholder={t('adminLabelDesigner.tagPlaceholder', 'bv. Wavistrong, EMT, EST')}
+                      placeholder={t('adminLabelDesigner.tagPlaceholder', 'bv. #MAZAK, #LOSSEN, EMT')}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-500 transition-all"
                       onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
                         const val = e.target.value;
                         if (val) {
-                          const newTags = val.split(',').map((t: string) => t.trim().toUpperCase()).filter((t: string) => t);
+                          const newTags = val
+                            .split(',')
+                            .map((t: string) => t.trim().toUpperCase().replace(/^#+/, ''))
+                            .filter((t: string) => t);
                           const uniqueNewTags = [...new Set(newTags)].filter(t => !labelTags.includes(t));
                           if (uniqueNewTags.length > 0) {
                             addToHistory();
@@ -1576,7 +1576,10 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                         if (e.key === 'Enter') {
                           const val = e.currentTarget.value;
                           if (val) {
-                            const newTags = val.split(',').map((t: string) => t.trim().toUpperCase()).filter((t: string) => t);
+                            const newTags = val
+                              .split(',')
+                              .map((t: string) => t.trim().toUpperCase().replace(/^#+/, ''))
+                              .filter((t: string) => t);
                             const uniqueNewTags = [...new Set<string>(newTags)].filter((t: string) => !labelTags.includes(t));
                             if (uniqueNewTags.length > 0) {
                               addToHistory();
@@ -1601,7 +1604,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                       ))}
                     </div>
                     <p className="text-[9px] text-slate-400 italic leading-relaxed">
-                      {t('adminLabelDesigner.tagHelpText', 'Voeg tags toe om dit label te koppelen aan specifieke productsoorten. Als er geen tags zijn, is dit label beschikbaar voor alle producten.')}
+                      {t('adminLabelDesigner.tagHelpText', 'Voeg tags toe om dit label te koppelen aan productsoorten en printerrouting. Je mag # gebruiken (bijv. #MAZAK, #LOSSEN); die wordt automatisch verwerkt. Zonder tags blijft het label algemeen beschikbaar.')}
                     </p>
                   </div>
                 </div>

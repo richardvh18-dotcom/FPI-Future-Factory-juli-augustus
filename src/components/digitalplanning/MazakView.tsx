@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import { useTranslation } from "react-i18next";
 import {
   collection,
+  collectionGroup,
   onSnapshot,
   query,
   where,
@@ -9,6 +10,7 @@ import {
   getDoc,
   doc,
   setDoc,
+  limit,
 } from "firebase/firestore";
 import {
   Package,
@@ -226,13 +228,15 @@ const hasFlangeTag = (template: LabelTemplate): boolean => {
 
 const selectQueuePrinterForStation = (
   printers: PrinterConfig[],
-  stationId: string
+  stationId: string,
+  templateTags: string[] = []
 ): PrinterConfig | null => {
   if (!Array.isArray(printers) || printers.length === 0) return null;
   return resolvePrinterForRouting(printers, {
     stationId,
     routeKey: 'MAZAK',
     labelRoute: 'mazak',
+    templateTags,
   });
 };
 
@@ -523,9 +527,25 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     }
   }, [filteredLabels, selectedLabelId]);
 
+  const selectedRoutingTags = useMemo<string[]>(() => {
+    if (!selectedLabelId) return [];
+
+    const chain = resolveLinkedTemplateChain(availableLabels as any[], selectedLabelId, { maxDepth: 4 }) as LabelTemplate[];
+    const templates = chain.length > 0
+      ? chain
+      : availableLabels.filter((template) => String(template?.id || "") === String(selectedLabelId));
+
+    return Array.from(new Set(
+      templates
+        .flatMap((template) => (Array.isArray(template?.tags) ? template.tags : []))
+        .map((tag) => String(tag || "").trim())
+        .filter(Boolean)
+    ));
+  }, [availableLabels, selectedLabelId]);
+
   const selectedQueuePrinter = useMemo<PrinterConfig | null>(() => {
-    return selectQueuePrinterForStation(availablePrinters, stationId || "");
-  }, [availablePrinters, stationId]);
+    return selectQueuePrinterForStation(availablePrinters, stationId || "", selectedRoutingTags);
+  }, [availablePrinters, stationId, selectedRoutingTags]);
 
   const mazakPrinterDpi = useMemo<number>(() => {
     const parsed = Number.parseInt(String(selectedQueuePrinter?.dpi ?? ""), 10);
@@ -853,7 +873,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     if (selectedQueuePrinter?.id) return selectedQueuePrinter;
 
     if (availablePrinters.length > 0) {
-      const fromState = selectQueuePrinterForStation(availablePrinters, stationId || "");
+      const fromState = selectQueuePrinterForStation(availablePrinters, stationId || "", selectedRoutingTags);
       if (fromState?.id) return fromState;
     }
 
@@ -864,12 +884,12 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
     if (fetchedPrinters.length > 0) {
       setAvailablePrinters(fetchedPrinters);
-      const fromFetch = selectQueuePrinterForStation(fetchedPrinters, stationId || "");
+      const fromFetch = selectQueuePrinterForStation(fetchedPrinters, stationId || "", selectedRoutingTags);
       if (fromFetch?.id) return fromFetch;
     }
 
     throw new Error("Geen geldige Mazak-printer geconfigureerd voor de queue.");
-  }, [selectedQueuePrinter, availablePrinters, stationId]);
+  }, [selectedQueuePrinter, availablePrinters, stationId, selectedRoutingTags]);
 
   const handlePrintLabels = async () => {
     if (!selectedProduct || !selectedLabelId) return;
@@ -944,6 +964,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
           description: `${isReprint ? "Mazak Herprint" : "Mazak Print"} batch ${String(selectedProduct?.orderId || "-")} (${itemsToPrint.length} lot${itemsToPrint.length === 1 ? "" : "s"})`,
           templateId: String(selectedLabelId),
           templateName: templatesToPrint.length > 1 ? "Mazak Label Batch" : (templatesToPrint[0]?.name || "Mazak Label"),
+          machineId: queueStationId,
           stationId: queueStationId,
           targetStation: queueStationId,
           targetPrinterName: queuePrinter?.name || queueStationId,
@@ -969,7 +990,18 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       const rootJobRef = doc(db, getPathString(PATHS.PRINT_QUEUE), normalizedJobId);
       const rootJobSnap = await getDoc(rootJobRef);
       if (!rootJobSnap.exists()) {
-        throw new Error(`Queue job niet gevonden na aanmaak (jobId: ${normalizedJobId}).`);
+        const scopedSnap = await getDocs(
+          query(
+            collectionGroup(db, "items"),
+            where("id", "==", normalizedJobId),
+            where("_scopeType", "==", "print_queue"),
+            limit(1)
+          )
+        );
+
+        if (scopedSnap.empty) {
+          throw new Error(`Queue job niet gevonden na aanmaak (jobId: ${normalizedJobId}).`);
+        }
       }
       queuedJobIds.push(normalizedJobId);
 
@@ -1044,6 +1076,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
             description: `Mazak Vrij Label (${String(queueStationId)})`,
             templateId: FREE_TEXT_LABEL_TEMPLATE.id,
             templateName: FREE_TEXT_LABEL_TEMPLATE.name || "Vrij label 100x25",
+            machineId: queueStationId,
             stationId: queueStationId,
             targetStation: queueStationId,
             targetPrinterName: queuePrinter?.name || queueStationId,

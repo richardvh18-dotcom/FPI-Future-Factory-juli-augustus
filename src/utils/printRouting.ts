@@ -2,6 +2,7 @@ const normalizeRouteToken = (value: unknown): string =>
   String(value || "")
     .trim()
     .toUpperCase()
+    .replace(/^#+/, "")
     .replace(/\s+/g, "")
     .replace(/^40(?=BH|BM|BA|MAZAK)/, "40");
 
@@ -46,6 +47,7 @@ export const getPrinterRoutingCandidates = (context: PrinterRoutingContext = {})
   const candidates = new Set<string>();
   const station = normalizeRouteToken(context.stationId);
   const routeKey = normalizeRouteToken(context.routeKey || context.labelRoute || context.labelType);
+  const templateTags = toTokenList(context.templateTags);
 
   if (routeKey) candidates.add(routeKey);
   if (station) {
@@ -54,8 +56,15 @@ export const getPrinterRoutingCandidates = (context: PrinterRoutingContext = {})
     candidates.add(`QUEUE:${station}`);
   }
 
+  for (const templateTag of templateTags) {
+    candidates.add(templateTag);
+    candidates.add(`LABEL:${templateTag}`);
+    candidates.add(`ROUTE:${templateTag}`);
+  }
+
   const itemCode = normalizeRouteToken(context.itemCode || context.item);
-  if (context.isFlange || itemCode.startsWith("FL") || toTokenList(context.templateTags).includes("FLANGE")) {
+  const hasFlangeTemplateTag = templateTags.includes("FLANGE") || templateTags.includes("FLENS") || templateTags.includes("FLENZEN");
+  if (context.isFlange || itemCode.startsWith("FL") || hasFlangeTemplateTag) {
     candidates.add("MAZAK");
     candidates.add("FLANGE");
     candidates.add("LABEL:MAZAK");
