@@ -1685,7 +1685,12 @@ const reassignTrackedProductOrder = withAudit('REASSIGN_TRACKED_PRODUCT_ORDER', 
   }
 
   const userRole = await resolveUserRoleForContext(context);
-  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole)) {
+  const source = clampText(data?.source, 80);
+  const isMazakOperatorReassign =
+    String(userRole || '').toLowerCase() === 'operator' &&
+    source.toLowerCase().startsWith('mazakview');
+
+  if (!ORDER_EDIT_ALLOWED_ROLES.has(userRole) && !isMazakOperatorReassign) {
     throwPermissionDenied(context, 'REASSIGN_TRACKED_PRODUCT_ORDER', userRole, 'Geen rechten om product-ordernummer te wijzigen.');
   }
 
@@ -1693,7 +1698,6 @@ const reassignTrackedProductOrder = withAudit('REASSIGN_TRACKED_PRODUCT_ORDER', 
   const newOrderId = clean(data?.newOrderId);
   const reason = clampText(data?.reason, 300);
   const actorLabel = clampText(data?.actorLabel, 120);
-  const source = clampText(data?.source, 80);
 
   if (!productId || !newOrderId || !reason) {
     throw new functions.https.HttpsError('invalid-argument', 'productId, newOrderId en reason zijn verplicht.');
