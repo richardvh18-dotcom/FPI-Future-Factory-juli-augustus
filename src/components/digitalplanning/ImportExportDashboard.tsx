@@ -7,6 +7,7 @@ import PlanningImportModal from "./modals/PlanningImportModal";
 import InventoryCheckModal from "./modals/InventoryCheckModal";
 import { auth, db } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
+import { getStartedCounterField } from "../../utils/hubHelpers";
 import { saveLnQrExportHistory as saveLnQrExportHistoryViaBackend } from "../../services/planningSecurityService";
 
 type TimestampLike = { toDate?: () => Date };
@@ -187,8 +188,18 @@ const toSafeNumber = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const resolvePlanningTodoCount = (order: EntryRecord | undefined, fallback: number): number => {
-  if (!order) return Math.max(0, fallback);
+const resolvePlanningTodoCount = (
+  order: EntryRecord | undefined,
+  fallback: number,
+  alreadyWikkeldCount: number = 0,
+  nahardingCount: number = 0
+): number => {
+  if (!order) {
+    return Math.max(
+      0,
+      toSafeNumber(fallback) - toSafeNumber(alreadyWikkeldCount) - toSafeNumber(nahardingCount)
+    );
+  }
 
   const candidates = [
     order.todoCount,
@@ -202,10 +213,18 @@ const resolvePlanningTodoCount = (order: EntryRecord | undefined, fallback: numb
 
   for (const candidate of candidates) {
     const parsed = toSafeNumber(candidate);
-    if (parsed > 0) return parsed;
+    if (parsed > 0) {
+      return Math.max(
+        0,
+        parsed - toSafeNumber(alreadyWikkeldCount) - toSafeNumber(nahardingCount)
+      );
+    }
   }
 
-  return Math.max(0, fallback);
+  return Math.max(
+    0,
+    toSafeNumber(fallback) - toSafeNumber(alreadyWikkeldCount) - toSafeNumber(nahardingCount)
+  );
 };
 
 const toLnReferenceCode = (value: unknown) => {
@@ -324,7 +343,15 @@ const hasWikkelSignal = (entry: EntryRecord): boolean => {
   const step = normalizeStation(entry?.currentStep || "");
   const status = normalizeStation(entry?.status || "");
   const lastStation = normalizeStation(entry?.lastStation || "");
-  return [station, step, status, lastStation].some((value) => value.includes("WIKKEL"));
+  const timestampSignals = [
+    entry?.timestamps?.wikkelen_start,
+    entry?.timestamps?.wikkelen_end,
+    entry?.timestamps?.station_start,
+    entry?.timestamps?.started,
+  ];
+  const hasTimestampSignal = timestampSignals.some((value) => Boolean(value));
+
+  return hasTimestampSignal || [station, step, status, lastStation].some((value) => value.includes("WIKKEL"));
 };
 
 const toLnQrRows = (rows: LnReadyGroupedRow[], periodToken: string): LnReadyQrRow[] =>
@@ -704,7 +731,22 @@ const ImportExportDashboard = ({
       const rowKey = `${originStation}__${orderId}`;
       const existingRow = groupedRows.get(rowKey);
       const nahardingCount = stats?.nahardingCount || 0;
-      const todoCount = resolvePlanningTodoCount(order, Math.max(0, totalOrderCount - nahardingCount));
+      const startedField = getStartedCounterField(originStation);
+      const startedAtStation = Math.max(
+        toSafeNumber(order?.[startedField]),
+        toSafeNumber(order?.[String(startedField || "").toLowerCase()])
+      );
+      const alreadyWikkeldCount = Math.max(
+        stats?.wikkelCount || 0,
+        startedAtStation,
+        toSafeNumber(order?.produced)
+      );
+      const todoCount = resolvePlanningTodoCount(
+        order,
+        Math.max(0, totalOrderCount - nahardingCount),
+        alreadyWikkeldCount,
+        nahardingCount
+      );
       const current: LnReadyGroupedRow = existingRow || {
         id: rowKey,
         station: originStation,
