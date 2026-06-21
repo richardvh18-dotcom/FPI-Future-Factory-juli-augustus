@@ -808,6 +808,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
     if (!planningSearch) {
       return base.sort((a, b) => {
         const priorityRank = (order: EnrichedPlanningOrder) => {
+          if (order?.demandOrder) return 4; // Pegging/Demand Order heeft absolute prioriteit
           const normalizedPriority =
             order?.priority === true
               ? "high"

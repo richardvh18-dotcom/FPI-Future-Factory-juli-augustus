@@ -680,6 +680,10 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         // Nieuwe PlanningImportModal met gesplitste stationuren (1715/1740/1020).
         estimatedHours += splitHours.total;
         ordersWithStandards++;
+      } else if (toNumber(order.machineHours) > 0 && (String(order.machine || "").toUpperCase().startsWith("BH") || String(order.machine || "").toUpperCase().startsWith("BA") || String(order.machine || "").toUpperCase().includes("BM18"))) {
+        // Gebruik machineHours voor bottleneck machines indien beschikbaar
+        estimatedHours += toNumber(order.machineHours);
+        ordersWithStandards++;
       } else if (importedPlannedHours > 0) {
         // Nieuwe planning import (plannedHours) direct gebruiken als vraag in uren.
         estimatedHours += importedPlannedHours;
@@ -714,9 +718,13 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     };
   }, [planningOrders, timeStandards, efficiencyData, periodStart, periodEnd, selectedDepartment, factoryConfig, timePeriod]);
 
-  // Bereken balans per machine (Vraag vs Aanbod)
+  // Bereken balans per machine (Vraag vs Aanbod) inclusief wekelijkse opbouw
   const machineBreakdown = useMemo(() => {
-    const breakdown: Record<string, { capacity: number; demand: number }> = {};
+    const breakdown: Record<string, { 
+      capacity: number; 
+      demand: number; 
+      weeks: Record<string, { capacity: number; demand: number }> 
+    }> = {};
 
     // Geeft het QC/Eindinspectie station terug op basis van hoofdmachine
     const getQcStation = (machineName: string) => {
@@ -725,13 +733,21 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
       return "BM01"; // Default fallback
     };
 
-    const addDemandToMachine = (machineName: string, hours: unknown) => {
+    const addDemandToMachine = (machineName: string, hours: unknown, date: Date | null) => {
       const normalizedMachine = normalizeMachine(machineName || "");
       const safeHours = toNumber(hours || 0);
       if (!normalizedMachine || safeHours <= 0) return;
 
-      if (!breakdown[normalizedMachine]) breakdown[normalizedMachine] = { capacity: 0, demand: 0 };
+      if (!breakdown[normalizedMachine]) breakdown[normalizedMachine] = { capacity: 0, demand: 0, weeks: {} };
       breakdown[normalizedMachine].demand += safeHours;
+      
+      if (date) {
+        const weekKey = `${date.getFullYear()}-W${String(getISOWeek(date)).padStart(2, '0')}`;
+        if (!breakdown[normalizedMachine].weeks[weekKey]) {
+          breakdown[normalizedMachine].weeks[weekKey] = { capacity: 0, demand: 0 };
+        }
+        breakdown[normalizedMachine].weeks[weekKey].demand += safeHours;
+      }
     };
 
     // 1. Capaciteit per machine (Occupancy)
@@ -746,7 +762,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
       const machine = normalizeMachine(occ.machineId || occ.machineName || "");
       if (!machine) return;
       
-      if (!breakdown[machine]) breakdown[machine] = { capacity: 0, demand: 0 };
+      if (!breakdown[machine]) breakdown[machine] = { capacity: 0, demand: 0, weeks: {} };
       
       // Toepassen van de Future Factory Capaciteitsmatrix regel (7 netto uren, 85% efficiency)
       let baseHours = toNumber(occ.hoursWorked || occ.hours || 0);
@@ -756,6 +772,12 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
       
       const effectiveHours = baseHours * 0.85;
       breakdown[machine].capacity += effectiveHours;
+      
+      const weekKey = `${occDate.getFullYear()}-W${String(getISOWeek(occDate)).padStart(2, '0')}`;
+      if (!breakdown[machine].weeks[weekKey]) {
+        breakdown[machine].weeks[weekKey] = { capacity: 0, demand: 0 };
+      }
+      breakdown[machine].weeks[weekKey].capacity += effectiveHours;
     });
 
     // 2. Vraag per machine (Orders)
@@ -782,7 +804,13 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         }
       }
 
-      if (!breakdown[machine]) breakdown[machine] = { capacity: 0, demand: 0 };
+      if (!breakdown[machine]) breakdown[machine] = { capacity: 0, demand: 0, weeks: {} };
+
+      // Als de order NIET is afgerond en in het verleden ligt, 
+      // is het achterstand (backlog). Dit schuiven we door naar de HUIDIGE week (vandaag), 
+      // ongeacht welke periode geselecteerd is, want je kunt niet in het verleden produceren.
+      const now = new Date();
+      const effectiveOrderDate = (!isCompleted && orderDate < now) ? now : orderDate;
 
       const splitBH = toNumber(order.plannedHoursBH || 0);
       const splitNabewerken = toNumber(order.plannedHoursNabewerken || 0);
@@ -792,9 +820,9 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
       if (hasSplitHours) {
         // Zet importuren op de juiste stations:
         // 1715 -> hoofdmachine (BH), 1740 -> NABEWERKING, 1020 -> BM01.
-        addDemandToMachine(machine, splitBH);
-        addDemandToMachine("NABEWERKING", splitNabewerken);
-        addDemandToMachine("BM01", splitBM01);
+        addDemandToMachine(machine, splitBH, effectiveOrderDate);
+        addDemandToMachine("NABEWERKING", splitNabewerken, effectiveOrderDate);
+        addDemandToMachine("BM01", splitBM01, effectiveOrderDate);
         return;
       }
 
@@ -824,9 +852,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
             if (postTotal > 0) {
                 const postPerUnit = qty > 0 ? postTotal / qty : 0;
                 const postHours = (postPerUnit * planCount) / 60;
-                const postMachine = "NABEWERKING";
-                if (!breakdown[postMachine]) breakdown[postMachine] = { capacity: 0, demand: 0 };
-                breakdown[postMachine].demand += postHours;
+                addDemandToMachine("NABEWERKING", postHours, effectiveOrderDate);
             }
 
             // 3. Eindinspectie (QC) Tijd -> Gaat naar het QC station van de afdeling
@@ -835,13 +861,14 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
                 const qcPerUnit = qty > 0 ? qcTotal / qty : 0;
                 const qcHoursNeeded = (qcPerUnit * planCount) / 60;
                 const qcStation = getQcStation(machine);
-                if (!breakdown[qcStation]) breakdown[qcStation] = { capacity: 0, demand: 0 };
-                breakdown[qcStation].demand += qcHoursNeeded;
+                addDemandToMachine(qcStation, qcHoursNeeded, effectiveOrderDate);
             }
         } else if (importedInfo.minutesPerUnit) {
             // Fallback voor oude imports zonder splitsing
             hoursNeeded = (importedInfo.minutesPerUnit * planCount) / 60;
         }
+      } else if (toNumber(order.machineHours) > 0 && (String(order.machine || "").toUpperCase().startsWith("BH") || String(order.machine || "").toUpperCase().startsWith("BA") || String(order.machine || "").toUpperCase().includes("BM18"))) {
+        hoursNeeded = toNumber(order.machineHours);
       } else if (importedPlannedHours > 0) {
         hoursNeeded = importedPlannedHours;
       } else {
@@ -854,7 +881,7 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
         }
       }
 
-      breakdown[machine].demand += hoursNeeded;
+      addDemandToMachine(machine, hoursNeeded, effectiveOrderDate);
     });
 
     // 2b. Consolidatie: Voeg varianten van Nabewerking samen (NABEWERKEN -> NABEWERKING)
@@ -863,23 +890,45 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
     
     aliases.forEach(alias => {
       if (breakdown[alias]) {
-        if (!breakdown[targetKey]) breakdown[targetKey] = { capacity: 0, demand: 0 };
+        if (!breakdown[targetKey]) breakdown[targetKey] = { capacity: 0, demand: 0, weeks: {} };
         breakdown[targetKey].capacity += breakdown[alias].capacity;
         breakdown[targetKey].demand += breakdown[alias].demand;
+        
+        Object.entries(breakdown[alias].weeks).forEach(([w, wData]) => {
+          if (!breakdown[targetKey].weeks[w]) breakdown[targetKey].weeks[w] = { capacity: 0, demand: 0 };
+          breakdown[targetKey].weeks[w].capacity += wData.capacity;
+          breakdown[targetKey].weeks[w].demand += wData.demand;
+        });
+
         delete breakdown[alias];
       }
     });
 
     // 3. Formatteren en Sorteren
     return Object.entries(breakdown)
-      .map(([machine, data]) => ({
-        machine,
-        capacity: Math.round(data.capacity * 10) / 10,
-        demand: Math.round(data.demand * 10) / 10,
-        gap: Math.round((data.capacity - data.demand) * 10) / 10,
-        utilization: data.capacity > 0 ? Math.round((data.demand / data.capacity) * 100) : 0,
-        status: (data.capacity - data.demand) >= 0 ? 'surplus' : 'shortage'
-      }))
+      .map(([machine, data]) => {
+        // Sorteer weken chronologisch
+        const sortedWeeks = Object.entries(data.weeks)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([weekLabel, wData]) => ({
+            weekLabel,
+            capacity: Math.round(wData.capacity * 10) / 10,
+            demand: Math.round(wData.demand * 10) / 10,
+            gap: Math.round((wData.capacity - wData.demand) * 10) / 10,
+            utilization: wData.capacity > 0 ? Math.round((wData.demand / wData.capacity) * 100) : 0,
+            status: (wData.capacity - wData.demand) >= 0 ? 'surplus' : 'shortage'
+          }));
+
+        return {
+          machine,
+          capacity: Math.round(data.capacity * 10) / 10,
+          demand: Math.round(data.demand * 10) / 10,
+          gap: Math.round((data.capacity - data.demand) * 10) / 10,
+          utilization: data.capacity > 0 ? Math.round((data.demand / data.capacity) * 100) : 0,
+          status: (data.capacity - data.demand) >= 0 ? 'surplus' : 'shortage',
+          weeks: sortedWeeks
+        };
+      })
       .filter(item => {
         // Verberg Teamleader en inactieve stations
         if (item.machine.includes("TEAMLEADER")) return false;
@@ -1500,6 +1549,33 @@ const CapacityPlanningView = ({ initialDepartment, lockDepartment = false, onNav
                     {item.gap > 0 ? '+' : ''}{item.gap}u
                   </span>
                 </div>
+                
+                {/* Wekelijkse opbouw (alleen als er meerdere weken zijn of data aanwezig is) */}
+                {item.weeks && item.weeks.length > 0 && timePeriod !== "week" && (
+                  <div className="mt-4 pt-3 border-t border-slate-200/60">
+                    <div className="text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">
+                      {t("planning.capacity.machine.weeklyBreakdown", "Wekelijkse Opbouw")}
+                    </div>
+                    <div className="space-y-2">
+                      {item.weeks.map(week => (
+                        <div key={week.weekLabel} className="flex flex-col gap-1 bg-white/40 p-2 rounded-lg border border-white/50">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-black text-slate-700">{week.weekLabel.split("-W")[1] ? `Week ${week.weekLabel.split("-W")[1]}` : week.weekLabel}</span>
+                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
+                              week.status === 'shortage' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'
+                            }`}>
+                              {week.gap > 0 ? '+' : ''}{week.gap}u
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-[9px] text-slate-500">
+                            <span>Cap: {week.capacity}u</span>
+                            <span>Vraag: {week.demand}u</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}

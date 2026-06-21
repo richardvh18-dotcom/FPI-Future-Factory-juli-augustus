@@ -3,6 +3,7 @@ import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS, getPathString, getArchiveItemsPath } from "../config/dbPaths";
 import { getISOWeek } from "date-fns";
+import { fetchScopedEfficiencyHours } from "../utils/efficiencyScopedReader";
 
 type PlanningDoc = QueryDocumentSnapshot<DocumentData>;
 
@@ -40,7 +41,7 @@ const ACTIVE_STATUSES = new Set([
   "released", "release", "vrijgegeven", "gepland", "open", "nieuw",
   "new", "todo", "to_do", "te_doen", "in_behandeling", "processing",
   "running", "lopend", "ingepland", "gereed_voor_productie", "productie",
-  "on_hold", "delegated",
+  "on_hold", "delegated", "waiting", "wachtend",
 ]);
 
 const isActiveStatus = (status: unknown): boolean => {
@@ -112,24 +113,37 @@ const resolveMachine = (data: Record<string, unknown>, fallbackId = ""): string 
  * Haalt de ruwe planningsdata op, geschoond en gestructureerd.
  * Bevraagt zowel het actuele als het legacy planning-pad.
  */
-export const getRawPlanningData = async (limitCount = 50): Promise<PlanningRow[]> => {
+export const getRawPlanningData = async (limitCount = 1000): Promise<PlanningRow[]> => {
   try {
     const paths = [
       PATHS.PLANNING,
       ["future-factory", "production", "data", "digital_planning", "orders"],
     ];
 
-    const snapshots = await Promise.all(
-      paths.map((p) =>
-        getDocs(query(collection(db, getPathString(p as string[])), limit(limitCount)))
-          .catch(() => ({ docs: [] }))
-      )
+    const rootQueries = paths.map((p) =>
+      getDocs(query(collection(db, getPathString(p as string[])), limit(limitCount)))
+        .catch((err) => { console.warn("Root planning query mislukt:", err); return { docs: [] }; })
     );
+
+    // Haal OOK de scoped orders op via collectionGroup!
+    const scopedQuery = getDocs(query(collectionGroup(db, "orders"), limit(limitCount)))
+      .then((snapshot) => {
+         const planningPrefix = `${getPathString(PATHS.PLANNING)}/`;
+         return {
+            docs: snapshot.docs.filter(d => {
+               const p = d.ref.path || "";
+               return p.startsWith(planningPrefix) && p.includes("/machines/") && p.includes("/orders/");
+            })
+         };
+      })
+      .catch((err) => { console.warn("Scoped planning query mislukt:", err); return { docs: [] }; });
+
+    const snapshots = await Promise.all([...rootQueries, scopedQuery]);
 
     const seenIds = new Set<string>();
     const allDocs: PlanningDoc[] = [];
     snapshots.forEach((snap) => {
-      snap.docs.forEach((d: PlanningDoc) => {
+      snap.docs.forEach((d: any) => {
         if (!seenIds.has(d.id)) {
           seenIds.add(d.id);
           allDocs.push(d);
@@ -167,6 +181,7 @@ export const getRawPlanningData = async (limitCount = 50): Promise<PlanningRow[]
         Gemaakt: Number(data.produced || 0),
         Nog_te_maken: Math.max(0, Number(data.plan || data.quantity || 0) - Number(data.produced || 0)),
         Prioriteit: data.priority || "normaal",
+        LNUren: Number(data.hours || data.plannedHours || data.standardTimeTotal || data.estimatedHours || 0)
       };
     });
   } catch (error) {
@@ -319,10 +334,18 @@ export const getTodayProductionContext = async () => {
  */
 export const getLivePlanningContext = async () => {
   try {
-    const [orders, todayCtx] = await Promise.all([
-      getRawPlanningData(40),
+    const [orders, todayCtx, efficiencyRows] = await Promise.all([
+      getRawPlanningData(1000),
       getTodayProductionContext(),
+      fetchScopedEfficiencyHours({ db, mode: 'active', maxDocs: 500 }).catch(() => [])
     ]);
+
+    const efficiencyMap = new Map<string, number>();
+    efficiencyRows.forEach((row: any) => {
+      if (row.orderId && row.minutesPerUnit) {
+        efficiencyMap.set(String(row.orderId).toUpperCase(), Number(row.minutesPerUnit));
+      }
+    });
 
     const now = new Date();
     const currentWeek = getISOWeek(now);
@@ -333,11 +356,53 @@ export const getLivePlanningContext = async () => {
     if (orders.length === 0) {
       ctx += "Geen actieve orders gevonden in de planning.\n";
     } else {
-      ctx += `Totaal ${orders.length} actieve orders:\n\n`;
+      // Create a summary by Machine and Week
+      const summaryByMachineAndWeek = new Map<string, { stukken: number; uren: number }>();
+      const ordersByMachineAndWeek = new Map<string, string[]>();
+
       orders.forEach((o) => {
+        const key = `Machine: ${o.Machine} | Week: ${o.Week}`;
+        const summary = summaryByMachineAndWeek.get(key) || { stukken: 0, uren: 0 };
+        
+        const nogTeMaken = o.Nog_te_maken;
+        const normMinutes = efficiencyMap.get(String(o.Ordernummer).toUpperCase()) || 0;
+        
+        // Gebruik norm uit efficiencyMap indien bekend, anders fallback naar LN uren op de order
+        let urenTeGaan = 0;
+        if (normMinutes > 0) {
+           urenTeGaan = (nogTeMaken * normMinutes) / 60;
+        } else if ((o as any).LNUren > 0 && o.Gepland > 0) {
+           // Bereken resterende uren op basis van percentage nog te maken
+           urenTeGaan = ((o as any).LNUren / o.Gepland) * nogTeMaken;
+        }
+        
+        summary.stukken += nogTeMaken;
+        summary.uren += urenTeGaan;
+        summaryByMachineAndWeek.set(key, summary);
+        
+        if (!ordersByMachineAndWeek.has(key)) ordersByMachineAndWeek.set(key, []);
         const achterstand = o.Gemaakt > 0 ? ` (${o.Gemaakt}/${o.Gepland} gemaakt)` : "";
-        ctx += `- **${o.Ordernummer}** | ${o.Product}${o.Artikelcode ? ` [${o.Artikelcode}]` : ""} | Machine: ${o.Machine} | Deadline: ${o.Deadline} | ${o.Week} | Te maken: ${o.Nog_te_maken}${achterstand} | Prio: ${o.Prioriteit}\n`;
+        const urenLabel = urenTeGaan > 0 ? ` | Resterende uren: ${Math.round(urenTeGaan * 10) / 10}` : "";
+        ordersByMachineAndWeek.get(key)!.push(`- **${o.Ordernummer}** | ${o.Product}${o.Artikelcode ? ` [${o.Artikelcode}]` : ""} | Status: ${o.Status} | Deadline: ${o.Deadline} | Te maken: ${nogTeMaken}${achterstand}${urenLabel} | Prio: ${o.Prioriteit}`);
       });
+
+      ctx += `### SAMENVATTING (Openstaande stuks en uren per Machine & Week):\n`;
+      Array.from(summaryByMachineAndWeek.entries()).sort().forEach(([key, totals]) => {
+         const urenWeergave = totals.uren > 0 ? `${Math.round(totals.uren)} uur` : `(Norm onbekend)`;
+         ctx += `- **${key}** -> Te maken: ${totals.stukken} stuks | Verwachte benodigde tijd: ${urenWeergave}\n`;
+      });
+
+      ctx += `\n### GEDETAILLEERDE ORDERS (Max 150 stuks getoond per groep):\n`;
+      let orderCount = 0;
+      for (const [key, orderList] of Array.from(ordersByMachineAndWeek.entries()).sort()) {
+         if (orderCount > 150) break;
+         ctx += `#### ${key}\n`;
+         for (const line of orderList) {
+            if (orderCount > 150) break;
+            ctx += line + '\n';
+            orderCount++;
+         }
+      }
     }
 
     ctx += `\n${todayCtx}`;

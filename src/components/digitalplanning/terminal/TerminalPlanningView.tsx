@@ -179,6 +179,12 @@ const TerminalPlanningView = ({
   };
 
   const getPriorityBadgeStyles = (order: AnyRecord) => {
+    if (order?.demandOrder) {
+      return {
+        label: t("digitalplanning.terminal.demand_order", "SPOED: Spoolbouw"),
+        className: "bg-red-600 text-white border border-red-700 animate-pulse shadow-sm shadow-red-200",
+      };
+    }
     const level = getPriorityLevel(order);
     if (level === "immediate") {
       return {
@@ -364,8 +370,8 @@ const TerminalPlanningView = ({
       const typeTintClass = getOrderTileTintClass(order);
       const typeBadge = getOrderTypeBadge(order);
       const priorityCardClass =
-        order.status === 'on_hold'
-          ? "border-orange-300 bg-orange-50/60 opacity-70"
+        (order.status === 'on_hold' || order.orderStatus === 'on_hold' || order.holdReason)
+          ? "border-red-300 bg-red-50/60 opacity-60 grayscale-[30%] pointer-events-none"
           : priorityLevel === "immediate"
             ? "border-rose-400 bg-rose-50/40 hover:border-rose-500"
             : priorityLevel === "urgent"
@@ -480,7 +486,17 @@ const TerminalPlanningView = ({
                   <Briefcase size={10} /> {order.projectDesc}
                 </p>
               )}
-              {(order.poText || order.notes) && (
+              {order.holdReason && (
+                <div className="mt-1.5 rounded-lg border border-red-500 bg-red-100 px-2 py-1 shadow-md shadow-red-200">
+                  <p className="text-[9px] font-black uppercase tracking-wide text-red-800 flex items-center gap-1">
+                    <AlertCircle size={10} /> {t("terminalPlanning.holdReason", "GEBLOKKEERD (Hold Reason)")}
+                  </p>
+                  <p className="truncate text-[10px] font-bold text-red-900 mt-0.5">
+                    {order.holdReason}
+                  </p>
+                </div>
+              )}
+              {(order.poText || order.notes) && !order.holdReason && (
                 <div className="mt-1.5 rounded-lg border border-amber-400 bg-amber-100 px-2 py-0.5 animate-pulse shadow-md shadow-amber-300/50">
                   <p className="text-[9px] font-black uppercase tracking-wide text-amber-800">{t("terminalPlanning.poText", "PO Text")}</p>
                   <p className="truncate text-[10px] font-bold text-amber-900">

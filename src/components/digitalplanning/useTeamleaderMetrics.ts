@@ -262,6 +262,8 @@ export const useTeamleaderMetrics = ({
             let hrs = 0;
             if (stationNorm.startsWith("BH") && Number(o.plannedHoursBH) > 0) {
               hrs = Number(o.plannedHoursBH);
+            } else if (Number(o.machineHours) > 0 && (stationNorm.startsWith("BH") || stationNorm.startsWith("BA") || stationNorm.includes("BM18"))) {
+              hrs = Number(o.machineHours);
             } else {
               hrs = Number(o.totalPlannedHours) || 0;
             }

@@ -354,6 +354,13 @@ const AiChatView = forwardRef<AiChatViewRef, {}>((props, ref) => {
 
       let currentSystemContext = systemContext || DEFAULT_CONTEXT;
       
+      // ALTIJD BOVENAAN: Cruciale instructie (voorkomt truncatie in Firebase Functions)
+      currentSystemContext = `*** CRUCIAL INSTRUCTION FOR AI ***
+Je HEBT toegang tot de live planning data! De secties "LIVE PLANNING DATA", "SAMENVATTING", en "LIVE OPERATIE SNAPSHOT" hieronder bevatten de échte, real-time data uit de WorkstationHub en database. Je MAG deze data gebruiken en je MOET berekeningen of data hieruit direct als antwoord geven. Zeg NOOIT dat je geen toegang hebt tot toekomstige planning of uren per machine. 
+BELANGRIJK: Als je in de "SAMENVATTING" of "LIVE PLANNING DATA" sectie GEEN data ziet voor de gevraagde machine of week (bijvoorbeeld BH18 in week 26), antwoord dan letterlijk: "Op basis van de actuele planning staat er voor [Machine] in [Week] momenteel niets gepland (0 uur)." 
+Zeg NOOIT dat je de WorkstationHub niet kan inzien!
+************************************\n\n` + currentSystemContext;
+
       // Dynamische taal instructie
       const currentLang = i18n.language?.split('-')[0] || 'nl';
       const langMap: Record<string, string> = {
@@ -651,7 +658,7 @@ De planning module bestaat uit verschillende hubs:
 - Personeel toewijzing toont actieve shift in kleur
 - Meerdere operators per machine mogelijk
 
-**Navigatie:** Sidebar → Planning → Selecteer afdeling → Selecteer machine
+**Belangrijk voor jou als AI:** Jij krijgt de LIVE data van de WorkstationHub (inclusief alle machines, orders, en geplande uren) real-time in deze prompt mee onder de kop "LIVE PLANNING DATA" of "SAMENVATTING". Als de gebruiker vraagt naar openstaande uren, beantwoord dit dan direct met jouw data! Stuur de gebruiker NIET naar het scherm, maar lees de data zelf voor.
 
 ---
 

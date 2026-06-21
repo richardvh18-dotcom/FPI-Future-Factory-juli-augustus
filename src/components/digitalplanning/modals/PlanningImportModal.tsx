@@ -40,6 +40,10 @@ type PlanningImportEntry = {
   smartSyncIncluded?: boolean;
   inspectionApprovedQty?: number;
   produced?: number;
+  demandOrder?: string;
+  demandOrderType?: string;
+  holdReason?: string;
+  machineHours?: number;
   [key: string]: any;
 };
 
@@ -104,6 +108,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
   const [importProgressLabel, setImportProgressLabel] = useState("");
   const [importEtaLabel, setImportEtaLabel] = useState("");
   const [, setDebugLogs] = useState<DebugLogEntry[]>([]);
+  const [activeTab, setActiveTab] = useState<"valid" | "blocked">("valid");
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pasteTextAreaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -398,6 +403,10 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     const idxProject = firstIndex(headers, ["project"]);
     const idxProjectDesc = firstIndex(headers, ["project desc", "project description"]);
     const idxDrawing = firstIndex(headers, ["drawing", "drawing number", "tekening"]);
+    const idxDemandOrder = firstIndex(headers, ["demand order", "demand-order"]);
+    const idxDemandOrderType = firstIndex(headers, ["demand order type", "demand-order type"]);
+    const idxHoldReason = firstIndex(headers, ["hold reason code description", "hold reason"]);
+    const idxMachineHours = firstIndex(headers, ["machine-uren", "machine hours"]);
 
     if (idxOrder === -1) return [];
 
@@ -424,6 +433,10 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         const estimatedHours = idxEstimatedHours !== -1 ? parseNum(row[idxEstimatedHours]) : 0;
         const quantity = idxPlan !== -1 ? parseNum(row[idxPlan]) : plan;
         const deliveredQty = idxDelivered !== -1 ? parseNum(row[idxDelivered]) : null;
+        const demandOrder = idxDemandOrder !== -1 ? clean(row[idxDemandOrder]) : "";
+        const demandOrderType = idxDemandOrderType !== -1 ? clean(row[idxDemandOrderType]) : "";
+        const holdReason = idxHoldReason !== -1 ? clean(row[idxHoldReason]) : "";
+        const machineHours = idxMachineHours !== -1 ? parseNum(row[idxMachineHours]) : 0;
         const docId = buildImportDocId(orderId, itemCode, itemDescription, machine);
 
         return {
@@ -446,9 +459,13 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
           deliveryDate: deliveryObj ? deliveryObj.toISOString() : null,
           plannedDate: deliveryObj ? subWeeks(deliveryObj, 3).toISOString() : null,
           weekNumber,
-          orderStatus: rawStatus,
+          orderStatus: holdReason ? "on_hold" : rawStatus || "Vrijgegeven",
           drawing: idxDrawing !== -1 ? clean(row[idxDrawing]) : "",
           isValidForImport: isStatusAllowed(rawStatus),
+          demandOrder,
+          demandOrderType,
+          holdReason,
+          machineHours,
           status: "waiting",
           totalPlannedHours: estimatedHours,
           totalActualHours: 0,
@@ -633,7 +650,11 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       // Alleen Special Instructions mag naar extraCode (Lot Code mag niet worden geïmporteerd als code).
       special: findCol(["special instructions", "special instruction", "extra code", "extra-code"]),
       todo: findCol(["to do qty"]),
-      creation: findCol(["order creation date"]) // Nieuwe kolom voor Dossier
+      creation: findCol(["order creation date"]), // Nieuwe kolom voor Dossier
+      demandOrder: findCol(["demand order", "demand-order"]),
+      demandOrderType: findCol(["demand order type", "demand-order type"]),
+      holdReason: findCol(["hold reason code description", "hold reason"]),
+      machineHours: findCol(["machine-uren", "machine hours"]),
     };
 
     const orderMap = new Map<string, PlanningImportAggregate>();
@@ -650,6 +671,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       const rowMachine = normalizeMachine(row[idx.machine]);
       const rowStatusAllowed = isStatusAllowed(rawStatus);
       const rawDelivery = idx.delivery !== -1 ? row[idx.delivery] : null;
+      const rowHoldReason = idx.holdReason !== -1 ? clean(row[idx.holdReason]) : "";
 
       if (!orderMap.has(orderId)) {
         orderMap.set(orderId, {
@@ -669,12 +691,16 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
           toDoQty: parseNum(row[idx.qty]),
           plannedDeliveryDate: rawDelivery instanceof Date ? rawDelivery : (clean(rawDelivery) || null),
           orderCreationDate: clean(row[idx.creation]), // Alleen voor dossier
-          orderStatus: rawStatus,
+          demandOrder: idx.demandOrder !== -1 ? clean(row[idx.demandOrder]) : "",
+          demandOrderType: idx.demandOrderType !== -1 ? clean(row[idx.demandOrderType]) : "",
+          holdReason: rowHoldReason,
+          orderStatus: rowHoldReason ? "on_hold" : (rawStatus || "Vrijgegeven"),
           drawing: clean(row[idx.drawing]),
           isValidForImport: rowStatusAllowed,
           status: "waiting",
           plan: parseNum(row[idx.qty]) || 0,
           totalPlannedHours: 0,
+          machineHours: 0,
           totalEstimatedHoursFromLn: estimatedTotalTime,
           totalActualHours: 0,
           operations: {},
@@ -687,9 +713,11 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       if (!order) return;
       if ((order.machine === "-" || !order.machine) && rowMachine !== "-") {
         order.machine = rowMachine;
-      }
-      if (!rowStatusAllowed) {
-        order.isValidForImport = false;
+        order.orderStatus = rowStatus || "Vrijgegeven";
+        order.isValidForImport = rowStatusAllowed;
+        if (order.holdReason) {
+          order.orderStatus = "on_hold";
+        }
       }
       if (!order.orderStatus && rawStatus) {
         order.orderStatus = rawStatus;
@@ -730,14 +758,32 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
         order.produced = Math.max(Number(order.produced) || 0, parseNum(row[idx.ready]));
       }
 
+      if (rowHoldReason) {
+        if (!order.holdReason) order.holdReason = rowHoldReason;
+        order.isValidForImport = order.isValidForImport || false;
+        if (order.holdReason) {
+          order.orderStatus = "on_hold";
+        }
+      }
+      if (idx.demandOrder !== -1 && !order.demandOrder) {
+        const dOrder = clean(row[idx.demandOrder]);
+        if (dOrder) order.demandOrder = dOrder;
+      }
+      if (idx.demandOrderType !== -1 && !order.demandOrderType) {
+        const dType = clean(row[idx.demandOrderType]);
+        if (dType) order.demandOrderType = dType;
+      }
+
       if (rowMachine !== "-") {
         const machineWeight = pTime > 0 ? pTime : 0.001;
         const machineTotals = order.machineTotals ?? (order.machineTotals = {});
         machineTotals[rowMachine] = (machineTotals[rowMachine] || 0) + machineWeight;
       }
 
+      const mTime = idx.machineHours !== -1 ? parseNum(row[idx.machineHours]) : 0;
       order.totalPlannedHours += pTime;
       order.totalActualHours += aTime;
+      order.machineHours = (order.machineHours || 0) + mTime;
 
       if (refOp) {
         // Derived bewerking detection: when Bewerking ≠ Oorspronkelijke bewerking the row is a
@@ -1043,8 +1089,20 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       setLoading(false);
     }
   };
+  // Orders zonder holdReason die valid zijn
+  const validOrders = useMemo(() => fileData.filter((d) => d.isValidForImport && !d.holdReason), [fileData]);
+  // Orders MET holdReason (nu valid, maar we tonen ze in de aparte tab)
+  const blockedOrders = useMemo(() => fileData.filter((d) => d.isValidForImport && d.holdReason), [fileData]);
+  
+  // We voegen ze samen in effectiveValidOrders zodat BEIDE in aanmerking komen voor de daadwerkelijke import!
+  const allValidForImport = useMemo(() => fileData.filter((d) => d.isValidForImport), [fileData]);
 
-  const validOrders = useMemo(() => fileData.filter((d) => d.isValidForImport), [fileData]);
+  // Als er geen blocked orders zijn, forceer valid tab
+  useEffect(() => {
+    if (blockedOrders.length === 0 && activeTab === "blocked") {
+      setActiveTab("valid");
+    }
+  }, [blockedOrders.length, activeTab]);
 
   const getComparableToDoQty = (order: PlanningImportEntry) => {
     const raw =
@@ -1057,7 +1115,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
   };
 
   const effectiveValidOrders = useMemo(() => {
-    return validOrders.map((order) => {
+    return allValidForImport.map((order) => {
       const orderId = order.id;
       if (!orderId) return order;
       const overrideRaw = toDoOverrides[orderId];
@@ -1291,7 +1349,8 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
   }, [effectiveValidOrders, existingOrderMap, toDoOverrides]);
 
   const displayData = useMemo(() => {
-    let rows = [...effectiveValidOrders];
+    // Afhankelijk van de actieve tab tonen we de valid of de blocked orders
+    let rows = activeTab === "valid" ? [...validOrders] : [...blockedOrders];
 
     if (isFittingsScoped) {
       rows = rows.filter((d) => isFittingsMachine(d.machine));
@@ -1360,15 +1419,15 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     let rows;
     // In paste mode: strict new-only — geen overschrijven, geen updates van bestaande orders
     if (pasteMode) {
-      rows = effectiveValidOrders.filter((d) => !isExistingOrder(d));
+      rows = allValidForImport.filter((d) => !isExistingOrder(d));
     } else if (importMode === "smart_update") {
-      rows = effectiveValidOrders.filter((d) => {
+      rows = allValidForImport.filter((d) => {
         if (hoursOnlyMode) return true;
         if (isSmartSyncExcludedOrder(d)) return false;
         return !isExistingOrder(d) || orderChangeMeta.get(d.id)?.hasSmartChange;
       });
     } else {
-      rows = effectiveValidOrders.filter((d) =>
+      rows = allValidForImport.filter((d) =>
         importMode === "overwrite" ||
         !isExistingOrder(d)
       );
@@ -1392,15 +1451,15 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
 
       let candidates;
       if (pasteMode) {
-        candidates = effectiveValidOrders.filter((d) => !isExistingOrder(d));
+        candidates = allValidForImport.filter((d) => !isExistingOrder(d));
       } else if (importMode === "smart_update") {
-        candidates = effectiveValidOrders.filter((d) => {
+        candidates = allValidForImport.filter((d) => {
           if (hoursOnlyMode) return true;
           if (isSmartSyncExcludedOrder(d)) return false;
           return !isExistingOrder(d) || orderChangeMeta.get(d.id)?.hasSmartChange;
         });
       } else {
-        candidates = effectiveValidOrders;
+        candidates = allValidForImport;
       }
       
       const filtered = candidates.filter((d: PlanningImportEntry) => isAllowedBySelectedMachines(d));
@@ -1575,8 +1634,33 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
                 </div>
             ) : (
               <div className="h-full min-h-0 flex flex-col gap-8">
-                <div className="bg-slate-900 p-4 rounded-[2.5rem] flex justify-between items-start shadow-2xl gap-4">
-                   <div className="flex-1 min-w-0 text-white">
+                {/* Tabs */}
+                {blockedOrders.length > 0 && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setActiveTab("valid")}
+                      className={`px-6 py-3 rounded-full font-black text-sm uppercase tracking-widest transition-all ${
+                        activeTab === "valid" ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                      }`}
+                    >
+                      Te Importeren ({validOrders.length})
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("blocked")}
+                      className={`px-6 py-3 rounded-full font-black text-sm uppercase tracking-widest transition-all flex items-center gap-2 ${
+                        activeTab === "blocked" ? "bg-red-600 text-white shadow-lg shadow-red-200" : "bg-red-50 text-red-500 border border-red-100 hover:bg-red-100"
+                      }`}
+                    >
+                      <ShieldCheck size={18} />
+                      Geblokkeerd door LN ({blockedOrders.length})
+                    </button>
+                  </div>
+                )}
+
+                {/* We gebruiken nu altijd dezelfde tabelstructuur en filters, maar de content (displayData) verandert obv activeTab */}
+                <>
+                  <div className={`p-4 rounded-[2.5rem] flex justify-between items-start shadow-2xl gap-4 ${activeTab === 'blocked' ? 'bg-red-950' : 'bg-slate-900'}`}>
+                     <div className="flex-1 min-w-0 text-white">
                       <div className="flex flex-wrap items-end gap-4">
                         <div className="flex flex-col">
                           <span className="text-[10px] font-black text-blue-400 uppercase ml-1 mb-1 tracking-widest">{t("digitalplanning.planning_import.department_group_label", "Afdelingsgroep")}</span>
@@ -1874,6 +1958,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
                     </tbody>
                   </table>
                 </div>
+              </>
               </div>
             )}
           </div>
