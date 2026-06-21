@@ -1,8 +1,9 @@
-import React, { useState, FC } from "react";
+import React, { useState, useEffect, FC } from "react";
 import i18n from "i18next";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { BrainCircuit, Loader2, Sparkles, ArrowRight, X } from "lucide-react";
 import { aiService } from "../../services/aiService";
+import { inforSyncService, InforOrderMeta } from '../../services/inforSyncService';
 
 interface PlanningOrder {
   id?: string;
@@ -31,6 +32,21 @@ export const SmartPlanningSuggestions: FC<Props> = ({ orders, onOrderClick, avai
   const [explanation, setExplanation] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<PlanningOrder[]>([]);
   const [showModal, setShowModal] = useState<boolean>(false);
+  const [inforMeta, setInforMeta] = useState<Map<string, InforOrderMeta>>(new Map());
+
+  // Haal Infor LN metadata op voor de suggesties
+  useEffect(() => {
+    const fetchMeta = async () => {
+      const orderIds = suggestions.map(o => o.orderId).filter(Boolean);
+      if (orderIds.length > 0) {
+        const meta = await inforSyncService.fetchOrderMetadata(orderIds);
+        setInforMeta(meta);
+      }
+    };
+    if (suggestions.length > 0) {
+      fetchMeta();
+    }
+  }, [suggestions]);
 
   const uniqueMachines = Array.from(
     new Set([
@@ -118,24 +134,39 @@ Geef een korte, professionele en menselijke verklaring (maximaal 2 of 3 zinnen) 
 
       {suggestions.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 mt-2">
-          {suggestions.map((order, index) => (
-            <div
-              key={order.id}
-              onClick={() => onOrderClick && onOrderClick(order)}
-              className="bg-white p-1.5 rounded-lg border border-indigo-50 flex items-center justify-between cursor-pointer hover:border-indigo-300 hover:shadow-sm transition-all group"
-            >
-              <div className="flex items-center gap-1.5">
-                <div className="bg-indigo-100 text-indigo-700 font-black w-5 h-5 rounded-lg flex items-center justify-center text-[8px]">
-                  {index + 1}
+          {suggestions.map((order, index) => {
+            const meta = inforMeta.get(order.orderId);
+            const isSpoolbouwWaiting = meta?.isSpoolbouwWaiting;
+            const isUrgent = meta?.isUrgent;
+            
+            let borderColor = "border-indigo-50";
+            if (isSpoolbouwWaiting) {
+              borderColor = "border-red-500 shadow-sm shadow-red-100";
+            } else if (isUrgent) {
+              borderColor = "border-orange-400 shadow-sm shadow-orange-100";
+            }
+
+            return (
+              <div
+                key={order.id}
+                onClick={() => onOrderClick && onOrderClick(order)}
+                className={`bg-white p-1.5 rounded-lg border flex items-center justify-between cursor-pointer transition-all group hover:border-indigo-400 hover:shadow-md ${borderColor}`}
+              >
+                <div className="flex items-center gap-1.5">
+                  <div className={`font-black w-5 h-5 rounded-lg flex items-center justify-center text-[8px] ${isSpoolbouwWaiting ? 'bg-red-100 text-red-700' : isUrgent ? 'bg-orange-100 text-orange-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                    {index + 1}
+                  </div>
+                  <div>
+                    <p className={`font-bold text-[9px] transition-colors ${isSpoolbouwWaiting ? 'text-red-700' : 'text-slate-800 group-hover:text-indigo-700'}`}>
+                      {order.orderId}
+                    </p>
+                    <p className="text-[8px] text-slate-400 font-mono">Score: {order.score}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-bold text-slate-800 text-[9px] group-hover:text-indigo-700 transition-colors">{order.orderId}</p>
-                  <p className="text-[8px] text-slate-400 font-mono">Score: {order.score}</p>
-                </div>
+                <ArrowRight className="w-2.5 h-2.5 text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
               </div>
-              <ArrowRight className="w-2.5 h-2.5 text-slate-300 group-hover:text-indigo-500 transition-colors shrink-0" />
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

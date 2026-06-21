@@ -18,9 +18,12 @@ import {
   Box,
   Bot,
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  FolderTree,
+  FileText
 } from "lucide-react";
 import { aiService } from "../../services/aiService";
+import { SystemDocumentationView } from "./SystemDocumentationView";
 
 type FileDetail = {
   title: string;
@@ -321,6 +324,7 @@ const ProjectStructureExpertView = () => {
   const { t } = useTranslation();
   const projectStructure = getProjectStructure(t);
   const [selectedFile, setSelectedFile] = useState("");
+  const [activeMainTab, setActiveMainTab] = useState<"explorer" | "docs">("explorer");
   const [aiExplanation, setAiExplanation] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isAiConfigured, setIsAiConfigured] = useState(false);
@@ -357,33 +361,67 @@ const ProjectStructureExpertView = () => {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
-      {/* Header met Statussen */}
-      <div className="p-6 border-b border-gray-100 bg-slate-900 text-white flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-black flex items-center tracking-tight">
-            <BookOpen className="w-8 h-8 mr-3 text-blue-400" />
-            {t('projectStructureExpert.portalTitle', 'ENGINEERING PORTAL')}
-          </h1>
-          <p className="text-slate-400 text-xs uppercase font-bold tracking-widest mt-1">
-            {t('projectStructureExpert.portalSubtitle', 'FPi Future Factory • Systeem Architectuur & Onboarding')}
-          </p>
+    <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
+      {/* Header met Statussen en Tabs */}
+      <div className="pt-6 px-6 border-b border-gray-200 bg-slate-900 text-white flex flex-col shrink-0">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-black flex items-center tracking-tight">
+              <BookOpen className="w-8 h-8 mr-3 text-blue-400" />
+              {t('projectStructureExpert.portalTitle', 'ENGINEERING PORTAL')}
+            </h1>
+            <p className="text-slate-400 text-xs uppercase font-bold tracking-widest mt-1">
+              {t('projectStructureExpert.portalSubtitle', 'FPi Future Factory • Systeem Architectuur & Onboarding')}
+            </p>
+          </div>
+          <div className="flex items-center space-x-3">
+            <div className="text-right mr-4 hidden md:block">
+              <p className="text-[10px] text-slate-500 font-mono">{t('projectStructureExpert.gitHash', 'GIT_HASH: 5e405e21')}</p>
+              <p className="text-[10px] text-green-400 font-mono italic">{t('projectStructureExpert.buildStatus', 'BUILD_STATUS: STABLE')}</p>
+            </div>
+            <div className="bg-blue-500/20 text-blue-400 px-4 py-2 rounded-xl border border-blue-500/30 text-xs font-black">
+              {t('projectStructureExpert.pilotVersion', 'PILOT v3.0')}
+            </div>
+          </div>
         </div>
-        <div className="flex items-center space-x-3">
-          <div className="text-right mr-4 hidden md:block">
-            <p className="text-[10px] text-slate-500 font-mono">{t('projectStructureExpert.gitHash', 'GIT_HASH: 5e405e21')}</p>
-            <p className="text-[10px] text-green-400 font-mono italic">{t('projectStructureExpert.buildStatus', 'BUILD_STATUS: STABLE')}</p>
-          </div>
-          <div className="bg-blue-500/20 text-blue-400 px-4 py-2 rounded-xl border border-blue-500/30 text-xs font-black">
-            {t('projectStructureExpert.pilotVersion', 'PILOT v3.0')}
-          </div>
+
+        {/* Tab Navigation */}
+        <div className="flex gap-2">
+          <button 
+            onClick={() => setActiveMainTab("explorer")}
+            className={`px-5 py-3 font-bold text-xs uppercase tracking-widest rounded-t-xl transition-all flex items-center gap-2 ${
+              activeMainTab === "explorer" 
+                ? "bg-white text-slate-900 shadow-sm" 
+                : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
+            }`}
+          >
+            <FolderTree size={16} />
+            {t('projectStructureExpert.projectExplorer', 'Project Verkenner')}
+          </button>
+          <button 
+            onClick={() => setActiveMainTab("docs")}
+            className={`px-5 py-3 font-bold text-xs uppercase tracking-widest rounded-t-xl transition-all flex items-center gap-2 ${
+              activeMainTab === "docs" 
+                ? "bg-white text-slate-900 shadow-sm" 
+                : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
+            }`}
+          >
+            <FileText size={16} />
+            {t('projectStructureExpert.docsTab', 'Systeem Documentatie')}
+          </button>
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Navigatie (Linkerzijde) */}
-        <div className="w-1/2 overflow-y-auto p-6 border-r border-gray-100 bg-gray-50/30 scrollbar-thin scrollbar-thumb-gray-200">
-          <h3 className="text-[10px] uppercase font-black text-gray-400 mb-4 tracking-[0.2em]">{t('projectStructureExpert.projectExplorer', 'Project Verkenner')}</h3>
+      <div className="flex flex-1 overflow-hidden relative bg-white">
+        {activeMainTab === "docs" ? (
+          <div className="absolute inset-0 w-full h-full">
+            <SystemDocumentationView t={t} />
+          </div>
+        ) : (
+          <>
+            {/* Navigatie (Linkerzijde) */}
+            <div className="w-1/2 overflow-y-auto p-6 border-r border-gray-100 bg-gray-50/30 scrollbar-thin scrollbar-thumb-gray-200">
+              <h3 className="text-[10px] uppercase font-black text-gray-400 mb-4 tracking-[0.2em]">{t('projectStructureExpert.projectExplorer', 'Project Verkenner')}</h3>
           {projectStructure.map((node, i) => (
             <TreeNode 
               key={i} 
@@ -504,6 +542,8 @@ const ProjectStructureExpertView = () => {
             </div>
           )}
         </div>
+        </>
+      )}
       </div>
 
       {/* Industriële Footer */}

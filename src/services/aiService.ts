@@ -260,7 +260,7 @@ class AIService {
    */
   async searchProductionOrders(searchTerm: string) {
     try {
-      const orders = await this.getProductionOrders(200);
+      const orders = await this.getProductionOrders(1000);
       const normalize = (value: any) => (value ?? '').toString();
       const collectLotNumbers = (order: any) => {
         const lots: string[] = [];
@@ -461,7 +461,7 @@ class AIService {
   async getAiDocuments(limitCount = 20): Promise<AiDocument[]> {
     try {
       const docsCollection = collection(db, getPathString(PATHS.AI_DOCUMENTS));
-      const q = query(docsCollection, limit(limitCount));
+      const q = query(docsCollection, orderBy('uploadedAt', 'desc'), limit(limitCount));
       const snapshot = await getDocs(q);
 
       return snapshot.docs.map((docSnap) => ({
@@ -999,7 +999,7 @@ class AIService {
     
     // Filter stopwoorden en korte woorden
     const importantWords = words.filter(word => 
-      word.length >= 3 && !stopWords.includes(word)
+      word.length >= 2 && !stopWords.includes(word)
     );
     
     // Return unieke termen
@@ -1354,7 +1354,7 @@ class AIService {
    */
   async searchCatalogProducts(searchTerm: string): Promise<CatalogProduct[]> {
     try {
-      const products = await this.getCatalogProducts(100);
+      const products = await this.getCatalogProducts(1000);
       const term = searchTerm.toLowerCase().trim();
       const tokens = this.extractSearchTerms(searchTerm);
       const entities = this.extractEntityTokens(searchTerm);
@@ -1627,7 +1627,7 @@ class AIService {
 
       if (isTimeQuery) {
         try {
-          const times = await this.getProductionTimes(20);
+          const times = await this.getProductionTimes(100);
           if (times.length > 0) {
             contextData += `\n\n⏱️ PRODUCTIE TIJDEN:\n`;
             contextData += '='.repeat(60) + '\n';
