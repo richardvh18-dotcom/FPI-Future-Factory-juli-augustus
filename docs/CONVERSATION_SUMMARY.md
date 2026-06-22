@@ -1,3 +1,30 @@
+## Update sessie 22 juni 2026 (ZPL data verborgen in logboeken, Audit Logging ISO Compliant fix)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. ZPL data verborgen in Logboeken**
+- Probleem: De velden `zplData`, `labelZPL` en `labelZplData` namen gigantisch veel ruimte in bij het bekijken van logboeken, waardoor de interface traag werd en de samenvatting onleesbaar.
+- Fix: Deze velden zijn toegevoegd aan `SKIP_DIFF_FIELDS` en `SKIP_SUMMARY_KEYS` in `AdminLogView.tsx`.
+- In de "Ruwe JSON" weergave worden deze velden nu ook netjes vervangen door `<ZPL_DATA_HIDDEN_TO_SAVE_SPACE>`.
+
+**2. Copy/Kopieer knop voor Label Print Regels**
+- Er is een "Kopieer regel" functie gebouwd in `AdminLabelManager` (tab Label Print Regels) zodat de complexe filter- en labelvoorwaarden makkelijk gekloond kunnen worden in plaats van alles opnieuw in te typen.
+
+**3. ISO 9001 / 27001 Audit Logging Hersteld**
+- Probleem: De strenge `firestore.rules` (waarbij `/audit/logs` op `allow write: if false` staat voor onveranderbare logs) zorgden ervoor dat client-side `logActivity` (in `firebase.ts`) functies faalden en hun errors negeerden. Hierdoor werden ~218 frontend logs (inloggen, uitloggen, settings wijzigen) stilzwijgend overgeslagen.
+- Fix backend: Nieuwe Callable endpoint `clientLogActivity` gebouwd in `functions/index.js` die veilig, via het admin auth token, logs wegschrijft in de audit trail. Met uitzondering voor `LOGIN_FAILED`.
+- Fix frontend: `logActivity` in `src/config/firebase.ts` herschreven zodat deze overal in de app de nieuwe Cloud Function aanroept.
+
+**Belangrijkste aangepaste bestanden in deze sessie:**
+- `src/components/admin/AdminLogView.tsx`
+- `src/components/admin/AdminLabelManager.tsx`
+- `src/components/admin/AdminLabelPrintRules.tsx`
+- `src/config/firebase.ts`
+- `functions/index.js`
+
+---
+
 ## Update sessie 22 juni 2026 (Label code-keuze, ProductionStartModal defaultfixes, routering en releases)
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)

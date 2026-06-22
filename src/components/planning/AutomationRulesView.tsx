@@ -36,7 +36,7 @@ const getErrorMessage = (error: unknown): string =>
 const AutomationRulesView = () => {
   const { t } = useTranslation();
   const { showConfirm , notify} = useNotifications();
-  const [activeTab, setActiveTab] = useState("automation"); // "automation" | "labels"
+  
   const [rules, setRules] = useState<AnyRecord[]>([]);
   const [executions, setExecutions] = useState<AnyRecord[]>([]);
   const [emailTemplates, setEmailTemplates] = useState<AnyRecord[]>([]);
@@ -521,32 +521,7 @@ const AutomationRulesView = () => {
         </div>
       </div>
 
-      {/* --- NIEUW: TAB NAVIGATIE --- */}
-      <div className="flex gap-2 border-b border-slate-200 mb-6 pb-1">
-        <button
-          onClick={() => setActiveTab("automation")}
-          className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all rounded-t-xl ${
-            activeTab === "automation"
-              ? "bg-purple-600 text-white shadow-md"
-              : "bg-transparent text-slate-500 hover:bg-slate-100"
-          }`}
-        >
-          {t("planning.automationRules.systemRulesTab", "Systeem Rules")}
-        </button>
-        <button
-          onClick={() => setActiveTab("labels")}
-          className={`px-6 py-3 font-black uppercase text-xs tracking-widest transition-all rounded-t-xl flex items-center gap-2 ${
-            activeTab === "labels"
-              ? "bg-blue-600 text-white shadow-md"
-              : "bg-transparent text-slate-500 hover:bg-slate-100"
-          }`}
-        >
-          {t("planning.automationRules.labelRulesTab", "Label Print Regels")}
-        </button>
-      </div>
-
-      {activeTab === "automation" ? (
-        <div className="animate-in fade-in duration-300">
+      <div className="animate-in fade-in duration-300">
       <div className="grid grid-cols-3 gap-6">
         {/* Rules List */}
         <div className="col-span-2 space-y-4">
@@ -1214,11 +1189,6 @@ const AutomationRulesView = () => {
         </div>
       </div>
       </div>
-      ) : (
-        <div className="animate-in fade-in slide-in-from-right-2 duration-300">
-          <AdminLabelPrintRules />
-        </div>
-      )}
     </div>
   );
 };

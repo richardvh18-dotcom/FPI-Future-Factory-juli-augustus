@@ -3,7 +3,7 @@ import { collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 
 import { db } from "../../config/firebase";
 import { PrintRuleDef, PrintRuleCondition } from "../../utils/labelHelpers";
 import { useLabelCatalog } from "../../hooks/useLabelCatalog";
-import { Plus, Trash2, Save, X, Edit3, Settings2, AlertTriangle, Layers } from "lucide-react";
+import { Plus, Trash2, Save, X, Edit3, Settings2, AlertTriangle, Layers, Copy } from "lucide-react";
 import toast from "react-hot-toast";
 
 const RULES_PATH = "future-factory/settings/label_print_rules";
@@ -76,6 +76,12 @@ export default function AdminLabelPrintRules() {
       console.error(error);
       toast.error("Fout bij verwijderen: " + error.message);
     }
+  };
+
+  const handleCopy = (rule: PrintRuleDef) => {
+    const copiedRule = { ...rule, name: `${rule.name} (Kopie)` };
+    delete copiedRule.id;
+    setEditingRule(copiedRule);
   };
 
   // Voorwaarden helpers
@@ -251,15 +257,16 @@ export default function AdminLabelPrintRules() {
               <div>
                 <h3 className="font-black text-slate-800 uppercase tracking-wide flex items-center gap-3">{rule.name} {!rule.active && <span className="text-[9px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded uppercase tracking-widest">Inactief</span>}</h3>
                 <p className="text-xs text-slate-500 mt-1.5 font-medium">ALS <span className="font-black text-slate-700">{rule.conditions.length} voorwaarde(n)</span> matcht DAN <span className="font-black text-blue-600">Print {rule.output.labelCount}x {
-                  rule.output.templateIds && rule.output.templateIds.length > 0
+                  String(rule.output.templateIds && rule.output.templateIds.length > 0
                     ? rule.output.templateIds.map(id => labelTemplates?.find((t: any) => t.id === id)?.name || id).join(" + ")
-                    : labelTemplates?.find((t: any) => t.id === (rule.output.templateId || rule.output.labelSizeId))?.name || rule.output.templateId || rule.output.labelSizeId || "Dynamisch"
+                    : labelTemplates?.find((t: any) => t.id === (rule.output.templateId || rule.output.labelSizeId))?.name || rule.output.templateId || rule.output.labelSizeId || "Dynamisch")
                 }</span>{rule.output.requiredTags?.length ? ` + Tags: [${rule.output.requiredTags.join(", ")}]` : ""}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setEditingRule(rule)} className="p-3 text-slate-400 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-colors"><Edit3 size={18} /></button>
-              <button onClick={() => handleDelete(rule.id!)} className="p-3 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-colors"><Trash2 size={18} /></button>
+              <button onClick={() => setEditingRule(rule)} className="p-3 text-slate-400 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-colors" title="Bewerken"><Edit3 size={18} /></button>
+              <button onClick={() => handleCopy(rule)} className="p-3 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 rounded-xl transition-colors" title="Kopiëren"><Copy size={18} /></button>
+              <button onClick={() => handleDelete(rule.id!)} className="p-3 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-colors" title="Verwijderen"><Trash2 size={18} /></button>
             </div>
           </div>
         ))}
