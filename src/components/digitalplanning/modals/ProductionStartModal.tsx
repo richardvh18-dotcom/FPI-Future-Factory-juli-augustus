@@ -422,7 +422,7 @@ const ProductionStartModal = ({
         initialCount = 1;
       }
 
-      if (isBh18Station(stationId) && !matchedOperatorPrintRule) {
+      if (isBh18Station(stationId)) {
         const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(' ').toUpperCase();
         const isElbow = itemIdentifier.includes("ELBOW") || itemIdentifier.includes("BOCHT") || itemIdentifier.includes("ELB");
         const isSpecialElbow = itemIdentifier.includes("AB/AB") || itemIdentifier.includes("SB/SB");
@@ -443,7 +443,7 @@ const ProductionStartModal = ({
 
       setLabelCount(String(Math.max(1, initialCount)));
     }
-  }, [isOpen, stringCount, stationId, order, shouldUseFlangeLabelFlow, matchedOperatorPrintRule, isBh12Station]);
+  }, [isOpen, stringCount, stationId, order, shouldUseFlangeLabelFlow, isBh12Station]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -563,7 +563,7 @@ const ProductionStartModal = ({
   const selectableLabels = useMemo(() => {
     if (!Array.isArray(availableLabels) || availableLabels.length === 0) return [];
 
-    const ruleCodeTag = String(matchedOperatorPrintRule?.code || "").trim().toUpperCase();
+    const ruleCodeTag = "";
     const hasRuleSpecificCode = Boolean(ruleCodeTag && ruleCodeTag !== "ANY");
     if (!hasRuleSpecificCode) return availableLabels;
 
@@ -573,7 +573,7 @@ const ProductionStartModal = ({
     });
 
     return filteredByRuleCode.length > 0 ? filteredByRuleCode : availableLabels;
-  }, [availableLabels, matchedOperatorPrintRule?.code]);
+  }, [availableLabels, ]);
 
   // Autofocus naar ordernummer (of lotnummer) bij openen in manuele modus
   useEffect(() => {
@@ -690,7 +690,7 @@ const ProductionStartModal = ({
              preferLarge = stationId === 'BH18' || isBh12Station;
           }
           
-          if (stationId === 'BH18' && !matchedOperatorPrintRule?.labelSize) {
+          if (stationId === 'BH18') {
              const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(' ').toUpperCase();
              const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
              const dia = match ? parseInt(match[1], 10) : parseInt(order?.diameter || order?.dn || 0, 10);
@@ -700,7 +700,7 @@ const ProductionStartModal = ({
           }
           
           const orderCodeTags = getOrderCodeTags(order);
-          const ruleCodeTag = String(matchedOperatorPrintRule?.code || "").trim().toUpperCase();
+          const ruleCodeTag = "";
           const hasRuleSpecificCode = Boolean(ruleCodeTag && ruleCodeTag !== "ANY");
           const ruleCodeLabels = hasRuleSpecificCode
             ? availableLabels.filter((label: LabelOption) => {
@@ -760,7 +760,7 @@ const ProductionStartModal = ({
       }
     };
     setDefaultLabel();
-  }, [isOpen, order, selectableLabels, loadingLabels, stationId, shouldUseFlangeLabelFlow, selectedLabelId, matchedOperatorPrintRule, isBh12Station, dynamicPrintRules]);
+  }, [isOpen, order, selectableLabels, loadingLabels, stationId, shouldUseFlangeLabelFlow, selectedLabelId, isBh12Station, dynamicPrintRules]);
   
   // 1b. Operators ophalen voor dit station
   useEffect(() => {

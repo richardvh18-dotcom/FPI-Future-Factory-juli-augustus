@@ -2370,6 +2370,38 @@ functions.params.defineSecret('ATPS_EXPORT_TOKEN');
 
 exports.sendEmail = sendEmail;
 
+exports.clientLogActivity = functions.region('europe-west1').https.onCall(async (data, context) => {
+  const { action, details } = data;
+  if (!action) {
+    throw new functions.https.HttpsError('invalid-argument', 'Action is verplicht.');
+  }
+
+  const isFailedLogin = action === 'LOGIN_FAILED';
+  if (!context.auth?.uid && !isFailedLogin) {
+    throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist voor logging.');
+  }
+
+  const email = context.auth?.token?.email || null;
+  const uid = context.auth?.uid || 'system';
+
+  try {
+    await auditService.logAction(
+      uid,
+      String(action).substring(0, 100),
+      details || {},
+      {
+        userEmail: email,
+        category: isFailedLogin ? 'SECURITY' : 'SYSTEM',
+        severity: isFailedLogin ? 'WARNING' : 'INFO',
+      }
+    );
+    return { ok: true };
+  } catch (error) {
+    console.error('Failed to log client activity:', error);
+    throw new functions.https.HttpsError('internal', 'Loggen mislukt.');
+  }
+});
+
 exports.logClientError = functions.region('europe-west1').https.onCall(async (data, context) => {
   if (!context.auth?.uid) {
     throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist voor error logging.');

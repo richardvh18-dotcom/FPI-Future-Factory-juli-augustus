@@ -113,7 +113,7 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 // Velden die te groot/irrelevant zijn voor de diff tabel
-const SKIP_DIFF_FIELDS = new Set(['id', 'labelZPL', 'history']);
+const SKIP_DIFF_FIELDS = new Set(['id', 'labelZPL', 'history', 'zplData', 'labelZplData']);
 
 const formatTimestampValue = (value: unknown): string | null => {
   if (!value) return null;
@@ -227,7 +227,7 @@ const SKIP_SUMMARY_KEYS = new Set([
   'before', 'after', 'orderDocPath', 'orderSourcePath', 'orderDocId',
   'message', 'orderId', 'stationId', 'machine', 'productId',
   'lotStart', 'totalToProduce', 'isVirtualLot', 'nextStep', 'nextStatus',
-  'action', 'userEmail',
+  'action', 'userEmail', 'zplData', 'labelZplData',
 ]);
 
 const formatObjectDetails = (details: unknown): string => {
@@ -1047,7 +1047,18 @@ const AdminLogView = () => {
                     <div className="min-w-0">
                       {rawJsonIds.has(log.id) ? (
                         <pre className="text-[10px] font-mono text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100 break-all whitespace-pre-wrap overflow-auto max-h-64">
-                          {JSON.stringify(log.details, null, 2)}
+                          {JSON.stringify(
+                            log.details && typeof log.details === 'object'
+                              ? { 
+                                  ...log.details, 
+                                  ...( (log.details as any).zplData ? { zplData: '<ZPL_DATA_HIDDEN_TO_SAVE_SPACE>' } : {} ),
+                                  ...( (log.details as any).labelZPL ? { labelZPL: '<ZPL_DATA_HIDDEN_TO_SAVE_SPACE>' } : {} ),
+                                  ...( (log.details as any).labelZplData ? { labelZplData: '<ZPL_DATA_HIDDEN_TO_SAVE_SPACE>' } : {} )
+                                }
+                              : log.details, 
+                            null, 
+                            2
+                          )}
                         </pre>
                       ) : (
                         <p className="text-sm font-bold text-slate-600 leading-snug group-hover:text-blue-600 transition-colors break-words whitespace-pre-wrap overflow-hidden">

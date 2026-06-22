@@ -7,7 +7,8 @@ import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
 import { useNotifications } from "../../contexts/NotificationContext";
 import AdminLabelDesigner from "./AdminLabelDesigner";
-import AdminLabelLogic from "./AdminLabelLogic";
+import AdminLabelVariables from "./AdminLabelVariables";
+import AdminLabelPrintRules from "./AdminLabelPrintRules";
 import AutoScaledLabelPreview from "../printer/AutoScaledLabelPreview";
 import { processLabelData } from "../../utils/labelHelpers";
 
@@ -44,7 +45,7 @@ const AdminLabelManager = ({ onNavigate }: AdminLabelManagerProps) => {
   const { t } = useTranslation();
   const { showConfirm , notify} = useNotifications();
   const genericFolderLabel = t('common.generic', 'Generiek');
-  const [activeTab, setActiveTab] = useState<"designer" | "logic" | "templates">("designer");
+  const [activeTab, setActiveTab] = useState<"designer" | "logic" | "printRules" | "templates">("designer");
   const [savedLabels, setSavedLabels] = useState<LabelTemplate[]>([]);
   const [templateSearch, setTemplateSearch] = useState("");
   const [designerOpenLabelId, setDesignerOpenLabelId] = useState<string | null>(null);
@@ -183,38 +184,48 @@ const AdminLabelManager = ({ onNavigate }: AdminLabelManagerProps) => {
         </div>
 
         <div className="w-full lg:w-auto overflow-x-auto">
-        <div className="flex w-max min-w-full lg:min-w-0 bg-slate-100 p-1 rounded-xl">
-          <button
-            onClick={() => setActiveTab("designer")}
-            className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all ${
-              activeTab === "designer"
-                ? "bg-white text-orange-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            <PenTool size={14} /> <span className="hidden sm:inline">{t('common.designer')}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("logic")}
-            className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all ${
-              activeTab === "logic"
-                ? "bg-white text-blue-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            <Settings size={14} /> <span className="hidden sm:inline">{t('common.logic')}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("templates")}
-            className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all ${
-              activeTab === "templates"
-                ? "bg-white text-emerald-600 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            <LayoutGrid size={14} /> <span className="hidden sm:inline">{t('common.labelTemplates', 'Label Templates')}</span>
-          </button>
-        </div>
+          <div className="flex w-max min-w-full lg:min-w-0 bg-slate-100 p-1 rounded-xl">
+            <button
+              onClick={() => setActiveTab("designer")}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all ${
+                activeTab === "designer"
+                  ? "bg-white text-orange-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <PenTool size={14} /> <span className="hidden sm:inline">{t('common.designer')}</span>
+            </button>
+            <button
+              onClick={() => setActiveTab("logic")}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all ${
+                activeTab === "logic"
+                  ? "bg-white text-blue-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Settings size={14} /> <span className="hidden sm:inline">{t('common.logic', 'Variabelen')}</span>
+            </button>
+            <button
+              onClick={() => setActiveTab("printRules")}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all ${
+                activeTab === "printRules"
+                  ? "bg-white text-purple-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Edit2 size={14} /> <span className="hidden sm:inline">{t('common.printRules', 'Print Regels')}</span>
+            </button>
+            <button
+              onClick={() => setActiveTab("templates")}
+              className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-all ${
+                activeTab === "templates"
+                  ? "bg-white text-emerald-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <LayoutGrid size={14} /> <span className="hidden sm:inline">{t('common.labelTemplates', 'Label Templates')}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -225,7 +236,12 @@ const AdminLabelManager = ({ onNavigate }: AdminLabelManagerProps) => {
         )}
         {activeTab === "logic" && (
           <div className="h-full overflow-hidden">
-             <AdminLabelLogic />
+             <AdminLabelVariables />
+          </div>
+        )}
+        {activeTab === "printRules" && (
+          <div className="h-full overflow-y-auto p-3 sm:p-4 md:p-6 bg-slate-100">
+             <div className="max-w-6xl mx-auto"><AdminLabelPrintRules /></div>
           </div>
         )}
         {activeTab === "templates" && (

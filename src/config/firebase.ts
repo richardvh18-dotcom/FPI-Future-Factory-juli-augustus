@@ -125,34 +125,20 @@ export const initializeOptionalAppCheck = (): void => {
   }
 };
 
+import { httpsCallable } from "firebase/functions";
+
 /**
- * logActivity - Gecorrigeerd om gebruik te maken van de centrale PATHS
+ * logActivity - ISO 9001/27001 compliant frontend logging.
+ * Roep de backend callable aan zodat deze veilig in het Audit Log geschreven wordt.
  */
 export const logActivity = async (userId: string, action: string, details: unknown) => {
   try {
-    const now = new Date();
-    const year = now.getUTCFullYear();
-    const month = now.getUTCMonth() + 1;
-    const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
-
-    // Gebruik de centrale definitie uit dbPaths.js
-    const logsRef = collection(db, getPathString(PATHS.ACTIVITY_LOGS));
-    await addDoc(logsRef, {
-      userId,
-      userEmail: auth.currentUser?.email || "Systeem",
+    const logActivityCallable = httpsCallable(functions, "clientLogActivity");
+    await logActivityCallable({
       action,
       details: sanitizeForFirestore(details),
-      year,
-      month,
-      yearMonth,
-      timestamp: serverTimestamp(),
     });
   } catch (e) {
-    const code = getErrorCode(e).toLowerCase();
-    if (code.includes("permission-denied") || code.includes("insufficient-permission")) {
-      return;
-    }
-
     console.error("Logging failed:", e);
   }
 };
