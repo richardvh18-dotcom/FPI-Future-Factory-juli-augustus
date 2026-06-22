@@ -8,6 +8,6 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setupTests.js"],
     css: true,
-    include: ["src/**/*.{test,spec}.{js,jsx,ts,tsx}"],
+    include: ["src/**/*.{test,spec}.{js,jsx,ts,tsx}", "tests/**/*.{test,spec}.{js,jsx,ts,tsx}"],
   },
 });

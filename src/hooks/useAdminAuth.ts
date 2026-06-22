@@ -71,7 +71,7 @@ const authStore = {
     if (this.active) return;
     this.active = true;
 
-    this.unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+    this.unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
       this.stopRoleListener();
 
       if (!firebaseUser) {
@@ -97,39 +97,54 @@ const authStore = {
       this.setState({ loading: true, error: null });
 
       try {
+        const idTokenResult = await firebaseUser.getIdTokenResult();
+        let tokenRole = String(idTokenResult.claims.role || "").toLowerCase().trim();
+
         const userRef = doc(db, ...(PATHS.USERS as [string, ...string[]]), currentUid);
         this.unsubscribeRole = onSnapshot(
           userRef,
           (snap) => {
             if (snap.exists()) {
               const data = snap.data();
-              const userRole = String(data.role || "user").toLowerCase();
+              const firestoreRole = String(data.role || "user").toLowerCase();
+              
+              if (tokenRole && tokenRole !== firestoreRole) {
+                firebaseUser.getIdToken(true).then(() => {
+                  debugLog("🔐 Forced token refresh due to role mismatch.");
+                }).catch(console.error);
+                tokenRole = firestoreRole; 
+              }
+
+              const resolvedRole = tokenRole || firestoreRole;
+
               this.setState({
                 user: { uid: currentUid, email: firebaseUser.email, ...data },
-                role: userRole,
-                isAdmin: userRole === "admin",
+                role: resolvedRole,
+                isAdmin: resolvedRole === "admin",
                 loading: false,
                 error: null,
               });
               return;
             }
 
+            const guestRole = tokenRole || "guest";
             this.setState({
               user: {
                 uid: currentUid,
                 email: firebaseUser.email,
-                role: "guest",
+                role: guestRole,
                 name: firebaseUser.displayName || String(firebaseUser.email || "gebruiker").split("@")[0],
               },
-              role: "guest",
-              isAdmin: false,
+              role: guestRole,
+              isAdmin: guestRole === "admin",
               loading: false,
               error: null,
             });
           },
           (err) => {
             console.error("Auth Guard Firestore Error:", (err as { code?: string })?.code || "unknown", err?.message || err);
-            this.setState({ role: "guest", isAdmin: false, loading: false, error: err });
+            const fallbackRole = tokenRole || "guest";
+            this.setState({ role: fallbackRole, isAdmin: fallbackRole === "admin", loading: false, error: err });
           },
         );
       } catch (err) {

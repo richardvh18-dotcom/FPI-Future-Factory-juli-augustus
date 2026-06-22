@@ -412,8 +412,8 @@ exports.saveLnQrExportHistory = withAudit(
             createdAtIso: nowIso,
         };
     },
-    (handler) => functions.region('europe-west1').https.onCall(handler),
-    (handler) => functions.region('europe-west1').https.onCall(handler),
+    (handler) => functions.region('europe-west1').runWith({ secrets: ['ATPS_EXPORT_TOKEN'] }).https.onCall(handler),
+    (handler) => functions.region('europe-west1').runWith({ secrets: ['ATPS_EXPORT_TOKEN'] }).https.onCall(handler),
 );
 
 /**
@@ -485,7 +485,7 @@ exports.requestExportTask = withAudit(
 
     return { taskId: taskRef.id };
     },
-    (handler) => functions.region('europe-west1').https.onCall(handler),
+    (handler) => functions.region('europe-west1').runWith({ secrets: ['ATPS_EXPORT_TOKEN'] }).https.onCall(handler),
 );
 
 /**
@@ -508,7 +508,7 @@ exports.previewAtpsOccupancyExport = withAudit(
                 includeRecords: true,
             });
         },
-    (handler) => functions.region('europe-west1').https.onCall(handler),
+    (handler) => functions.region('europe-west1').runWith({ secrets: ['ATPS_EXPORT_TOKEN'] }).https.onCall(handler),
 );
 
 exports.executeAtpsOccupancyExport = withAudit(
@@ -569,9 +569,9 @@ exports.executeAtpsOccupancyExport = withAudit(
             throw error;
         }
     },
-    (handler) => functions.region('europe-west1').https.onCall(handler),
-    (handler) => functions.region('europe-west1').https.onCall(handler),
-    (handler) => functions.region('europe-west1').https.onCall(handler),
+    (handler) => functions.region('europe-west1').runWith({ secrets: ['ATPS_EXPORT_TOKEN'] }).https.onCall(handler),
+    (handler) => functions.region('europe-west1').runWith({ secrets: ['ATPS_EXPORT_TOKEN'] }).https.onCall(handler),
+    (handler) => functions.region('europe-west1').runWith({ secrets: ['ATPS_EXPORT_TOKEN'] }).https.onCall(handler),
 );
 
 const processAtpsRetryQueueInternal = async (input = {}) => {
@@ -714,7 +714,7 @@ exports.processAtpsRetryQueue = withAudit(
         }
         return processAtpsRetryQueueInternal(data || {});
     },
-    (handler) => functions.region('europe-west1').https.onCall(handler),
+    (handler) => functions.region('europe-west1').runWith({ secrets: ['ATPS_EXPORT_TOKEN'] }).https.onCall(handler),
 );
 
 exports.getAtpsExportMonitor = withAudit(
@@ -747,7 +747,7 @@ exports.getAtpsExportMonitor = withAudit(
             },
         };
     },
-    (handler) => functions.region('europe-west1').https.onCall(handler),
+    (handler) => functions.region('europe-west1').runWith({ secrets: ['ATPS_EXPORT_TOKEN'] }).https.onCall(handler),
 );
 
 async function generateLNCompareData(filter) {

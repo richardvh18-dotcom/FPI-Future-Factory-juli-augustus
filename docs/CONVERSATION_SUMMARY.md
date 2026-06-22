@@ -1,3 +1,42 @@
+## Update sessie 21 juni 2026 (ISO/Security Hardening & Backups)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie (Platform Upgrades Pt. 1)
+In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afgerond, resulterend in een meer productie-klare en veilige applicatie architectuur.
+
+**1. RBAC via custom claims invoeren (Task 1)**
+- Firebase Auth custom claims configuratie toegevoegd in de backend via een Firestore trigger (`functions/src/auth/syncUserClaims.ts`).
+- `firestore.rules` herschreven zodat de primaire authorisatie via `request.auth.token.role` (server-side claims) loopt in plaats van alleen kwetsbare client-side document fetches.
+- `useAdminAuth` frontend hook aangepast zodat de token geforceerd herladen wordt wanneer een rol wijzigt.
+
+**2. Security rule tests toevoegen (Task 2)**
+- Testomgeving opgezet via `@firebase/rules-unit-testing` v3.
+- Een matrix van unit tests geschreven in `tests/firestore/rules.test.ts` om regressies in CRUD-acties voor admins, teamleaders en operators te voorkomen.
+- Run-scripts toegevoegd aan `package.json` en de Firebase emulators array opgezet.
+
+**3. Audit logging activeren (Task 3)**
+- Gecontroleerd dat de `auditService` reeds uitgebreid geïntegreerd zat op de kritieke paden in de `planningCallables`.
+- Aangevuld met onveranderbare security audit events (`logSystem`) voor role mutaties (RBAC wijzigingen).
+
+**4. Monitoring en alerting inrichten (Task 4)**
+- Integratie van Google Cloud Error Reporting in de custom `logClientError` functie toegevoegd. Fouten van de React frontend (`ErrorBoundary`) sturen nu gestructureerde Error-objecten met stacktraces naar GCP Error Reporting, wat alerting en debugging sterk vereenvoudigt.
+
+**5. Backups en restore-procedure formaliseren (Task 5)**
+- Een geautomatiseerde Cron-functie geschreven (`scheduledFirestoreExport` in `backupDatabase.ts`) die elke 24 uur een volledige Firestore snapshot backupt naar een afgeschermde Google Cloud Storage bucket.
+- Standard Operating Procedure vastgelegd in `docs/RESTORE_SOP.md` om in geval van nood (disaster recovery) de database accuraat te herstellen via de `gcloud` CLI.
+
+**6. Secrets naar managed secret store migreren (Task 6)**
+- Gevoelige omgevingsvariabelen zoals `RESEND_API_KEY` en `ATPS_EXPORT_TOKEN` expliciet omgezet naar Google Cloud Secret Manager (`functions.params.defineSecret`).
+- De bijbehorende functies (zoals in `exportCallables.ts`) maken nu veilig gebruik van `.runWith({ secrets: [...] })`.
+
+### Volgende stappen (Hervatpunt)
+- **Log cleanup & TODO's:** Verwijderen van onnodige debug statements in de productie codebase (Task 7).
+- **Modulair opsplitsen:** Functions architectuur modulairder maken (Task 8).
+- **UX Workflows (DND-kit):** Starten met de integratie van `dnd-kit` voor interactieve "drag and drop" features in de digitale planning (Task 9).
+
+---
+
 ## Update sessie 19 juni 2026 (AI Presentatie Slides & Naamwedstrijd)
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
