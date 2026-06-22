@@ -519,7 +519,6 @@ const ImportExportDashboard = ({
     const historyRef = collection(db, historyPath);
     const historyQuery = query(
       historyRef,
-      where("userId", "==", currentUserId),
       where("createdAtIso", ">=", cutoffIso),
       orderBy("createdAtIso", "desc"),
       limit(75)

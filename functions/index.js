@@ -2364,6 +2364,10 @@ exports.aiProxyGenerate = functions.region('europe-west1').runWith({ secrets: ['
 
 const { sendEmail } = require('./src/callables/emailCallables');
 
+// Define secrets so Firebase CLI prompts for them on deploy
+functions.params.defineSecret('RESEND_API_KEY');
+functions.params.defineSecret('ATPS_EXPORT_TOKEN');
+
 exports.sendEmail = sendEmail;
 
 exports.logClientError = functions.region('europe-west1').https.onCall(async (data, context) => {
@@ -2389,5 +2393,19 @@ exports.logClientError = functions.region('europe-west1').https.onCall(async (da
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
+  // Integratie met Google Cloud Error Reporting
+  const clientError = new Error(`[Frontend] ${message}`);
+  clientError.stack = stack || clientError.stack;
+  clientError.name = 'FrontendClientError';
+  console.error(`Frontend error from ${context.auth.token?.email || context.auth.uid} at ${source}:`, clientError);
+
   return { ok: true };
 });
+
+// Auth Triggers
+const { syncUserClaimsOnWrite } = require('./src/auth/syncUserClaims');
+exports.syncUserClaimsOnWrite = syncUserClaimsOnWrite;
+
+// Backups
+const { scheduledFirestoreExport } = require('./src/admin/backupDatabase');
+exports.scheduledFirestoreExport = scheduledFirestoreExport;

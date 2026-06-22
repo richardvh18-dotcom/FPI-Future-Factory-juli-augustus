@@ -42,7 +42,9 @@ service cloud.firestore {
     }
 
     function userRole() {
-      return hasUserRecord() ? get(userDocPath()).data.role : null;
+      return ('role' in request.auth.token && request.auth.token.role != null) 
+        ? request.auth.token.role 
+        : (hasUserRecord() ? get(userDocPath()).data.role : null);
     }
 
     function hasAnyRole(roles) {
