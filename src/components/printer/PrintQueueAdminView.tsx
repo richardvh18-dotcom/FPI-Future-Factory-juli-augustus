@@ -33,9 +33,13 @@ import { resolvePrinterForRouting } from '../../utils/printRouting';
 import {
   buildOrderLabelPreviewData,
   buildOrderLabelTemplateProduct,
+  hasOrderLabelCode,
+  isElbow200Product,
   getOrderLabelDescription,
   getOrderLabelItemCode,
   getOrderLabelOrder,
+  isElbow100Product,
+  pickPreferredTempTemplateId,
   resolveLinkedTemplateChain,
 } from '../../utils/orderLabelTemplateUtils';
 
@@ -148,18 +152,56 @@ const stationNameFromValue = (stationValue: unknown): string => {
   return String(stationValue).trim();
 };
 
-const normalizeStationKey = (value: unknown): string => String(value || '').trim().toUpperCase();
+const normalizeStationKey = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/^40(?=BH|BM|BA)/, '');
 const normalizeQueueStatus = (value: unknown): string => String(value || 'pending').trim().toLowerCase();
 const isQueuedJobStatus = (value: unknown): boolean => {
   const status = normalizeQueueStatus(value);
   return status === 'pending' || status === 'queued' || status === 'processing' || status === 'printing';
 };
 const normalizeDepartmentKey = (value: unknown): string =>
-  String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+  String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '');
+
+const DEPARTMENT_CANONICAL_RULES: Array<{ key: string; needles: string[] }> = [
+  { key: 'FITTINGS', needles: ['FITTING', 'FITTINGS'] },
+  { key: 'PIPES', needles: ['PIPE', 'PIPES'] },
+  { key: 'SPOOLS', needles: ['SPOOL', 'SPOOLS'] },
+  { key: 'PLANNING', needles: ['PLANNING', 'PLAN'] },
+  { key: 'LOGISTICS', needles: ['LOGISTIEK', 'LOGISTICS'] },
+  { key: 'WAREHOUSE', needles: ['MAGAZIJN', 'WAREHOUSE'] },
+  { key: 'QUALITY', needles: ['QUALITY', 'KWALITEIT', 'QC'] },
+];
+
+const getDepartmentMatchKeys = (value: unknown): string[] => {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+
+  const normalized = normalizeDepartmentKey(raw);
+  if (!normalized) return [];
+
+  const cleaned = normalized
+    .replace(/^(AFDELING|PRODUCTIE|DEPARTMENT)+/g, '')
+    .replace(/(AFDELING|PRODUCTIE|DEPARTMENT)$/g, '');
+
+  const keys = new Set<string>([normalized]);
+  if (cleaned) keys.add(cleaned);
+
+  DEPARTMENT_CANONICAL_RULES.forEach(({ key, needles }) => {
+    if (needles.some((needle) => normalized.includes(needle))) {
+      keys.add(key);
+    }
+  });
+
+  return Array.from(keys);
+};
 
 const getDepartmentKeys = (department: AnyRecord): string[] => {
-  const candidates = [department?.id, department?.slug, department?.name];
-  return Array.from(new Set(candidates.map((entry) => normalizeDepartmentKey(entry)).filter(Boolean)));
+  const candidates = [department?.id, department?.slug, department?.name, department?.title];
+  return Array.from(new Set(candidates.flatMap((entry) => getDepartmentMatchKeys(entry)).filter(Boolean)));
 };
 
 const normalizeStationBindingKey = (value: unknown): string =>
@@ -211,7 +253,6 @@ const getJobStationKeys = (job: PrintJob): string[] => {
     metadata.targetStationId,
     metadata.machineId,
     metadata.machine,
-    metadata.targetPrinterName,
     job.machineId,
     job.stationId,
     job.currentStation,
@@ -372,7 +413,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, han
     if (topOptions.length > 0) {
       const isValidSelection = topOptions.some((t) => String(t.id) === selectedTemplateId);
       if (!selectedTemplateId || !isValidSelection) {
-        setSelectedTemplateId(String(topOptions[0]?.id || ""));
+        setSelectedTemplateId(pickPreferredTempTemplateId(item, topOptions as any[]));
       }
     } else if (selectedTemplateId) {
       setSelectedTemplateId("");
@@ -448,6 +489,19 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
   const { t } = useTranslation();
   const { notify } = useNotifications();
 
+  const shouldPrintDoubleElb12590 = (record: AnyRecord | null | undefined): boolean => {
+    const description = getOrderLabelDescription(record || {}).toUpperCase();
+    const itemCode = getOrderLabelItemCode(record || {}).toUpperCase();
+    const rawType = String((record as AnyRecord)?.type || (record as AnyRecord)?.productType || '').toUpperCase();
+
+    const combined = `${description} ${itemCode} ${rawType}`;
+    const hasElbow = /(^|\W)ELB(\W|$)|(^|\W)ELBOW(\W|$)/.test(combined);
+    const hasDiameter125 = /(^|\D)125(\D|$)/.test(combined);
+    const hasNinetyDegree = /(90\s*°)|(90\s*GRADEN)|(90\s*DEGREE)|(90\s*DEG)/.test(combined);
+
+    return hasElbow && hasDiameter125 && hasNinetyDegree;
+  };
+
   // Printfunctie nu binnen de modal zodat t altijd beschikbaar is
   const handleTempLegacyPrint = async (orderData: AnyRecord, template: any, processedData: any) => {
     const dpi = printerDpi;
@@ -458,6 +512,10 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     const desc = getOrderLabelDescription(orderData);
 
     let zpl;
+    const shouldPrintDoubleElb200WithCode = isElbow200Product(orderData) && hasOrderLabelCode(orderData);
+    const printQuantity = isElbow100Product(orderData)
+      ? 1
+      : (shouldPrintDoubleElb200WithCode || shouldPrintDoubleElb12590(orderData) ? 2 : 1);
     const templateChain = template
       ? (resolveLinkedTemplateChain(labelTemplates as any[], template.id, { maxDepth: 4 }) as LabelTemplate[])
       : [];
@@ -518,8 +576,9 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       }
 
       if (deviceToUse) {
-        await printRawUsb(deviceToUse, zpl);
-        notify(t("common.printLabelDirectUsb", { order }) + ` (${Math.max(1, templatesToPrint.length || 1)}x)`);
+        const usbPayload = normalizeQueuePrintPayload(zpl, printQuantity);
+        await printRawUsb(deviceToUse, usbPayload);
+        notify(t("common.printLabelDirectUsb", { order }) + ` (${Math.max(1, (templatesToPrint.length || 1) * printQuantity)}x)`);
         return;
       }
 
@@ -544,7 +603,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
               currentZpl,
               {
                 description: `Order label voor ${order}`,
-                quantity: 1,
+                quantity: printQuantity,
                 orderId: order,
                 lotNumber: orderData.lotNumber || order,
                 stationId: selectedStation || 'PRINT_QUEUE_ADMIN',
@@ -571,7 +630,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
             zpl,
             {
               description: `Order label voor ${order}`,
-              quantity: 1,
+              quantity: printQuantity,
               orderId: order,
               lotNumber: orderData.lotNumber || order,
               stationId: selectedStation || 'PRINT_QUEUE_ADMIN',
@@ -1231,6 +1290,17 @@ const PrintStationWizardModal = ({
   const [printerId, setPrinterId] = useState<string>('');
 
   useEffect(() => {
+    const normalizedCurrent = normalizeStationBindingKey(station);
+    const hasCurrentStation = stations.some((entry) => normalizeStationBindingKey(entry) === normalizedCurrent);
+    if (hasCurrentStation) return;
+
+    const fallbackStation = selectedStation || stations[0] || '';
+    if (fallbackStation !== station) {
+      setStation(fallbackStation);
+    }
+  }, [selectedStation, station, stations]);
+
+  useEffect(() => {
     if (!station) return;
     const stationKey = normalizeStationBindingKey(station);
     const boundPrinterId = String(stationBindings[stationKey] || '').trim();
@@ -1301,6 +1371,7 @@ const PrintQueueAdminView = () => {
   const { t } = useTranslation();
   const { showConfirm , notify} = useNotifications();
   const canManage = ['admin', 'teamleader', 'planner'].includes(String(role || ''));
+  const canQueueReprint = canManage || String(role || '').toLowerCase() === 'operator';
 
   const [printJobs, setPrintJobs] = useState<PrintJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1464,9 +1535,9 @@ const PrintQueueAdminView = () => {
     };
   }, []);
 
-  const userDepartmentKey = useMemo(() => {
+  const userDepartmentKeys = useMemo(() => {
     const userRecord = (user || {}) as AnyRecord;
-    return normalizeDepartmentKey(
+    return getDepartmentMatchKeys(
       userRecord.departmentId
       || userRecord.department
       || userRecord.currentDepartment
@@ -1477,12 +1548,15 @@ const PrintQueueAdminView = () => {
 
   const scopedFactoryDepartments = useMemo<AnyRecord[]>(() => {
     const departments = Array.isArray(factoryConfig?.departments) ? (factoryConfig?.departments as AnyRecord[]) : [];
-    if (!userDepartmentKey || String(role || '').toLowerCase() === 'admin') {
+    if (userDepartmentKeys.length === 0 || String(role || '').toLowerCase() === 'admin') {
       return departments;
     }
 
-    return departments.filter((department) => getDepartmentKeys(department).includes(userDepartmentKey));
-  }, [factoryConfig, role, userDepartmentKey]);
+    return departments.filter((department) => {
+      const departmentKeys = getDepartmentKeys(department);
+      return userDepartmentKeys.some((userKey) => departmentKeys.includes(userKey));
+    });
+  }, [factoryConfig, role, userDepartmentKeys]);
 
   const allFactoryStations = useMemo<string[]>(() => {
     const stations = scopedFactoryDepartments
@@ -1669,6 +1743,11 @@ const PrintQueueAdminView = () => {
       ? [{ key: 'all-stations', label: 'Alle stations', stations: stationGroups }]
       : [];
   }, [scopedFactoryDepartments, stationGroups]);
+
+  const wizardStations = useMemo(() => {
+    if (allFactoryStations.length > 0) return allFactoryStations;
+    return stationGroups;
+  }, [allFactoryStations, stationGroups]);
 
   const printerDpi = useMemo(() => {
     const parsed = parseInt(String(activeQueuePrinter?.dpi ?? ''), 10);
@@ -2154,15 +2233,14 @@ const PrintQueueAdminView = () => {
             </div>
           </div>
         </div>
-        {isUsbDirectSupported() && (
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowStationWizard(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs uppercase transition-all border-2 bg-white text-slate-600 border-slate-200 hover:border-blue-300"
-            >
-              <Settings2 size={16} /> {t('printStationView.printerWizardTitle', 'Print Station Wizard')}
-            </button>
-            {usbDevice && (
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowStationWizard(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs uppercase transition-all border-2 bg-white text-slate-600 border-slate-200 hover:border-blue-300"
+          >
+            <Settings2 size={16} /> {t('printStationView.printerWizardTitle', 'Print Station Wizard')}
+          </button>
+          {isUsbDirectSupported() && usbDevice && (
               <button
                 onClick={() => setAutoPrint(!autoPrint)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs uppercase transition-all border-2 ${
@@ -2175,8 +2253,9 @@ const PrintQueueAdminView = () => {
                 <Zap size={16} fill={autoPrint ? "currentColor" : "none"} />
                 {autoPrint ? "Auto-Print AAN" : "Auto-Print UIT"}
               </button>
-            )}
-            
+          )}
+
+          {isUsbDirectSupported() && (
             <button 
               onClick={handleConnectUsb}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs uppercase transition-all border-2 ${
@@ -2186,8 +2265,8 @@ const PrintQueueAdminView = () => {
               {usbDevice ? <Usb className="text-green-500" /> : <Usb />}
               {usbDevice ? `Verbonden: ${usbDevice.productName}` : 'Verbind USB Printer'}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       <div className="mb-6 bg-white border-2 border-slate-200 rounded-2xl p-4">
@@ -2419,7 +2498,7 @@ const PrintQueueAdminView = () => {
                       </button>
                       </>
                     )}
-                    <button onClick={() => handleReprint(job.id)} disabled={!canManage} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-100 rounded-full disabled:opacity-50" title={t("printer.reprint", "Opnieuw printen")}>
+                    <button onClick={() => handleReprint(job.id)} disabled={!canQueueReprint} className="p-2 text-slate-500 hover:text-blue-600 hover:bg-blue-100 rounded-full disabled:opacity-50" title={t("printer.reprint", "Opnieuw printen")}>
                       <RefreshCw size={16} />
                     </button>
                     <button onClick={() => handleDelete(job.id)} disabled={!canManage} className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-100 rounded-full disabled:opacity-50" title={t("common.delete", "Verwijderen")}>
@@ -2505,9 +2584,9 @@ const PrintQueueAdminView = () => {
       {showStationWizard && (
         <PrintStationWizardModal
           onClose={() => setShowStationWizard(false)}
-          stations={allFactoryStations}
+          stations={wizardStations}
           printers={printers}
-          selectedStation={stationContext || allFactoryStations[0] || ''}
+          selectedStation={stationContext || wizardStations[0] || ''}
           stationBindings={stationBindings}
           onSave={handleSaveStationBinding}
         />

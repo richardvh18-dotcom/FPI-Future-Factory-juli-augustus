@@ -1,3 +1,132 @@
+## Update sessie 22 juni 2026 (Label code-keuze, ProductionStartModal defaultfixes, routering en releases)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Tijdelijke orderlabel-logica uitgebreid (ELB specifieke regels)**
+- `ELB 100mm` regel aangescherpt: default naar klein label en 1x print.
+- `ELB 100mm` met code: voorkeur voor `CODE -> KLEIN` keten (waar beschikbaar).
+- `ELB 200mm` met code: voorkeur voor `CODE -> GROOT` en 2x print.
+
+**2. Placeholder/code-fallback robuust gemaakt**
+- In `labelHelpers` werken placeholders `{code}` en `{extraCode}` nu met alias-fallbacks (`code -> extraCode -> itemCode/productId` en omgekeerd).
+- Hierdoor krijgen labels met code-velden consistent data, ook bij afwijkende orderpayloads.
+
+**3. Label-logica beheerscherm uitgebreid met code-keuze**
+- In `AdminLabelLogic` is bij operator printregels een expliciete `Code`-keuze toegevoegd (ANY of codes uit settings).
+- Deze codefilter is ook runtime gekoppeld in `ProductionStartModal` (`resolveOperatorPrintRule`).
+
+**4. ProductionStartModal default label selectie gefixt**
+- Oorzaken aangepakt waardoor modal bleef defaulten op groot/A1S1 ondanks A2G3-klein regel:
+    - Dynamische rule engine forceerde niet langer impliciet `Large` als default zonder match.
+    - Regelcode (bijv. `A2G3`) krijgt nu prioriteit in candidate selectie.
+    - Dropdown/keuzelijst wordt gefilterd op regelcode wanneer specifieke code ingesteld is.
+    - Small fallback is aangescherpt zodat bij `Small` voorkeur niet teruggevallen wordt op groot door kandidaatset-volgorde.
+
+**5. Print queue station-routering mismatch hardening**
+- Stationnormalisatie gelijkgetrokken (`40BH12` en `BH12` worden als dezelfde stationkey behandeld).
+- `targetPrinterName` verwijderd als stationbron in routing-checks.
+- Auto-processor zet station-mismatch jobs niet meer direct op `error`, maar slaat ze over zodat juiste station/printer ze kan oppakken.
+
+**6. Releases en deploys in deze sessie**
+- Patch bumps en hosting deploys uitgevoerd:
+    - `0.1.34 -> 0.1.35`
+    - `0.1.35 -> 0.1.36`
+- Hosting deploys succesvol afgerond op project `future-factory-377ef`.
+
+**Belangrijkste aangepaste bestanden in deze sessie:**
+- `src/components/admin/AdminLabelLogic.tsx`
+- `src/components/digitalplanning/modals/ProductionStartModal.tsx`
+- `src/components/printer/PrintQueueAdminView.tsx`
+- `src/components/printer/PrintQueueAutoProcessor.tsx`
+- `src/components/printer/PrintStationView.tsx`
+- `src/utils/labelHelpers.tsx`
+- `src/utils/orderLabelTemplateUtils.ts`
+- `src/utils/printRouting.ts`
+- `package.json`
+- `package-lock.json`
+- `public/version.json`
+- `.firebase/hosting.ZGlzdA.cache`
+
+---
+
+## Update sessie 22 juni 2026 (Printerrechten/operator fixes + globale auto-print)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Sidebar printertoegang losgekoppeld en beveiligd**
+- Nieuwe permissiemodule toegevoegd voor printertoegang (`printer_center` met feature `printer_queue_access`) in gebruikersbeheer.
+- Sidebar toont Printers nu op basis van expliciete printerrechten, met fallback voor bestaande `digital_planning` toewijzingen.
+- Route-guard toegevoegd op `/printer-queue`, zodat directe URL-toegang zonder rechten wordt geblokkeerd.
+
+**2. Print Station Wizard voor operators hersteld**
+- Wizardknop zichtbaar gemaakt zonder WebUSB-afhankelijkheid.
+- Station-selectie in wizard robuuster gemaakt met fallback op beschikbare stations, ook bij late data-initialisatie.
+- Afdelingsscope voor operators verbeterd met tolerante department-matching (o.a. `Afdeling Fittings` vs `Productie - Fittings`) en ondersteuning voor `title` in factory departments.
+
+**3. Operator printflow verbeterd**
+- Queue-herprint toegestaan voor rol `operator` (zonder delete-rechten open te zetten).
+- Regel toegevoegd: `ELB 125 90 graden` print automatisch **2x** (zowel direct USB als queued labels via quantity/payload).
+
+**4. Globale auto-print opgelost (app-breed)**
+- `PrintQueueAutoProcessor` staat nu altijd aan voor ingelogde gebruikers (niet meer uit op de Print Stations pagina).
+- Processor gebruikt nu ook station→printer bindings uit localStorage om juiste printer te resolven zonder dat de Print Stations pagina eerst geopend hoeft te worden.
+
+**5. Releases en deploys in deze sessie**
+- Meerdere patch bumps en deploys uitgevoerd; laatste live versie staat op **0.1.34**.
+- Hosting deploys succesvol afgerond op project `future-factory-377ef`.
+
+**Belangrijkste aangepaste bestanden in deze sessie:**
+- `src/hooks/useHasFeature.ts`
+- `src/components/Sidebar.tsx`
+- `src/components/admin/AdminUsersView.tsx`
+- `src/App.tsx`
+- `src/components/printer/PrintQueueAdminView.tsx`
+- `src/components/printer/PrintQueueAutoProcessor.tsx`
+- `package.json`
+- `package-lock.json`
+- `public/version.json`
+- `.firebase/hosting.ZGlzdA.cache`
+- `docs/CONVERSATION_SUMMARY.md`
+
+---
+
+## Update sessie 19 juni 2026 (LN To do fix, naharding-aftrek, deploy en release)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Gereed voor LN: To do-teller gecorrigeerd op gewikkeld per order**
+- In de LN exportlogica is To do aangepast zodat reeds gewikkelde aantallen per order in mindering worden gebracht.
+- Voor de aftrek wordt nu robuuster gekeken naar meerdere bronnen (tracking-signalen, station-startcounters en order-produced), zodat orders met aantoonbaar gestart/gewikkeld werk niet onterecht op volledig To do blijven staan.
+
+**2. Naharding ook in mindering op To do**
+- To do wordt nu ook verminderd met aantallen die al de status naharden/oven hebben bereikt.
+- Hiermee sluit de teller aan op de operationele verwachting: stukken in naharding hoeven niet opnieuw als LN-boeking in To do te blijven staan.
+
+**3. Exporthistorie bevestiging**
+- LN exporthistorie blijft ingesteld op een bewaartermijn van 5 dagen (lokaal en in backend-query venster).
+
+**4. Deploys en versiebeheer**
+- Patch bump uitgevoerd naar 0.1.26.
+- Vervolgens volledige deployflow uitgevoerd (bump + build + hosting deploy), waardoor versie 0.1.27 live is gezet.
+- Hosting deploy succesvol afgerond op project `future-factory-377ef`.
+
+**5. Git commit en push**
+- Wijzigingen gecommit met release/fix inhoud voor LN To do en versie-updates.
+- Push succesvol naar `origin/FPiFF-June-rolout`.
+- Branchstatus na push: schoon en in sync met remote.
+
+**Aangepaste bestanden in deze sessie:**
+- `src/components/digitalplanning/ImportExportDashboard.tsx`
+- `package.json`
+- `package-lock.json`
+- `public/version.json`
+- `.firebase/hosting.ZGlzdA.cache`
+
+---
+
 ## Update sessie 21 juni 2026 (ISO/Security Hardening & Backups)
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
