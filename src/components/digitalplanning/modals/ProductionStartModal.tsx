@@ -424,9 +424,9 @@ const ProductionStartModal = ({
 
 
 
-      setLabelCount(String(Math.max(1, initialCount)));
+      setLabelCount(mode === "qc_steekproef" ? "1" : String(Math.max(1, initialCount)));
     }
-  }, [isOpen, stringCount, stationId, order, shouldUseFlangeLabelFlow, isBh12Station]);
+  }, [isOpen, stringCount, stationId, order, shouldUseFlangeLabelFlow, isBh12Station, mode]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -504,7 +504,7 @@ const ProductionStartModal = ({
     if (!isOpen || !isFlangeOrder) return;
     const cavityCount = Math.max(1, Number(flangeSeriesInfo?.cavityCount || 1));
     setStringCount((prev) => (String(prev || "") === "1" ? String(cavityCount) : prev));
-    if (mode === "auto") {
+    if (mode === "auto" || mode === "qc_steekproef") {
       setLabelCount("0");
     }
   }, [isOpen, mode, isFlangeOrder, flangeSeriesInfo?.cavityCount]);
@@ -765,9 +765,9 @@ const ProductionStartModal = ({
         }));
         setAssignedOperators(operators);
         if (operators.length === 1) {
-          setOperatorInput(operators[0].number);
+          // Auto-fill is handled by mode-watcher useEffect below
         } else {
-          setOperatorInput("");
+          // Auto-fill is handled by mode-watcher useEffect below
         }
       } catch (err: any) {
         console.error("Kon operators niet ophalen", err);
@@ -775,6 +775,14 @@ const ProductionStartModal = ({
     };
     fetchOccupancy();
   }, [isOpen, stationId]);
+
+  useEffect(() => {
+    if (mode === "qc_steekproef") {
+      setOperatorInput("");
+    } else if (assignedOperators.length === 1) {
+      setOperatorInput(assignedOperators[0].number);
+    }
+  }, [mode, assignedOperators]);
 
   // 1c. Printers ophalen
   useEffect(() => {
@@ -1653,6 +1661,7 @@ const ProductionStartModal = ({
           skipStartLabel: isFlangeOrder,
           lotNumbers: Array.isArray(lotBatchLots) && lotBatchLots.length > 0 ? lotBatchLots : undefined,
           batchCount,
+          isQcSteekproef: mode === "qc_steekproef",
         }
       );
       updateOperation(startOpId, "Klaar ✓");
@@ -1837,7 +1846,7 @@ const ProductionStartModal = ({
   }, [showPreviewPane, supportsStringLotBatch, previewStringCount, lotNumber]);
 
   const shouldShowStringLotPreview = showPreviewPane && supportsStringLotBatch && previewStringCount > 1;
-  const isCompactAutoLayout = mode === "auto" && !isFlangeOrder;
+  const isCompactAutoLayout = (mode === "auto" || mode === "qc_steekproef") && !isFlangeOrder;
 
   if (!isOpen || !order || location.pathname.includes("/login")) return null;
 
@@ -1849,7 +1858,7 @@ const ProductionStartModal = ({
           <div className="flex justify-between items-start mb-4">
             <div className="text-left">
               <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">
-                {t("productionStartModal.title", "Order starten")}
+                {mode === "qc_steekproef" ? "QC Steekproef" : t("productionStartModal.title", "Order starten")}
               </h2>
               <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 text-left italic">
                 {stationId}
@@ -1900,7 +1909,7 @@ const ProductionStartModal = ({
             {/* Operator Selection */}
             <div className="space-y-1.5">
               <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">
-                {t("productionStartModal.labels.operatorNumber", "Operator (nr)")}
+                {mode === "qc_steekproef" ? "QC medewerker (Nr)" : t("productionStartModal.labels.operatorNumber", "Operator (nr)")}
               </label>
               {assignedOperators.length > 1 ? (
                 <div className="relative">
@@ -1953,10 +1962,20 @@ const ProductionStartModal = ({
               >
                 <Keyboard size={12} /> Manueel
               </button>
+              <button
+                onClick={() => setMode("qc_steekproef")}
+                className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all ${
+                  mode === "qc_steekproef"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-slate-500"
+                }`}
+              >
+                <Activity size={12} /> QC Steekproef
+              </button>
             </div>
 
             {/* Lot invoer sectie */}
-            {mode === "auto" ? (
+            {(mode === "auto" || mode === "qc_steekproef") ? (
               <div className={`${isCompactAutoLayout ? "space-y-2" : "space-y-3"} animate-in slide-in-from-top-2 text-left`}>
                 <div className={`bg-slate-900 ${isCompactAutoLayout ? "p-3" : "p-4"} rounded-2xl text-center shadow-xl border border-white/5 relative overflow-hidden`}>
                   <div className="absolute top-0 right-0 p-3 opacity-5">
@@ -1973,7 +1992,8 @@ const ProductionStartModal = ({
                   </div>
                   {lotError && <p className="text-red-400 text-xs mt-2 font-bold">{lotError}</p>}
                 </div>
-                <div className={`${isCompactAutoLayout ? "space-y-0.5" : "space-y-1"} text-left`}>
+                {mode !== "qc_steekproef" && (
+                  <div className={`${isCompactAutoLayout ? "space-y-0.5" : "space-y-1"} text-left`}>
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2 block">
                     {t("productionStartModal.labels.totalQuantity", "Totaal aantal")}
                   </label>
@@ -1999,7 +2019,8 @@ const ProductionStartModal = ({
                     </p>
                   )}
                 </div>
-                {!isFlangeOrder && (
+                )}
+                {!isFlangeOrder && mode !== "qc_steekproef" && (
                   <div className={`${isCompactAutoLayout ? "space-y-0.5" : "space-y-1"} text-left`}>
                     <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2 block">
                       {t("productionStartModal.labels.labelsToPrint", "Aantal labels printen")}
@@ -2190,13 +2211,15 @@ const ProductionStartModal = ({
                 (!isManualMode && !canStartAuto)
               }
               className={`flex-[2] ${isCompactAutoLayout ? "py-3.5" : "py-5"} rounded-2xl font-black uppercase text-[10px] tracking-[0.15em] shadow-xl transition-all flex items-center justify-center gap-3 active:scale-95 ${
-                isManualMode && canStartManual
+                mode === "qc_steekproef"
+                  ? "bg-orange-500 text-white hover:bg-orange-400 shadow-orange-600/50"
+                  : isManualMode && canStartManual
                   ? "bg-emerald-600 text-white hover:bg-emerald-500 shadow-emerald-600/50 animate-pulse"
                   : "bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-50"
               }`}
             >
               {isCheckingLot || isStarting ? <Loader2 className="animate-spin" size={20} /> : <PlayCircle size={20} />} 
-              {isStarting ? t("productionStartModal.labels.starting") : (selectedOperatorName ? t("productionStartModal.labels.startWithOperator", { operator: operatorInput }) : t("productionStartModal.labels.startOrder"))}
+              {isStarting ? t("productionStartModal.labels.starting") : mode === "qc_steekproef" ? "Steekproef nemen" : (selectedOperatorName ? t("productionStartModal.labels.startWithOperator", { operator: operatorInput }) : t("productionStartModal.labels.startOrder"))}
             </button>
           </div>
         </div>

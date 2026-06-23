@@ -1538,7 +1538,11 @@ const PrintQueueAdminView = () => {
       setLoading(false);
     };
 
-    const rootQ = query(collection(db, getPathString(PATHS.PRINT_QUEUE)), orderBy('createdAt', 'desc'));
+    const rootQ = query(
+      collection(db, getPathString(PATHS.PRINT_QUEUE)),
+      orderBy('createdAt', 'desc'),
+      limit(300)
+    );
     const unsubscribeRoot = onSnapshot(rootQ, (snapshot) => {
       rootJobs = snapshot.docs.map(normalizeJob).filter((job): job is PrintJob => Boolean(job));
       mergeJobs();
@@ -1548,7 +1552,11 @@ const PrintQueueAdminView = () => {
       mergeJobs();
     });
 
-    const scopedQ = collectionGroup(db, 'items');
+    const scopedQ = query(
+      collectionGroup(db, 'items'),
+      where('_scopeType', '==', 'print_queue'),
+      limit(50)
+    );
     const unsubscribeScoped = onSnapshot(scopedQ, (snapshot) => {
       scopedJobs = snapshot.docs
         .filter((docSnap) => isScopedPrintQueuePath(docSnap.ref?.path))

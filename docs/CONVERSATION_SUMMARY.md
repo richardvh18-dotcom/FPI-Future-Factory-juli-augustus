@@ -1,3 +1,54 @@
+## Update sessie 23 juni 2026 (QC Steekproef Functionaliteit)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. QC Steekproef Tab & Flow**
+- Probleem: Er was behoefte aan een snelle manier om een order als "QC Steekproef" te starten, waarbij het lot direct de juiste status krijgt voor inspectie zonder extra handmatige klikken.
+- Fix: Een "QC Steekproef" modus toegevoegd aan de `ProductionStartModal` en `Terminal`.
+  - **Startscherm UI:** 
+    - Verbergt het "Totaal aantal" en "Aantal labels printen" veld.
+    - Drukt altijd hardcoded 1 label af.
+    - Operator-veld vraagt om "QC medewerker (Nr)" en vult niet meer automatisch de ingelogde stationsoperator in.
+    - Start-knop is oranje gekleurd en toont "Steekproef nemen".
+  - **Automatische Release:** Zodra het lot is gegenereerd en actief wordt in `Terminal`, popt de `ProductReleaseModal` automatisch op.
+  - **Standaard Status:** De release modal is vooringevuld met status "Afkeur" (`rejected`) en de afkeurreden "QC Steekproef" (`rejection.qcSample`).
+
+**Aangepaste bestanden in deze sessie:**
+- `src/components/digitalplanning/modals/ProductionStartModal.tsx`
+- `src/components/digitalplanning/Terminal.tsx`
+
+---
+
+## Update sessie 23 juni 2026 (Infor LN Demand Order UI & Print Queue Latency Fix)
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Infor LN Demand Order & Pegging Visualisatie**
+- Probleem: Alle orders met een `Demand Order` lieten standaard "SPOED: Spoolbouw" zien, ongeacht of het voor een klant, interne afdeling of magazijn was.
+- Fix: `TerminalPlanningView.tsx` uitgebreid met logica voor `Demand Order Type`:
+  - **Verkooporder / Sales Order:** Krijgt een rode "KLANTORDER" badge met een vrachtwagen-icoon en een expliciete waarschuwing in het detailvenster ("Vrachtwagen-Prioriteit").
+  - **Voorraad / Veiligheidsvoorraad (of leeg):** Krijgt een grijze "Voorraad" badge met een doos-icoon (Make-to-Stock, lage prioriteit).
+  - **Productieorder:** Krijgt een paarse "Interne Pegging" badge met een fabrieks-icoon (Pull-principe: afhankelijkheid tussen afdelingen).
+  - Terugval (fallback) blijft "Spoed: Spoolbouw" voor afwijkende types met een ingevulde Demand Order.
+
+**2. Print Queue Latency & UI Freezes Opgelost**
+- Probleem: De browser liep regelmatig vast en printen had flinke vertraging ("behoorlijke vertraging in op het moment dat iemand op start order drukt"). 
+- Root Cause:
+  - De achtergrondprocessor (`PrintQueueAutoProcessor`) downloadde constant de **volledige print-geschiedenis** (`orderBy('createdAt', 'desc')` zonder limit) én bevatte een ongebonden `collectionGroup('items')` query die de halve database opvroeg.
+  - De Admin View (`PrintQueueAdminView`) deed hetzelfde voor het inladen van de UI.
+- Fixes geïmplementeerd:
+  - In `PrintQueueAutoProcessor.tsx` zijn queries geoptimaliseerd met `where('status', '==', 'pending')`. Er worden nu alléén actieve prints gedownload (max enkele documenten) in plaats van duizenden oude jobs.
+  - In `PrintQueueAdminView.tsx` is een harde `limit(100)` toegevoegd aan de printgeschiedenis-query en een `limit(50)` met scope filter aan de scoped items query. 
+  - Resultaat: De frontend en achtergrondprocessen zijn weer razendsnel, zonder complexe multi-database-path architectuur. De laatste 100 prints zijn nog steeds netjes zichtbaar voor "Herprint" functionaliteit.
+
+**Aangepaste bestanden in deze sessie:**
+- `src/components/digitalplanning/terminal/TerminalPlanningView.tsx`
+- `src/components/printer/PrintQueueAutoProcessor.tsx`
+- `src/components/printer/PrintQueueAdminView.tsx`
+
+---
+
 ## Update sessie 23 juni 2026 (Label Count Fix & Deployment)
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)

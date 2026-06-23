@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, collectionGroup, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, collectionGroup, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { PATHS, getPathString } from '../../config/dbPaths';
 import { transitionPrintQueueJobStatus } from '../../services/planningSecurityService';
@@ -392,7 +392,10 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       setPrintJobs(merged);
     };
 
-    const rootQ = query(collection(db, getPathString(PATHS.PRINT_QUEUE)), orderBy('createdAt', 'desc'));
+    const rootQ = query(
+      collection(db, getPathString(PATHS.PRINT_QUEUE)),
+      where('status', '==', 'pending')
+    );
     const unsubscribeRoot = onSnapshot(
       rootQ,
       (snapshot) => {
@@ -406,7 +409,10 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       }
     );
 
-    const scopedQ = collectionGroup(db, 'items');
+    const scopedQ = query(
+      collectionGroup(db, 'items'),
+      where('status', '==', 'pending')
+    );
     const unsubscribeScoped = onSnapshot(
       scopedQ,
       (snapshot) => {
