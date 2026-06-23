@@ -592,11 +592,12 @@ const ProductionStartModal = ({
       const productDataForRules = processLabelData(order);
       const ruleOutput = evaluatePrintRules(productDataForRules, dynamicPrintRules);
 
+      if (ruleOutput.labelCount) {
+        setLabelCount(String(ruleOutput.labelCount));
+      }
+
       if (ruleOutput.templateIds && ruleOutput.templateIds.length > 0) {
         setSelectedTemplateIds(ruleOutput.templateIds);
-        if (ruleOutput.labelCount) {
-          setLabelCount(String(ruleOutput.labelCount));
-        }
         // Als er maar één template is, zet die ook als de 'hoofd' geselecteerde voor de preview
         if (ruleOutput.templateIds.length === 1) {
           setSelectedLabelId(ruleOutput.templateIds[0]);
