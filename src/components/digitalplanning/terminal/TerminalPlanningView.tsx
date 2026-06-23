@@ -19,6 +19,8 @@ import {
   Calendar,
   Keyboard,
   X,
+  Truck,
+  Package,
 } from "lucide-react";
 import { collection, getDocs, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../../../config/firebase";
@@ -180,6 +182,19 @@ const TerminalPlanningView = ({
 
   const getPriorityBadgeStyles = (order: AnyRecord) => {
     if (order?.demandOrder) {
+      const dType = String(order.demandOrderType || "").toLowerCase();
+      if (dType === "verkooporder" || dType === "sales order") {
+        return {
+          label: t("digitalplanning.terminal.demand_order_sales", "Klantorder"),
+          className: "bg-red-600 text-white border border-red-700 animate-pulse shadow-sm shadow-red-200",
+        };
+      }
+      if (dType === "productieorder" || dType === "production order") {
+        return {
+          label: <span className="flex items-center gap-1"><Factory size={10} /> {t("digitalplanning.terminal.demand_order_prod", "Interne Pegging")}</span>,
+          className: "bg-purple-600 text-white border border-purple-700 animate-pulse shadow-sm shadow-purple-200",
+        };
+      }
       return {
         label: t("digitalplanning.terminal.demand_order", "SPOED: Spoolbouw"),
         className: "bg-red-600 text-white border border-red-700 animate-pulse shadow-sm shadow-red-200",
@@ -255,6 +270,19 @@ const TerminalPlanningView = ({
       };
     }
 
+    return null;
+  };
+
+  const getStockBadge = (order: AnyRecord) => {
+    const dType = String(order?.demandOrderType || "").toLowerCase();
+    const isStock = !order?.demandOrder && (dType === "" || dType.includes("voorraad") || dType.includes("veiligheid"));
+    
+    if (isStock) {
+      return {
+        label: <span className="flex items-center gap-1"><Package size={10} /> {t("digitalplanning.terminal.stock_order", "Voorraad")}</span>,
+        className: "bg-slate-100 text-slate-500 border border-slate-200",
+      };
+    }
     return null;
   };
 
@@ -369,6 +397,7 @@ const TerminalPlanningView = ({
       const priorityLevel = getPriorityLevel(order);
       const typeTintClass = getOrderTileTintClass(order);
       const typeBadge = getOrderTypeBadge(order);
+      const stockBadge = getStockBadge(order);
       const priorityCardClass =
         (order.status === 'on_hold' || order.orderStatus === 'on_hold' || order.holdReason)
           ? "border-red-300 bg-red-50/60 opacity-60 grayscale-[30%] pointer-events-none"
@@ -479,6 +508,17 @@ const TerminalPlanningView = ({
                       {typeBadge.label}
                     </span>
                   )}
+                  {stockBadge && (
+                    <span className={`inline-block px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wide ${stockBadge.className}`}>
+                      {stockBadge.label}
+                    </span>
+                  )}
+                </div>
+              ) : stockBadge ? (
+                <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                  <span className={`inline-block px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wide ${stockBadge.className}`}>
+                    {stockBadge.label}
+                  </span>
                 </div>
               ) : null}
               {order.projectDesc && (
@@ -562,6 +602,9 @@ const TerminalPlanningView = ({
     : null;
   const selectedOrderTypeBadge = selectedOrder
     ? getOrderTypeBadge(selectedOrder)
+    : null;
+  const selectedOrderStockBadge = selectedOrder
+    ? getStockBadge(selectedOrder)
     : null;
 
   const activeSelectedOrderLots = React.useMemo(() => {
@@ -821,6 +864,11 @@ const TerminalPlanningView = ({
                         {selectedOrder.extraCode}
                       </span>
                     )}
+                    {selectedOrderStockBadge && (
+                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide ${selectedOrderStockBadge.className}`}>
+                        {selectedOrderStockBadge.label}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <StatusBadge status={selectedOrder.status} />
@@ -876,6 +924,58 @@ const TerminalPlanningView = ({
                 </div>
               </div>
             </div>
+
+            {/* Demand Order (Klantorder/Spoolbouw) waarschuwing */}
+            {(() => {
+              if (!selectedOrder.demandOrder) return null;
+              const dType = String(selectedOrder.demandOrderType || "").toLowerCase();
+              const isSalesOrder = dType === "verkooporder" || dType === "sales order";
+              const isProdOrder = dType === "productieorder" || dType === "production order";
+              
+              if (isSalesOrder) {
+                return (
+                  <div className="bg-red-100 rounded-[2rem] px-6 py-4 flex items-start gap-3 shadow-md shadow-red-200/50 border border-red-200 mt-6">
+                    <span className="text-red-600 mt-0.5 shrink-0 animate-bounce">
+                      <Truck size={20} />
+                    </span>
+                    <div>
+                      <p className="text-[9px] font-black text-red-600/80 uppercase tracking-widest mb-0.5">{t("terminalPlanning.demandOrderType", "Vrachtwagen-Prioriteit")}</p>
+                      <p className="text-sm font-black text-red-900 leading-snug">
+                        {t("terminalPlanning.demandOrderCustomer", "Let op: Product direct bestemd voor klantorder {{orderId}}", { orderId: selectedOrder.demandOrder })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+              if (isProdOrder) {
+                return (
+                  <div className="bg-purple-100 rounded-[2rem] px-6 py-4 flex items-start gap-3 shadow-md shadow-purple-200/50 border border-purple-200 mt-6">
+                    <span className="text-purple-600 mt-0.5 shrink-0 animate-pulse">
+                      <Factory size={20} />
+                    </span>
+                    <div>
+                      <p className="text-[9px] font-black text-purple-600/80 uppercase tracking-widest mb-0.5">{t("terminalPlanning.demandOrderType_Internal", "Interne Afhankelijkheid")}</p>
+                      <p className="text-sm font-black text-purple-900 leading-snug">
+                        {t("terminalPlanning.demandOrderInternal", "Let op: Spoolbouw wacht op dit onderdeel voor order {{orderId}}", { orderId: selectedOrder.demandOrder })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div className="bg-red-100 rounded-[2rem] px-6 py-4 flex items-start gap-3 shadow-md shadow-red-200/50 border border-red-200 mt-6">
+                  <span className="text-red-600 mt-0.5 shrink-0 animate-pulse">
+                    <AlertCircle size={20} />
+                  </span>
+                  <div>
+                    <p className="text-[9px] font-black text-red-600/80 uppercase tracking-widest mb-0.5">{t("terminalPlanning.demandOrderType_Spoolbouw", "Spoed: Spoolbouw")}</p>
+                    <p className="text-sm font-black text-red-900 leading-snug">
+                      {t("terminalPlanning.demandOrderSpoolbouw", "Let op: Dit product is direct bestemd voor Spoolbouw order {{orderId}}", { orderId: selectedOrder.demandOrder })}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* PO Text - direct onder de zwarte header, alleen tonen als aanwezig */}
             {(() => {

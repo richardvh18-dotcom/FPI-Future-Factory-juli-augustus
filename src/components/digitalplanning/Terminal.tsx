@@ -175,6 +175,9 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
   const [viewingProduct, setViewingProduct] = useState<TrackedProductDoc | null>(null);
   const [showRepairModal, setShowRepairModal] = useState(false);
   const [itemToRepair, setItemToRepair] = useState<TrackedProductDoc | null>(null);
+  const [pendingQcSteekproefLot, setPendingQcSteekproefLot] = useState<string | null>(null);
+  const [releaseDefaultStatus, setReleaseDefaultStatus] = useState<string | undefined>(undefined);
+  const [releaseDefaultReasons, setReleaseDefaultReasons] = useState<string[] | undefined>(undefined);
 
   // Scan functionaliteit voor wikkelen tab
   const [scanInput, setScanInput] = useState("");
@@ -1118,6 +1121,10 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
         ? startResult.createdLots
         : [startResult?.firstLot || startLot].filter(Boolean);
 
+      if (startOptions?.isQcSteekproef && createdLots.length > 0) {
+        setPendingQcSteekproefLot(createdLots[0]);
+      }
+
       void logActivity(
         user?.uid || "system",
         "ORDER_RELEASE",
@@ -1132,6 +1139,18 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       throw err;
     }
   };
+
+  useEffect(() => {
+    if (pendingQcSteekproefLot && allTracked && allTracked.length > 0) {
+      const foundProduct = allTracked.find((p) => p.lotNumber === pendingQcSteekproefLot);
+      if (foundProduct) {
+        setProductToRelease(foundProduct as TrackedProductDoc);
+        setReleaseDefaultStatus("rejected");
+        setReleaseDefaultReasons(["rejection.qcSample"]);
+        setPendingQcSteekproefLot(null);
+      }
+    }
+  }, [allTracked, pendingQcSteekproefLot]);
 
   const handleRepair = (item: TrackedProductDoc) => {
     setItemToRepair(item);
@@ -1422,10 +1441,14 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
             isOpen={true} product={productToRelease}
           bulkProducts={bulkProductsToRelease}
             autoApproveTrigger={releaseAutoApproveToken}
+            defaultStatus={releaseDefaultStatus}
+            defaultReasons={releaseDefaultReasons}
             onClose={() => {
               setProductToRelease(null);
               setBulkProductsToRelease([]);
               setSelectedTrackedId(null);
+              setReleaseDefaultStatus(undefined);
+              setReleaseDefaultReasons(undefined);
             }}
             appId={appId || undefined}
           />
