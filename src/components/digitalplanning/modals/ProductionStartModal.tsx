@@ -1476,7 +1476,9 @@ const ProductionStartModal = ({
       const operatorForcedLabels = !isFlangeOrder && typeof matchedOperatorPrintRule?.labelCount === "number" && matchedOperatorPrintRule.labelCount > 0
         ? matchedOperatorPrintRule.labelCount
         : null;
-      const bh18ForcedLabels = operatorForcedLabels === null && isBh18Station(stationId) && getOrderNominalDiameter(order) > 200 ? 2 : null;
+      // Previously BH18 station forced 2 labels for large diameters. Remove hardcoded enforcement
+      // so label counts are driven by operator settings and admin label rules.
+      const bh18ForcedLabels = null;
       const labelsToPrint = operatorForcedLabels ?? bh18ForcedLabels ?? requestedLabelsToPrint;
       const normalizedRunStationId = String(stationId || "").toUpperCase();
       const shouldPrintStringLotBatch =
