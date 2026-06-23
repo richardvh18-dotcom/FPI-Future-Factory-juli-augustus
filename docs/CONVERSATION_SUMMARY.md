@@ -1,3 +1,33 @@
+## Update sessie 23 juni 2026 (Label Count Fix & Deployment)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. ProductionStartModal Label Count Fix**
+- Probleem: De `ProductionStartModal` negeerde `labelCount` uit dynamische Admin Label Print Regels, tenzij `templateIds` ook aanwezig waren.
+- Root Cause: De regel-output `labelCount` werd alleen toegepast als `templateIds` in de regel stonden.
+- Fix: In `src/components/digitalplanning/modals/ProductionStartModal.tsx` aangepast:
+  - `labelCount` wordt nu **altijd** toegepast wanneer `ruleOutput.labelCount` bestaat, onafhankelijk van `templateIds`.
+  - Dit zorgt ervoor dat matching label rules hun juiste label-aantallen activeren (bijv. 2 labels voor elbow rules).
+
+**2. Firebase CLI Authentication & Deployment**
+- Probleem: Firebase CLI login mislukt door browser-side auth fouten, gestrand terminal sessies.
+- Fix: Terminal schoongemaakt, Firebase login opnieuw uitgevoerd met `firebase login --no-localhost`.
+- Autorisatie: Gebruiker voerde Google auth code in → succesvol ingelogd als `richardvh18@gmail.com`.
+- Deployment: `npm run deploy` succesvol:
+  - Build voltooid (22.13s)
+  - Versie bumped: `0.1.38 -> 0.1.39`
+  - 96 files geüpload naar Firebase Hosting
+  - Hosting URL: `https://future-factory-377ef.web.app`
+
+**Aangepaste bestanden:**
+- `src/components/digitalplanning/modals/ProductionStartModal.tsx`
+
+**Git status:**
+- Wijzigingen klaar voor commit en push naar `FPiFF-June-rolout`
+
+---
+
 ## Update sessie 23 juni 2026 (USB Printer Restore & Reconnection Logic)
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)

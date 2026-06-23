@@ -22,6 +22,7 @@ interface BackgroundTaskStore {
     tasks: BackgroundTask[];
     dismissedTaskIds: string[];
     setTasks: (tasks: BackgroundTask[]) => void;
+    setDismissedTaskIds: (taskIds: string[]) => void;
     dismissTask: (taskId: string) => void;
     downloadTaskResult: (task: BackgroundTask) => void;
 }
@@ -41,13 +42,43 @@ const b64toBlob = (b64Data: string, contentType = '', sliceSize = 512) => {
     return new Blob(byteArrays, { type: contentType });
 };
 
+const getDismissedTaskStorageKey = (userId: string) => `background_task_dismissed_task_ids_${userId}`;
+
+const loadDismissedTaskIds = (userId: string): string[] => {
+    if (typeof window === 'undefined') return [];
+    try {
+        const raw = window.localStorage.getItem(getDismissedTaskStorageKey(userId));
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter((item) => typeof item === 'string');
+    } catch {
+        return [];
+    }
+};
+
+const saveDismissedTaskIds = (userId: string, taskIds: string[]) => {
+    if (typeof window === 'undefined') return;
+    try {
+        window.localStorage.setItem(getDismissedTaskStorageKey(userId), JSON.stringify(taskIds));
+    } catch {
+        // ignore localStorage write failures
+    }
+};
+
 export const useBackgroundTaskStore = create<BackgroundTaskStore>((set) => ({
     tasks: [],
     dismissedTaskIds: [],
     setTasks: (tasks) => set({ tasks }),
-    dismissTask: (taskId: string) => set((state) => ({
-        dismissedTaskIds: Array.from(new Set([...state.dismissedTaskIds, taskId]))
-    })),
+    setDismissedTaskIds: (taskIds) => set({ dismissedTaskIds: taskIds }),
+    dismissTask: (taskId: string) => set((state) => {
+        const nextIds = Array.from(new Set([...state.dismissedTaskIds, taskId]));
+        const currentUser = auth.currentUser;
+        if (currentUser?.uid) {
+            saveDismissedTaskIds(currentUser.uid, nextIds);
+        }
+        return { dismissedTaskIds: nextIds };
+    }),
     downloadTaskResult: (task: BackgroundTask) => {
         if (!task.result) return;
         
@@ -68,6 +99,7 @@ export const useBackgroundTasks = () => useBackgroundTaskStore();
 
 export const BackgroundTaskProvider = ({ children }: { children: React.ReactNode }) => {
     const setTasks = useBackgroundTaskStore((state) => state.setTasks);
+    const setDismissedTaskIds = useBackgroundTaskStore((state) => state.setDismissedTaskIds);
     const [currentUser, setCurrentUser] = useState(auth ? auth.currentUser : null);
     const [tasksEnabled, setTasksEnabled] = useState(true);
 
@@ -75,9 +107,20 @@ export const BackgroundTaskProvider = ({ children }: { children: React.ReactNode
         if (!auth) return;
         const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
             setCurrentUser(user);
+            if (!user) {
+                setTasks([]);
+                setDismissedTaskIds([]);
+            }
         });
         return () => unsubscribeAuth();
-    }, []);
+    }, [setTasks, setDismissedTaskIds]);
+
+    useEffect(() => {
+        if (currentUser?.uid) {
+            const loaded = loadDismissedTaskIds(currentUser.uid);
+            setDismissedTaskIds(loaded);
+        }
+    }, [currentUser, setDismissedTaskIds]);
 
     useEffect(() => {
         if (!currentUser || !db || !tasksEnabled) {

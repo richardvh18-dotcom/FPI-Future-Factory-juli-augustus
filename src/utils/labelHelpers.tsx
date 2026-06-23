@@ -227,6 +227,14 @@ const parseConnections = (text: string): string => {
   return "";
 };
 
+const normalizeConnectionLine = (text: string): string =>
+  String(text || "")
+    .toUpperCase()
+    .trim()
+    .replace(/\//g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/^(TB|CB|FL|AM|AB|CS|CF|FB|LB|SB)\1$/, "$1-$1");
+
 // Bepaalt productnaam + graden (voor elbows)
 const parseProductType = (text: string): string => {
   const upper = text.toUpperCase();
@@ -444,6 +452,18 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
     if (specs?.connection) {
       connectionLine = String(specs.connection);
     }
+  }
+
+  connectionLine = normalizeConnectionLine(connectionLine);
+  const isSpecialElbow =
+    productType.startsWith("ELBOW") && /^(AB-AB|SB-SB)$/.test(connectionLine);
+
+  if (isSpecialElbow) {
+    productType = "ELBOW 45°";
+  }
+
+  if (connectionLine === "AB-AB") {
+    connectionLine = `${connectionLine} ADJUSTING`;
   }
 
   // 4. Bepaal Afmetingen
