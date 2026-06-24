@@ -1,6 +1,7 @@
 {
   "projects": {
-    "Future-Factory": "future-factory-377ef"
+    "default": "future-factory-377ef",
+    "staging": "future-factory-test"
   },
   "targets": {},
   "etags": {}

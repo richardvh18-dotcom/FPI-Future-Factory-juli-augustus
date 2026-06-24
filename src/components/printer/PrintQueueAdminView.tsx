@@ -1555,7 +1555,8 @@ const PrintQueueAdminView = () => {
     const scopedQ = query(
       collectionGroup(db, 'items'),
       where('_scopeType', '==', 'print_queue'),
-      limit(50)
+      orderBy('createdAt', 'desc'),
+      limit(200)
     );
     const unsubscribeScoped = onSnapshot(scopedQ, (snapshot) => {
       scopedJobs = snapshot.docs

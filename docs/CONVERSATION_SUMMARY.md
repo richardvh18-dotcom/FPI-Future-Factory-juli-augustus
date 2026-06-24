@@ -1,3 +1,35 @@
+## Update sessie 24 juni 2026 (Inrichting 2e Firebase Project & Sync-Script)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Multi-Environment Firebase Setup (Productie vs. Test/Staging)**
+- **Doel:** Mogelijkheid bieden om met een 2e Firebase project (`future-factory-test`) te testen en makkelijk te schakelen tussen omgevingen.
+- **Configuratie:**
+  - `.env.production` aangemaakt met de live productieomgeving-gegevens.
+  - `.env.development` aangemaakt met de testomgeving-gegevens (project ID `future-factory-test` en bijbehorende credentials).
+  - `.firebaserc` bijgewerkt met project-aliassen (`default` voor productie en `staging` voor test).
+  - `package.json` bijgewerkt met specifieke dev/build/deploy scripts voor test en productie (bijv. `npm run dev:test`, `npm run dev:prod`, `npm run deploy:test`).
+
+**2. Firestore Database Synchronisatie-Script**
+- **Fix/Tooling:** `scripts/sync-users.cjs` aangemaakt/geoptimaliseerd om Firestore collecties over te dragen van het ene Firebase-project naar het andere.
+- **Functionaliteit:**
+  - Standaard modus: Kopiëren van gebruikersgerelateerde collecties (`Accounts`, `Personnel`, `NFCTagMappings`, `AccountRequests`).
+  - Volledige database-modus: Met de `--all` vlag kopieert het script recursief alle root-collecties en subcollecties van de bron naar de bestemming.
+
+**3. Walkthrough Handleiding**
+- Handboek `walkthrough.md` gemaakt in de artifacts met instructies voor het configureren van de testomgeving, het exporteren/importeren van Authentication-accounts via de CLI, en het draaien van het Firestore synchronisatiescript.
+
+**Aangepaste bestanden in deze sessie:**
+- `.env.production` [NEW]
+- `.env.development` [NEW]
+- `package.json` [MODIFY]
+- `.firebaserc` [MODIFY]
+- `scripts/sync-users.cjs` [NEW]
+- `docs/CONVERSATION_SUMMARY.md` [MODIFY]
+
+---
+
 ## Update sessie 24 juni 2026 (Tijdelijke Uitschakeling Voorraad & Spoolbouw Badges)
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)

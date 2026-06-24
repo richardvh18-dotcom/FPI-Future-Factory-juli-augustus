@@ -122,7 +122,7 @@ export const PATHS: Record<string, string[]> = {
   TOOLING_MOLDS: [BASE, "settings", "tooling_molds"],
   
   // --- PRINTER SERVICE ---
-  PRINT_QUEUE: withPathMode([BASE, "production", "print_queue"]),
+  PRINT_QUEUE: [BASE, "production", "print_queue"],
   PRINT_LISTENERS: [BASE, "settings", "print_listeners"],
   COUNTERS: withPathMode([BASE, "production", "counters"]),
   ACTIVE_PRODUCTION: withPathMode([BASE, "production", "active"]),
