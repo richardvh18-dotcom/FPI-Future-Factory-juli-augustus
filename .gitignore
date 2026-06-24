@@ -12,3 +12,8 @@ functions/lib
 test-results/
 playwright-report/
 playwright/.cache/
+
+# Firebase Service Accounts
+*.sa.json
+*-sa.json
+sa.json

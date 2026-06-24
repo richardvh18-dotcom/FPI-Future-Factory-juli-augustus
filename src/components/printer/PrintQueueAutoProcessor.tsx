@@ -100,6 +100,9 @@ const getPrinterAllowedStationKeys = (printer: PrinterConfig | null | undefined)
 
 const getJobStationKeys = (job: PrintJob): string[] => {
   const metadata = (job?.metadata || {}) as AnyRecord;
+  const refPath = String((job as AnyRecord)?.__refPath || '');
+  const pathMatch = refPath.match(/\/machines\/([^/]+)\/items\//i);
+  const stationFromPath = pathMatch?.[1] || '';
   const candidates = [
     metadata.stationId,
     metadata.station,
@@ -108,9 +111,11 @@ const getJobStationKeys = (job: PrintJob): string[] => {
     metadata.targetStationId,
     metadata.machineId,
     metadata.machine,
+    job.machineId,
     job.stationId,
     job.currentStation,
     job.machine,
+    stationFromPath,
   ];
 
   return Array.from(new Set(
@@ -209,12 +214,12 @@ const getJobQuantity = (job: PrintJob): number => {
   return match ? Math.max(1, Number(match[1])) : 1;
 };
 
-const normalizeJob = (docSnap: { id: string; data: () => unknown }): PrintJob | null => {
+const normalizeJob = (docSnap: any): PrintJob | null => {
   const data = (docSnap.data() || {}) as AnyRecord;
   const metadata = (data.metadata || {}) as AnyRecord;
   const isQueueJob = Boolean(data.printerId || data.zpl || data.status || metadata.description);
   if (!isQueueJob) return null;
-  return { id: docSnap.id, ...data } as PrintJob;
+  return { id: docSnap.id, ...data, __refPath: String(docSnap.ref?.path || '') } as PrintJob;
 };
 
 const getCurrentPrinterId = (printers: PrinterConfig[], usbDevice: USBDevice | null): string | null => {
@@ -254,7 +259,10 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
   const [printJobs, setPrintJobs] = useState<PrintJob[]>([]);
   const isProcessingRef = useRef(false);
 
+  console.log('[PrintQueueAutoProcessor] Rendered:', { enabled, printersCount: printers.length, printJobsCount: printJobs.length });
+
   useEffect(() => {
+    console.log('[PrintQueueAutoProcessor] USB Connection hook, enabled:', enabled, 'directUsbSupported:', isUsbDirectSupported());
     if (!enabled || !isUsbDirectSupported() || typeof navigator === 'undefined') {
       setUsbDevice(null);
       return;
@@ -268,20 +276,33 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       savedProduct?: string | null,
       savedPrinterId?: string
     ): boolean => {
+      console.log('[PrintQueueAutoProcessor] matchesSavedUsbDevice checking device:', device.productName, {
+        deviceVendor: device.vendorId,
+        deviceProduct: device.productId,
+        savedVendor,
+        savedProduct,
+        savedPrinterId,
+      });
+
       if (savedVendor && savedProduct) {
-        return (
+        const matches = (
           device.vendorId === parseInt(savedVendor, 10) &&
           device.productId === parseInt(savedProduct, 10)
         );
+        console.log('[PrintQueueAutoProcessor] matchesSavedUsbDevice vendor/product match:', matches);
+        return matches;
       }
 
       if (savedPrinterId) {
         const savedPrinter = printers.find((printer) => printer.id === savedPrinterId);
+        console.log('[PrintQueueAutoProcessor] matchesSavedUsbDevice savedPrinter search result:', savedPrinter);
         if (savedPrinter?.vendorId !== undefined && savedPrinter?.productId !== undefined) {
-          return (
+          const matches = (
             Number(savedPrinter.vendorId) === device.vendorId &&
             Number(savedPrinter.productId) === device.productId
           );
+          console.log('[PrintQueueAutoProcessor] matchesSavedUsbDevice savedPrinter vendor/product match:', matches);
+          return matches;
         }
       }
 
@@ -292,9 +313,15 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
       const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
       const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
+      console.log('[PrintQueueAutoProcessor] restoreUsbConnection started. LocalStorage keys:', {
+        savedVendor,
+        savedProduct,
+        savedPrinterId,
+      });
 
       try {
         const devices = await navigator.usb.getDevices();
+        console.log('[PrintQueueAutoProcessor] restoreUsbConnection got authorized devices:', devices.map(d => ({ name: d.productName, vendorId: d.vendorId, productId: d.productId })));
         if (cancelled) return;
 
         const match = devices.find((device) =>
@@ -302,21 +329,25 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
         );
 
         if (match) {
+          console.log('[PrintQueueAutoProcessor] restoreUsbConnection match found:', match.productName);
           setUsbDevice(match);
           return;
         }
 
         if (!savedVendor && !savedProduct && !savedPrinterId && devices.length === 1) {
+          console.log('[PrintQueueAutoProcessor] restoreUsbConnection default to single authorized device:', devices[0].productName);
           setUsbDevice(devices[0]);
           return;
         }
+        console.log('[PrintQueueAutoProcessor] restoreUsbConnection no match found among devices.');
       } catch (error) {
         console.warn('[PrintQueueAutoProcessor] USB herstel mislukt:', error);
       }
     };
 
-    const handleUsbConnect = (event: USBConnectionEvent | Event) => {
-      const device = (event as USBConnectionEvent).device || (event as any).device;
+    const handleUsbConnect = (event: any) => {
+      const device = event.device || (event as any).device;
+      console.log('[PrintQueueAutoProcessor] handleUsbConnect event for device:', device?.productName);
       if (!device) return;
 
       const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
@@ -324,34 +355,42 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
 
       if (matchesSavedUsbDevice(device, savedVendor, savedProduct, savedPrinterId)) {
+        console.log('[PrintQueueAutoProcessor] handleUsbConnect matched and set device:', device.productName);
         setUsbDevice(device);
       }
     };
 
-    const handleUsbDisconnect = (event: USBConnectionEvent | Event) => {
-      const device = (event as USBConnectionEvent).device || (event as any).device;
+    const handleUsbDisconnect = (event: any) => {
+      const device = event.device || (event as any).device;
+      console.log('[PrintQueueAutoProcessor] handleUsbDisconnect event for device:', device?.productName);
       if (!device || !usbDevice) return;
       if (
         device.vendorId === usbDevice.vendorId &&
         device.productId === usbDevice.productId &&
         String(device.serialNumber || '').trim() === String(usbDevice.serialNumber || '').trim()
       ) {
+        console.log('[PrintQueueAutoProcessor] handleUsbDisconnect matched current active device, setting to null');
         setUsbDevice(null);
       }
     };
 
     void restoreUsbConnection();
-    navigator.usb.addEventListener('connect', handleUsbConnect as EventListener);
-    navigator.usb.addEventListener('disconnect', handleUsbDisconnect as EventListener);
+    if (typeof navigator !== 'undefined' && 'usb' in navigator && (navigator.usb as any).addEventListener) {
+      (navigator.usb as any).addEventListener('connect', handleUsbConnect);
+      (navigator.usb as any).addEventListener('disconnect', handleUsbDisconnect);
+    }
 
     return () => {
       cancelled = true;
-      navigator.usb.removeEventListener('connect', handleUsbConnect as EventListener);
-      navigator.usb.removeEventListener('disconnect', handleUsbDisconnect as EventListener);
+      if (typeof navigator !== 'undefined' && 'usb' in navigator && (navigator.usb as any).removeEventListener) {
+        (navigator.usb as any).removeEventListener('connect', handleUsbConnect);
+        (navigator.usb as any).removeEventListener('disconnect', handleUsbDisconnect);
+      }
     };
   }, [enabled, printers]);
 
   useEffect(() => {
+    console.log('[PrintQueueAutoProcessor] Printers listener hook, enabled:', enabled);
     if (!enabled) {
       setPrinters([]);
       return () => {};
@@ -362,11 +401,13 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
         id: docSnap.id,
         ...(docSnap.data() as AnyRecord),
       })) as PrinterConfig[];
+      console.log('[PrintQueueAutoProcessor] Printers updated, count:', mapped.length);
       setPrinters(mapped);
     });
   }, [enabled]);
 
   useEffect(() => {
+    console.log('[PrintQueueAutoProcessor] printJobs listener hook, enabled:', enabled);
     if (!enabled) {
       setPrintJobs([]);
       return () => {};
@@ -394,6 +435,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       const merged = Array.from(byId.values()).sort(
         (a, b) => tsToMillis(b.createdAt) - tsToMillis(a.createdAt)
       );
+      console.log('[PrintQueueAutoProcessor] mergeJobs total merged jobs:', merged.length);
       setPrintJobs(merged);
     };
 
@@ -404,6 +446,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
     const unsubscribeRoot = onSnapshot(
       rootQ,
       (snapshot) => {
+        console.log('[PrintQueueAutoProcessor] rootQ snapshot pending count:', snapshot.size);
         rootJobs = snapshot.docs.map((docSnap) => normalizeJob(docSnap)).filter((job): job is PrintJob => Boolean(job));
         mergeJobs();
       },
@@ -421,10 +464,23 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
     const unsubscribeScoped = onSnapshot(
       scopedQ,
       (snapshot) => {
+        console.log('[PrintQueueAutoProcessor] scopedQ snapshot pending count:', snapshot.size);
         scopedJobs = snapshot.docs
-          .filter((docSnap) => isScopedPrintQueuePath(docSnap.ref.path))
+          .filter((docSnap) => {
+            const matches = isScopedPrintQueuePath(docSnap.ref.path);
+            if (!matches) {
+              console.log('[PrintQueueAutoProcessor] Scoped path mismatch skipped:', docSnap.ref.path);
+            }
+            return matches;
+          })
           .map((docSnap) => normalizeJob(docSnap))
-          .filter((job): job is PrintJob => Boolean(job) && String((job as PrintJob)._scopeType || 'print_queue').trim() === 'print_queue');
+          .filter((job): job is PrintJob => {
+            const isValid = Boolean(job) && String((job as PrintJob)._scopeType || 'print_queue').trim() === 'print_queue';
+            if (!isValid && job) {
+              console.log('[PrintQueueAutoProcessor] Job scopeType mismatch skipped:', job.id, job._scopeType);
+            }
+            return isValid;
+          });
         mergeJobs();
       },
       (error) => {
@@ -440,10 +496,11 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
     };
   }, [enabled]);
 
-  const currentPrinterId = useMemo(
-    () => getCurrentPrinterId(printers, usbDevice),
-    [printers, usbDevice]
-  );
+  const currentPrinterId = useMemo(() => {
+    const id = getCurrentPrinterId(printers, usbDevice);
+    console.log('[PrintQueueAutoProcessor] Resolved currentPrinterId:', id);
+    return id;
+  }, [printers, usbDevice]);
 
   useEffect(() => {
     if (!currentPrinterId) return;
@@ -456,13 +513,27 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
   );
 
   useEffect(() => {
-    if (!enabled || !usbDevice || !currentPrinterId || isProcessingRef.current) return;
+    console.log('[PrintQueueAutoProcessor] processQueue check triggered. State:', {
+      enabled,
+      hasUsbDevice: !!usbDevice,
+      usbDeviceName: usbDevice?.productName,
+      currentPrinterId,
+      currentPrinterName: currentPrinter?.name,
+      isProcessing: isProcessingRef.current,
+      printJobsCount: printJobs.length,
+    });
+
+    if (!enabled || !usbDevice || !currentPrinterId || isProcessingRef.current) {
+      console.log('[PrintQueueAutoProcessor] processQueue check rejected: early return conditions met');
+      return;
+    }
 
     const pendingJobs = printJobs.filter((job) => {
       if (job.status !== 'pending') return false;
       return job.printerId === currentPrinterId;
     }).sort((a, b) => tsToMillis(a.createdAt) - tsToMillis(b.createdAt));
 
+    console.log('[PrintQueueAutoProcessor] pendingJobs matched for active printer:', pendingJobs.map(j => ({ id: j.id, desc: j.metadata?.description || j.description })));
     if (pendingJobs.length === 0) return;
 
     const processQueue = async () => {
@@ -471,11 +542,11 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
         for (const job of pendingJobs) {
           const routingViolation = getPrinterRoutingViolation(job, currentPrinter);
           if (routingViolation) {
-            // Skip jobs that belong to another station/printer routing target.
             console.warn(`[PrintQueueAutoProcessor] ${routingViolation} jobId=${job.id}`);
             continue;
           }
 
+          console.log('[PrintQueueAutoProcessor] Starting print processing for job:', job.id);
           try {
             await transitionPrintQueueJobStatus({
               jobId: job.id,
@@ -484,6 +555,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             });
           } catch (error) {
             if (isInvalidPrintQueueTransitionError(error)) {
+              console.log('[PrintQueueAutoProcessor] Transition invalid (already claimed by another processor):', job.id);
               continue;
             }
             throw error;
@@ -500,7 +572,10 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             const shouldCutAtEnd = hasBatchSequence ? batchSeqIndex === batchSeqTotal : true;
             const basePayload = normalizeQueuePrintPayload(content, getJobQuantity(job), isPreBatchedJob);
             const payload = enforceCutModeOnBatchPayload(basePayload, shouldCutAtEnd, isPreBatchedJob);
+            
+            console.log('[PrintQueueAutoProcessor] Sending ZPL string to USB device...');
             await printRawUsbToDevice({ device: usbDevice, content: payload });
+            console.log('[PrintQueueAutoProcessor] USB output succeeded for job:', job.id);
 
             await transitionPrintQueueJobStatus({
               jobId: job.id,
@@ -509,6 +584,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             });
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            console.error('[PrintQueueAutoProcessor] Print failure for job:', job.id, message);
             try {
               await transitionPrintQueueJobStatus({
                 jobId: job.id,

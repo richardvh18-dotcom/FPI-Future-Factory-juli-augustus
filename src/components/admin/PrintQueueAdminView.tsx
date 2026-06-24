@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../../config/firebase';
-import { collection, collectionGroup, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, collectionGroup, onSnapshot, orderBy, query, where, limit } from 'firebase/firestore';
 import { PATHS } from '../../config/dbPaths';
 import { formatDistanceToNow } from 'date-fns';
 import { nl } from 'date-fns/locale';
@@ -114,19 +114,26 @@ const PrintQueueAdminView = () => {
     const unsubscribeRoot = onSnapshot(rootQ, (snapshot) => {
       rootJobs = snapshot.docs.map(normalizeJob).filter((job): job is PrintJob => Boolean(job));
       mergeJobs();
-    }, () => {
+    }, (error) => {
+      console.error('[PrintQueueAdminView] Root print queue query failed:', error);
       rootJobs = [];
       mergeJobs();
     });
 
-    const scopedQ = collectionGroup(db, 'items');
+    const scopedQ = query(
+      collectionGroup(db, 'items'),
+      where('_scopeType', '==', 'print_queue'),
+      orderBy('createdAt', 'desc'),
+      limit(200)
+    );
     const unsubscribeScoped = onSnapshot(scopedQ, (snapshot) => {
       scopedJobs = snapshot.docs
         .filter((docSnap) => isScopedPrintQueuePath(docSnap.ref.path))
         .map(normalizeJob)
-        .filter((job): job is PrintJob => Boolean(job) && String(job?._scopeType || 'print_queue').trim() === 'print_queue');
+        .filter((job): job is PrintJob => Boolean(job));
       mergeJobs();
-    }, () => {
+    }, (error) => {
+      console.error('[PrintQueueAdminView] Scoped print queue query failed:', error);
       scopedJobs = [];
       mergeJobs();
     });
