@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { X, FileSpreadsheet, FileText, Download, Info, CheckCircle2, Factory, CalendarRange, ListTodo, Search, Loader2 } from "lucide-react";
+import { X, FileSpreadsheet, FileText, Download, Info, CheckCircle2, Factory, CalendarRange, ListTodo, Search, Loader2, ClipboardCheck, List } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
@@ -57,11 +57,12 @@ export default function TeamleaderExportModal({
   preloadedTask,
 }: TeamleaderExportModalProps) {
   const { t } = useTranslation();
-  const [exportType, setExportType] = useState("planning"); // 'planning', 'lotnummers' of 'ln_compare'
+  const [exportType, setExportType] = useState("planning"); // 'planning', 'lotnummers' of 'lotnummer_controle'
   const [selectedMachine, setSelectedMachine] = useState("Alle machines");
   const [isRequestingExport, setIsRequestingExport] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const { tasks, downloadTaskResult } = useBackgroundTasks();
+  const [selectedWeek, setSelectedWeek] = useState(() => format(new Date(), "yyyy-'W'II"));
 
   // Planning Filters (Origineel)
   const [orderStatusFilter, setOrderStatusFilter] = useState("lopend");
@@ -72,7 +73,7 @@ export default function TeamleaderExportModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    if (["planning", "lotnummers"].includes(initialExportType)) {
+    if (["planning", "lotnummers", "lotnummer_controle"].includes(initialExportType)) {
       setExportType(initialExportType);
     } else {
       setExportType("planning");
@@ -354,12 +355,119 @@ export default function TeamleaderExportModal({
     });
   }, [activeProducts, selectedMachine]);
 
+  // 6b. Data Lotnummer Controle
+  const lotnummerControleData = useMemo(() => {
+    if (exportType !== "lotnummer_controle" || !selectedWeek) return [];
+    
+    const weekParts = selectedWeek.split("-W");
+    if (weekParts.length !== 2) return [];
+    const filterWeek = weekParts[1];
+
+    const isMatch = (product: any) => {
+      const lotStr = String(product.lotNumber || "").trim().toUpperCase();
+      
+      // 1. Probeer de week uit het lotnummer te halen (Formaat: 40YYWW..., QCYYWW..., of VQCYYWW...)
+      const match = lotStr.match(/^(40|QC|VQC)(\d{2})(\d{2})/);
+      if (match) {
+         const yy = match[2];
+         const ww = match[3];
+         
+         const [selYear, selWeek] = selectedWeek.split("-W");
+         
+         // Als we een geldig patroon hebben gevonden, is dat de enige waarheid voor de week
+         return (yy === selYear.slice(-2) && ww === selWeek);
+      }
+
+      // 2. Fallback naar echte aanmaakdatum (uitgiftedatum) als het patroon niet herkend wordt
+      if (product.createdAt) {
+         const d = safeToDate(product.createdAt);
+         if (d) {
+            return format(d, "yyyy-'W'II") === selectedWeek;
+         }
+      }
+      
+      // 3. Laatste fallback (minder accuraat)
+      if (product.updatedAt) {
+         const d = safeToDate(product.updatedAt);
+         if (d) {
+            return format(d, "yyyy-'W'II") === selectedWeek;
+         }
+      }
+
+      return false;
+    };
+
+    const weekProducts = allProducts.filter(p => isMatch(p));
+    
+    const sortedData = weekProducts.filter((p: any) => {
+      if (selectedMachine === "Alle machines") return true;
+      const m = String(p.originMachine || p.machine || p.currentStation || "").toLowerCase();
+      return m === selectedMachine.toLowerCase();
+    }).map((p: any) => ({
+      "Lotnummer": String(p.lotNumber || "Onbekend").trim(),
+      "Machine": String(p.originMachine || p.machine || p.currentStation || "Onbekend").trim(),
+      "Ordernummer": String(p.orderId || p.orderNumber || "Onbekend"),
+      "Status": String(p.status || p.currentStep || "Onbekend"),
+      "Aangemaakt op": safeFormatDate(p.createdAt || p.updatedAt, "dd-MM-yyyy HH:mm")
+    })).sort((a: any, b: any) => {
+      const locCompare = a.Machine.localeCompare(b.Machine);
+      if (locCompare !== 0) return locCompare;
+      
+      const numA = parseInt(a.Lotnummer, 10);
+      const numB = parseInt(b.Lotnummer, 10);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.Lotnummer.localeCompare(b.Lotnummer);
+    });
+
+    const result = [];
+    let prevLot: string | null = null;
+    let prevMachine: string | null = null;
+
+    const splitLot = (lot: string) => {
+        const match = lot.match(/^(.+?)(\d+)$/);
+        if (match) {
+            return { prefix: match[1], seq: parseInt(match[2], 10), seqStrLen: match[2].length };
+        }
+        return null;
+    };
+
+    for (const row of sortedData) {
+        if (prevMachine === row.Machine && prevLot) {
+            const prevParts = splitLot(prevLot);
+            const currParts = splitLot(row.Lotnummer);
+            
+            if (prevParts && currParts && prevParts.prefix === currParts.prefix) {
+                const diff = currParts.seq - prevParts.seq;
+                if (diff > 1 && diff <= 100) {
+                    for (let i = prevParts.seq + 1; i < currParts.seq; i++) {
+                        const missingLot = prevParts.prefix + String(i).padStart(prevParts.seqStrLen, '0');
+                        result.push({
+                            "Lotnummer": `⚠️ ONTBREEKT: ${missingLot}`,
+                            "Machine": row.Machine,
+                            "Ordernummer": "---",
+                            "Status": "GAT (HANDMATIG?)",
+                            "Aangemaakt op": "---",
+                            isGap: true
+                        });
+                    }
+                }
+            }
+        }
+        result.push(row);
+        prevLot = row.Lotnummer;
+        prevMachine = row.Machine;
+    }
+    
+    return result;
+  }, [allProducts, selectedWeek, selectedMachine, exportType]);
+
   // 7. Active Data Array
   const currentData = useMemo(() => {
     if (exportType === "planning") return planningExportData;
     if (exportType === "lotnummers") return lotnummerExportData;
+    if (exportType === "lotnummer_controle") return lotnummerControleData;
     return [];
-  }, [exportType, planningExportData, lotnummerExportData, allOrders, allProducts, selectedMachine]);
+  }, [exportType, planningExportData, lotnummerExportData, lotnummerControleData]);
 
   const handleExportCloud = async () => {
     setIsRequestingExport(true);
@@ -443,6 +551,24 @@ export default function TeamleaderExportModal({
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Lotnummers");
       XLSX.writeFile(wb, `Lotnummer_Export_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`);
+    } else if (exportType === "lotnummer_controle") {
+      const excelData: any[] = [];
+      let currentLoc: any = null;
+      lotnummerControleData.forEach((row: any) => {
+        const rowLoc = row.Machine;
+        if (currentLoc !== rowLoc) {
+          excelData.push({
+            'Lotnummer': `=== Machine: ${rowLoc} ===`,
+            'Machine': '', 'Ordernummer': '', 'Status': '', 'Aangemaakt op': ''
+          });
+          currentLoc = rowLoc;
+        }
+        excelData.push(row);
+      });
+      const ws = XLSX.utils.json_to_sheet(excelData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Verbruik");
+      XLSX.writeFile(wb, `Verbruik_Export_${selectedWeek}_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}.xlsx`);
     }
     onClose();
   };
@@ -490,7 +616,7 @@ export default function TeamleaderExportModal({
       });
 
       doc.save(`Planning_Export_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`);
-    } else {
+    } else if (exportType === "lotnummers") {
       doc.setFontSize(16);
       doc.text(`Actuele Lotnummer Lijst - Machine: ${selectedMachine}`, 14, 15);
       doc.setFontSize(10);
@@ -528,6 +654,46 @@ export default function TeamleaderExportModal({
       });
 
       doc.save(`Lotnummer_Export_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`);
+    } else if (exportType === "lotnummer_controle") {
+      doc.setFontSize(16);
+      doc.text(`Lotnummer Controle - ${selectedWeek} - ${selectedMachine}`, 14, 15);
+      doc.setFontSize(10);
+      doc.text(`Datum gegenereerd: ${format(new Date(), 'dd-MM-yyyy HH:mm')}`, 14, 22);
+
+      const tableData: any[] = [];
+      let currentLoc: any = null;
+      lotnummerControleData.forEach((row: any) => {
+        const rowLoc = row.Machine;
+        if (currentLoc !== rowLoc) {
+          tableData.push([
+            { content: `=== Machine: ${rowLoc} ===`, colSpan: 5, styles: { halign: 'center', fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: 'bold' } }
+          ]);
+          currentLoc = rowLoc;
+        }
+        
+        if (row.isGap) {
+          tableData.push([
+            { content: row.Lotnummer, styles: { textColor: [220, 38, 38], fontStyle: 'bold' } },
+            row.Machine,
+            row.Ordernummer,
+            { content: row.Status, styles: { textColor: [220, 38, 38], fontStyle: 'bold' } },
+            row["Aangemaakt op"]
+          ]);
+        } else {
+          tableData.push([row.Lotnummer, row.Machine, row.Ordernummer, row.Status, row["Aangemaakt op"]]);
+        }
+      });
+
+      (doc as any).autoTable({
+        startY: 28,
+        head: [['Lotnummer', 'Machine', 'Ordernummer', 'Status', 'Aangemaakt op']],
+        body: tableData,
+        theme: 'grid',
+        headStyles: { fillColor: [37, 99, 235], textColor: 255 },
+        styles: { fontSize: 9 }
+      });
+
+      doc.save(`Verbruik_Export_${selectedWeek}_${selectedMachine === 'Alle machines' ? 'Alle_Machines' : selectedMachine}.pdf`);
     }
 
     onClose();
@@ -537,10 +703,10 @@ export default function TeamleaderExportModal({
 
   return (
     <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 scale-100 animate-in zoom-in-95">
+      <div className="bg-white rounded-3xl shadow-2xl w-[95vw] max-w-5xl flex flex-col overflow-hidden border border-slate-100 scale-100 animate-in zoom-in-95 max-h-[90vh]">
         
         {/* Header */}
-        <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50/50">
+        <div className="flex justify-between items-center p-6 border-b border-slate-100 bg-slate-50/50 shrink-0">
           <h3 className="text-lg sm:text-xl font-black text-slate-800 flex items-center gap-3 uppercase italic tracking-tight">
             <Download size={20} className="text-blue-600" /> Export Module
           </h3>
@@ -549,152 +715,224 @@ export default function TeamleaderExportModal({
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
-          {/* Export Type Toggle */}
-          {!lockExportType && (
-            <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-2">
-              <button onClick={() => setExportType("planning")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'planning' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
-                <CalendarRange size={16} /> Planning
-              </button>
-              <button onClick={() => setExportType("lotnummers")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'lotnummers' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
-                <ListTodo size={16} /> Lotnummers
-              </button>
-            </div>
-          )}
-
-          {/* Filter Dropdown */}
-          <div>
-            <label className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">
-              <Factory size={14} /> {exportType === "lotnummers" ? "Selecteer Locatie" : "Selecteer Machine"}
-            </label>
-            <div className="relative">
-              <select value={selectedMachine} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedMachine(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors cursor-pointer appearance-none shadow-sm">
-                <option value="Alle machines">{exportType === "lotnummers" ? "Alle locaties" : "Alle machines"}</option>
-                {displayedMachines.map((m: string) => <option key={m} value={m}>{m}</option>)}
-              </select>
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">
-                ▼
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+          {/* Left Panel - Controls */}
+          <div className="p-6 space-y-6 w-full md:w-[26rem] shrink-0 border-r border-slate-100 overflow-y-auto">
+            {/* Export Type Toggle */}
+            {!lockExportType && (
+              <div className="flex bg-slate-100 p-1.5 rounded-2xl mb-2">
+                <button onClick={() => setExportType("planning")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'planning' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
+                  <CalendarRange size={16} /> Planning
+                </button>
+                <button onClick={() => setExportType("lotnummers")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'lotnummers' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
+                  <ListTodo size={16} /> Actueel
+                </button>
+                <button onClick={() => setExportType("lotnummer_controle")} className={`flex-1 py-3 text-[10px] sm:text-xs font-black uppercase tracking-widest rounded-xl transition-all flex justify-center items-center gap-2 ${exportType === 'lotnummer_controle' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>
+                  <ClipboardCheck size={16} /> Controle
+                </button>
               </div>
-            </div>
-          </div>
-
-          {/* Dynamic Content based on Type */}
-          {exportType === "planning" ? (
-            <div className="space-y-6 animate-in slide-in-from-left-2 duration-300">
-              <div>
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">{t('teamleaderExportModal.orderStatus', 'Order Status')}</label>
-                <div className="flex gap-2">
-                      <button onClick={() => setOrderStatusFilter("lopend")} className={`flex-1 py-3 text-xs font-bold rounded-xl border-2 transition-colors ${orderStatusFilter === "lopend" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('teamleaderExportModal.runningOrders', 'Lopende Orders')}</button>
-                      <button onClick={() => setOrderStatusFilter("gereed")} className={`flex-1 py-3 text-xs font-bold rounded-xl border-2 transition-colors ${orderStatusFilter === "gereed" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('teamleaderExportModal.fullyReady', 'Geheel Gereed')}</button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">{t('teamleaderExportModal.deliveryDateFilter', 'Leverdatum Filter')}</label>
-                <div className="flex gap-2 mb-3">
-                  <button onClick={() => setDateFilterType("all")} className={`flex-1 py-3 text-[10px] font-black tracking-widest uppercase rounded-xl border-2 transition-colors ${dateFilterType === "all" ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('common.all', 'Alles')}</button>
-                  <button onClick={() => setDateFilterType("single")} className={`flex-1 py-3 text-[10px] font-black tracking-widest uppercase rounded-xl border-2 transition-colors ${dateFilterType === "single" ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>1 Datum</button>
-                  <button onClick={() => setDateFilterType("range")} className={`flex-1 py-3 text-[10px] font-black tracking-widest uppercase rounded-xl border-2 transition-colors ${dateFilterType === "range" ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('common.period', 'Periode')}</button>
-                </div>
-                
-                {dateFilterType === "single" && (
-                  <input type="date" value={singleDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSingleDate(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
-                )}
-                
-                {dateFilterType === "range" && (
-                  <div className="flex gap-2 items-center">
-                    <input type="date" value={startDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)} className="flex-1 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
-                    <span className="text-sm font-black text-slate-300">-</span>
-                    <input type="date" value={endDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)} className="flex-1 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : exportType === "lotnummers" ? (
-            <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 flex gap-3 items-start animate-in slide-in-from-right-2 duration-300">
-              <Info className="text-blue-500 shrink-0 mt-0.5" size={20} />
-              <p className="text-xs text-blue-800 leading-relaxed font-medium">
-                {t('teamleaderExportModal.thisExportShows', 'Deze export toont de ')}<strong>{t('teamleaderExportModal.physicalShopfloorStock', 'fysieke werkvoorraad')}</strong>{t('teamleaderExportModal.onTheFloorDesc', ' op de vloer. Je ziet direct waar actieve lotnummers liggen en hoelang ze daar al verblijven. Vervangt de oude To Do lijst.')}
-              </p>
-            </div>
-          ) : null}
-
-          {/* Actieknoppen & Teller */}
-          <div className="pt-2 border-t border-slate-100">
-
-            {/* === VOORTGANGSSTATUS WANNEER CLOUD EXPORT LOOPT === */}
-            {activeTask ? (
-              <div className="flex flex-col gap-4">
-                {activeTask.status === 'processing' || activeTask.status === 'pending' ? (
-                  <div className="flex flex-col items-center gap-4 py-6 px-4 bg-blue-50 rounded-2xl border border-blue-200">
-                    <Loader2 className="animate-spin text-blue-500" size={40} />
-                    <div className="text-center">
-                      <p className="font-black text-blue-800 text-sm uppercase tracking-widest">{t('teamleaderExportModal.exportBeingCreated', 'Export wordt aangemaakt')}</p>
-                      <p className="text-xs text-blue-500 mt-1">{t('teamleaderExportModal.exportMayTakeTime', 'Dit kan even duren. Je kunt dit venster sluiten — we melden het als het klaar is.')}</p>
-                    </div>
-                    <button
-                      onClick={onClose}
-                      className="text-xs text-blue-400 hover:text-blue-600 underline"
-                    >
-                      Naar achtergrond sturen
-                    </button>
-                  </div>
-                ) : activeTask.status === 'completed' ? (
-                  <div className="flex flex-col items-center gap-4 py-6 px-4 bg-emerald-50 rounded-2xl border border-emerald-200">
-                    <CheckCircle2 className="text-emerald-500" size={40} />
-                    <div className="text-center">
-                      <p className="font-black text-emerald-800 text-sm uppercase tracking-widest">{t('teamleaderExportModal.exportReady', 'Export klaar!')}</p>
-                      <p className="text-xs text-emerald-600 mt-1">{activeTask.fileName || 'export.xlsx'}</p>
-                    </div>
-                    <button
-                      onClick={() => { downloadTaskResult(activeTask); onClose(); }}
-                      className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs rounded-2xl transition-all shadow-lg shadow-emerald-200 active:scale-95"
-                    >
-                      <Download size={18} /> Bestand downloaden
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center gap-4 py-6 px-4 bg-red-50 rounded-2xl border border-red-200">
-                    <p className="font-black text-red-700 text-sm uppercase tracking-widest">{t('teamleaderExportModal.exportFailed', 'Export mislukt')}</p>
-                    <p className="text-xs text-red-500">{activeTask.error || 'Onbekende fout'}</p>
-                    <button
-                      onClick={() => setActiveTaskId(null)}
-                      className="text-xs text-red-400 hover:text-red-600 underline"
-                    >
-                      Opnieuw proberen
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between mb-4 mt-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t('common.result', 'Resultaat')}</span>
-                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${currentData.length > 0 ? "bg-emerald-50 text-emerald-600 border border-emerald-200" : "bg-slate-100 text-slate-400"}`}>
-                    <CheckCircle2 size={12} />
-                    {currentData.length} item(s)
-                  </span>
-                </div>
-                
-                <div className="flex flex-col gap-3">
-                  <button 
-                    disabled={currentData.length === 0 || isRequestingExport} 
-                    onClick={handleExportCloud} 
-                    className="w-full flex items-center justify-center gap-2 py-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-xs rounded-2xl transition-all shadow-lg shadow-blue-200 active:scale-95"
-                  >
-                    {isRequestingExport ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />} 
-                    Achtergrond Export (Cloud)
-                  </button>
-                  
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <button disabled={currentData.length === 0} onClick={handleExportExcel} className="flex-1 flex items-center justify-center gap-2 py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all shadow-md active:scale-95"><FileSpreadsheet size={16} /> Direct Excel</button>
-                    <button disabled={currentData.length === 0} onClick={handleExportPDF} className="flex-1 flex items-center justify-center gap-2 py-4 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all shadow-md active:scale-95"><FileText size={16} /> PDF</button>
-                  </div>
-                </div>
-              </>
             )}
+
+            {/* Filter Dropdown */}
+            <div>
+              <label className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">
+                <Factory size={14} /> {exportType === "lotnummers" ? "Selecteer Locatie" : "Selecteer Machine"}
+              </label>
+              <div className="relative">
+                <select value={selectedMachine} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSelectedMachine(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors cursor-pointer appearance-none shadow-sm">
+                  <option value="Alle machines">{exportType === "lotnummers" ? "Alle locaties" : "Alle machines"}</option>
+                  {displayedMachines.map((m: string) => <option key={m} value={m}>{m}</option>)}
+                </select>
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">
+                  ▼
+                </div>
+              </div>
+            </div>
+
+            {/* Dynamic Content based on Type */}
+            {exportType === "planning" ? (
+              <div className="space-y-6 animate-in slide-in-from-left-2 duration-300">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">{t('teamleaderExportModal.orderStatus', 'Order Status')}</label>
+                  <div className="flex gap-2">
+                        <button onClick={() => setOrderStatusFilter("lopend")} className={`flex-1 py-3 text-xs font-bold rounded-xl border-2 transition-colors ${orderStatusFilter === "lopend" ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('teamleaderExportModal.runningOrders', 'Lopende Orders')}</button>
+                        <button onClick={() => setOrderStatusFilter("gereed")} className={`flex-1 py-3 text-xs font-bold rounded-xl border-2 transition-colors ${orderStatusFilter === "gereed" ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('teamleaderExportModal.fullyReady', 'Geheel Gereed')}</button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">{t('teamleaderExportModal.deliveryDateFilter', 'Leverdatum Filter')}</label>
+                  <div className="flex gap-2 mb-3">
+                    <button onClick={() => setDateFilterType("all")} className={`flex-1 py-3 text-[10px] font-black tracking-widest uppercase rounded-xl border-2 transition-colors ${dateFilterType === "all" ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('common.all', 'Alles')}</button>
+                    <button onClick={() => setDateFilterType("single")} className={`flex-1 py-3 text-[10px] font-black tracking-widest uppercase rounded-xl border-2 transition-colors ${dateFilterType === "single" ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>1 Datum</button>
+                    <button onClick={() => setDateFilterType("range")} className={`flex-1 py-3 text-[10px] font-black tracking-widest uppercase rounded-xl border-2 transition-colors ${dateFilterType === "range" ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-white border-slate-100 text-slate-500 hover:bg-slate-50"}`}>{t('common.period', 'Periode')}</button>
+                  </div>
+                  
+                  {dateFilterType === "single" && (
+                    <input type="date" value={singleDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSingleDate(e.target.value)} className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
+                  )}
+                  
+                  {dateFilterType === "range" && (
+                    <div className="flex gap-2 items-center">
+                      <input type="date" value={startDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setStartDate(e.target.value)} className="flex-1 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
+                      <span className="text-sm font-black text-slate-300">-</span>
+                      <input type="date" value={endDate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEndDate(e.target.value)} className="flex-1 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : exportType === "lotnummers" ? (
+              <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 flex gap-3 items-start animate-in slide-in-from-right-2 duration-300">
+                <Info className="text-blue-500 shrink-0 mt-0.5" size={20} />
+                <p className="text-xs text-blue-800 leading-relaxed font-medium">
+                  {t('teamleaderExportModal.thisExportShows', 'Deze export toont de ')}<strong>{t('teamleaderExportModal.physicalShopfloorStock', 'fysieke werkvoorraad')}</strong>{t('teamleaderExportModal.onTheFloorDesc', ' op de vloer. Je ziet direct waar actieve lotnummers liggen en hoelang ze daar al verblijven. Vervangt de oude To Do lijst.')}
+                </p>
+              </div>
+            ) : exportType === "lotnummer_controle" ? (
+              <div className="space-y-6 animate-in slide-in-from-right-2 duration-300">
+                <div className="bg-purple-50 p-5 rounded-2xl border border-purple-100 flex gap-3 items-start">
+                  <Info className="text-purple-500 shrink-0 mt-0.5" size={20} />
+                  <p className="text-xs text-purple-800 leading-relaxed font-medium">
+                    Deze export toont <strong>alle aangemaakte lotnummers</strong> in de geselecteerde week, oplopend gesorteerd per machine. Hiermee controleer je makkelijk of er gaten in de reeks zitten (handmatig aangemaakte producten).
+                  </p>
+                </div>
+                
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Kies een Week</label>
+                  <input 
+                    type="week" 
+                    value={selectedWeek} 
+                    onChange={(e) => setSelectedWeek(e.target.value)} 
+                    className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-purple-500 transition-colors"
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            {/* Actieknoppen & Teller */}
+            <div className="pt-2 border-t border-slate-100">
+
+              {/* === VOORTGANGSSTATUS WANNEER CLOUD EXPORT LOOPT === */}
+              {activeTask ? (
+                <div className="flex flex-col gap-4">
+                  {activeTask.status === 'processing' || activeTask.status === 'pending' ? (
+                    <div className="flex flex-col items-center gap-4 py-6 px-4 bg-blue-50 rounded-2xl border border-blue-200">
+                      <Loader2 className="animate-spin text-blue-500" size={40} />
+                      <div className="text-center">
+                        <p className="font-black text-blue-800 text-sm uppercase tracking-widest">{t('teamleaderExportModal.exportBeingCreated', 'Export wordt aangemaakt')}</p>
+                        <p className="text-xs text-blue-500 mt-1">{t('teamleaderExportModal.exportMayTakeTime', 'Dit kan even duren. Je kunt dit venster sluiten — we melden het als het klaar is.')}</p>
+                      </div>
+                      <button
+                        onClick={onClose}
+                        className="text-xs text-blue-400 hover:text-blue-600 underline"
+                      >
+                        Naar achtergrond sturen
+                      </button>
+                    </div>
+                  ) : activeTask.status === 'completed' ? (
+                    <div className="flex flex-col items-center gap-4 py-6 px-4 bg-emerald-50 rounded-2xl border border-emerald-200">
+                      <CheckCircle2 className="text-emerald-500" size={40} />
+                      <div className="text-center">
+                        <p className="font-black text-emerald-800 text-sm uppercase tracking-widest">{t('teamleaderExportModal.exportReady', 'Export klaar!')}</p>
+                        <p className="text-xs text-emerald-600 mt-1">{activeTask.fileName || 'export.xlsx'}</p>
+                      </div>
+                      <button
+                        onClick={() => { downloadTaskResult(activeTask); onClose(); }}
+                        className="w-full flex items-center justify-center gap-2 py-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black uppercase tracking-widest text-xs rounded-2xl transition-all shadow-lg shadow-emerald-200 active:scale-95"
+                      >
+                        <Download size={18} /> Bestand downloaden
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-4 py-6 px-4 bg-red-50 rounded-2xl border border-red-200">
+                      <p className="font-black text-red-700 text-sm uppercase tracking-widest">{t('teamleaderExportModal.exportFailed', 'Export mislukt')}</p>
+                      <p className="text-xs text-red-500">{activeTask.error || 'Onbekende fout'}</p>
+                      <button
+                        onClick={() => setActiveTaskId(null)}
+                        className="text-xs text-red-400 hover:text-red-600 underline"
+                      >
+                        Opnieuw proberen
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-3 mt-4">
+                    <button 
+                      disabled={currentData.length === 0 || isRequestingExport} 
+                      onClick={handleExportCloud} 
+                      className="w-full flex items-center justify-center gap-2 py-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-xs rounded-2xl transition-all shadow-lg shadow-blue-200 active:scale-95"
+                    >
+                      {isRequestingExport ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />} 
+                      Achtergrond Export (Cloud)
+                    </button>
+                    
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <button disabled={currentData.length === 0} onClick={handleExportExcel} className="flex-1 flex items-center justify-center gap-2 py-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all shadow-md active:scale-95"><FileSpreadsheet size={16} /> Direct Excel</button>
+                      <button disabled={currentData.length === 0} onClick={handleExportPDF} className="flex-1 flex items-center justify-center gap-2 py-4 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:bg-slate-300 text-white font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all shadow-md active:scale-95"><FileText size={16} /> PDF</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            
           </div>
           
+          {/* Right Panel - Data Preview */}
+          <div className="flex-1 bg-slate-50 p-6 flex flex-col overflow-hidden">
+             <div className="flex justify-between items-center mb-4 shrink-0">
+                 <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs flex items-center gap-2"><List size={16} className="text-slate-400" /> Voorbeeld Weergave</h4>
+                 <span className="text-xs font-bold text-slate-500 bg-white py-1 px-3 rounded-full border border-slate-200 shadow-sm">{currentData.length} resultaten</span>
+             </div>
+             
+             <div className="flex-1 overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+                 {currentData.length > 0 ? (
+                   <table className="w-full text-left text-[10px] sm:text-xs whitespace-nowrap">
+                     <thead className="bg-slate-100 sticky top-0 z-10 shadow-sm">
+                        <tr>
+                           {Object.keys(currentData[0] || {}).filter(k => k !== 'isGap').map(key => (
+                             <th key={key} className="px-4 py-3 font-bold text-slate-600 uppercase tracking-widest">{key}</th>
+                           ))}
+                        </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-100">
+                        {currentData.slice(0, 100).map((row, idx) => (
+                           <tr key={idx} className={`hover:bg-slate-50 transition-colors ${row.isGap ? 'bg-red-50/50' : ''}`}>
+                              {Object.keys(row).filter(k => k !== 'isGap').map(key => {
+                                 const val = row[key as keyof typeof row];
+                                 let displayVal = val;
+                                 if (val instanceof Date) {
+                                    displayVal = format(val, 'dd-MM-yyyy HH:mm');
+                                 } else if (val && typeof val === 'object' && typeof (val as any).toDate === 'function') {
+                                    displayVal = format((val as any).toDate(), 'dd-MM-yyyy HH:mm');
+                                 } else if (typeof val === 'object' && val !== null) {
+                                    displayVal = JSON.stringify(val);
+                                 }
+                                 
+                                 return (
+                                   <td key={key} className={`px-4 py-2.5 ${row.isGap ? 'font-bold text-red-700' : 'text-slate-600 font-medium'}`}>
+                                     {String(displayVal ?? "")}
+                                   </td>
+                                 );
+                              })}
+                           </tr>
+                        ))}
+                     </tbody>
+                   </table>
+                 ) : (
+                   <div className="h-full flex flex-col items-center justify-center text-slate-400 italic text-sm font-medium p-8">
+                     <List size={40} className="text-slate-200 mb-3" />
+                     Geen data gevonden voor deze selectie.
+                   </div>
+                 )}
+             </div>
+             {currentData.length > 100 && (
+                 <div className="mt-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                   Toont eerste 100 van {currentData.length} resultaten. Exporteer om alles te zien.
+                 </div>
+             )}
+          </div>
         </div>
       </div>
     </div>

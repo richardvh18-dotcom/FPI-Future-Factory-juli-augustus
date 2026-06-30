@@ -1300,6 +1300,8 @@ export const queuePrintJob = async (printerId: unknown, zplData: unknown, metada
     throw new Error("zplData is verplicht.");
   }
 
+  // Vuurt de backend cloud function af voor ISO compliance, validatie en scoping.
+  // We retourneren de promise (of awaiten we hem in de call site), maar zorgen dat we de backend gebruiken.
   const result = await queuePrintJobCallable(payload);
   return result?.data || null; // Returns document ID
 };

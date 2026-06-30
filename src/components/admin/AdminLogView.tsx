@@ -1120,7 +1120,7 @@ const AdminLogView = () => {
                       <History size={12} /> {t('adminLogView.changeHistory')}
                     </h4>
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      <SmartDiffView before={diffPayload?.oldValue} after={diffPayload?.newValue} t={t} />
+                      <SmartDiffView before={diffPayload?.oldValue} after={diffPayload?.newValue} t={t as any} />
                     </div>
                   </div>
                 )}

@@ -107,6 +107,21 @@ const App = () => {
   const currentVersion = import.meta.env.VITE_APP_VERSION || "dev";
   const versionRef = useRef(currentVersion);
 
+  // Keep-alive ping voor de Print Queue Server (voorkomt 30-60 sec cold starts)
+  useEffect(() => {
+    if (!user) return;
+    const keepAliveInterval = setInterval(() => {
+      // Importeer inline of roep dynamisch de cloud function aan (zonder frontend validatie)
+      import("firebase/functions").then(({ getFunctions, httpsCallable }) => {
+        const ping = httpsCallable(getFunctions(app, "europe-west1"), "queuePrintJob");
+        // We sturen expres ongeldige parameters. De server ontwaakt, weigert het, en valt weer in slaap-timer.
+        ping({ printerId: "PING", zplData: "PING" }).catch(() => {});
+      });
+    }, 9 * 60 * 1000); // Elke 9 minuten
+
+    return () => clearInterval(keepAliveInterval);
+  }, [user]);
+
   useEffect(() => {
     const host = typeof window !== "undefined" ? window.location.hostname : "";
     const isLocalDevHost =

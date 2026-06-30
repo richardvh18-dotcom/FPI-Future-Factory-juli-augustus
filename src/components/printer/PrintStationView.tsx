@@ -848,8 +848,8 @@ const PrintStationView = () => {
       }
     };
 
-    const handleUsbConnect = (event: USBConnectionEvent | Event) => {
-      const device = (event as USBConnectionEvent).device || (event as any).device;
+    const handleUsbConnect = (event: any) => {
+      const device = event.device;
       if (!device) return;
 
       const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
@@ -861,8 +861,8 @@ const PrintStationView = () => {
       }
     };
 
-    const handleUsbDisconnect = (event: USBConnectionEvent | Event) => {
-      const device = (event as USBConnectionEvent).device || (event as any).device;
+    const handleUsbDisconnect = (event: any) => {
+      const device = event.device;
       if (!device || !usbDevice) return;
       if (
         device.vendorId === usbDevice.vendorId &&
@@ -874,11 +874,15 @@ const PrintStationView = () => {
     };
 
     void restoreUsbConnection();
+    // @ts-ignore
     navigator.usb.addEventListener('connect', handleUsbConnect as EventListener);
+    // @ts-ignore
     navigator.usb.addEventListener('disconnect', handleUsbDisconnect as EventListener);
 
     return () => {
+      // @ts-ignore
       navigator.usb.removeEventListener('connect', handleUsbConnect as EventListener);
+      // @ts-ignore
       navigator.usb.removeEventListener('disconnect', handleUsbDisconnect as EventListener);
     };
   }, [printers, usbDevice]);
@@ -1328,7 +1332,7 @@ const PrintStationView = () => {
           routeKey: selectedStation,
         });
         const usbMatches = printers.filter(
-          (printer) => Number(printer.vendorId) === deviceToUse.vendorId && Number(printer.productId) === deviceToUse.productId
+          (printer) => Number(printer.vendorId) === deviceToUse?.vendorId && Number(printer.productId) === deviceToUse?.productId
         );
         const printerIdToStore = routingPrinter?.id || (usbMatches.length === 1 ? usbMatches[0].id : '');
         if (printerIdToStore) {
@@ -1363,7 +1367,7 @@ const PrintStationView = () => {
         routeKey: selectedStation,
       });
       const usbMatches = printers.filter(
-        (printer) => Number(printer.vendorId) === deviceToUse.vendorId && Number(printer.productId) === deviceToUse.productId
+        (printer) => Number(printer.vendorId) === deviceToUse?.vendorId && Number(printer.productId) === deviceToUse?.productId
       );
       const printerIdToStore = routingPrinter?.id || (usbMatches.length === 1 ? usbMatches[0].id : '');
       if (printerIdToStore) {

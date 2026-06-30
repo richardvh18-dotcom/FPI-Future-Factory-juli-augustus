@@ -356,7 +356,8 @@ const normalizeQueuePrintPayload = (content: unknown, quantity: unknown, isPreBa
     return applyCutMode(base, true);
   }
 
-  return Array.from({ length: qty }, (_, idx) => applyCutMode(base, idx === qty - 1)).join("\n");
+  // ALTIJD knippen tussen labels door true te passeren i.p.v. alleen op het einde
+  return Array.from({ length: qty }, () => applyCutMode(base, true)).join("\n");
 };
 
 const isLikelyPreBatchedZpl = (content: unknown): boolean => {
@@ -378,16 +379,11 @@ const enforceCutModeOnBatchPayload = (payload: unknown, shouldCutAtEnd: boolean,
   if (!normalized) return '';
   if (isPreBatchedJob) return normalized;
 
+  // We dwingen af dat élk label wordt geknipt
   let transformed = normalized
-    .replace(/\^MM[CT]/g, '^MMT')
-    .replace(/\^PQ1,0,1,[YN]/g, '^PQ1,0,1,N');
+    .replace(/\^MM[CT]/g, '^MMC')
+    .replace(/\^PQ1,0,1,[YN]/g, '^PQ1,0,1,Y');
 
-  if (!shouldCutAtEnd) {
-    return transformed;
-  }
-
-  transformed = replaceLastLiteral(transformed, '^MMT', '^MMC');
-  transformed = replaceLastLiteral(transformed, '^PQ1,0,1,N', '^PQ1,0,1,Y');
   return transformed;
 };
 
@@ -1454,8 +1450,8 @@ const PrintQueueAdminView = () => {
       }
     };
 
-    const handleUsbConnect = (event: USBConnectionEvent | Event) => {
-      const device = (event as USBConnectionEvent).device || (event as any).device;
+    const handleUsbConnect = (event: any) => {
+      const device = event.device;
       if (!device) return;
 
       const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
@@ -1467,8 +1463,8 @@ const PrintQueueAdminView = () => {
       }
     };
 
-    const handleUsbDisconnect = (event: USBConnectionEvent | Event) => {
-      const device = (event as USBConnectionEvent).device || (event as any).device;
+    const handleUsbDisconnect = (event: any) => {
+      const device = event.device;
       if (!device || !usbDevice) return;
       if (
         device.vendorId === usbDevice.vendorId &&
@@ -1480,7 +1476,9 @@ const PrintQueueAdminView = () => {
     };
 
     void restoreUsbConnection();
+    // @ts-ignore
     navigator.usb.addEventListener('connect', handleUsbConnect as EventListener);
+    // @ts-ignore
     navigator.usb.addEventListener('disconnect', handleUsbDisconnect as EventListener);
 
     // Printers ophalen
@@ -1578,7 +1576,9 @@ const PrintQueueAdminView = () => {
       unsubPrinters();
       unsubscribeRoot();
       unsubscribeScoped();
+      // @ts-ignore
       navigator.usb.removeEventListener('connect', handleUsbConnect as EventListener);
+      // @ts-ignore
       navigator.usb.removeEventListener('disconnect', handleUsbDisconnect as EventListener);
     };
   }, []);

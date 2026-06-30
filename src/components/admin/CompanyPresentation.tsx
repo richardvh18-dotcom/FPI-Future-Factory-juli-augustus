@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   ChevronLeft, ChevronRight, Tablet, FileText, Users, 
   Settings, Zap, MessageSquarePlus, PlayCircle, ShieldCheck, X,
@@ -14,6 +14,16 @@ const CompanyPresentation: React.FC<CompanyPresentationProps> = ({ onClose }) =>
   const [currentSlide, setCurrentSlide] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const [showBadges, setShowBadges] = useState(false);
+  const [showVideo, setShowVideo] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (showVideo && videoRef.current) {
+      videoRef.current.requestFullscreen().catch((err) => {
+        console.log("Kon fullscreen niet automatisch starten:", err);
+      });
+    }
+  }, [showVideo]);
 
   useEffect(() => {
     if (currentSlide === 1 && currentStep === 1) {
@@ -220,7 +230,7 @@ const CompanyPresentation: React.FC<CompanyPresentationProps> = ({ onClose }) =>
             currentStep >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
           }`}>
             <span className="bg-rose-100 text-rose-600 p-3 rounded-2xl shadow-sm shrink-0"><FileText size={36} /></span>
-            <span className="pt-2">Maten en tekeningen zoeken op het intranet of bij de machine is vaak een hele uitdaging. Het vreet tijd, het zorgt voor irritatie en het haalt je telkens uit je flow. Dat werkt gewoon niet lekker.</span>
+            <span className="pt-2">Maten en tekeningen zoeken op het intranet of bij de machine is vaak een hele uitdaging. Het kost onnodig veel tijd, het zorgt voor irritatie en het haalt je telkens uit je flow. Dat werkt gewoon niet lekker.</span>
           </li>
         </ul>
       )
@@ -331,7 +341,7 @@ const CompanyPresentation: React.FC<CompanyPresentationProps> = ({ onClose }) =>
               <Gift size={36} className="text-rose-500 animate-bounce" style={{ animationDuration: '2.5s' }} /> Win een Cadeaubon
             </h4>
             <p className="text-xl md:text-2xl text-slate-600 leading-relaxed">
-              "Voor de winnaar met de allerbeste of leukste naam ligt er een mooie cadeaubon klaar! Stuur je ideeën in via de feedback-optie in de app of geef ze direct door aan je leidinggevende. We zijn benieuwd!"
+              "Voor de winnaar met de allerbeste of leukste naam ligt er een mooie cadeaubon klaar! Formulieren hiervoor liggen bij de receptie, of geef je idee direct door aan je leidinggevende. We zijn benieuwd!"
             </p>
           </div>
         </div>
@@ -344,10 +354,10 @@ const CompanyPresentation: React.FC<CompanyPresentationProps> = ({ onClose }) =>
       content: (
         <div className="text-center">
           <button 
-            onClick={() => window.location.href = '/workstation'} 
+            onClick={() => setShowVideo(true)} 
             className="bg-slate-900 text-white px-12 py-6 rounded-full font-black uppercase tracking-widest text-xl md:text-2xl shadow-2xl hover:bg-blue-600 transition-all hover:scale-105 active:scale-95 flex items-center gap-4 mx-auto"
           >
-            Open Productie Hub <ChevronRight size={32} />
+            Demo <ChevronRight size={32} />
           </button>
         </div>
       )
@@ -474,6 +484,27 @@ const CompanyPresentation: React.FC<CompanyPresentationProps> = ({ onClose }) =>
           <ChevronRight size={32} />
         </button>
       </footer>
+
+      {/* Video Overlay */}
+      {showVideo && (
+        <div className="fixed inset-0 z-[10000] bg-black/90 flex items-center justify-center p-8 backdrop-blur-sm animate-in fade-in duration-300">
+          <button 
+            onClick={() => setShowVideo(false)}
+            className="absolute top-8 right-8 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 p-4 rounded-full transition-all z-50 hover:scale-110"
+          >
+            <X size={32} />
+          </button>
+          <video 
+            ref={videoRef}
+            src="https://firebasestorage.googleapis.com/v0/b/future-factory-377ef.firebasestorage.app/o/Video%2Fkantinemeet.mov?alt=media&token=63c28821-6789-45f6-aa24-efcbf4d276a6"
+            controls 
+            autoPlay 
+            className="w-full max-w-7xl max-h-[85vh] rounded-2xl shadow-2xl ring-1 ring-white/10"
+          >
+            Je browser ondersteunt deze video niet.
+          </video>
+        </div>
+      )}
     </div>
   );
 };

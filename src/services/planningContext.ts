@@ -1,4 +1,4 @@
-import { collection, getDocs, query, limit } from "firebase/firestore";
+import { collection, collectionGroup, getDocs, query, limit } from "firebase/firestore";
 import type { DocumentData, QueryDocumentSnapshot } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS, getPathString, getArchiveItemsPath } from "../config/dbPaths";

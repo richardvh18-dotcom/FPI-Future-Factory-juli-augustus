@@ -21,6 +21,10 @@ service firebase.storage {
       return hasAnyRole(['admin', 'qc', 'engineer', 'planner', 'teamleader']);
     }
 
+    match /Video/{allPaths=**} {
+      allow read: if true;
+    }
+
     match /{allPaths=**} {
       allow read: if isSignedIn();
       allow write: if isUploader();

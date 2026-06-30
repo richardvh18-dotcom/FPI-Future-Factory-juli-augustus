@@ -1,3 +1,75 @@
+## Update sessie 30 juni 2026 (Systeem Presentatie Demo Video)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Systeem Presentatie Slide 8 Aangepast**
+- De knop "Open Productie hub" is hernoemd naar "Demo".
+- Bij het klikken op de knop opent er nu een video-overlay (full screen) in plaats van te navigeren naar `/workstation`.
+- De video start nu automatisch in fullscreen (via de browser API `requestFullscreen`) zodra erop geklikt wordt.
+- De video wordt ingeladen via een direct, geauthenticeerd Firebase access token vanuit het pad `Video/kantinemeet.mov`. Dit voorkomt problemen met hardcoded URL's en Firebase Storage policies.
+- De tekst op slide 7 ("Win een Cadeaubon") is aangepast: de optie om via de app feedback in te sturen is verwijderd en vervangen door een verwijzing naar fysieke formulieren bij de receptie.
+- De tekst op slide 3 ("Waar komen we vandaan?") is aangepast om een herhaling van "Het vreet tijd" te voorkomen. In de derde bullet is dit gewijzigd naar "Het kost onnodig veel tijd".
+- Er is een nieuw tabblad ("Controle") toegevoegd aan de `TeamleaderExportModal`, inclusief een specifieke tegel op het Import/Export dashboard. Hiermee kan per week en per machine een lijst opgevraagd worden van alle gebruikte lotnummers, oplopend gesorteerd. De data wordt hierbij **strikt gefilterd op uitgifteweek** (inclusief QC/VQC lotnummers). Bovendien controleert het systeem nu **automatisch op ontbrekende volgnummers in de reeks** (gaten in de lijst). Als er een nummer ontbreekt (bijv. 0023 tussen 0022 en 0024), wordt dit in de export geüpload met een opvallende waarschuwing (`⚠️ ONTBREEKT`), compleet met rode styling in de PDF, zodat handmatig geproduceerde items onmiddellijk in het oog springen. Tot slot toont de modal zelf nu ook direct een **live data preview** in een overzichtelijke tabel, zodat je vooraf al precies ziet wat er geëxporteerd gaat worden (incl. weergave van de ontbrekende gaten).
+- **Print Wachtrij & Label Knip Fixes**: Twee problemen met de Zebra printers opgelost. (1) De vertraging van 30-60 seconden bij het printen is verholpen. Omdat de ISO-standaard eist dat prints via de backend worden ge-audit, is er een onzichtbare 'Keep-Alive Ping' toegevoegd aan de app. Deze ping wekt de server elke 9 minuten, waardoor 'cold-starts' van de Cloud Functions worden voorkomen en de printer instantaan reageert. (2) Bij het afdrukken van meerdere labels in een batch snijdt de Zebra printer nu correct na *elk* label, doordat de `^PQ` parameter correct wordt meegegeven (`^PQ1,0,1,Y`).
+
+**Aangepaste bestanden in deze sessie:**
+- `src/components/admin/CompanyPresentation.tsx` [MODIFY]
+- `src/components/digitalplanning/modals/TeamleaderExportModal.tsx` [MODIFY]
+- `storage.rules` [MODIFY]
+
+---
+
+## Update sessie 28 juni 2026 (Infor ION Integratie Voorbereiding)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Infor ION Backend Framework Opgezet**
+- Omdat de applicatie met de Infor ION API moet praten (en eventueel OAGIS BODs moet ontvangen/versturen), is de middleware structuur in de Firebase Functions backend klaargezet.
+- `axios` en `fast-xml-parser` geïnstalleerd in `functions/package.json`.
+- Nieuwe map `functions/src/infor-ion/` aangemaakt met:
+  - `auth.ts`: OAuth 2.0 authenticatie flow (Client Credentials) naar Infor Ming.le/ION API, inclusief token caching.
+  - `api.ts`: Helper voor het versturen van (geauthenticeerde) REST-verzoeken naar ION API endpoints, en een mock-functie `sendProductionOrderBOD`.
+  - `webhook.ts`: Een HTTP Firebase Function (`ionWebhook`) klaargezet om inkomende BOD-berichten vanuit ION Desk (via een "Connection Point" of "ION API Target") te ontvangen, inclusief API-key check.
+- Placeholder variabelen toegevoegd aan `.env` voor de ION CloudSuite credentials (`ION_API_URL`, `ION_TENANT_ID`, `ION_CLIENT_ID`, `ION_CLIENT_SECRET`, `ION_TOKEN_URL`, `ION_WEBHOOK_SECRET`).
+
+**Aangepaste bestanden in deze sessie:**
+- `functions/package.json` [MODIFY]
+- `functions/src/infor-ion/auth.ts` [NEW]
+- `functions/src/infor-ion/api.ts` [NEW]
+- `functions/src/infor-ion/webhook.ts` [NEW]
+- `.env` [MODIFY]
+
+---
+
+## Update sessie 27 juni 2026 (TypeScript Typings Fixes)
+
+### Uitgevoerd in deze sessie
+**1. TypeScript Compile Errors Fixed**
+- **Probleem:** De TypeScript compiler (`tsc`) en IDE gaven diverse fouten.
+- **Fixes:** 
+  - Typo in `PlanningImportModal.tsx` (`rowStatus` naar `rawStatus`) verholpen.
+  - Return type van `getStockBadge` gezet om 'never' te voorkomen in `TerminalPlanningView.tsx`.
+  - Type casts toegevoegd aan i18next `t` functie in `AdminLogView.tsx` en `product.status` in `ProductDossierModal.tsx`.
+  - Ontbrekende module import voor `collectionGroup` toegevoegd in `planningContext.ts`.
+  - WebUSB specifieke types ('USBConnectionEvent' / `navigator.usb`) met `@ts-ignore` of afwijkende argument types genegeerd in `PrintStationView.tsx` en `PrintQueueAdminView.tsx` ter voorkoming van niet-herkende DOM types.
+  - Oplossen nullable fout bij re-evaluatie van printer mapping middels null-check op `deviceToUse?.vendorId`.
+  - Ontbrekende dependencies (`@dnd-kit/core`, `vite-plugin-pwa`) gedownload en correct geïnstalleerd met `npm install`.
+  - Firestore typefout verholpen in `OrderDetail.tsx` door de correcte path string parsing in plaats van array spreads te gebruiken voor `collection()` en `doc()`.
+
+**Aangepaste bestanden:**
+- `src/components/admin/AdminLogView.tsx` [MODIFY]
+- `src/components/digitalplanning/modals/PlanningImportModal.tsx` [MODIFY]
+- `src/components/digitalplanning/modals/ProductDossierModal.tsx` [MODIFY]
+- `src/components/digitalplanning/terminal/TerminalPlanningView.tsx` [MODIFY]
+- `src/components/printer/PrintQueueAdminView.tsx` [MODIFY]
+- `src/components/printer/PrintStationView.tsx` [MODIFY]
+- `src/components/digitalplanning/OrderDetail.tsx` [MODIFY]
+- `src/services/planningContext.ts` [MODIFY]
+
+---
+
 ## Update sessie 27 juni 2026 (Backend Modularisatie & DND-kit UX)
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)

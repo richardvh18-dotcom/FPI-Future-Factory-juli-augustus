@@ -713,7 +713,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
       if (!order) return;
       if ((order.machine === "-" || !order.machine) && rowMachine !== "-") {
         order.machine = rowMachine;
-        order.orderStatus = rowStatus || "Vrijgegeven";
+        order.orderStatus = rawStatus || "Vrijgegeven";
         order.isValidForImport = rowStatusAllowed;
         if (order.holdReason) {
           order.orderStatus = "on_hold";

@@ -1269,6 +1269,19 @@ const ImportExportDashboard = ({
 
                    <button
                      type="button"
+                     onClick={() => onOpenMachineExport?.("lotnummer_controle")}
+                     className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 hover:border-purple-300 hover:bg-purple-50 transition-all text-left group"
+                   >
+                     <div className="flex justify-between items-start mb-4">
+                       <ClipboardCheck size={24} className="text-slate-400 group-hover:text-purple-500 transition-colors" />
+                       <ArrowRight size={20} className="text-slate-300 group-hover:text-purple-500 transform group-hover:translate-x-1 transition-all" />
+                     </div>
+                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Lotnummer Controle (Historie)</h4>
+                     <p className="text-[10px] text-slate-500 font-medium">Controleer alle aangemaakte lotnummers van een geselecteerde week</p>
+                   </button>
+
+                   <button
+                     type="button"
                      onClick={() => setShowInventoryModal(true)}
                      className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 hover:border-purple-300 hover:bg-purple-50 transition-all text-left group"
                    >

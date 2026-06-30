@@ -1129,13 +1129,13 @@ const OrderDetail = React.memo(({
             try {
               const drawingId = order.drawing;
               if (drawingId && drawingId !== "-" && drawingId !== "") {
-                const directRef = doc(db, ...PATHS.PRODUCTS, drawingId);
+                const directRef = doc(db, getPathString(PATHS.PRODUCTS), drawingId);
                 const directSnap = await getDoc(directRef);
                 if (directSnap.exists()) {
                   setViewingDrawing({ id: directSnap.id, ...directSnap.data() });
                   return;
                 }
-                const productsRef = collection(db, ...PATHS.PRODUCTS);
+                const productsRef = collection(db, getPathString(PATHS.PRODUCTS));
                 const q1 = query(productsRef, where("articleCode", "==", drawingId));
                 const snap1 = await getDocs(q1);
                 if (!snap1.empty) {
