@@ -667,7 +667,7 @@ const ProductDossierModal = ({
       doc.setFont("helvetica", "bold");
       doc.text("Status:", 14, 50);
       doc.setFont("helvetica", "normal");
-      doc.text(String(product?.status || "-"), 45, 50);
+      doc.text(String((product as any)?.status || "-"), 45, 50);
 
       doc.setFont("helvetica", "bold");
       doc.text("QC Samenvatting:", 14, 56);

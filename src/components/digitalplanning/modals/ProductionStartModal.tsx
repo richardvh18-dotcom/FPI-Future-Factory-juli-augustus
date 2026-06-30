@@ -936,6 +936,7 @@ const ProductionStartModal = ({
             if (seq > maxSeq) maxSeq = seq;
           });
         } catch (scopedErr: any) {
+            // Ignore if index or path does not exist
         }
 
     } catch (error: any) {
@@ -1667,12 +1668,8 @@ const ProductionStartModal = ({
 
       // --- NIEUWE PRINT LOOP VOOR MEERDERE TEMPLATES ---
       if (!isFlangeOrder && printConfig.mode === "queue" && labelsToPrint > 0 && selectedTemplateIds.length > 0) {
-        if (!targetPrinter) {
-          showError(t("productionStartModal.errors.noPrinterConfigured", { stationId }));
-          return;
-        }
-
-        for (const templateId of selectedTemplateIds) {
+        if (targetPrinter) {
+          for (const templateId of selectedTemplateIds) {
           const templateToPrint = allLabels.find(l => l.id === templateId);
           if (!templateToPrint) {
             console.warn(`Template met ID ${templateId} niet gevonden, wordt overgeslagen.`);
@@ -1715,10 +1712,13 @@ const ProductionStartModal = ({
           } catch (printError: unknown) {
             const printMessage = getErrorMessage(printError);
             notify(t("productionStartModal.errors.printFailedForTemplate", { template: templateToPrint.name, message: printMessage }));
-            showError(t("productionStartModal.errors.printFailedForTemplate", { template: templateToPrint.name, message: printMessage }));
+            }
           }
+          showSuccess(t("productionStartModal.notifications.labelsQueued", { count: labelsToPrint * selectedTemplateIds.length, printer: targetPrinter.name }));
+        } else if (!isManualMode) {
+          // Alleen een waarschuwing tonen als we niet in handmatige modus zitten en er geen printer is
+          console.warn(`Geen printer geconfigureerd voor station ${stationId}, labels overgeslagen.`);
         }
-        showSuccess(t("productionStartModal.notifications.labelsQueued", { count: labelsToPrint * selectedTemplateIds.length, printer: targetPrinter.name }));
       }
 
       if (printConfig.mode === "queue" && shouldPrintStringLotBatch && lotBatchPrintData) {
@@ -1744,11 +1744,11 @@ const ProductionStartModal = ({
                 lots: lotBatchLots,
               }
             );
-            showSuccess(t("productionStartModal.notifications.stringLotsQueued", { count: lotBatchLots.length, printer: targetPrinter.name }));
-          } else {
-            showError(t("productionStartModal.errors.noPrinterConfigured", { stationId }));
-          }
-        } catch (printError: unknown) {
+              showSuccess(t("productionStartModal.notifications.stringLotsQueued", { count: lotBatchLots.length, printer: targetPrinter.name }));
+            } else if (!isManualMode) {
+              console.warn(`Geen printer geconfigureerd voor station ${stationId}, string lot batch overgeslagen.`);
+            }
+          } catch (printError: unknown) {
           console.error(printError);
           const printMessage = getErrorMessage(printError);
           notify(t("productionStartModal.errors.stringLotPrintFailed", { message: printMessage }));

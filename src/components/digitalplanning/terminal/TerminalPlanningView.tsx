@@ -271,7 +271,7 @@ const TerminalPlanningView = ({
     return null;
   };
 
-  const getStockBadge = (order: AnyRecord) => {
+  const getStockBadge = (order: AnyRecord): { label: string, className: string } | null => {
     // Voorraad - Tijdelijk uitgeschakeld
     return null;
   };

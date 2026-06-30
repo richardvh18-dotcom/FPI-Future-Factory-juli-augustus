@@ -170,7 +170,8 @@ const normalizeQueuePrintPayload = (content: unknown, quantity: unknown, isPreBa
     return applyCutMode(base, true);
   }
 
-  return Array.from({ length: qty }, (_, idx) => applyCutMode(base, idx === qty - 1)).join('\n');
+  // ALTIJD knippen tussen labels door true te passeren i.p.v. alleen op het einde
+  return Array.from({ length: qty }, () => applyCutMode(base, true)).join('\n');
 };
 
 const isLikelyPreBatchedZpl = (content: unknown): boolean => {
@@ -192,16 +193,11 @@ const enforceCutModeOnBatchPayload = (payload: unknown, shouldCutAtEnd: boolean,
   if (!normalized) return '';
   if (isPreBatchedJob) return normalized;
 
+  // We dwingen af dat élk label wordt geknipt
   let transformed = normalized
-    .replace(/\^MM[CT]/g, '^MMT')
-    .replace(/\^PQ1,0,1,[YN]/g, '^PQ1,0,1,N');
+    .replace(/\^MM[CT]/g, '^MMC')
+    .replace(/\^PQ1,0,1,[YN]/g, '^PQ1,0,1,Y');
 
-  if (!shouldCutAtEnd) {
-    return transformed;
-  }
-
-  transformed = replaceLastLiteral(transformed, '^MMT', '^MMC');
-  transformed = replaceLastLiteral(transformed, '^PQ1,0,1,N', '^PQ1,0,1,Y');
   return transformed;
 };
 
@@ -439,15 +435,11 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
         scopedJobs = snapshot.docs
           .filter((docSnap) => {
             const matches = isScopedPrintQueuePath(docSnap.ref.path);
-            if (!matches) {
-            }
             return matches;
           })
           .map((docSnap) => normalizeJob(docSnap))
           .filter((job): job is PrintJob => {
             const isValid = Boolean(job) && String((job as PrintJob)._scopeType || 'print_queue').trim() === 'print_queue';
-            if (!isValid && job) {
-            }
             return isValid;
           });
         mergeJobs();
