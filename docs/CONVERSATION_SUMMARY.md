@@ -1,3 +1,27 @@
+## Update sessie 2 juli 2026 (Fix Excel Import Extra Code Matching Priority)
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+**1. Prioritering van `"extra code"` kolom-matching bij Excel-import**
+- In [planningImportWorker.ts](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/workers/planningImportWorker.ts) en [PlanningImportModal.tsx](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/components/digitalplanning/modals/PlanningImportModal.tsx):
+  - In de Excel-bestanden is er vaak een kolom `"Code"` (die de artikelcode bevat, bijv. `FLSTEMS0F00A10BCCFBE`) en een kolom `"Extra Code"` (die de specifieke code bevat, bijv. `A1G9`).
+  - Doordat in de zoekpatronen `"code"` vóór `"extra code"` stond, matchte het systeem de kolom `"Code"` (artikelcode) als de `extraCode`. Dit leidde ertoe dat de artikelcode in de database werd opgeslagen onder het veld `extraCode`.
+  - We hebben de volgorde aangepast naar `["extra code", "code"]`, zodat de specifiekere `"Extra Code"`-kolom altijd eerst wordt gezocht en gematcht. Als die niet bestaat, valt hij pas terug op `"Code"`.
+  - Hierdoor worden nieuwe imports nu correct ingelezen met de juiste extra codes in de database.
+
+**2. Versie bump uitgevoerd**
+- App versie verhoogd van `0.1.59` naar `0.1.60`.
+
+**Aangepaste bestanden in deze sessie:**
+- [planningImportWorker.ts](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/workers/planningImportWorker.ts) [MODIFY]
+- [PlanningImportModal.tsx](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/components/digitalplanning/modals/PlanningImportModal.tsx) [MODIFY]
+- [package.json](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/package.json) [MODIFY]
+- [version.json](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/public/version.json) [MODIFY]
+- [CONVERSATION_SUMMARY.md](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/docs/CONVERSATION_SUMMARY.md) [MODIFY]
+
+---
+
 ## Update sessie 2 juli 2026 (Fix Extra Code Overlapping in Flens Labels)
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)

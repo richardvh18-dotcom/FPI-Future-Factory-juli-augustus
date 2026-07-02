@@ -280,7 +280,7 @@ const parseWorkbook = (arrayBuffer: ArrayBuffer): ParsedImportRow[] => {
     const idxGewikkeld = firstIndex(headers, ["gewikkeld", "geproduceerd", "gemaakt", "produced", "hoeveelheid gereed"]);
     const idxWeek = firstIndex(headers, ["week", "weeknumber", "week number"]);
     const idxItemDesc = firstIndex(headers, ["item desc", "description", "omschrijving"]);
-    const idxCode = firstIndex(headers, ["code", "extra code"]);
+    const idxCode = firstIndex(headers, ["extra code", "code"]);
     const idxPoText = firstIndex(headers, ["production order text", "po text", "po-text", "po note", "opmerking"]);
     const idxProject = firstIndex(headers, ["project"]);
     const idxProjectDesc = firstIndex(headers, ["project desc", "project description"]);
