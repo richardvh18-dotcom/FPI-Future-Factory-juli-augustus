@@ -397,7 +397,7 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
     const idxProduced = firstIndex(headers, ["gewikkeld", "produced", "gemaakt", "hoeveelheid gereed"]);
     const idxEstimatedHours = firstIndex(headers, ["total production estimated time [hrs]", "total production estimated time hrs", "estimated time [hrs]", "estimated time hrs"]);
     const idxStatus = firstIndex(headers, ["status", "order status"]);
-    const idxCode = firstIndex(headers, ["code", "extra code", "special instructions"]);
+    const idxCode = firstIndex(headers, ["extra code", "code", "special instructions"]);
     const idxPoText = firstIndex(headers, ["po text", "po-text", "po note", "opmerking"]);
     const idxProject = firstIndex(headers, ["project"]);
     const idxProjectDesc = firstIndex(headers, ["project desc", "project description"]);
