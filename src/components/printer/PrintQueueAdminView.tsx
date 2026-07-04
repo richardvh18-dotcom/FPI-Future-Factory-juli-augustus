@@ -81,6 +81,9 @@ type TempLabelItemProps = {
   labelRules: AnyRecord[];
   printerDpi?: number;
   handleTempLegacyPrint: (orderData: AnyRecord, template: any, processedData: any) => Promise<void>;
+  departmentGroups?: DepartmentGroup[];
+  printers?: PrinterConfig[];
+  stationId?: string;
 };
 
 type TempLabelModalProps = {
@@ -92,6 +95,8 @@ type TempLabelModalProps = {
   setUsbDevice: React.Dispatch<React.SetStateAction<USBDevice | null>>;
   activeQueuePrinter: PrinterConfig | null;
   selectedStation: string | null;
+  departmentGroups?: DepartmentGroup[];
+  printers?: PrinterConfig[];
 };
 
 type LotPrintModalProps = {
@@ -481,9 +486,11 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, han
 };
 
 // --- Modal: Tijdelijke Labels Zoeken ---
-const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printerDpi = 203, usbDevice, setUsbDevice, activeQueuePrinter, selectedStation }: TempLabelModalProps) => {
+const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printerDpi = 203, usbDevice, setUsbDevice, activeQueuePrinter, selectedStation, departmentGroups = [], printers = [] }: TempLabelModalProps) => {
   const { t } = useTranslation();
   const { notify } = useNotifications();
+  
+
 
 
 
@@ -1000,15 +1007,17 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                   {t("printer.orderLabels", "Order Labels")}
                 </h3>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  {t("printer.legacyEmergencyLabelsSearch", "Legacy / Nood-etiketten zoeken")}
+                  {t("printer.legacyEmergencyLabelsSearch", "Legacy / Nood-etiketten zoeken of handmatig maken")}
                 </p>
               </div>
             </div>
             <button onClick={onClose} className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-full transition-colors"><X size={20} /></button>
           </div>
 
+          
+
           {/* Search Bar */}
-          <div className="flex flex-col sm:flex-row gap-3 mb-6 shrink-0">
+              <div className="flex flex-col sm:flex-row gap-3 mb-6 shrink-0">
             <div className="relative flex-1 group">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" size={18} />
               <input 
@@ -1050,6 +1059,9 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                     labelRules={labelRules}
                     printerDpi={printerDpi}
                     handleTempLegacyPrint={handleTempLegacyPrint}
+                    departmentGroups={departmentGroups}
+                    printers={printers}
+                    stationId={selectedStation || "SYSTEM"}
                   />
                 ))}
               </div>
@@ -2632,6 +2644,8 @@ const PrintQueueAdminView = () => {
           setUsbDevice={setUsbDevice}
           activeQueuePrinter={activeQueuePrinter}
           selectedStation={selectedStation}
+          departmentGroups={departmentGroups}
+          printers={printers}
         />
       )}
 

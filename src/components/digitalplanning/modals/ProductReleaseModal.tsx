@@ -865,28 +865,26 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
 
         <div className="p-4 md:p-6 overflow-y-auto custom-scrollbar">
           {/* Status Selection */}
-          {requiresMeasurements && (
-            <div className="grid grid-cols-3 gap-2 md:gap-3 mb-4 md:mb-6">
-              <button
-                onClick={() => setFormState((prev) => ({ ...prev, status: "approved" }))}
-                className={`p-2 md:p-3 rounded-xl border-2 font-black uppercase text-[10px] md:text-xs flex flex-col items-center gap-1 md:gap-2 ${status === "approved" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-100 text-slate-400 hover:border-emerald-200"}`}
-              >
-                <CheckCircle size={20} className="md:w-6 md:h-6" /> Goed
-              </button>
-              <button
-                onClick={() => setFormState((prev) => ({ ...prev, status: "temp_reject" }))}
-                className={`p-2 md:p-3 rounded-xl border-2 font-black uppercase text-[10px] md:text-xs flex flex-col items-center gap-1 md:gap-2 ${status === "temp_reject" ? "border-orange-500 bg-orange-50 text-orange-700" : "border-slate-100 text-slate-400 hover:border-orange-200"}`}
-              >
-                <AlertTriangle size={20} className="md:w-6 md:h-6" /> Tijdelijke afkeur
-              </button>
-              <button
-                onClick={() => setFormState((prev) => ({ ...prev, status: "rejected" }))}
-                className={`p-2 md:p-3 rounded-xl border-2 font-black uppercase text-[10px] md:text-xs flex flex-col items-center gap-1 md:gap-2 ${status === "rejected" ? "border-rose-500 bg-rose-50 text-rose-700" : "border-slate-100 text-slate-400 hover:border-rose-200"}`}
-              >
-                <AlertOctagon size={20} className="md:w-6 md:h-6" /> Definitieve afkeur
-              </button>
-            </div>
-          )}
+          <div className="grid grid-cols-3 gap-2 md:gap-3 mb-4 md:mb-6">
+            <button
+              onClick={() => setFormState((prev) => ({ ...prev, status: "approved" }))}
+              className={`p-2 md:p-3 rounded-xl border-2 font-black uppercase text-[10px] md:text-xs flex flex-col items-center gap-1 md:gap-2 ${status === "approved" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-100 text-slate-400 hover:border-emerald-200"}`}
+            >
+              <CheckCircle size={20} className="md:w-6 md:h-6" /> Goed
+            </button>
+            <button
+              onClick={() => setFormState((prev) => ({ ...prev, status: "temp_reject" }))}
+              className={`p-2 md:p-3 rounded-xl border-2 font-black uppercase text-[10px] md:text-xs flex flex-col items-center gap-1 md:gap-2 ${status === "temp_reject" ? "border-orange-500 bg-orange-50 text-orange-700" : "border-slate-100 text-slate-400 hover:border-orange-200"}`}
+            >
+              <AlertTriangle size={20} className="md:w-6 md:h-6" /> Tijdelijke afkeur
+            </button>
+            <button
+              onClick={() => setFormState((prev) => ({ ...prev, status: "rejected" }))}
+              className={`p-2 md:p-3 rounded-xl border-2 font-black uppercase text-[10px] md:text-xs flex flex-col items-center gap-1 md:gap-2 ${status === "rejected" ? "border-rose-500 bg-rose-50 text-rose-700" : "border-slate-100 text-slate-400 hover:border-rose-200"}`}
+            >
+              <AlertOctagon size={20} className="md:w-6 md:h-6" /> Definitieve afkeur
+            </button>
+          </div>
 
           {isBulkMode && (
             <div className="mb-4 md:mb-6 bg-blue-50 p-3 md:p-4 rounded-2xl border border-blue-100">

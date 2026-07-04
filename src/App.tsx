@@ -3,7 +3,7 @@ import { listenToAppVersion } from "./services/versionService";
 import { Loader2 } from "lucide-react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { auth, db, logActivity } from "./config/firebase";
+import app, { auth, db, logActivity } from "./config/firebase";
 import { addDoc, collection, doc, getDoc, serverTimestamp, query, collectionGroup, where, limit, getDocs } from "firebase/firestore";
 import LoggedOutView from "./components/LoggedOutView";
 

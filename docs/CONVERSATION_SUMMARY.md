@@ -1,3 +1,27 @@
+## Opschoonrapport Pilot Future-Factory (v4) - 3 juli 2026
+
+**Status:** De codebase is geaudit en opgeschoond ter voorbereiding op de pilot.
+
+**1. Verwijderde bestanden (Dead code)**
+- \src/components/ai/AiCenterView,jsx\ (Bevatte typfout in extensie, was al opgeschoond)
+- \src/components/AiAssistantView.jsx\ (Verplaatst naar juiste map, was al opgeschoond)
+- \ite.config.js\ (Verouderd, verwijderd aangezien deze is vervangen door de \.ts\ variant)
+- \unctions/functions/package.json\ (Dubbele geneste map, was al opgeschoond)
+
+---
+
+## Update sessie 3 juli 2026 (Print Modals & Nood-Etiketten Revamp)
+
+- De functionaliteit voor handmatig labels afdrukken ('Handmatig Aanmaken' tab) is verwijderd uit \TempLabelModal\.
+- Het toevoegen van lotnummers is nu verplaatst naar de reguliere 'Zoeken' stroom. Bij elk gevonden resultaat kan men via de knop '+ Voeg Lotnummer Toe' direct een afdeling, machine, weeknummer, volgnummer, en aantal invoeren.
+- Het lotnummer wordt automatisch opgebouwd en berekend via \getISOWeekInfo\.
+- Slimme template detectie (Diameter, grote of kleine labels, FiberMar/WaviStrong, etc.) wordt hierbij direct toegepast op basis van de geselecteerde order.
+- Als een item een Flens is (begint met 'FL'), wordt printen geblokkeerd omdat flenzen later bij Mazak worden geprint.
+- Deze handmatig opgewaardeerde labels worden via \queuePrintJob\ met de ingestelde DPI geforceerd naar de BM01 printer verstuurd.
+- TypeScript syntax in \PrintStationView.tsx\ en \PrintQueueAdminView.tsx\ zijn beide schoongemaakt en type-check foutloos.
+
+---
+
 ## Update sessie 2 juli 2026 (Fix Excel Import Extra Code Matching Priority)
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
@@ -10524,3 +10548,8 @@ Made changes.
 - Preview en print gebruiken nu dezelfde template/payload-logica in Admin Order Labels.
 - Order Labels zoekt nu breder in zowel legacy, huidige/scoped, als diep geneste machine-paden, zodat recente BH18-orders (ook uit Fittings/Pipes-structuur) vindbaar zijn.
 
+F i x e d   i s s u e   w h e r e   s t a t u s   s e l e c t i o n   w a s   h i d d e n   i n   P r o d u c t R e l e a s e M o d a l   w h e n   m e a s u r e m e n t s   w e r e   n o t   r e q u i r e d ,   c a u s i n g   u s e r s   t o   b e   s t u c k   o n   ' d e f i n i t i e v e   a f k e u r '   i f   t h a t   w a s   t h e i r   p r e v i o u s l y   c a c h e d   s t a t e . 
+ 
+ A d d e d   ' H a n d m a t i g   A a n m a k e n '   m o d e   t o   T e m p L a b e l M o d a l   i n   P r i n t S t a t i o n V i e w . t s x   t o   a l l o w   g e n e r a t i n g   d u m m y   O r d e r   L a b e l   d a t a   m a n u a l l y   w i t h o u t   t y p i n g   t h e   f u l l   1 5 - d i g i t   l o t   n u m b e r . 
+ 
+ 
