@@ -1742,8 +1742,8 @@ export const nl = {
       analysisTip: "Gebruik bottleneck analyse om orders te identificeren die extra aandacht nodig hebben"
     },
     projectStructureExpert: {
-      gitHash: "GIT_HASH: 5e405e21",
-      buildStatus: "BUILD_STATUS: STABLE",
+      gitHash: "GIT_HASH: {{hash}}",
+      buildStatus: "BUILD_STATUS: {{status}}",
       projectExplorer: "Project Verkenner",
       developerGuidance: "Lead-raad voor Ontwikkelaars",
       corePartPrefix: "Dit bestand is een kernonderdeel van de ",

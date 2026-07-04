@@ -71,27 +71,27 @@ const fileDetails: Record<string, FileDetail> = {
   },
 
   // MODALS (DE DIALOGEN)
-  "src/components/digitalplanning/modals/ProductionStartModal.jsx": {
+  "src/components/digitalplanning/modals/ProductionStartModal.tsx": {
     title: "Productie Start Dialog",
     desc: "Het startpunt voor een operator op BH18. Handelt het scannen van orders en het koppelen van lotnummers af.",
     tags: ["Modal", "BH18", "Workflow"]
   },
-  "src/components/digitalplanning/modals/InspectionModal.jsx": {
+  "src/components/digitalplanning/modals/InspectionModal.tsx": {
     title: "Keuringsvenster",
     desc: "Interface voor het invoeren van meetgegevens (diameter, wanddikte). Vervangt de papieren meetlijsten.",
     tags: ["Kwaliteit", "Data-Entry"]
   },
-  "src/components/digitalplanning/modals/TraceModal.jsx": {
+  "src/components/digitalplanning/modals/TraceModal.tsx": {
     title: "Traceability Viewer",
     desc: "Biedt inzicht in de volledige geschiedenis van een product: wie heeft het gewikkeld, wanneer is het gelost en door wie is het goedgekeurd.",
     tags: ["Traceability", "ISO-Audit"]
   },
-  "src/components/digitalplanning/modals/PlanningImportModal.jsx": {
+  "src/components/digitalplanning/modals/PlanningImportModal.tsx": {
     title: "Planning Importeur",
     desc: "Gids voor planners (Edwin/Frank) om Excel of CSV bestanden uit LN te importeren naar de digitale planning.",
     tags: ["ERP", "Import", "Admin"]
   },
-  "src/components/digitalplanning/modals/TerminalSelectionModal.jsx": {
+  "src/components/digitalplanning/modals/TerminalSelectionModal.tsx": {
     title: "Terminal Kiezer",
     desc: "Eerste scherm op een nieuwe tablet. Hiermee bepaalt de gebruiker of de tablet fungeert als BH18 terminal, Nabewerking of BM01 Hub.",
     tags: ["Setup", "UX"]
@@ -115,17 +115,17 @@ const fileDetails: Record<string, FileDetail> = {
   },
 
   // HUBS & VIEWS
-  "src/components/digitalplanning/BM01Hub.jsx": {
+  "src/components/digitalplanning/BM01Hub.tsx": {
     title: "BM01 Eindcontrole Hub",
     desc: "Het zenuwcentrum voor de keurmeester. Genereert de dubbele QR-codes voor Factory Track overdracht.",
     tags: ["Kwaliteit", "BM01", "QR"]
   },
-  "src/components/digitalplanning/terminal/TerminalProductionView.jsx": {
+  "src/components/digitalplanning/terminal/TerminalProductionView.tsx": {
     title: "BH18 Live Scherm",
     desc: "Toont de actuele status van de wikkelbank. In de toekomst gekoppeld aan de Beckhoff PLC via de Edge Gateway.",
     tags: ["Real-time", "Operator", "UI"]
   },
-  "src/components/admin/AdminUsersView.jsx": {
+  "src/components/admin/AdminUsersView.tsx": {
     title: "Gebruikers & Wachtwoord Beheer",
     desc: "Beheermodule voor accounts. Inclusief de 'Admin Override' om wachtwoorden van @fpi.nl accounts te resetten zonder e-mail.",
     tags: ["Admin", "Security", "Auth"]
@@ -144,26 +144,26 @@ const fileDetails: Record<string, FileDetail> = {
   },
 
   // --- GEMIGREERD VAN OUDE VERSIE ---
-  "src/components/admin/AdminDashboard.jsx": { title: "Admin Dashboard", desc: "Hoofdscherm voor alle admin-functies, bevat tabbladen voor alle beheermodules.", tags: ["Admin", "UI"] },
-  "src/components/admin/AdminProductManager.jsx": { title: "Product Manager", desc: "Beheer van producten, toevoegen/bewerken/verwijderen van productdata.", tags: ["Admin", "Producten"] },
-  "src/components/admin/AdminLogView.jsx": { title: "Audit Log", desc: "Logboek van alle belangrijke systeemacties en wijzigingen.", tags: ["Admin", "Logs"] },
-  "src/components/admin/AdminLabelDesigner.jsx": { title: "Label Designer", desc: "Visuele editor voor het ontwerpen van labels en etiketten.", tags: ["Admin", "Labels"] },
-  "src/components/admin/AdminReferenceTable.jsx": { title: "Reference Table", desc: "Technische encyclopedie en referentietabellen.", tags: ["Admin", "Data"] },
-  "src/components/admin/ProductionTimeStandardsManager.jsx": { title: "Time Standards", desc: "Beheer van standaard productietijden per product/machine.", tags: ["Admin", "Efficiency"] },
-  "src/components/digitalplanning/EfficiencyDashboard.jsx": { title: "Efficiency Dashboard", desc: "Dashboard met efficiency metrics en real-time performance.", tags: ["Planning", "KPI"] },
-  "src/components/digitalplanning/DigitalPlanningHub.jsx": { title: "Planning Hub", desc: "Hoofdhub voor digitale productieplanning.", tags: ["Planning", "Core"] },
-  "src/components/digitalplanning/MobileScanner.jsx": { title: "Mobile Scanner", desc: "Mobiele scanner voor werkvloer en voorraadbeheer.", tags: ["Mobile", "Scanner"] },
-  "src/components/notifications/ToastContainer.jsx": { title: "Toast Container", desc: "UI-container voor alle toastmeldingen.", tags: ["UI", "Notificaties"] },
-  "src/components/products/ProductSearchView.jsx": { title: "Product Search", desc: "Zoek- en filtercomponent voor producten.", tags: ["Producten", "Search"] },
-  "src/components/products/ProductCard.jsx": { title: "Product Card", desc: "Visuele kaartweergave van een product.", tags: ["UI", "Producten"] },
-  "src/components/personnel/PersonnelListView.jsx": { title: "Personnel List", desc: "Overzicht en beheer van personeel.", tags: ["Personeel", "Admin"] },
-  "src/components/planning/KanbanBoardView.jsx": { title: "Kanban Board", desc: "Kanban-bord voor orderplanning.", tags: ["Planning", "UI"] },
-  "src/components/planning/GanttChartView.jsx": { title: "Gantt Chart", desc: "Gantt-diagram voor tijdlijnplanning.", tags: ["Planning", "UI"] },
-  "src/components/ai/AiCenterView.jsx": { title: "AI Center", desc: "AI-hub: training, documenten, flashcards.", tags: ["AI", "Core"] },
-  "src/components/ai/AiTrainingView.jsx": { title: "AI Training", desc: "Trainingsmodule voor AI-kennis.", tags: ["AI", "Training"] },
-  "src/components/teamleader/TeamleaderDashboard.jsx": { title: "Teamleader Dashboard", desc: "Dashboard voor teamleiders.", tags: ["Teamleader", "KPI"] },
-  "src/components/debug/FirestoreDebugger.jsx": { title: "Firestore Debugger", desc: "Debugtool voor Firestore-database.", tags: ["Debug", "Database"] },
-  "src/contexts/NotificationContext.jsx": { title: "Notification Context", desc: "Context provider voor notificatiesysteem.", tags: ["Context", "Core"] },
+  "src/components/admin/AdminDashboard.tsx": { title: "Admin Dashboard", desc: "Hoofdscherm voor alle admin-functies, bevat tabbladen voor alle beheermodules.", tags: ["Admin", "UI"] },
+  "src/components/admin/AdminProductManager.tsx": { title: "Product Manager", desc: "Beheer van producten, toevoegen/bewerken/verwijderen van productdata.", tags: ["Admin", "Producten"] },
+  "src/components/admin/AdminLogView.tsx": { title: "Audit Log", desc: "Logboek van alle belangrijke systeemacties en wijzigingen.", tags: ["Admin", "Logs"] },
+  "src/components/admin/AdminLabelDesigner.tsx": { title: "Label Designer", desc: "Visuele editor voor het ontwerpen van labels en etiketten.", tags: ["Admin", "Labels"] },
+  "src/components/admin/AdminReferenceTable.tsx": { title: "Reference Table", desc: "Technische encyclopedie en referentietabellen.", tags: ["Admin", "Data"] },
+  "src/components/admin/ProductionTimeStandardsManager.tsx": { title: "Time Standards", desc: "Beheer van standaard productietijden per product/machine.", tags: ["Admin", "Efficiency"] },
+  "src/components/digitalplanning/EfficiencyDashboard.tsx": { title: "Efficiency Dashboard", desc: "Dashboard met efficiency metrics en real-time performance.", tags: ["Planning", "KPI"] },
+  "src/components/digitalplanning/DigitalPlanningHub.tsx": { title: "Planning Hub", desc: "Hoofdhub voor digitale productieplanning.", tags: ["Planning", "Core"] },
+  "src/components/digitalplanning/MobileScanner.tsx": { title: "Mobile Scanner", desc: "Mobiele scanner voor werkvloer en voorraadbeheer.", tags: ["Mobile", "Scanner"] },
+  "src/components/notifications/ToastContainer.tsx": { title: "Toast Container", desc: "UI-container voor alle toastmeldingen.", tags: ["UI", "Notificaties"] },
+  "src/components/products/ProductSearchView.tsx": { title: "Product Search", desc: "Zoek- en filtercomponent voor producten.", tags: ["Producten", "Search"] },
+  "src/components/products/ProductCard.tsx": { title: "Product Card", desc: "Visuele kaartweergave van een product.", tags: ["UI", "Producten"] },
+  "src/components/personnel/PersonnelListView.tsx": { title: "Personnel List", desc: "Overzicht en beheer van personeel.", tags: ["Personeel", "Admin"] },
+  "src/components/planning/KanbanBoardView.tsx": { title: "Kanban Board", desc: "Kanban-bord voor orderplanning.", tags: ["Planning", "UI"] },
+  "src/components/planning/GanttChartView.tsx": { title: "Gantt Chart", desc: "Gantt-diagram voor tijdlijnplanning.", tags: ["Planning", "UI"] },
+  "src/components/ai/AiCenterView.tsx": { title: "AI Center", desc: "AI-hub: training, documenten, flashcards.", tags: ["AI", "Core"] },
+  "src/components/ai/AiTrainingView.tsx": { title: "AI Training", desc: "Trainingsmodule voor AI-kennis.", tags: ["AI", "Training"] },
+  "src/components/teamleader/TeamleaderDashboard.tsx": { title: "Teamleader Dashboard", desc: "Dashboard voor teamleiders.", tags: ["Teamleader", "KPI"] },
+  "src/components/debug/FirestoreDebugger.tsx": { title: "Firestore Debugger", desc: "Debugtool voor Firestore-database.", tags: ["Debug", "Database"] },
+  "src/contexts/NotificationContext.tsx": { title: "Notification Context", desc: "Context provider voor notificatiesysteem.", tags: ["Context", "Core"] },
   "src/hooks/useAdminAuth.js": { title: "Auth Hook", desc: "Custom React hook voor admin authenticatie.", tags: ["Hooks", "Auth"] },
   "src/hooks/useProductsData.js": { title: "Products Hook", desc: "Custom React hook voor productdata.", tags: ["Hooks", "Data"] },
   "src/utils/efficiencyCalculator.js": { title: "Efficiency Calc", desc: "Helperfuncties voor efficiencyberekeningen.", tags: ["Utils", "Math"] },
@@ -189,38 +189,38 @@ const getProjectStructure = (t: any): TreeNodeData[] => [
     children: [
       "src/config/dbPaths.js",
       "src/config/firebase.js",
-      "src/contexts/NotificationContext.jsx",
-      "src/main.jsx",
-      "src/App.jsx"
+      "src/contexts/NotificationContext.tsx",
+      "src/main.tsx",
+      "src/App.tsx"
     ]
   },
   {
     label: t('projectStructureExpert.nodes.digitalPlanning', "Digital Planning (Fittings Flow)"),
     icon: <Zap className="w-4 h-4 text-amber-500" />,
     children: [
-      "src/components/digitalplanning/BM01Hub.jsx",
-      "src/components/digitalplanning/WorkstationHub.jsx",
-      "src/components/digitalplanning/Terminal.jsx",
-      "src/components/digitalplanning/EfficiencyDashboard.jsx",
+      "src/components/digitalplanning/BM01Hub.tsx",
+      "src/components/digitalplanning/WorkstationHub.tsx",
+      "src/components/digitalplanning/Terminal.tsx",
+      "src/components/digitalplanning/EfficiencyDashboard.tsx",
       {
         label: t('projectStructureExpert.nodes.modalsInteractive', "Modals (Interactief)"),
         children: [
-          "src/components/digitalplanning/modals/ProductionStartModal.jsx",
-          "src/components/digitalplanning/modals/InspectionModal.jsx",
-          "src/components/digitalplanning/modals/TraceModal.jsx",
-          "src/components/digitalplanning/modals/PlanningImportModal.jsx",
-          "src/components/digitalplanning/modals/TerminalSelectionModal.jsx",
-          "src/components/digitalplanning/modals/ProductDossierModal.jsx",
-          "src/components/digitalplanning/modals/OrderEditModal.jsx",
-          "src/components/digitalplanning/modals/LotOverrideModal.jsx"
+          "src/components/digitalplanning/modals/ProductionStartModal.tsx",
+          "src/components/digitalplanning/modals/InspectionModal.tsx",
+          "src/components/digitalplanning/modals/TraceModal.tsx",
+          "src/components/digitalplanning/modals/PlanningImportModal.tsx",
+          "src/components/digitalplanning/modals/TerminalSelectionModal.tsx",
+          "src/components/digitalplanning/modals/ProductDossierModal.tsx",
+          "src/components/digitalplanning/modals/OrderEditModal.tsx",
+          "src/components/digitalplanning/modals/LotOverrideModal.tsx"
         ]
       },
       {
         label: t('projectStructureExpert.nodes.terminalViews', "Terminal Views"),
         children: [
-          "src/components/digitalplanning/terminal/TerminalProductionView.jsx",
-          "src/components/digitalplanning/terminal/TerminalPlanningView.jsx",
-          "src/components/digitalplanning/terminal/TerminalManualInput.jsx"
+          "src/components/digitalplanning/terminal/TerminalProductionView.tsx",
+          "src/components/digitalplanning/terminal/TerminalPlanningView.tsx",
+          "src/components/digitalplanning/terminal/TerminalManualInput.tsx"
         ]
       }
     ]
@@ -229,17 +229,17 @@ const getProjectStructure = (t: any): TreeNodeData[] => [
     label: t('projectStructureExpert.nodes.adminMatrix', "Admin & Matrix Management"),
     icon: <Settings className="w-4 h-4 text-blue-500" />,
     children: [
-      "src/components/admin/AdminDashboard.jsx",
-      "src/components/admin/AdminUsersView.jsx",
-      "src/components/admin/AdminLabelDesigner.jsx",
-      "src/components/admin/AdminDatabaseView.jsx",
-      "src/components/admin/FactoryStructureManager.jsx",
+      "src/components/admin/AdminDashboard.tsx",
+      "src/components/admin/AdminUsersView.tsx",
+      "src/components/admin/AdminLabelDesigner.tsx",
+      "src/components/admin/AdminDatabaseView.tsx",
+      "src/components/admin/FactoryStructureManager.tsx",
       {
         label: t('projectStructureExpert.nodes.matrixManager', "Matrix Manager"),
         children: [
-          "src/components/admin/matrixmanager/AdminMatrixManager.jsx",
-          "src/components/admin/matrixmanager/DimensionsView.jsx",
-          "src/components/admin/matrixmanager/MatrixGrid.jsx"
+          "src/components/admin/matrixmanager/AdminMatrixManager.tsx",
+          "src/components/admin/matrixmanager/DimensionsView.tsx",
+          "src/components/admin/matrixmanager/MatrixGrid.tsx"
         ]
       }
     ]
@@ -363,23 +363,23 @@ const ProjectStructureExpertView = () => {
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
       {/* Header met Statussen en Tabs */}
-      <div className="pt-6 px-6 border-b border-gray-200 bg-slate-900 text-white flex flex-col shrink-0">
+      <div className="pt-6 px-6 border-b border-gray-200 bg-white text-slate-900 flex flex-col shrink-0">
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-black flex items-center tracking-tight">
-              <BookOpen className="w-8 h-8 mr-3 text-blue-400" />
+              <BookOpen className="w-8 h-8 mr-3 text-blue-500" />
               {t('projectStructureExpert.portalTitle', 'ENGINEERING PORTAL')}
             </h1>
-            <p className="text-slate-400 text-xs uppercase font-bold tracking-widest mt-1">
+            <p className="text-slate-500 text-xs uppercase font-bold tracking-widest mt-1">
               {t('projectStructureExpert.portalSubtitle', 'FPi Future Factory • Systeem Architectuur & Onboarding')}
             </p>
           </div>
           <div className="flex items-center space-x-3">
             <div className="text-right mr-4 hidden md:block">
-              <p className="text-[10px] text-slate-500 font-mono">{t('projectStructureExpert.gitHash', 'GIT_HASH: 5e405e21')}</p>
-              <p className="text-[10px] text-green-400 font-mono italic">{t('projectStructureExpert.buildStatus', 'BUILD_STATUS: STABLE')}</p>
+              <p className="text-[10px] text-slate-400 font-mono">{t('projectStructureExpert.gitHash', 'GIT_HASH: {{hash}}', { hash: import.meta.env.VITE_GIT_HASH || 'unknown' })}</p>
+              <p className={`text-[10px] font-mono italic ${import.meta.env.VITE_BUILD_STATUS === 'DIRTY' ? 'text-amber-500' : 'text-emerald-600'}`}>{t('projectStructureExpert.buildStatus', 'BUILD_STATUS: {{status}}', { status: import.meta.env.VITE_BUILD_STATUS || 'STABLE' })}</p>
             </div>
-            <div className="bg-blue-500/20 text-blue-400 px-4 py-2 rounded-xl border border-blue-500/30 text-xs font-black">
+            <div className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl border border-blue-200 text-xs font-black">
               {t('projectStructureExpert.pilotVersion', 'PILOT v3.0')}
             </div>
           </div>
@@ -389,10 +389,10 @@ const ProjectStructureExpertView = () => {
         <div className="flex gap-2">
           <button 
             onClick={() => setActiveMainTab("explorer")}
-            className={`px-5 py-3 font-bold text-xs uppercase tracking-widest rounded-t-xl transition-all flex items-center gap-2 ${
+            className={`px-5 py-3 font-bold text-xs uppercase tracking-widest rounded-t-xl transition-all flex items-center gap-2 border-t border-x ${
               activeMainTab === "explorer" 
-                ? "bg-white text-slate-900 shadow-sm" 
-                : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
+                ? "bg-white text-blue-600 border-gray-200 border-b-transparent translate-y-[1px]" 
+                : "bg-slate-50 text-slate-500 border-transparent hover:bg-slate-100 hover:text-slate-800"
             }`}
           >
             <FolderTree size={16} />
@@ -400,10 +400,10 @@ const ProjectStructureExpertView = () => {
           </button>
           <button 
             onClick={() => setActiveMainTab("docs")}
-            className={`px-5 py-3 font-bold text-xs uppercase tracking-widest rounded-t-xl transition-all flex items-center gap-2 ${
+            className={`px-5 py-3 font-bold text-xs uppercase tracking-widest rounded-t-xl transition-all flex items-center gap-2 border-t border-x ${
               activeMainTab === "docs" 
-                ? "bg-white text-slate-900 shadow-sm" 
-                : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
+                ? "bg-white text-blue-600 border-gray-200 border-b-transparent translate-y-[1px]" 
+                : "bg-slate-50 text-slate-500 border-transparent hover:bg-slate-100 hover:text-slate-800"
             }`}
           >
             <FileText size={16} />

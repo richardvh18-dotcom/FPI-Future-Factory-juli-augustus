@@ -11,10 +11,11 @@ import { getISOWeekInfo, getStationMachineCode } from '../../utils/lotLogic';
 import AutoScaledLabelPreview from './AutoScaledLabelPreview';
 import { useLabelCatalog } from '../../hooks/useLabelCatalog';
 import { useLabelPreview } from '../../hooks/useLabelPreview';
-import { processLabelData, applyLabelLogic, filterTempOrderLabelsByProduct } from '../../utils/labelHelpers';
+import { processLabelData, applyLabelLogic, filterTempOrderLabelsByProduct, filterLabelsByProduct } from '../../utils/labelHelpers';
 import { executeOrderLabelSearch, loadFactoryMachinePaths, normalizeText } from "../../utils/orderLabelSearch";
 import { renderLabelToBitmapZpl } from '../../utils/unifiedLabelRenderEngine';
 import { resolvePrinterForRouting } from '../../utils/printRouting';
+import { queuePrintJob } from '../../services/printService';
 import {
   buildOrderLabelPreviewData,
   buildOrderLabelTemplateProduct,
@@ -65,6 +66,9 @@ type TempLabelItemProps = {
   labelRules: AnyRecord[];
   onPrint: (orderData: AnyRecord, templateId: string) => Promise<void>;
   printerDpi?: number;
+  departmentGroups?: DepartmentGroup[];
+  printers?: PrinterConfig[];
+  stationId?: string;
 };
 
 type TempLabelModalProps = {
@@ -73,6 +77,9 @@ type TempLabelModalProps = {
   labelTemplates?: LabelTemplate[];
   labelRules?: AnyRecord[];
   printerDpi?: number;
+  departmentGroups?: DepartmentGroup[];
+  printers?: PrinterConfig[];
+  stationId?: string;
 };
 
 type LotPrintModalProps = {
@@ -167,10 +174,20 @@ const resolveUsbBoundPrinter = (printers: PrinterConfig[], usbDevice: USBDevice 
 };
 
 // --- Helper voor Tijdelijke Labels ---
-const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi = 203 }: TempLabelItemProps) => {
+const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi = 203, departmentGroups = [], printers = [], stationId }: TempLabelItemProps) => {
   const { t } = useTranslation();
+  const { notify, showError, showSuccess } = useNotifications();
   const itemDisplay = getOrderLabelDescription(item) || getOrderLabelItemCode(item);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  
+  // States for "Add Lot Number" form
+  const [lotFormOpen, setLotFormOpen] = useState(false);
+  const [manualDept, setManualDept] = useState(departmentGroups[0]?.key || "");
+  const [manualStation, setManualStation] = useState(departmentGroups[0]?.stations?.[0] || "");
+  const [manualWeekOffset, setManualWeekOffset] = useState(0);
+  const [manualSeq, setManualSeq] = useState("");
+  const [labelCount, setLabelCount] = useState("1");
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const topOptions = useMemo(() => {
     return filterTempOrderLabelsByProduct(labelTemplates || [], buildOrderLabelTemplateProduct(item)) as LabelTemplate[];
@@ -187,6 +204,115 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
     }
   }, [topOptions, selectedTemplateId]);
 
+  const currentManualDept = useMemo(
+    () => departmentGroups.find(d => d.key === manualDept) || departmentGroups[0] || null,
+    [departmentGroups, manualDept]
+  );
+  const availableManualStations = currentManualDept?.stations || [];
+  
+  useEffect(() => {
+    if (departmentGroups.length > 0 && !departmentGroups.some(d => d.key === manualDept)) {
+      setManualDept(departmentGroups[0].key);
+    }
+  }, [departmentGroups, manualDept]);
+
+  useEffect(() => {
+    if (availableManualStations.length > 0 && !availableManualStations.includes(manualStation)) {
+      setManualStation(availableManualStations[0]);
+    } else if (availableManualStations.length === 0 && manualStation) {
+      setManualStation("");
+    }
+  }, [availableManualStations, manualStation]);
+
+  const handleLotPrint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const isFlange = String(item.itemCode || "").toUpperCase().startsWith("FL");
+    if (isFlange) {
+        showSuccess(t("productionStartModal.labels.flangePrintLater", "Voor flenzen worden bij start geen labels geprint. Labelprint gebeurt later bij Mazak."));
+        return;
+    }
+
+    if (!manualStation || !manualSeq.trim()) {
+      showError("Vul alle velden in (Machine en Volgnummer).");
+      return;
+    }
+    
+    setIsGenerating(true);
+    try {
+      const now = new Date();
+      now.setDate(now.getDate() + (Number(manualWeekOffset) * 7));
+      const { year, week } = getISOWeekInfo(now);
+      const weekStr = String(week).padStart(2, '0');
+      const machineCode = getStationMachineCode(manualStation);
+      const seqStr = String(manualSeq).trim().padStart(3, '0');
+      const generatedLot = `${machineCode}${weekStr}${seqStr}`;
+      
+      const count = parseInt(labelCount, 10);
+      if (isNaN(count) || count < 1) {
+          throw new Error("Ongeldig aantal labels.");
+      }
+
+      const availableRealLabels = filterLabelsByProduct(labelTemplates || [], item, { excludeTempOrderLabels: true });
+      if (!availableRealLabels || availableRealLabels.length === 0) {
+          throw new Error("Geen reguliere label template gevonden voor dit product.");
+      }
+      
+      // Selecteer de beste match op basis van naam of eerste
+      let bestTemplate = availableRealLabels[0];
+      
+      // Zoek naar target printer BM01
+      const bm01Printer = printers.find(p => p.id === 'BM01' || String(p.name || '').toUpperCase().includes('BM01'));
+      if (!bm01Printer) {
+          throw new Error("Printer BM01 niet gevonden in het systeem.");
+      }
+      
+      let dpiForPrint = printerDpi;
+      if (bm01Printer.dpi) {
+          dpiForPrint = parseInt(String(bm01Printer.dpi), 10);
+      }
+      
+      const previewDataForPrint = buildOrderLabelPreviewData(item, labelRules);
+      const renderData = { ...previewDataForPrint, lotNumber: generatedLot };
+      
+      const darkness = Number.parseInt(String((bm01Printer as any)?.darkness || '15'), 10);
+      
+      const zplPayload = await renderLabelToBitmapZpl({
+        template: bestTemplate,
+        data: renderData,
+        printerDpi: dpiForPrint,
+        darkness: Number.isFinite(darkness) ? darkness : 15,
+        printSpeed: 3
+      });
+
+      if (!zplPayload) {
+          throw new Error("Genereren van label payload mislukt.");
+      }
+      
+      await queuePrintJob(
+        bm01Printer.id,
+        zplPayload,
+        {
+          description: `Nood-label ${bestTemplate.name} voor ${getOrderLabelOrder(item)} (Lot: ${generatedLot}) (x${count})`,
+          quantity: count,
+          orderId: String(getOrderLabelOrder(item) || ""),
+          lotNumber: generatedLot,
+          stationId: stationId || "SYSTEM",
+          targetPrinterName: bm01Printer.name || "BM01",
+          variables: renderData,
+          templateId: bestTemplate.id,
+        }
+      );
+      
+      showSuccess(`Label succesvol verzonden naar wachtrij van ${bm01Printer.name}`);
+      setLotFormOpen(false);
+    } catch (err) {
+      showError(getErrMsg(err));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const selectedTemplate = topOptions.find((t: LabelTemplate) => t.id === selectedTemplateId) || topOptions[0];
   const selectedTemplateChain = useMemo<LabelTemplate[]>(() => {
     if (!selectedTemplate) return [];
@@ -198,35 +324,105 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
     return buildOrderLabelPreviewData(item, labelRules);
   }, [item, labelRules]);
 
+  const isFlangeInfo = String(item.itemCode || "").toUpperCase().startsWith("FL");
+
   return (
     <div className="w-full p-4 bg-white border border-slate-200 hover:border-amber-300 rounded-2xl transition-all">
       <div className="flex flex-col lg:flex-row gap-4">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-black text-slate-800 truncate">{getOrderLabelOrder(item)}</p>
           <p className="text-xs font-bold text-slate-500 truncate">{itemDisplay}</p>
-          <div className="mt-3">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t('common.template', 'Template')}</label>
-            {topOptions.length > 0 ? (
-              <select
-                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
-                value={selectedTemplateId}
-                onChange={(e) => setSelectedTemplateId(e.target.value)}
-              >
-                {topOptions.map((t: LabelTemplate) => (
-                  <option key={t.id} value={t.id}>{String(t.name || t.id)}</option>
-                ))}
-              </select>
-            ) : (
-              <p className="text-xs italic text-amber-600">{t('printStationView.noMatchingTemporaryTemplateFound', 'Geen passende tijdelijke template gevonden.')}</p>
-            )}
+          
+          <div className="flex gap-2 mt-4">
+            <button
+                onClick={() => setLotFormOpen(false)}
+                className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all ${!lotFormOpen ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+            >
+                Print Normaal
+            </button>
+            <button
+                onClick={() => setLotFormOpen(true)}
+                className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all ${lotFormOpen ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+            >
+                + Voeg Lotnummer Toe
+            </button>
           </div>
-          <button
-            onClick={() => onPrint(item, selectedTemplateId)}
-            disabled={!selectedTemplateId || topOptions.length === 0}
-            className="mt-3 px-3 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-amber-600 disabled:opacity-50"
-          >
-            Print
-          </button>
+
+          {!lotFormOpen ? (
+              <div className="mt-4 p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1">{t('common.template', 'Template')}</label>
+                {topOptions.length > 0 ? (
+                  <select
+                    className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold"
+                    value={selectedTemplateId}
+                    onChange={(e) => setSelectedTemplateId(e.target.value)}
+                  >
+                    {topOptions.map((t: LabelTemplate) => (
+                      <option key={t.id} value={t.id}>{String(t.name || t.id)}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="text-xs italic text-amber-600">{t('printStationView.noMatchingTemporaryTemplateFound', 'Geen passende tijdelijke template gevonden.')}</p>
+                )}
+                <button
+                  onClick={() => onPrint(item, selectedTemplateId)}
+                  disabled={!selectedTemplateId || topOptions.length === 0}
+                  className="w-full mt-3 px-3 py-2 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-slate-700 disabled:opacity-50"
+                >
+                  Regulier Printen
+                </button>
+              </div>
+          ) : (
+              <form onSubmit={handleLotPrint} className="mt-4 p-3 bg-amber-50/50 border border-amber-100 rounded-xl space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                    <div>
+                        <label className="text-[9px] font-bold text-slate-500 uppercase mb-1 block">{t("common.department", "Afdeling")}</label>
+                        <select value={manualDept} onChange={e => setManualDept(e.target.value)} className="w-full p-2 text-xs border border-slate-200 rounded-lg font-bold bg-white" disabled={departmentGroups.length === 0}>
+                            {departmentGroups.length === 0 && <option value="">{t("common.noDepartmentsFound")}</option>}
+                            {departmentGroups.map((group) => <option key={group.key} value={group.key}>{group.label}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-[9px] font-bold text-slate-500 uppercase mb-1 block">{t("common.stationMachine", "Machine")}</label>
+                        <select value={manualStation} onChange={e => setManualStation(e.target.value)} className="w-full p-2 text-xs border border-slate-200 rounded-lg font-bold bg-white" disabled={availableManualStations.length === 0}>
+                            {availableManualStations.length === 0 && <option value="">{t("common.noStationsFound")}</option>}
+                            {availableManualStations.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                    </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                    <div>
+                        <label className="text-[9px] font-bold text-slate-500 uppercase mb-1 block">{t("common.week", "Week")}</label>
+                        <select value={String(manualWeekOffset)} onChange={(e) => setManualWeekOffset(parseInt(e.target.value, 10) || 0)} className="w-full p-2 text-xs border border-slate-200 rounded-lg font-bold bg-white">
+                            <option value="-1">{t("common.previousWeek", "Vorige week")}</option>
+                            <option value="0">{t("common.currentWeek", "Huidige week")}</option>
+                            <option value="1">{t("common.nextWeek", "Volgende week")}</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-[9px] font-bold text-slate-500 uppercase mb-1 block">Volgnummer</label>
+                        <input type="text" value={manualSeq} onChange={e => setManualSeq(e.target.value)} className="w-full p-2 text-xs border border-slate-200 rounded-lg font-bold bg-white" placeholder="Bijv. 123" required />
+                    </div>
+                </div>
+                <div>
+                    <label className="text-[9px] font-bold text-slate-500 uppercase mb-1 block">Aantal</label>
+                    <input type="number" min="1" value={labelCount} onChange={e => setLabelCount(e.target.value)} className="w-full p-2 text-xs border border-slate-200 rounded-lg font-bold bg-white" required />
+                </div>
+                
+                {isFlangeInfo && (
+                  <p className="text-[10px] font-bold text-amber-700 italic">Let op: Voor flenzen worden hier geen labels geprint. Dit gebeurt later bij Mazak.</p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isGenerating}
+                  className="w-full mt-2 px-3 py-2 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-amber-600 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isGenerating ? <Loader2 className="animate-spin" size={14} /> : null}
+                  Lotnummer Toevoegen & Printen (BM01)
+                </button>
+              </form>
+          )}
         </div>
         <div className="w-full lg:w-64 h-56 bg-white border border-slate-200 rounded-xl p-2 overflow-y-auto">
           {previewTemplates.length > 0 ? (
@@ -250,9 +446,8 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
     </div>
   );
 };
-
 // --- Modal: Tijdelijke Labels Zoeken ---
-const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = [], printerDpi = 203 }: TempLabelModalProps) => {
+const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = [], printerDpi = 203, departmentGroups = [], printers = [] }: TempLabelModalProps) => {
   const { t } = useTranslation();
   const { notify } = useNotifications();
   const [orderStr, setOrderStr] = useState("");
@@ -262,6 +457,8 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
   const [loading, setLoading] = useState(false);
   const [searchDiagnostics, setSearchDiagnostics] = useState<string[]>([]);
   const isMountedRef = useRef(true);
+
+
 
   const refreshInitialList = useCallback(async () => {
     setLoadingInitialList(true);
@@ -400,15 +597,17 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
               <div>
                 <h3 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-1">{t('printStationView.orderLabels', 'Order Labels')}</h3>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  Legacy / Nood-etiketten zoeken
+                  Legacy / Nood-etiketten zoeken of handmatig maken
                 </p>
               </div>
             </div>
             <button onClick={onClose} className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-full transition-colors"><X size={20} /></button>
           </div>
 
+          
+
           {/* Search Bar */}
-          <div className="flex flex-col sm:flex-row gap-3 mb-6 shrink-0">
+              <div className="flex flex-col sm:flex-row gap-3 mb-6 shrink-0">
             <div className="relative flex-1 group">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-amber-500 transition-colors" size={18} />
               <input 
@@ -450,37 +649,47 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
                     labelRules={labelRules}
                     onPrint={onPrint}
                     printerDpi={printerDpi}
+                    departmentGroups={departmentGroups}
+                    printers={printers}
+                    stationId={undefined}
                   />
                 ))}
               </div>
             )}
-            
-            {loadingInitialList && !orderStr.trim() && (
-              <div className="py-12 border-2 border-dashed border-slate-200 rounded-[30px] flex flex-col items-center justify-center text-center bg-slate-50/50">
-                <Loader2 className="animate-spin text-slate-400 mb-3" size={24} />
-                <p className="text-xs text-slate-400 font-medium">{t("common.loadingList")}</p>
-              </div>
-            )}
+                {displayItems.length === 0 && !loading && !loadingInitialList && !orderStr.trim() && (
+                  <div className="h-full flex flex-col items-center justify-center p-8 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
+                    <Tag size={48} className="text-slate-300 mb-4" />
+                    <p className="text-sm font-bold text-slate-500">{t('printStationView.noLabelsFound', 'Geen labels gevonden')}</p>
+                    <p className="text-xs text-slate-400 mt-2">{t('printStationView.noLabelsFoundHint', 'Probeer een andere zoekterm')}</p>
+                  </div>
+                )}
 
-            {results.length === 0 && orderStr.trim() && !loading && (
-              <div className="py-12 border-2 border-dashed border-slate-200 rounded-[30px] flex flex-col items-center justify-center text-center bg-slate-50/50">
-                <div className="p-4 bg-slate-100 text-slate-400 rounded-full mb-3">
-                  <Search size={24} />
-                </div>
-                <p className="text-sm font-black text-slate-600 uppercase tracking-widest">{t("common.nothingFound")}</p>
-                <p className="text-xs text-slate-400 font-medium mt-1">{t("common.noOrderOrProductFoundFor", { query: orderStr })}</p>
-                
-                {searchDiagnostics.length > 0 && (
-                  <div className="mt-4 mx-auto max-w-xl text-[11px] font-mono bg-slate-100 border border-slate-200 rounded-xl p-3 text-slate-600">
-                    <p className="font-black mb-1">{t('printStationView.searchDiagnostics', 'Zoekdiagnostiek')}</p>
-                    {searchDiagnostics.map((line, idx) => (
-                      <p key={`${line}-${idx}`} className="break-all">{line}</p>
-                    ))}
+                {loadingInitialList && !orderStr.trim() && (
+                  <div className="py-12 border-2 border-dashed border-slate-200 rounded-[30px] flex flex-col items-center justify-center text-center bg-slate-50/50">
+                    <Loader2 className="animate-spin text-slate-400 mb-3" size={24} />
+                    <p className="text-xs text-slate-400 font-medium">{t("common.loadingList")}</p>
+                  </div>
+                )}
+
+                {results.length === 0 && orderStr.trim() && !loading && (
+                  <div className="py-12 border-2 border-dashed border-slate-200 rounded-[30px] flex flex-col items-center justify-center text-center bg-slate-50/50">
+                    <div className="p-4 bg-slate-100 text-slate-400 rounded-full mb-3">
+                      <Search size={24} />
+                    </div>
+                    <p className="text-sm font-black text-slate-600 uppercase tracking-widest">{t("common.nothingFound")}</p>
+                    <p className="text-xs text-slate-400 font-medium mt-1">{t("common.noOrderOrProductFoundFor", { query: orderStr })}</p>
+                    
+                    {searchDiagnostics.length > 0 && (
+                      <div className="mt-4 mx-auto max-w-xl text-[11px] font-mono bg-slate-100 border border-slate-200 rounded-xl p-3 text-slate-600">
+                        <p className="font-black mb-1">{t('printStationView.searchDiagnostics', 'Zoekdiagnostiek')}</p>
+                        {searchDiagnostics.map((line, idx) => (
+                          <p key={`${line}-${idx}`} className="break-all">{line}</p>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
         </div>
       </div>
     </div>
@@ -1520,7 +1729,7 @@ const PrintStationView = () => {
         )}
         
         {showTempModal && (
-          <TempLabelModal onClose={() => setShowTempModal(false)} onPrint={handleTempLegacyPrint} labelTemplates={labelTemplates} labelRules={labelRules} printerDpi={printerDpi} />
+          <TempLabelModal onClose={() => setShowTempModal(false)} onPrint={handleTempLegacyPrint} labelTemplates={labelTemplates} labelRules={labelRules} printerDpi={printerDpi} departmentGroups={departmentGroups} />
         )}
         {showLotModal && (
           <LotPrintModal onClose={() => setShowLotModal(false)} departmentGroups={departmentGroups} onPrintBatch={handleDirectLotPrintBatch} printer={activeQueuePrinter} />

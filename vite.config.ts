@@ -9,6 +9,22 @@ import { pwaConfig } from './vite.pwa.config';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+import { execSync } from 'child_process';
+
+let gitHash = 'unknown';
+let buildStatus = 'UNKNOWN';
+try {
+  gitHash = execSync('git rev-parse --short HEAD').toString().trim();
+  const gitStatus = execSync('git status --porcelain').toString().trim();
+  buildStatus = gitStatus ? 'DIRTY' : 'STABLE';
+} catch (e) {
+  console.warn('Could not read git status');
+}
+
+process.env.VITE_GIT_HASH = gitHash;
+process.env.VITE_BUILD_STATUS = buildStatus;
+
+
 // Read version from public/version.json
 const versionPath = path.resolve(__dirname, 'public/version.json');
 let version = 'dev';
