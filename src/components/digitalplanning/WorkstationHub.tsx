@@ -812,6 +812,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       );
       unsubs.push(unsubScopedOrders);
       
+      const currentStationClean = String(selectedStation || "").toUpperCase().replace(/\s/g, "");
+      
       // LISTENER 2: Products (also starts immediately, in parallel)
       const isPostProcessing = [
         "mazak",
@@ -829,7 +831,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       const unsubProds = subscribeTrackedProducts({
         db,
         statusExclusions: ["completed", "shipped", "deleted", "archived_rejected"],
-        maxItems: 200,
+        maxItems: null,
         onData: (items) => {
           if (isMounted) setRawProducts(items);
           markStreamReady();

@@ -1,4 +1,50 @@
+### Update sessie 07 July 2026 (Fix currentStationClean ReferenceError)
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Oplossen van de `ReferenceError: currentStationClean is not defined` crash in de data-initialisatie van `WorkstationHub.tsx`.
+
+**Uitgevoerd:**
+- In `WorkstationHub.tsx` de variabele `currentStationClean` weer correct gedefinieerd bovenaan de product-listener (deze was per ongeluk verwijderd tijdens de query rollback). Dit herstelt de werking van de Firestore product-sync, waardoor data weer succesvol geladen wordt op BM01 en alle andere stations.
+- Versie verhoogd van `0.1.76` naar `0.1.77` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (BM01 Limiet Verwijderd, Snelheidsfix & Debugging)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- De limiet van 200 producten verwijderen die oudere lots van het BM01 station drukten.
+- De laadsnelheid van de Teamleader Hub optimaliseren.
+- Console logs toevoegen om product-filtering lokaal en live te debuggen.
+
+**Uitgevoerd:**
+- In `WorkstationHub.tsx` de parameter `maxItems` teruggezet naar `null` (ongelimiteerd) bij de product-sync. Hierdoor vallen oudere lots op BM01 niet meer buiten de boot.
+- In `useTeamleaderFirestore.ts` de archiefgeschiedenis ingekort tot 14 dagen vóór de start van de huidige ISO-week (in plaats van 365 dagen), wat de data-overdracht met 95%+ verlaagt.
+- In `BM01Hub.tsx` console logs toegevoegd voor `products` en `bm01Products` om te kunnen inzien welke data binnenkomt.
+- Versie verhoogd van `0.1.74` naar `0.1.76` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (BM01 'Te Keuren' Filter Fix)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Zorgen dat producten met de status of stap "Te Keuren" (te inspecteren) correct worden getoond in de BM01/eindinspectie-lijst.
+
+**Uitgevoerd:**
+- In `BM01Hub.tsx` het productfilter (`bm01Products`) uitgebreid met `step.includes("KEUR")` en `status.includes("KEUR")` matching. Hierdoor worden lots met de status/stap "Te Keuren" nu correct herkend en getoond op het BM01 station.
+- Versie verhoogd van `0.1.73` naar `0.1.74` in `package.json` en `public/version.json`.
+
+---
+
 ### Update sessie 07 July 2026 (Offline Persistence Weer Aangezet)
+
 
 **Datum:** 07 July 2026 | **Branch:** pilot-dev
 
