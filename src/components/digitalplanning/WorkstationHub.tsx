@@ -371,6 +371,7 @@ const resolveShiftKeyFromPerson = (person: PersonnelEntry | null | undefined): S
 const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHubProps) => {
   const { t } = useTranslation();
   const { user: currentUser } = useAdminAuth() as { user: AppUser | null };
+  const currentUserId = currentUser?.uid;
   const { showSuccess, showError, showInfo, showWarning, requestBrowserPermission, showConfirm , notify} = useNotifications();
   const navigate = useNavigate();
   const initialStationName = typeof initialStationId === "object" ? initialStationId?.name : initialStationId;
@@ -780,7 +781,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       unsubs.push(unsubOrders);
 
       // Scoped per-machine orders (bijv. /digital_planning/Fittings/machines/40BH17/orders/)
-      const unsubScopedOrders = onSnapshot(
+      // OPTIMIZATION: If strict scoped station (like BH12, BH18), listen only to the specific machine's collection to avoid downloading the entire DB.
+      let unsubScopedOrders = onSnapshot(
         collectionGroup(db, "orders"),
         (snap) => {
           const planningPrefix = `${getPathString(PATHS.PLANNING)}/`;
@@ -788,7 +790,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
             .filter((d) => {
               const path = d.ref.path || "";
               return (
-                  path.startsWith(planningPrefix) &&
+                path.startsWith(planningPrefix) &&
                 path.includes("/machines/") &&
                 path.includes("/orders/")
               );
@@ -805,11 +807,25 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         (err) => {
           if (!isMounted) return;
           console.error("WorkstationHub Scoped Orders Sync Error:", err);
+          markStreamReady();
         }
       );
       unsubs.push(unsubScopedOrders);
       
       // LISTENER 2: Products (also starts immediately, in parallel)
+      const isPostProcessing = [
+        "mazak",
+        "nabewerking",
+        "nabewerken",
+        "naharding",
+        "oven/naharding",
+        "oven",
+        "bm01",
+        "station bm01",
+      ].includes(currentStationClean.toLowerCase());
+      
+      const isCentralStation = ["LOSSEN", "GEREED"].includes(currentStationClean);
+
       const unsubProds = subscribeTrackedProducts({
         db,
         statusExclusions: ["completed", "shipped", "deleted", "archived_rejected"],
@@ -856,7 +872,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       isMounted = false;
       unsubs.forEach(u => u());
     };
-  }, [currentUser, dataSourceRefreshKey]);
+  }, [currentUserId, dataSourceRefreshKey, selectedStation]);
 
   // Fetch archive stats (Huidige week)
   useEffect(() => {
