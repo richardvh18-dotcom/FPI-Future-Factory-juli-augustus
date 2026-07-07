@@ -1,4 +1,18 @@
+### Update sessie 07 July 2026 (Optimalisatie BH18 Laadtijd door Scoped Subcollecties)
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Het oplossen van de trage database laadtijd op wikkelstations zoals BH18 na het terugrollen van de queries.
+
+**Uitgevoerd:**
+- In `WorkstationHub.tsx` de directe subcollectie-paden query hersteld voor wikkelstations (nu de ReferenceError is opgelost). Hierdoor luistert BH18 alleen direct naar de 4 specifieke subcollectiepaden in plaats van de gehele database (unfiltered collectionGroup query), wat de database laadtijd weer super snel maakt.
+- Versie verhoogd van `0.1.77` naar `0.1.78` in `package.json` en `public/version.json`.
+
+---
+
 ### Update sessie 07 July 2026 (Fix currentStationClean ReferenceError)
+
 
 **Datum:** 07 July 2026 | **Branch:** pilot-dev
 

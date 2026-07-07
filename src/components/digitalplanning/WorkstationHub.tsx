@@ -780,39 +780,81 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       });
       unsubs.push(unsubOrders);
 
-      // Scoped per-machine orders (bijv. /digital_planning/Fittings/machines/40BH17/orders/)
-      // OPTIMIZATION: If strict scoped station (like BH12, BH18), listen only to the specific machine's collection to avoid downloading the entire DB.
-      let unsubScopedOrders = onSnapshot(
-        collectionGroup(db, "orders"),
-        (snap) => {
-          const planningPrefix = `${getPathString(PATHS.PLANNING)}/`;
-          scopedOrders = snap.docs
-            .filter((d) => {
-              const path = d.ref.path || "";
-              return (
-                path.startsWith(planningPrefix) &&
-                path.includes("/machines/") &&
-                path.includes("/orders/")
-              );
-            })
-            .map(mapOrderDoc)
-            .filter((o): o is PlanningOrder => Boolean(o))
-            .filter((o) => {
-              const s = String(o.status || "").toLowerCase();
-              return !["completed", "cancelled", "shipped", "rejected", "finished"].includes(s);
-            });
-          mergeOrders();
-          markStreamReady();
-        },
-        (err) => {
-          if (!isMounted) return;
-          console.error("WorkstationHub Scoped Orders Sync Error:", err);
-          markStreamReady();
-        }
-      );
-      unsubs.push(unsubScopedOrders);
-      
       const currentStationClean = String(selectedStation || "").toUpperCase().replace(/\s/g, "");
+      const isWindingStation = !isPostProcessing && !isCentralStation;
+      
+      let unsubScopedOrders: () => void;
+      
+      if (isWindingStation) {
+        const paths = [
+          `${getPathString(PATHS.PLANNING)}/Fittings/machines/40${currentStationClean}/orders`,
+          `${getPathString(PATHS.PLANNING)}/Fittings/machines/${currentStationClean}/orders`,
+          `${getPathString(PATHS.PLANNING)}/Pipes/machines/40${currentStationClean}/orders`,
+          `${getPathString(PATHS.PLANNING)}/Pipes/machines/${currentStationClean}/orders`,
+        ];
+        
+        const docsMap = new Map<string, PlanningOrder[]>();
+        
+        const unsubsPaths = paths.map((path) => {
+          return onSnapshot(
+            collection(db, path),
+            (snap) => {
+              const docs = snap.docs
+                .map(mapOrderDoc)
+                .filter((o): o is PlanningOrder => Boolean(o));
+              docsMap.set(path, docs);
+              
+              scopedOrders = Array.from(docsMap.values()).flat();
+              mergeOrders();
+              markStreamReady();
+            },
+            (err) => {
+              console.warn(`Error listening to path ${path}:`, err);
+              markStreamReady();
+            }
+          );
+        });
+        
+        unsubScopedOrders = () => {
+          unsubsPaths.forEach((unsub) => unsub());
+        };
+      } else {
+        const activeStatuses = ["ready", "planned", "production", "paused", "setup", "material_ready", "to_be_planned", "concept", "running"];
+        const scopedOrdersQuery = query(
+          collectionGroup(db, "orders"),
+          where("status", "in", activeStatuses)
+        );
+
+        unsubScopedOrders = onSnapshot(
+          scopedOrdersQuery,
+          (snap) => {
+            const planningPrefix = `${getPathString(PATHS.PLANNING)}/`;
+            scopedOrders = snap.docs
+              .filter((d) => {
+                const path = d.ref.path || "";
+                return (
+                  path.startsWith(planningPrefix) &&
+                  path.includes("/machines/") &&
+                  path.includes("/orders/")
+                );
+              })
+              .map(mapOrderDoc)
+              .filter((o): o is PlanningOrder => Boolean(o))
+              .filter((o) => {
+                const s = String(o.status || "").toLowerCase();
+                return !["completed", "cancelled", "shipped", "rejected", "finished"].includes(s);
+              });
+            mergeOrders();
+            markStreamReady();
+          },
+          (err) => {
+            if (!isMounted) return;
+            console.error("WorkstationHub Scoped Orders Sync Error:", err);
+            markStreamReady();
+          }
+        );
+      }
+      unsubs.push(unsubScopedOrders);
       
       // LISTENER 2: Products (also starts immediately, in parallel)
       const isPostProcessing = [
