@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { collection, collectionGroup, query, onSnapshot, doc, where } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { db } from "../../config/firebase";
-import { subDays } from "date-fns";
+import { subDays, startOfISOWeek } from "date-fns";
 import { PATHS, getArchiveItemsPath, getArchiveRejectedItemsPath, getPathString } from "../../config/dbPaths";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 import { normalizeMachine } from "../../utils/hubHelpers";
@@ -247,7 +247,7 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
       unsubs.push(unsubDowntime);
 
       const now = new Date();
-      const minArchiveDate = subDays(now, 365);
+      const minArchiveDate = subDays(startOfISOWeek(now), 14);
       const archiveDataByYear: Record<number, FirestoreTrackedProduct[]> = {};
 
       const syncArchiveHistory = () => {

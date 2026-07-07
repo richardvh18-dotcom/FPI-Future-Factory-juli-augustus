@@ -502,8 +502,8 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
         const step = (p.currentStep || "").toUpperCase();
         const status = (p.status || "").toUpperCase();
         
-        // Ruimere matching voor BM01/Inspectie
-        const isMatch = station.includes("BM01") || step.includes("INSPECTIE") || step === "EINDINSPECTIE" || step === "BM01";
+        // Ruimere matching voor BM01/Inspectie (inclusief 'Te Keuren' / 'Keuren' statussen)
+        const isMatch = station.includes("BM01") || step.includes("INSPECTIE") || step.includes("KEUR") || status.includes("KEUR") || step === "EINDINSPECTIE" || step === "BM01";
         
         const isRejected = status === "REJECTED" || step === "REJECTED" || status === "AFKEUR";
         const isFinished = step === "FINISHED" || station === "GEREED";
@@ -512,7 +512,10 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
     });
   }, [products]);
 
-    const toMillisSafe = (value: unknown) => toMillisFromMixed(value);
+  console.log("BM01 Raw Products received:", products);
+  console.log("BM01 Filtered bm01Products:", bm01Products);
+
+  const toMillisSafe = (value: unknown) => toMillisFromMixed(value);
 
     const getNahardingOfferedMillis = (item: ProductRecord) => {
         const ts = item?.timestamps || {};
