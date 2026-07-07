@@ -781,6 +781,20 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       unsubs.push(unsubOrders);
 
       const currentStationClean = String(selectedStation || "").toUpperCase().replace(/\s/g, "");
+      
+      const isPostProcessing = [
+        "mazak",
+        "nabewerking",
+        "nabewerken",
+        "naharding",
+        "oven/naharding",
+        "oven",
+        "bm01",
+        "station bm01",
+      ].includes(currentStationClean.toLowerCase());
+      
+      const isCentralStation = ["LOSSEN", "GEREED"].includes(currentStationClean);
+      
       const isWindingStation = !isPostProcessing && !isCentralStation;
       
       let unsubScopedOrders: () => void;
@@ -851,19 +865,6 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       unsubs.push(unsubScopedOrders);
       
       // LISTENER 2: Products (also starts immediately, in parallel)
-      const isPostProcessing = [
-        "mazak",
-        "nabewerking",
-        "nabewerken",
-        "naharding",
-        "oven/naharding",
-        "oven",
-        "bm01",
-        "station bm01",
-      ].includes(currentStationClean.toLowerCase());
-      
-      const isCentralStation = ["LOSSEN", "GEREED"].includes(currentStationClean);
-
       const unsubProds = subscribeTrackedProducts({
         db,
         statusExclusions: ["completed", "shipped", "deleted", "archived_rejected"],
