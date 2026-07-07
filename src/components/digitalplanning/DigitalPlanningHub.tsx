@@ -154,7 +154,10 @@ const DigitalPlanningHub = () => {
         setActiveDept(state.initialView);
       } else if (!state.searchOrder) {
         // FIX: Reset naar hoofdmenu als er geen specifieke state is (bijv. klik op Sidebar)
-        // Dit zorgt ervoor dat een klik op 'Planning' je altijd terugbrengt naar de start
+        // Maar doe dit niet als de gebruiker slechts 1 station toegewezen heeft (om loops te voorkomen)
+        if (user?.allowedStations?.length === 1) {
+          return;
+        }
         setActiveDept(null);
       }
     } catch (err: unknown) {

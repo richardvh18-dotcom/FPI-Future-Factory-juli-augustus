@@ -1,4 +1,167 @@
+### Update sessie 07 July 2026 (Offline Persistence Weer Aangezet)
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Offline persistence (IndexedDB cache) weer inschakelen zodat tablets en laptops probleemloos doorwerken bij wisselende WiFi-verbindingen.
+
+**Uitgevoerd:**
+- In `firebase.ts` de offline cache weer geactiveerd via `persistentLocalCache` met de `persistentMultipleTabManager`.
+- De cachegrootte is gelimiteerd op een veilige **50MB** (i.p.v. `CACHE_SIZE_UNLIMITED`) om browser QuotaExceededErrors te voorkomen.
+- Versie verhoogd van `0.1.72` naar `0.1.73` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (Revert van Scoping Query Logica naar Werkende v0.1.61)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- De query logica volledig terugrollen naar de werkende status van `v0.1.61`, met behoud van de bugfixes voor browsercrashes en render-loops.
+
+**Uitgevoerd:**
+- In `WorkstationHub.tsx` de scoped orders query teruggezet naar de unfiltered `collectionGroup("orders")` listener.
+- In `WorkstationHub.tsx` de `subscribeTrackedProducts`-aanroep teruggezet naar de parameterloze variant (luistert naar alle machines).
+- In `trackedProducts.ts` de `limit(150)` restrictie verwijderd van de root listener.
+- De stability fixes (uitschakeling IndexedDB persistence, localStorage cleanup en DigitalPlanningHub render-loop guards) zijn behouden gebleven.
+- Versie verhoogd van `0.1.71` naar `0.1.72` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (Subcollectie Paden voor Wikkelstations)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Bypassen van ontbrekende Firestore Collection Group indexes op `machine` door direct te luisteren naar de specifieke machine-subcollecties.
+
+**Uitgevoerd:**
+- In `WorkstationHub.tsx` voor wikkelstations de `collectionGroup("orders")` query (die faalde door een missende index) vervangen door 4 directe, specifieke pad-listeners (`Fittings/machines/...` en `Pipes/machines/...`). Dit omzeilt de noodzaak voor indexen en laadt de planning data direct.
+- Versie verhoogd van `0.1.70` naar `0.1.71` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (Fix Oneindige Render-Loop in DigitalPlanningHub)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Oplossen van de flikkerende schermen en het oneindig spinnende laadwiel op single-station tablets (zoals BH18).
+
+**Uitgevoerd:**
+- In `DigitalPlanningHub.tsx` voorkomen dat `activeDept` gereset wordt naar `null` bij auth-updates als de ingelogde gebruiker slechts één toegewezen station heeft (`user?.allowedStations?.length === 1`). Dit doorbreekt de oneindige reset- en auto-navigatie mount/unmount loop die het laadwiel en flikkerende scherm veroorzaakte.
+- Versie verhoogd van `0.1.69` naar `0.1.70` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (Uitzetten Firestore Offline Persistence & Index-Filter)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- De 20-30 seconden laadwiel-hang en lege schermen op workstations volledig verhelpen door IndexedDB persistence uit te zetten en server-side index-filtering toe te passen voor orders.
+
+**Uitgevoerd:**
+- In `firebase.ts` de offline persistence (`localCache`) uitgeschakeld en vervangen door directe `getFirestore(app)` initialisatie. Dit voorkomt IndexedDB corruptie en quota errors op de tablets.
+- `clearIndexedDb(firestore)` toegevoegd op startup om automatisch schijfruimte vrij te maken op client apparaten.
+- In `WorkstationHub.tsx` het laadwiel loopsysteem verholpen door `currentUser` in de `useEffect` dependency array te vervangen door `currentUser?.uid` (voorkomt onnodige re-renders door referentiewisselingen).
+- De `isStrictScoped` getDocs path queries (die hingen/leeg bleven) vervangen door een geoptimaliseerde, server-side gefilterde `collectionGroup("orders")` query. Wikkelstations filteren nu direct op hun eigen station-ID (`machine in [selectedStation, ...]`), en overige hubs op actieve statussen (`status in activeStatuses`), wat 99% aan querydata scheelt en direct laadt.
+- Versie verhoogd van `0.1.67` naar `0.1.69` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (Automatische Schoonmaak localStorage Firestore)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Oplossen van hardnekkige `QuotaExceededError` crashes door `localStorage` automatisch te ontdoen van verouderde/beschadigde Firestore mutatie-keys.
+
+**Uitgevoerd:**
+- In `firebase.ts` een opstart-cleanupscript toegevoegd dat alle `firestore_mutations_` en `firestore` keys wist uit `localStorage` bij initialisatie.
+- Versie verhoogd van `0.1.66` naar `0.1.67` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (Tracked Products Query Optimalisatie)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Database-laadtijd gigantisch versnellen door overbodige documentdownloads van de complete `tracked_products` tabel in te perken.
+
+**Uitgevoerd:**
+- In `trackedProducts.ts` een limiet van **150** toegevoegd aan de root-collectie listener (`PATHS.TRACKING`) om legacy data overslag te voorkomen.
+- In `WorkstationHub.tsx` de `subscribeTrackedProducts`-aanroep voor standaard wikkelmachines geoptimaliseerd door specifiek te filteren op het geselecteerde station (`selectedStation` en `40BH...`), in plaats van te luisteren naar alle machines in de fabriek tegelijkertijd.
+- Versie verhoogd van `0.1.65` naar `0.1.66` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (Limiet op Firestore Cache-grootte)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Voorkomen van `QuotaExceededError` in de browser door een oneindig groeiende Firestore cache (`CACHE_SIZE_UNLIMITED`).
+
+**Uitgevoerd:**
+- In `firebase.ts` de parameter `cacheSizeBytes` aangepast van `CACHE_SIZE_UNLIMITED` naar een vaste limiet van **50MB** (`50 * 1024 * 1024`), zodat de SDK automatisch oude cachegegevens opschoont.
+- Versie verhoogd van `0.1.64` naar `0.1.65` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (Fix Firestore Assertion Crash)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Oplossen van de Firestore assertion error (`Unexpected state`) die optrad bij het laden van BH18 door IndexedDB cache conflict (gelijktijdig onSnapshot op specifieke collectie en collectionGroup).
+
+**Uitgevoerd:**
+- In `WorkstationHub.tsx` de onSnapshot-listeners voor strikt gescoopte paden vervangen door een veilige `getDocs` fetch in combinatie met een 30-seconden polling interval.
+- `selectedStation` toegevoegd aan de dependency array van de database-load `useEffect` zodat de listeners correct updaten bij stationwissels.
+- Versie verhoogd van `0.1.63` naar `0.1.64` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (Database Load Optimalisatie - BH12 & BH18)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Het laden van de database op werkstations versnellen (vooral BH18), omdat de `collectionGroup('orders')` query de volledige database downloadde.
+
+**Uitgevoerd:**
+- In `WorkstationHub.tsx` de order-listener aangepast: indien het een strikt gescoopt station is (zoals BH12 of BH18), luisteren we direct naar de specifieke machine-collectie(s) in plaats van de globale `collectionGroup`.
+- Versie verhoogd van `0.1.62` naar `0.1.63` in `package.json` en `public/version.json`.
+
+---
+
+### Update sessie 07 July 2026 (Deployment)
+
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Versie verhogen en firebase/hosting deployen.
+
+**Uitgevoerd:**
+- Versie verhoogd van `0.1.61` naar `0.1.62` in `package.json` en `public/version.json`.
+- Firebase en Hosting deployment uitgevoerd.
+
+---
+
 ### Update sessie 06 July 2026 (Printer Beheer - Afdelingen & Locatie Label)
+
 
 **Datum:** 06 July 2026 | **Branch:** pilot-dev
 

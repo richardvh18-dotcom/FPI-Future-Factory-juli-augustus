@@ -3,7 +3,6 @@ import {
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
-  CACHE_SIZE_UNLIMITED,
   getFirestore,
   collection,
   addDoc,
@@ -77,11 +76,25 @@ export const firebaseConfig = {
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 const createFirestoreInstance = () => {
+  if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+    try {
+      const keys = Object.keys(localStorage);
+      for (const key of keys) {
+        if (key.startsWith("firestore_mutations_") || key.includes("firestore")) {
+          localStorage.removeItem(key);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not clear localStorage firestore keys:", e);
+    }
+  }
+
+  // Enable IndexedDB offline persistence with a safe 50MB cache size limit
   try {
     return initializeFirestore(app, {
       localCache: persistentLocalCache({
         tabManager: persistentMultipleTabManager(),
-        cacheSizeBytes: CACHE_SIZE_UNLIMITED,
+        cacheSizeBytes: 50 * 1024 * 1024,
       }),
     });
   } catch (error) {
