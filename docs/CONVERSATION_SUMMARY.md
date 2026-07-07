@@ -1,4 +1,18 @@
+### Update sessie 07 July 2026 (Fix isPostProcessing ReferenceError)
+
+**Datum:** 07 July 2026 | **Branch:** pilot-dev
+
+**Doel:**
+- Oplossen van de `ReferenceError: Cannot access 'isPostProcessing' before initialization` crash in `WorkstationHub.tsx` die ervoor zorgde dat er geen data geladen werd.
+
+**Uitgevoerd:**
+- In `WorkstationHub.tsx` de definities van `isPostProcessing` en `isCentralStation` verplaatst naar de top van de `initData` functie (vóór hun eerste gebruik in `isWindingStation`). Dit lost de initialisatie crash op, waardoor de Firestore listeners correct starten en alle database informatie weer vliegensvlug geladen wordt.
+- Versie verhoogd van `0.1.80` naar `0.1.81` in `package.json` en `public/version.json`.
+
+---
+
 ### Update sessie 07 July 2026 (Fix Index-vrije Queries & Productlimiet)
+
 
 **Datum:** 07 July 2026 | **Branch:** pilot-dev
 
