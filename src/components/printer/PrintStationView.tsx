@@ -887,13 +887,25 @@ const PrintStationWizardModal = ({
   const { t } = useTranslation();
   const [station, setStation] = useState<string>(selectedStation || stations[0] || '');
   const [printerId, setPrinterId] = useState<string>('');
+  const previousStationRef = useRef<string>('');
 
   useEffect(() => {
     if (!station) return;
+    const stationChanged = previousStationRef.current !== station;
+    previousStationRef.current = station;
+
     const stationKey = normalizeStationBindingKey(station);
     const boundPrinterId = String(stationBindings[stationKey] || '').trim();
-    setPrinterId(boundPrinterId || printers[0]?.id || '');
-  }, [station, stationBindings, printers]);
+    const fallbackPrinterId = boundPrinterId || printers[0]?.id || '';
+    const currentPrinterStillExists = printers.some((printer) => printer.id === printerId);
+
+    // Keep a manual in-progress selection stable while the wizard is open.
+    if (!stationChanged && currentPrinterStillExists) {
+      return;
+    }
+
+    setPrinterId(fallbackPrinterId);
+  }, [station, stationBindings, printers, printerId]);
 
   const handleSave = () => {
     if (!station || !printerId) return;
