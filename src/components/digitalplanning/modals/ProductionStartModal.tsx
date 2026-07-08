@@ -1859,6 +1859,7 @@ const ProductionStartModal = ({
             !isManualMode ? (selectedLabelId || templateIdsToPrint[0] || null) : null,
             {
               printerId: targetPrinter?.id || "",
+              requestedLabelCount: labelsToPrint,
               isFlangeSeries: isFlangeOrder,
               skipStartLabel: isFlangeOrder,
               lotNumbers: Array.isArray(lotBatchLots) && lotBatchLots.length > 0 ? lotBatchLots : undefined,
