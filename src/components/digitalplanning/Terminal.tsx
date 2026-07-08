@@ -1123,6 +1123,10 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
 
       const startLabelZpl = String(labelZplData || "").trim();
       const printerId = String((startOptions as any)?.printerId || "").trim();
+      const requestedLabelCount = Math.max(
+        1,
+        Number.parseInt(String((startOptions as any)?.requestedLabelCount || "1"), 10) || 1
+      );
 
       if (startLabelZpl && printerId) {
         try {
@@ -1130,12 +1134,14 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
             source: "production_start",
             orderId: cleanOrderId,
             lotNumber: startLot,
-            quantity: 1,
+            quantity: requestedLabelCount,
+            labelCount: requestedLabelCount,
+            forceQuantityCopies: true,
             stationId: effectiveStationId,
             machineId: effectiveStationId,
             originMachine: effectiveStationId,
             labelTemplateId: String(labelTemplateId || "").trim(),
-            description: `Startlabel voor ${cleanOrderId} (Lot: ${startLot})`,
+            description: `Startlabel voor ${cleanOrderId} (Lot: ${startLot}) (x${requestedLabelCount})`,
           });
         } catch (queueError) {
           console.error("Kon startlabel niet in de printqueue zetten:", queueError);

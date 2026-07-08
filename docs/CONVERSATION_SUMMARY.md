@@ -1,3 +1,39 @@
+### Update sessie 08 July 2026 (Release 0.1.93)
+
+**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Samenvatting:**
+- Hotfix doorgevoerd voor productie-start printaantal: de startlabel queue job neemt nu expliciet het gevraagde aantal labels over vanuit de startmodal.
+- In `Terminal.tsx` wordt `requestedLabelCount` uit `startOptions` gelezen en toegepast op:
+    - `quantity`
+    - `labelCount`
+    - `forceQuantityCopies`
+- Startlabel omschrijving verrijkt met aantalwaarde `(xN)` voor betere zichtbaarheid in queue/completed.
+- Doel: mismatch oplossen waarbij bij aanvraag van 2 labels slechts 1 startlabel werd geprint.
+
+**Deployresultaat:**
+- Build validatie geslaagd.
+- Hosting deploy uitgevoerd via standaard `npm run deploy` flow (met verplichte patch bump vooraf).
+
+---
+
+### Update sessie 08 July 2026 (Release 0.1.92)
+
+**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Samenvatting:**
+- Commit en push uitgevoerd: `d4718d2` met printflow-fixes voor ProductionStartModal en queue auto-processor.
+- Versie verhoogd van `0.1.91` naar `0.1.92`.
+- Startlabel en queue metadata aangescherpt (lotnummer in startlabelomschrijving, quantity/labelCount afstemming).
+- Queue-machine normalisatie en station-binding flow verder gehard voor BH18-routing.
+- Auto-processor aangepast zodat `forceQuantityCopies` jobs het gevraagde aantal labels afdrukken.
+
+**Deployresultaat:**
+- `npm run deploy` succesvol afgerond (build + verify + Firebase Hosting deploy).
+- Live Hosting URL: `https://future-factory-377ef.web.app`.
+
+---
+
 ### Update sessie 08 July 2026 (Release 0.1.87)
 
 **Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
