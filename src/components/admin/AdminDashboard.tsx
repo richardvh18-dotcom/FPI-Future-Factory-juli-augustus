@@ -1,4 +1,3 @@
-/* eslint-disable */
 import React, { useState, Suspense, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";

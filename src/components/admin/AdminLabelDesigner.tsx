@@ -1,4 +1,3 @@
-/* eslint-disable */
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -371,7 +370,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     void restoreUsbConnection();
   }, []);
 
-  const mapOrderDoc = (snap: any): OrderRecord => {
+  const mapOrderDoc = (snap: { id: string; data: () => Record<string, unknown>; ref?: { path?: string } }): OrderRecord => {
     const data = (snap.data?.() || {}) as Record<string, unknown>;
     const path = String(snap.ref?.path || '');
     const pathMachine = path.match(/\/machines\/([^/]+)\/orders\//i)?.[1] || '';
@@ -672,8 +671,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     const { dpi: resolvedDpi } = await resolveDefaultPrinter();
 
     const printData = await renderLabelToBitmapZpl({
-      template: labelConfig as any,
-      data: data as any,
+      template: labelConfig as Record<string, unknown>,
+      data: data as Record<string, unknown>,
       printerDpi: resolvedDpi,
       darkness: 15,
       printSpeed: 3,

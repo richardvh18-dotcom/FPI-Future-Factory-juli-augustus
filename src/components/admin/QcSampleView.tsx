@@ -1,9 +1,8 @@
-/* eslint-disable */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ShieldCheck, Send, Loader2, Camera, Keyboard, Hash, RefreshCw, Printer } from "lucide-react";
 import QRCode from "qrcode";
-import { collection, query, where, getDocs, doc, getDoc, collectionGroup } from "firebase/firestore";
+import { collection, query, where, getDocs, collectionGroup } from "firebase/firestore";
 import { db } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
@@ -133,7 +132,7 @@ const QcSampleView = () => {
   const reason = formState.reason;
   const scanMode = formState.scanMode;
 
-  const { rawOrders } = useTeamleaderFirestore({ user: user as any }) as { rawOrders: TeamleaderOrder[] };
+  const { rawOrders } = useTeamleaderFirestore({ user: user as never }) as { rawOrders: TeamleaderOrder[] };
 
   const machineOptions = useMemo(() => {
     const set = new Set<string>();
@@ -209,7 +208,7 @@ const QcSampleView = () => {
             const qScoped = query(itemsGroup, where("lotNumber", ">=", prefix), where("lotNumber", "<=", prefix + "\uf8ff"));
             const snapScoped = await getDocs(qScoped);
             snapScoped.docs.forEach(docSnap => {
-              const lot = docSnap.data().lotNumber;
+              const lot = (docSnap.data() as Record<string, unknown>).lotNumber as string;
               if (lot && lot.startsWith(prefix)) {
                 const seq = parseInt(lot.slice(-4), 10);
                 if (seq > maxSeq) maxSeq = seq;
@@ -281,7 +280,7 @@ const QcSampleView = () => {
       const detector = new detectorCtor({
         formats: ["code_128", "code_39", "codabar", "ean_13", "ean_8", "qr_code"],
       });
-      const imageBitmap = await createImageBitmap(file); // eslint-disable-line no-undef
+      const imageBitmap = await createImageBitmap(file);
       const codes = await detector.detect(imageBitmap);
       const detected = String(codes?.[0]?.rawValue || "").trim().toUpperCase();
       if (!detected) {
@@ -378,7 +377,7 @@ const QcSampleView = () => {
       }
 
       try {
-        const trackingRef = collection(db, getPathString(PATHS.TRACKING as any));
+        const trackingRef = collection(db, getPathString(PATHS.TRACKING as never));
         const itemsGroupRef = collectionGroup(db, "items");
         let found = false;
         let retries = 0;

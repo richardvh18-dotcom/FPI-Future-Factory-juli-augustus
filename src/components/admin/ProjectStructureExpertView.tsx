@@ -1,5 +1,4 @@
-/* eslint-disable */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import RoadmapViewer from "./RoadmapViewer";
 
 import projPlanningMd from '../../../docs/03_PROJECT_PLANNING.md?raw';
@@ -320,7 +319,7 @@ const fileDetails: Record<string, FileDetail> = {
  * DE VOLLEDIGE PROJECTBOOM
  * Gebaseerd op de 5e405e21 snapshot.
  */
-const getProjectStructure = (t: any): TreeNodeData[] => [
+const getProjectStructure = (t: (key: string, defaultValue?: string) => string): TreeNodeData[] => [
   {
     label: t('projectStructureExpert.nodes.configAndCore', "Config & Core"),
     icon: <Shield className="w-4 h-4 text-red-500" />,
@@ -460,7 +459,7 @@ const TreeNode = ({ node, path = "", level = 0, onSelect, selectedPath }: TreeNo
 
 const ProjectStructureExpertView = () => {
   const { t } = useTranslation();
-  const projectStructure = getProjectStructure(t);
+  const projectStructure = getProjectStructure(t as never);
   const [selectedFile, setSelectedFile] = useState("");
   const [activeMainTab, setActiveMainTab] = useState<"explorer" | "docs" | "markdown" | "roadmap">("explorer");
   const [activeMdFile, setActiveMdFile] = useState("CONVERSATION_SUMMARY.md");

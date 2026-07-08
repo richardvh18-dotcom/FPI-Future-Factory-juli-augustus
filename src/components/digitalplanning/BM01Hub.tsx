@@ -18,92 +18,8 @@ import InternalQrImage from "../../utils/InternalQrImage";
 import PlanningSidebar from "./PlanningSidebar";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useTouchKeyboardPreference } from "../../hooks/useTouchKeyboardPreference";
-
-type TimestampLike = {
-    toMillis?: () => number;
-    seconds?: number;
-};
-
-type OrderRecord = {
-    id?: string;
-    orderId?: string;
-    status?: string;
-    item?: string;
-    itemDescription?: string;
-    lnDeliveredQty?: string | number | null;
-    deliveredQty?: string | number | null;
-    quantityDelivered?: string | number | null;
-    inspectionApprovedQty?: string | number | null;
-    produced?: string | number | null;
-    [key: string]: unknown;
-};
-
-type HistoryEntry = {
-    details?: string;
-    station?: string;
-    action?: string;
-    timestamp?: TimestampLike | string | number | Date | null;
-    time?: TimestampLike | string | number | Date | null;
-    [key: string]: unknown;
-};
-
-type ProductRecord = {
-    id?: string;
-    sourcePath?: string;
-    __docPath?: string;
-    lotNumber?: string;
-    activeLot?: string;
-    currentStation?: string;
-    currentStep?: string;
-    status?: string;
-    orderId?: string;
-    machine?: string;
-    originMachine?: string;
-    item?: string;
-    itemDescription?: string;
-    itemCode?: string;
-    updatedAt?: TimestampLike | string | number | Date | null;
-    createdAt?: TimestampLike | string | number | Date | null;
-    lastStation?: string;
-    timestamps?: Record<string, TimestampLike | string | number | Date | null | undefined>;
-    history?: HistoryEntry[];
-    inspection?: { status?: string };
-    qcNotes?: Array<{ text: string; timestamp: string; user: string }>;
-    [key: string]: unknown;
-};
-
-type SidebarEntry = {
-    id?: string;
-    orderId?: string;
-    status?: string;
-    item?: string;
-    itemDescription?: string;
-    machine?: string;
-    originMachine?: string;
-    isArchivedOrder?: boolean;
-    archived?: boolean;
-    archivedCandidates?: ProductRecord[];
-    lotNumbers?: string[];
-    lotNumbersText?: string;
-    lotNumber?: string;
-    timestamps?: Record<string, TimestampLike | string | number | Date | null | undefined>;
-    updatedAt?: TimestampLike | string | number | Date | null;
-    qcNotes?: Array<{ text: string; timestamp: string; user: string }>;
-    [key: string]: unknown;
-};
-
-type FinishPayload = {
-    note?: string;
-    [key: string]: unknown;
-};
-
-type DeliveryMismatch = {
-    orderId: string;
-    item: string;
-    deliveredQty: number;
-    inspectionApprovedQty: number;
-    delta: number;
-};
+import { OrderRecord, ProductRecord, SidebarEntry, FinishPayload, DeliveryMismatch } from "./bm01/bm01Types";
+import { useBM01Data } from "./bm01/useBM01Data";
 
 type BM01HubProps = {
     onBack?: () => void;
@@ -124,26 +40,6 @@ const escapeHtml = (value: unknown) =>
 
 const resolveProductIdentifier = (product: ProductRecord | null | undefined) =>
     String(product?.sourcePath || product?.__docPath || product?.id || product?.lotNumber || "").trim();
-
-const archiveColPath = (year: number) => collection(db, getPathString(getArchiveItemsPath(year)));
-
-const toMillisFromMixed = (value: unknown): number => {
-    if (!value) return 0;
-    if (typeof value === "object" && value !== null && "toMillis" in value && typeof value.toMillis === "function") return value.toMillis();
-    if (typeof value === "object" && value !== null && "seconds" in value && typeof value.seconds === "number") return value.seconds * 1000;
-    if (value instanceof Date) return value.getTime();
-    if (typeof value !== "string" && typeof value !== "number") return 0;
-    const parsed = new Date(value).getTime();
-    return Number.isFinite(parsed) ? parsed : 0;
-};
-
-const toDateFromMixed = (value: unknown): Date | null => {
-    const millis = toMillisFromMixed(value);
-    if (!millis) return null;
-    const date = new Date(millis);
-    return isValid(date) ? date : null;
-};
-
 const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: BM01HubProps) => {
     void onBack;
     const { t } = useTranslation();
@@ -158,7 +54,6 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showPrintModal, setShowPrintModal] = useState(false);
-    const [archivedProducts, setArchivedProducts] = useState<ProductRecord[]>([]);
   const [lastNahardingResetAt, setLastNahardingResetAt] = useState<string | null>(() => {
     return typeof window !== "undefined" ? localStorage.getItem("last_naharding_reset_at") : null;
   });
@@ -288,79 +183,6 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
             }, 50);
         }
     };
-
-    const planningOrders = useMemo(() => {
-        return (orders || []).filter((o: OrderRecord) => o.status !== "completed" && o.status !== "cancelled");
-    }, [orders]);
-
-    const deliveryInspectionMismatches = useMemo(() => {
-        const toFinite = (value: unknown) => {
-            const num = Number(value);
-            return Number.isFinite(num) ? num : null;
-        };
-
-        return planningOrders
-            .map((order: OrderRecord): DeliveryMismatch | null => {
-                const deliveredQty =
-                    toFinite(order?.lnDeliveredQty) ??
-                    toFinite(order?.deliveredQty) ??
-                    toFinite(order?.quantityDelivered) ??
-                    null;
-
-                if (!Number.isFinite(deliveredQty)) return null;
-
-                const inspectionApprovedQty = toFinite(order?.inspectionApprovedQty) ?? toFinite(order?.produced) ?? 0;
-                const safeDeliveredQty = deliveredQty ?? 0;
-                const delta = safeDeliveredQty - inspectionApprovedQty;
-                if (delta === 0) return null;
-
-                return {
-                    orderId: order?.orderId || order?.id || "-",
-                    item: order?.item || order?.itemDescription || "-",
-                    deliveredQty: safeDeliveredQty,
-                    inspectionApprovedQty,
-                    delta,
-                };
-            })
-                .filter((entry): entry is DeliveryMismatch => Boolean(entry))
-                .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-    }, [planningOrders]);
-
-    const deliveryInspectionOverMismatches = useMemo(() => {
-        return deliveryInspectionMismatches
-            .filter((entry) => Number(entry?.delta) > 0)
-            .sort((a, b) => b.delta - a.delta);
-    }, [deliveryInspectionMismatches]);
-
-    const deliveryInspectionUnderMismatches = useMemo(() => {
-        return deliveryInspectionMismatches
-            .filter((entry) => Number(entry?.delta) < 0)
-            .sort((a, b) => a.delta - b.delta);
-    }, [deliveryInspectionMismatches]);
-
-    const visibleDeliveryInspectionMismatches = useMemo(() => {
-        if (deliveryMismatchFilter === "over") return deliveryInspectionOverMismatches;
-        if (deliveryMismatchFilter === "under") return deliveryInspectionUnderMismatches;
-        return deliveryInspectionMismatches;
-    }, [deliveryMismatchFilter, deliveryInspectionMismatches, deliveryInspectionOverMismatches, deliveryInspectionUnderMismatches]);
-
-    const selectedOrder = useMemo(() => {
-        if (!selectedOrderId) return null;
-        return planningOrders.find((o: OrderRecord) => o.id === selectedOrderId || o.orderId === selectedOrderId) || null;
-    }, [planningOrders, selectedOrderId]);
-
-    const selectedDetailEntry = useMemo(() => {
-        if (selectedOrder) return selectedOrder;
-        if (selectedSidebarEntry?.isArchivedOrder) return selectedSidebarEntry;
-        return null;
-    }, [selectedOrder, selectedSidebarEntry]);
-
-    const selectedSidebarEntryId = useMemo(() => {
-        if (selectedSidebarEntry?.orderId) return selectedSidebarEntry.orderId;
-        if (selectedSidebarEntry?.id) return selectedSidebarEntry.id;
-        return selectedOrderId;
-    }, [selectedSidebarEntry, selectedOrderId]);
-
     const handleSidebarSelect = async (entry: SidebarEntry | null) => {
         if (!entry) {
             setSelectedOrderId(null);
@@ -497,132 +319,36 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
         });
     };
 
+        const {
+            planningOrders,
+            deliveryInspectionMismatches,
+            deliveryInspectionOverMismatches,
+            deliveryInspectionUnderMismatches,
+            visibleDeliveryInspectionMismatches,
+            selectedOrder,
+            selectedDetailEntry,
+            selectedSidebarEntryId,
+            bm01Products,
+            nahardingProducts,
+            latestNahardingBatchDateKey,
+            nahardingBatchProducts,
+            latestNahardingBatchLabel,
+            archivedProducts,
+            nahardingPrintList,
+            completedProducts,
+            getNahardingOfferedMillis,
+            archiveColPath,
+            toMillisFromMixed,
+            toDateFromMixed
+        } = useBM01Data({
+            orders, products, selectedOrderId, selectedSidebarEntry, activeTab, selectedDate, viewMode, lastNahardingResetAt, deliveryMismatchFilter
+        });
   // Filter producten specifiek voor BM01 (Aan te bieden tab)
   // Dit zorgt ervoor dat items met stap 'Eindinspectie' of station 'BM01' correct worden doorgegeven
-  const bm01Products = useMemo(() => {
-        return products.filter((p: ProductRecord) => {
-        const station = (p.currentStation || "").toUpperCase().replace(/\s/g, "");
-        const step = (p.currentStep || "").toUpperCase();
-        const status = (p.status || "").toUpperCase();
-        
-        // Ruimere matching voor BM01/Inspectie (inclusief 'Te Keuren' / 'Keuren' statussen)
-        const isMatch = station.includes("BM01") || step.includes("INSPECTIE") || step.includes("KEUR") || status.includes("KEUR") || step === "EINDINSPECTIE" || step === "BM01";
-        
-        const isRejected = status === "REJECTED" || step === "REJECTED" || status === "AFKEUR";
-        const isFinished = step === "FINISHED" || station === "GEREED";
-        
-        return isMatch && !isFinished && !isRejected;
-    });
-  }, [products]);
-
   console.log("BM01 Raw Products received:", products);
   console.log("BM01 Filtered bm01Products:", bm01Products);
 
   const toMillisSafe = (value: unknown) => toMillisFromMixed(value);
-
-    const getNahardingOfferedMillis = (item: ProductRecord) => {
-        const ts = item?.timestamps || {};
-        const directTs =
-            toMillisSafe(ts.oven_naharding_start)
-            || toMillisSafe(ts.naharding_start)
-            || 0;
-        if (directTs > 0) return directTs;
-
-        const historyList = Array.isArray(item?.history) ? item.history : [];
-        
-        // Zoek het EERSTE event (oudste) dat verwijst naar Naharding.
-        // Hiermee vangen we het moment van *aanbieden* aan de oven, i.p.v. het moment van *afronden*.
-        const nahardingEvent = historyList.find((entry) => {
-            const details = String(entry?.details || "").toUpperCase();
-            const station = String(entry?.station || "").toUpperCase();
-            const action = String(entry?.action || "").toUpperCase();
-            
-            // Negeer expliciete afrond-events zodat we niet de datum van uithalen pakken
-            if (details.includes("GEREEDGEMELD") || action === "ARCHIVE" || action === "COMPLETED") return false;
-
-            return details.includes("NAHARD") || details.includes("OVEN") ||
-                   station.includes("NAHARD") || station.includes("OVEN") ||
-                   action.includes("NAHARD");
-        });
-        const historyTs = toMillisSafe(nahardingEvent?.timestamp || nahardingEvent?.time);
-        if (historyTs > 0) return historyTs;
-
-        // Laatste fallback: alleen toepassen als het product daadwerkelijk een naharding relatie heeft
-        const station = String(item?.currentStation || "").toUpperCase().replace(/\s/g, "");
-        const step = String(item?.currentStep || "").toUpperCase().replace(/\s/g, "");
-        const status = String(item?.status || "").toUpperCase().trim();
-        const lastStation = String(item?.lastStation || "").toUpperCase().replace(/\s/g, "");
-        const isLegacyQcVirtual = Boolean(item?.isVirtualLot) && (step === "QC_VIRTUAL" || status === "QC VIRTUAL ISSUED");
-
-        const isNahardingRelated =
-            station.includes("NAHARD") || station.includes("OVEN") ||
-            step.includes("NAHARD") || step.includes("OVEN") ||
-            status === "TE NAHARDEN" ||
-            isLegacyQcVirtual ||
-            lastStation.includes("NAHARD") || lastStation.includes("OVEN");
-
-        if (isNahardingRelated) {
-            const isFinished = status === "COMPLETED" || station === "GEREED";
-            if (isFinished) {
-                // Als het al afgerond is, is updatedAt van vandaag (de afronding). We zoeken de starttijd.
-                return toMillisSafe(item?.createdAt);
-            }
-            return toMillisSafe(item?.updatedAt) || toMillisSafe(item?.createdAt);
-        }
-
-        return 0;
-    };
-
-    const nahardingProducts = useMemo(() => {
-        const items = products.filter((p: ProductRecord) => {
-            const station = String(p.currentStation || "").toUpperCase().replace(/\s/g, "");
-            const step = String(p.currentStep || "").toUpperCase().replace(/\s/g, "");
-            const status = String(p.status || "").toUpperCase().trim();
-            const isLegacyQcVirtual = Boolean(p?.isVirtualLot) && (step === "QC_VIRTUAL" || status === "QC VIRTUAL ISSUED");
-
-            const isNaharding =
-                station.includes("NAHARD") ||
-                station.includes("OVEN") ||
-                step.includes("NAHARD") ||
-                step.includes("OVEN") ||
-                status === "TE NAHARDEN" ||
-                isLegacyQcVirtual;
-
-            const isClosed =
-                status === "COMPLETED" ||
-                status === "REJECTED" ||
-                status === "AFKEUR" ||
-                step === "FINISHED" ||
-                station === "GEREED";
-
-            return isNaharding && !isClosed;
-        });
-
-        return items.sort((a, b) => getNahardingOfferedMillis(b) - getNahardingOfferedMillis(a));
-    }, [products]);
-
-    const latestNahardingBatchDateKey = useMemo(() => {
-        if (nahardingProducts.length === 0) return "";
-        const latest = getNahardingOfferedMillis(nahardingProducts[0]);
-        if (!latest) return "";
-        return format(new Date(latest), "yyyy-MM-dd");
-    }, [nahardingProducts]);
-
-    const nahardingBatchProducts = useMemo(() => {
-        return [...nahardingProducts].sort((a, b) => {
-            const orderA = String(a.orderId || "").trim();
-            const orderB = String(b.orderId || "").trim();
-            return orderA.localeCompare(orderB);
-        });
-    }, [nahardingProducts]);
-
-    const latestNahardingBatchLabel = useMemo(() => {
-        if (!latestNahardingBatchDateKey) return "";
-        const parsed = new Date(`${latestNahardingBatchDateKey}T00:00:00`);
-        if (!isValid(parsed)) return latestNahardingBatchDateKey;
-        return format(parsed, "EEEE d MMMM yyyy", { locale: nl });
-    }, [latestNahardingBatchDateKey]);
-
     const handleNahardingBatchComplete = async () => {
         if (isNahardingBatchProcessing) return;
         const batchItems = nahardingBatchProducts.filter((item) => Boolean(resolveProductIdentifier(item)));
@@ -688,138 +414,9 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
     };
 
   // Fetch archived products for selected date
-  useEffect(() => {
-    if (activeTab !== "completed" && activeTab !== "naharding_batch") return;
-
-    const year = selectedDate.getFullYear();
-    let start, end;
-
-    if (viewMode === "day" || viewMode === "export") {
-        start = new Date(selectedDate);
-        start.setHours(0, 0, 0, 0);
-        end = new Date(selectedDate);
-        end.setHours(23, 59, 59, 999);
-    } else {
-        start = startOfISOWeek(selectedDate);
-        start.setHours(0, 0, 0, 0);
-        end = endOfISOWeek(selectedDate);
-        end.setHours(23, 59, 59, 999);
-    }
-
-    let queryEnd = new Date(end);
-    if (activeTab === "naharding_batch") {
-        // Voor naharding: items die op de geselecteerde datum de oven in zijn gegaan,
-        // kunnen pas dagen later zijn afgerond (gearchiveerd).
-        // Verruim de einddatum van de query met max 14 dagen (of tot vandaag) om ze te vangen.
-        const maxEnd = new Date(end);
-        maxEnd.setDate(maxEnd.getDate() + 14);
-        
-        const now = new Date();
-        now.setHours(23, 59, 59, 999);
-        
-        queryEnd = maxEnd < now ? maxEnd : now;
-        if (queryEnd < end) queryEnd = new Date(end);
-    }
-
-    // Luister naar de archief collectie voor de geselecteerde periode
-    const archiveRef = archiveColPath(year);
-    const q = query(
-        archiveRef,
-        where("timestamps.finished", ">=", start),
-        where("timestamps.finished", "<=", queryEnd)
-    );
-
-    const unsub = onSnapshot(q, (snap) => {
-        const items: ProductRecord[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<ProductRecord, 'id'>) }));
-        setArchivedProducts(items);
-    }, (err) => {
-        console.error("Fout bij ophalen archief:", err);
-    });
-
-    return () => unsub();
-  }, [selectedDate, activeTab, viewMode]);
-
   // Specifieke lijst voor de Naharding Print-tegel, inclusief historie/archief van de geselecteerde dag
-  const nahardingPrintList = useMemo(() => {
-      const isTargetPeriod = (p: ProductRecord) => {
-          const ts = getNahardingOfferedMillis(p);
-          if (!ts) return false;
-          const date = new Date(ts);
-          if (viewMode === "export") {
-              if (lastNahardingResetAt) {
-                  return ts > new Date(lastNahardingResetAt).getTime();
-              }
-              return isSameDay(date, new Date());
-          } else if (viewMode === "day") {
-              return isSameDay(date, selectedDate);
-          } else {
-              const start = startOfISOWeek(selectedDate);
-              const end = endOfISOWeek(selectedDate);
-              return isWithinInterval(date, { start, end });
-          }
-      };
-      const activeMatches = products.filter((p: ProductRecord) => isTargetPeriod(p));
-      const archivedMatches = archivedProducts.filter((p: ProductRecord) => isTargetPeriod(p));
-      const combined: ProductRecord[] = [...activeMatches];
-      archivedMatches.forEach((archived: ProductRecord) => {
-          if (!combined.some((p: ProductRecord) => p.id === archived.id)) combined.push(archived);
-      });
-      return combined.sort((a, b) => {
-          const orderA = String(a.orderId || "").trim();
-          const orderB = String(b.orderId || "").trim();
-          if (orderA !== orderB) {
-              return orderA.localeCompare(orderB);
-          }
-          return getNahardingOfferedMillis(a) - getNahardingOfferedMillis(b);
-      });
-  }, [products, archivedProducts, selectedDate, viewMode, lastNahardingResetAt]);
-
   // Filter producten die gereed zijn (Aangeboden tab) op basis van geselecteerde datum
   // Combineert actieve producten (die nog niet gearchiveerd zijn) en gearchiveerde producten
-  const completedProducts = useMemo(() => {
-    // Voor de 'Gereed' tab (Completed)
-        const activeFinished: ProductRecord[] = products.filter((p: ProductRecord) => {
-        const station = (p.currentStation || "").toUpperCase().replace(/\s/g, "");
-        const status = (p.status || "").toUpperCase();
-        
-        const isFinished = status === 'COMPLETED' || p.currentStep === 'Finished' || station === 'GEREED';
-        
-        if (!isFinished) return false;
-
-        // Bepaal datum van afronding
-        const finishDate = toDateFromMixed(p.timestamps?.finished || p.updatedAt);
-
-        if (!finishDate) return false;
-
-        if (viewMode === "day") {
-            return isSameDay(finishDate, selectedDate);
-        } else {
-            const start = startOfISOWeek(selectedDate);
-            const end = endOfISOWeek(selectedDate);
-            return isWithinInterval(finishDate, { start, end });
-        }
-    });
-
-    // Combineer met gearchiveerde producten (voorkom dubbelen op ID)
-    const combined: ProductRecord[] = [...activeFinished];
-    archivedProducts.forEach((archived: ProductRecord) => {
-        if (!combined.some((p: ProductRecord) => p.id === archived.id)) {
-            combined.push(archived);
-        }
-    });
-
-    return combined.sort((a, b) => {
-        const orderA = String(a.orderId || "").trim();
-        const orderB = String(b.orderId || "").trim();
-        if (orderA !== orderB) {
-            return orderA.localeCompare(orderB);
-        }
-                const tA = toMillisFromMixed(a.timestamps?.finished || a.updatedAt || 0);
-                const tB = toMillisFromMixed(b.timestamps?.finished || b.updatedAt || 0);
-        return tB - tA;
-    });
-  }, [products, archivedProducts, selectedDate, viewMode]);
-
     const handleItemClick = (item: ProductRecord) => {
     setSelectedProduct(item); // Selecteer item
     setShowFinishModal(true); // Open modal voor handmatige actie
@@ -1394,7 +991,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                         </div>
                     ) : (
                         <div className="flex flex-col gap-2">
-                            {bm01Products.map(item => (
+                            {bm01Products.map((item: ProductRecord) => (
                                 <div 
                                     key={item.id}
                                     onClick={() => handleItemClick(item)}
@@ -1736,7 +1333,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                             </p>
                         </div>
                     ) : (
-                        visibleDeliveryInspectionMismatches.map((entry) => (
+                        visibleDeliveryInspectionMismatches.map((entry: DeliveryMismatch) => (
                             <div key={`${entry.orderId}_${entry.item}`} className="flex items-center justify-between gap-4 rounded-3xl bg-white border border-slate-100 p-5 shadow-sm hover:border-blue-200 transition-all group">
                                 <div className="min-w-0">
                                     <p className="text-base font-black text-slate-800 tracking-tight group-hover:text-blue-600 transition-colors">{entry.orderId}</p>

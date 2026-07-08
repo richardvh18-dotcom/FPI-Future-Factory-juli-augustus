@@ -101,8 +101,7 @@ class AIService {
   async debugListDocuments() {
     try {
       const docs = await this.getAiDocuments(50);
-      docs.forEach((doc, idx) => {
-      });
+      docs.forEach((doc, idx) => { /* no-op */ });
       return docs;
     } catch (error) {
       console.error('Debug error:', error);
@@ -116,8 +115,7 @@ class AIService {
   async debugSearchDocuments(searchTerm: string) {
     const terms = this.extractSearchTerms(searchTerm);
     const results = await this.searchAiDocuments(searchTerm);
-    results.forEach((doc, idx) => {
-    });
+    results.forEach((doc, idx) => { /* no-op */ });
     return results;
   }
 
@@ -166,6 +164,7 @@ class AIService {
         
         pushUnique(planningOrders, 'PLANNING');
       } catch (error) {
+        // ignore
       }
 
       // Legacy planning pad fallback
@@ -180,8 +179,7 @@ class AIService {
         }));
 
         pushUnique(legacyOrders, 'PLANNING_LEGACY');
-      } catch (error) {
-      }
+      } catch (error) { /* no-op */ }
 
       // Scoped orders fallback via collectionGroup
       try {
@@ -193,8 +191,7 @@ class AIService {
         }));
 
         pushUnique(scopedOrders, 'PLANNING_SCOPED');
-      } catch (error) {
-      }
+      } catch (error) { /* no-op */ }
       
       // Probeer PATHS.TRACKING
       try {
@@ -208,11 +205,11 @@ class AIService {
         }));
         
         pushUnique(trackedOrders, 'TRACKING');
-      } catch (error) {
-      }
+      } catch (error) { /* no-op */ }
       
       // Log eerste doc structure
       if (allOrders.length > 0) {
+        // no-op
       }
       
       return allOrders;
@@ -269,8 +266,10 @@ class AIService {
       const lotNumber = lotNumberMatch ? lotNumberMatch[0] : null;
       
       if (orderNumber) {
+        // no-op
       }
       if (lotNumber) {
+        // no-op
       }
       
       // Filter orders
@@ -492,7 +491,7 @@ class AIService {
     ctx += `**Totaalaantal werkdagen: ${workdays.length} | Totale capaciteit: ${workdays.length * dailyCapacityHours} uur**\n`;
 
     // --- 3. Al bezette uren ophalen uit OCCUPANCY ---
-    const occupancyByDay: Record<string, number> = {};
+    const occupancyByDay: Record<string, number> = { /* no-op */ };
     try {
       const occSnap = await getDocs(collection(db, getPathString(PATHS.OCCUPANCY)));
       occSnap.docs.forEach(d => {
@@ -827,7 +826,7 @@ class AIService {
           }
           const etaDate = addWorkingDays(now, etaWorkDays);
 
-          const plan = planningByOrder.get(orderId) || {};
+          const plan = planningByOrder.get(orderId) || { /* no-op */ };
           const dueDate = parseDate(
             plan.deliveryDate || plan.leverDatum || plan.dueDate || plan.deadline || row.deliveryDate || row.dueDate
           );
@@ -1196,7 +1195,7 @@ class AIService {
       if (hotOrders.length > 0) {
         ctx += '\nTop lopende orders o.b.v. actieve lotnummers:\n';
         hotOrders.forEach(([orderId, count]) => {
-          const plan = planningByOrder.get(orderId) || {};
+          const plan = planningByOrder.get(orderId) || { /* no-op */ };
           const relatedLots = activeTrackingRows.filter((r) => String(r.orderId || r.orderNumber || '').trim() === orderId);
           const lotNumbers = [...new Set(relatedLots.map((r) => getLotNumber(r)).filter(Boolean))];
 
@@ -1292,8 +1291,7 @@ class AIService {
         // Check of ENIGE zoekterm matcht
         const found = searchTerms.some(term => haystack.includes(term));
         
-        if (found) {
-        }
+        if (found) { /* no-op */ }
         
         return found;
       });
@@ -1702,9 +1700,7 @@ class AIService {
       
       contextData = clamp(contextData, 7800);
 
-      if (contextData.length > 100) {
-      } else {
-      }
+      if (contextData.length > 100) { /* no-op */ } else { /* no-op */ }
       return contextData;
     } catch (error) {
       console.error('Error getting context:', error);
@@ -1716,7 +1712,7 @@ class AIService {
     return this.availableModel;
   }
 
-  async chat(messages: any[], systemPrompt: string | null = null, options = {}) {
+  async chat(messages: any[], systemPrompt: string | null = null, options = { /* no-op */ }) {
     if (!this.isConfigured()) {
       throw new Error(i18n.t("gemini.api_disabled", "AI functionaliteit is uitgeschakeld."));
     }
@@ -1743,7 +1739,7 @@ class AIService {
    * @param {boolean} includeContext - Include productie data context
    * @returns {Promise<string>} Response
    */
-  async chatWithContext(messages: any[], systemPrompt: string | null = null, includeContext = true, options = {}) {
+  async chatWithContext(messages: any[], systemPrompt: string | null = null, includeContext = true, options = { /* no-op */ }) {
     if (!this.isConfigured()) {
       throw new Error('AI functionaliteit is uitgeschakeld');
     }
@@ -1759,15 +1755,14 @@ class AIService {
         
         if (context && context.trim().length > 0) {
           enhancedSystemPrompt = this.composeSystemPrompt(enhancedSystemPrompt, context);
-        } else {
-        }
+        } else { /* no-op */ }
       }
     }
 
     return this.chat(messages, enhancedSystemPrompt, options);
   }
 
-  async chatGoogle(messages: any[], systemPrompt: string, modelName: string, options = {}) {
+  async chatGoogle(messages: any[], systemPrompt: string, modelName: string, options = { /* no-op */ }) {
     try {
       const response = await this.aiProxyGenerate({
         messages,

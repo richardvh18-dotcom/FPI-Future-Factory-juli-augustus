@@ -1,4 +1,3 @@
-/* eslint-disable */
 import { useNotifications } from '../../../contexts/NotificationContext';
 import React, { useState, useMemo, useRef } from "react";
 import i18n from "i18next";

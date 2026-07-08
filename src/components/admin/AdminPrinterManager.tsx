@@ -1,5 +1,4 @@
-/* eslint-disable */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
@@ -670,7 +669,7 @@ const TempLabelModal = ({ onClose, printers, labelTemplates, labelRules, onPrint
     setResults([]);
     setSearchDiagnostics([]);
     try {
-      const { results: finalResults, diagnostics } = await executeOrderLabelSearch(orderStr, initialList as any);
+      const { results: finalResults, diagnostics } = await executeOrderLabelSearch(orderStr, initialList as Record<string, unknown>[]);
       setSearchDiagnostics(diagnostics);
       setResults(finalResults as TempOrderRecord[]);
 
@@ -1464,13 +1463,13 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         lotNumber: String(orderData.lotNumber || order),
       });
       const processedData = applyLabelLogic(labelData, labelLogicRules);
-      const widthMm = Number((selectedTemplate as any)?.width) || resolveRollWidthMm(printer);
-      const heightMm = Number((selectedTemplate as any)?.height) || 40;
+      const widthMm = Number((selectedTemplate as Record<string, unknown>)?.width) || resolveRollWidthMm(printer);
+      const heightMm = Number((selectedTemplate as Record<string, unknown>)?.height) || 40;
 
       try {
         const bitmapZpl = await renderLabelToBitmapZpl({
-          template: selectedTemplate as any,
-          data: processedData as any,
+          template: selectedTemplate as Record<string, unknown>,
+          data: processedData as Record<string, unknown>,
           printerDpi: driver.nativeDpi,
           darkness,
           printSpeed,
@@ -1494,7 +1493,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         ],
       };
       const fallbackBitmapZpl = await renderLabelToBitmapZpl({
-        template: fallbackTemplate as any,
+        template: fallbackTemplate as Record<string, unknown>,
         data: {
           orderNumber: order,
           itemCode: item,

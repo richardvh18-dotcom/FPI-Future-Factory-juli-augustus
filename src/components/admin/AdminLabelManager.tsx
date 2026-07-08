@@ -1,4 +1,3 @@
-/* eslint-disable */
 import React, { useMemo, useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { BoxSelect, PenTool, Settings, LayoutGrid, Edit2, Search, Trash2 } from "lucide-react";
