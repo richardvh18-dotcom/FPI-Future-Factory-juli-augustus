@@ -119,6 +119,27 @@ const isPermissionDeniedError = (error: any) => {
 const normalizeStationBindingKey = (value: unknown): string =>
   String(value || "").trim().toUpperCase().replace(/\s+/g, "");
 
+const getBoundPrinterIdForStation = (station: string): string => {
+  if (typeof window === "undefined") return "";
+  const stationKey = normalizeStationBindingKey(station);
+  if (!stationKey) return "";
+
+  try {
+    const raw = String(localStorage.getItem(PRINT_STATION_BINDINGS_KEY) || "").trim();
+    if (!raw) return "";
+    const parsed = tryParseObject(raw);
+
+    const direct = String(parsed[stationKey] || "").trim();
+    if (direct) return direct;
+
+    // Support keys with/without 40-prefix.
+    const altKey = stationKey.startsWith("40") ? stationKey.slice(2) : `40${stationKey}`;
+    return String(parsed[altKey] || "").trim();
+  } catch {
+    return "";
+  }
+};
+
 const persistPrinterBindingForAutoProcessor = (station: string, printer: any) => {
   if (typeof window === "undefined") return;
   const safeStation = normalizeStationBindingKey(station);
@@ -463,17 +484,29 @@ const ProductionStartModal = ({
   };
 
   const resolveTargetPrinterAsync = async () => {
-    const currentResolved = resolveTargetPrinter(savedPrinters, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
-    if (currentResolved) return currentResolved;
+    const boundPrinterId = getBoundPrinterIdForStation(stationId);
+    const currentBound = boundPrinterId
+      ? savedPrinters.find((p: any) => String(p?.id || "") === boundPrinterId)
+      : null;
+    if (currentBound) return currentBound;
 
     const currentById = printConfig.printerId
       ? savedPrinters.find((p: any) => p.id === printConfig.printerId)
       : null;
     if (currentById) return currentById;
 
+    const currentResolved = resolveTargetPrinter(savedPrinters, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
+    if (currentResolved) return currentResolved;
+
     const prnPaths = PATHS.PRINTERS;
     const snap = await getDocs(collection(db, getPathString(prnPaths as string[])));
     const fetchedPrinters = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+
+    const fetchedBound = boundPrinterId
+      ? fetchedPrinters.find((p: any) => String(p?.id || "") === boundPrinterId)
+      : null;
+    if (fetchedBound) return fetchedBound;
+
     const fetchedResolved = resolveTargetPrinter(fetchedPrinters, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
     if (fetchedResolved) return fetchedResolved;
 
@@ -880,15 +913,21 @@ const ProductionStartModal = ({
         const unsub = onSnapshot(printersRef, (snap) => {
           const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
           setSavedPrinters(list);
+          const boundPrinterId = getBoundPrinterIdForStation(stationId);
+          const boundPrinter = boundPrinterId
+            ? list.find((p: any) => String(p?.id || "") === boundPrinterId)
+            : null;
           const targetPrinter = resolveTargetPrinter(list, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
 
-          if (targetPrinter) {
+          const preferredPrinter = boundPrinter || targetPrinter;
+
+          if (preferredPrinter) {
             // Default naar 'queue' als er een printer is geconfigureerd voor dit station.
             // De gebruiker kan dit handmatig aanpassen met de print-mode knoppen.
             setPrintConfig((prev) => ({
               ...prev,
               mode: 'queue',
-              printerId: prev.printerId || targetPrinter.id
+              printerId: boundPrinterId || prev.printerId || preferredPrinter.id
             }));
           }
         });
