@@ -7,6 +7,7 @@ import envDeployMd from '../../../docs/05_ENVIRONMENTS_AND_DEPLOYMENT.md?raw';
 import convSummaryMd from '../../../docs/CONVERSATION_SUMMARY.md?raw';
 import printerRoutingMd from '../../../docs/PRINTER_ROUTING_SETUP.md?raw';
 import restoreSopMd from '../../../docs/RESTORE_SOP.md?raw';
+import architectureMd from '../../../docs/ARCHITECTURE.md?raw';
 
 import { useTranslation } from "react-i18next";
 import i18n from "i18next";
@@ -150,6 +151,11 @@ const fileDetails: Record<string, FileDetail> = {
     title: "Project Strategie",
     desc: "Beschrijft de 4 fasen van de pilot en de technische stappen voor de Beckhoff integratie.",
     tags: ["Documentatie", "Planning"]
+  },
+  "docs/ARCHITECTURE.md": {
+    title: "Architectuurdocument",
+    desc: "Technisch referentiedocument dat de high-level architectuur, orkestratie via hubs en Firebase Firestore data structuren van de applicatie uitlegt.",
+    tags: ["Documentatie", "Architectuur", "Onboarding"]
   },
 
     // --- GEMIGREERD VAN OUDE VERSIE (UITGEBREID) ---
@@ -402,7 +408,8 @@ const getProjectStructure = (t: (key: string, defaultValue?: string) => string):
       "firebase.json",
       "package.json",
       "vite.config.ts",
-      "ROADMAP.md"
+      "ROADMAP.md",
+      "docs/ARCHITECTURE.md"
     ]
   }
 ];
@@ -482,7 +489,8 @@ const ProjectStructureExpertView = () => {
     "05_ENVIRONMENTS_AND_DEPLOYMENT.md": { title: "Deployments", content: envDeployMd },
     "CONVERSATION_SUMMARY.md": { title: "Conversation Summary", content: convSummaryMd },
     "PRINTER_ROUTING_SETUP.md": { title: "Printer Setup", content: printerRoutingMd },
-    "RESTORE_SOP.md": { title: "Restore SOP", content: restoreSopMd }
+    "RESTORE_SOP.md": { title: "Restore SOP", content: restoreSopMd },
+    "ARCHITECTURE.md": { title: "Architectuurdocument", content: architectureMd }
   };
   const [aiExplanation, setAiExplanation] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
