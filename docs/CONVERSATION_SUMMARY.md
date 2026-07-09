@@ -1,3 +1,27 @@
+### 📋 Openstaande Taken & Geplande Roadmap
+
+**Hieronder vind je de gebundelde openstaande taken en wensen uit eerdere sessies:**
+
+1. **Beveiliging & Firestore (Prioriteit)**
+   - Firestore rules hardenen (implementatie van RBAC via custom claims).
+   - Geplande Firestore-exports inrichten en een periodieke restore-test inbouwen.
+
+2. **Codebase Opschonen (Fase 4)**
+   - Console logs en openstaande TODO's opruimen in de productiepaden (Log cleanup).
+
+3. **Internationalisatie (i18n)**
+   - Start de i18n vertaling voor `src/components/planning/AutomationRulesView.jsx` (vervangen van vaste teksten door `t()` calls).
+
+4. **Documentatie & Architectuur (Review Aanbeveling)**
+   - Eventueel extra inhoudelijke slides toevoegen aan het Kennis Centrum / de Dashboard Roadmap.
+   - Een Architectuurdocument (docs/ARCHITECTURE.md) opstellen zodat nieuwe ontwikkelaars sneller kunnen instappen.
+
+5. **Kwaliteitsborging & Testen (Review Aanbeveling)**
+   - Resterende ny types in de codebase zoveel mogelijk vervangen door sterke TypeScript-types.
+   - Controleren of alle nieuwe (en bestaande) hooks goed getest zijn met unit tests (bijv. via Jest/React Testing Library).
+
+---
+
 ### Update sessie 09 July 2026 (Terminal.tsx Acties Refactor)
 
 **Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout
