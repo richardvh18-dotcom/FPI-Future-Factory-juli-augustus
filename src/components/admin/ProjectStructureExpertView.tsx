@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { aiService } from "../../services/aiService";
 import { SystemDocumentationView } from "./SystemDocumentationView";
+import { LiveDocumentationView } from "./LiveDocumentationView";
 
 type FileDetail = {
   title: string;
@@ -573,16 +574,7 @@ const ProjectStructureExpertView = () => {
     );
   };
 
-  const markdownFiles: Record<string, { title: string, content: string }> = {
-    "03_PROJECT_PLANNING.md": { title: "Project Planning", content: projPlanningMd },
-    "04_OPERATIONS_NOTES_AND_TASKS.md": { title: "Operations & Tasks", content: opsNotesMd },
-    "05_ENVIRONMENTS_AND_DEPLOYMENT.md": { title: "Deployments", content: envDeployMd },
-    "CONVERSATION_SUMMARY.md": { title: "Conversation Summary", content: convSummaryMd },
-    "PRINTER_ROUTING_SETUP.md": { title: "Printer Setup", content: printerRoutingMd },
-    "RESTORE_SOP.md": { title: "Restore SOP", content: restoreSopMd },
-    "ARCHITECTURE.md": { title: "Architectuurdocument", content: architectureMd }
-  };
-  const [aiExplanation, setAiExplanation] = useState("");
+    const [aiExplanation, setAiExplanation] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isAiConfigured, setIsAiConfigured] = useState(false);
   const detail = selectedFile ? (fileDetails[selectedFile] || null) : null;
@@ -675,7 +667,7 @@ const ProjectStructureExpertView = () => {
             }`}
           >
             <BookOpen size={16} />
-            {"Live Docs"}
+            {"Live Documentatie"}
           </button>
           <button 
             onClick={() => setActiveMainTab("roadmap")}
@@ -826,55 +818,8 @@ const ProjectStructureExpertView = () => {
       )}
 
       {activeMainTab === "markdown" && (
-        <div className="flex w-full h-full">
-          {/* Sidebar for markdown files */}
-          <div className="w-64 border-r border-gray-200 bg-slate-50 overflow-y-auto flex flex-col">
-            <div className="p-4 border-b border-gray-200 bg-slate-100/50">
-              <h3 className="font-bold text-slate-700 text-sm tracking-wide">Live Documentatie</h3>
-              <p className="text-[10px] text-slate-500 mt-1">Automatisch gesynchroniseerd met docs/ directory via Vite HMR.</p>
-            </div>
-            <div className="flex-1 p-2 space-y-1">
-              {Object.keys(markdownFiles).map(filename => (
-                <button
-                  key={filename}
-                  onClick={() => setActiveMdFile(filename)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
-                    activeMdFile === filename 
-                      ? "bg-blue-100 text-blue-700 font-bold" 
-                      : "text-slate-600 hover:bg-slate-200/50"
-                  }`}
-                >
-                  <div className="flex items-center">
-                    <FileText size={14} className="mr-2 opacity-70" />
-                    <span className="truncate">{markdownFiles[filename].title}</span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-          {/* Content area */}
-          <div className="flex-1 bg-white overflow-y-auto p-8">
-            <div className="max-w-4xl mx-auto">
-              <div className="mb-6 pb-4 border-b border-slate-200 flex justify-between items-start">
-                <div>
-                  <h2 className="text-2xl font-black text-slate-800">{markdownFiles[activeMdFile].title}</h2>
-                  <p className="text-xs text-slate-500 mt-1 font-mono">{activeMdFile}</p>
-                </div>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Zoek in document..."
-                    value={mdSearchQuery}
-                    onChange={(e) => setMdSearchQuery(e.target.value)}
-                    className="pl-3 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
-                  />
-                </div>
-              </div>
-              <pre className="whitespace-pre-wrap font-mono text-sm bg-slate-50 p-6 rounded-xl border border-slate-200 overflow-x-auto text-slate-800 leading-relaxed">
-                {renderHighlightedText(markdownFiles[activeMdFile].content, mdSearchQuery)}
-              </pre>
-            </div>
-          </div>
+        <div className="absolute inset-0 w-full h-full z-10 bg-white">
+          <LiveDocumentationView t={t} />
         </div>
       )}
 

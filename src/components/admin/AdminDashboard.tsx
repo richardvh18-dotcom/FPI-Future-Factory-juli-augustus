@@ -67,7 +67,7 @@ type DashboardCategory = {
 
 // --- LAZY LOAD IMPORTS ---
 const RoadmapViewer = React.lazy(() => import("./RoadmapViewer"));
-const ProjectStructureExpertView = React.lazy(() => import("./ProjectStructureExpertView"));
+import ProjectStructureExpertView from "./ProjectStructureExpertView";
 const AdminEmailManager = React.lazy(() => import("./AdminEmailManager"));
 const AdminProductManager = React.lazy(() => import("./AdminProductManager"));
 const FactoryStructureManager = React.lazy(() =>

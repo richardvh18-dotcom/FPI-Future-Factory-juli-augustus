@@ -64,3 +64,12 @@ Self-service analytics en gerichte actie.
 
 ---
 *Deze visie plaatst het systeem niet langer als slechts een tool, maar als een intelligente partner in het productieproces. Het is de stip op de horizon waar alle huidige architectonische beslissingen (clean code, modulaire hubs, strakke beveiliging) naartoe werken.*
+
+## De Roadmap naar AI-Readiness
+Om deze AI-First visie te realiseren, doorloopt het platform eerst een technische voorbereidingsfase. AI heeft feilloos gestructureerde data en historie nodig. De 5 kernstappen zijn:
+
+1. **Van `any` naar Strikte Data Modellen (Zod / TypeScript):** Volledig uitsluiten van flexibele datatypes zodat de structuur voorspelbaar is voor AI.
+2. **Event Sourcing & Tijdreeksen:** Het opslaan van historische wijzigingen (append-only) in plaats van overschrijven, noodzakelijk voor voorspellend onderhoud (Predictive Maintenance).
+3. **Beveiligde Backend Endpoints:** Het verplaatsen van zware berekeningen en LLM-connecties naar veilige Cloud Functions.
+4. **Vector Zoeken:** Het inrichten van embeddings voor eerdere storingen en PDF-handleidingen (Root Cause AI).
+5. **Machine-API's (IoT):** Directe sensor-data feeds (bijv. via Infor ION of MQTT) om de Digital Twin en OEE real-time te voeden zonder menselijke tussenkomst.

@@ -15,10 +15,15 @@
 4. **Documentatie & Architectuur (Review Aanbeveling)**
    - Eventueel extra inhoudelijke slides toevoegen aan het Kennis Centrum / de Dashboard Roadmap.
    - ~~Een Architectuurdocument (docs/ARCHITECTURE.md) opstellen zodat nieuwe ontwikkelaars sneller kunnen instappen.~~ (✅ Afgerond)
+   - **Nieuw:** Strategische visie voor AI-First MES vastgelegd in [VISION.md](file:///d:/Antygravity/FPI-Future-Factory-juli-augustus/docs/VISION.md). Dit document beschrijft de langetermijnvisie en de 5 stappen naar AI-readiness.
 
 5. **Kwaliteitsborging & Testen (Review Aanbeveling)**
    - Resterende ny types in de codebase zoveel mogelijk vervangen door sterke TypeScript-types.
    - Controleren of alle nieuwe (en bestaande) hooks goed getest zijn met unit tests (bijv. via Jest/React Testing Library).
+
+6. **Firestore Persistence (Tablets op de vloer)**
+   - Onderzoeken en oplossen van de Firestore quota-fout (`installHook.js:1 Firestore persistence tijdelijk uitgeschakeld na quota-fout; memory cache actief.`). 
+   - Persistence weer activeren/optimaliseren voor de tablets op de werkvloer om betrouwbaarheid bij netwerkuitval (offline cache) te borgen.
 
 ---
 

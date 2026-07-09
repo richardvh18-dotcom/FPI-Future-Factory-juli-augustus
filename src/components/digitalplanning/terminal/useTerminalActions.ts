@@ -5,13 +5,41 @@ import { db, logActivity } from "../../../config/firebase";
 import { PATHS, getPathString } from "../../../config/dbPaths";
 import { queuePrintJob, startProductionLots, completeTrackedProductRepair } from "../../../services/planningSecurityService";
 
-// Tijdelijke types voor documenten (deze komen overeen met Terminal.tsx)
-type TrackedProductDoc = any;
-type PlanningOrder = any;
+export interface TrackedProductDoc {
+  id: string;
+  lotNumber?: string;
+  orderId?: string;
+  currentStep?: string;
+  articleCode?: string;
+  status?: string;
+  machineId?: string;
+  [key: string]: unknown;
+}
+
+export interface PlanningOrder {
+  id: string;
+  orderId: string;
+  itemCode?: string;
+  productId?: string;
+  item?: string;
+  __docPath?: string;
+  sourcePath?: string;
+  [key: string]: unknown;
+}
+
+export interface CustomAuthUser {
+  uid: string;
+  email: string | null;
+  name?: string;
+  role?: string;
+  isGodMode?: boolean;
+  allowedStations?: string[];
+  [key: string]: unknown;
+}
 
 export interface UseTerminalActionsProps {
-  user: any;
-  notify: any;
+  user: CustomAuthUser | null | undefined;
+  notify: (msg: string) => void;
   effectiveStationId: string;
   stationName?: string;
   isBH18: boolean;
@@ -86,7 +114,7 @@ export function useTerminalActions({
         return;
       }
       
-      const found = activeWikkelingen.find((i: any) => 
+      const found = activeWikkelingen.find((i: TrackedProductDoc) => 
         (i.lotNumber || "").toLowerCase() === code.toLowerCase() || 
         (i.orderId || "").toLowerCase() === code.toLowerCase()
       );
@@ -146,7 +174,7 @@ export function useTerminalActions({
           return;
         }
       }
-      notify((String(t("digitalplanning.terminal.product_not_found"))) as any);
+      notify(String(t("digitalplanning.terminal.product_not_found")));
     } catch (err) {
       console.error("Fout bij laden product:", err);
     }
@@ -206,11 +234,11 @@ export function useTerminalActions({
         : [startResult?.firstLot || startLot].filter(Boolean);
 
       const startLabelZpl = String(labelZplData || "").trim();
-      const printerId = String((startOptions as any)?.printerId || "").trim();
-      const skipStartLabel = Boolean((startOptions as any)?.skipStartLabel);
+      const printerId = String(startOptions?.printerId || "").trim();
+      const skipStartLabel = Boolean(startOptions?.skipStartLabel);
       const requestedLabelCount = Math.max(
         1,
-        Number.parseInt(String((startOptions as any)?.requestedLabelCount || "1"), 10) || 1
+        Number.parseInt(String(startOptions?.requestedLabelCount || "1"), 10) || 1
       );
 
       if (!skipStartLabel && startLabelZpl && printerId) {
@@ -254,7 +282,7 @@ export function useTerminalActions({
 
   useEffect(() => {
     if (pendingQcSteekproefLot && allTracked && allTracked.length > 0) {
-      const foundProduct = allTracked.find((p: any) => p.lotNumber === pendingQcSteekproefLot);
+      const foundProduct = allTracked.find((p: TrackedProductDoc) => p.lotNumber === pendingQcSteekproefLot);
       if (foundProduct) {
         setProductToRelease(foundProduct as TrackedProductDoc);
         setReleaseDefaultStatus("rejected");
