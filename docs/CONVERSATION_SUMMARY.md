@@ -7,7 +7,7 @@
    - Geplande Firestore-exports inrichten en een periodieke restore-test inbouwen.
 
 2. **Codebase Opschonen (Fase 4)**
-   - Console logs en openstaande TODO's opruimen in de productiepaden (Log cleanup).
+   - ~~Console logs en openstaande TODO's opruimen in de productiepaden (Log cleanup).~~ (✅ Afgerond)
 
 3. **Internationalisatie (i18n)**
    - Start de i18n vertaling voor `src/components/planning/AutomationRulesView.jsx` (vervangen van vaste teksten door `t()` calls).

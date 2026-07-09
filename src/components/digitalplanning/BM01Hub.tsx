@@ -349,8 +349,6 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
         });
   // Filter producten specifiek voor BM01 (Aan te bieden tab)
   // Dit zorgt ervoor dat items met stap 'Eindinspectie' of station 'BM01' correct worden doorgegeven
-  console.log("BM01 Raw Products received:", products);
-  console.log("BM01 Filtered bm01Products:", bm01Products);
 
   const toMillisSafe = (value: unknown) => toMillisFromMixed(value);
     const handleNahardingBatchComplete = async () => {
