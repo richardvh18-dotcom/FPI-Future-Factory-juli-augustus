@@ -1,60 +1,87 @@
 const fs = require('fs');
-const path = require('path');
+const path = 'd:/Antygravity/FPI-Future-Factory-juli-augustus/src/components/digitalplanning/Terminal.tsx';
+let content = fs.readFileSync(path, 'utf8');
 
-const terminalPath = path.join(__dirname, 'src/components/digitalplanning/Terminal.tsx');
-let content = fs.readFileSync(terminalPath, 'utf8');
+// Voeg de import toe
+content = content.replace('import { useTerminalData } from "./terminal/useTerminalData";', 'import { useTerminalData } from "./terminal/useTerminalData";\\nimport { useTerminalActions } from "./terminal/useTerminalActions";');
 
-// The start of the block to remove
-const startMarker = "// Real-time Data Sync - ONLY for tracked products (orders come from prop)";
-// The end of the block to remove (first line of handlers)
-const endMarker = "// Handlers";
+// Zoek het begin van de states om te verwijderen
+const stateStart = content.indexOf('const [showStartModal, setShowStartModal] = useState(false);');
+const stateEnd = content.indexOf('// Scan functionaliteit voor wikkelen tab');
 
-const startIndex = content.indexOf(startMarker);
-const endIndex = content.indexOf(endMarker);
-
-if (startIndex === -1 || endIndex === -1) {
-  console.error("Markers not found");
-  process.exit(1);
+if (stateStart > -1 && stateEnd > -1) {
+    const contentBeforeState = content.substring(0, stateStart);
+    const contentAfterState = content.substring(stateEnd);
+    content = contentBeforeState + contentAfterState;
 }
 
-const beforeBlock = content.substring(0, startIndex);
-const afterBlock = content.substring(endIndex);
+// Nu zoek de handlers om te verwijderen
+const handlersStart = content.indexOf('// Scan handler voor wikkelen tab');
+const handlersEnd = content.indexOf('if (loading) return (');
 
-const hookCall = `
-  const terminalData = useTerminalData({
-    initialStation,
-    orders,
-    planningSearch,
-    wikkelenSearch,
-    lossenPlanningFilter,
-    referenceDate,
-    showAllWeeks
+if (handlersStart > -1 && handlersEnd > -1) {
+    const contentBeforeHandlers = content.substring(0, handlersStart);
+    const contentAfterHandlers = content.substring(handlersEnd);
+
+    const callHook = `
+  const {
+    showStartModal,
+    setShowStartModal,
+    productToRelease,
+    setProductToRelease,
+    bulkProductsToRelease,
+    setBulkProductsToRelease,
+    releaseAutoApproveToken,
+    setReleaseAutoApproveToken,
+    viewingProduct,
+    setViewingProduct,
+    showRepairModal,
+    setShowRepairModal,
+    itemToRepair,
+    setItemToRepair,
+    releaseDefaultStatus,
+    setReleaseDefaultStatus,
+    releaseDefaultReasons,
+    setReleaseDefaultReasons,
+    handleScan,
+    handleOpenReleaseModal,
+    handleViewDrawing,
+    handleStartProduction,
+    handleRepair,
+    handleRepairComplete,
+  } = useTerminalActions({
+    user,
+    notify,
+    effectiveStationId: effectiveStationId as string,
+    stationName: stationName as string | undefined,
+    isBH18,
+    isNabewerking,
+    isLossenStation,
+    isBM01,
+    isBH31,
+    activeTab,
+    setActiveTab,
+    allTracked: allTracked as any[],
+    activeWikkelingen: activeWikkelingen as any[],
+    selectedWikkeling,
+    setSelectedTrackedId,
+    scanInput,
+    setScanInput,
   });
 
-  const {
-    effectiveStationId, normalizedStationId, cleanStationId,
-    isNabewerking, isMazak, isLossen1218Station, isLossenStation, isSimpleViewStation, isBH18, isGereedTabSourceStation, isBH31, isBM01,
-    allOrders, allTracked, archiveTrackedItems, loading, setLoading,
-    targetWeekNum, targetYearNum, currentRealDate, currentRealWeek, currentRealYear, absCurrentReal, appId, stationCounterField,
-    stationOrderMeta, madeCountMap, myOrders, productionProgressMap, rejectedCountMap, readyForReturnMap, waitingForLossenMap,
-    activeWikkelingen, lotConflictMeta, repairItems, filteredOrders, lossenFilteredOrders
-  } = terminalData;
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+  };
+  
+  `;
 
-  // Sync ref met state
-  useEffect(() => {
-    // Add logic if needed, or rely on hook
-  }, []);
-
-`;
-
-// Don't forget to add the import at the top of Terminal.tsx
-const importStatement = `import { useTerminalData } from "./terminal/useTerminalData";\n`;
-let finalContent = beforeBlock + hookCall + afterBlock;
-if (!finalContent.includes('useTerminalData')) {
-  finalContent = importStatement + finalContent;
+    content = contentBeforeHandlers + callHook + contentAfterHandlers;
+    
+    // Verwijder onnodige imports in Terminal.tsx
+    content = content.replace('import { queuePrintJob, startProductionLots } from "../../services/planningSecurityService";\\nimport { completeTrackedProductRepair } from "../../services/planningSecurityService";', '');
+    
+    fs.writeFileSync(path, content, 'utf8');
+    console.log("Terminal.tsx updated successfully.");
 } else {
-  finalContent = finalContent.replace('import React, {', importStatement + 'import React, {');
+    console.log("Could not find blocks to replace.");
 }
-
-fs.writeFileSync(terminalPath, finalContent);
-console.log("Terminal.tsx updated");

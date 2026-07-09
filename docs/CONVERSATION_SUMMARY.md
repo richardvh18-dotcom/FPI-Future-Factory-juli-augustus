@@ -1,3 +1,35 @@
+### Update sessie 09 July 2026 (Terminal.tsx Acties Refactor)
+
+**Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Uitgevoerd (Stap 4 Voltooid):**
+- De actie logica in `Terminal.tsx` (o.a. scannen, productie starten, tekeningen openen, reparaties afhandelen) is succesvol geëxtraheerd naar een nieuwe custom hook: `src/components/digitalplanning/terminal/useTerminalActions.ts`.
+- `Terminal.tsx` roept deze hook nu aan en geeft de gegenereerde functies en states door, waardoor het bestand sterk is vereenvoudigd tot een schone UI-wrapper.
+- Zowel TypeScript validatie (`npx tsc --noEmit`) als linting (`npm run lint`) zijn gepasseerd na de herstructurering.
+
+**Resultaat:**
+- `Terminal.tsx` is vrijgemaakt van zware bedrijfslogica. Het "Centralisatie AI-services en prompt management" voor deze component is daarmee succesvol verwezenlijkt.
+
+---
+
+### Update sessie 09 July 2026 (BM01Hub.tsx Refactor Afronding)
+
+**Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Uitgevoerd (Stap 3 Voltooid):**
+- De gigantische `BM01Hub.tsx` (~1550 regels) succesvol opgedeeld in kleinere, onderhoudbare componenten.
+- Drie nieuwe tab-componenten gecreëerd in `src/components/digitalplanning/bm01/`:
+  - `BM01InspectionTab.tsx` (UI voor QA inspecties, afkeuringslogica en steekproeven)
+  - `BM01HistoryTab.tsx` (UI voor archiefweergave en lot-historie)
+  - `BM01NahardingTab.tsx` (UI voor naharding, exportresets en labels printen)
+- `BM01Hub.tsx` fungeert nu enkel als orkestrator die de state beheert via `useBM01Data` en delegeert naar de juiste child component.
+- Zowel TypeScript validatie (`npx tsc --noEmit`) als linting (`npm run lint`) zijn naadloos gepasseerd.
+
+**Resultaat:**
+- `BM01Hub.tsx` is nu schoon, leesbaar en strikt getypeerd, waarmee de technische schuld van deze component volledig is afgelost.
+
+---
+
 ## [2026-07-08] Sessie Update (Avond)
 **Voortgang BM01Hub.tsx Refactor (Stap 3):**
 - Data logica succesvol ge�xtraheerd naar src/components/digitalplanning/bm01/useBM01Data.ts.

@@ -20,6 +20,10 @@ import { useNotifications } from '../../contexts/NotificationContext';
 import { useTouchKeyboardPreference } from "../../hooks/useTouchKeyboardPreference";
 import { OrderRecord, ProductRecord, SidebarEntry, FinishPayload, DeliveryMismatch } from "./bm01/bm01Types";
 import { useBM01Data } from "./bm01/useBM01Data";
+import BM01InspectionTab from "./bm01/BM01InspectionTab";
+import BM01HistoryTab from "./bm01/BM01HistoryTab";
+import BM01NahardingTab from "./bm01/BM01NahardingTab";
+
 
 type BM01HubProps = {
     onBack?: () => void;
@@ -916,373 +920,49 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                 </div>
             </div>
         ) : activeTab === "inspectie" ? (
-            <div className="h-full w-full">
-                <div
-                    className="h-full flex flex-col p-3 w-full overflow-y-auto custom-scrollbar"
-                >
-                    {/* Scan Indicator & Input */}
-                    <div className="shrink-0 space-y-2 mb-3 sticky top-0 bg-white py-2 z-10">
-                        <div className="flex justify-between items-end">
-                            {/* Indicator Label */}
-                            <div className="flex items-center gap-2 px-4 py-2 bg-purple-50 rounded-lg border border-purple-100 w-fit">
-                                <div className="w-2 h-2 bg-purple-500 rounded-full pulse-text-bm01"></div>
-                                <span className="text-xs font-black text-purple-600 uppercase tracking-widest">
-                                    🔍 {t('bm01.ready_for_inspection_scan', 'Klaar voor inspectie scan')}
-                                </span>
-                            </div>
-
-                            {/* Scanner Mode Toggle */}
-                            <button 
-                                onClick={() => setScannerMode(!scannerMode)}
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 font-black text-[9px] uppercase tracking-tighter transition-all ${scannerMode ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-white border-slate-200 text-slate-400'}`}
-                                title={scannerMode ? t('bm01.scannerModeKeyboardHidden', 'Toetsenbord verborgen (Scanner Modus)') : t('bm01.normalInput', 'Normale invoer')}
-                            >
-                                {scannerMode ? <ScanBarcode size={14} /> : <Keyboard size={14} />}
-                                {scannerMode ? t('bm01.scanner', 'Scanner') : t('bm01.keyboard', 'Keyboard')}
-                            </button>
-                        </div>
-                        {/* Scan Input */}
-                        <div className="relative">
-                            <ScanBarcode className="absolute left-4 top-1/2 -translate-y-1/2 text-purple-500 transition-all scan-pulse-bm01" size={24} />
-                            <input
-                                ref={scanInputRef}
-                                type="text"
-                                autoFocus
-                                value={scanInput}
-                                onChange={(e) => setScanInput(e.target.value)}
-                                inputMode={scannerMode && isTouchDevice && !touchKeyboardPreferred ? "none" : "text"}
-                                onKeyDown={handleScan}
-                                placeholder={t("placeholders.dpScanLotForInspection", "Scan lotnummer voor inspectie...")}
-                                className="w-full pl-14 pr-24 py-4 bg-white border-2 border-purple-100 focus:border-purple-500 focus:ring-2 focus:ring-purple-300 rounded-2xl font-bold text-lg shadow-sm outline-none transition-all placeholder:text-slate-300"
-                            />
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                                {scanInput ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setScanInput("");
-                                            scanInputRef.current?.focus();
-                                        }}
-                                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-slate-700"
-                                        title={t("common.clear", "Wissen")}
-                                    >
-                                        <X size={14} />
-                                    </button>
-                                ) : null}
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setTouchKeyboardPreferred(true);
-                                        requestAnimationFrame(() => scanInputRef.current?.focus());
-                                    }}
-                                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-blue-600 hover:text-blue-700"
-                                    title={t("digitalplanning.terminal.keyboard", "Toetsenbord")}
-                                >
-                                    <Keyboard size={14} />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {bm01Products.length === 0 ? (
-                        <div className="text-center py-20 opacity-40">
-                            <Package size={64} className="mx-auto mb-4 text-slate-300" />
-                            <p className="font-black uppercase tracking-widest text-slate-400">{t('bm01.no_items_inspect')}</p>
-                        </div>
-                    ) : (
-                        <div className="flex flex-col gap-2">
-                            {bm01Products.map((item: ProductRecord) => (
-                                <div 
-                                    key={item.id}
-                                    onClick={() => handleItemClick(item)}
-                                    className={`bg-white border rounded-[14px] p-3 shadow-sm hover:shadow-md transition-all group cursor-pointer w-full
-                                        ${selectedProduct?.id === item.id ? 'bg-purple-50 border-purple-400 ring-2 ring-purple-200' : 'border-slate-100'}`}
-                                >
-                                    <div className="flex justify-between items-start gap-3">
-                                        <div className="min-w-0 flex-1">
-                                            <h4 className="font-black text-2xl text-slate-800 tracking-tight">{item.lotNumber}</h4>
-                                            <span className="text-[7px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-lg font-black uppercase tracking-wider border border-slate-200 inline-block mt-0.5">
-                                                {item.orderId}
-                                            </span>
-                                            <p className="text-[9px] text-slate-500 font-bold uppercase truncate mt-0.5">{item.item}</p>
-                                            <div className="flex items-center gap-1 mt-1">
-                                                <History size={8} className="text-slate-400" />
-                                                <span className="text-[7px] text-slate-400 font-bold uppercase">
-                                                    {t('bm01.from')}: {item.lastStation || t('common.unknown')}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => handleItemClick(item)}
-                                        className="w-full mt-2 px-2 py-1.5 bg-purple-600 text-white rounded-lg font-black uppercase text-[8px] tracking-widest hover:bg-purple-700 transition-all shadow-md active:scale-95"
-                                    >
-                                        {t('bm01.report_ready')}
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
+            <BM01InspectionTab
+                bm01Products={bm01Products}
+                selectedProduct={selectedProduct}
+                scanInput={scanInput}
+                setScanInput={setScanInput}
+                scannerMode={scannerMode}
+                setScannerMode={setScannerMode}
+                scanInputRef={scanInputRef}
+                handleScan={handleScan}
+                isTouchDevice={isTouchDevice}
+                touchKeyboardPreferred={touchKeyboardPreferred}
+                setTouchKeyboardPreferred={setTouchKeyboardPreferred}
+                handleItemClick={handleItemClick}
+                scheduleScanFocus={scheduleScanFocus}
+            />
         ) : activeTab === "completed" ? (
-            /* AANGEBODEN / GEREED TAB */
-            <div className="h-full flex flex-col p-3 w-full">
-                {/* Datum Navigatie */}
-                <div className="flex flex-col md:flex-row items-center justify-center gap-2 mb-3">
-                    <div className="flex items-center bg-white p-1.5 rounded-xl shadow-md border-2 border-slate-200 scale-95 sm:scale-100">
-                        <button onClick={() => setSelectedDate(d => viewMode === 'day' ? subDays(d, 1) : subDays(d, 7))} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-slate-800">
-                            <ChevronLeft size={20} />
-                        </button>
-                        <div 
-                            className="flex items-center gap-2 px-4 min-w-[200px] justify-center cursor-pointer hover:bg-slate-50 rounded-lg transition-colors select-none"
-                            onDoubleClick={() => setSelectedDate(new Date())}
-                            title={t('bm01.reset_date_tooltip', 'Dubbelklik om naar vandaag te gaan')}
-                        >
-                            <Calendar size={18} className="text-emerald-500" />
-                            <span className="font-black text-slate-800 uppercase tracking-wider text-xs">
-                                {viewMode === 'day' 
-                                    ? format(selectedDate, "EEEE d MMMM", { locale: nl })
-                                    : `Week ${format(selectedDate, "w")} (${format(startOfISOWeek(selectedDate), "d MMM")} - ${format(endOfISOWeek(selectedDate), "d MMM")})`
-                                }
-                            </span>
-                        </div>
-                        <button onClick={() => setSelectedDate(d => viewMode === 'day' ? addDays(d, 1) : addDays(d, 7))} className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 hover:text-slate-800">
-                            <ChevronRight size={20} />
-                        </button>
-                    </div>
-                    
-                    <div className="flex gap-1.5 scale-95 sm:scale-100">
-                        <div className="flex bg-white p-0.5 rounded-lg border border-slate-100 shadow-sm">
-                            <button 
-                                onClick={() => setViewMode("day")}
-                                className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase transition-all ${viewMode === "day" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}
-                            >
-                                {t('bm01.day')}
-                            </button>
-                            <button 
-                                onClick={() => setViewMode("week")}
-                                className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase transition-all ${viewMode === "week" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}
-                            >
-                                {t('bm01.week')}
-                            </button>
-                        </div>
-
-                        <button 
-                            onClick={handleExport}
-                            className="p-2 bg-white hover:bg-emerald-50 text-emerald-600 border border-slate-100 rounded-lg transition-colors shadow-sm"
-                            title={t('bm01.exportCsv', 'Export CSV')}
-                        >
-                            <Download size={18} />
-                        </button>
-                        
-                        <button 
-                            onClick={() => setShowPrintModal(true)}
-                            className="p-2 bg-white hover:bg-blue-50 text-blue-600 border border-slate-100 rounded-lg transition-colors shadow-sm"
-                            title={t('bm01.print_list', 'Print Lijst')}
-                        >
-                            <Printer size={18} />
-                        </button>
-                    </div>
-                </div>
-
-                <div className="text-center mb-3">
-                    <div className="inline-block bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100 shadow-sm">
-                        <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">
-                            {t('bm01.foundLotsInPeriod', 'Gevonden lots in deze periode')}: <span className="text-emerald-600 font-black text-xl ml-2">{completedProducts.length}</span>
-                        </p>
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3">
-                    {activeTab === "completed" && completedProducts.length === 0 ? (
-                        <div className="text-center py-20 opacity-40">
-                            <CheckCircle2 size={64} className="mx-auto mb-4 text-slate-300" />
-                            <p className="font-black uppercase tracking-widest text-slate-400">{t('bm01.no_offered_items')}</p>
-                        </div>
-                    ) : (
-                        completedProducts.map(item => (
-                            <div key={item.id} className="bg-white p-5 rounded-[25px] border border-slate-100 shadow-sm flex justify-between items-center opacity-75 hover:opacity-100 transition-opacity">
-                                <div className="flex items-center gap-5">
-                                    <div className="p-4 rounded-2xl shrink-0 bg-emerald-50 text-emerald-600">
-                                        <CheckCircle2 size={24} />
-                                    </div>
-                                    <div>
-                                        <div className="flex items-center gap-2 mb-1">
-                                            <h4 className="font-black text-lg text-slate-800 tracking-tight">{item.lotNumber}</h4>
-                                            <span className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg font-black uppercase tracking-wider border border-slate-200">
-                                                {item.orderId}
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-slate-500 font-bold uppercase truncate">{item.item}</p>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <span className="text-[10px] text-emerald-600 font-bold uppercase">
-                                                {t('bm01.reportedReadyAt', 'Gereedgemeld om')} {item.timestamps?.finished ? format(toDateFromMixed(item.timestamps.finished) || new Date(), "HH:mm") : "--:--"}
-                                            </span>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setViewingDossier(item);
-                                                }}
-                                                className="ml-4 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded-lg transition-colors"
-                                            >
-                                                <FileText size={12} /> {t('bm01.dossier')}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </div>
+            <BM01HistoryTab
+                completedProducts={completedProducts}
+                selectedDate={selectedDate}
+                setSelectedDate={setSelectedDate}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+                handleExport={handleExport}
+                setShowPrintModal={setShowPrintModal}
+                setViewingDossier={setViewingDossier}
+                toDateFromMixed={toDateFromMixed}
+            />
         ) : activeTab === "naharding_batch" ? (
-            <div className="h-full flex flex-col p-4 gap-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 flex flex-col justify-between shadow-sm">
-                        <div>
-                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">{t('bm01.nahardingBatch', 'Naharding Batch')}</p>
-                            <p className="text-sm font-bold text-slate-700 mt-1">
-                                {t("bm01.naharding_batch_desc", "Meld in 1x alle Naharding lots gereed zodra de oven is geleegd.")}
-                            </p>
-                            {latestNahardingBatchLabel && (
-                                <p className="mt-3 text-[11px] font-bold text-amber-800">
-                                    {t("bm01.naharding_batch_date", "Laatst aangeboden batch: {{date}}", { date: latestNahardingBatchLabel })}
-                                </p>
-                            )}
-                        </div>
-                        <button
-                            type="button"
-                            onClick={handleNahardingBatchComplete}
-                            disabled={isNahardingBatchProcessing || nahardingBatchProducts.length === 0}
-                            className={`mt-4 w-full px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${
-                                isNahardingBatchProcessing || nahardingBatchProducts.length === 0
-                                    ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                                    : "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200 shadow-sm"
-                            }`}
-                        >
-                            {isNahardingBatchProcessing
-                                ? t("bm01.naharding_batch_processing", "Batch wordt verwerkt...")
-                                : t("bm01.naharding_batch_button", "Batch Naharding gereedmelden ({{count}})", { count: nahardingBatchProducts.length })}
-                        </button>
-                    </div>
-
-                    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 flex flex-col justify-between shadow-sm">
-                        <div>
-                            <div className="flex justify-between items-start gap-2">
-                                <div>
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-700">{t('bm01.printLabels', 'Print Labels')}</p>
-                                    <p className="text-sm font-bold text-slate-700 mt-1">
-                                        {t('bm01.printLabelsHelp', 'Print het QR-overzicht voor de Naharding batch van een specifieke dag of week.')}
-                                    </p>
-                                </div>
-                                <div className="flex bg-white p-0.5 rounded-lg border border-blue-100 shadow-sm shrink-0">
-                                    <button 
-                                        onClick={() => setViewMode("export")}
-                                        className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase transition-all ${viewMode === "export" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}
-                                    >
-                                        {t('bm01.export', 'Per Export')}
-                                    </button>
-                                    <button 
-                                        onClick={() => setViewMode("day")}
-                                        className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase transition-all ${viewMode === "day" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}
-                                    >
-                                        {t('bm01.day', 'Dag')}
-                                    </button>
-                                    <button 
-                                        onClick={() => setViewMode("week")}
-                                        className={`px-3 py-1.5 rounded-md text-[9px] font-black uppercase transition-all ${viewMode === "week" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}
-                                    >
-                                        {t('bm01.week', 'Week')}
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="flex justify-between items-end mt-4">
-                                <p className="text-xs font-bold text-blue-800 bg-blue-100/50 px-3 py-1.5 rounded-lg border border-blue-200 shadow-sm">
-                                    {t('bm01.lotCount', 'Aantal lots')}: <span className="font-black text-lg ml-1">{nahardingPrintList.length}</span>
-                                </p>
-                                {viewMode === "export" ? (
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-[9px] text-slate-500 font-bold uppercase">
-                                            {lastNahardingResetAt 
-                                                ? `${t('bm01.lastPrint', 'Reset')}: ${format(new Date(lastNahardingResetAt), "HH:mm")}`
-                                                : t('bm01.noPrintYet', 'Geen reset')}
-                                        </span>
-                                        <button 
-                                            type="button"
-                                            onClick={() => {
-                                                const nowStr = new Date().toISOString();
-                                                localStorage.setItem("last_naharding_reset_at", nowStr);
-                                                setLastNahardingResetAt(nowStr);
-                                            }}
-                                            className="px-2 py-1 bg-slate-200 hover:bg-slate-300 border border-slate-300 rounded-lg text-[8px] font-black uppercase tracking-wider text-slate-700 transition-colors"
-                                        >
-                                            Reset view
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex items-center bg-white p-1.5 rounded-xl shadow-md border-2 border-blue-200 shrink-0">
-                                        <button onClick={() => setSelectedDate(d => viewMode === 'day' ? subDays(d, 1) : subDays(d, 7))} className="p-2 hover:bg-blue-50 rounded-lg text-slate-500 hover:text-blue-700 transition-colors">
-                                            <ChevronLeft size={18} />
-                                        </button>
-                                        <div 
-                                            className="flex items-center px-4 cursor-pointer select-none min-w-[120px] justify-center"
-                                            onDoubleClick={() => setSelectedDate(new Date())}
-                                            title={t('bm01.doubleClickForToday', 'Dubbelklik voor vandaag')}
-                                        >
-                                            <Calendar size={14} className="text-blue-500 mr-2 inline-block" />
-                                            <span className="font-black text-slate-800 text-xs uppercase tracking-wider">
-                                                {viewMode === 'day' 
-                                                    ? format(selectedDate, "d MMM", { locale: nl })
-                                                    : `Week ${format(selectedDate, "w")}`
-                                                }
-                                            </span>
-                                        </div>
-                                        <button onClick={() => setSelectedDate(d => viewMode === 'day' ? addDays(d, 1) : addDays(d, 7))} className="p-2 hover:bg-blue-50 rounded-lg text-slate-500 hover:text-blue-700 transition-colors">
-                                            <ChevronRight size={18} />
-                                        </button>
-                                    </div>
-                                )}
-                        </div>
-                    </div>
-                        <button 
-                            onClick={() => setShowPrintModal(true)}
-                            disabled={nahardingPrintList.length === 0}
-                            className={`mt-4 w-full px-5 py-3 rounded-xl text-xs font-black uppercase tracking-widest border transition-all shadow-sm flex items-center justify-center gap-2 ${
-                                nahardingPrintList.length === 0 
-                                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed" 
-                                : "bg-white hover:bg-blue-100 text-blue-700 border-blue-300"
-                            }`}
-                        >
-                            <Printer size={16} className="inline-block mr-2 -mt-0.5" />
-                            <span>{t('bm01.qrPrintOverview', 'QR Print Overzicht')}</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3">
-                    {nahardingBatchProducts.length === 0 ? (
-                        <div className="h-full flex items-center justify-center text-center opacity-60">
-                            <p className="text-xs font-black uppercase tracking-widest text-slate-500">
-                                {nahardingProducts.length === 0
-                                    ? t("bm01.naharding_batch_none_total", "Geen lots op Naharding station gevonden.")
-                                    : t("bm01.naharding_batch_none", "{{total}} lots op Naharding, maar geen batch-datum bepaald.", { total: nahardingProducts.length })}
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="space-y-2">
-                            {nahardingBatchProducts.map((item) => (
-                                <div key={item.id || item.lotNumber} className="rounded-xl border border-slate-200 p-3">
-                                    <p className="text-sm font-black text-slate-800">{item.lotNumber || item.id}</p>
-                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mt-1">
-                                        {item.orderId || "-"} | {item.item || item.itemCode || "-"}
-                                    </p>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </div>
+            <BM01NahardingTab
+                nahardingBatchProducts={nahardingBatchProducts}
+                latestNahardingBatchLabel={latestNahardingBatchLabel}
+                isNahardingBatchProcessing={isNahardingBatchProcessing}
+                handleNahardingBatchComplete={handleNahardingBatchComplete}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+                nahardingPrintList={nahardingPrintList}
+                lastNahardingResetAt={lastNahardingResetAt}
+                setLastNahardingResetAt={setLastNahardingResetAt}
+                selectedDate={selectedDate}
+                setSelectedDate={setSelectedDate}
+                setShowPrintModal={setShowPrintModal}
+                nahardingProducts={nahardingProducts}
+            />
         ) : (
             <div className="h-full flex flex-col p-4 overflow-y-auto">
                 <div className="mb-4 rounded-3xl border-2 border-rose-200 bg-rose-50 px-5 py-4 shadow-sm">
