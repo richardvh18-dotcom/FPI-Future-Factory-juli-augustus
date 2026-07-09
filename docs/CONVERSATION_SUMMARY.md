@@ -10,7 +10,7 @@
    - ~~Console logs en openstaande TODO's opruimen in de productiepaden (Log cleanup).~~ (✅ Afgerond)
 
 3. **Internationalisatie (i18n)**
-   - Start de i18n vertaling voor `src/components/planning/AutomationRulesView.jsx` (vervangen van vaste teksten door `t()` calls).
+   - ~~Start de i18n vertaling voor `src/components/planning/AutomationRulesView.jsx` (vervangen van vaste teksten door `t()` calls).~~ (✅ Reeds uitgevoerd)
 
 4. **Documentatie & Architectuur (Review Aanbeveling)**
    - Eventueel extra inhoudelijke slides toevoegen aan het Kennis Centrum / de Dashboard Roadmap.
