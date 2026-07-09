@@ -14,7 +14,7 @@
 
 4. **Documentatie & Architectuur (Review Aanbeveling)**
    - Eventueel extra inhoudelijke slides toevoegen aan het Kennis Centrum / de Dashboard Roadmap.
-   - Een Architectuurdocument (docs/ARCHITECTURE.md) opstellen zodat nieuwe ontwikkelaars sneller kunnen instappen.
+   - ~~Een Architectuurdocument (docs/ARCHITECTURE.md) opstellen zodat nieuwe ontwikkelaars sneller kunnen instappen.~~ (✅ Afgerond)
 
 5. **Kwaliteitsborging & Testen (Review Aanbeveling)**
    - Resterende ny types in de codebase zoveel mogelijk vervangen door sterke TypeScript-types.
