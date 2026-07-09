@@ -384,6 +384,12 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       return () => {};
     }
 
+    const activePrinterId = currentPrinterId || getCurrentPrinterId(printers, usbDevice);
+    if (!activePrinterId) {
+      setPrintJobs([]);
+      return () => {};
+    }
+
     let rootJobs: PrintJob[] = [];
     let scopedJobs: PrintJob[] = [];
 
@@ -411,12 +417,14 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
 
     const rootQ = query(
       collection(db, getPathString(PATHS.PRINT_QUEUE)),
-      where('status', '==', 'pending')
+      where('printerId', '==', activePrinterId)
     );
     const unsubscribeRoot = onSnapshot(
       rootQ,
       (snapshot) => {
-        rootJobs = snapshot.docs.map((docSnap) => normalizeJob(docSnap)).filter((job): job is PrintJob => Boolean(job));
+        rootJobs = snapshot.docs
+          .map((docSnap) => normalizeJob(docSnap))
+          .filter((job): job is PrintJob => Boolean(job) && job.status === 'pending');
         mergeJobs();
       },
       (error) => {
@@ -433,14 +441,14 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       scopedJobs = snapshot.docs
         .filter((docSnap: { ref: { path: string } }) => isScopedPrintQueuePath(docSnap.ref.path))
         .map((docSnap: any) => normalizeJob(docSnap))
-        .filter((job: PrintJob | null): job is PrintJob => Boolean(job));
+        .filter((job: PrintJob | null): job is PrintJob => Boolean(job) && job.status === 'pending');
       mergeJobs();
     };
 
     const subscribeScopedFallback = () => {
       const fallbackQ = query(
         collectionGroup(db, 'items'),
-        where('status', '==', 'pending')
+        where('printerId', '==', activePrinterId)
       );
 
       unsubscribeScoped = onSnapshot(
@@ -457,7 +465,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
     const scopedQ = query(
       collectionGroup(db, 'items'),
       where('_scopeType', '==', 'print_queue'),
-      where('status', '==', 'pending')
+      where('printerId', '==', activePrinterId)
     );
 
     unsubscribeScoped = onSnapshot(
@@ -485,7 +493,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       unsubscribeRoot();
       if (unsubscribeScoped) unsubscribeScoped();
     };
-  }, [enabled]);
+  }, [enabled, printers, usbDevice]);
 
   const currentPrinterId = useMemo(() => {
     const id = getCurrentPrinterId(printers, usbDevice);

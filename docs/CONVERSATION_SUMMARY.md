@@ -45,6 +45,19 @@
 - Auto-processor blijft functioneel tijdens index-opbouw en startup blijft stabieler.
 - Geen deploy uitgevoerd; wijziging alleen lokaal + git.
 
+### Naverbetering (zelfde sessie): actieve-printer query-scope
+
+**Aanleiding:**
+- Laden bleef nog traag met lange Firestore `success` handlers (>1s), ondanks de index-fallback.
+
+**Uitgevoerd:**
+- `PrintQueueAutoProcessor` leest queue-data nu gericht voor alleen de actieve printer (`printerId == activePrinterId`) i.p.v. brede queue-scans.
+- Zowel root queue als scoped `items`-listener filteren daarna alleen op `status === pending`.
+
+**Resultaat:**
+- Minder documenten per snapshot en lagere client-side merge/sort belasting tijdens startup.
+- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
+
 ---
 
 ### Update sessie 09 July 2026 (Firestore Persistence Recovery)
