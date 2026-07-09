@@ -793,7 +793,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         "station bm01",
       ].includes(currentStationClean.toLowerCase());
       
-      const isCentralStation = ["LOSSEN", "GEREED"].includes(currentStationClean);
+      const isCentralStation = ["LOSSEN", "GEREED", "LOSSEN12/18"].includes(currentStationClean);
       
       const isWindingStation = !isPostProcessing && !isCentralStation;
       
