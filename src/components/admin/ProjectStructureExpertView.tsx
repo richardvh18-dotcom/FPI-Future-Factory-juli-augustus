@@ -98,7 +98,7 @@ const fileDetails: Record<string, FileDetail> = {
   },
   "src/components/digitalplanning/modals/PlanningImportModal.tsx": {
     title: "Planning Importeur",
-    desc: "Gids voor planners (Edwin/Frank) om Excel of CSV bestanden uit LN te importeren naar de digitale planning.",
+    desc: "De hoofdmodule voor de planningsimport om Excel of CSV bestanden uit Infor LN in te lezen. Essentieel zolang er nog geen live API-koppeling is met het ERP-systeem.",
     tags: ["ERP", "Import", "Admin"]
   },
   "src/components/digitalplanning/modals/TerminalSelectionModal.tsx": {
