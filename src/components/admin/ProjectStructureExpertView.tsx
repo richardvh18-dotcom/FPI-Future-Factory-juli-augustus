@@ -83,8 +83,8 @@ const fileDetails: Record<string, FileDetail> = {
   // MODALS (DE DIALOGEN)
   "src/components/digitalplanning/modals/ProductionStartModal.tsx": {
     title: "Productie Start Dialog",
-    desc: "Het startpunt voor een operator op BH18. Handelt het scannen van orders en het koppelen van lotnummers af.",
-    tags: ["Modal", "BH18", "Workflow"]
+    desc: "Het startpunt voor een operator op een wikkelstation (bijv. BH12, BH18). Handelt het scannen van orders en het koppelen van lotnummers af.",
+    tags: ["Modal", "Wikkelstation", "Workflow"]
   },
   "src/components/digitalplanning/modals/InspectionModal.tsx": {
     title: "Keuringsvenster",
