@@ -107,6 +107,22 @@
 - Lagere Firestore snapshot load op routes waar print/logica niet nodig is.
 - Geen deploy uitgevoerd; wijziging alleen lokaal + git.
 
+### Naverbetering (zelfde sessie): persistence recovery-policy aangescherpt
+
+**Aanleiding:**
+- Gebruikerservaring bleef traag en voelde alsof Firestore offline persistence niet meer terug inschakelde na eerdere quota/assertion incidenten.
+
+**Uitgevoerd:**
+- In `src/config/firebase.ts` de recovery-policy gemigreerd naar `v2` met automatische reset van oude/stale disable-flags.
+- Quota backoff-vensters sterk verkort (`2 min`, `5 min`, `15 min` i.p.v. lange periodes).
+- Harde disable op assertion-only events verwijderd; bij assertions blijft app actief en probeert persistence bij volgende init opnieuw.
+- Guard toegevoegd die een actieve disable-periode maximaal op 30 minuten begrenst.
+
+**Resultaat:**
+- Persistence kan niet meer langdurig “blijven hangen” op memory-cache door oude flags.
+- Sneller herstel terug naar IndexedDB persistence na incidenten.
+- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
+
 ---
 
 ### Update sessie 09 July 2026 (Firestore Persistence Recovery)

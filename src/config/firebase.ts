@@ -84,10 +84,12 @@ const FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY = "fpi_firestore_persistence_disa
 const FIRESTORE_QUOTA_RECOVERY_RELOAD_KEY = "fpi_firestore_quota_recovery_reload_done";
 const FIRESTORE_ASSERT_RECOVERY_HANDLED_KEY = "fpi_firestore_assert_recovery_handled";
 const FIRESTORE_PERSISTENCE_QUOTA_FAILURE_COUNT_KEY = "fpi_firestore_persistence_quota_failure_count";
+const FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION_KEY = "fpi_firestore_recovery_policy_version";
+const FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION = "v2";
 const FIRESTORE_PERSISTENCE_RECOVERY_STEPS_MS = [
+  2 * 60 * 1000,
+  5 * 60 * 1000,
   15 * 60 * 1000,
-  60 * 60 * 1000,
-  6 * 60 * 60 * 1000,
 ];
 
 const isFirestoreUnexpectedStateText = (text: string): boolean => {
@@ -123,6 +125,33 @@ const resetFirestorePersistenceRecoveryState = () => {
     window.localStorage.removeItem(FIRESTORE_PERSISTENCE_QUOTA_FAILURE_COUNT_KEY);
   } catch {
     // ignore reset failures
+  }
+};
+
+const normalizeFirestoreRecoveryState = () => {
+  if (typeof window === "undefined") return;
+  try {
+    const storedPolicyVersion = String(
+      window.localStorage.getItem(FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION_KEY) || "",
+    ).trim();
+
+    if (storedPolicyVersion !== FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION) {
+      // Reset stale recovery flags after policy changes so persistence can recover immediately.
+      resetFirestorePersistenceRecoveryState();
+      window.localStorage.setItem(
+        FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION_KEY,
+        FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION,
+      );
+      return;
+    }
+
+    const disabledUntil = readNumberFromStorage(FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY);
+    const maxAllowedDisabledUntil = Date.now() + 30 * 60 * 1000;
+    if (disabledUntil > maxAllowedDisabledUntil) {
+      window.localStorage.setItem(FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY, String(maxAllowedDisabledUntil));
+    }
+  } catch {
+    // ignore migration failures
   }
 };
 
@@ -217,16 +246,10 @@ const installFirestoreQuotaRecovery = () => {
       // Soft recovery for transient assertion storms: keep app running and
       // avoid full-page reloads (important on tablets with unstable Wi-Fi).
       if (isUnexpectedStateIssue && !isQuotaIssue) {
-        const assertDisableForMs = 2 * 60 * 60 * 1000;
-        window.localStorage.setItem(
-          FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY,
-          String(now + assertDisableForMs),
-        );
-
         const handledAlready = window.sessionStorage.getItem(FIRESTORE_ASSERT_RECOVERY_HANDLED_KEY) === "1";
         if (!handledAlready) {
           window.sessionStorage.setItem(FIRESTORE_ASSERT_RECOVERY_HANDLED_KEY, "1");
-          console.warn("Firestore assertion gedetecteerd; app blijft actief zonder harde reload.");
+          console.warn("Firestore assertion gedetecteerd; app blijft actief en probeert persistence opnieuw.");
         }
         return;
       }
@@ -251,6 +274,7 @@ const installFirestoreQuotaRecovery = () => {
 
 const createFirestoreInstance = () => {
   installFirestoreQuotaRecovery();
+  normalizeFirestoreRecoveryState();
 
   if (typeof window !== "undefined" && window.indexedDB) {
     try {
