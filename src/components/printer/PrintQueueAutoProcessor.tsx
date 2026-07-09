@@ -426,26 +426,55 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       }
     );
 
+    let unsubscribeScoped: (() => void) | null = null;
+    let usingScopedFallback = false;
+
+    const mapScopedSnapshot = (snapshot: { docs: Array<{ ref: { path: string } }> } & any) => {
+      scopedJobs = snapshot.docs
+        .filter((docSnap: { ref: { path: string } }) => isScopedPrintQueuePath(docSnap.ref.path))
+        .map((docSnap: any) => normalizeJob(docSnap))
+        .filter((job: PrintJob | null): job is PrintJob => Boolean(job));
+      mergeJobs();
+    };
+
+    const subscribeScopedFallback = () => {
+      const fallbackQ = query(
+        collectionGroup(db, 'items'),
+        where('status', '==', 'pending')
+      );
+
+      unsubscribeScoped = onSnapshot(
+        fallbackQ,
+        mapScopedSnapshot,
+        (error) => {
+          console.error('[PrintQueueAutoProcessor] Scoped queue fallback leesfout:', error);
+          scopedJobs = [];
+          mergeJobs();
+        }
+      );
+    };
+
     const scopedQ = query(
       collectionGroup(db, 'items'),
+      where('_scopeType', '==', 'print_queue'),
       where('status', '==', 'pending')
     );
-    const unsubscribeScoped = onSnapshot(
+
+    unsubscribeScoped = onSnapshot(
       scopedQ,
-      (snapshot) => {
-        scopedJobs = snapshot.docs
-          .filter((docSnap) => {
-            const matches = isScopedPrintQueuePath(docSnap.ref.path);
-            return matches;
-          })
-          .map((docSnap) => normalizeJob(docSnap))
-          .filter((job): job is PrintJob => {
-            const isValid = Boolean(job) && String((job as PrintJob)._scopeType || 'print_queue').trim() === 'print_queue';
-            return isValid;
-          });
-        mergeJobs();
-      },
+      mapScopedSnapshot,
       (error) => {
+        const code = String((error as { code?: unknown })?.code || '').toLowerCase();
+        const message = String((error as { message?: unknown })?.message || '').toLowerCase();
+        const missingIndex = code.includes('failed-precondition') || message.includes('requires an index');
+
+        if (missingIndex && !usingScopedFallback) {
+          usingScopedFallback = true;
+          console.warn('[PrintQueueAutoProcessor] Scoped index nog niet beschikbaar; fallback query actief.');
+          subscribeScopedFallback();
+          return;
+        }
+
         console.error('[PrintQueueAutoProcessor] Scoped queue leesfout:', error);
         scopedJobs = [];
         mergeJobs();
@@ -454,7 +483,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
 
     return () => {
       unsubscribeRoot();
-      unsubscribeScoped();
+      if (unsubscribeScoped) unsubscribeScoped();
     };
   }, [enabled]);
 

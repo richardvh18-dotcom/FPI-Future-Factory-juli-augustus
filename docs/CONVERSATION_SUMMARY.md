@@ -27,6 +27,26 @@
 
 ---
 
+### Update sessie 09 July 2026 (PrintQueue index fallback + performance)
+
+**Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Probleem:**
+- Startup bleef traag en de console liet zien dat de nieuwe scoped query in `PrintQueueAutoProcessor` faalde met `The query requires an index ... index is currently building`.
+- Door die fout bleef de listener opnieuw proberen, wat extra load en logging-ruis veroorzaakte tijdens het laden.
+
+**Uitgevoerd:**
+- In `src/components/printer/PrintQueueAutoProcessor.tsx` is een index-aware fallback toegevoegd voor de scoped queue-listener.
+- Eerst wordt de snelle scoped query geprobeerd (`_scopeType == print_queue` + `status == pending`).
+- Bij `failed-precondition` / `requires an index` schakelt de code automatisch over naar een fallback-query op alleen `status == pending`, met bestaande padfiltering op printqueue-items.
+
+**Resultaat:**
+- Geen herhalende scoped query-fouten meer terwijl de composite index nog buildt.
+- Auto-processor blijft functioneel tijdens index-opbouw en startup blijft stabieler.
+- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
+
+---
+
 ### Update sessie 09 July 2026 (Firestore Persistence Recovery)
 
 **Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout
