@@ -452,10 +452,15 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       return;
     }
 
+    const normalizedRole = String(user.role || '').toLowerCase();
+    const recipients = normalizedRole === 'admin'
+      ? [user.email.toLowerCase(), 'admin']
+      : [user.email.toLowerCase()];
+
     const messagesRef = collection(db, getPathString(PATHS.MESSAGES));
     const q = query(
       messagesRef,
-      where('to', 'in', [user.email.toLowerCase(), 'admin'])
+      where('to', 'in', recipients)
     );
 
     const unsubscribe = onSnapshot(

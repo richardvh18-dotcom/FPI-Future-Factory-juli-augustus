@@ -58,6 +58,20 @@
 - Minder documenten per snapshot en lagere client-side merge/sort belasting tijdens startup.
 - Geen deploy uitgevoerd; wijziging alleen lokaal + git.
 
+### Naverbetering (zelfde sessie): dubbele berichten-listeners verwijderd
+
+**Aanleiding:**
+- Startup bleef traag met veel Firestore `success` handlers terwijl printqueue-load al was beperkt.
+
+**Uitgevoerd:**
+- In `PortalView` is de aparte `useMessages` realtime listener verwijderd.
+- `PortalView` gebruikt nu de centrale `unreadCount` uit `NotificationContext` store.
+- In `NotificationContext` is de berichtenquery versmald: alleen admins luisteren op `[eigen e-mail, admin]`; overige gebruikers alleen op `[eigen e-mail]`.
+
+**Resultaat:**
+- Minder parallelle listeners en minder berichtendocumenten per snapshot bij app-start.
+- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
+
 ---
 
 ### Update sessie 09 July 2026 (Firestore Persistence Recovery)
