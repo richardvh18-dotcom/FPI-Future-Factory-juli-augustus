@@ -92,6 +92,21 @@
 - Stabilere UI-respons bij laden wanneer netwerk tijdelijk wegvalt.
 - Geen deploy uitgevoerd; wijziging alleen lokaal + git.
 
+### Naverbetering (zelfde sessie): app-root listener reductie
+
+**Aanleiding:**
+- Ondanks eerdere optimalisaties bleven Firestore `success` handlers lang duren tijdens startup.
+
+**Uitgevoerd:**
+- In `src/App.tsx` is de extra globale `useMessages` subscription verwijderd (dubbele listener naast `NotificationContext`).
+- `PrintQueueAutoProcessor` draait nu alleen nog wanneer printertoegang effectief nodig is (`canAccessPrinters`).
+- In `src/contexts/NotificationContext.tsx` is de messages listener begrensd met `limit(100)` om snapshot-omvang te beperken.
+
+**Resultaat:**
+- Minder always-on realtime listeners bij app-start.
+- Lagere Firestore snapshot load op routes waar print/logica niet nodig is.
+- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
+
 ---
 
 ### Update sessie 09 July 2026 (Firestore Persistence Recovery)

@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useRef } from 'react';
 import { create } from 'zustand';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { getPathString, PATHS } from '../config/dbPaths';
 import { useAdminAuth } from '../hooks/useAdminAuth';
@@ -460,7 +460,8 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     const messagesRef = collection(db, getPathString(PATHS.MESSAGES));
     const q = query(
       messagesRef,
-      where('to', 'in', recipients)
+      where('to', 'in', recipients),
+      limit(100)
     );
 
     const unsubscribe = onSnapshot(
