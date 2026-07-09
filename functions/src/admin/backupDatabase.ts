@@ -8,7 +8,7 @@ const client = new firestore.v1.FirestoreAdminClient();
 const BUCKET = `gs://${process.env.GCLOUD_PROJECT}-firestore-backups`;
 
 exports.scheduledFirestoreExport = functions.region('europe-west1')
-  .pubsub.schedule('every 24 hours')
+  .pubsub.schedule('30 5 * * *')
   .timeZone('Europe/Amsterdam')
   .onRun(async () => {
     const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
