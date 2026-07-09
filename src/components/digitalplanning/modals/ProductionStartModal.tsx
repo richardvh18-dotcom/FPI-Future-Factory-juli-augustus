@@ -116,6 +116,15 @@ const isPermissionDeniedError = (error: any) => {
   return code.includes("permission-denied") || message.includes("insufficient permissions");
 };
 
+const isClientOffline = (): boolean =>
+  typeof navigator !== "undefined" && navigator.onLine === false;
+
+const isFirestoreOfflineError = (error: any): boolean => {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || "").toLowerCase();
+  return code.includes("unavailable") || message.includes("client is offline");
+};
+
 const normalizeStationBindingKey = (value: unknown): string =>
   String(value || "").trim().toUpperCase().replace(/\s+/g, "");
 
@@ -945,6 +954,11 @@ const ProductionStartModal = ({
       const normalizedLot = String(lotToCheck || "").trim().toUpperCase();
       if (!normalizedLot) return false;
 
+      if (isClientOffline()) {
+        lotExistsCacheRef.current.set(normalizedLot, { exists: false, checkedAt: Date.now() });
+        return false;
+      }
+
       const now = Date.now();
       const cached = lotExistsCacheRef.current.get(normalizedLot);
       if (cached && now - cached.checkedAt < 15000) {
@@ -1018,13 +1032,25 @@ const ProductionStartModal = ({
       lotExistsCacheRef.current.set(normalizedLot, { exists, checkedAt: now });
       return exists;
     } catch (error: any) {
-      console.error("Fout bij lot validatie:", error);
+      if (!isFirestoreOfflineError(error)) {
+        console.error("Fout bij lot validatie:", error);
+      }
       return false;
     }
   };
 
   const getHighestSequenceForBaseLot = async (baseLotStr: string, stationId: string, weekSuffix: string) => {
     let maxSeq = 0;
+
+    if (isClientOffline()) {
+      existingProducts?.forEach((p: any) => {
+        const lot = String(p?.lotNumber || p?.activeLot || "");
+        if (!lot.startsWith(baseLotStr)) return;
+        const seq = parseInt(lot.substring(baseLotStr.length).replace(/[^0-9]/g, ""), 10);
+        if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
+      });
+      return maxSeq;
+    }
     
     const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const counterDocId = `${safeStationId}_${weekSuffix}`;
@@ -1049,7 +1075,9 @@ const ProductionStartModal = ({
             return Math.max(maxSeq, Number.isFinite(counterValue) ? counterValue : 0);
         }
     } catch (e: any) {
-        console.error("Fout bij lezen counter:", e);
+        if (!isFirestoreOfflineError(e)) {
+          console.error("Fout bij lezen counter:", e);
+        }
     }
 
     try {
@@ -1101,7 +1129,9 @@ const ProductionStartModal = ({
         }
 
     } catch (error: any) {
-        console.error("Fout bij ophalen max sequence:", error);
+        if (!isFirestoreOfflineError(error)) {
+          console.error("Fout bij ophalen max sequence:", error);
+        }
     }
 
     try {
@@ -1121,6 +1151,8 @@ const ProductionStartModal = ({
   };
 
   const consumeRecycledSequence = async (baseLot: string, station: string, weekSuffix: string) => {
+    if (isClientOffline()) return null;
+
     const safeStationId = (station || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const counterDocId = `${safeStationId}_${weekSuffix}`;
     const counterRef = doc(db, getPathString(PATHS.COUNTERS), counterDocId);
@@ -1367,9 +1399,13 @@ const ProductionStartModal = ({
             setLotError("");
         }
       } catch (error: any) {
-        console.error("Error setting lot number", error);
+        if (!isFirestoreOfflineError(error)) {
+          console.error("Error setting lot number", error);
+        }
         if (isMounted && lotRefreshRunIdRef.current === runId) {
-          setLotError("Waarschuwing: Kan uniciteit niet garanderen.");
+          setLotError(isClientOffline()
+            ? "Offline: lotcontrole tijdelijk beperkt."
+            : "Waarschuwing: Kan uniciteit niet garanderen.");
         }
       } finally {
         if (isMounted && lotRefreshRunIdRef.current === runId) {

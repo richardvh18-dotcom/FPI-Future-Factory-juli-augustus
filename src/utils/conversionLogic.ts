@@ -38,6 +38,25 @@ type ConversionSpecs = {
 
 type ProgressCallback = (value: number) => void;
 
+const OFFLINE_LOG_COOLDOWN_MS = 30000;
+let lastOfflineLookupLogAt = 0;
+
+const isClientOffline = (): boolean =>
+  typeof navigator !== "undefined" && navigator.onLine === false;
+
+const isFirestoreOfflineError = (error: unknown): boolean => {
+  const code = String((error as { code?: unknown })?.code || "").toLowerCase();
+  const message = String((error as { message?: unknown })?.message || "").toLowerCase();
+  return code.includes("unavailable") || message.includes("client is offline");
+};
+
+const maybeLogOfflineLookup = () => {
+  const now = Date.now();
+  if (now - lastOfflineLookupLogAt < OFFLINE_LOG_COOLDOWN_MS) return;
+  lastOfflineLookupLogAt = now;
+  console.warn(i18n.t("conversion.lookup_offline", "Conversie lookup overgeslagen: client offline."));
+};
+
 /**
  * Conversie Logica V5.0 - Volledig Herstel Functionaliteit
  * Beheert de koppeling tussen ERP (Infor-LN) codes en technische tekeningen.
@@ -88,6 +107,10 @@ const getActorId = () => auth.currentUser?.uid ?? "SYSTEM";
  */
 export const lookupProductByManufacturedId = async (unusedAppId: unknown, inputCode: unknown) => {
   if (!inputCode) return null;
+  if (isClientOffline()) {
+    maybeLogOfflineLookup();
+    return null;
+  }
   const rawCode = String(inputCode).trim();
   const normalizedCode = normalizeCode(rawCode);
   const compactNormalizedCode = compactCode(rawCode);
@@ -166,6 +189,10 @@ export const lookupProductByManufacturedId = async (unusedAppId: unknown, inputC
 
     return null;
   } catch (error) {
+    if (isFirestoreOfflineError(error) || isClientOffline()) {
+      maybeLogOfflineLookup();
+      return null;
+    }
     console.error(i18n.t("conversion.lookup_error", "Fout bij lookup conversie:"), error);
     return null;
   }

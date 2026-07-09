@@ -72,6 +72,26 @@
 - Minder parallelle listeners en minder berichtendocumenten per snapshot bij app-start.
 - Geen deploy uitgevoerd; wijziging alleen lokaal + git.
 
+### Naverbetering (zelfde sessie): offline guard op conversie + lotgeneratie
+
+**Aanleiding:**
+- Console bleef gevuld met `Failed to get document because the client is offline` in `conversionLogic.ts` en `ProductionStartModal.tsx`, met merkbare traagheid tijdens laden/herproberen.
+
+**Uitgevoerd:**
+- In `src/utils/conversionLogic.ts`:
+    - Vroege offline short-circuit toegevoegd voor lookup calls.
+    - Offline Firestore-fouten (`unavailable` / `client is offline`) worden niet meer als harde error gespamd.
+    - Offline waarschuwing wordt gethrottled (cooldown) om log-stormen te vermijden.
+- In `src/components/digitalplanning/modals/ProductionStartModal.tsx`:
+    - Vroege offline checks toegevoegd in lot-validatie en sequence-bepaling.
+    - Zware Firestore lotqueries worden overgeslagen wanneer de client offline is.
+    - Offline Firestore-fouten worden niet meer herhaald als harde errors gelogd.
+
+**Resultaat:**
+- Minder retry-spam en minder blokkerende Firestore calls tijdens offline momenten.
+- Stabilere UI-respons bij laden wanneer netwerk tijdelijk wegvalt.
+- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
+
 ---
 
 ### Update sessie 09 July 2026 (Firestore Persistence Recovery)
