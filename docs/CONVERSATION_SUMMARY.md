@@ -1,3 +1,22 @@
+### Update sessie 09 July 2026 (Fix LOSSEN12/18 Firestore pad — v0.1.95)
+
+**Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout → main
+
+**Probleem:**
+- Werkstation `LOSSEN12/18` kon geen orders laden: `FirebaseError: Invalid collection reference. Collection references must have an odd number of segments, but future-factory/production/digital_planning/Fittings/machines/40LOSSEN12/18/orders has 8.`
+- Oorzaak: de `/` in de stationnaam werd door Firestore als pad-scheiding geïnterpreteerd, waardoor het pad 8 segmenten kreeg i.p.v. 7.
+- `LOSSEN12/18` viel door naar `isWindingStation` omdat de `isCentralStation`-check alleen `LOSSEN` en `GEREED` bevatte.
+
+**Uitgevoerd:**
+- In `WorkstationHub.tsx` `"LOSSEN12/18"` toegevoegd aan de `isCentralStation`-array.
+- Station gebruikt nu de `collectionGroup`-aanpak (zoals `LOSSEN`/`GEREED`), wat aansluit op de bestaande `isLossen1218Station` filterlogica (regel ~1903).
+
+**Deployresultaat:**
+- Versie gebumpt: 0.1.93 → 0.1.95.
+- Build geslaagd, Firebase Hosting deploy uitgevoerd naar `future-factory-377ef.web.app`.
+
+---
+
 ### Update sessie 08 July 2026 (Counter sync fix BH18_2628)
 
 **Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
