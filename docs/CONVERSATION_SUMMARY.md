@@ -22,8 +22,31 @@
    - Controleren of alle nieuwe (en bestaande) hooks goed getest zijn met unit tests (bijv. via Jest/React Testing Library).
 
 6. **Firestore Persistence (Tablets op de vloer)**
-   - Onderzoeken en oplossen van de Firestore quota-fout (`installHook.js:1 Firestore persistence tijdelijk uitgeschakeld na quota-fout; memory cache actief.`). 
-   - Persistence weer activeren/optimaliseren voor de tablets op de werkvloer om betrouwbaarheid bij netwerkuitval (offline cache) te borgen.
+    - ~~Onderzoeken en oplossen van de Firestore quota-fout (`installHook.js:1 Firestore persistence tijdelijk uitgeschakeld na quota-fout; memory cache actief.`).~~ (✅ Oorzaak vastgesteld en recovery-flow aangepast)
+    - Persistence weer activeren/optimaliseren voor de tablets op de werkvloer om betrouwbaarheid bij netwerkuitval (offline cache) te borgen.
+
+---
+
+### Update sessie 09 July 2026 (Firestore Persistence Recovery)
+
+**Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Probleem:**
+- Firestore offline persistence stond feitelijk permanent uit doordat in `src/config/firebase.ts` een harde emergency-switch actief was.
+- Na een quota-fout schakelde de app bovendien voor 24 uur over op `memoryLocalCache`, waardoor tablets geen duurzame offline cache meer gebruikten.
+- De daadwerkelijke quota-explosie kwam uit Firestore multi-tab shared client state: `persistentMultipleTabManager()` schreef mutation metadata weg in `localStorage`, wat op de tablets `QuotaExceededError` en daarna `Unexpected state` assertion-loops veroorzaakte.
+
+**Uitgevoerd:**
+- De harde blokkade vervangen door een expliciete env-switch: `VITE_FIRESTORE_PERSISTENCE_DISABLED=1` is nu nodig om persistence bewust uit te zetten.
+- De quota-recovery flow aangepast naar oplopende tijdelijke backoff (`15 min`, `1 uur`, `6 uur`) in plaats van een vaste disable-periode van 24 uur.
+- Firestore persistentie teruggezet naar single-tab gedrag door de expliciete `persistentMultipleTabManager()` te verwijderen; daardoor gebruikt de SDK geen mutation shared-state in `localStorage` meer.
+- Herstelstate wordt nu automatisch opgeschoond zodra Firestore weer succesvol met `persistentLocalCache` initialiseert.
+- TypeScript validatie uitgevoerd: `npx tsc --noEmit` geslaagd.
+
+**Resultaat:**
+- Firestore persistence is opnieuw de standaard voor tablets op de vloer.
+- Bij quota-problemen valt de app nog steeds veilig terug, maar probeert zij later gecontroleerd opnieuw IndexedDB-persistentie te activeren.
+- Geen deploy uitgevoerd; wijziging alleen lokaal vastgelegd voor git.
 
 ---
 
@@ -11344,4 +11367,4 @@ Ran terminal command:  cd /workspaces/FPIFF-30-1 && npm run build 2>&1 | tail -5
 Made changes.
 
 ---
-
+
