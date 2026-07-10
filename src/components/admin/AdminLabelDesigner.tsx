@@ -1086,47 +1086,28 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
   return (
     <div className="flex flex-col h-full w-full bg-slate-100 overflow-hidden text-left animate-in fade-in">
       {/* HEADER */}
-      <div className="bg-white border-b border-slate-200 px-8 py-3 flex justify-between items-center shadow-sm z-20 shrink-0 h-20">
-        <div className="flex items-center gap-6">
-          <button
-            onClick={handleBack}
-            className="p-3 bg-slate-50 hover:bg-slate-100 rounded-2xl text-slate-400 transition-all flex items-center gap-2 group"
-          >
-            <X
-              size={18}
-              className="group-hover:rotate-90 transition-transform"
-            />
-          </button>
-          <div className="text-left">
-            <h1 className="font-black text-slate-900 text-lg uppercase italic tracking-tighter leading-none">
-              {t('label')} <span className="text-blue-600">{t('architect')}</span>
-            </h1>
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1.5 flex items-center gap-1.5">
-              <ShieldCheck size={10} className="text-emerald-500" /> {t('rootSync')}: /{PATHS.LABEL_TEMPLATES.join("/")}
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="relative group">
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 lg:px-8 py-3 flex flex-col gap-3 lg:flex-row lg:justify-between lg:items-center shadow-sm z-20 shrink-0">
+        <div className="w-full lg:w-auto overflow-x-auto pb-1 lg:pb-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-max lg:justify-end">
+          <div className="relative group shrink-0">
              <input 
                 type="text" 
                 value={labelName} 
                 onChange={(e) => { setLabelName(e.target.value); setHasUnsavedChanges(true); }}
-                className="w-40 px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-black text-slate-700 outline-none focus:border-blue-500 transition-all placeholder:text-slate-300"
+                className="w-28 sm:w-36 lg:w-40 px-3 sm:px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-xs font-black text-slate-700 outline-none focus:border-blue-500 transition-all placeholder:text-slate-300"
                 placeholder={t('adminLabelDesigner.labelNamePlaceholder')}
              />
           </div>
           <button
             onClick={handleNewDesign}
-            className="p-3 bg-white border-2 border-slate-100 text-slate-600 hover:text-blue-600 hover:border-blue-100 rounded-2xl transition-all shadow-sm"
+            className="p-3 bg-white border-2 border-slate-100 text-slate-600 hover:text-blue-600 hover:border-blue-100 rounded-2xl transition-all shadow-sm shrink-0"
             title={t('common.new')}
           >
             <Plus size={18} />
           </button>
           <button
             onClick={handleDownloadZPL}
-            className="p-3 bg-white border-2 border-slate-100 text-slate-600 hover:text-blue-600 hover:border-blue-100 rounded-2xl transition-all shadow-sm"
+            className="p-3 bg-white border-2 border-slate-100 text-slate-600 hover:text-blue-600 hover:border-blue-100 rounded-2xl transition-all shadow-sm shrink-0"
             title={t('adminLabelDesigner.downloadZplPreview', 'Download ZPL Preview')}
           >
             <Code size={18} />
@@ -1134,14 +1115,14 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
           <button
             onClick={handleDirectWebUsbPrint}
             disabled={isUsbPrinting || !isUsbDirectSupported()}
-            className="p-3 bg-white border-2 border-slate-100 text-slate-600 hover:text-emerald-600 hover:border-emerald-200 rounded-2xl transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            className="p-3 bg-white border-2 border-slate-100 text-slate-600 hover:text-emerald-600 hover:border-emerald-200 rounded-2xl transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
             title={t('adminLabelDesigner.directUsbPrint', 'Direct print via WebUSB')}
           >
             {isUsbPrinting ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
           </button>
           <button
             onClick={fetchLiveOrders}
-            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 transition-all ${
+            className={`flex items-center gap-2 px-3 sm:px-4 lg:px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 transition-all shrink-0 ${
               previewData
                 ? "bg-emerald-50 text-emerald-700 border-emerald-100"
                 : "bg-white text-slate-600 border-slate-100 hover:bg-slate-50"
@@ -1151,11 +1132,11 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
             {previewData ? t('liveDataLinked') : t('linkLiveOrder')}
           </button>
 
-          <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1" title={t('adminLabelDesigner.copyFromTooltip', 'Kopieer ontwerp')}>
+          <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1 min-w-0 max-w-full shrink-0" title={t('adminLabelDesigner.copyFromTooltip', 'Kopieer ontwerp')}>
              <div className="pl-3 text-slate-400"><Copy size={14} /></div>
              <select
               onChange={(e) => handleCopyFrom(e.target.value)}
-              className="bg-transparent text-[10px] font-black uppercase outline-none pr-4 py-2 cursor-pointer max-w-[100px]"
+              className="bg-transparent text-[10px] font-black uppercase outline-none pr-3 sm:pr-4 py-2 cursor-pointer max-w-[88px] sm:max-w-[100px]"
               value=""
             >
               <option value="" disabled>{t('common.copy', 'Kopieer...')}</option>
@@ -1165,11 +1146,11 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
             </select>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1">
+          <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1 min-w-0 max-w-full shrink-0">
             <select
               value={selectedSizeKey}
               onChange={(e) => { setSelectedSizeKey(e.target.value as LabelSizeKey | "Custom"); setHasUnsavedChanges(true); }}
-              className="bg-transparent text-[10px] font-black uppercase outline-none px-4 py-2 cursor-pointer"
+              className="bg-transparent text-[10px] font-black uppercase outline-none px-3 sm:px-4 py-2 cursor-pointer max-w-[110px] sm:max-w-none"
             >
               {(Object.keys(LABEL_SIZES) as LabelSizeKey[]).map((s) => (
                 <option key={s} value={s}>
@@ -1201,11 +1182,11 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
           </div>
 
           {/* Nieuwe Department Selector */}
-          <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1">
+          <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1 min-w-0 max-w-full shrink-0">
             <select
               value={assignedDepartment}
               onChange={(e) => { setAssignedDepartment(e.target.value); setHasUnsavedChanges(true); }}
-              className="bg-transparent text-[10px] font-black uppercase outline-none px-4 py-2 cursor-pointer max-w-[150px]"
+              className="bg-transparent text-[10px] font-black uppercase outline-none px-3 sm:px-4 py-2 cursor-pointer max-w-[120px] sm:max-w-[150px]"
             >
               <option value="All">{t('adminUsers.allDepartments', 'Alle Afdelingen')}</option>
               {departments.map((d) => (
@@ -1214,14 +1195,14 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
             </select>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1">
+          <div className="flex items-center gap-2 bg-slate-50 border-2 border-slate-100 rounded-2xl p-1 shrink-0">
             <select
               value={linkedTemplateId}
               onChange={(e) => {
                 setLinkedTemplateId(e.target.value);
                 setHasUnsavedChanges(true);
               }}
-              className="bg-transparent text-[10px] font-black uppercase outline-none px-4 py-2 cursor-pointer max-w-[220px]"
+              className="bg-transparent text-[10px] font-black uppercase outline-none px-3 sm:px-4 py-2 cursor-pointer max-w-[160px] sm:max-w-[220px]"
               title={t('adminLabelDesigner.linkedFollowupLabel', 'Gekoppeld vervolglabel')}
             >
               <option value="">{t('adminLabelDesigner.noLinkedFollowupLabel', 'Geen vervolglabel')}</option>
@@ -1236,7 +1217,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
           <button
             onClick={handleSaveAs}
             disabled={isLoading}
-            className="p-4 bg-slate-100 text-slate-600 rounded-2xl hover:bg-blue-50 hover:text-blue-600 transition-all shadow-sm active:scale-95 border-2 border-transparent hover:border-blue-100"
+            className="p-4 bg-slate-100 text-slate-600 rounded-2xl hover:bg-blue-50 hover:text-blue-600 transition-all shadow-sm active:scale-95 border-2 border-transparent hover:border-blue-100 shrink-0"
             title={t('adminLabelDesigner.saveAsTitle')}
           >
             <FilePlus size={18} />
@@ -1245,7 +1226,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
           <button
             onClick={() => saveLabel()}
             disabled={isLoading}
-            className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-blue-600 transition-all shadow-xl active:scale-95 flex items-center gap-3"
+            className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] hover:bg-blue-600 transition-all shadow-xl active:scale-95 flex items-center gap-3 shrink-0"
           >
             {isLoading ? (
               <Loader2 className="animate-spin" size={16} />
@@ -1253,6 +1234,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
               <Save size={16} />
             )} {t('save')}
           </button>
+          </div>
         </div>
       </div>
 

@@ -424,11 +424,10 @@ const shouldClearTemporaryInspection = ({ trackedData, nextStation }) => {
   const inspectionStatus = clean(trackedData?.inspection?.status).toLowerCase();
   if (inspectionStatus !== 'tijdelijke afkeur') return false;
 
-  const currentStation = normalizeStationKey(trackedData?.currentStation || trackedData?.machine || '');
   const targetStation = normalizeStationKey(nextStation);
 
-  if (!targetStation || targetStation === 'BH31') return false;
-  return currentStation === 'BH31';
+  if (!targetStation) return false;
+  return targetStation !== 'BH31';
 };
 
 const getActorLabel = (auth, actorLabel) => {
@@ -567,8 +566,12 @@ const restoreArchivedTrackedProductService = async ({
     currentStep: route.currentStep,
     status: route.status,
     archivedAt: admin.firestore.FieldValue.delete(),
+    archivedReason: admin.firestore.FieldValue.delete(),
     completedBy: admin.firestore.FieldValue.delete(),
     completedByRole: admin.firestore.FieldValue.delete(),
+    rejectedBy: admin.firestore.FieldValue.delete(),
+    rejectedByRole: admin.firestore.FieldValue.delete(),
+    rejectionSource: admin.firestore.FieldValue.delete(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     restoredFromArchiveAt: admin.firestore.FieldValue.serverTimestamp(),
     restoredFromArchiveBy: userLabel,

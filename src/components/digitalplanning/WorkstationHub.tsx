@@ -1,5 +1,5 @@
 import { collection, collectionGroup, query, onSnapshot, doc, serverTimestamp, where, limit, getDocs, getDoc, arrayUnion, increment, addDoc, updateDoc } from "firebase/firestore";
-import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback, useDeferredValue } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { LogOut, Loader2, Menu, X, Clock, Calendar, UserCheck, AlertTriangle } from "lucide-react";
@@ -109,6 +109,25 @@ type TrackedProductDoc = {
   createdAt?: TimestampLike | string | number | Date | null;
   updatedAt?: TimestampLike | string | number | Date | null;
   [key: string]: unknown;
+};
+
+const mergeTrackedProductDocs = (
+  currentItems: TrackedProductDoc[],
+  incomingItems: TrackedProductDoc[]
+) => {
+  const merged = new Map<string, TrackedProductDoc>();
+  currentItems.forEach((item) => {
+    const key = String(item.id || item.orderId || item.lotNumber || "");
+    if (key) merged.set(key, item);
+  });
+  incomingItems.forEach((item) => {
+    const key = String(item.id || item.orderId || item.lotNumber || "");
+    if (!key) return;
+    if (!merged.has(key)) {
+      merged.set(key, item);
+    }
+  });
+  return Array.from(merged.values());
 };
 
 type OccupancyEntry = {
@@ -442,6 +461,9 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
   const [dataSourceRefreshKey, setDataSourceRefreshKey] = useState(0);
   const [searchFilterOrder] = useState<string | null>(searchOrder || null);
   const [archivedStats, setArchivedStats] = useState<{ done: number; items: TrackedProductDoc[] }>({ done: 0, items: [] });
+  const backgroundTrackingUnsubRef = useRef<null | (() => void)>(null);
+  const backgroundTrackingTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const visibleRawProducts = useDeferredValue(rawProducts);
   
   // Huidige datum/tijd voor display
   const currentDate = new Date();
@@ -865,12 +887,21 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       unsubs.push(unsubScopedOrders);
       
       // LISTENER 2: Products (also starts immediately, in parallel)
+      const normalizedSelectedStation = normalizeMachine(selectedStation);
+      const usesPipeScope = PIPE_MACHINES.includes(normalizedSelectedStation);
+      const trackingDepartments = usesPipeScope ? ["Pipes"] : ["Fittings"];
+      const trackingMachines = usesPipeScope ? PIPE_MACHINES : FITTING_MACHINES;
+
       const unsubProds = subscribeTrackedProducts({
         db,
         statusExclusions: ["completed", "shipped", "deleted", "archived_rejected"],
-        maxItems: 350,
+        maxItems: 25,
+        departments: trackingDepartments,
+        machines: trackingMachines,
         onData: (items) => {
-          if (isMounted) setRawProducts(items);
+          if (isMounted) {
+            setRawProducts((current) => mergeTrackedProductDocs(current, items));
+          }
           markStreamReady();
         },
         onError: (error) => {
@@ -879,6 +910,42 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         },
       });
       unsubs.push(unsubProds);
+
+      if (backgroundTrackingTimerRef.current) {
+        window.clearTimeout(backgroundTrackingTimerRef.current);
+      }
+      backgroundTrackingTimerRef.current = window.setTimeout(() => {
+        if (!isMounted) return;
+        if (backgroundTrackingUnsubRef.current) {
+          backgroundTrackingUnsubRef.current();
+          backgroundTrackingUnsubRef.current = null;
+        }
+
+        backgroundTrackingUnsubRef.current = subscribeTrackedProducts({
+          db,
+          statusExclusions: ["completed", "shipped", "deleted", "archived_rejected"],
+          departments: trackingDepartments,
+          machines: trackingMachines,
+          onData: (items) => {
+            if (isMounted) {
+              setRawProducts((current) => mergeTrackedProductDocs(current, items));
+            }
+          },
+          onError: (error) => {
+            console.warn("Background tracking sync error:", error);
+          },
+        });
+      }, 1800);
+      unsubs.push(() => {
+        if (backgroundTrackingTimerRef.current) {
+          window.clearTimeout(backgroundTrackingTimerRef.current);
+          backgroundTrackingTimerRef.current = null;
+        }
+        if (backgroundTrackingUnsubRef.current) {
+          backgroundTrackingUnsubRef.current();
+          backgroundTrackingUnsubRef.current = null;
+        }
+      });
       
       // LISTENER 3: Occupancy (lazy load after main data is ready)
       const unsubOccupancy = onSnapshot(
@@ -909,6 +976,14 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     initData();
     return () => {
       isMounted = false;
+      if (backgroundTrackingTimerRef.current) {
+        window.clearTimeout(backgroundTrackingTimerRef.current);
+        backgroundTrackingTimerRef.current = null;
+      }
+      if (backgroundTrackingUnsubRef.current) {
+        backgroundTrackingUnsubRef.current();
+        backgroundTrackingUnsubRef.current = null;
+      }
       unsubs.forEach(u => u());
     };
   }, [currentUserId, dataSourceRefreshKey, selectedStation]);
@@ -1677,7 +1752,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       return norm === stationNorm;
     };
 
-    rawProducts.forEach((product) => {
+    visibleRawProducts.forEach((product) => {
       if (product.isVirtualLot) return;
       const orderId = String(product?.orderId || "").trim();
       if (!orderId) return;
@@ -1706,7 +1781,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     });
 
     return map;
-  }, [rawProducts, selectedStation]);
+  }, [visibleRawProducts, selectedStation]);
 
   // Bereken Derived Data (Memoized)
   const stationOrders = useMemo(() => {
@@ -1768,7 +1843,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     });
 
     const pipeProgressCountByOrder = new Map();
-    rawProducts.forEach((p) => {
+    visibleRawProducts.forEach((p) => {
       if (p.isVirtualLot) return;
       const orderId = String(p.orderId || "").trim();
       if (!orderId) return;
@@ -1795,7 +1870,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     });
     
     const orderStats: Record<string, { started: number; finished: number }> = {};
-    rawProducts.forEach((p: TrackedProductDoc) => {
+    visibleRawProducts.forEach((p: TrackedProductDoc) => {
       if (p.isVirtualLot) return;
       if (!p.orderId) return;
       if (p.status === "rejected" || p.currentStep === "REJECTED") return;
@@ -1811,7 +1886,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     });
 
     const waitingForLossenOnlyByOrder = new Map();
-    rawProducts.forEach((p) => {
+    visibleRawProducts.forEach((p) => {
       if (p.isVirtualLot) return;
       const orderId = String(p?.orderId || "").trim();
       if (!orderId) return;
@@ -1955,7 +2030,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       );
 
     return baseStationOrders;
-  }, [rawOrders, rawProducts, selectedStation, stationActivityByOrder]);
+  }, [rawOrders, visibleRawProducts, selectedStation, stationActivityByOrder]);
 
   const stationStats = useMemo(() => {
     const currentStationNorm = normalizeMachine(selectedStation);
@@ -1976,7 +2051,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
             
             // Todo (Aan te bieden): Items die wachten op BM01
             let todo = 0;
-            rawProducts.forEach(p => {
+            visibleRawProducts.forEach(p => {
                  const pStationNorm = normalizeMachine(p.currentStation || "");
                  const pStepUpper = (p.currentStep || "").toUpperCase();
                  const isActive = p.status !== "completed" && p.currentStep !== "Finished" && p.status !== "rejected" && p.currentStep !== "REJECTED";
@@ -1988,7 +2063,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
             
             // Done (Gereed): Items uit archief + actieve finished items
             let done = archivedStats.done;
-            rawProducts.forEach(p => {
+            visibleRawProducts.forEach(p => {
                  if ((p.status === "completed" || p.currentStep === "Finished") && (p.currentStation === "GEREED" || p.lastStation === "BM01")) {
                      done++;
                  }
@@ -2070,7 +2145,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     let doneThisWeek = 0;
     const startOfWeekDate = startOfISOWeek(new Date());
 
-    rawProducts.forEach((p: TrackedProductDoc) => {
+    visibleRawProducts.forEach((p: TrackedProductDoc) => {
        const pMachineNorm = normalizeMachine(p.originMachine || p.machine || "");
        if (pMachineNorm !== currentStationNorm) return;
        if (p.status === "rejected" || p.currentStep === "REJECTED") return;
@@ -2100,14 +2175,14 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     });
 
     return { plan, done: doneThisWeek, todo };
-  }, [stationOrders, rawProducts, selectedStation, archivedStats, stationActivityByOrder]);
+  }, [stationOrders, visibleRawProducts, selectedStation, archivedStats, stationActivityByOrder]);
 
   const activeUnitsHere = useMemo(() => {
     if (!selectedStation) return [];
     const currentStationNorm = normalizeMachine(selectedStation);
     const cleanStationId = (currentStationNorm || "").toUpperCase().replace(/\s/g, "");
 
-    return rawProducts.filter((p) => {
+    return visibleRawProducts.filter((p) => {
       if (p.currentStep === "Finished" || p.currentStep === "REJECTED")
         return false;
 
@@ -2148,7 +2223,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       }
       return false;
     });
-  }, [rawProducts, selectedStation]);
+  }, [visibleRawProducts, selectedStation]);
 
   const selectedStationNormForHeader = normalizeMachine(selectedStation);
   const selectedStationCleanForHeader = (selectedStationNormForHeader || "").toUpperCase().replace(/\s/g, "");
@@ -2963,10 +3038,10 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
           <>
             {activeTab === "winding" && (
               ((selectedStation || "").toUpperCase().replace(/\s/g, "").includes("NABEWERK")) ? (
-            <Nabewerken products={rawProducts as any} orders={rawOrders as any} />
+            <Nabewerken products={visibleRawProducts as any} orders={rawOrders as any} />
               ) : (
-              <ActiveProductionView
-                  activeUnits={activeUnitsHere as any}
+                <ActiveProductionView
+                activeUnits={activeUnitsHere as any}
               smartSuggestions={[] as any}
                   selectedStation={selectedStation}
                   onProcessUnit={handleProcessUnit}
@@ -2979,19 +3054,19 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
               <div className="h-full bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                 {isWorkstationGereedTab ? (
                   <GereedView
-                products={rawProducts as any}
+                  products={visibleRawProducts as any}
                     stationId={selectedStation}
                   />
                 ) : ((selectedStation || "").toUpperCase().replace(/\s/g, "").includes("NABEWERK")) ? (
-              <Nabewerken products={rawProducts as any} orders={rawOrders as any} />
+              <Nabewerken products={visibleRawProducts as any} orders={rawOrders as any} />
                 ) : (String(selectedStation || "").toUpperCase().replace(/\s/g, "") === "MAZAK") ? (
                   <MazakView
-                products={rawProducts as any}
+                  products={visibleRawProducts as any}
                     stationId={selectedStation}
                   />
                 ) : (
                 <LossenView
-                products={rawProducts as any}
+                products={visibleRawProducts as any}
                     stationId={selectedStation}
                     appId={currentAppId}
                   />
@@ -3022,7 +3097,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
 
       <WorkstationModals
         stationId={selectedStation}
-        rawProducts={rawProducts}
+                  rawProducts={visibleRawProducts}
         handleStartProduction={handleStartProduction}
         handleOpenProductInfo={handleOpenProductInfo}
         handleLinkProduct={handleLinkProduct}

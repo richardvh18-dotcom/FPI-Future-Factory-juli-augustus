@@ -4,8 +4,9 @@ import { useProductsData } from "../../hooks/useProductsData";
 import ProductFilterSidebar from "./ProductFilterSidebar";
 import ProductCard from "./ProductCard";
 import ProductDetailModal from "./ProductDetailModal";
-import { Search, ChevronDown, Layers, Box, Filter } from "lucide-react";
+import { Search, ChevronDown, Layers, Box, Filter, Scissors, ArrowRight } from "lucide-react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
+import GlassCutListModal from "../digitalplanning/modals/GlassCutListModal";
 
 type ProductRecord = {
   id?: string;
@@ -88,6 +89,7 @@ const ProductSearchView = ({ showFilters, setShowFilters }: { showFilters: boole
   const { user } = useAdminAuth();
   const { products, loading, error } = useProductsData(user as any);
   const [selectedProduct, setSelectedProduct] = useState<ProductRecord | null>(null);
+  const [showGlassCutListModal, setShowGlassCutListModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
@@ -382,6 +384,13 @@ const ProductSearchView = ({ showFilters, setShowFilters }: { showFilters: boole
         />
       )}
 
+      {showGlassCutListModal && (
+        <GlassCutListModal
+          isOpen={showGlassCutListModal}
+          onClose={() => setShowGlassCutListModal(false)}
+        />
+      )}
+
       {/* 3. Hoofd Content */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbalk met Zoekveld & Filter Knop */}
@@ -426,6 +435,29 @@ const ProductSearchView = ({ showFilters, setShowFilters }: { showFilters: boole
 
         {/* Scrollbaar Gebied met Groepen */}
         <div className="flex-1 overflow-hidden pb-0">
+          <div className="px-4 md:px-8 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowGlassCutListModal(true)}
+              className="w-full md:w-auto group text-left p-5 bg-white rounded-2xl border-2 border-slate-100 hover:border-rose-300 hover:bg-rose-50 transition-all shadow-sm"
+            >
+              <div className="flex items-center justify-between gap-5">
+                <div className="flex items-center gap-4">
+                  <div className="p-3 rounded-xl bg-rose-100 text-rose-600 group-hover:bg-rose-200 transition-colors">
+                    <Scissors size={18} />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-slate-800 uppercase tracking-widest text-xs">Snijlijst Export</h4>
+                    <p className="text-[11px] text-slate-500 font-semibold mt-1">
+                      Open Glass Snijlijst en exporteer direct naar PDF.
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight size={18} className="text-slate-300 group-hover:text-rose-500 group-hover:translate-x-1 transition-all" />
+              </div>
+            </button>
+          </div>
+
           {filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-20 m-6 bg-white rounded-[3rem] border-2 border-dashed border-slate-200 animate-in">
               <Box className="text-slate-200 mb-6" size={60} />

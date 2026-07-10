@@ -5,7 +5,7 @@ import { db } from "../../config/firebase";
 import { subDays, startOfISOWeek } from "date-fns";
 import { PATHS, getArchiveItemsPath, getArchiveRejectedItemsPath, getPathString } from "../../config/dbPaths";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
-import { normalizeMachine } from "../../utils/hubHelpers";
+import { FITTING_MACHINES, PIPE_MACHINES, normalizeMachine } from "../../utils/hubHelpers";
 
 type TeamleaderUser = {
   role?: string;
@@ -62,7 +62,17 @@ const toMillisSafe = (value: unknown): number => {
  *           archivedHistoryProducts, archivedRejectedProducts, factoryConfig,
  *           loading, dbError.
  */
-export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null | undefined }) => {
+export const useTeamleaderFirestore = ({
+  user,
+  fixedScope,
+  loadArchivedRejected = false,
+  loadActiveDowntimes = false,
+}: {
+  user: TeamleaderUser | null | undefined;
+  fixedScope?: string;
+  loadArchivedRejected?: boolean;
+  loadActiveDowntimes?: boolean;
+}) => {
   const [rawOrders, setRawOrders] = useState<FirestoreOrder[]>([]);
   const [rawProducts, setRawProducts] = useState<FirestoreTrackedProduct[]>([]);
   const [bezetting, setBezetting] = useState<Record<string, unknown>[]>([]);
@@ -89,6 +99,17 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
 
     const initData = async () => {
       const auth = getAuth();
+      const scopeKey = String(fixedScope || "").toLowerCase();
+      const scopedDepartments = scopeKey === "pipes" || scopeKey === "pipe"
+        ? ["Pipes"]
+        : scopeKey === "fittings" || scopeKey === "fitting"
+          ? ["Fittings"]
+          : undefined;
+      const scopedMachines = scopeKey === "pipes" || scopeKey === "pipe"
+        ? PIPE_MACHINES
+        : scopeKey === "fittings" || scopeKey === "fitting"
+          ? FITTING_MACHINES
+          : undefined;
 
       if (!user.role || user.role === "guest") {
         setLoading(false);
@@ -200,6 +221,8 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
           console.warn("Tracked Products Sync Error:", code);
           markStreamReady();
         },
+        departments: scopedDepartments,
+        machines: scopedMachines,
       });
       unsubs.push(unsubProds);
       markStreamReady();
@@ -230,21 +253,23 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
       );
       unsubs.push(unsubConfig);
 
-      // LISTENER 5: Downtime
-      const unsubDowntime = onSnapshot(
-        query(
-          collection(db, getPathString(PATHS.DOWNTIME)),
-          where("endTime", "==", null)
-        ),
-        (snap) => {
-          if (isMounted) setActiveDowntimes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        },
-        (err: { code?: string }) => {
-          if (err.code === "permission-denied") return;
-          console.warn("Downtime Sync Error:", err);
-        }
-      );
-      unsubs.push(unsubDowntime);
+      // LISTENER 5: Downtime (only when a view needs it)
+      if (loadActiveDowntimes) {
+        const unsubDowntime = onSnapshot(
+          query(
+            collection(db, getPathString(PATHS.DOWNTIME)),
+            where("endTime", "==", null)
+          ),
+          (snap) => {
+            if (isMounted) setActiveDowntimes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          },
+          (err: { code?: string }) => {
+            if (err.code === "permission-denied") return;
+            console.warn("Downtime Sync Error:", err);
+          }
+        );
+        unsubs.push(unsubDowntime);
+      }
 
       const now = new Date();
       const minArchiveDate = subDays(startOfISOWeek(now), 14);
@@ -291,23 +316,25 @@ export const useTeamleaderFirestore = ({ user }: { user: TeamleaderUser | null |
         );
         unsubs.push(unsubArchiveYear);
 
-        const unsubRejectedYear = onSnapshot(
-          collection(db, getPathString(getArchiveRejectedItemsPath(historyYear))),
-          (snap) => {
-            if (!isMounted) return;
-            const items = snap.docs.map((d) => ({
-              id: d.id,
-              _archiveYear: historyYear,
-              ...d.data(),
-            }));
-            setArchivedRejectedProducts((prev) => {
-              const filtered = prev.filter((p) => p._archiveYear !== historyYear);
-              return [...filtered, ...items];
-            });
-          },
-          (err: { code?: string }) => console.warn("Archive Rejected Sync Error:", historyYear, err.code)
-        );
-        unsubs.push(unsubRejectedYear);
+        if (loadArchivedRejected) {
+          const unsubRejectedYear = onSnapshot(
+            collection(db, getPathString(getArchiveRejectedItemsPath(historyYear))),
+            (snap) => {
+              if (!isMounted) return;
+              const items = snap.docs.map((d) => ({
+                id: d.id,
+                _archiveYear: historyYear,
+                ...d.data(),
+              }));
+              setArchivedRejectedProducts((prev) => {
+                const filtered = prev.filter((p) => p._archiveYear !== historyYear);
+                return [...filtered, ...items];
+              });
+            },
+            (err: { code?: string }) => console.warn("Archive Rejected Sync Error:", historyYear, err.code)
+          );
+          unsubs.push(unsubRejectedYear);
+        }
       });
 
       // Background token refresh

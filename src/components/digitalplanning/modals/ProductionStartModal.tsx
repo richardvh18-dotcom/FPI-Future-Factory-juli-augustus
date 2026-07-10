@@ -283,11 +283,15 @@ const isSleevelessCouplerOrder = (order: any): boolean => {
 
 const getOrderProductTypeKey = (order: any): string => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
+  const teePairMatch = itemIdentifier.match(/(\d+)\s*[xX/]\s*(\d+)/);
+  const hasWyeTee = /\bWYE\b|\bY[\s-]?TEE\b/.test(itemIdentifier);
+  const hasTee = itemIdentifier.includes("TEE") || hasWyeTee;
+  const isUnequalBySize = teePairMatch && teePairMatch[1] !== teePairMatch[2];
   if (isSleevelessCouplerOrder(order)) return "COUPLER";
   if (itemIdentifier.includes("ELB") || itemIdentifier.includes("BOCHT")) return "ELBOW";
   if (itemIdentifier.includes("FLANGE") || itemIdentifier.includes("FLENS")) return "FLANGE";
-  if (itemIdentifier.includes("UNEQUAL") || itemIdentifier.includes("VERLOOP TEE")) return "UNEQUAL-TEE";
-  if (itemIdentifier.includes("TEE")) return "EQUAL-TEE";
+  if (itemIdentifier.includes("UNEQUAL") || itemIdentifier.includes("VERLOOP TEE") || (hasTee && isUnequalBySize)) return "UNEQUAL-TEE";
+  if (hasTee) return "EQUAL-TEE";
   if (itemIdentifier.includes("REDUCER") || itemIdentifier.includes("VERLOOP")) return "REDUCER";
   if (itemIdentifier.includes("COUPLER") || itemIdentifier.includes("MOF")) return "COUPLER";
   if (itemIdentifier.includes("ADAPTOR") || itemIdentifier.includes("ADAPTER")) return "ADAPTOR";

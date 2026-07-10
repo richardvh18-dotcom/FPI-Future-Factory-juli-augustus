@@ -5,6 +5,8 @@ import { endOfISOWeek, format, getISOWeek, isSameDay, isWithinInterval, startOfI
 import { collection, limit, onSnapshot, orderBy, query, where } from "firebase/firestore";
 import PlanningImportModal from "./modals/PlanningImportModal";
 import InventoryCheckModal from "./modals/InventoryCheckModal";
+import GlassRulesImportModal from "./modals/GlassRulesImportModal";
+import GlassCutListModal from "./modals/GlassCutListModal";
 import { auth, db } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
 import { getStartedCounterField } from "../../utils/hubHelpers";
@@ -464,6 +466,8 @@ const ImportExportDashboard = ({
   const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState("import"); // 'import', 'export'
   const [showLegacyModal, setShowLegacyModal] = useState(false);
+  const [showGlassRulesModal, setShowGlassRulesModal] = useState(false);
+  const [showGlassCutListModal, setShowGlassCutListModal] = useState(false);
   const [showCompletedExportModal, setShowCompletedExportModal] = useState(false);
   const [showLnReadyExportModal, setShowLnReadyExportModal] = useState(false);
   const [showInventoryModal, setShowInventoryModal] = useState(false);
@@ -1202,6 +1206,24 @@ const ImportExportDashboard = ({
                      </p>
                    </div>
                  </div>
+
+                 <div className="mt-6 bg-blue-50 p-6 rounded-2xl border border-blue-100">
+                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                     <div>
+                       <h4 className="font-bold text-blue-900 text-sm mb-1">Glass Calculation Fittings (.xlsm)</h4>
+                       <p className="text-xs text-blue-700">
+                         Eenmalige baseline import en revisie-import voor T-stukken, Endcaps en Manhole Bottom snijregels.
+                       </p>
+                     </div>
+                     <button
+                       type="button"
+                       onClick={() => setShowGlassRulesModal(true)}
+                       className="px-4 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
+                     >
+                       <FileSpreadsheet size={16} /> Start Glass Import
+                     </button>
+                   </div>
+                 </div>
               </div>
             </div>
           ) : (
@@ -1301,6 +1323,19 @@ const ImportExportDashboard = ({
                      <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">{t("importExportDashboard.floorCheckRound", "Vloercontrole (Ronde)")}</h4>
                      <p className="text-[10px] text-slate-500 font-medium">{t("importExportDashboard.floorCheckRoundBody", "Controleer fysieke lotnummers per station via tablet/scanner")}</p>
                    </button>
+
+                   <button
+                     type="button"
+                     onClick={() => setShowGlassCutListModal(true)}
+                     className="p-6 bg-slate-50 rounded-2xl border-2 border-slate-100 hover:border-rose-300 hover:bg-rose-50 transition-all text-left group"
+                   >
+                     <div className="flex justify-between items-start mb-4">
+                       <Printer size={24} className="text-slate-400 group-hover:text-rose-500 transition-colors" />
+                       <ArrowRight size={20} className="text-slate-300 group-hover:text-rose-500 transform group-hover:translate-x-1 transition-all" />
+                     </div>
+                     <h4 className="font-black text-slate-700 uppercase tracking-widest text-xs mb-1">Glass Snijlijst</h4>
+                     <p className="text-[10px] text-slate-500 font-medium">Zoek op PN/ID(/ID1) in GLASS_RULES en print direct een snijblad als PDF.</p>
+                   </button>
                  </div>
               </div>
             </div>
@@ -1314,6 +1349,21 @@ const ImportExportDashboard = ({
           onClose={() => setShowLegacyModal(false)}
           onSuccess={() => setShowLegacyModal(false)}
           currentDepartment={currentDepartment}
+        />
+      )}
+
+      {showGlassRulesModal && (
+        <GlassRulesImportModal
+          isOpen={showGlassRulesModal}
+          onClose={() => setShowGlassRulesModal(false)}
+          onSuccess={() => setShowGlassRulesModal(false)}
+        />
+      )}
+
+      {showGlassCutListModal && (
+        <GlassCutListModal
+          isOpen={showGlassCutListModal}
+          onClose={() => setShowGlassCutListModal(false)}
         />
       )}
 

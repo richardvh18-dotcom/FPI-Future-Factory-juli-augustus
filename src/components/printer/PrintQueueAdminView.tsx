@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { generateLotBatchZPL } from '../../utils/zplHelper';
 import { resolvePrinterDpi } from '../../utils/printerDrivers';
-import { filterTempOrderLabelsByProduct } from '../../utils/labelHelpers';
+import { filterOrderLabelsByProduct } from '../../utils/labelHelpers';
 import { getISOWeekInfo, getStationMachineCode } from '../../utils/lotLogic';
 import {
   transitionPrintQueueJobStatus,
@@ -37,10 +37,12 @@ import {
   getOrderLabelDescription,
   getOrderLabelItemCode,
   getOrderLabelOrder,
+  isOrderLabelFlangeProduct,
   normalizeOrderLabelProductData,
   pickPreferredTempTemplateId,
   resolveLinkedTemplateChain,
 } from '../../utils/orderLabelTemplateUtils';
+import { loadFactoryMachinePaths } from '../../utils/orderLabelSearch';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -156,12 +158,18 @@ const stationNameFromValue = (stationValue: unknown): string => {
   return String(stationValue).trim();
 };
 
-const normalizeStationKey = (value: unknown): string =>
-  String(value || '')
+const normalizeStationKey = (value: unknown): string => {
+  const compact = String(value || '')
     .trim()
     .toUpperCase()
-    .replace(/\s+/g, '')
+    .replace(/[^A-Z0-9]+/g, '')
     .replace(/^40(?=BH|BM|BA)/, '');
+
+  const stationTokenMatch = compact.match(/(BH|BM|BA)\d{2,3}/);
+  if (stationTokenMatch?.[0]) return stationTokenMatch[0];
+
+  return compact;
+};
 const normalizeQueueStatus = (value: unknown): string => String(value || 'pending').trim().toLowerCase();
 const isQueuedJobStatus = (value: unknown): boolean => {
   const status = normalizeQueueStatus(value);
@@ -407,7 +415,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, han
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
   const topOptions = useMemo(() => {
-    return filterTempOrderLabelsByProduct(labelTemplates || [], buildOrderLabelTemplateProduct(item)) as LabelTemplate[];
+    return filterOrderLabelsByProduct(labelTemplates || [], buildOrderLabelTemplateProduct(item)) as LabelTemplate[];
   }, [item, labelTemplates]);
 
   useEffect(() => {
@@ -472,7 +480,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, han
                       {t("printer.labelStep", "Label {{index}}", { index: idx + 1 })}
                     </p>
                   )}
-                  <AutoScaledLabelPreview label={template as any} data={previewData} maxScale={1} exactBitmapPreview />
+                  <AutoScaledLabelPreview label={template as any} data={previewData} maxScale={1} />
                 </div>
               ))}
             </div>
@@ -495,7 +503,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
 
 
   // Printfunctie nu binnen de modal zodat t altijd beschikbaar is
-  const handleTempLegacyPrint = async (orderData: AnyRecord, template: any, processedData: any) => {
+  const handleTempLegacyPrint = async (orderData: AnyRecord, template: any, processedData: any, quantity = 1) => {
     const dpi = printerDpi;
     const darkness = 15; // of printerDarkness als beschikbaar
 
@@ -504,7 +512,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     const desc = getOrderLabelDescription(orderData);
 
     let zpl;
-    const printQuantity = 1;
+    const printQuantity = Math.max(1, Number(quantity) || 1);
     const templateChain = template
       ? (resolveLinkedTemplateChain(labelTemplates as any[], template.id, { maxDepth: 4 }) as LabelTemplate[])
       : [];
@@ -648,442 +656,486 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     }
   };
   const [orderStr, setOrderStr] = useState("");
-  const [results, setResults] = useState<AnyRecord[]>([]);
-  const [initialList, setInitialList] = useState<AnyRecord[]>([]);
-  const [loadingInitialList, setLoadingInitialList] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const isMountedRef = useRef(true);
+  const [selectedMachine, setSelectedMachine] = useState<string>("");
+  const [machineItems, setMachineItems] = useState<AnyRecord[]>([]);
+  const [loadingMachineItems, setLoadingMachineItems] = useState(false);
+  const [searchItems, setSearchItems] = useState<AnyRecord[]>([]);
+  const [loadingSearchItems, setLoadingSearchItems] = useState(false);
+  const [selectedOrderId, setSelectedOrderId] = useState<string>("");
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [printCount, setPrintCount] = useState<string>("1");
+  const normalizeText = useCallback((value: unknown) => String(value || "").toLowerCase().trim(), []);
 
-  const refreshInitialList = useCallback(async () => {
-    setLoadingInitialList(true);
-    try {
-      const [tempSnap, planSnap, trackSnap, scopedOrdersSnap] = await Promise.all([
-        getDocs(query(collection(db, getPathString(PATHS.TEMP_PLANNING)), limit(120))),
-        getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(120))),
-        getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(120))),
-        getDocs(query(collectionGroup(db, 'orders'), limit(120))),
-      ]);
-
-      if (!isMountedRef.current) return;
-
-      const rows: AnyRecord[] = [];
-      const pushRows = (snap: any) => {
-        snap.docs.forEach((d: any) => rows.push({ id: d.id, ...(d.data() as AnyRecord) }));
-      };
-
-      pushRows(tempSnap);
-      pushRows(planSnap);
-      pushRows(trackSnap);
-      pushRows(scopedOrdersSnap);
-
-      const dedup: AnyRecord[] = [];
-      const seen = new Set<string>();
-      rows.forEach((r) => {
-        const rowId = String(r.id || "");
-        if (!rowId || seen.has(rowId)) return;
-        seen.add(rowId);
-        dedup.push(r);
-      });
-
-      dedup.sort((a, b) =>
-        getOrderLabelOrder(a).localeCompare(getOrderLabelOrder(b), undefined, { numeric: true })
-      );
-
-      setInitialList(dedup);
-    } catch (err) {
-      console.error("Fout bij laden order labels lijst:", err);
-    } finally {
-      if (isMountedRef.current) setLoadingInitialList(false);
-    }
+  const normalizeMachineKey = useCallback((value: unknown) => {
+    const compact = String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+    const token = compact.match(/(40BH\d+|BH\d+)/)?.[0];
+    return token ? token.replace(/^40(?=BH)/, "") : compact;
   }, []);
 
-  const normalizeText = (value: unknown) => String(value || "").toLowerCase().trim();
+  const machineOptions = useMemo(() => {
+    const stations = departmentGroups
+      .flatMap((group) => Array.isArray(group?.stations) ? group.stations : [])
+      .map((station) => String(station || "").trim())
+      .filter((station) => /^40BH\d+/i.test(station) || /^BH\d+/i.test(station));
+
+    return Array.from(new Set(stations)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [departmentGroups]);
 
   useEffect(() => {
-    isMountedRef.current = true;
-    refreshInitialList();
+    if (selectedMachine) return;
 
-    return () => {
-      isMountedRef.current = false;
+    if (selectedStation) {
+      const stationMatch = machineOptions.find((entry) => normalizeMachineKey(entry) === normalizeMachineKey(selectedStation));
+      if (stationMatch) {
+        setSelectedMachine(stationMatch);
+        return;
+      }
+    }
+
+    if (machineOptions.length > 0) {
+      setSelectedMachine(machineOptions[0]);
+    }
+  }, [machineOptions, normalizeMachineKey, selectedMachine, selectedStation]);
+
+  const buildMachineFetchTargets = useCallback(async (machineValue: string) => {
+    const machinePairs = await loadFactoryMachinePaths();
+    const targetKey = normalizeMachineKey(machineValue);
+    const relevantPairs = machinePairs.filter((pair) => normalizeMachineKey(pair.machine) === targetKey);
+
+    const machineAliases = new Set<string>();
+    const pushMachineAlias = (value: unknown) => {
+      const normalized = normalizeMachineKey(value);
+      if (!normalized) return;
+      machineAliases.add(normalized);
+      if (normalized.startsWith("BH")) machineAliases.add(`40${normalized}`);
+      if (normalized.startsWith("40BH")) machineAliases.add(normalized.replace(/^40/, ""));
     };
-  }, [refreshInitialList]);
 
-  const displayItems = orderStr.trim() ? results : [];
+    pushMachineAlias(machineValue);
+    relevantPairs.forEach((pair) => pushMachineAlias(pair.machine));
 
-  const handleSearch = async () => {
-    if (!orderStr.trim()) {
-      setResults([]);
+    const productTypes = new Set<string>();
+    relevantPairs.forEach((pair) => {
+      const pt = String(pair.productType || "").trim();
+      if (pt) productTypes.add(pt);
+    });
+
+    if (productTypes.size === 0) {
+      productTypes.add("Fittings");
+    }
+
+    const fetchTargets: Array<{ productType: string; machine: string }> = [];
+    productTypes.forEach((productType) => {
+      machineAliases.forEach((machine) => {
+        fetchTargets.push({ productType, machine });
+      });
+    });
+
+    return fetchTargets;
+  }, [normalizeMachineKey]);
+
+  const loadMachineOrders = useCallback(async (machineValue: string) => {
+    if (!machineValue) {
+      setMachineItems([]);
+      setSearchItems([]);
       return;
     }
-    setLoading(true);
-    setResults([]);
+
+    setLoadingMachineItems(true);
     try {
-      let searchStr = orderStr.trim().toUpperCase();
-      // Als de gebruiker per ongeluk een heel databasepad plakt, pak het laatste stuk (de ID)
-      if (searchStr.includes('/')) {
-        searchStr = searchStr.split('/').filter(Boolean).pop() || searchStr;
-      }
+      const fetchTargets = await buildMachineFetchTargets(machineValue);
 
-      // Short-circuit fallback for legacy/nood label flow on known BH18 Fittings paths.
-      if (searchStr.startsWith("N") && searchStr.length >= 6) {
-        const targetedPaths = [
-          `${getPathString(PATHS.PLANNING)}/Fittings/machines/40BH18/orders`,
-          `${getPathString(PATHS.PLANNING)}/Fittings/machines/BH18/orders`,
-        ];
-        const targetedResults: AnyRecord[] = [];
-        for (const path of targetedPaths) {
-          try {
-            const prefixSnap = await getDocs(
-              query(collection(db, path), orderBy(documentId()), where(documentId(), ">=", searchStr), where(documentId(), "<=", searchStr + "\uf8ff"), limit(300))
-            );
-            prefixSnap.docs.forEach((d) => {
-              targetedResults.push({ id: d.id, ...(d.data() as AnyRecord) });
-            });
-          } catch (err) {
-            console.warn("Targeted BH18 query failed for path:", path, err);
-          }
+      const fetches = fetchTargets.map(async ({ productType, machine }) => {
+        const machinePath = `${getPathString(PATHS.PLANNING)}/${productType}/machines/${machine}/orders`;
+        try {
+          const snap = await getDocs(query(collection(db, machinePath), limit(600)));
+          return snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as AnyRecord),
+            __machine: machine,
+            __productType: productType,
+          }));
+        } catch {
+          return [] as AnyRecord[];
         }
-        if (targetedResults.length > 0) {
-          setResults(targetedResults);
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Genereer logische FPI voorvoegsels
-      let searchOptions: string[] = [searchStr];
-      const digitsMatch = searchStr.match(/\d+/);
-      if (digitsMatch) {
-          const digits = digitsMatch[0];
-          if (digits.length >= 3) {
-            if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
-              searchOptions.push(`N${digits}`);
-              searchOptions.push(`N20${digits}`);
-              searchOptions.push(`N200${digits}`);
-              searchOptions.push(`N21${digits}`);
-              searchOptions.push(`N210${digits}`);
-              searchOptions.push(`P${digits}`);
-            }
-          }
-      }
-
-      const uniqueOptions = Array.from(new Set(searchOptions)).slice(0, 15);
-      const colRef = collection(db, getPathString(PATHS.TEMP_PLANNING));
-      const planRef = collection(db, getPathString(PATHS.PLANNING));
-      const trackRef = collection(db, getPathString(PATHS.TRACKING));
-      
-      const foundDocs = new Map<string, AnyRecord>();
-      const addDocs = (snap: any) => {
-        if (snap && snap.docs) {
-          snap.docs.forEach((d: any) => foundDocs.set(d.id, { id: d.id, ...(d.data() as AnyRecord) }));
-        }
-      };
-
-      // 0. Scoped machine orders zoeken (collectionGroup voor alle 'orders' onder alle machines)
-      try {
-        const scopedQueries = [
-          getDocs(query(collectionGroup(db, 'orders'), where('id', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('orderId', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('orderNumber', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('Order', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('order', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('originalOrderId', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('itemCode', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('productCode', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('articleCode', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('Item', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('Artikel', 'in', uniqueOptions))),
-          getDocs(query(collectionGroup(db, 'orders'), where('itemDescription', 'in', uniqueOptions))),
-        ];
-        const scopedSnaps = await Promise.all(scopedQueries.map(p => p.catch(() => null)));
-        scopedSnaps.forEach(addDocs);
-      } catch (err) {
-        console.warn('Fout bij zoeken in scoped orders:', err);
-      }
-
-      // 1. Direct op Document ID proberen
-      const directLookupPaths = [
-        getPathString(PATHS.TEMP_PLANNING),
-        getPathString(PATHS.PLANNING),
-        getPathString(PATHS.TRACKING),
-        `${getPathString(PATHS.PLANNING)}/Fittings/machines/40BH18/orders`,
-        `${getPathString(PATHS.PLANNING)}/Fittings/machines/BH18/orders`
-      ];
-
-      for (const opt of uniqueOptions) {
-        for (const path of directLookupPaths) {
-          try {
-            const docRef = doc(db, `${path}/${opt}`);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) foundDocs.set(docSnap.id, { id: docSnap.id, ...(docSnap.data() as AnyRecord) });
-          } catch {
-            continue;
-          }
-        }
-      }
-
-      // 2. Parallelle exacte zoekopdrachten
-      const exactQueries = [
-        getDocs(query(colRef, where("orderId", "in", uniqueOptions))),
-        getDocs(query(colRef, where("orderNumber", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Order", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Productieorder", "in", uniqueOptions))),
-        getDocs(query(colRef, where("order", "in", uniqueOptions))),
-        getDocs(query(colRef, where("originalOrderId", "in", uniqueOptions))),
-        getDocs(query(colRef, where("itemCode", "in", uniqueOptions))),
-        getDocs(query(colRef, where("productCode", "in", uniqueOptions))),
-        getDocs(query(colRef, where("articleCode", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Item", "in", uniqueOptions))),
-        getDocs(query(colRef, where("Artikel", "in", uniqueOptions))),
-        getDocs(query(colRef, where("itemDescription", "in", uniqueOptions))),
-        getDocs(query(planRef, where("orderId", "in", uniqueOptions))),
-        getDocs(query(planRef, where("orderNumber", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Order", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Productieorder", "in", uniqueOptions))),
-        getDocs(query(planRef, where("order", "in", uniqueOptions))),
-        getDocs(query(planRef, where("originalOrderId", "in", uniqueOptions))),
-        getDocs(query(planRef, where("itemCode", "in", uniqueOptions))),
-        getDocs(query(planRef, where("productCode", "in", uniqueOptions))),
-        getDocs(query(planRef, where("articleCode", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Item", "in", uniqueOptions))),
-        getDocs(query(planRef, where("Artikel", "in", uniqueOptions))),
-        getDocs(query(planRef, where("itemDescription", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("orderId", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("orderNumber", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("Order", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("order", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("originalOrderId", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("itemCode", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("item", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("itemDescription", "in", uniqueOptions))),
-        getDocs(query(trackRef, where("productCode", "in", uniqueOptions)))
-      ];
-      const exactSnaps = await Promise.all(exactQueries.map(p => p.catch(() => null)));
-      exactSnaps.forEach(addDocs);
-        
-      // 3. Gedeeltelijke / part-match (als lengte >= 3 is) client-side op brede datasets
-      if (searchStr.length >= 3) {
-        const broadSnaps = await Promise.all([
-          getDocs(query(collectionGroup(db, 'orders'), limit(1500))).catch(() => null),
-          getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(500))).catch(() => null)
-        ]);
-        broadSnaps.forEach(snap => {
-          if (snap && snap.docs) {
-            snap.docs.forEach(d => {
-              const data = d.data() as AnyRecord;
-              const idTxt = d.id.toUpperCase();
-              const orderTxt = String(data.orderId || data.orderNumber || data.Order || '').toUpperCase();
-              if (idTxt.includes(searchStr) || orderTxt.includes(searchStr)) {
-                foundDocs.set(d.id, { id: d.id, ...data });
-              }
-            });
-          }
-        });
-      }
-
-      // 4. 'Begint met' zoekopdrachten (als we nog weinig of niks hebben)
-      if (foundDocs.size < 5 && searchStr.length >= 3) {
-        const startOptions = [searchStr];
-        if (digitsMatch && digitsMatch[0].length >= 3) {
-            if (!searchStr.startsWith('N') && !searchStr.startsWith('P')) {
-                startOptions.push(`N200${digitsMatch[0]}`);
-                startOptions.push(`N20${digitsMatch[0]}`);
-                startOptions.push(`N210${digitsMatch[0]}`);
-                startOptions.push(`N21${digitsMatch[0]}`);
-            }
-        }
-        
-        const startsWithQueries: Array<Promise<any>> = [];
-        Array.from(new Set(startOptions)).forEach(opt => {
-            startsWithQueries.push(getDocs(query(colRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("Productieorder", ">=", opt), where("Productieorder", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(colRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("Productieorder", ">=", opt), where("Productieorder", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(planRef, where("description", ">=", opt), where("description", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("orderNumber", ">=", opt), where("orderNumber", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("item", ">=", opt), where("item", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("itemDescription", ">=", opt), where("itemDescription", "<=", opt + "\uf8ff"), limit(10))));
-            startsWithQueries.push(getDocs(query(trackRef, where("productCode", ">=", opt), where("productCode", "<=", opt + "\uf8ff"), limit(10))));
-        });
-
-        const startSnaps = await Promise.all(startsWithQueries.map(p => p.catch(() => null)));
-        startSnaps.forEach(addDocs);
-      }
-      
-      const queryText = normalizeText(orderStr);
-      const clientMatches = initialList.filter((item) => {
-        const orderText = normalizeText(getOrderLabelOrder(item));
-        const productText = normalizeText([
-          item.item,
-          item.itemDescription,
-          item.itemCode,
-          item.productCode,
-          item.articleCode,
-          item.Item,
-          item.Artikel,
-          item.description,
-          item.Description,
-          item.Omschrijving,
-        ].filter(Boolean).join(' '));
-        return orderText.includes(queryText) || productText.includes(queryText);
       });
 
-      const merged = new Map<string, AnyRecord>();
-      Array.from(foundDocs.values()).forEach((item) => merged.set(String(item.id || ""), item));
-      clientMatches.forEach((item) => merged.set(String(item.id || ""), item));
-      let finalResults = Array.from(merged.values());
+      let rows = (await Promise.all(fetches)).flat();
 
-      if (finalResults.length === 0 && searchStr.length >= 3) {
-        const targetedPaths = [
-          `${getPathString(PATHS.PLANNING)}/Fittings/machines/BH18/orders`,
-          `${getPathString(PATHS.PLANNING)}/Fittings/machines/40BH18/orders`,
-        ];
-        const targetedQueries = targetedPaths.map((path) =>
-          getDocs(
-            query(collection(db, path), where(documentId(), ">=", searchStr), where(documentId(), "<=", searchStr + "\uf8ff"), limit(250))
-          ).catch(() => null)
-        );
-        const targetedSnaps = await Promise.all(targetedQueries);
-        const targetedMatches: AnyRecord[] = [];
-        targetedSnaps.forEach((snap) => {
-          if (!snap || !snap.docs) return;
-          snap.docs.forEach((d: any) => targetedMatches.push({ id: d.id, ...(d.data() as AnyRecord) }));
-        });
-        if (targetedMatches.length > 0) {
-          finalResults = targetedMatches;
+      // Fallback: als runtime planning-root niet overeenkomt, lees scoped orders root-agnostisch.
+      if (rows.length === 0) {
+        const machineMarkers = Array.from(new Set(fetchTargets.map((target) => `/machines/${target.machine}/orders/`)));
+        try {
+          const scopedSnap = await getDocs(query(collectionGroup(db, 'orders'), limit(2000)));
+          rows = scopedSnap.docs
+            .filter((docSnap) => {
+              const refPath = String(docSnap.ref?.path || '');
+              return machineMarkers.some((marker) => refPath.includes(marker));
+            })
+            .map((docSnap) => {
+              const refPath = String(docSnap.ref?.path || '');
+              const machineMatch = refPath.match(/\/machines\/([^/]+)\/orders\//i);
+              return {
+                id: docSnap.id,
+                ...(docSnap.data() as AnyRecord),
+                __machine: machineMatch?.[1] || undefined,
+              };
+            });
+        } catch {
+          // Silence fallback failures; UI shows no result state.
         }
       }
 
-      setResults(finalResults);
-    } catch (e) {
-      console.error("Zoekfout temp labels:", e);
-    } finally {
-      setLoading(false);
-    }
-  };
+      const byId = new Map<string, AnyRecord>();
+      rows.forEach((row) => {
+        const rowId = String(row.id || "").trim();
+        if (!rowId) return;
+        byId.set(rowId, row);
+      });
 
-  const handleRefresh = async () => {
-    setOrderStr("");
-    setResults([]);
-    await refreshInitialList();
+      const sorted = Array.from(byId.values())
+        .filter((item) => !isOrderLabelFlangeProduct(item))
+        .sort((a, b) =>
+        String(getOrderLabelOrder(a)).localeCompare(String(getOrderLabelOrder(b)), undefined, { numeric: true })
+      );
+
+      setMachineItems(sorted);
+      setSearchItems([]);
+      setSelectedOrderId((prev) => {
+        if (prev && sorted.some((row) => String(row.id) === prev)) return prev;
+        return String(sorted[0]?.id || "");
+      });
+    } catch (err) {
+      console.error("Fout bij laden machine-orders voor order labels:", err);
+      setMachineItems([]);
+      setSearchItems([]);
+      setSelectedOrderId("");
+    } finally {
+      setLoadingMachineItems(false);
+    }
+  }, [buildMachineFetchTargets]);
+
+  useEffect(() => {
+    void loadMachineOrders(selectedMachine);
+  }, [loadMachineOrders, selectedMachine]);
+
+  useEffect(() => {
+    const searchText = String(orderStr || "").trim().toUpperCase();
+    if (!selectedMachine || searchText.length < 3) {
+      setSearchItems([]);
+      setLoadingSearchItems(false);
+      return;
+    }
+
+    let active = true;
+
+    const runSearch = async () => {
+      setLoadingSearchItems(true);
+      try {
+        const fetchTargets = await buildMachineFetchTargets(selectedMachine);
+        const machineMarkers = Array.from(new Set(fetchTargets.map((target) => `/machines/${target.machine}/orders/`)));
+        const queries = fetchTargets.map(async ({ productType, machine }) => {
+          const machinePath = `${getPathString(PATHS.PLANNING)}/${productType}/machines/${machine}/orders`;
+          try {
+            const snap = await getDocs(
+              query(
+                collection(db, machinePath),
+                orderBy(documentId()),
+                where(documentId(), ">=", searchText),
+                where(documentId(), "<=", `${searchText}\uf8ff`),
+                limit(80)
+              )
+            );
+            return snap.docs.map((docSnap) => ({
+              id: docSnap.id,
+              ...(docSnap.data() as AnyRecord),
+              __machine: machine,
+              __productType: productType,
+            }));
+          } catch {
+            return [] as AnyRecord[];
+          }
+        });
+
+        let rows = (await Promise.all(queries)).flat();
+
+        // Fallback: zoek direct in alle scoped 'orders' collections en filter op machinepad.
+        if (rows.length === 0) {
+          try {
+            const scopedSearchSnap = await getDocs(
+              query(
+                collectionGroup(db, 'orders'),
+                orderBy(documentId()),
+                where(documentId(), ">=", searchText),
+                where(documentId(), "<=", `${searchText}\uf8ff`),
+                limit(250)
+              )
+            );
+
+            rows = scopedSearchSnap.docs
+              .filter((docSnap) => {
+                const refPath = String(docSnap.ref?.path || '');
+                return machineMarkers.some((marker) => refPath.includes(marker));
+              })
+              .map((docSnap) => {
+                const refPath = String(docSnap.ref?.path || '');
+                const machineMatch = refPath.match(/\/machines\/([^/]+)\/orders\//i);
+                return {
+                  id: docSnap.id,
+                  ...(docSnap.data() as AnyRecord),
+                  __machine: machineMatch?.[1] || undefined,
+                };
+              });
+          } catch {
+            // Silence fallback failures; list stays empty.
+          }
+        }
+
+        const byId = new Map<string, AnyRecord>();
+        rows.forEach((row) => {
+          const rowId = String(row.id || "").trim();
+          if (!rowId) return;
+          byId.set(rowId, row);
+        });
+
+        const results = Array.from(byId.values())
+          .filter((item) => !isOrderLabelFlangeProduct(item))
+          .sort((a, b) =>
+          String(getOrderLabelOrder(a)).localeCompare(String(getOrderLabelOrder(b)), undefined, { numeric: true })
+        );
+
+        if (active) {
+          setSearchItems(results);
+          if (results.length > 0) {
+            setSelectedOrderId((prev) => {
+              if (prev && results.some((row) => String(row.id) === prev)) return prev;
+              return String(results[0].id || "");
+            });
+          }
+        }
+      } finally {
+        if (active) setLoadingSearchItems(false);
+      }
+    };
+
+    void runSearch();
+
+    return () => {
+      active = false;
+    };
+  }, [buildMachineFetchTargets, orderStr, selectedMachine]);
+
+  const filteredMachineItems = useMemo(() => {
+    const queryText = normalizeText(orderStr);
+    if (!queryText) return machineItems;
+
+    return machineItems.filter((item) => {
+      const orderText = normalizeText(getOrderLabelOrder(item));
+      const productText = normalizeText(getOrderLabelDescription(item) || getOrderLabelItemCode(item));
+      return orderText.includes(queryText) || productText.includes(queryText);
+    });
+  }, [machineItems, orderStr]);
+
+  const displayItems = useMemo(() => {
+    const hasSearch = String(orderStr || "").trim().length >= 3;
+    if (!hasSearch) return filteredMachineItems;
+    return searchItems.length > 0 ? searchItems : filteredMachineItems;
+  }, [filteredMachineItems, orderStr, searchItems]);
+
+  const selectedOrder = useMemo(() => {
+    if (!selectedOrderId) return null;
+    return displayItems.find((item) => String(item.id || "") === selectedOrderId)
+      || machineItems.find((item) => String(item.id || "") === selectedOrderId)
+      || null;
+  }, [displayItems, machineItems, selectedOrderId]);
+
+  const temporaryTemplates = useMemo(() => {
+    if (!selectedOrder) return [] as LabelTemplate[];
+    return filterOrderLabelsByProduct(labelTemplates || [], buildOrderLabelTemplateProduct(selectedOrder)) as LabelTemplate[];
+  }, [labelTemplates, selectedOrder]);
+
+  useEffect(() => {
+    if (temporaryTemplates.length === 0) {
+      setSelectedTemplateId("");
+      return;
+    }
+
+    const stillValid = temporaryTemplates.some((template) => String(template.id) === selectedTemplateId);
+    if (!stillValid) {
+      setSelectedTemplateId(String(temporaryTemplates[0].id));
+    }
+  }, [selectedTemplateId, temporaryTemplates]);
+
+  const selectedTemplate = useMemo(() => {
+    return temporaryTemplates.find((template) => String(template.id) === selectedTemplateId) || temporaryTemplates[0] || null;
+  }, [selectedTemplateId, temporaryTemplates]);
+
+  const previewData = useMemo(() => {
+    if (!selectedOrder) return {} as AnyRecord;
+    return buildOrderLabelPreviewData(selectedOrder, labelRules);
+  }, [labelRules, selectedOrder]);
+
+  const previewTemplates = useMemo(() => {
+    if (!selectedTemplate) return [] as LabelTemplate[];
+    const chain = resolveLinkedTemplateChain(labelTemplates as any[], selectedTemplate.id, { maxDepth: 4 }) as LabelTemplate[];
+    return chain.length > 0 ? chain : [selectedTemplate];
+  }, [labelTemplates, selectedTemplate]);
+
+  const handlePrintSelected = async () => {
+    if (!selectedOrder || !selectedTemplate) return;
+    const processedData = buildOrderLabelPreviewData(selectedOrder, labelRules);
+    const qty = Math.max(1, Math.min(100, Number.parseInt(printCount, 10) || 1));
+    await handleTempLegacyPrint(selectedOrder, selectedTemplate, processedData, qty);
   };
 
   return (
     <div className="fixed inset-0 z-[200] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-      <div className="bg-white w-full max-w-4xl rounded-[40px] shadow-2xl overflow-hidden relative border border-slate-100">
-        {/* Achtergrond Decoratie */}
-        <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
-          <Tag size={180} className="text-slate-900 -rotate-12" />
-        </div>
-
-        <div className="p-8 md:p-10 relative z-10 flex flex-col h-full max-h-[90vh]">
-          {/* Header */}
-          <div className="flex justify-between items-start mb-8">
-            <div className="flex items-center gap-4">
-              <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl shadow-sm border border-emerald-100/50">
-                <Tag size={28} strokeWidth={2.5} />
+      <div className="bg-white w-full max-w-[1200px] rounded-[36px] shadow-2xl overflow-hidden border border-slate-100">
+        <div className="p-8 md:p-10 flex flex-col h-full max-h-[92vh]">
+          <div className="flex justify-between items-start mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100">
+                <Tag size={24} strokeWidth={2.5} />
               </div>
               <div>
-                <h3 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter leading-none mb-1">
-                  {t("printer.orderLabels", "Order Labels")}
-                </h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  {t("printer.legacyEmergencyLabelsSearch", "Legacy / Nood-etiketten zoeken of handmatig maken")}
+                <h3 className="text-2xl font-black text-slate-900 uppercase italic leading-none">{t("printer.orderLabels", "Order Labels")}</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                  Machine-keuze, orderlijst en labelpreview
                 </p>
               </div>
             </div>
             <button onClick={onClose} className="p-2 bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-full transition-colors"><X size={20} /></button>
           </div>
 
-          
-
-          {/* Search Bar */}
-              <div className="flex flex-col sm:flex-row gap-3 mb-6 shrink-0">
-            <div className="relative flex-1 group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" size={18} />
-              <input 
-                type="text" 
-                placeholder={t('printer.searchOrderPlaceholder', 'ZOEK OP ORDER OF PRODUCT')}
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold uppercase outline-none focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all text-sm text-slate-900 placeholder:text-slate-400"
-                value={orderStr}
-                onChange={(e) => setOrderStr(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              />
-            </div>
-            <button 
-              onClick={handleSearch} 
-              disabled={loading} 
-              className="px-8 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? <Loader2 className="animate-spin" size={18} /> : t("common.search")}
-            </button>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={loadingInitialList || loading}
-              className="px-4 py-4 bg-slate-50 border-2 border-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-100 hover:text-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-              title={t("common.refresh", "Ververs lijst")}
-            >
-              <RefreshCw size={18} className={loadingInitialList ? 'animate-spin' : ''} />
-            </button>
-          </div>
-
-          {/* Results Area */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar -mx-2 px-2 pb-2">
-            {displayItems.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-0">
+            <div className="lg:col-span-5 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col min-h-0">
               <div className="space-y-3">
-                {displayItems.map((item, idx) => (
-                  <TempLabelItem 
-                    key={String(item.id || idx)} 
-                    item={item} 
-                    labelTemplates={labelTemplates} 
-                    labelRules={labelRules}
-                    printerDpi={printerDpi}
-                    handleTempLegacyPrint={handleTempLegacyPrint}
-                    departmentGroups={departmentGroups}
-                    printers={printers}
-                    stationId={selectedStation || "SYSTEM"}
-                  />
-                ))}
-              </div>
-            )}
-            
-            {!orderStr.trim() && (
-              <div className="py-12 border-2 border-dashed border-slate-200 rounded-[30px] flex flex-col items-center justify-center text-center bg-slate-50/50">
-                <Search className="text-slate-400 mb-3" size={32} />
-                <p className="text-sm font-bold text-slate-600">{t("printer.searchOrderOrLot", "Zoek een order of lotnummer")}</p>
-                <p className="text-xs text-slate-400 font-medium mt-1">{t("printer.typeReferenceToViewLabels", "Typ een referentie in de zoekbalk om labels te bekijken.")}</p>
-              </div>
-            )}
-
-            {results.length === 0 && orderStr.trim() && !loading && (
-              <div className="py-12 border-2 border-dashed border-slate-200 rounded-[30px] flex flex-col items-center justify-center text-center bg-slate-50/50">
-                <div className="p-4 bg-slate-100 text-slate-400 rounded-full mb-3">
-                  <Search size={24} />
+                <div>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">{t('common.stationMachine', 'Station / Machine')}</label>
+                  <select
+                    className="w-full p-3 bg-white border border-slate-200 rounded-xl text-sm font-bold"
+                    value={selectedMachine}
+                    onChange={(e) => setSelectedMachine(e.target.value)}
+                    disabled={machineOptions.length === 0}
+                  >
+                    {machineOptions.length === 0 && <option value="">{t('common.noStationsFound', 'Geen stations gevonden')}</option>}
+                    {machineOptions.map((machine) => (
+                      <option key={machine} value={machine}>{machine}</option>
+                    ))}
+                  </select>
                 </div>
-                <p className="text-sm font-black text-slate-600 uppercase tracking-widest">{t("common.nothingFound")}</p>
-                <p className="text-xs text-slate-400 font-medium mt-1">{t("common.noOrderOrProductFoundFor", { query: orderStr })}</p>
+
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                  <input
+                    type="text"
+                    placeholder={t('printer.searchOrderPlaceholder', 'ZOEK OP ORDER OF PRODUCT')}
+                    className="w-full pl-10 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-300"
+                    value={orderStr}
+                    onChange={(e) => setOrderStr(e.target.value)}
+                  />
+                </div>
               </div>
-            )}
+
+              <div className="mt-4 flex-1 min-h-0 overflow-y-auto bg-white border border-slate-200 rounded-xl">
+                {loadingMachineItems || loadingSearchItems ? (
+                  <div className="h-full flex items-center justify-center text-slate-400 gap-2">
+                    <Loader2 className="animate-spin" size={18} /> {t('common.loadingList', 'Lijst laden...')}
+                  </div>
+                ) : displayItems.length === 0 ? (
+                  <div className="h-full flex items-center justify-center text-center text-slate-400 p-6">
+                    {t('printStationView.noLabelsFound', 'Geen labels gevonden')}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {displayItems.map((item) => {
+                      const itemId = String(item.id || '');
+                      const selected = itemId === selectedOrderId;
+                      return (
+                        <button
+                          key={itemId}
+                          type="button"
+                          onClick={() => setSelectedOrderId(itemId)}
+                          className={`w-full text-left px-3 py-2.5 transition-colors ${selected ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
+                        >
+                          <p className="text-sm font-black text-slate-800 truncate">{getOrderLabelOrder(item)}</p>
+                          <p className="text-xs font-semibold text-slate-500 truncate">{getOrderLabelDescription(item) || getOrderLabelItemCode(item)}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-4 flex flex-col min-h-0">
+              {!selectedOrder ? (
+                <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+                  {t('printStationView.selectOrderFirst', 'Selecteer eerst een order aan de linkerkant.')}
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <div className="md:col-span-2">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">{t('common.template', 'Template')}</label>
+                      <select
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold"
+                        value={selectedTemplateId}
+                        onChange={(e) => setSelectedTemplateId(e.target.value)}
+                        disabled={temporaryTemplates.length === 0}
+                      >
+                        {temporaryTemplates.length === 0 && <option value="">{t('printer.noMatchingTemporaryTemplate', 'Geen tijdelijke labels beschikbaar')}</option>}
+                        {temporaryTemplates.map((template) => (
+                          <option key={String(template.id)} value={String(template.id)}>{String(template.name || template.id)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">{t('common.amount', 'Aantal')}</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={printCount}
+                        onChange={(e) => setPrintCount(e.target.value)}
+                        onBlur={() => setPrintCount(String(Math.max(1, Math.min(100, Number.parseInt(printCount, 10) || 1))))}
+                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-3">
+                    {previewTemplates.length > 0 ? (
+                      <div className="space-y-3">
+                        {previewTemplates.map((template, idx) => (
+                          <div key={String(template.id || idx)} className="bg-white border border-slate-200 rounded-xl p-2">
+                            {previewTemplates.length > 1 && (
+                              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-1 pb-1">
+                                {t('printer.labelStep', 'Label {{index}}', { index: idx + 1 })}
+                              </p>
+                            )}
+                            <AutoScaledLabelPreview label={template as any} data={previewData} maxScale={1.5} />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+                        {t('printer.noPreview', 'Geen preview')}
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handlePrintSelected}
+                    disabled={!selectedTemplate || temporaryTemplates.length === 0}
+                    className="mt-3 w-full px-4 py-3 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {t('common.print', 'Print')}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -1106,7 +1158,10 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: Lot
     () => departmentGroups.find((d) => d.key === departmentKey) || departmentGroups[0] || null,
     [departmentGroups, departmentKey]
   );
-  const availableStations = currentDepartment?.stations || [];
+  const availableStations = useMemo(() => {
+    const stations = currentDepartment?.stations || [];
+    return stations.filter((station) => /(^|[^A-Z0-9])BH\d+/i.test(String(station)) || /^40BH\d+/i.test(String(station)) || /^BH\d+/i.test(String(station)));
+  }, [currentDepartment]);
   const parsedStartNum = Math.max(1, parseInt(startNum, 10) || 1);
   const parsedCount = Math.max(1, Math.min(100, parseInt(count, 10) || 1));
 
@@ -1574,15 +1629,11 @@ const PrintQueueAdminView = () => {
       mergeJobs();
     });
 
-    const scopedQ = query(
-      collectionGroup(db, 'items'),
-      where('_scopeType', '==', 'print_queue'),
-      orderBy('createdAt', 'desc'),
-      limit(200)
-    );
-    const unsubscribeScoped = onSnapshot(scopedQ, (snapshot) => {
+    let unsubscribeScopedFallback: (() => void) | null = null;
+
+    const applyScopedSnapshot = (snapshot: any) => {
       scopedJobs = snapshot.docs
-        .filter((docSnap) => isScopedPrintQueuePath(docSnap.ref?.path))
+        .filter((docSnap: any) => isScopedPrintQueuePath(docSnap.ref?.path))
         .map(normalizeJob)
         .filter((job): job is PrintJob => {
           if (!job) return false;
@@ -1590,8 +1641,44 @@ const PrintQueueAdminView = () => {
           return !scopeType || scopeType === 'print_queue';
         });
       mergeJobs();
+    };
+
+    const subscribeScopedFallback = () => {
+      const fallbackQ = query(
+        collectionGroup(db, 'items'),
+        where('_scopeType', '==', 'print_queue'),
+        limit(600)
+      );
+
+      unsubscribeScopedFallback = onSnapshot(fallbackQ, (snapshot) => {
+        applyScopedSnapshot(snapshot);
+      }, (fallbackErr) => {
+        console.error('Error fetching scoped print jobs (fallback):', fallbackErr);
+        scopedJobs = [];
+        mergeJobs();
+      });
+    };
+
+    const scopedQ = query(
+      collectionGroup(db, 'items'),
+      where('_scopeType', '==', 'print_queue'),
+      orderBy('createdAt', 'desc'),
+      limit(600)
+    );
+    const unsubscribeScoped = onSnapshot(scopedQ, (snapshot) => {
+      applyScopedSnapshot(snapshot);
     }, (err) => {
       console.error('Error fetching scoped print jobs:', err);
+
+      const errCode = String((err as { code?: unknown })?.code || '').toLowerCase();
+      const errMessage = String((err as { message?: unknown })?.message || '').toLowerCase();
+      const looksLikeMissingIndex = errCode.includes('failed-precondition') || errMessage.includes('index');
+
+      if (looksLikeMissingIndex && !unsubscribeScopedFallback) {
+        subscribeScopedFallback();
+        return;
+      }
+
       scopedJobs = [];
       mergeJobs();
     });
@@ -1600,6 +1687,7 @@ const PrintQueueAdminView = () => {
       unsubPrinters();
       unsubscribeRoot();
       unsubscribeScoped();
+      if (unsubscribeScopedFallback) unsubscribeScopedFallback();
       // @ts-ignore
       navigator.usb.removeEventListener('connect', handleUsbConnect as EventListener);
       // @ts-ignore
@@ -1876,38 +1964,66 @@ const PrintQueueAdminView = () => {
     }
   };
 
-  const handleDirectLotPrintBatch = async (batchData: string) => {
+  const handleDirectLotPrintBatch = async (batchData: string, lotCount: number) => {
     let deviceToUse = usbDevice;
     if (!deviceToUse) {
-      const requestedDevice = await navigator.usb.requestDevice({ filters: [] });
-      deviceToUse = requestedDevice;
-      setUsbDevice(requestedDevice);
-      localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(requestedDevice.vendorId));
-      localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(requestedDevice.productId));
+      try {
+        const requestedDevice = await navigator.usb.requestDevice({ filters: [] });
+        deviceToUse = requestedDevice;
+        setUsbDevice(requestedDevice);
+        localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(requestedDevice.vendorId));
+        localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(requestedDevice.productId));
 
-      const routingPrinter = resolvePrinterForRouting(printers, {
-        stationId: stationContext || undefined,
-        routeKey: stationContext || undefined,
-      });
-      const usbMatches = printers.filter(
-        (printer) => Number(printer.vendorId) === requestedDevice.vendorId && Number(printer.productId) === requestedDevice.productId
-      );
-      const printerIdToStore = routingPrinter?.id || (usbMatches.length === 1 ? usbMatches[0].id : '');
-      if (printerIdToStore) {
-        if (stationContext) {
-          persistStationBinding(stationContext, printerIdToStore);
-        } else {
-          localStorage.setItem(USB_PRINTER_ID_KEY, printerIdToStore);
+        const routingPrinter = resolvePrinterForRouting(printers, {
+          stationId: stationContext || undefined,
+          routeKey: stationContext || undefined,
+        });
+        const usbMatches = printers.filter(
+          (printer) => Number(printer.vendorId) === requestedDevice.vendorId && Number(printer.productId) === requestedDevice.productId
+        );
+        const printerIdToStore = routingPrinter?.id || (usbMatches.length === 1 ? usbMatches[0].id : '');
+        if (printerIdToStore) {
+          if (stationContext) {
+            persistStationBinding(stationContext, printerIdToStore);
+          } else {
+            localStorage.setItem(USB_PRINTER_ID_KEY, printerIdToStore);
+          }
+        }
+      } catch (usbErr) {
+        const hasQueuePrinter = Boolean(activeQueuePrinter?.id);
+        if (!hasQueuePrinter) {
+          throw usbErr;
         }
       }
     }
 
-    if (!deviceToUse) {
-      throw new Error('Geen USB printer verbonden.');
+    if (deviceToUse) {
+      await printRawUsb(deviceToUse, batchData);
+      setError('');
+      notify(`Lotnummers direct geprint via USB (${lotCount}).`);
+      return;
     }
 
-    await printRawUsb(deviceToUse, batchData);
+    if (!activeQueuePrinter?.id) {
+      throw new Error('Geen USB printer verbonden en geen wachtrijprinter geconfigureerd.');
+    }
+
+    await queuePrintJob(
+      activeQueuePrinter.id,
+      batchData,
+      {
+        description: `Lotnummers batch (${lotCount})`,
+        quantity: 1,
+        stationId: stationContext || selectedStation || 'PRINT_QUEUE_ADMIN',
+        targetPrinterName: activeQueuePrinter.name,
+        queuedAsBatch: true,
+        source: 'lot_number_batch',
+        lotCount,
+      }
+    );
+
     setError('');
+    notify(`Lotnummers in wachtrij gezet (${lotCount}) naar ${String(activeQueuePrinter.name || activeQueuePrinter.id)}.`);
   };
 
   const regenerateBitmapPayloadFromJob = useCallback(async (job: PrintJob): Promise<string | null> => {
@@ -2411,12 +2527,17 @@ const PrintQueueAdminView = () => {
       <div className="mb-8">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {stationGroups.map(station => {
-            const pendingCount = printJobs.filter((j) => {
-              if (!isQueuedJobStatus(j.status)) return false;
-              const stationKey = normalizeStationKey(station);
+            const stationKey = normalizeStationKey(station);
+            const stationJobs = printJobs.filter((j) => {
               const jobStationKeys = getJobStationKeys(j);
               return jobStationKeys.includes(stationKey);
+            });
+
+            const pendingCount = stationJobs.filter((j) => {
+              if (!isQueuedJobStatus(j.status)) return false;
+              return true;
             }).length;
+            const totalCount = stationJobs.length;
             
             return (
               <button 
@@ -2440,6 +2561,9 @@ const PrintQueueAdminView = () => {
                 </div>
                 <h3 className="font-black text-xl text-slate-800 mt-4 uppercase tracking-tight">{station}</h3>
                 <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">{t("printer.printQueue", "Print Queue")}</p>
+                <p className="text-[11px] text-slate-500 font-bold mt-2">
+                  {t("printer.totalJobs", "Totaal jobs")}: {totalCount}
+                </p>
               </button>
             );
           })}
@@ -2621,7 +2745,6 @@ const PrintQueueAdminView = () => {
                                         data={(previewJob.metadata?.variables as Record<string, unknown>) || {}} 
                                       printerDpi={printerDpi}
                                       maxScale={1}
-                                      exactBitmapPreview
                                     />
                                 </div>
                             );

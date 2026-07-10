@@ -152,6 +152,10 @@ export const PATHS: Record<string, string[]> = {
   AI_MEMORY: [BASE, "settings", "ai_memory"],
   AI_CONVERSATIONS: [BASE, "settings", "ai_conversations"],
 
+  // --- GLASS CALCULATION STAMDATA ---
+  GLASS_RULES: [BASE, "settings", "glass_rules"],
+  GLASS_RULE_IMPORTS: [BASE, "settings", "glass_rule_imports"],
+
   // --- LN REFERENTIE OPERATIES (stamdata uit ERP) ---
   REFERENCE_OPERATIONS: [BASE, "settings", "reference_operations"],
   LN_QR_EXPORT_HISTORY: [BASE, "exports", "ln_qr_history"],
