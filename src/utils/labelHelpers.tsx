@@ -237,17 +237,81 @@ const normalizeConnectionLine = (text: string): string =>
     .replace(/\s+/g, "-")
     .replace(/^(TB|CB|FL|AM|AB|CS|CF|FB|LB|SB)\1$/, "$1-$1");
 
+const parseDualDimensionValues = (
+  text: string | null | undefined,
+  data: Record<string, unknown> = {}
+): { primary: number | null; secondary: number | null } => {
+  const pairMatch = String(text || "").match(/(\d{2,4})\s*[xX/]\s*(\d{2,4})/);
+  if (pairMatch) {
+    const primary = Number.parseInt(pairMatch[1], 10);
+    const secondary = Number.parseInt(pairMatch[2], 10);
+    return {
+      primary: Number.isFinite(primary) && primary > 0 ? primary : null,
+      secondary: Number.isFinite(secondary) && secondary > 0 ? secondary : null,
+    };
+  }
+
+  const primaryRaw = data.dn ?? data.diameter ?? data.ID ?? data.id;
+  const secondaryRaw = data.id1 ?? data.ID1 ?? data.secondaryDiameter ?? data.branchDiameter;
+  const primary = Number.parseInt(String(primaryRaw || "0"), 10);
+  const secondary = Number.parseInt(String(secondaryRaw || "0"), 10);
+
+  const isValidDiameter = (value: number): boolean => Number.isFinite(value) && value >= 25 && value <= 3000;
+
+  const parsePackedFromCode = (): { primary: number | null; secondary: number | null } => {
+    const codeText = String(data.itemCode || data.productId || "").toUpperCase();
+    const packedMatches = codeText.match(/\d{5,8}/g) || [];
+
+    for (const packed of packedMatches) {
+      const candidates: Array<[number, number]> = [];
+      if (packed.length === 5) candidates.push([3, 2], [2, 3]);
+      if (packed.length === 6) candidates.push([3, 3], [4, 2], [2, 4]);
+      if (packed.length === 7) candidates.push([4, 3], [3, 4]);
+      if (packed.length === 8) candidates.push([4, 4]);
+
+      for (const [leftLen, rightLen] of candidates) {
+        if (leftLen + rightLen !== packed.length) continue;
+        const left = Number.parseInt(packed.slice(0, leftLen), 10);
+        const right = Number.parseInt(packed.slice(leftLen), 10);
+        if (isValidDiameter(left) && isValidDiameter(right)) {
+          return { primary: left, secondary: right };
+        }
+      }
+    }
+
+    return { primary: null, secondary: null };
+  };
+
+  const packedPair = parsePackedFromCode();
+  if (packedPair.primary !== null && packedPair.secondary !== null) {
+    return packedPair;
+  }
+
+  return {
+    primary: Number.isFinite(primary) && primary > 0 ? primary : null,
+    secondary: Number.isFinite(secondary) && secondary > 0 ? secondary : null,
+  };
+};
+
 // Bepaalt productnaam + graden (voor elbows)
 const parseProductType = (text: string): string => {
   const upper = text.toUpperCase();
   const isSleevelessCoupler = /\bSLEEVE?LESS\b/.test(upper) && (upper.includes("COUPLER") || upper.includes("MOF"));
+  const isShortReducer = /\bRED\s*SHO\b|\bSHORT\s+REDUCER\b/.test(upper);
+  const isWye = /\bWYE\b/.test(upper);
+  const isYTee = /\bY[\s-]?TEE\b/.test(upper);
+  const hasWyeTee = /\bWYE\b|\bY[\s-]?TEE\b/.test(upper);
   const teePairMatch = upper.match(/(\d+)\s*[xX/]\s*(\d+)/);
-  const hasTee = upper.includes("TEE");
+  const hasTee = upper.includes("TEE") || hasWyeTee;
   const isUnequalBySize = teePairMatch && teePairMatch[1] !== teePairMatch[2];
   let type = upper.includes("ELB") || upper.includes("BOCHT")
     ? "ELBOW"
     : upper.includes("ADAPTOR") || upper.includes("ADAPTER")
       ? "ADAPTOR"
+    : isWye
+      ? (isUnequalBySize ? "UNEQUAL-Y-TEE" : "EQUAL-Y-TEE")
+    : isYTee
+      ? (isUnequalBySize ? "UNEQUAL-Y-TEE" : "EQUAL-Y-TEE")
     : upper.includes("UNEQUAL") || upper.includes("VERLOOP TEE") || (hasTee && isUnequalBySize)
       ? "UNEQUAL-TEE"
       : upper.includes("TEE")
@@ -258,6 +322,8 @@ const parseProductType = (text: string): string => {
             ? "BLIND FLANGE"
                 : upper.includes("FLANGE") || upper.includes("FLENS") || /\b(?:FL|STUB)\b/.test(upper)
               ? "FLANGE"
+              : isShortReducer
+                ? "SHORT REDUCER"
               : upper.includes("CONC") || upper.includes("REDCON") || upper.includes("RED CON")
                 ? "CONCENTRIC REDUCER"
                 : upper.includes("ECC") || upper.includes("REDECC") || upper.includes("RED ECC")
@@ -296,6 +362,8 @@ const parseDimensions = (
   const needsDualId =
     productType.includes("REDUCER") ||
     productType.includes("TEE") ||
+    productType === "WYE" ||
+    productType === "Y-TEE" ||
     upperText.includes("REDCON") ||
     upperText.includes("RED CON") ||
     upperText.includes("REDECC") ||
@@ -388,6 +456,12 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
   const upperDesc = desc.toUpperCase();
   const lotNumber = String(rawData.lotNumber || "");
   const isSleevelessCoupler = /\bSLEEVE?LESS\b/.test(upperDesc) && (upperDesc.includes("COUPLER") || upperDesc.includes("MOF"));
+  const hasWyeLikeType = /\bWYE\b|\bY[\s-]?TEE\b/.test(upperDesc);
+  const wyeDisplayType = /\bWYE\b/.test(upperDesc)
+    ? "Y-TEE"
+    : /\bY[\s-]?TEE\b/.test(upperDesc)
+      ? "Y-TEE"
+      : "";
 
   // 1. Bepaal Product Type
   let productType = parseProductType(desc);
@@ -445,6 +519,11 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
   } else if (upperDesc.includes("EST") || upperDesc.includes("EWT") || upperDesc.includes("WAVISTRONG")) {
     materialLine = "Wavistrong";
   }
+  if (wyeDisplayType) {
+    productType = wyeDisplayType;
+    materialLine = wyeDisplayType;
+  }
+  const materialSystemLine = wyeDisplayType || materialLine;
 
   // 3. Bepaal Connecties
   let connectionLine = parseConnections(desc);
@@ -474,6 +553,18 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
 
   // 4. Bepaal Afmetingen
   let idLine = parseDimensions(desc, productType, data);
+  const dualDimensions = parseDualDimensionValues(desc, rawData);
+  const idPrimaryValue = dualDimensions.primary;
+  const idSecondaryValue = dualDimensions.secondary;
+  if (hasWyeLikeType) {
+    productType =
+      idPrimaryValue !== null && idSecondaryValue !== null && idPrimaryValue !== idSecondaryValue
+        ? "UNEQUAL-Y-TEE"
+        : "EQUAL-Y-TEE";
+  }
+  const idDisplay = idPrimaryValue ? `${idPrimaryValue}mm ${toInches(idPrimaryValue)}` : "";
+  const id1Display = idSecondaryValue ? `${idSecondaryValue}mm ${toInches(idSecondaryValue)}` : "";
+  const id1Line = id1Display ? `ID1: ${id1Display}` : "";
   const diaMatch = desc.toUpperCase().match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
   const diameterVal = diaMatch ? parseInt(diaMatch[1], 10) : parseInt(String(rawData.diameter || rawData.dn || 0), 10);
 
@@ -628,10 +719,19 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
     drawing: data.drawing || data.drawingNumber || "N/A",
 
     idLine: idLine,
+    id1Line,
+    id: idDisplay,
+    ID: idDisplay,
+    id1: id1Display,
+    ID1: id1Display,
+    idPrimaryValue: idPrimaryValue || "",
+    idSecondaryValue: idSecondaryValue || "",
     productType: productType,
     pressureLine: pressureLine,
     pressureLineEmt: pressureLineEmt,
     materialLine: materialLine,
+    materialSystemLine,
+    shapeLine: wyeDisplayType || productType,
     connectionLine: connectionLine,
     radiusText: radiusText,
 
@@ -845,6 +945,7 @@ export const filterLabelsByProduct = (
   
   // Basis tags uit type
   if (type) productTags.add(type);
+  if (type === "SHORT REDUCER") productTags.add("REDUCER");
 
   // Verbeterde Type Detectie: Zoek naar specifieke producttypen in de omschrijving
   const knownTypes = ["ELBOW", "TEE", "REDUCER", "FLANGE", "COUPLER", "BLIND FLANGE", "CONCENTRIC REDUCER", "ECCENTRIC REDUCER", "UNEQUAL-TEE", "EQUAL-TEE"];
@@ -853,6 +954,11 @@ export const filterLabelsByProduct = (
       productTags.add(knownType.split('-')[0]); // Add "TEE" for "EQUAL-TEE"
     }
   });
+
+  if (/\bRED\s*SHO\b|\bSHORT\s+REDUCER\b/.test(desc)) {
+    productTags.add("SHORT REDUCER");
+    productTags.add("REDUCER");
+  }
 
     // Detecteer Flens varianten voor label filtering
     if (type === "FLANGE" || /\b(?:FL|FLENS|FLANGE|STUB)\b/.test(desc)) {
@@ -1015,6 +1121,109 @@ export const filterTempOrderLabelsByProduct = (
     }
 
     // Geen specifieke tag gevonden in item
+    return true;
+  });
+};
+
+/**
+ * Strikte filtering voor Order Labels op basis van de ORDERLABELS flag.
+ * Regels zijn verder gelijk aan de legacy/temp orderlabel filtering.
+ */
+export const filterOrderLabelsByProduct = (
+  labels: LabelTemplate[] | null | undefined,
+  product: AnyRecord | null | undefined
+): LabelTemplate[] => {
+  if (!product || !labels) return labels || [];
+
+  const getTemplateSortTime = (label: LabelTemplate): number => {
+    const stamp = label.lastUpdated || label.updatedAt || label.createdAt;
+    if (!stamp) return 0;
+
+    if (typeof stamp === "number") return stamp;
+    if (typeof stamp === "string") {
+      const parsed = Date.parse(stamp);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+
+    if (typeof stamp === "object") {
+      const typedStamp = stamp as {
+        toMillis?: () => number;
+        toDate?: () => Date;
+        seconds?: number;
+      };
+
+      if (typeof typedStamp.toMillis === "function") {
+        return typedStamp.toMillis();
+      }
+
+      if (typeof typedStamp.toDate === "function") {
+        return typedStamp.toDate().getTime();
+      }
+
+      if (typeof typedStamp.seconds === "number") {
+        return typedStamp.seconds * 1000;
+      }
+    }
+
+    return 0;
+  };
+
+  const itemText = `${product.itemCode || product.productId || ""} ${product.description || product.item || ""} ${product.extraCode || product.code || ""} ${product.productType || product.type || ""}`.toUpperCase();
+  const normalizedItemText = itemText.replace(/[^A-Z0-9]+/g, " ").trim();
+
+  const hasItemTag = (tag: string): boolean => {
+    const upperTag = String(tag || "").toUpperCase();
+    return new RegExp(`\\b${upperTag}(?:\\d+)?\\b`).test(normalizedItemText);
+  };
+
+  const itemCstEstEwt = ["CST", "EST", "EWT"].filter(hasItemTag);
+  const itemHasEmt = hasItemTag("EMT");
+  const itemCodeTags = Array.from(new Set((normalizedItemText.match(/\bA\d[A-Z]\d\b/g) || [])));
+  const itemHasAdapter = hasItemTag("ADAPTOR") || hasItemTag("ADAPTER");
+
+  const normalizedTags = (label: LabelTemplate): string[] =>
+    (label.tags || []).map((tag: unknown) => String(tag).toUpperCase().trim());
+  const hasAdapterTag = (tags: string[]): boolean => tags.includes("ADAPTOR") || tags.includes("ADAPTER");
+  const hasOrderLabelsTag = (tags: string[]): boolean =>
+    tags.includes("ORDERLABELS") ||
+    tags.includes("ORDER_LABELS") ||
+    tags.includes("ORDER-LABELS") ||
+    tags.includes("ORDERLABEL") ||
+    tags.includes("ORDER_LABEL");
+
+  const orderLabels = labels.filter((label: LabelTemplate) => {
+    const tags = normalizedTags(label);
+    return hasOrderLabelsTag(tags);
+  }).sort((a: LabelTemplate, b: LabelTemplate) => {
+    const timeDiff = getTemplateSortTime(b) - getTemplateSortTime(a);
+    if (timeDiff !== 0) return timeDiff;
+
+    const nameA = String(a.name || a.id || "").toUpperCase();
+    const nameB = String(b.name || b.id || "").toUpperCase();
+    return nameA.localeCompare(nameB, undefined, { numeric: true });
+  });
+
+  const hasAnyAdapterLabel = orderLabels.some((label: LabelTemplate) => hasAdapterTag(normalizedTags(label)));
+
+  return orderLabels.filter((label: LabelTemplate) => {
+    const tags = normalizedTags(label);
+
+    if (itemHasAdapter && hasAnyAdapterLabel) {
+      return hasAdapterTag(tags);
+    }
+
+    if (itemCodeTags.length > 0) {
+      return itemCodeTags.some(codeTag => tags.includes(codeTag));
+    }
+
+    if (itemHasEmt) {
+      return tags.includes("EMT");
+    }
+
+    if (itemCstEstEwt.length > 0) {
+      return itemCstEstEwt.some(tag => tags.includes(tag));
+    }
+
     return true;
   });
 };

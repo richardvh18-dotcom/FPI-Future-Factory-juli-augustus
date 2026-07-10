@@ -1,3 +1,67 @@
+### Chatvoorkeuren
+- Standaard antwoorden in het Nederlands.
+- Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md).
+- Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
+- Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
+
+---
+
+### Samenvatting sessie 10 July 2026 (geconsolideerd)
+
+Deze dag stond volledig in het teken van stabiliteit, performance en printpariteit tussen Print Stations, Sidebar printers en ProductionStart, met als hoofdthema een betrouwbare Order Labels-flow voor BH-machines.
+
+**1) Print en queue robuustheid**
+- Lotnummers en orderlabels zijn gelijkgetrokken in gedrag: eerst directe USB-print, daarna fallback naar wachtrijprinter indien USB niet beschikbaar of geweigerd is.
+- Queue-jobs kregen rijkere metadata (bron, stationcontext, batch-info) zodat opvolging in de printqueue duidelijker is.
+- In lotnummer-batches is de QR scanbaarheid verbeterd (grotere footprint/modulegrootte, robuustere instellingen) en is de 90mm tekstlayout minder samengedrukt gemaakt.
+
+**2) Order Labels herbouw en data-ophaalfixes**
+- De sidebar-variant (PrintQueueAdminView) is functioneel gelijkgetrokken met de station-variant: BH-machinekeuze, vereenvoudigde orderlijst, grotere preview en labelaantal.
+- Lege lijsten voor BH-machines zijn opgelost via:
+  - importfix van loadFactoryMachinePaths,
+  - BH/40BH alias-resolutie,
+  - fallback via collectionGroup('orders') met machinepad-filtering,
+  - extra Firestore prefix-zoekpad op documentId voor ordernummer-zoekopdrachten.
+- Resultaat: orders onder varianten als BH11/40BH11 worden nu betrouwbaar gevonden en geladen.
+
+**3) Template- en productselectieregels**
+- Order Labels gebruikt nu de ORDERLABELS-tagstrategie (in plaats van tijdelijke/noodtemplate-selectie).
+- Flensproducten worden centraal uitgesloten uit Order Labels.
+- Productnaamcorrectie toegevoegd: RED SHO wordt consequent SHORT REDUCER.
+- Previewkwaliteit verbeterd door het verwijderen van het korrelige exactBitmapPreview-pad in de orderlabel-flow.
+
+**4) WYE / Y-TEE normalisatie en labelvelden**
+- WYE en Y-TEE parsing is gecentraliseerd in labelHelpers met dual-dimension parsing (ook packed codes zoals 08083).
+- Voor labels zijn aparte velden beschikbaar gemaakt voor ID en ID1 (naast gecombineerde idLine).
+- Eindafspraak doorgevoerd: WYE/Y-TEE wordt nu getypeerd als:
+  - UNEQUAL-Y-TEE bij verschillende diameters,
+  - EQUAL-Y-TEE bij gelijke diameters.
+- Hiermee sluiten producttype, templatekeuze en labelweergave beter op elkaar aan.
+
+**5) Productieflow en UI/operationele verbeteringen**
+- ProductionStart producttype-routering is afgestemd op de centrale labelparser, inclusief WYE/Y-TEE-gevallen.
+- Label Manager-header/toolbar is opgeschoond en responsiever gemaakt voor kleinere schermen.
+- Afkeur-naar-nabewerking en restore-cleanup zijn aangescherpt zodat archief-/rejectvelden niet onterecht blijven hangen.
+
+**6) Performance en Teamleader/Workstation**
+- Firestore subscriptions zijn gescoped op actieve afdeling/tab om onnodige parallelle listeners te verminderen.
+- Teamleader lazy loading is tab-afhankelijk gemaakt voor niet-essentiële datasets, met behoud van KPI-kritische data.
+- Doel/resultaat: snellere eerste render en minder achtergrondbelasting op trage verbindingen.
+
+**7) Glass Rules traject (van plan naar implementatie)**
+- Van functioneel plan naar werkende implementatie gegaan voor Glass Calculation Fittings integratie.
+- Toegevoegd: Firestore paden, importmodal, rule parsing, validatie, revisiebeheer, snijlijstmodal, print/export en productcatalogus-tegel.
+- Matchlogica verbeterd zodat optionele verfijnvelden (TW/TWc/TWk/SB) alleen meetellen als ze echt ingevuld zijn.
+- Mappingdocument vastgelegd in docs/GLASS_CALCULATION_SHEET_MAPPING.md.
+
+**Netto dagresultaat**
+- De printketen is robuuster,
+- Order Labels voor BH-machines is functioneel betrouwbaar,
+- WYE/Y-TEE labelgedrag is inhoudelijk gecorrigeerd,
+- en de glass-rules functionaliteit is van analyse naar operationele basis gebracht.
+
+---
+
 ### Update sessie 09 July 2026 (Fix LOSSEN12/18 Firestore pad — v0.1.95)
 
 **Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout → main
