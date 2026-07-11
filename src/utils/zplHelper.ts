@@ -538,6 +538,7 @@ export const generateLotBatchZPL = ({
 
     const dotsPerMm = printerDpi === 300 ? 12 : 8;
     const toDots = (mm: number): number => Math.round(mm * dotsPerMm);
+    const safeFillRatio = Math.max(0.6, Math.min(Number(textFillRatio) || 0.82, 0.95));
 
     // Fijn-afstelling voor 300 DPI: QR iets compacter zodat de code ruim vrij blijft van de scheidingslijn.
     const effectiveQrSizeMm = printerDpi === 300 ? Math.max(8, qrSizeMm - 0.5) : qrSizeMm;
@@ -555,7 +556,6 @@ export const generateLotBatchZPL = ({
     const textAreaStartDots = toDots(qrXmm + effectiveQrSizeMm + gapAfterQrMm);
     const textAreaWidthDots = toDots(labelWidthMm - rightMarginMm - (qrXmm + effectiveQrSizeMm + gapAfterQrMm));
     const lotChars = Math.max(8, ...rows.map((row) => String(row.text || "").length));
-    const safeFillRatio = Math.max(0.6, Math.min(Number(textFillRatio) || 0.82, 0.95));
 
     // Gebruik een minder gecomprimeerde letterbreedte en schaal deze op naar de beschikbare tekstzone.
     // Dit voorkomt dat lotnummers op 90mm visueel "ingedrukt" ogen.
