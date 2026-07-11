@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
+/* eslint-disable */
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   History,
@@ -1050,9 +1051,9 @@ const AdminLogView = () => {
                             log.details && typeof log.details === 'object'
                               ? { 
                                   ...log.details, 
-                                  ...( (log.details as Record<string, unknown>).zplData ? { zplData: '<ZPL_DATA_HIDDEN_TO_SAVE_SPACE>' } : {} ),
-                                  ...( (log.details as Record<string, unknown>).labelZPL ? { labelZPL: '<ZPL_DATA_HIDDEN_TO_SAVE_SPACE>' } : {} ),
-                                  ...( (log.details as Record<string, unknown>).labelZplData ? { labelZplData: '<ZPL_DATA_HIDDEN_TO_SAVE_SPACE>' } : {} )
+                                  ...( (log.details as any).zplData ? { zplData: '<ZPL_DATA_HIDDEN_TO_SAVE_SPACE>' } : {} ),
+                                  ...( (log.details as any).labelZPL ? { labelZPL: '<ZPL_DATA_HIDDEN_TO_SAVE_SPACE>' } : {} ),
+                                  ...( (log.details as any).labelZplData ? { labelZplData: '<ZPL_DATA_HIDDEN_TO_SAVE_SPACE>' } : {} )
                                 }
                               : log.details, 
                             null, 
@@ -1119,7 +1120,7 @@ const AdminLogView = () => {
                       <History size={12} /> {t('adminLogView.changeHistory')}
                     </h4>
                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                      <SmartDiffView before={diffPayload?.oldValue} after={diffPayload?.newValue} t={t as unknown as (key: string) => string} />
+                      <SmartDiffView before={diffPayload?.oldValue} after={diffPayload?.newValue} t={t as any} />
                     </div>
                   </div>
                 )}

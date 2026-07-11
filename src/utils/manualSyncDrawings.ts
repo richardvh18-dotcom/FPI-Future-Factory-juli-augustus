@@ -297,7 +297,8 @@ export const manualSyncDrawings = async (onProgress?: SyncProgressCallback): Pro
       }
 
       // DEBUG: Log de eerste paar pogingen om te zien wat er mis gaat
-      if (current <= 10) { /* no-op */ }
+      if (current <= 10) {
+      }
 
       if (match) {
         // MATCH GEVONDEN! Update planning docs direct met drawing link

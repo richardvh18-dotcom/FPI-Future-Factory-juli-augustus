@@ -489,12 +489,13 @@ export const generateLotBatchZPL = ({
     darkness = 15,
     labelWidthMm = 90,
     labelHeightMm = 13,
-    qrSizeMm = 9,
+    qrSizeMm = 10,
     qrXmm = 2,
-    qrYmm = 2.5,
+    qrYmm = 1,
     qrCellWidth = null,
-    textYmm = 2.5,
-    textHeightMm = 6.5,
+    textYmm = 2.2,
+    textHeightMm = 7,
+    textFillRatio = 0.92,
     rightMarginMm = 2,
     gapAfterQrMm = 2,
     lotTextShiftRightMm = 0,
@@ -514,6 +515,7 @@ export const generateLotBatchZPL = ({
     qrCellWidth?: number | null;
     textYmm?: number;
     textHeightMm?: number;
+    textFillRatio?: number;
     rightMarginMm?: number;
     gapAfterQrMm?: number;
     lotTextShiftRightMm?: number;
@@ -536,21 +538,33 @@ export const generateLotBatchZPL = ({
 
     const dotsPerMm = printerDpi === 300 ? 12 : 8;
     const toDots = (mm: number): number => Math.round(mm * dotsPerMm);
+    const safeFillRatio = Math.max(0.6, Math.min(Number(textFillRatio) || 0.82, 0.95));
+
+    // Fijn-afstelling voor 300 DPI: QR iets compacter zodat de code ruim vrij blijft van de scheidingslijn.
+    const effectiveQrSizeMm = printerDpi === 300 ? Math.max(8, qrSizeMm - 0.5) : qrSizeMm;
+    const effectiveTextFillRatio = printerDpi === 300 ? Math.min(0.95, safeFillRatio + 0.01) : safeFillRatio;
 
     const leftQrX = toDots(qrXmm);
     const qrY = toDots(qrYmm);
     const textY = toDots(textYmm);
     const fontHeightDots = toDots(textHeightMm);
-    const targetQrSizeDots = toDots(qrSizeMm);
-    const autoQrCellWidth = Math.max(2, Math.round(targetQrSizeDots / 24));
+    const targetQrSizeDots = toDots(effectiveQrSizeMm);
+    const autoQrCellWidth = Math.max(3, Math.round(targetQrSizeDots / 24));
     const effectiveQrCellWidth = Number.isFinite(Number(qrCellWidth)) && Number(qrCellWidth) > 0
         ? Number(qrCellWidth)
         : autoQrCellWidth;
-    const textAreaStartDots = toDots(qrXmm + qrSizeMm + gapAfterQrMm);
-    const textAreaWidthDots = toDots(labelWidthMm - rightMarginMm - (qrXmm + qrSizeMm + gapAfterQrMm));
-    const lotChars = Math.max(15, ...rows.map((row) => String(row.text || "").length));
-    // Character width is 52% of height for monospace fonts (standard Zebra font)
-    const fontWidthDots = Math.max(1, Math.round(fontHeightDots * 0.52));
+    const textAreaStartDots = toDots(qrXmm + effectiveQrSizeMm + gapAfterQrMm);
+    const textAreaWidthDots = toDots(labelWidthMm - rightMarginMm - (qrXmm + effectiveQrSizeMm + gapAfterQrMm));
+    const lotChars = Math.max(8, ...rows.map((row) => String(row.text || "").length));
+
+    // Gebruik een minder gecomprimeerde letterbreedte en schaal deze op naar de beschikbare tekstzone.
+    // Dit voorkomt dat lotnummers op 90mm visueel "ingedrukt" ogen.
+    const targetTextWidthDots = Math.max(1, Math.round(textAreaWidthDots * effectiveTextFillRatio));
+    const fittedWidthFromArea = Math.max(1, Math.floor(targetTextWidthDots / lotChars));
+    const minFontWidthDots = Math.max(1, Math.round(fontHeightDots * 0.6));
+    const maxFontWidthDots = Math.max(minFontWidthDots, Math.round(fontHeightDots * 1.1));
+    const fontWidthDots = Math.max(minFontWidthDots, Math.min(fittedWidthFromArea, maxFontWidthDots));
+
     const estimatedTextWidthDots = lotChars * fontWidthDots;
     const lotTextShiftRightDots = toDots(lotTextShiftRightMm);
     const textX = Math.max(
@@ -568,7 +582,7 @@ export const generateLotBatchZPL = ({
         zplBatch += `^PW${toDots(labelWidthMm)}`;
         zplBatch += `^LL${toDots(labelHeightMm)}`;
         zplBatch += `^MD${darkness}`;
-        zplBatch += `^FO${leftQrX},${qrY}^BQN,2,${effectiveQrCellWidth},Q,7^FDQA,${row.qrValue}^FS`;
+        zplBatch += `^FO${leftQrX},${qrY}^BQN,2,${effectiveQrCellWidth},Q^FDQA,${row.qrValue}^FS`;
         zplBatch += `^FO${textX},${textY}^A0N,${safeFontHeight},${fontWidthDots}^FD${row.text}^FS`;
         zplBatch += `^FO${toDots(separatorXmm)},${toDots(separatorYmm)}^GB${toDots(separatorWidthMm)},1,1^FS`;
         if (isLast) {

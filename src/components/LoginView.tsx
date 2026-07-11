@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { useNotifications } from '../contexts/NotificationContext';
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";

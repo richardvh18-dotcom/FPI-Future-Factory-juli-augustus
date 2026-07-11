@@ -56,7 +56,12 @@ export const useTeamleaderModalData = ({
 				const status = String(p?.status || "").toLowerCase();
 				const step = String(p?.currentStep || "").toLowerCase();
 				return ["rejected", "afkeur"].includes(status) || step === "rejected";
-			});
+			}).map((p) => ({
+				...p,
+				archived: true,
+				isArchivedOrder: true,
+				archivedAt: p?.archivedAt || p?.updatedAt || p?.createdAt || null,
+			}));
 			data = [...activeRejected, ...archivedRejected];
 		} else if (["tijdelijke_afkeur", "temp_rejected", "tijdelijke afkeur", "tijdelijk_afkeur"].includes(activeKpi)) {
 			data = rawProducts

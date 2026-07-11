@@ -116,15 +116,6 @@ const isPermissionDeniedError = (error: any) => {
   return code.includes("permission-denied") || message.includes("insufficient permissions");
 };
 
-const isClientOffline = (): boolean =>
-  typeof navigator !== "undefined" && navigator.onLine === false;
-
-const isFirestoreOfflineError = (error: any): boolean => {
-  const code = String(error?.code || "").toLowerCase();
-  const message = String(error?.message || "").toLowerCase();
-  return code.includes("unavailable") || message.includes("client is offline");
-};
-
 const normalizeStationBindingKey = (value: unknown): string =>
   String(value || "").trim().toUpperCase().replace(/\s+/g, "");
 
@@ -292,11 +283,15 @@ const isSleevelessCouplerOrder = (order: any): boolean => {
 
 const getOrderProductTypeKey = (order: any): string => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
+  const teePairMatch = itemIdentifier.match(/(\d+)\s*[xX/]\s*(\d+)/);
+  const hasWyeTee = /\bWYE\b|\bY[\s-]?TEE\b/.test(itemIdentifier);
+  const hasTee = itemIdentifier.includes("TEE") || hasWyeTee;
+  const isUnequalBySize = teePairMatch && teePairMatch[1] !== teePairMatch[2];
   if (isSleevelessCouplerOrder(order)) return "COUPLER";
   if (itemIdentifier.includes("ELB") || itemIdentifier.includes("BOCHT")) return "ELBOW";
   if (itemIdentifier.includes("FLANGE") || itemIdentifier.includes("FLENS")) return "FLANGE";
-  if (itemIdentifier.includes("UNEQUAL") || itemIdentifier.includes("VERLOOP TEE")) return "UNEQUAL-TEE";
-  if (itemIdentifier.includes("TEE")) return "EQUAL-TEE";
+  if (itemIdentifier.includes("UNEQUAL") || itemIdentifier.includes("VERLOOP TEE") || (hasTee && isUnequalBySize)) return "UNEQUAL-TEE";
+  if (hasTee) return "EQUAL-TEE";
   if (itemIdentifier.includes("REDUCER") || itemIdentifier.includes("VERLOOP")) return "REDUCER";
   if (itemIdentifier.includes("COUPLER") || itemIdentifier.includes("MOF")) return "COUPLER";
   if (itemIdentifier.includes("ADAPTOR") || itemIdentifier.includes("ADAPTER")) return "ADAPTOR";
@@ -954,11 +949,6 @@ const ProductionStartModal = ({
       const normalizedLot = String(lotToCheck || "").trim().toUpperCase();
       if (!normalizedLot) return false;
 
-      if (isClientOffline()) {
-        lotExistsCacheRef.current.set(normalizedLot, { exists: false, checkedAt: Date.now() });
-        return false;
-      }
-
       const now = Date.now();
       const cached = lotExistsCacheRef.current.get(normalizedLot);
       if (cached && now - cached.checkedAt < 15000) {
@@ -1032,25 +1022,13 @@ const ProductionStartModal = ({
       lotExistsCacheRef.current.set(normalizedLot, { exists, checkedAt: now });
       return exists;
     } catch (error: any) {
-      if (!isFirestoreOfflineError(error)) {
-        console.error("Fout bij lot validatie:", error);
-      }
+      console.error("Fout bij lot validatie:", error);
       return false;
     }
   };
 
   const getHighestSequenceForBaseLot = async (baseLotStr: string, stationId: string, weekSuffix: string) => {
     let maxSeq = 0;
-
-    if (isClientOffline()) {
-      existingProducts?.forEach((p: any) => {
-        const lot = String(p?.lotNumber || p?.activeLot || "");
-        if (!lot.startsWith(baseLotStr)) return;
-        const seq = parseInt(lot.substring(baseLotStr.length).replace(/[^0-9]/g, ""), 10);
-        if (Number.isFinite(seq) && seq > maxSeq) maxSeq = seq;
-      });
-      return maxSeq;
-    }
     
     const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const counterDocId = `${safeStationId}_${weekSuffix}`;
@@ -1075,9 +1053,7 @@ const ProductionStartModal = ({
             return Math.max(maxSeq, Number.isFinite(counterValue) ? counterValue : 0);
         }
     } catch (e: any) {
-        if (!isFirestoreOfflineError(e)) {
-          console.error("Fout bij lezen counter:", e);
-        }
+        console.error("Fout bij lezen counter:", e);
     }
 
     try {
@@ -1129,9 +1105,7 @@ const ProductionStartModal = ({
         }
 
     } catch (error: any) {
-        if (!isFirestoreOfflineError(error)) {
-          console.error("Fout bij ophalen max sequence:", error);
-        }
+        console.error("Fout bij ophalen max sequence:", error);
     }
 
     try {
@@ -1151,8 +1125,6 @@ const ProductionStartModal = ({
   };
 
   const consumeRecycledSequence = async (baseLot: string, station: string, weekSuffix: string) => {
-    if (isClientOffline()) return null;
-
     const safeStationId = (station || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const counterDocId = `${safeStationId}_${weekSuffix}`;
     const counterRef = doc(db, getPathString(PATHS.COUNTERS), counterDocId);
@@ -1399,13 +1371,9 @@ const ProductionStartModal = ({
             setLotError("");
         }
       } catch (error: any) {
-        if (!isFirestoreOfflineError(error)) {
-          console.error("Error setting lot number", error);
-        }
+        console.error("Error setting lot number", error);
         if (isMounted && lotRefreshRunIdRef.current === runId) {
-          setLotError(isClientOffline()
-            ? "Offline: lotcontrole tijdelijk beperkt."
-            : "Waarschuwing: Kan uniciteit niet garanderen.");
+          setLotError("Waarschuwing: Kan uniciteit niet garanderen.");
         }
       } finally {
         if (isMounted && lotRefreshRunIdRef.current === runId) {
@@ -1879,6 +1847,12 @@ const ProductionStartModal = ({
         }
       }
 
+      // Ensure queue mode resolves a target printer before start options are computed.
+      // Without this, skipStartLabel can become true while no queue printer exists.
+      if (printConfig.mode === "queue" && !isFlangeOrder && !targetPrinter && templateIdsToPrint.length > 0) {
+        targetPrinter = await resolveTargetPrinterAsync();
+      }
+
       const batchCount = Array.isArray(lotBatchLots) && lotBatchLots.length > 0 ? lotBatchLots.length : totalToProduce;
 
       updateOperation(startOpId, "Bezig met starten...");
@@ -1899,6 +1873,7 @@ const ProductionStartModal = ({
               isFlangeSeries: isFlangeOrder,
               skipStartLabel: isFlangeOrder || (
                 printConfig.mode === "queue" &&
+                Boolean(targetPrinter) &&
                 labelsToPrint > 0 &&
                 templateIdsToPrint.length > 0
               ),
@@ -1990,9 +1965,9 @@ const ProductionStartModal = ({
             }
           }
           showSuccess(t("productionStartModal.notifications.labelsQueued", { count: totalQueuedCount, printer: targetPrinter.name }));
-        } else if (!isManualMode) {
-          // Alleen een waarschuwing tonen als we niet in handmatige modus zitten en er geen printer is
+        } else {
           console.warn(`Geen printer geconfigureerd voor station ${stationId}, labels overgeslagen.`);
+          notify(`Geen printer geconfigureerd voor station ${stationId}; labels zijn niet in de wachtrij gezet.`);
         }
       }
 

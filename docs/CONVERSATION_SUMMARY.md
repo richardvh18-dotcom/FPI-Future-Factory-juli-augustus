@@ -1,255 +1,88 @@
-### 📋 Openstaande Taken & Geplande Roadmap
-
-**Hieronder vind je de gebundelde openstaande taken en wensen uit eerdere sessies:**
-
-1. **Beveiliging & Firestore (Prioriteit)**
-   - Firestore rules hardenen (implementatie van RBAC via custom claims).
-   - Geplande Firestore-exports inrichten en een periodieke restore-test inbouwen.
-
-2. **Codebase Opschonen (Fase 4)**
-   - ~~Console logs en openstaande TODO's opruimen in de productiepaden (Log cleanup).~~ (✅ Afgerond)
-
-3. **Internationalisatie (i18n)**
-   - ~~Start de i18n vertaling voor `src/components/planning/AutomationRulesView.jsx` (vervangen van vaste teksten door `t()` calls).~~ (✅ Reeds uitgevoerd)
-
-4. **Documentatie & Architectuur (Review Aanbeveling)**
-   - Eventueel extra inhoudelijke slides toevoegen aan het Kennis Centrum / de Dashboard Roadmap.
-   - ~~Een Architectuurdocument (docs/ARCHITECTURE.md) opstellen zodat nieuwe ontwikkelaars sneller kunnen instappen.~~ (✅ Afgerond)
-   - **Nieuw:** Strategische visie voor AI-First MES vastgelegd in [VISION.md](file:///d:/Antygravity/FPI-Future-Factory-juli-augustus/docs/VISION.md). Dit document beschrijft de langetermijnvisie en de 5 stappen naar AI-readiness.
-
-5. **Kwaliteitsborging & Testen (Review Aanbeveling)**
-   - Resterende ny types in de codebase zoveel mogelijk vervangen door sterke TypeScript-types.
-   - Controleren of alle nieuwe (en bestaande) hooks goed getest zijn met unit tests (bijv. via Jest/React Testing Library).
-
-6. **Firestore Persistence (Tablets op de vloer)**
-    - ~~Onderzoeken en oplossen van de Firestore quota-fout (`installHook.js:1 Firestore persistence tijdelijk uitgeschakeld na quota-fout; memory cache actief.`).~~ (✅ Oorzaak vastgesteld en recovery-flow aangepast)
-    - Persistence weer activeren/optimaliseren voor de tablets op de werkvloer om betrouwbaarheid bij netwerkuitval (offline cache) te borgen.
+### Chatvoorkeuren
+- Standaard antwoorden in het Nederlands.
+- Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md).
+- Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
+- Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
 
 ---
 
-### Update sessie 11 July 2026 (.env file configuratie)
+### Samenvatting sessie 10 July 2026 (geconsolideerd)
 
-**Datum:** 11 July 2026 | **Branch:** FPiFF-June-rolout
+Deze dag stond volledig in het teken van stabiliteit, performance en printpariteit tussen Print Stations, Sidebar printers en ProductionStart, met als hoofdthema een betrouwbare Order Labels-flow voor BH-machines.
 
-**Uitgevoerd:**
-- `.env` file aangemaakt met de opgegeven Firebase, Google AI en andere vereiste configuraties.
+**1) Print en queue robuustheid**
+- Lotnummers en orderlabels zijn gelijkgetrokken in gedrag: eerst directe USB-print, daarna fallback naar wachtrijprinter indien USB niet beschikbaar of geweigerd is.
+- Queue-jobs kregen rijkere metadata (bron, stationcontext, batch-info) zodat opvolging in de printqueue duidelijker is.
+- In lotnummer-batches is de QR scanbaarheid verbeterd (grotere footprint/modulegrootte, robuustere instellingen) en is de 90mm tekstlayout minder samengedrukt gemaakt.
+
+**2) Order Labels herbouw en data-ophaalfixes**
+- De sidebar-variant (PrintQueueAdminView) is functioneel gelijkgetrokken met de station-variant: BH-machinekeuze, vereenvoudigde orderlijst, grotere preview en labelaantal.
+- Lege lijsten voor BH-machines zijn opgelost via:
+  - importfix van loadFactoryMachinePaths,
+  - BH/40BH alias-resolutie,
+  - fallback via collectionGroup('orders') met machinepad-filtering,
+  - extra Firestore prefix-zoekpad op documentId voor ordernummer-zoekopdrachten.
+- Resultaat: orders onder varianten als BH11/40BH11 worden nu betrouwbaar gevonden en geladen.
+
+**3) Template- en productselectieregels**
+- Order Labels gebruikt nu de ORDERLABELS-tagstrategie (in plaats van tijdelijke/noodtemplate-selectie).
+- Flensproducten worden centraal uitgesloten uit Order Labels.
+- Productnaamcorrectie toegevoegd: RED SHO wordt consequent SHORT REDUCER.
+- Previewkwaliteit verbeterd door het verwijderen van het korrelige exactBitmapPreview-pad in de orderlabel-flow.
+
+**4) WYE / Y-TEE normalisatie en labelvelden**
+- WYE en Y-TEE parsing is gecentraliseerd in labelHelpers met dual-dimension parsing (ook packed codes zoals 08083).
+- Voor labels zijn aparte velden beschikbaar gemaakt voor ID en ID1 (naast gecombineerde idLine).
+- Eindafspraak doorgevoerd: WYE/Y-TEE wordt nu getypeerd als:
+  - UNEQUAL-Y-TEE bij verschillende diameters,
+  - EQUAL-Y-TEE bij gelijke diameters.
+- Hiermee sluiten producttype, templatekeuze en labelweergave beter op elkaar aan.
+
+**5) Productieflow en UI/operationele verbeteringen**
+- ProductionStart producttype-routering is afgestemd op de centrale labelparser, inclusief WYE/Y-TEE-gevallen.
+- Label Manager-header/toolbar is opgeschoond en responsiever gemaakt voor kleinere schermen.
+- Afkeur-naar-nabewerking en restore-cleanup zijn aangescherpt zodat archief-/rejectvelden niet onterecht blijven hangen.
+
+**6) Performance en Teamleader/Workstation**
+- Firestore subscriptions zijn gescoped op actieve afdeling/tab om onnodige parallelle listeners te verminderen.
+- Teamleader lazy loading is tab-afhankelijk gemaakt voor niet-essentiële datasets, met behoud van KPI-kritische data.
+- Doel/resultaat: snellere eerste render en minder achtergrondbelasting op trage verbindingen.
+
+**7) Glass Rules traject (van plan naar implementatie)**
+- Van functioneel plan naar werkende implementatie gegaan voor Glass Calculation Fittings integratie.
+- Toegevoegd: Firestore paden, importmodal, rule parsing, validatie, revisiebeheer, snijlijstmodal, print/export en productcatalogus-tegel.
+- Matchlogica verbeterd zodat optionele verfijnvelden (TW/TWc/TWk/SB) alleen meetellen als ze echt ingevuld zijn.
+- Mappingdocument vastgelegd in docs/GLASS_CALCULATION_SHEET_MAPPING.md.
+
+**Netto dagresultaat**
+- De printketen is robuuster,
+- Order Labels voor BH-machines is functioneel betrouwbaar,
+- WYE/Y-TEE labelgedrag is inhoudelijk gecorrigeerd,
+- en de glass-rules functionaliteit is van analyse naar operationele basis gebracht.
 
 ---
 
-### Update sessie 09 July 2026 (PrintQueue index fallback + performance)
+### Update sessie 09 July 2026 (Fix LOSSEN12/18 Firestore pad — v0.1.95)
 
-**Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout
+**Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout → main
 
 **Probleem:**
-- Startup bleef traag en de console liet zien dat de nieuwe scoped query in `PrintQueueAutoProcessor` faalde met `The query requires an index ... index is currently building`.
-- Door die fout bleef de listener opnieuw proberen, wat extra load en logging-ruis veroorzaakte tijdens het laden.
+- Werkstation `LOSSEN12/18` kon geen orders laden: `FirebaseError: Invalid collection reference. Collection references must have an odd number of segments, but future-factory/production/digital_planning/Fittings/machines/40LOSSEN12/18/orders has 8.`
+- Oorzaak: de `/` in de stationnaam werd door Firestore als pad-scheiding geïnterpreteerd, waardoor het pad 8 segmenten kreeg i.p.v. 7.
+- `LOSSEN12/18` viel door naar `isWindingStation` omdat de `isCentralStation`-check alleen `LOSSEN` en `GEREED` bevatte.
 
 **Uitgevoerd:**
-- In `src/components/printer/PrintQueueAutoProcessor.tsx` is een index-aware fallback toegevoegd voor de scoped queue-listener.
-- Eerst wordt de snelle scoped query geprobeerd (`_scopeType == print_queue` + `status == pending`).
-- Bij `failed-precondition` / `requires an index` schakelt de code automatisch over naar een fallback-query op alleen `status == pending`, met bestaande padfiltering op printqueue-items.
+- In `WorkstationHub.tsx` `"LOSSEN12/18"` toegevoegd aan de `isCentralStation`-array.
+- Station gebruikt nu de `collectionGroup`-aanpak (zoals `LOSSEN`/`GEREED`), wat aansluit op de bestaande `isLossen1218Station` filterlogica (regel ~1903).
 
-**Resultaat:**
-- Geen herhalende scoped query-fouten meer terwijl de composite index nog buildt.
-- Auto-processor blijft functioneel tijdens index-opbouw en startup blijft stabieler.
-- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
-
-### Naverbetering (zelfde sessie): actieve-printer query-scope
-
-**Aanleiding:**
-- Laden bleef nog traag met lange Firestore `success` handlers (>1s), ondanks de index-fallback.
-
-**Uitgevoerd:**
-- `PrintQueueAutoProcessor` leest queue-data nu gericht voor alleen de actieve printer (`printerId == activePrinterId`) i.p.v. brede queue-scans.
-- Zowel root queue als scoped `items`-listener filteren daarna alleen op `status === pending`.
-
-**Resultaat:**
-- Minder documenten per snapshot en lagere client-side merge/sort belasting tijdens startup.
-- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
-
-### Naverbetering (zelfde sessie): dubbele berichten-listeners verwijderd
-
-**Aanleiding:**
-- Startup bleef traag met veel Firestore `success` handlers terwijl printqueue-load al was beperkt.
-
-**Uitgevoerd:**
-- In `PortalView` is de aparte `useMessages` realtime listener verwijderd.
-- `PortalView` gebruikt nu de centrale `unreadCount` uit `NotificationContext` store.
-- In `NotificationContext` is de berichtenquery versmald: alleen admins luisteren op `[eigen e-mail, admin]`; overige gebruikers alleen op `[eigen e-mail]`.
-
-**Resultaat:**
-- Minder parallelle listeners en minder berichtendocumenten per snapshot bij app-start.
-- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
-
-### Naverbetering (zelfde sessie): offline guard op conversie + lotgeneratie
-
-**Aanleiding:**
-- Console bleef gevuld met `Failed to get document because the client is offline` in `conversionLogic.ts` en `ProductionStartModal.tsx`, met merkbare traagheid tijdens laden/herproberen.
-
-**Uitgevoerd:**
-- In `src/utils/conversionLogic.ts`:
-    - Vroege offline short-circuit toegevoegd voor lookup calls.
-    - Offline Firestore-fouten (`unavailable` / `client is offline`) worden niet meer als harde error gespamd.
-    - Offline waarschuwing wordt gethrottled (cooldown) om log-stormen te vermijden.
-- In `src/components/digitalplanning/modals/ProductionStartModal.tsx`:
-    - Vroege offline checks toegevoegd in lot-validatie en sequence-bepaling.
-    - Zware Firestore lotqueries worden overgeslagen wanneer de client offline is.
-    - Offline Firestore-fouten worden niet meer herhaald als harde errors gelogd.
-
-**Resultaat:**
-- Minder retry-spam en minder blokkerende Firestore calls tijdens offline momenten.
-- Stabilere UI-respons bij laden wanneer netwerk tijdelijk wegvalt.
-- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
-
-### Naverbetering (zelfde sessie): app-root listener reductie
-
-**Aanleiding:**
-- Ondanks eerdere optimalisaties bleven Firestore `success` handlers lang duren tijdens startup.
-
-**Uitgevoerd:**
-- In `src/App.tsx` is de extra globale `useMessages` subscription verwijderd (dubbele listener naast `NotificationContext`).
-- `PrintQueueAutoProcessor` draait nu alleen nog wanneer printertoegang effectief nodig is (`canAccessPrinters`).
-- In `src/contexts/NotificationContext.tsx` is de messages listener begrensd met `limit(100)` om snapshot-omvang te beperken.
-
-**Resultaat:**
-- Minder always-on realtime listeners bij app-start.
-- Lagere Firestore snapshot load op routes waar print/logica niet nodig is.
-- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
-
-### Naverbetering (zelfde sessie): persistence recovery-policy aangescherpt
-
-**Aanleiding:**
-- Gebruikerservaring bleef traag en voelde alsof Firestore offline persistence niet meer terug inschakelde na eerdere quota/assertion incidenten.
-
-**Uitgevoerd:**
-- In `src/config/firebase.ts` de recovery-policy gemigreerd naar `v2` met automatische reset van oude/stale disable-flags.
-- Quota backoff-vensters sterk verkort (`2 min`, `5 min`, `15 min` i.p.v. lange periodes).
-- Harde disable op assertion-only events verwijderd; bij assertions blijft app actief en probeert persistence bij volgende init opnieuw.
-- Guard toegevoegd die een actieve disable-periode maximaal op 30 minuten begrenst.
-
-**Resultaat:**
-- Persistence kan niet meer langdurig “blijven hangen” op memory-cache door oude flags.
-- Sneller herstel terug naar IndexedDB persistence na incidenten.
-- Geen deploy uitgevoerd; wijziging alleen lokaal + git.
-
----
-
-### Update sessie 09 July 2026 (Firestore Persistence Recovery)
-
-**Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout
-
-**Probleem:**
-- Firestore offline persistence stond feitelijk permanent uit doordat in `src/config/firebase.ts` een harde emergency-switch actief was.
-- Na een quota-fout schakelde de app bovendien voor 24 uur over op `memoryLocalCache`, waardoor tablets geen duurzame offline cache meer gebruikten.
-- De daadwerkelijke quota-explosie kwam uit Firestore multi-tab shared client state: `persistentMultipleTabManager()` schreef mutation metadata weg in `localStorage`, wat op de tablets `QuotaExceededError` en daarna `Unexpected state` assertion-loops veroorzaakte.
-
-**Uitgevoerd:**
-- De harde blokkade vervangen door een expliciete env-switch: `VITE_FIRESTORE_PERSISTENCE_DISABLED=1` is nu nodig om persistence bewust uit te zetten.
-- De quota-recovery flow aangepast naar oplopende tijdelijke backoff (`15 min`, `1 uur`, `6 uur`) in plaats van een vaste disable-periode van 24 uur.
-- Firestore persistentie teruggezet naar single-tab gedrag door de expliciete `persistentMultipleTabManager()` te verwijderen; daardoor gebruikt de SDK geen mutation shared-state in `localStorage` meer.
-- Herstelstate wordt nu automatisch opgeschoond zodra Firestore weer succesvol met `persistentLocalCache` initialiseert.
-- TypeScript validatie uitgevoerd: `npx tsc --noEmit` geslaagd.
-
-**Resultaat:**
-- Firestore persistence is opnieuw de standaard voor tablets op de vloer.
-- Bij quota-problemen valt de app nog steeds veilig terug, maar probeert zij later gecontroleerd opnieuw IndexedDB-persistentie te activeren.
-- Geen deploy uitgevoerd; wijziging alleen lokaal vastgelegd voor git.
-
----
-
-### Update sessie 09 July 2026 (Terminal.tsx Acties Refactor)
-
-**Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout
-
-**Uitgevoerd (Stap 4 Voltooid):**
-- De actie logica in `Terminal.tsx` (o.a. scannen, productie starten, tekeningen openen, reparaties afhandelen) is succesvol geëxtraheerd naar een nieuwe custom hook: `src/components/digitalplanning/terminal/useTerminalActions.ts`.
-- `Terminal.tsx` roept deze hook nu aan en geeft de gegenereerde functies en states door, waardoor het bestand sterk is vereenvoudigd tot een schone UI-wrapper.
-- Zowel TypeScript validatie (`npx tsc --noEmit`) als linting (`npm run lint`) zijn gepasseerd na de herstructurering.
-
-**Resultaat:**
-- `Terminal.tsx` is vrijgemaakt van zware bedrijfslogica. Het "Centralisatie AI-services en prompt management" voor deze component is daarmee succesvol verwezenlijkt.
-
----
-
-### Update sessie 09 July 2026 (BM01Hub.tsx Refactor Afronding)
-
-**Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout
-
-**Uitgevoerd (Stap 3 Voltooid):**
-- De gigantische `BM01Hub.tsx` (~1550 regels) succesvol opgedeeld in kleinere, onderhoudbare componenten.
-- Drie nieuwe tab-componenten gecreëerd in `src/components/digitalplanning/bm01/`:
-  - `BM01InspectionTab.tsx` (UI voor QA inspecties, afkeuringslogica en steekproeven)
-  - `BM01HistoryTab.tsx` (UI voor archiefweergave en lot-historie)
-  - `BM01NahardingTab.tsx` (UI voor naharding, exportresets en labels printen)
-- `BM01Hub.tsx` fungeert nu enkel als orkestrator die de state beheert via `useBM01Data` en delegeert naar de juiste child component.
-- Zowel TypeScript validatie (`npx tsc --noEmit`) als linting (`npm run lint`) zijn naadloos gepasseerd.
-
-**Resultaat:**
-- `BM01Hub.tsx` is nu schoon, leesbaar en strikt getypeerd, waarmee de technische schuld van deze component volledig is afgelost.
-
----
-
-## [2026-07-08] Sessie Update (Avond)
-**Voortgang BM01Hub.tsx Refactor (Stap 3):**
-- Data logica succesvol ge�xtraheerd naar src/components/digitalplanning/bm01/useBM01Data.ts.
-- Types succesvol gecentraliseerd in src/components/digitalplanning/bm01/bm01Types.ts.
-- Grote TypeScript-errors opgelost (ts-morph AST transformatie gebruikt).
-- 
-px tsc --noEmit succesvol 100% foutloos voor deze specifieke aanpassingen.
-- **Volgende stap voor morgen:** Het visuele deel (JSX) van \BM01Hub.tsx\ uitsplitsen in kleinere componenten (\BM01InspectionTab\, \BM01HistoryTab\, \BM01NahardingTab\).
-
-
-### Update sessie 08 July 2026 (Stap 1: TypeScript & Linting Perfectie)
-
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
-
-**Probleem:**
-- De codebase bevatte nog veel `any` types, missende interfaces en linting fouten (`eslint-disable`).
-- De TypeScript compiler `tsc --noEmit` faalde op tientallen plekken.
-- De gebruiker wilde een "perfect kloppende" oplossing zonder quick-fixes (zoals `any` of `never` casts).
-
-**Uitgevoerd (Stap 1 onafhankelijk):**
-- Alle `/* eslint-disable */` regels en overtredingen verwijderd.
-- Firebase Auth User types en `AdminUser` types correct op elkaar afgestemd (d.m.v. gerichte properties casting).
-- Firebase Document types via `Record<string, unknown>` opgelost voor datareaders.
-- Strikte TS-interfaces toegevoegd waar data-transformaties missend waren (bijv. `PersonnelStats` in `PersonnelManager`).
-- `ProductForm`, `Terminal`, `AdminPrinterManager`, `AdminToolingMoldsView` en `QcSampleView` type-safe gemaakt zónder escape hatches.
-- Beide checks (`npm run lint` en `npx tsc --noEmit`) passeren nu 100% succesvol (exit code 0).
-
-**Resultaat:**
-- Stap 1 (Linting en TypeScript - perfect kloppend) is volledig, onafhankelijk en succesvol afgerond!
-
----
-
-### Geplande werkzaamheden (Stap 2: Opsplitsen van grote componenten)
-
-**Datum:** 08 July 2026 | **Status:** Gepland
-
-**Aanpak voor `Terminal.tsx`:**
-- Huidige grootte: ~64KB. Bevat veel geneste states en views.
-- **Stap 2 (Afgerond):**
-  - Implementatieplan voor component-opsplitsing opgesteld en goedgekeurd.
-  - `src/components/digitalplanning/terminal/useTerminalData.ts` gecreëerd en geïntegreerd in `Terminal.tsx`.
-  - Ongeveer 900 regels aan data logica succesvol ontkoppeld van de UI en vervangen door een overzichtelijke hook call in de hoofd component.
-  - Type validatie is uitgevoerd en alles sluit naadloos aan.
-- **Stap 3 (Gepland):** Refactor BM01Hub.tsx
-- **Stap 4 (Gepland):** Centralisatie AI-services en prompt management.
-  - `src/components/digitalplanning/terminal/useTerminalActions.ts`: Groepeert logica voor starten, lossen, afronden en verplaatsen van orders.
-  - `Terminal.tsx` wordt opgeschoond tot een UI-wrapper die voornamelijk tab-routering beheert en data doorgeeft aan de sub-views.
-
-**Aanpak voor `BM01Hub.tsx`:**
-- Huidige grootte: ~109KB (bijna 2000 regels). Grote hoeveelheid JSX en logica gecombineerd.
-- **Nieuwe mapstructuur:** `src/components/digitalplanning/bm01/`
-- **Nieuwe bestanden:**
-  - `useBM01Data.ts`: Data-laag voor `bm01Products`, archieven en order/product-mismatches.
-  - `BM01InspectionTab.tsx`: UI voor QA inspecties, afkeuringslogica en steekproeven.
-  - `BM01HistoryTab.tsx`: UI voor de archiefweergave (lot-historie).
-  - `BM01NahardingTab.tsx`: UI voor naharding, exportresets en labels printen.
-  - `BM01Hub.tsx` fungeert alleen nog als orkestrator die de juiste tab-component laadt en de gedeelde state (`useBM01Data`) doorgeeft.
+**Deployresultaat:**
+- Versie gebumpt: 0.1.93 → 0.1.95.
+- Build geslaagd, Firebase Hosting deploy uitgevoerd naar `future-factory-377ef.web.app`.
 
 ---
 
 ### Update sessie 08 July 2026 (Counter sync fix BH18_2628)
+
 **Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
 
 **Probleem:**
@@ -5913,59 +5746,6 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Datum:** 2 mei 2026 | **Branch:** `preview-v2`
 
-
-### Update sessie 18 mei 2026 (Admin Printer Order Labels parity + BH18 zoekpaden)
-
-**Datum:** 18 mei 2026 | **Branch:** `FPiFF-18-12-May`
-
-**Doel:**
-- Preview en daadwerkelijke print in **Admin → Printers → Order Labels** gelijk trekken met Label Templates.
-- Nieuwe orders (o.a. BH18) vindbaar maken via huidige planningspaden.
-
-**Uitgevoerd:**
-
-1. **Order Labels modal parity verbeterd** in `src/components/admin/AdminPrinterManager.tsx`
-- Template-selectie per order in de modal behouden/afgemaakt.
-- Live preview gekoppeld aan dezelfde template-dataflow als print.
-- Print-handler gebruikt nu dezelfde veld-normalisatie als preview (`orderId/Order/Productieorder/...`, `itemCode/Item/...`, `description/Description/...`).
-
-2. **Navigatiehulp naar Label Templates toegevoegd**
-- In Legacy/Nood-etiketten modal extra infoblok geplaatst met verwijzing naar map-overzicht + Designer.
-- Directe knop toegevoegd om naar `label_manager` te navigeren vanuit de modal.
-
-3. **Zoekbronnen uitgebreid voor nieuwe planningstructuur (BH18)**
-- Extra bron toegevoegd: legacy planningpad `future-factory/production/data/digital_planning/orders`.
-- Extra bron toegevoegd: scoped planning-orders via `collectionGroup("orders")`, gefilterd op huidig planningprefix.
-- Uitbreiding toegepast op:
-    - initiële lijst
-    - exacte `in`-queries
-    - starts-with/range fallback-queries
-
-**Validatie:**
-- `npm run -s type-check -- --pretty false` succesvol.
-- `npm run -s build` succesvol.
-- Geen TypeScript-fouten in `src/components/admin/AdminPrinterManager.tsx` na aanpassingen.
-
-**Uitbreiding 2: Diepe machine-path zoeken** (18 mei 2026)
-- Order Labels zoeklogica uitgebreid met diepe nested paden: `digital_planning/{Fittings|Pipes}/machines/{BH18|40BH18|BH12|BH15|BH17|BM01|BM02|BM18}/orders`.
-- Laadt deze deep paths nu ook in de initiële lijst.
-- Voegt deep path queries toe aan zowel exact-match als fallback-zoeken.
-
-**Validatie:**
-- `npm run -s type-check -- --pretty false` succesvol.
-- `npm run -s build` succesvol (AdminPrinterManager chunk: 64.70 kB).
-- Geen TypeScript-fouten.
-
-**Resultaat:**
-- Preview en print gebruiken nu dezelfde template/payload-logica in Admin Order Labels.
-- Order Labels zoekt nu breder in zowel legacy, huidige/scoped, als diep geneste machine-paden, zodat recente BH18-orders (ook uit Fittings/Pipes-structuur) vindbaar zijn.
-
-F i x e d   i s s u e   w h e r e   s t a t u s   s e l e c t i o n   w a s   h i d d e n   i n   P r o d u c t R e l e a s e M o d a l   w h e n   m e a s u r e m e n t s   w e r e   n o t   r e q u i r e d ,   c a u s i n g   u s e r s   t o   b e   s t u c k   o n   ' d e f i n i t i e v e   a f k e u r '   i f   t h a t   w a s   t h e i r   p r e v i o u s l y   c a c h e d   s t a t e . 
- 
- A d d e d   ' H a n d m a t i g   A a n m a k e n '   m o d e   t o   T e m p L a b e l M o d a l   i n   P r i n t S t a t i o n V i e w . t s x   t o   a l l o w   g e n e r a t i n g   d u m m y   O r d e r   L a b e l   d a t a   m a n u a l l y   w i t h o u t   t y p i n g   t h e   f u l l   1 5 - d i g i t   l o t   n u m b e r . 
- 
- 
-
 ### Opgelost / Gewijzigd
 **Tweede record bijhouden van uitgegeven lotnummers per order**
 - **Probleem:** De tracking van orders en producten liep af en toe nog spaak, wat voelde als een lappenmiddel. Het was moeilijk om snel te verifiëren of alle lots correct geregistreerd stonden, zeker bij nieuwe imports.
@@ -10159,203 +9939,6 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 ---
 
-
-### Update sessie 93 (Architectuur review vertaald naar uitvoerbaar vervolg)
-
-**Datum:** 12 april 2026 | **Branch:** `pilot-dev`
-
-**Context:**
-- Externe architectuurreview aangeleverd met focus op write-boundary, import-bypass, rules-hardening en type-safety.
-
-**Feitelijke status (gevalideerd op code):**
-
-1. **Kritische bypass nog aanwezig in importflow**
-- `src/components/digitalplanning/modals/PlanningImportModal.jsx` schrijft nog direct client-side met `writeBatch` en `batch.set`.
-- Dit omzeilt de command-laag in Cloud Functions.
-
-2. **Medium-priority planning writes zijn inmiddels wel via callables**
-- Reeds gemigreerd en live (sessie 90-92).
-
-3. **Firestore rules laten nog meerdere client writes toe**
-- Bewust pilot-vriendelijk gehouden.
-- Hierdoor is “writes alleen via backend” nog niet hard technisch afgedwongen.
-
-4. **Overige directe writes buiten medium-scope bestaan nog**
-- O.a. in admin/AI/notification/printer/util-onderdelen.
-
-**Besloten strategie (CQRS-light, gefaseerd):**
-
-1. **Query (read):** frontend blijft direct luisteren met `onSnapshot`.
-2. **Command (write):** productie/planning writes gefaseerd naar callables.
-3. **Rules-hardening:** pas na functionele migratie per domein, om pilot niet te blokkeren.
-
-**Eerstvolgende implementatiestap (hoogste prioriteit):**
-
-1. `PlanningImportModal` migreren naar backend command-callable (bijv. `importPlanningOrders`).
-2. Frontend importmodal alleen payload laten bouwen/valideren en callable aanroepen.
-3. Daarna rules voor import-gerelateerde writes aanscherpen zodat client-write pad dicht kan.
-
-**Concrete checklist voor volgende sessie:**
-
-1. Nieuwe callable + servicefunctie toevoegen voor planning import.
-2. `PlanningImportModal.jsx` refactoren: `writeBatch` verwijderen, vervangen door callable call.
-3. End-to-end test: import met machinefilter (BH12/BH18) blijft correct werken.
-4. Pas daarna Firestore rules voor betreffende collecties strakker zetten.
-5. Deploy functions + rules + commit/push.
-
-**Doel van deze fase:**
-- Grootste architectuurgat (import-bypass) sluiten zonder pilot-flow te breken.
-
----
-
-
-
-### Update sessie 90-92 (Medium writes naar callables + deploy)
-
-**Datum:** 12 april 2026 | **Branch:** `pilot-dev`
-
-**Doel:**
-- Alle **medium-priority** frontend writes migreren van directe Firestore-mutaties naar backend-callables.
-
-**Uitgevoerd:**
-
-1. **Nieuwe backend service-functies toegevoegd** in `functions/src/services/planningTransitionService.js`
-- `addOrderDependencyService`
-- `removeOrderDependencyService`
-- `updateOrderPlannedDateService`
-- `updateOrderKanbanStatusService`
-- `markReadyForNextStepService`
-- `startTrackedProductRepairService`
-- `reportShopFloorIssueService`
-- `resolveShopFloorIssueService`
-
-2. **Nieuwe callables toegevoegd en geëxporteerd**
-- `functions/src/callables/planningCallables.js`
-- `functions/index.js`
-
-3. **Frontend callable wrappers toegevoegd** in `src/services/planningSecurityService.js`
-- `addOrderDependency`
-- `removeOrderDependency`
-- `updateOrderPlannedDate`
-- `updateOrderKanbanStatus`
-- `markReadyForNextStep`
-- `startTrackedProductRepair`
-- `reportShopFloorIssue`
-- `resolveShopFloorIssue`
-
-4. **Medium views gemigreerd naar wrappers/callables**
-- `src/components/planning/OrderDependenciesView.jsx`
-- `src/components/planning/GanttChartView.jsx`
-- `src/components/planning/KanbanBoardView.jsx`
-- `src/components/planning/ShopFloorMobileApp.jsx`
-
-5. **Firebase deploy uitgevoerd (geslaagd)**
-- `addOrderDependency`
-- `removeOrderDependency`
-- `updateOrderPlannedDate`
-- `updateOrderKanbanStatus`
-- `markReadyForNextStep`
-- `startTrackedProductRepair`
-- `reportShopFloorIssue`
-- `resolveShopFloorIssue`
-
-6. **Git status**
-- Commit: `7c61629`
-- Message: `Migrate medium planning writes to secure callables`
-- Push: `pilot-dev` succesvol geüpdatet (`03fdeb3 -> 7c61629`)
-
-7. **Nacontrole**
-- Lint-error in `ShopFloorMobileApp.jsx` (`commonData is not defined`) direct opgelost.
-- `firebase-debug.log` verwijdering teruggedraaid; worktree weer schoon.
-
-**Resultaat:**
-- Medium-priority planning/shopfloor writes lopen nu via backend + callable boundary.
-- Branch staat gesynchroniseerd op GitHub en deploy is live.
-
----
-
-
-
-### Update sessie 48 (Opslagpunt: Gantt planning verbeteringen + Firebase importpad)
-
-**Datum:** 7 april 2026 | **Branch:** `pilot-dev`
-
-**Doel:**
-- Conversatie opslaan zodat later direct kan worden hervat op de nieuwste Gantt- en importverbeteringen.
-
-**Wat is afgerond in deze sessie:**
-
-1. **Importintegratie richting Power Automate/Firebase afgerond voorbereid**
-- Webhook blijft beschikbaar via `importPlanningFromWebhook` (Power Automate-first, backward compatible met oude tokenkeys).
-- Nieuwe Firebase Storage trigger toegevoegd: `importPlanningFromStorage`.
-- Upload van Excel naar `imports/planning/` start nu automatisch import.
-- Import ondersteunt server-side machinefilter (`allowedMachines`, incl. config `integration.allowed_machines`).
-
-2. **Planning-import UI hybride sturing toegevoegd**
-- In `PlanningImportModal` is hybride importselectie toegevoegd (bijv. BH12/BH18).
-- Selectie wordt opgeslagen in localStoratie bepaalt ook echt welke orders worden geïmporteerd.
-
-3. **Gantt planning sterk uitgebreid (klassieke Gantt-ervaring)**
-- Orders tonen nu van **startdatum t/m leverdatum**.
-- Orders die deels in beeld vallen blijven zichtbaar.
-- Machinekolom blijft vast; balken lopen niet meer onder de machinekolom.
-- Muis "vastpakken" voor horizontaal pannen toegevoegd (ook op dag/datum-balk).
-- `Shift + muiswiel` en trackpad horizontaal scrollen toegevoegd.
-- Afdelingfilter verbeterd (normalisatie `40BHxx` vs `BHxx`).
-- Machines zijn inklapbaar per regel + knoppen "Alles inklappen/uitklappen".
-- Nieuwe **All View** toegevoegd:
-    - volledige planningrange over alle orders
-    - dynamische dagbreedte
-    - maximaal 35 dagen tegelijk zichtbaar op het scherm
-    - horizontaal door de rest scrollen.
-- Statuslegend opgeschoond: `Verzendklaar` en `Verzonden` verwijderd.
-
-**Belangrijk hervatpunt (eerstvolgende stap):**
-1. Live UI-check op echte planningdata (specifiek All View + leverdatumtrajecten).
-2. Indien gewenst: auto-scroll naar "vandaag" bij openen van All View toevoegen.
-3. Firebase deploy + storage upload-test draaien voor end-to-end import zonder Power Automate account.
-
-**Aangepaste kernbestanden in deze sessie:**
-- `functions/index.js`
-- `src/components/digitalplanning/modals/PlanningImportModal.jsx`
-- `src/components/planning/GanttChartView.jsx`
-
-**Validatie:**
-- `node --check functions/index.js` succesvol.
-- Meerdere keren `npm run build` succesvol na wijzigingen.
-
----
-
-
-
-### Update sessie 33 (BH12 ProductionStartModal verfijning)
-
-**Datum:** 3 april 2026 | **Branch:** `pilot-dev`
-
-**Doel:** Startflow voor BH12/flens-orders verfijnen in de `ProductionStartModal`.
-
-**Uitgevoerd in `src/components/digitalplanning/modals/ProductionStartModal.jsx`:**
-
-- FL-orders gebruiken standaard een **klein label** als voorbeeld/templatekeuze.
-- Previewpaneel blijft zichtbaar in **auto mode** (ook voor FL), zodat het voorbeeld altijd zichtbaar is.
-- In **manual mode** is `Aantal in String` toegevoegd zodat meerdere lotnummers in serie gestart kunnen worden.
-- Manual string-run gebruikt nu het **eerste ingevoerde lotnummer** als startpunt en telt door.
-- Extra validatie toegevoegd: bij manual string-run worden alle volgende lotnummers gecontroleerd op duplicaten (actief + archief).
-- Voor flens met mal-match wordt het gevonden cavity-aantal als **advies/startwaarde** ingevuld.
-- Daarna verfijnd op verzoek: ook in **auto mode** is het aantal handmatig aanpasbaar (geen lock meer op het aantalveld).
-
-**Resultaat voor BH12:**
-
-- FL-flow is consistenter: klein labelvoorbeeld, zichtbare preview, aantallen nog overschrijfbaar.
-- String-start werkt nu zowel praktisch als veilig (doorlopende lotreeks + uniciteitscontrole).
-
-**Validatie:**
-
-- `npx eslint src/components/digitalplanning/modals/ProductionStartModal.jsx` succesvol (geen output / geen fouten).
-
----
-
-
 ### Update sessie 31 (Import + Capaciteitsplanning + BH12 flowrouting)
 
 - Doel van deze sessie: import- en capaciteitslogica laten aansluiten op echte LN data en routing voor BH12 aanscherpen.
@@ -11475,3 +11058,243 @@ Made changes.
 
 ---
 
+### Update sessie 33 (BH12 ProductionStartModal verfijning)
+
+**Datum:** 3 april 2026 | **Branch:** `pilot-dev`
+
+**Doel:** Startflow voor BH12/flens-orders verfijnen in de `ProductionStartModal`.
+
+**Uitgevoerd in `src/components/digitalplanning/modals/ProductionStartModal.jsx`:**
+
+- FL-orders gebruiken standaard een **klein label** als voorbeeld/templatekeuze.
+- Previewpaneel blijft zichtbaar in **auto mode** (ook voor FL), zodat het voorbeeld altijd zichtbaar is.
+- In **manual mode** is `Aantal in String` toegevoegd zodat meerdere lotnummers in serie gestart kunnen worden.
+- Manual string-run gebruikt nu het **eerste ingevoerde lotnummer** als startpunt en telt door.
+- Extra validatie toegevoegd: bij manual string-run worden alle volgende lotnummers gecontroleerd op duplicaten (actief + archief).
+- Voor flens met mal-match wordt het gevonden cavity-aantal als **advies/startwaarde** ingevuld.
+- Daarna verfijnd op verzoek: ook in **auto mode** is het aantal handmatig aanpasbaar (geen lock meer op het aantalveld).
+
+**Resultaat voor BH12:**
+
+- FL-flow is consistenter: klein labelvoorbeeld, zichtbare preview, aantallen nog overschrijfbaar.
+- String-start werkt nu zowel praktisch als veilig (doorlopende lotreeks + uniciteitscontrole).
+
+**Validatie:**
+
+- `npx eslint src/components/digitalplanning/modals/ProductionStartModal.jsx` succesvol (geen output / geen fouten).
+
+---
+
+### Update sessie 48 (Opslagpunt: Gantt planning verbeteringen + Firebase importpad)
+
+**Datum:** 7 april 2026 | **Branch:** `pilot-dev`
+
+**Doel:**
+- Conversatie opslaan zodat later direct kan worden hervat op de nieuwste Gantt- en importverbeteringen.
+
+**Wat is afgerond in deze sessie:**
+
+1. **Importintegratie richting Power Automate/Firebase afgerond voorbereid**
+- Webhook blijft beschikbaar via `importPlanningFromWebhook` (Power Automate-first, backward compatible met oude tokenkeys).
+- Nieuwe Firebase Storage trigger toegevoegd: `importPlanningFromStorage`.
+- Upload van Excel naar `imports/planning/` start nu automatisch import.
+- Import ondersteunt server-side machinefilter (`allowedMachines`, incl. config `integration.allowed_machines`).
+
+2. **Planning-import UI hybride sturing toegevoegd**
+- In `PlanningImportModal` is hybride importselectie toegevoegd (bijv. BH12/BH18).
+- Selectie wordt opgeslagen in localStoratie bepaalt ook echt welke orders worden geïmporteerd.
+
+3. **Gantt planning sterk uitgebreid (klassieke Gantt-ervaring)**
+- Orders tonen nu van **startdatum t/m leverdatum**.
+- Orders die deels in beeld vallen blijven zichtbaar.
+- Machinekolom blijft vast; balken lopen niet meer onder de machinekolom.
+- Muis "vastpakken" voor horizontaal pannen toegevoegd (ook op dag/datum-balk).
+- `Shift + muiswiel` en trackpad horizontaal scrollen toegevoegd.
+- Afdelingfilter verbeterd (normalisatie `40BHxx` vs `BHxx`).
+- Machines zijn inklapbaar per regel + knoppen "Alles inklappen/uitklappen".
+- Nieuwe **All View** toegevoegd:
+    - volledige planningrange over alle orders
+    - dynamische dagbreedte
+    - maximaal 35 dagen tegelijk zichtbaar op het scherm
+    - horizontaal door de rest scrollen.
+- Statuslegend opgeschoond: `Verzendklaar` en `Verzonden` verwijderd.
+
+**Belangrijk hervatpunt (eerstvolgende stap):**
+1. Live UI-check op echte planningdata (specifiek All View + leverdatumtrajecten).
+2. Indien gewenst: auto-scroll naar "vandaag" bij openen van All View toevoegen.
+3. Firebase deploy + storage upload-test draaien voor end-to-end import zonder Power Automate account.
+
+**Aangepaste kernbestanden in deze sessie:**
+- `functions/index.js`
+- `src/components/digitalplanning/modals/PlanningImportModal.jsx`
+- `src/components/planning/GanttChartView.jsx`
+
+**Validatie:**
+- `node --check functions/index.js` succesvol.
+- Meerdere keren `npm run build` succesvol na wijzigingen.
+
+---
+
+### Update sessie 90-92 (Medium writes naar callables + deploy)
+
+**Datum:** 12 april 2026 | **Branch:** `pilot-dev`
+
+**Doel:**
+- Alle **medium-priority** frontend writes migreren van directe Firestore-mutaties naar backend-callables.
+
+**Uitgevoerd:**
+
+1. **Nieuwe backend service-functies toegevoegd** in `functions/src/services/planningTransitionService.js`
+- `addOrderDependencyService`
+- `removeOrderDependencyService`
+- `updateOrderPlannedDateService`
+- `updateOrderKanbanStatusService`
+- `markReadyForNextStepService`
+- `startTrackedProductRepairService`
+- `reportShopFloorIssueService`
+- `resolveShopFloorIssueService`
+
+2. **Nieuwe callables toegevoegd en geëxporteerd**
+- `functions/src/callables/planningCallables.js`
+- `functions/index.js`
+
+3. **Frontend callable wrappers toegevoegd** in `src/services/planningSecurityService.js`
+- `addOrderDependency`
+- `removeOrderDependency`
+- `updateOrderPlannedDate`
+- `updateOrderKanbanStatus`
+- `markReadyForNextStep`
+- `startTrackedProductRepair`
+- `reportShopFloorIssue`
+- `resolveShopFloorIssue`
+
+4. **Medium views gemigreerd naar wrappers/callables**
+- `src/components/planning/OrderDependenciesView.jsx`
+- `src/components/planning/GanttChartView.jsx`
+- `src/components/planning/KanbanBoardView.jsx`
+- `src/components/planning/ShopFloorMobileApp.jsx`
+
+5. **Firebase deploy uitgevoerd (geslaagd)**
+- `addOrderDependency`
+- `removeOrderDependency`
+- `updateOrderPlannedDate`
+- `updateOrderKanbanStatus`
+- `markReadyForNextStep`
+- `startTrackedProductRepair`
+- `reportShopFloorIssue`
+- `resolveShopFloorIssue`
+
+6. **Git status**
+- Commit: `7c61629`
+- Message: `Migrate medium planning writes to secure callables`
+- Push: `pilot-dev` succesvol geüpdatet (`03fdeb3 -> 7c61629`)
+
+7. **Nacontrole**
+- Lint-error in `ShopFloorMobileApp.jsx` (`commonData is not defined`) direct opgelost.
+- `firebase-debug.log` verwijdering teruggedraaid; worktree weer schoon.
+
+**Resultaat:**
+- Medium-priority planning/shopfloor writes lopen nu via backend + callable boundary.
+- Branch staat gesynchroniseerd op GitHub en deploy is live.
+
+---
+
+### Update sessie 93 (Architectuur review vertaald naar uitvoerbaar vervolg)
+
+**Datum:** 12 april 2026 | **Branch:** `pilot-dev`
+
+**Context:**
+- Externe architectuurreview aangeleverd met focus op write-boundary, import-bypass, rules-hardening en type-safety.
+
+**Feitelijke status (gevalideerd op code):**
+
+1. **Kritische bypass nog aanwezig in importflow**
+- `src/components/digitalplanning/modals/PlanningImportModal.jsx` schrijft nog direct client-side met `writeBatch` en `batch.set`.
+- Dit omzeilt de command-laag in Cloud Functions.
+
+2. **Medium-priority planning writes zijn inmiddels wel via callables**
+- Reeds gemigreerd en live (sessie 90-92).
+
+3. **Firestore rules laten nog meerdere client writes toe**
+- Bewust pilot-vriendelijk gehouden.
+- Hierdoor is “writes alleen via backend” nog niet hard technisch afgedwongen.
+
+4. **Overige directe writes buiten medium-scope bestaan nog**
+- O.a. in admin/AI/notification/printer/util-onderdelen.
+
+**Besloten strategie (CQRS-light, gefaseerd):**
+
+1. **Query (read):** frontend blijft direct luisteren met `onSnapshot`.
+2. **Command (write):** productie/planning writes gefaseerd naar callables.
+3. **Rules-hardening:** pas na functionele migratie per domein, om pilot niet te blokkeren.
+
+**Eerstvolgende implementatiestap (hoogste prioriteit):**
+
+1. `PlanningImportModal` migreren naar backend command-callable (bijv. `importPlanningOrders`).
+2. Frontend importmodal alleen payload laten bouwen/valideren en callable aanroepen.
+3. Daarna rules voor import-gerelateerde writes aanscherpen zodat client-write pad dicht kan.
+
+**Concrete checklist voor volgende sessie:**
+
+1. Nieuwe callable + servicefunctie toevoegen voor planning import.
+2. `PlanningImportModal.jsx` refactoren: `writeBatch` verwijderen, vervangen door callable call.
+3. End-to-end test: import met machinefilter (BH12/BH18) blijft correct werken.
+4. Pas daarna Firestore rules voor betreffende collecties strakker zetten.
+5. Deploy functions + rules + commit/push.
+
+**Doel van deze fase:**
+- Grootste architectuurgat (import-bypass) sluiten zonder pilot-flow te breken.
+
+---
+
+### Update sessie 18 mei 2026 (Admin Printer Order Labels parity + BH18 zoekpaden)
+
+**Datum:** 18 mei 2026 | **Branch:** `FPiFF-18-12-May`
+
+**Doel:**
+- Preview en daadwerkelijke print in **Admin → Printers → Order Labels** gelijk trekken met Label Templates.
+- Nieuwe orders (o.a. BH18) vindbaar maken via huidige planningspaden.
+
+**Uitgevoerd:**
+
+1. **Order Labels modal parity verbeterd** in `src/components/admin/AdminPrinterManager.tsx`
+- Template-selectie per order in de modal behouden/afgemaakt.
+- Live preview gekoppeld aan dezelfde template-dataflow als print.
+- Print-handler gebruikt nu dezelfde veld-normalisatie als preview (`orderId/Order/Productieorder/...`, `itemCode/Item/...`, `description/Description/...`).
+
+2. **Navigatiehulp naar Label Templates toegevoegd**
+- In Legacy/Nood-etiketten modal extra infoblok geplaatst met verwijzing naar map-overzicht + Designer.
+- Directe knop toegevoegd om naar `label_manager` te navigeren vanuit de modal.
+
+3. **Zoekbronnen uitgebreid voor nieuwe planningstructuur (BH18)**
+- Extra bron toegevoegd: legacy planningpad `future-factory/production/data/digital_planning/orders`.
+- Extra bron toegevoegd: scoped planning-orders via `collectionGroup("orders")`, gefilterd op huidig planningprefix.
+- Uitbreiding toegepast op:
+    - initiële lijst
+    - exacte `in`-queries
+    - starts-with/range fallback-queries
+
+**Validatie:**
+- `npm run -s type-check -- --pretty false` succesvol.
+- `npm run -s build` succesvol.
+- Geen TypeScript-fouten in `src/components/admin/AdminPrinterManager.tsx` na aanpassingen.
+
+**Uitbreiding 2: Diepe machine-path zoeken** (18 mei 2026)
+- Order Labels zoeklogica uitgebreid met diepe nested paden: `digital_planning/{Fittings|Pipes}/machines/{BH18|40BH18|BH12|BH15|BH17|BM01|BM02|BM18}/orders`.
+- Laadt deze deep paths nu ook in de initiële lijst.
+- Voegt deep path queries toe aan zowel exact-match als fallback-zoeken.
+
+**Validatie:**
+- `npm run -s type-check -- --pretty false` succesvol.
+- `npm run -s build` succesvol (AdminPrinterManager chunk: 64.70 kB).
+- Geen TypeScript-fouten.
+
+**Resultaat:**
+- Preview en print gebruiken nu dezelfde template/payload-logica in Admin Order Labels.
+- Order Labels zoekt nu breder in zowel legacy, huidige/scoped, als diep geneste machine-paden, zodat recente BH18-orders (ook uit Fittings/Pipes-structuur) vindbaar zijn.
+
+F i x e d   i s s u e   w h e r e   s t a t u s   s e l e c t i o n   w a s   h i d d e n   i n   P r o d u c t R e l e a s e M o d a l   w h e n   m e a s u r e m e n t s   w e r e   n o t   r e q u i r e d ,   c a u s i n g   u s e r s   t o   b e   s t u c k   o n   ' d e f i n i t i e v e   a f k e u r '   i f   t h a t   w a s   t h e i r   p r e v i o u s l y   c a c h e d   s t a t e . 
+ 
+ A d d e d   ' H a n d m a t i g   A a n m a k e n '   m o d e   t o   T e m p L a b e l M o d a l   i n   P r i n t S t a t i o n V i e w . t s x   t o   a l l o w   g e n e r a t i n g   d u m m y   O r d e r   L a b e l   d a t a   m a n u a l l y   w i t h o u t   t y p i n g   t h e   f u l l   1 5 - d i g i t   l o t   n u m b e r . 
+ 
+ 

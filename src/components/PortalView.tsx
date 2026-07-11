@@ -20,7 +20,7 @@ import { db } from "../config/firebase";
 import { PATHS } from "../config/dbPaths";
 import { updateUserLanguage } from "../services/planningSecurityService";
 import { useAdminAuth } from "../hooks/useAdminAuth";
-import { useNotificationStore } from "../contexts/NotificationContext";
+import { useMessages } from "../hooks/useMessages"; // Voor badge count
 import packageJson from '../../package.json';
 
 const PortalView = () => {
@@ -92,8 +92,12 @@ const PortalView = () => {
     }
   }, []);
 
-  // Hergebruik centrale unread-teller om dubbele message listeners te voorkomen.
-  const unreadCount = useNotificationStore((state) => state.unreadCount);
+  // Ophalen ongelezen berichten voor badge
+  const firebaseUser = getAuth().currentUser;
+  const { messages } = useMessages(firebaseUser);
+  const unreadCount = messages
+    ? messages.filter((m) => !m.read && m.status !== 'read' && !m.archived).length
+    : 0;
 
   // Mobiel detectie
   useEffect(() => {

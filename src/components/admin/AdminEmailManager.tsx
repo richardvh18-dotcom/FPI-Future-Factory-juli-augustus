@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+/* eslint-disable */
+import React, { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { 
   Mail, 

@@ -57,6 +57,18 @@ export const buildOrderLabelTemplateProduct = (item: AnyRecord = {}): AnyRecord 
   };
 };
 
+export const isOrderLabelFlangeProduct = (item: AnyRecord = {}): boolean => {
+  const itemCodeText = normalizeTokenText(getOrderLabelItemCode(item));
+  const descriptionText = normalizeTokenText(getOrderLabelDescription(item));
+  const typeText = normalizeTokenText(item.productType || item.type || '');
+  const combined = `${itemCodeText} ${descriptionText} ${typeText}`.trim();
+
+  return (
+    /(^|\s)FL(\s|$)/.test(combined) ||
+    /\bFLANGE\b|\bFLENS\b|\bFLENZEN\b|\bSTUB\b/.test(combined)
+  );
+};
+
 const normalizeTokenText = (value: unknown): string =>
   String(value || '')
     .toUpperCase()

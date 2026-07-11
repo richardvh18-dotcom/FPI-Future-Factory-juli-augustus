@@ -124,7 +124,12 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
      loading,
      dbError,
      activeDowntimes,
-   } = useTeamleaderFirestore({ user });
+   } = useTeamleaderFirestore({
+     user,
+     fixedScope,
+     loadArchivedRejected: true,
+     loadActiveDowntimes: activeTab === "efficiency" || activeTab === "import_export",
+   });
    
    const factoryConfig = rawFactoryConfig ?? undefined;
    const rawOrdersList = (rawOrders || []) as any[];

@@ -44,7 +44,7 @@ service cloud.firestore {
     function userRole() {
       return ('role' in request.auth.token && request.auth.token.role != null) 
         ? request.auth.token.role 
-        : null;
+        : (hasUserRecord() ? get(userDocPath()).data.role : null);
     }
 
     function hasAnyRole(roles) {

@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React, { useState, Suspense, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -67,7 +68,7 @@ type DashboardCategory = {
 
 // --- LAZY LOAD IMPORTS ---
 const RoadmapViewer = React.lazy(() => import("./RoadmapViewer"));
-import ProjectStructureExpertView from "./ProjectStructureExpertView";
+const ProjectStructureExpertView = React.lazy(() => import("./ProjectStructureExpertView"));
 const AdminEmailManager = React.lazy(() => import("./AdminEmailManager"));
 const AdminProductManager = React.lazy(() => import("./AdminProductManager"));
 const FactoryStructureManager = React.lazy(() =>

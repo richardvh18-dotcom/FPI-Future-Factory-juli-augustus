@@ -384,12 +384,6 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       return () => {};
     }
 
-    const activePrinterId = currentPrinterId || getCurrentPrinterId(printers, usbDevice);
-    if (!activePrinterId) {
-      setPrintJobs([]);
-      return () => {};
-    }
-
     let rootJobs: PrintJob[] = [];
     let scopedJobs: PrintJob[] = [];
 
@@ -417,14 +411,12 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
 
     const rootQ = query(
       collection(db, getPathString(PATHS.PRINT_QUEUE)),
-      where('printerId', '==', activePrinterId)
+      where('status', '==', 'pending')
     );
     const unsubscribeRoot = onSnapshot(
       rootQ,
       (snapshot) => {
-        rootJobs = snapshot.docs
-          .map((docSnap) => normalizeJob(docSnap))
-          .filter((job): job is PrintJob => Boolean(job) && job.status === 'pending');
+        rootJobs = snapshot.docs.map((docSnap) => normalizeJob(docSnap)).filter((job): job is PrintJob => Boolean(job));
         mergeJobs();
       },
       (error) => {
@@ -434,55 +426,26 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       }
     );
 
-    let unsubscribeScoped: (() => void) | null = null;
-    let usingScopedFallback = false;
-
-    const mapScopedSnapshot = (snapshot: { docs: Array<{ ref: { path: string } }> } & any) => {
-      scopedJobs = snapshot.docs
-        .filter((docSnap: { ref: { path: string } }) => isScopedPrintQueuePath(docSnap.ref.path))
-        .map((docSnap: any) => normalizeJob(docSnap))
-        .filter((job: PrintJob | null): job is PrintJob => Boolean(job) && job.status === 'pending');
-      mergeJobs();
-    };
-
-    const subscribeScopedFallback = () => {
-      const fallbackQ = query(
-        collectionGroup(db, 'items'),
-        where('printerId', '==', activePrinterId)
-      );
-
-      unsubscribeScoped = onSnapshot(
-        fallbackQ,
-        mapScopedSnapshot,
-        (error) => {
-          console.error('[PrintQueueAutoProcessor] Scoped queue fallback leesfout:', error);
-          scopedJobs = [];
-          mergeJobs();
-        }
-      );
-    };
-
     const scopedQ = query(
       collectionGroup(db, 'items'),
-      where('_scopeType', '==', 'print_queue'),
-      where('printerId', '==', activePrinterId)
+      where('status', '==', 'pending')
     );
-
-    unsubscribeScoped = onSnapshot(
+    const unsubscribeScoped = onSnapshot(
       scopedQ,
-      mapScopedSnapshot,
+      (snapshot) => {
+        scopedJobs = snapshot.docs
+          .filter((docSnap) => {
+            const matches = isScopedPrintQueuePath(docSnap.ref.path);
+            return matches;
+          })
+          .map((docSnap) => normalizeJob(docSnap))
+          .filter((job): job is PrintJob => {
+            const isValid = Boolean(job) && String((job as PrintJob)._scopeType || 'print_queue').trim() === 'print_queue';
+            return isValid;
+          });
+        mergeJobs();
+      },
       (error) => {
-        const code = String((error as { code?: unknown })?.code || '').toLowerCase();
-        const message = String((error as { message?: unknown })?.message || '').toLowerCase();
-        const missingIndex = code.includes('failed-precondition') || message.includes('requires an index');
-
-        if (missingIndex && !usingScopedFallback) {
-          usingScopedFallback = true;
-          console.warn('[PrintQueueAutoProcessor] Scoped index nog niet beschikbaar; fallback query actief.');
-          subscribeScopedFallback();
-          return;
-        }
-
         console.error('[PrintQueueAutoProcessor] Scoped queue leesfout:', error);
         scopedJobs = [];
         mergeJobs();
@@ -491,9 +454,9 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
 
     return () => {
       unsubscribeRoot();
-      if (unsubscribeScoped) unsubscribeScoped();
+      unsubscribeScoped();
     };
-  }, [enabled, printers, usbDevice]);
+  }, [enabled]);
 
   const currentPrinterId = useMemo(() => {
     const id = getCurrentPrinterId(printers, usbDevice);

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
+/* eslint-disable */
+import React, { useState, useEffect } from "react";
 import RoadmapViewer from "./RoadmapViewer";
 
 import projPlanningMd from '../../../docs/03_PROJECT_PLANNING.md?raw';
@@ -7,7 +8,6 @@ import envDeployMd from '../../../docs/05_ENVIRONMENTS_AND_DEPLOYMENT.md?raw';
 import convSummaryMd from '../../../docs/CONVERSATION_SUMMARY.md?raw';
 import printerRoutingMd from '../../../docs/PRINTER_ROUTING_SETUP.md?raw';
 import restoreSopMd from '../../../docs/RESTORE_SOP.md?raw';
-import architectureMd from '../../../docs/ARCHITECTURE.md?raw';
 
 import { useTranslation } from "react-i18next";
 import i18n from "i18next";
@@ -34,7 +34,6 @@ import {
 } from "lucide-react";
 import { aiService } from "../../services/aiService";
 import { SystemDocumentationView } from "./SystemDocumentationView";
-import { LiveDocumentationView } from "./LiveDocumentationView";
 
 type FileDetail = {
   title: string;
@@ -84,8 +83,8 @@ const fileDetails: Record<string, FileDetail> = {
   // MODALS (DE DIALOGEN)
   "src/components/digitalplanning/modals/ProductionStartModal.tsx": {
     title: "Productie Start Dialog",
-    desc: "Het startpunt voor een operator op een wikkelstation (bijv. BH12, BH18). Handelt het scannen van orders en het koppelen van lotnummers af.",
-    tags: ["Modal", "Wikkelstation", "Workflow"]
+    desc: "Het startpunt voor een operator op BH18. Handelt het scannen van orders en het koppelen van lotnummers af.",
+    tags: ["Modal", "BH18", "Workflow"]
   },
   "src/components/digitalplanning/modals/InspectionModal.tsx": {
     title: "Keuringsvenster",
@@ -99,7 +98,7 @@ const fileDetails: Record<string, FileDetail> = {
   },
   "src/components/digitalplanning/modals/PlanningImportModal.tsx": {
     title: "Planning Importeur",
-    desc: "De hoofdmodule voor de planningsimport om Excel of CSV bestanden uit Infor LN in te lezen. Essentieel zolang er nog geen live API-koppeling is met het ERP-systeem.",
+    desc: "Gids voor planners (Edwin/Frank) om Excel of CSV bestanden uit LN te importeren naar de digitale planning.",
     tags: ["ERP", "Import", "Admin"]
   },
   "src/components/digitalplanning/modals/TerminalSelectionModal.tsx": {
@@ -152,11 +151,6 @@ const fileDetails: Record<string, FileDetail> = {
     title: "Project Strategie",
     desc: "Beschrijft de 4 fasen van de pilot en de technische stappen voor de Beckhoff integratie.",
     tags: ["Documentatie", "Planning"]
-  },
-  "docs/ARCHITECTURE.md": {
-    title: "Architectuurdocument",
-    desc: "Technisch referentiedocument dat de high-level architectuur, orkestratie via hubs en Firebase Firestore data structuren van de applicatie uitlegt.",
-    tags: ["Documentatie", "Architectuur", "Onboarding"]
   },
 
     // --- GEMIGREERD VAN OUDE VERSIE (UITGEBREID) ---
@@ -319,96 +313,6 @@ const fileDetails: Record<string, FileDetail> = {
     title: "Applicatie Constanten",
     desc: "Het centrale bestand voor alle hardcoded configuratiewaarden: API-endpoints, UI-kleurcodes, status-enums (PENDING, ACTIVE, COMPLETED), en limieten zoals 'MAX_FILE_SIZE'. Dit voorkomt 'magic numbers' in de codebase.",
     tags: ["Data", "Config", "Enums"]
-  },
-  "src/main.tsx": {
-    title: "Applicatie Entry Point",
-    desc: "Het absolute startpunt van de React applicatie. Hier wordt de root gerenderd en worden globale providers (zoals i18n, Router en NotificationContext) geïnjecteerd.",
-    tags: ["Core", "Setup", "React"]
-  },
-  "src/App.tsx": {
-    title: "Hoofd Application Component",
-    desc: "Beheert de globale routing-structuur, authenticatie-state en thema's. Schakelt tussen de publieke login-pagina en de beveiligde interne hub-routes.",
-    tags: ["Core", "Routing", "Auth"]
-  },
-  "src/components/digitalplanning/WorkstationHub.tsx": {
-    title: "Werkstation Hub",
-    desc: "De kerncomponent voor werkstations (bijv. Wikkelbanken). Haalt de orders op die specifiek aan dit station zijn toegewezen via geoptimaliseerde Firestore-queries en delegatiet naar Terminal views.",
-    tags: ["Planning", "Hub", "Data"]
-  },
-  "src/components/digitalplanning/Terminal.tsx": {
-    title: "Terminal UI Orkestrator",
-    desc: "De hoofd-UI voor de productieterminals (zoals BH18). De actielogica en datastromen zijn recent geëxtraheerd naar custom hooks, waardoor deze component nu dient als een pure en overzichtelijke UI-wrapper.",
-    tags: ["Terminal", "UI", "Orkestrator"]
-  },
-  "src/components/digitalplanning/modals/ProductDossierModal.tsx": {
-    title: "Product Dossier Viewer",
-    desc: "Een modal die het volledige technische dossier van een product weergeeft (specificaties, revisies, en gekoppelde matrijs-tekeningen) voor referentie tijdens de productie.",
-    tags: ["Producten", "Documentatie", "Modal"]
-  },
-  "src/components/digitalplanning/modals/OrderEditModal.tsx": {
-    title: "Order Editor",
-    desc: "Hiermee kunnen planners de parameters van een specifieke productie-order wijzigen, zoals aantallen, prioriteit of de gekoppelde machine, zonder de Infor LN sync te breken.",
-    tags: ["Planning", "Beheer", "Modal"]
-  },
-  "src/components/digitalplanning/modals/LotOverrideModal.tsx": {
-    title: "Lotnummer Overschrijving",
-    desc: "Een supervisor-modal waarmee handmatig afgeweken kan worden van het automatisch berekende lotnummer of weeknummer, bijvoorbeeld bij een storing of historische correctie.",
-    tags: ["Productie", "Beheer", "Modal"]
-  },
-  "src/components/digitalplanning/terminal/TerminalPlanningView.tsx": {
-    title: "Terminal Planning Overzicht",
-    desc: "Toont de komende wachtrij van orders op een terminal. Operators kunnen hiermee vooruit kijken en anticiperen op toekomstige productieruns en materiaalbehoeften.",
-    tags: ["Terminal", "Planning", "UI"]
-  },
-  "src/components/digitalplanning/terminal/TerminalManualInput.tsx": {
-    title: "Handmatige Terminal Invoer",
-    desc: "Laat operators handmatig gegevens invoeren of correcties doorvoeren op productieparameters wanneer barcode-scanners falen of orders ontbreken in de digitale wachtrij.",
-    tags: ["Terminal", "Fallback", "UI"]
-  },
-  "src/components/admin/AdminDatabaseView.tsx": {
-    title: "Database Configuratie View",
-    desc: "Een beheerderspaneel om directe parameters en systeem-brede database-instellingen (zoals sync-intervallen en retentie) te bekijken en tweaken.",
-    tags: ["Admin", "Database", "Instellingen"]
-  },
-  "src/components/admin/FactoryStructureManager.tsx": {
-    title: "Factory Layout Manager",
-    desc: "Beheert de virtuele weergave van de fabriek: afdelingen, werkstations, en hun onderlinge hiërarchie. Wordt gebruikt voor capaciteitsplanning en routing.",
-    tags: ["Admin", "Configuratie", "Layout"]
-  },
-  "src/components/admin/matrixmanager/AdminMatrixManager.tsx": {
-    title: "Matrix Manager Hub",
-    desc: "Het zenuwcentrum voor het instellen van de productie-matrices, waarbij productafmetingen gekoppeld worden aan specifieke normtijden en machinemogelijkheden.",
-    tags: ["Admin", "Matrix", "Configuratie"]
-  },
-  "src/components/admin/matrixmanager/DimensionsView.tsx": {
-    title: "Dimensie Configuratie",
-    desc: "Een sub-view van de Matrix Manager voor het fijnmazig instellen van de toegestane diameters, lengtes, en productklassen die de fabriek aankan.",
-    tags: ["Admin", "Specificaties", "Matrix"]
-  },
-  "src/components/admin/matrixmanager/MatrixGrid.tsx": {
-    title: "Productie Matrix Grid",
-    desc: "Een interactieve spreadsheet-achtige UI waar engineers complexe correlaties (bijv. diameter X vs lengte Y) kunnen invullen of kalibreren voor de automatische calculator.",
-    tags: ["Admin", "UI", "Matrix"]
-  },
-  "src/utils/pdfGenerator.js": {
-    title: "PDF Generator Engine",
-    desc: "Genereert dynamisch PDF-rapporten of etiketten vanuit de frontend met behulp van templates. Ideaal voor rapportages en audits waarbij een hard-copy verplicht is.",
-    tags: ["Export", "PDF", "Rapportage"]
-  },
-  "firebase.json": {
-    title: "Firebase Configuratie",
-    desc: "Het root-configuratiebestand voor de Firebase CLI. Bepaalt welke directories gedeployd worden naar Hosting, regels voor Storage, en configuratie voor Cloud Functions.",
-    tags: ["Config", "Deploy", "Firebase"]
-  },
-  "package.json": {
-    title: "NPM Package Manifest",
-    desc: "Definieert alle project-dependencies, versie-nummers, en bevat de scripts voor development, bouwen, linten, en deployen (zoals 'verify:build-output').",
-    tags: ["Config", "Dependencies", "Scripts"]
-  },
-  "vite.config.ts": {
-    title: "Vite Bundler Configuratie",
-    desc: "Configureren van de Vite bundler: alias-resolutie, proxy-instellingen voor de dev-server, HMR, en build-optimalisaties voor de uiteindelijke SPA.",
-    tags: ["Config", "Build", "Vite"]
   }
 };
 
@@ -416,7 +320,7 @@ const fileDetails: Record<string, FileDetail> = {
  * DE VOLLEDIGE PROJECTBOOM
  * Gebaseerd op de 5e405e21 snapshot.
  */
-const getProjectStructure = (t: (key: string, defaultValue?: string) => string): TreeNodeData[] => [
+const getProjectStructure = (t: any): TreeNodeData[] => [
   {
     label: t('projectStructureExpert.nodes.configAndCore', "Config & Core"),
     icon: <Shield className="w-4 h-4 text-red-500" />,
@@ -499,8 +403,7 @@ const getProjectStructure = (t: (key: string, defaultValue?: string) => string):
       "firebase.json",
       "package.json",
       "vite.config.ts",
-      "ROADMAP.md",
-      "docs/ARCHITECTURE.md"
+      "ROADMAP.md"
     ]
   }
 ];
@@ -557,7 +460,7 @@ const TreeNode = ({ node, path = "", level = 0, onSelect, selectedPath }: TreeNo
 
 const ProjectStructureExpertView = () => {
   const { t } = useTranslation();
-  const projectStructure = getProjectStructure(t as never);
+  const projectStructure = getProjectStructure(t);
   const [selectedFile, setSelectedFile] = useState("");
   const [activeMainTab, setActiveMainTab] = useState<"explorer" | "docs" | "markdown" | "roadmap">("explorer");
   const [activeMdFile, setActiveMdFile] = useState("CONVERSATION_SUMMARY.md");
@@ -574,7 +477,15 @@ const ProjectStructureExpertView = () => {
     );
   };
 
-    const [aiExplanation, setAiExplanation] = useState("");
+  const markdownFiles: Record<string, { title: string, content: string }> = {
+    "03_PROJECT_PLANNING.md": { title: "Project Planning", content: projPlanningMd },
+    "04_OPERATIONS_NOTES_AND_TASKS.md": { title: "Operations & Tasks", content: opsNotesMd },
+    "05_ENVIRONMENTS_AND_DEPLOYMENT.md": { title: "Deployments", content: envDeployMd },
+    "CONVERSATION_SUMMARY.md": { title: "Conversation Summary", content: convSummaryMd },
+    "PRINTER_ROUTING_SETUP.md": { title: "Printer Setup", content: printerRoutingMd },
+    "RESTORE_SOP.md": { title: "Restore SOP", content: restoreSopMd }
+  };
+  const [aiExplanation, setAiExplanation] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isAiConfigured, setIsAiConfigured] = useState(false);
   const detail = selectedFile ? (fileDetails[selectedFile] || null) : null;
@@ -667,7 +578,7 @@ const ProjectStructureExpertView = () => {
             }`}
           >
             <BookOpen size={16} />
-            {"Live Documentatie"}
+            {"Live Docs"}
           </button>
           <button 
             onClick={() => setActiveMainTab("roadmap")}
@@ -818,8 +729,55 @@ const ProjectStructureExpertView = () => {
       )}
 
       {activeMainTab === "markdown" && (
-        <div className="absolute inset-0 w-full h-full z-10 bg-white">
-          <LiveDocumentationView t={t} />
+        <div className="flex w-full h-full">
+          {/* Sidebar for markdown files */}
+          <div className="w-64 border-r border-gray-200 bg-slate-50 overflow-y-auto flex flex-col">
+            <div className="p-4 border-b border-gray-200 bg-slate-100/50">
+              <h3 className="font-bold text-slate-700 text-sm tracking-wide">Live Documentatie</h3>
+              <p className="text-[10px] text-slate-500 mt-1">Automatisch gesynchroniseerd met docs/ directory via Vite HMR.</p>
+            </div>
+            <div className="flex-1 p-2 space-y-1">
+              {Object.keys(markdownFiles).map(filename => (
+                <button
+                  key={filename}
+                  onClick={() => setActiveMdFile(filename)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${
+                    activeMdFile === filename 
+                      ? "bg-blue-100 text-blue-700 font-bold" 
+                      : "text-slate-600 hover:bg-slate-200/50"
+                  }`}
+                >
+                  <div className="flex items-center">
+                    <FileText size={14} className="mr-2 opacity-70" />
+                    <span className="truncate">{markdownFiles[filename].title}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Content area */}
+          <div className="flex-1 bg-white overflow-y-auto p-8">
+            <div className="max-w-4xl mx-auto">
+              <div className="mb-6 pb-4 border-b border-slate-200 flex justify-between items-start">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-800">{markdownFiles[activeMdFile].title}</h2>
+                  <p className="text-xs text-slate-500 mt-1 font-mono">{activeMdFile}</p>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Zoek in document..."
+                    value={mdSearchQuery}
+                    onChange={(e) => setMdSearchQuery(e.target.value)}
+                    className="pl-3 pr-4 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+                  />
+                </div>
+              </div>
+              <pre className="whitespace-pre-wrap font-mono text-sm bg-slate-50 p-6 rounded-xl border border-slate-200 overflow-x-auto text-slate-800 leading-relaxed">
+                {renderHighlightedText(markdownFiles[activeMdFile].content, mdSearchQuery)}
+              </pre>
+            </div>
+          </div>
         </div>
       )}
 

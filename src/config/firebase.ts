@@ -3,6 +3,7 @@ import {
   initializeFirestore,
   persistentLocalCache,
   memoryLocalCache,
+  persistentMultipleTabManager,
   getFirestore,
   collection,
   addDoc,
@@ -77,20 +78,11 @@ const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 // Emergency switch: keep Firestore persistence disabled in production until
 // the upstream SDK assertion-loop is fully resolved.
-const FIRESTORE_PERSISTENCE_EMERGENCY_DISABLED =
-  String(import.meta.env.VITE_FIRESTORE_PERSISTENCE_DISABLED || "").trim() === "1";
+const FIRESTORE_PERSISTENCE_EMERGENCY_DISABLED = true;
 
 const FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY = "fpi_firestore_persistence_disabled_until";
 const FIRESTORE_QUOTA_RECOVERY_RELOAD_KEY = "fpi_firestore_quota_recovery_reload_done";
 const FIRESTORE_ASSERT_RECOVERY_HANDLED_KEY = "fpi_firestore_assert_recovery_handled";
-const FIRESTORE_PERSISTENCE_QUOTA_FAILURE_COUNT_KEY = "fpi_firestore_persistence_quota_failure_count";
-const FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION_KEY = "fpi_firestore_recovery_policy_version";
-const FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION = "v2";
-const FIRESTORE_PERSISTENCE_RECOVERY_STEPS_MS = [
-  2 * 60 * 1000,
-  5 * 60 * 1000,
-  15 * 60 * 1000,
-];
 
 const isFirestoreUnexpectedStateText = (text: string): boolean => {
   const normalized = String(text || "").toLowerCase();
@@ -116,66 +108,6 @@ const shouldUseMemoryFirestoreCache = (): boolean => {
   if (FIRESTORE_PERSISTENCE_EMERGENCY_DISABLED) return true;
   const disabledUntil = readNumberFromStorage(FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY);
   return disabledUntil > Date.now();
-};
-
-const resetFirestorePersistenceRecoveryState = () => {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.removeItem(FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY);
-    window.localStorage.removeItem(FIRESTORE_PERSISTENCE_QUOTA_FAILURE_COUNT_KEY);
-  } catch {
-    // ignore reset failures
-  }
-};
-
-const normalizeFirestoreRecoveryState = () => {
-  if (typeof window === "undefined") return;
-  try {
-    const storedPolicyVersion = String(
-      window.localStorage.getItem(FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION_KEY) || "",
-    ).trim();
-
-    if (storedPolicyVersion !== FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION) {
-      // Reset stale recovery flags after policy changes so persistence can recover immediately.
-      resetFirestorePersistenceRecoveryState();
-      window.localStorage.setItem(
-        FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION_KEY,
-        FIRESTORE_PERSISTENCE_RECOVERY_POLICY_VERSION,
-      );
-      return;
-    }
-
-    const disabledUntil = readNumberFromStorage(FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY);
-    const maxAllowedDisabledUntil = Date.now() + 30 * 60 * 1000;
-    if (disabledUntil > maxAllowedDisabledUntil) {
-      window.localStorage.setItem(FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY, String(maxAllowedDisabledUntil));
-    }
-  } catch {
-    // ignore migration failures
-  }
-};
-
-const getFirestorePersistenceDisableDurationMs = (): number => {
-  if (typeof window === "undefined") {
-    return FIRESTORE_PERSISTENCE_RECOVERY_STEPS_MS[0];
-  }
-
-  try {
-    const currentFailureCount = readNumberFromStorage(FIRESTORE_PERSISTENCE_QUOTA_FAILURE_COUNT_KEY);
-    const nextFailureCount = currentFailureCount + 1;
-    window.localStorage.setItem(
-      FIRESTORE_PERSISTENCE_QUOTA_FAILURE_COUNT_KEY,
-      String(nextFailureCount),
-    );
-
-    const stepIndex = Math.min(
-      nextFailureCount - 1,
-      FIRESTORE_PERSISTENCE_RECOVERY_STEPS_MS.length - 1,
-    );
-    return FIRESTORE_PERSISTENCE_RECOVERY_STEPS_MS[stepIndex];
-  } catch {
-    return FIRESTORE_PERSISTENCE_RECOVERY_STEPS_MS[0];
-  }
 };
 
 const clearFirestoreLocalStorageArtifacts = () => {
@@ -246,15 +178,21 @@ const installFirestoreQuotaRecovery = () => {
       // Soft recovery for transient assertion storms: keep app running and
       // avoid full-page reloads (important on tablets with unstable Wi-Fi).
       if (isUnexpectedStateIssue && !isQuotaIssue) {
+        const assertDisableForMs = 2 * 60 * 60 * 1000;
+        window.localStorage.setItem(
+          FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY,
+          String(now + assertDisableForMs),
+        );
+
         const handledAlready = window.sessionStorage.getItem(FIRESTORE_ASSERT_RECOVERY_HANDLED_KEY) === "1";
         if (!handledAlready) {
           window.sessionStorage.setItem(FIRESTORE_ASSERT_RECOVERY_HANDLED_KEY, "1");
-          console.warn("Firestore assertion gedetecteerd; app blijft actief en probeert persistence opnieuw.");
+          console.warn("Firestore assertion gedetecteerd; app blijft actief zonder harde reload.");
         }
         return;
       }
 
-      const disableForMs = getFirestorePersistenceDisableDurationMs();
+      const disableForMs = 24 * 60 * 60 * 1000;
       window.localStorage.setItem(FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY, String(now + disableForMs));
 
       clearFirestoreLocalStorageArtifacts();
@@ -274,7 +212,6 @@ const installFirestoreQuotaRecovery = () => {
 
 const createFirestoreInstance = () => {
   installFirestoreQuotaRecovery();
-  normalizeFirestoreRecoveryState();
 
   if (typeof window !== "undefined" && window.indexedDB) {
     try {
@@ -292,9 +229,7 @@ const createFirestoreInstance = () => {
   }
 
   // Enable IndexedDB offline persistence with a safe 50MB cache size limit.
-  // Deliberately use the SDK default single-tab manager here: the multi-tab
-  // shared client state writes mutation metadata into localStorage, which is
-  // what causes the QuotaExceededError storm seen on shopfloor tablets.
+  // When quota recovery is active, force memory cache temporarily.
   if (shouldUseMemoryFirestoreCache()) {
     try {
       console.warn("Firestore persistence tijdelijk uitgeschakeld na quota-fout; memory cache actief.");
@@ -311,13 +246,12 @@ const createFirestoreInstance = () => {
   }
 
   try {
-    const firestore = initializeFirestore(app, {
+    return initializeFirestore(app, {
       localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
         cacheSizeBytes: 50 * 1024 * 1024,
       }),
     });
-    resetFirestorePersistenceRecoveryState();
-    return firestore;
   } catch (error) {
     const code = getErrorCode(error).toLowerCase();
     const message = getErrorMessage(error);

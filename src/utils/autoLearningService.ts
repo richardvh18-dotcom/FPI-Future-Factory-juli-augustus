@@ -78,7 +78,7 @@ const getErrorMessage = (error: unknown): string => {
  * @param {boolean} options.dryRun - Test mode zonder daadwerkelijke updates
  * @returns {Promise<Object>} Update resultaten
  */
-export const analyzeAndUpdateStandards = async (options: AutoLearningOptions = { /* no-op */ }): Promise<AutoLearningResults> => {
+export const analyzeAndUpdateStandards = async (options: AutoLearningOptions = {}): Promise<AutoLearningResults> => {
   const {
     minSamples = 5,
     maxDeviation = 50,
@@ -238,7 +238,9 @@ export const analyzeAndUpdateStandards = async (options: AutoLearningOptions = {
 
           results.updated++;
 
-        } else { /* no-op */ }
+        } else {
+
+        }
 
       } catch (error: unknown) {
         console.error(i18n.t("autolearning.error_processing", { item: standard.itemCode, machine: standard.machine, defaultValue: `[Auto-Learning] Error processing ${standard.itemCode}/${standard.machine}:` }), error);

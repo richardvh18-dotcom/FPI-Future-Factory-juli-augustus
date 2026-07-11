@@ -2,57 +2,66 @@
 
 ## Doel
 
-Gebruik aparte printerrecords voor aparte fysieke printers, ook als het hetzelfde model is. Dit maakt gerichte aansturing per fysiek station mogelijk.
+Gebruik aparte printerrecords voor aparte fysieke printers, ook als het hetzelfde model is.
 
 Voorbeeld:
-- `ZM400-WIKKELSTATION-1` met routing keys `WIKKELEN, SMALL, STATION:W01`
-- `ZM400-EINDINSPECTIE` met routing keys `GENERAL, LARGE, STATION:INSPECTIE`
 
-Zo kan de applicatie labels routeren zonder een globale default printer, maar op basis van het type werkplek of de specifieke bewerking.
+- `ZM400-MAZAK-PC` met routing keys `MAZAK, FLANGE`
+- `ZM400-BH18-PC` met routing keys `GENERAL, LARGE, STATION:BH18`
+
+Zo kan de applicatie labels routeren zonder een globale default printer.
 
 ## Inrichting per computer
 
-1. Maak in **Printer Beheer** voor elke fysieke printer een apart record aan.
-2. Geef per printer duidelijke routing keys op (bijv. `STATION:INSPECTIE`).
-3. Open op de betreffende computer (bijv. de tablet bij de eindinspectie) de print listener of print station pagina.
+1. Maak in Printer Beheer voor elke fysieke printer een apart record aan.
+2. Geef per printer duidelijke routing keys op.
+3. Open op de betreffende computer de print listener of print station pagina.
 4. Koppel op die computer alleen de lokaal aangesloten USB-printer.
-5. Laat computers op andere stations hetzelfde doen voor hun eigen lokaal aangesloten printers.
+5. Laat de andere computer hetzelfde doen voor zijn eigen printer.
 
-De interne queue processor pakt vervolgens alleen jobs op voor de printer die op die specifieke computer/browser geautoriseerd en gekoppeld is.
+De queue processor pakt dan alleen jobs op voor de printer die op die computer echt gekoppeld is.
 
 ## Aanbevolen routing keys
 
-- `WIKKELEN`: Labels specifiek voor de wikkelstations
-- `FLANGE`: Alias voor speciale flenslabels
-- `GENERAL`: Algemene labels (bijv. voor pallets of grote kratten)
-- `LARGE`: Alias voor grote labels
-- `STATION:W01`: Expliciete printer voor Wikkelstation 1
-- `STATION:INSPECTIE`: Expliciete printer voor de Eindinspectie (bijv. BM01)
+- `MAZAK`: Mazak labels en FL-producten
+- `FLANGE`: extra alias voor Mazak/flenslabels
+- `GENERAL`: algemene grote labels voor BH-stations
+- `LARGE`: alias voor grote labels
+- `STATION:BH18`: expliciete printer voor BH18
+- `STATION:BM01`: expliciete printer voor BM01
 
 ## Zonder beheerdersaccount
 
 Voor WebUSB-printen is normaal geen lokaal Windows-beheerdersaccount nodig zodra:
-1. de benodigde printerdriver (bijv. Zebra ZDesigner of Lighthouse TSPL) al aanwezig is op de host, of
-2. de browser (Chrome/Edge) de USB-printer eenmalig mag autoriseren voor die gebruiker.
 
-Praktisch advies voor de werkvloer:
-- Gebruik een vaste browserlogin per station (bijv. een inlog voor Wikkelstation 1).
-- Koppel daar eenmalig alleen de bijbehorende USB printer.
-- Geef operators op de vloer geen toegang tot 'Printer Beheer' als dat niet strikt noodzakelijk is.
+1. de printerdriver al aanwezig is, of
+2. de browser de USB-printer eenmalig mag autoriseren voor die gebruiker.
 
-Als een driver nog helemaal niet op de pc staat, is meestal een eenmalige installatie door IT nodig. Daarna kan de operator dagelijks zonder adminrechten via WebUSB blijven printen.
+Praktisch advies:
+
+- gebruik een vaste browserlogin op de Mazak-pc
+- koppel daar alleen de Mazak-printer
+- gebruik op de BH18-pc een aparte browserlogin of aparte werkplekpagina
+- geef operators geen Printer Beheer rechten als dat niet nodig is
+
+Als een driver nog helemaal niet op de pc staat, is meestal wel een eenmalige installatie door IT of een beheerder nodig. Daarna kan de gebruiker zonder adminrechten blijven printen.
 
 ## Voorbeeldconfiguratie
 
-### Wikkelstation PC
-- **Printernaam:** `ZM400 Wikkelen`
-- **Routing keys:** `WIKKELEN, SMALL, STATION:W01`
-- **Gekoppelde USB-printer:** Alleen de kleine Zebra printer op het wikkelstation.
+### Mazak-pc
 
-### Inspectie PC
-- **Printernaam:** `ZM400 Inspectie Groot`
-- **Routing keys:** `GENERAL, LARGE, STATION:INSPECTIE`
-- **Gekoppelde USB-printer:** Alleen de grote Zebra printer op de eindinspectie.
+- printernaam: `ZM400 Mazak`
+- routing keys: `MAZAK, FLANGE`
+- gekoppelde lokale USB-printer: alleen de Mazak printer
+
+### Grote-labels-pc
+
+- printernaam: `ZM400 BH18 Groot`
+- routing keys: `GENERAL, LARGE, STATION:BH18`
+- gekoppelde lokale USB-printer: alleen de printer voor grote labels
 
 ## Resultaat
-Door deze inrichting gaan product-specifieke labels automatisch naar de juiste fysieke printer, ongeacht op welk scherm de operator de print-opdracht triggert. Minder kritische flows (zoals algemene status-labels) kunnen dezelfde routing helper gebruiken, zolang ze de correcte `routeKey` meegeven in de datastroom.
+
+- FL en Mazak gaan naar de Mazak-pc
+- BH18 en andere algemene grote labels kunnen naar de andere pc
+- minder kritische flows kunnen dezelfde routing helper gebruiken zolang ze een station of routeKey meegeven
