@@ -1847,6 +1847,12 @@ const ProductionStartModal = ({
         }
       }
 
+      // Ensure queue mode resolves a target printer before start options are computed.
+      // Without this, skipStartLabel can become true while no queue printer exists.
+      if (printConfig.mode === "queue" && !isFlangeOrder && !targetPrinter && templateIdsToPrint.length > 0) {
+        targetPrinter = await resolveTargetPrinterAsync();
+      }
+
       const batchCount = Array.isArray(lotBatchLots) && lotBatchLots.length > 0 ? lotBatchLots.length : totalToProduce;
 
       updateOperation(startOpId, "Bezig met starten...");
@@ -1867,6 +1873,7 @@ const ProductionStartModal = ({
               isFlangeSeries: isFlangeOrder,
               skipStartLabel: isFlangeOrder || (
                 printConfig.mode === "queue" &&
+                Boolean(targetPrinter) &&
                 labelsToPrint > 0 &&
                 templateIdsToPrint.length > 0
               ),
@@ -1958,9 +1965,9 @@ const ProductionStartModal = ({
             }
           }
           showSuccess(t("productionStartModal.notifications.labelsQueued", { count: totalQueuedCount, printer: targetPrinter.name }));
-        } else if (!isManualMode) {
-          // Alleen een waarschuwing tonen als we niet in handmatige modus zitten en er geen printer is
+        } else {
           console.warn(`Geen printer geconfigureerd voor station ${stationId}, labels overgeslagen.`);
+          notify(`Geen printer geconfigureerd voor station ${stationId}; labels zijn niet in de wachtrij gezet.`);
         }
       }
 

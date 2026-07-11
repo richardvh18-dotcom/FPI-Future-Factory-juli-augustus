@@ -1796,7 +1796,8 @@ const PrintQueueAdminView = () => {
     if (!autoPrint || !usbDevice || isProcessing || !currentPrinterId) return;
 
     const pendingJobs = printJobs.filter((j) => {
-      if (!isQueuedJobStatus(j.status)) return false;
+      // Only pick jobs that are still pending. Processing/printing jobs are already claimed.
+      if (normalizeQueueStatus(j.status) !== 'pending') return false;
       if (j.printerId !== currentPrinterId) return false;
       if (!selectedStation) return true;
       const selectedKey = normalizeStationKey(selectedStation);
