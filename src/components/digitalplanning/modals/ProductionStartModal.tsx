@@ -2061,6 +2061,41 @@ const ProductionStartModal = ({
               }
             }
           }
+
+          if (totalQueuedCount === 0 && targetPrinter && printData) {
+            const fallbackPrintData = String(printData || "").trim();
+            if (fallbackPrintData) {
+              await queuePrintJob(
+                targetPrinter.id,
+                fallbackPrintData,
+                {
+                  description: `Label voor ${order.orderId} (Lot: ${effectiveLotNumber}) (x${labelsToPrint})`,
+                  quantity: labelsToPrint,
+                  labelCount: labelsToPrint,
+                  forceQuantityCopies: true,
+                  orderId: order.orderId,
+                  lotNumber: effectiveLotNumber,
+                  stationId: stationId || t("common.unknown"),
+                  machineId: scopedMachineId,
+                  originMachine: scopedMachineId,
+                  targetPrinterName: targetPrinter.name,
+                  width: parseInt(String((selectedLabel as any)?.width || 0), 10),
+                  height: parseInt(String((selectedLabel as any)?.height || 0), 10),
+                  variables: {
+                    lotNumber: effectiveLotNumber,
+                    orderId: truncateText(order?.orderId, 80),
+                    itemCode: truncateText(order?.itemCode || order?.productId, 80),
+                    item: truncateText(order?.item || order?.description, 160),
+                    stationId: truncateText(stationId, 40),
+                  },
+                  templateId: selectedLabelId || String((selectedLabel as any)?.id || "").trim() || null,
+                  source: "production_start_fallback",
+                }
+              );
+              totalQueuedCount += labelsToPrint;
+            }
+          }
+
           showSuccess(t("productionStartModal.notifications.labelsQueued", { count: totalQueuedCount, printer: targetPrinter.name }));
         } else {
           console.warn(`Geen printer geconfigureerd voor station ${stationId}, labels overgeslagen.`);
