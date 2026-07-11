@@ -489,13 +489,13 @@ export const generateLotBatchZPL = ({
     darkness = 15,
     labelWidthMm = 90,
     labelHeightMm = 13,
-    qrSizeMm = 11,
+    qrSizeMm = 10,
     qrXmm = 2,
     qrYmm = 1,
     qrCellWidth = null,
     textYmm = 2.2,
-    textHeightMm = 6.5,
-    textFillRatio = 0.82,
+    textHeightMm = 7,
+    textFillRatio = 0.92,
     rightMarginMm = 2,
     gapAfterQrMm = 2,
     lotTextShiftRightMm = 0,
@@ -539,26 +539,30 @@ export const generateLotBatchZPL = ({
     const dotsPerMm = printerDpi === 300 ? 12 : 8;
     const toDots = (mm: number): number => Math.round(mm * dotsPerMm);
 
+    // Fijn-afstelling voor 300 DPI: QR iets compacter zodat de code ruim vrij blijft van de scheidingslijn.
+    const effectiveQrSizeMm = printerDpi === 300 ? Math.max(8, qrSizeMm - 0.5) : qrSizeMm;
+    const effectiveTextFillRatio = printerDpi === 300 ? Math.min(0.95, safeFillRatio + 0.01) : safeFillRatio;
+
     const leftQrX = toDots(qrXmm);
     const qrY = toDots(qrYmm);
     const textY = toDots(textYmm);
     const fontHeightDots = toDots(textHeightMm);
-    const targetQrSizeDots = toDots(qrSizeMm);
+    const targetQrSizeDots = toDots(effectiveQrSizeMm);
     const autoQrCellWidth = Math.max(3, Math.round(targetQrSizeDots / 24));
     const effectiveQrCellWidth = Number.isFinite(Number(qrCellWidth)) && Number(qrCellWidth) > 0
         ? Number(qrCellWidth)
         : autoQrCellWidth;
-    const textAreaStartDots = toDots(qrXmm + qrSizeMm + gapAfterQrMm);
-    const textAreaWidthDots = toDots(labelWidthMm - rightMarginMm - (qrXmm + qrSizeMm + gapAfterQrMm));
+    const textAreaStartDots = toDots(qrXmm + effectiveQrSizeMm + gapAfterQrMm);
+    const textAreaWidthDots = toDots(labelWidthMm - rightMarginMm - (qrXmm + effectiveQrSizeMm + gapAfterQrMm));
     const lotChars = Math.max(8, ...rows.map((row) => String(row.text || "").length));
     const safeFillRatio = Math.max(0.6, Math.min(Number(textFillRatio) || 0.82, 0.95));
 
     // Gebruik een minder gecomprimeerde letterbreedte en schaal deze op naar de beschikbare tekstzone.
     // Dit voorkomt dat lotnummers op 90mm visueel "ingedrukt" ogen.
-    const targetTextWidthDots = Math.max(1, Math.round(textAreaWidthDots * safeFillRatio));
+    const targetTextWidthDots = Math.max(1, Math.round(textAreaWidthDots * effectiveTextFillRatio));
     const fittedWidthFromArea = Math.max(1, Math.floor(targetTextWidthDots / lotChars));
     const minFontWidthDots = Math.max(1, Math.round(fontHeightDots * 0.6));
-    const maxFontWidthDots = Math.max(minFontWidthDots, Math.round(fontHeightDots * 0.95));
+    const maxFontWidthDots = Math.max(minFontWidthDots, Math.round(fontHeightDots * 1.1));
     const fontWidthDots = Math.max(minFontWidthDots, Math.min(fittedWidthFromArea, maxFontWidthDots));
 
     const estimatedTextWidthDots = lotChars * fontWidthDots;
