@@ -488,40 +488,19 @@ const ProductionStartModal = ({
   };
 
   const resolveTargetPrinterAsync = async () => {
-    const rememberResolvedPrinter = (printer: any) => {
-      if (printer?.id) {
-        setPrintConfig((prev) => ({
-          ...prev,
-          printerId: String(printer.id),
-          mode: prev.mode === "queue" ? prev.mode : "queue",
-        }));
-      }
-      return printer;
-    };
-
     const boundPrinterId = getBoundPrinterIdForStation(stationId);
     const currentBound = boundPrinterId
       ? savedPrinters.find((p: any) => String(p?.id || "") === boundPrinterId)
       : null;
-    if (currentBound) return rememberResolvedPrinter(currentBound);
+    if (currentBound) return currentBound;
 
     const currentById = printConfig.printerId
       ? savedPrinters.find((p: any) => p.id === printConfig.printerId)
       : null;
-    if (currentById) return rememberResolvedPrinter(currentById);
+    if (currentById) return currentById;
 
     const currentResolved = resolveTargetPrinter(savedPrinters, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
-    if (currentResolved) return rememberResolvedPrinter(currentResolved);
-
-    const lastUsbPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || "").trim();
-    if (lastUsbPrinterId) {
-      const byLastUsb = savedPrinters.find((p: any) => String(p?.id || "") === lastUsbPrinterId);
-      if (byLastUsb) return rememberResolvedPrinter(byLastUsb);
-    }
-
-    if (savedPrinters.length === 1) {
-      return rememberResolvedPrinter(savedPrinters[0]);
-    }
+    if (currentResolved) return currentResolved;
 
     const prnPaths = PATHS.PRINTERS;
     const snap = await getDocs(collection(db, getPathString(prnPaths as string[])));
@@ -530,26 +509,15 @@ const ProductionStartModal = ({
     const fetchedBound = boundPrinterId
       ? fetchedPrinters.find((p: any) => String(p?.id || "") === boundPrinterId)
       : null;
-    if (fetchedBound) return rememberResolvedPrinter(fetchedBound);
+    if (fetchedBound) return fetchedBound;
 
     const fetchedResolved = resolveTargetPrinter(fetchedPrinters, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
-    if (fetchedResolved) return rememberResolvedPrinter(fetchedResolved);
+    if (fetchedResolved) return fetchedResolved;
 
     const fetchedById = printConfig.printerId
       ? fetchedPrinters.find((p: any) => p.id === printConfig.printerId)
       : null;
-    if (fetchedById) return rememberResolvedPrinter(fetchedById);
-
-    if (lastUsbPrinterId) {
-      const fetchedByLastUsb = fetchedPrinters.find((p: any) => String(p?.id || "") === lastUsbPrinterId);
-      if (fetchedByLastUsb) return rememberResolvedPrinter(fetchedByLastUsb);
-    }
-
-    if (fetchedPrinters.length === 1) {
-      return rememberResolvedPrinter(fetchedPrinters[0]);
-    }
-
-    return null;
+    return fetchedById || null;
   };
 
   const productForPreview = useMemo(() => ({
@@ -1879,11 +1847,6 @@ const ProductionStartModal = ({
         }
       }
 
-      // Zorg dat queue-print in zowel auto als manual modus een doelprinter heeft.
-      if (printConfig.mode === "queue" && !isFlangeOrder && !targetPrinter) {
-        targetPrinter = await resolveTargetPrinterAsync();
-      }
-
       const batchCount = Array.isArray(lotBatchLots) && lotBatchLots.length > 0 ? lotBatchLots.length : totalToProduce;
 
       updateOperation(startOpId, "Bezig met starten...");
@@ -1904,7 +1867,6 @@ const ProductionStartModal = ({
               isFlangeSeries: isFlangeOrder,
               skipStartLabel: isFlangeOrder || (
                 printConfig.mode === "queue" &&
-                Boolean(targetPrinter) &&
                 labelsToPrint > 0 &&
                 templateIdsToPrint.length > 0
               ),
@@ -1996,9 +1958,9 @@ const ProductionStartModal = ({
             }
           }
           showSuccess(t("productionStartModal.notifications.labelsQueued", { count: totalQueuedCount, printer: targetPrinter.name }));
-        } else {
+        } else if (!isManualMode) {
+          // Alleen een waarschuwing tonen als we niet in handmatige modus zitten en er geen printer is
           console.warn(`Geen printer geconfigureerd voor station ${stationId}, labels overgeslagen.`);
-          notify(`Geen printer geconfigureerd voor station ${stationId}; labels zijn niet in de wachtrij gezet.`);
         }
       }
 
