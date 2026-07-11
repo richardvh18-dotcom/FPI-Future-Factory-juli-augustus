@@ -534,50 +534,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       return;
     }
 
-    let activePrinterId = currentPrinterId || getCurrentPrinterId(printers, usbDevice);
-
-    if (!activePrinterId && usbDevice) {
-      const usbMatchedPrinters = printers.filter((printer) => {
-        const pVendor = parseUsbId(printer.vendorId);
-        const pProduct = parseUsbId(printer.productId);
-        return pVendor !== undefined && pProduct !== undefined && pVendor === usbDevice.vendorId && pProduct === usbDevice.productId;
-      });
-
-      if (usbMatchedPrinters.length === 1) {
-        activePrinterId = usbMatchedPrinters[0].id;
-      } else if (usbMatchedPrinters.length > 1) {
-        const pendingPrinterIds = new Set(
-          printJobs
-            .filter((job) => String(job?.status || '').toLowerCase() === 'pending')
-            .map((job) => String(job?.printerId || '').trim())
-            .filter(Boolean)
-        );
-        const matchedPending = usbMatchedPrinters.filter((printer) => pendingPrinterIds.has(String(printer.id || '').trim()));
-        if (matchedPending.length === 1) {
-          activePrinterId = matchedPending[0].id;
-        }
-      }
-    }
-
-    if (activePrinterId) {
-      const activePendingJobs = printJobs.filter((job) => job.status === 'pending' && job.printerId === activePrinterId);
-      if (activePendingJobs.length === 0 && usbDevice) {
-        const usbMatchedPrinters = printers.filter((printer) => {
-          const pVendor = parseUsbId(printer.vendorId);
-          const pProduct = parseUsbId(printer.productId);
-          return pVendor !== undefined && pProduct !== undefined && pVendor === usbDevice.vendorId && pProduct === usbDevice.productId;
-        });
-
-        const pendingUsbMatches = usbMatchedPrinters.filter((printer) =>
-          printJobs.some((job) => job.status === 'pending' && job.printerId === printer.id)
-        );
-
-        if (pendingUsbMatches.length === 1) {
-          activePrinterId = pendingUsbMatches[0].id;
-        }
-      }
-    }
-
+    const activePrinterId = currentPrinterId || getCurrentPrinterId(printers, usbDevice);
     if (!activePrinterId) return;
 
     const pendingJobs = printJobs.filter((job) => {

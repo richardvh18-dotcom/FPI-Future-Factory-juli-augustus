@@ -557,7 +557,7 @@ const App = () => {
           <ConfirmDialog />
           <BackgroundTaskOverlay />
           <ProgressToast />
-          <PrintQueueAutoProcessor enabled={Boolean(user && role === "operator")} />
+          <PrintQueueAutoProcessor enabled={Boolean(user && role !== "guest")} />
           {content}
         </BackgroundTaskProvider>
     </NotificationProvider>

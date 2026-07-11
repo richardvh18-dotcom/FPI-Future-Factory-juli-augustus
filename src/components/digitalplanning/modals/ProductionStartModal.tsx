@@ -26,7 +26,6 @@ import {
   evaluatePrintRules,
   type PrintRuleDef
 } from "../../../utils/labelHelpers";
-import { generatePrintData } from "../../../utils/zplHelper";
 import { getFlangeSeriesInfo } from "../../../utils/flangeSeriesHelper";
 import { lookupProductByManufacturedId } from "../../../utils/conversionLogic";
 import { useNotifications } from "../../../contexts/NotificationContext";
@@ -500,47 +499,6 @@ const ProductionStartModal = ({
       return printer;
     };
 
-    const matchUsbPrinter = async (printerList: any[]) => {
-      if (typeof navigator === "undefined" || !navigator.usb?.getDevices) {
-        return null;
-      }
-
-      const savedVendor = String(localStorage.getItem(USB_PRINTER_VENDOR_KEY) || "").trim();
-      const savedProduct = String(localStorage.getItem(USB_PRINTER_PRODUCT_KEY) || "").trim();
-      const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || "").trim();
-
-      try {
-        const devices = await navigator.usb.getDevices();
-        const match = devices.find((device) => {
-          if (savedVendor && savedProduct) {
-            return device.vendorId === Number(savedVendor) && device.productId === Number(savedProduct);
-          }
-
-          if (!savedPrinterId) return false;
-          const savedPrinter = printerList.find((printer) => String(printer?.id || "") === savedPrinterId);
-          return savedPrinter
-            ? Number(savedPrinter.vendorId) === device.vendorId && Number(savedPrinter.productId) === device.productId
-            : false;
-        });
-
-        if (match) {
-          const matchedPrinter = printerList.find((printer) => {
-            const printerVendor = Number(printer?.vendorId);
-            const printerProduct = Number(printer?.productId);
-            return printerVendor === match.vendorId && printerProduct === match.productId;
-          });
-
-          if (matchedPrinter) {
-            return matchedPrinter;
-          }
-        }
-      } catch (error) {
-        console.warn("Kon USB-printer niet automatisch koppelen in ProductionStartModal:", error);
-      }
-
-      return null;
-    };
-
     const boundPrinterId = getBoundPrinterIdForStation(stationId);
     const currentBound = boundPrinterId
       ? savedPrinters.find((p: any) => String(p?.id || "") === boundPrinterId)
@@ -551,9 +509,6 @@ const ProductionStartModal = ({
       ? savedPrinters.find((p: any) => p.id === printConfig.printerId)
       : null;
     if (currentById) return rememberResolvedPrinter(currentById);
-
-    const usbMatchedSaved = await matchUsbPrinter(savedPrinters);
-    if (usbMatchedSaved) return rememberResolvedPrinter(usbMatchedSaved);
 
     const currentResolved = resolveTargetPrinter(savedPrinters, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
     if (currentResolved) return rememberResolvedPrinter(currentResolved);
@@ -584,9 +539,6 @@ const ProductionStartModal = ({
       ? fetchedPrinters.find((p: any) => p.id === printConfig.printerId)
       : null;
     if (fetchedById) return rememberResolvedPrinter(fetchedById);
-
-    const usbMatchedFetched = await matchUsbPrinter(fetchedPrinters);
-    if (usbMatchedFetched) return rememberResolvedPrinter(usbMatchedFetched);
 
     if (lastUsbPrinterId) {
       const fetchedByLastUsb = fetchedPrinters.find((p: any) => String(p?.id || "") === lastUsbPrinterId);
@@ -1003,52 +955,6 @@ const ProductionStartModal = ({
             : null;
           const targetPrinter = resolveTargetPrinter(list, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
 
-          const resolveUsbPrinterFromList = async () => {
-            if (typeof navigator === "undefined" || !navigator.usb?.getDevices) return null;
-
-            const savedVendor = String(localStorage.getItem(USB_PRINTER_VENDOR_KEY) || "").trim();
-            const savedProduct = String(localStorage.getItem(USB_PRINTER_PRODUCT_KEY) || "").trim();
-            const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || "").trim();
-
-            try {
-              const devices = await navigator.usb.getDevices();
-              const matchedBySavedIds = devices.find((device) => {
-                if (savedVendor && savedProduct) {
-                  return device.vendorId === Number(savedVendor) && device.productId === Number(savedProduct);
-                }
-
-                if (!savedPrinterId) return false;
-                const savedPrinter = list.find((printer: any) => String(printer?.id || "") === savedPrinterId);
-                return savedPrinter
-                  ? Number(savedPrinter.vendorId) === device.vendorId && Number(savedPrinter.productId) === device.productId
-                  : false;
-              });
-
-              if (matchedBySavedIds) {
-                const matchedPrinter = list.find((printer: any) => {
-                  const printerVendor = Number(printer?.vendorId);
-                  const printerProduct = Number(printer?.productId);
-                  return printerVendor === matchedBySavedIds.vendorId && printerProduct === matchedBySavedIds.productId;
-                });
-                if (matchedPrinter) return matchedPrinter;
-              }
-
-              if (!savedVendor && !savedProduct && !savedPrinterId && devices.length === 1) {
-                const singleDevice = devices[0];
-                const printerByDevice = list.find((printer: any) => {
-                  const printerVendor = Number(printer?.vendorId);
-                  const printerProduct = Number(printer?.productId);
-                  return printerVendor === singleDevice.vendorId && printerProduct === singleDevice.productId;
-                });
-                if (printerByDevice) return printerByDevice;
-              }
-            } catch (error) {
-              console.warn("Kon USB-printer niet automatisch koppelen in ProductionStartModal:", error);
-            }
-
-            return null;
-          };
-
           const preferredPrinter = boundPrinter || targetPrinter;
 
           if (preferredPrinter) {
@@ -1059,17 +965,7 @@ const ProductionStartModal = ({
               mode: 'queue',
               printerId: boundPrinterId || prev.printerId || preferredPrinter.id
             }));
-            return;
           }
-
-          void resolveUsbPrinterFromList().then((usbPrinter) => {
-            if (!usbPrinter?.id) return;
-            setPrintConfig((prev) => ({
-              ...prev,
-              mode: 'queue',
-              printerId: String(usbPrinter.id),
-            }));
-          });
         });
         return () => unsub();
     } catch(e: any) {
@@ -1903,28 +1799,13 @@ const ProductionStartModal = ({
             lotNumber: effectiveLotNumber,
           };
           const darkness = Number.parseInt(String((targetPrinter as any)?.darkness || '15'), 10);
-          try {
-            printData = generatePrintData(
-              selectedLabel as any,
-              {
-                ...printPreviewData,
-                isLastOfBatch: true,
-              } as Record<string, unknown>,
-              dpiForPrint
-            );
-          } catch (directZplError) {
-            console.warn(`Directe ZPL generatie mislukt voor template ${String((selectedLabel as any)?.name || selectedLabelId || '')}, valt terug op bitmap-render.`, directZplError);
-          }
-
-          if (!String(printData || '').trim()) {
-            printData = await renderLabelToBitmapZpl({
-              template: selectedLabel as any,
-              data: printPreviewData as Record<string, unknown>,
-              printerDpi: dpiForPrint,
-              darkness: Number.isFinite(darkness) ? darkness : 15,
-              printSpeed: 3,
-            });
-          }
+          printData = await renderLabelToBitmapZpl({
+            template: selectedLabel as any,
+            data: printPreviewData as Record<string, unknown>,
+            printerDpi: dpiForPrint,
+            darkness: Number.isFinite(darkness) ? darkness : 15,
+            printSpeed: 3,
+          });
         }
       } else {
         // Manual mode: eerst machinecode validatie, dan uniciteitscheck.
@@ -2045,22 +1926,6 @@ const ProductionStartModal = ({
       void logActivity(auth.currentUser?.uid || "system", "ORDER_RELEASE", `Order started: ${order.orderId}, Lot: ${effectiveLotNumber}`);
 
       // --- NIEUWE PRINT LOOP VOOR MEERDERE TEMPLATES ---
-      let anyLabelQueued = false;
-
-      console.info("[ProductionStart] print-diagnose", {
-        isFlangeOrder,
-        printConfigMode: printConfig.mode,
-        labelsToPrint,
-        templateIdsToPrintCount: templateIdsToPrint.length,
-        templateIdsToPrint,
-        hasTargetPrinter: Boolean(targetPrinter),
-        targetPrinterId: targetPrinter?.id || null,
-        savedPrintersCount: savedPrinters.length,
-        hasPrintData: Boolean(String(printData || "").trim()),
-        selectedLabelId,
-        stationId,
-      });
-
       if (!isFlangeOrder && printConfig.mode === "queue" && labelsToPrint > 0 && templateIdsToPrint.length > 0) {
         if (targetPrinter) {
           persistPrinterBindingForAutoProcessor(stationId, targetPrinter);
@@ -2083,42 +1948,13 @@ const ProductionStartModal = ({
               try {
                 const dpiForPrint = getNormalizedPrinterDpi(targetPrinter, 203);
                 const darkness = Number.parseInt(String((targetPrinter as any)?.darkness || '15'), 10);
-                const printVariables = { ...previewData, lotNumber: currentLot } as Record<string, unknown>;
-                let currentPrintData = "";
-
-                try {
-                  currentPrintData = generatePrintData(
-                    templateToPrint as any,
-                    {
-                      ...printVariables,
-                      isLastOfBatch: true,
-                    } as Record<string, unknown>,
-                    dpiForPrint
-                  );
-                } catch (bitmapError) {
-                  console.warn(`Directe ZPL generatie mislukt voor template ${templateToPrint.name}, valt terug op bitmap-render.`, bitmapError);
-                }
-
-                if (!String(currentPrintData || "").trim()) {
-                  currentPrintData = await renderLabelToBitmapZpl({
-                    template: templateToPrint as any,
-                    data: printVariables,
-                    printerDpi: dpiForPrint,
-                    darkness: Number.isFinite(darkness) ? darkness : 15,
-                    printSpeed: 3,
-                  });
-                }
-
-                if (!String(currentPrintData || "").trim()) {
-                  currentPrintData = generatePrintData(
-                    templateToPrint as any,
-                    {
-                      ...printVariables,
-                      isLastOfBatch: true,
-                    } as Record<string, unknown>,
-                    dpiForPrint
-                  );
-                }
+                const currentPrintData = await renderLabelToBitmapZpl({
+                  template: templateToPrint as any,
+                  data: { ...previewData, lotNumber: currentLot } as Record<string, unknown>,
+                  printerDpi: dpiForPrint,
+                  darkness: Number.isFinite(darkness) ? darkness : 15,
+                  printSpeed: 3,
+                });
 
                 const normalizedPrintData = String(currentPrintData || "").trim();
                 if (!normalizedPrintData) {
@@ -2153,59 +1989,17 @@ const ProductionStartModal = ({
                     }
                 );
                 totalQueuedCount += labelsToPrint;
-                anyLabelQueued = true;
               } catch (printError: unknown) {
                 const printMessage = getErrorMessage(printError);
                 notify(t("productionStartModal.errors.printFailedForTemplate", { template: templateToPrint.name, message: printMessage }));
               }
             }
           }
-
-          if (totalQueuedCount === 0 && targetPrinter && printData) {
-            const fallbackPrintData = String(printData || "").trim();
-            if (fallbackPrintData) {
-              await queuePrintJob(
-                targetPrinter.id,
-                fallbackPrintData,
-                {
-                  description: `Label voor ${order.orderId} (Lot: ${effectiveLotNumber}) (x${labelsToPrint})`,
-                  quantity: labelsToPrint,
-                  labelCount: labelsToPrint,
-                  forceQuantityCopies: true,
-                  orderId: order.orderId,
-                  lotNumber: effectiveLotNumber,
-                  stationId: stationId || t("common.unknown"),
-                  machineId: scopedMachineId,
-                  originMachine: scopedMachineId,
-                  targetPrinterName: targetPrinter.name,
-                  width: parseInt(String((selectedLabel as any)?.width || 0), 10),
-                  height: parseInt(String((selectedLabel as any)?.height || 0), 10),
-                  variables: {
-                    lotNumber: effectiveLotNumber,
-                    orderId: truncateText(order?.orderId, 80),
-                    itemCode: truncateText(order?.itemCode || order?.productId, 80),
-                    item: truncateText(order?.item || order?.description, 160),
-                    stationId: truncateText(stationId, 40),
-                  },
-                  templateId: selectedLabelId || String((selectedLabel as any)?.id || "").trim() || null,
-                  source: "production_start_fallback",
-                }
-              );
-              totalQueuedCount += labelsToPrint;
-              anyLabelQueued = true;
-            }
-          }
-
           showSuccess(t("productionStartModal.notifications.labelsQueued", { count: totalQueuedCount, printer: targetPrinter.name }));
         } else {
           console.warn(`Geen printer geconfigureerd voor station ${stationId}, labels overgeslagen.`);
           notify(`Geen printer geconfigureerd voor station ${stationId}; labels zijn niet in de wachtrij gezet.`);
         }
-      }
-
-      if (!isFlangeOrder && printConfig.mode === "queue" && labelsToPrint > 0 && templateIdsToPrint.length === 0) {
-        console.warn(`Geen labeltemplate geselecteerd voor station ${stationId}; labels zijn niet in de wachtrij gezet.`);
-        notify(`Geen labeltemplate geselecteerd voor station ${stationId}; labels zijn niet in de wachtrij gezet.`);
       }
 
       if (printConfig.mode === "queue" && shouldPrintStringLotBatch && lotBatchPrintData) {
@@ -2245,81 +2039,6 @@ const ProductionStartModal = ({
           const printMessage = getErrorMessage(printError);
           notify(t("productionStartModal.errors.stringLotPrintFailed", { message: printMessage }));
           showError(t("productionStartModal.errors.stringLotPrintFailed", { message: printMessage }));
-        }
-      }
-
-      // Vangnet: als er in queue-modus voor een niet-flens order nog geen enkele
-      // printtaak is aangemaakt, forceer dan alsnog een queue-job zodat de
-      // operator-start nooit stil zonder printopdracht eindigt.
-      if (!isFlangeOrder && printConfig.mode === "queue" && labelsToPrint > 0 && !anyLabelQueued) {
-        try {
-          if (!targetPrinter) {
-            targetPrinter = await resolveTargetPrinterAsync();
-          }
-
-          const scopedMachineId = normalizedStationNoPrefix || normalizedStationId;
-          const guaranteedDpi = getNormalizedPrinterDpi(targetPrinter, 203);
-          const guaranteedTemplate = (selectedLabel as any)
-            || allLabels.find((l) => l.id === (selectedLabelId || templateIdsToPrint[0]))
-            || null;
-
-          let guaranteedPayload = String(printData || "").trim();
-          if (!guaranteedPayload && guaranteedTemplate) {
-            guaranteedPayload = String(
-              generatePrintData(
-                guaranteedTemplate as any,
-                {
-                  ...previewData,
-                  lotNumber: effectiveLotNumber,
-                  isLastOfBatch: true,
-                } as Record<string, unknown>,
-                guaranteedDpi
-              ) || ""
-            ).trim();
-          }
-
-          if (targetPrinter && guaranteedPayload) {
-            persistPrinterBindingForAutoProcessor(stationId, targetPrinter);
-            await queuePrintJob(
-              targetPrinter.id,
-              guaranteedPayload,
-              {
-                description: `Label voor ${order.orderId} (Lot: ${effectiveLotNumber}) (x${labelsToPrint})`,
-                quantity: labelsToPrint,
-                labelCount: labelsToPrint,
-                forceQuantityCopies: true,
-                orderId: order.orderId,
-                lotNumber: effectiveLotNumber,
-                stationId: stationId || t("common.unknown"),
-                machineId: scopedMachineId,
-                originMachine: scopedMachineId,
-                targetPrinterName: targetPrinter.name,
-                width: parseInt(String((guaranteedTemplate as any)?.width || 0), 10),
-                height: parseInt(String((guaranteedTemplate as any)?.height || 0), 10),
-                variables: {
-                  lotNumber: effectiveLotNumber,
-                  orderId: truncateText(order?.orderId, 80),
-                  itemCode: truncateText(order?.itemCode || order?.productId, 80),
-                  item: truncateText(order?.item || order?.description, 160),
-                  stationId: truncateText(stationId, 40),
-                },
-                templateId: selectedLabelId || String((guaranteedTemplate as any)?.id || "").trim() || null,
-                source: "production_start_guaranteed",
-              }
-            );
-            anyLabelQueued = true;
-            showSuccess(t("productionStartModal.notifications.labelsQueued", { count: labelsToPrint, printer: targetPrinter.name }));
-          } else {
-            console.warn("[ProductionStart] Vangnet kon geen queue-job maken", {
-              hasTargetPrinter: Boolean(targetPrinter),
-              hasPayload: Boolean(guaranteedPayload),
-            });
-            notify(`Geen printopdracht aangemaakt voor ${stationId}; controleer printerkoppeling.`);
-          }
-        } catch (guaranteedError: unknown) {
-          const guaranteedMessage = getErrorMessage(guaranteedError);
-          console.error("[ProductionStart] Vangnet queue-job mislukt:", guaranteedMessage);
-          notify(`Printopdracht kon niet worden aangemaakt: ${guaranteedMessage}`);
         }
       }
     } catch (e: any) {
