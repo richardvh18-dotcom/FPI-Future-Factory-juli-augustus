@@ -1847,13 +1847,28 @@ const ProductionStartModal = ({
             lotNumber: effectiveLotNumber,
           };
           const darkness = Number.parseInt(String((targetPrinter as any)?.darkness || '15'), 10);
-          printData = await renderLabelToBitmapZpl({
-            template: selectedLabel as any,
-            data: printPreviewData as Record<string, unknown>,
-            printerDpi: dpiForPrint,
-            darkness: Number.isFinite(darkness) ? darkness : 15,
-            printSpeed: 3,
-          });
+          try {
+            printData = generatePrintData(
+              selectedLabel as any,
+              {
+                ...printPreviewData,
+                isLastOfBatch: true,
+              } as Record<string, unknown>,
+              dpiForPrint
+            );
+          } catch (directZplError) {
+            console.warn(`Directe ZPL generatie mislukt voor template ${String((selectedLabel as any)?.name || selectedLabelId || '')}, valt terug op bitmap-render.`, directZplError);
+          }
+
+          if (!String(printData || '').trim()) {
+            printData = await renderLabelToBitmapZpl({
+              template: selectedLabel as any,
+              data: printPreviewData as Record<string, unknown>,
+              printerDpi: dpiForPrint,
+              darkness: Number.isFinite(darkness) ? darkness : 15,
+              printSpeed: 3,
+            });
+          }
         }
       } else {
         // Manual mode: eerst machinecode validatie, dan uniciteitscheck.
@@ -2000,6 +2015,19 @@ const ProductionStartModal = ({
                 let currentPrintData = "";
 
                 try {
+                  currentPrintData = generatePrintData(
+                    templateToPrint as any,
+                    {
+                      ...printVariables,
+                      isLastOfBatch: true,
+                    } as Record<string, unknown>,
+                    dpiForPrint
+                  );
+                } catch (bitmapError) {
+                  console.warn(`Directe ZPL generatie mislukt voor template ${templateToPrint.name}, valt terug op bitmap-render.`, bitmapError);
+                }
+
+                if (!String(currentPrintData || "").trim()) {
                   currentPrintData = await renderLabelToBitmapZpl({
                     template: templateToPrint as any,
                     data: printVariables,
@@ -2007,8 +2035,6 @@ const ProductionStartModal = ({
                     darkness: Number.isFinite(darkness) ? darkness : 15,
                     printSpeed: 3,
                   });
-                } catch (bitmapError) {
-                  console.warn(`Bitmap render mislukt voor template ${templateToPrint.name}, valt terug op directe ZPL.`, bitmapError);
                 }
 
                 if (!String(currentPrintData || "").trim()) {
