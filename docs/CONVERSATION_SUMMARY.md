@@ -6,6 +6,21 @@
 
 ---
 
+### Update sessie 11 July 2026 (Roadmap & Robot Integratie)
+
+**Datum:** 11 July 2026 | **Branch:** master / main
+
+**Uitgevoerd:**
+- Onderzocht: De Rodomach wikkelrobot workflow via `WM18_Rekenprogramma_versie_12.xlsm`.
+- Conclusie: De Excel verstuurt momenteel geen `.json` in een watch folder, maar genereert een `.MOD` (RAPID) bestand dat direct via FTP naar IP `192.168.125.1` (slot 1/2) wordt geschoten.
+- Visie / Roadmap uitgebreid: Dit concept is vastgelegd in `VISION.md` en `03_PROJECT_PLANNING.md` om in de toekomst:
+  1. De VBA code om te schrijven naar Node/TypeScript.
+  2. Een 'Zelflerende' Parameter UI te maken in Future Factory.
+  3. Bij "Start Productie" het `.MOD` bestand automatisch te genereren en naar de robot te FTP'en.
+- Het volledige implementatieplan opgeslagen als document: `docs/implementation_plan-robot.md`.
+
+---
+
 ### Samenvatting sessie 10 July 2026 (geconsolideerd)
 
 Deze dag stond volledig in het teken van stabiliteit, performance en printpariteit tussen Print Stations, Sidebar printers en ProductionStart, met als hoofdthema een betrouwbare Order Labels-flow voor BH-machines.

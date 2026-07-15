@@ -64,10 +64,10 @@
     "vitest": "^3.2.4"
   },
   "scripts": {
-    "dev": "vite",
-    "dev:test": "vite --mode development",
-    "dev:prod": "vite --mode production",
-    "start": "vite",
+    "dev": "vite --port 3000",
+    "dev:test": "vite --mode development --port 3000",
+    "dev:prod": "vite --mode production --port 3000",
+    "start": "vite --port 3000",
     "build": "vite build",
     "build:test": "vite build --mode development",
     "build:prod": "vite build --mode production",

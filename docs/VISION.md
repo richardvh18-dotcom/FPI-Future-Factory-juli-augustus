@@ -72,4 +72,5 @@ Om deze AI-First visie te realiseren, doorloopt het platform eerst een technisch
 2. **Event Sourcing & Tijdreeksen:** Het opslaan van historische wijzigingen (append-only) in plaats van overschrijven, noodzakelijk voor voorspellend onderhoud (Predictive Maintenance).
 3. **Beveiligde Backend Endpoints:** Het verplaatsen van zware berekeningen en LLM-connecties naar veilige Cloud Functions.
 4. **Vector Zoeken:** Het inrichten van embeddings voor eerdere storingen en PDF-handleidingen (Root Cause AI).
-5. **Machine-API's (IoT):** Directe sensor-data feeds (bijv. via Infor ION of MQTT) om de Digital Twin en OEE real-time te voeden zonder menselijke tussenkomst.
+75: 5. **Machine-API's (IoT):** Directe sensor-data feeds (bijv. via Infor ION of MQTT) om de Digital Twin en OEE real-time te voeden zonder menselijke tussenkomst.
+76: 6. **Directe Robot-Integratie & Zelflerende Parameters:** Reverse-engineering van Excel-macro's om automatische programma's (.MOD voor ABB/Rodomach) te genereren via FTP direct vanuit de webapplicatie. Gebruik van productiedata voor AI-gedreven, zelflerende robotparameters.

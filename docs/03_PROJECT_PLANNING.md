@@ -559,3 +559,9 @@ Dit document is de **'Single Source of Truth'** voor de technische ontwikkeling.
 - [ ] Staging environment + production parity
 - [ ] Sentry/LogRocket error tracking
 - [ ] Automated performance benchmarks
+
+### Prioriteit 4: AI & Machine Integratie (Future Scope)
+- [ ] Reverse-engineeren WM18 Excel-Rekenprogramma naar TypeScript
+- [ ] Zelflerende robotparameters engine (analyse op historische cycli en afkeur)
+- [ ] UI voor Robot Configuratie (Engineers)
+- [ ] FTP auto-export generatie (.MOD) direct vanuit ProductionStartModal (Slot 1 / 2)
