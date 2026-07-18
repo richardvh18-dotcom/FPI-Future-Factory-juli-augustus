@@ -1,3 +1,5 @@
+import { auth, logActivity } from "../config/firebase";
+
 type UsbPrinterFilterInput = {
   vendorId?: unknown;
   productId?: unknown;
@@ -326,9 +328,11 @@ export const requestUsbDevice = async (printer: UsbPrinterFilterInput = {}): Pro
 export const printRawUsbToDevice = async ({
   device,
   content,
+  logMessage,
 }: {
   device: USBDevice | null | undefined;
   content: unknown;
+  logMessage?: string;
 }) => {
   if (!device) {
     throw new Error("Geen printer verbonden.");
@@ -362,6 +366,14 @@ export const printRawUsbToDevice = async ({
       }
     }
 
+    if (logMessage) {
+      try {
+        await logActivity(auth.currentUser?.uid || "system", "PRINT_LABEL", logMessage);
+      } catch (e) {
+        console.error("Logging print mislukt:", e);
+      }
+    }
+
     return {
       productName: device.productName || "Onbekende USB printer",
       vendorId: device.vendorId,
@@ -378,16 +390,18 @@ export const printRawUsbToDevice = async ({
 export const printRawUsb = async ({
   content,
   printer = {},
+  logMessage,
 }: {
   content: unknown;
   printer?: UsbPrinterFilterInput;
+  logMessage?: string;
 }) => {
   if (!content || !String(content).trim()) {
     throw new Error("Geen printinhoud opgegeven.");
   }
 
   const device = await selectUsbDevice(printer);
-  return printRawUsbToDevice({ device, content });
+  return printRawUsbToDevice({ device, content, logMessage });
 };
 
 export const isUsbDirectSupported = (): boolean => {

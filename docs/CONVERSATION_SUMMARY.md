@@ -11313,3 +11313,5 @@ F i x e d   i s s u e   w h e r e   s t a t u s   s e l e c t i o n   w a s   h 
  A d d e d   ' H a n d m a t i g   A a n m a k e n '   m o d e   t o   T e m p L a b e l M o d a l   i n   P r i n t S t a t i o n V i e w . t s x   t o   a l l o w   g e n e r a t i n g   d u m m y   O r d e r   L a b e l   d a t a   m a n u a l l y   w i t h o u t   t y p i n g   t h e   f u l l   1 5 - d i g i t   l o t   n u m b e r . 
  
  
+- Aangemaakt: `docs/04_OWNERSHIP_TRANSFER.md` met een stappenplan voor het overdragen van GitHub en Firebase naar @futurepipe.com accounts.
+- Print-acties (via USB en de wachtrij) worden nu expliciet in het Activiteiten Logboek geregistreerd, inclusief ordereferenties en lotnummers.

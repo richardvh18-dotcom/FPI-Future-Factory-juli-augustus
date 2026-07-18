@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { db } from '../../config/firebase';
+import { db, auth, logActivity } from '../../config/firebase';
 import { collection, query, where, getDocs, limit, doc, getDoc, documentId, onSnapshot, collectionGroup, orderBy } from 'firebase/firestore';
 import { PATHS, getPathString, getArchiveItemsPath } from '../../config/dbPaths';
 import { Loader2, Printer, Search, RefreshCw, Send, X, Tag, Usb, Settings2 } from 'lucide-react';
@@ -1227,7 +1227,7 @@ const PrintStationView = () => {
     }
   };
 
-  const printRawUsb = async (device: USBDevice, content: string) => {
+  const printRawUsb = async (device: USBDevice, content: string, logMessage?: string) => {
     if (!device) throw new Error("Geen printer verbonden");
     if (!device.opened) await device.open();
     if (device.configuration === null) await device.selectConfiguration(1);
@@ -1244,6 +1244,14 @@ const PrintStationView = () => {
     const endpointNumber = endpoint ? endpoint.endpointNumber : 1;
 
     await device.transferOut(endpointNumber, data);
+
+    if (logMessage) {
+      try {
+        await logActivity(auth.currentUser?.uid || 'system', 'PRINT_LABEL', logMessage);
+      } catch (err) {
+        console.error("Logging print failed:", err);
+      }
+    }
   };
 
   useEffect(() => {
@@ -1616,7 +1624,7 @@ const PrintStationView = () => {
         const usbPayload = printQuantity > 1
           ? Array.from({ length: printQuantity }, () => zpl).join('\n')
           : zpl;
-        await printRawUsb(deviceToUse, usbPayload);
+        await printRawUsb(deviceToUse, usbPayload, `Order label geprint voor order: ${order}`);
         const labelsPrinted = Math.max(1, (templatesToPrint.length || 1) * printQuantity);
         showSuccess(`${labelsPrinted} label(s) voor ${order} direct geprint via USB!`);
         setShowTempModal(false);
@@ -1703,7 +1711,7 @@ const PrintStationView = () => {
         }
       }
 
-  await printRawUsb(deviceToUse, printDataChunks.join('\n'));
+  await printRawUsb(deviceToUse, printDataChunks.join('\n'), `Batch order labels geprint voor lot: ${productData.lotNumber}`);
   showSuccess(`${templatesToPrint.length} label(s) voor lot ${productData.lotNumber} direct geprint via USB!`);
       
       setProductData(null);
@@ -1738,7 +1746,7 @@ const PrintStationView = () => {
       }
     }
 
-    await printRawUsb(deviceToUse, batchData);
+    await printRawUsb(deviceToUse, batchData, `Auto-print batch labels geprint (Aantal: ${lotCount})`);
     showSuccess(`${lotCount} lotnummer(s) direct geprint via USB!`);
   };
 

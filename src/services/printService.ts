@@ -88,10 +88,13 @@ export const queuePrintJob = async (printerId: string, zplData: string, metadata
     };
 
     const docRef = await addDoc(queueRef, jobData);
+    const logDesc = metadata?.description 
+      ? `Printjob in wachtrij: ${metadata.description} (${printerId})`
+      : `Printjob in wachtrij gezet: ${docRef.id} (${printerId})`;
     await logActivity(
       currentUserId,
       "PRINT_QUEUE_ADD",
-      `Printjob in wachtrij gezet: ${docRef.id} (${printerId})`
+      logDesc
     );
     return docRef.id;
   } catch (error) {
