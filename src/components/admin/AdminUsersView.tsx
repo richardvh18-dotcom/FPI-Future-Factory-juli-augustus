@@ -47,6 +47,7 @@ import {
 import { PATHS, isValidPath, getPathString } from "../../config/dbPaths";
 import { createUserWithEmailAndPassword, getAuth, signOut } from "firebase/auth";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useAdminAuth } from "../../hooks/useAdminAuth";
 
 type RoleRecord = {
   id: string;
@@ -131,6 +132,7 @@ const getErrorCode = (err: unknown): string | undefined => {
  */
 const AdminUsersView = () => {
   const { t } = useTranslation();
+  const { role: currentUserRole } = useAdminAuth();
   const { showConfirm , notify} = useNotifications();
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [accountRequests, setAccountRequests] = useState<AccountRequestRecord[]>([]);
@@ -147,6 +149,25 @@ const AdminUsersView = () => {
   const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [expandedCountries, setExpandedCountries] = useState<Record<string, boolean>>({}); // State voor inklapbare groepen
   const [expandedModules, setExpandedModules] = useState<Record<string, boolean>>({}); // State voor uitgevouwen modules in permissions
+
+  // Helper to determine real-time presence
+  const getPresenceStatus = (user: UserRecord) => {
+    const status = user.presenceStatus;
+    const lastActive = user.lastActiveAt as { seconds?: number; toMillis?: () => number } | undefined;
+    
+    if (!status || !lastActive) return "offline";
+
+    const lastActiveMs = typeof lastActive.toMillis === "function" 
+      ? lastActive.toMillis() 
+      : (lastActive.seconds ? lastActive.seconds * 1000 : 0);
+
+    const timeSinceLastActive = Date.now() - lastActiveMs;
+    // Als de laatste activiteit meer dan 15 minuten (900000ms) geleden is, toon als offline (ongeacht de status)
+    if (timeSinceLastActive > 15 * 60 * 1000) return "offline";
+    
+    return status === "idle" ? "idle" : "online";
+  };
+
   const [allStations, setAllStations] = useState<StationRecord[]>([]);
   const [stationFilterCountry, setStationFilterCountry] = useState("All");
   const [stationFilterDept, setStationFilterDept] = useState("All");
@@ -345,6 +366,7 @@ const AdminUsersView = () => {
             // Fallback defaults als DB leeg is
             setRoles([
                 { id: "admin", label: "Master Admin", color: "bg-blue-600" },
+                { id: "supervisor", label: "Supervisor", color: "bg-indigo-600" },
                 { id: "engineer", label: "Process Engineer", color: "bg-purple-600" },
                 { id: "teamleader", label: "Teamleider", color: "bg-emerald-600" },
                 { id: "operator", label: "Machine Operator", color: "bg-orange-600" },
@@ -975,13 +997,15 @@ const AdminUsersView = () => {
               <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
 
-            <button
-              onClick={() => setShowAddUserModal(true)}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black uppercase text-xs tracking-widest transition-all flex items-center gap-2 shadow-lg whitespace-nowrap"
-            >
-              <UserPlus size={18} />
-              <span className="hidden md:inline">{t('adminUsers.addUser', "Gebruiker Toevoegen")}</span>
-            </button>
+            {currentUserRole === 'admin' && (
+              <button
+                onClick={() => setShowAddUserModal(true)}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black uppercase text-xs tracking-widest transition-all flex items-center gap-2 shadow-lg whitespace-nowrap"
+              >
+                <UserPlus size={18} />
+                <span className="hidden md:inline">{t('adminUsers.addUser', "Gebruiker Toevoegen")}</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1100,10 +1124,34 @@ const AdminUsersView = () => {
                                   <div className="w-14 h-14 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                                     <Fingerprint size={28} />
                                   </div>
-                                  <div className="text-left overflow-hidden">
-                                    <h4 className="font-black text-slate-900 uppercase italic truncate text-lg leading-none mb-1.5">
-                                      {u.name || "Identiteit Onbekend"}
-                                    </h4>
+                                  <div className="text-left overflow-hidden w-full">
+                                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                                      <h4 className="font-black text-slate-900 uppercase italic truncate text-lg leading-none">
+                                        {u.name || "Identiteit Onbekend"}
+                                      </h4>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        {getPresenceStatus(u) === "online" && (
+                                          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-green-50 border border-green-100 rounded-full" title="Gebruiker is momenteel online en actief">
+                                            <span className="relative flex h-2 w-2">
+                                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                            </span>
+                                            <span className="text-[9px] font-black uppercase text-green-600">Online</span>
+                                          </div>
+                                        )}
+                                        {getPresenceStatus(u) === "idle" && (
+                                          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-orange-50 border border-orange-100 rounded-full" title="Gebruiker is ingelogd maar 10+ min niet actief">
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-400"></span>
+                                            <span className="text-[9px] font-black uppercase text-orange-600">Afwezig</span>
+                                          </div>
+                                        )}
+                                        {getPresenceStatus(u) === "offline" && (
+                                          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-50 border border-slate-100 rounded-full" title="Gebruiker is offline">
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-slate-300"></span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
                                     <div className="flex flex-wrap gap-2">
                                       <span
                                         className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest text-white shadow-sm ${
@@ -1147,6 +1195,15 @@ const AdminUsersView = () => {
                                 >
                                   <Key size={18} />
                                 </button>
+                                {currentUserRole === 'admin' && (
+                                  <button
+                                    onClick={() => handleDelete(u.id)}
+                                    className="p-3 bg-slate-50 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                                    title={t('common.delete', "Verwijderen")}
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => handleEdit(u)}
                                   className="p-3 bg-slate-50 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"

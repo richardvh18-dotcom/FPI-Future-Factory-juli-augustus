@@ -21,6 +21,15 @@ const toTokenList = (value: unknown): string[] => {
   return [];
 };
 
+export type PrinterRoutingRule = {
+  id?: string;
+  conditionType: string; // 'itemCode', 'station', etc.
+  operator: string;      // 'startsWith', 'regex', 'equals'
+  conditionValue: string;
+  targetPrinter: string;
+  isActive?: boolean;
+};
+
 export type PrinterRoutingContext = {
   stationId?: string;
   routeKey?: string;
@@ -43,7 +52,10 @@ export type PrinterRoutingTarget = {
   [key: string]: unknown;
 };
 
-export const getPrinterRoutingCandidates = (context: PrinterRoutingContext = {}): string[] => {
+export const getPrinterRoutingCandidates = (
+  context: PrinterRoutingContext = {},
+  dynamicRules: PrinterRoutingRule[] = []
+): string[] => {
   const candidates = new Set<string>();
   const station = normalizeRouteToken(context.stationId);
   const routeKey = normalizeRouteToken(context.routeKey || context.labelRoute || context.labelType);
@@ -64,6 +76,38 @@ export const getPrinterRoutingCandidates = (context: PrinterRoutingContext = {})
 
   const itemCode = normalizeRouteToken(context.itemCode || context.item);
   const hasFlangeTemplateTag = templateTags.includes("FLANGE") || templateTags.includes("FLENS") || templateTags.includes("FLENZEN");
+  
+  // Apply dynamic rules from Firestore if provided
+  if (dynamicRules && dynamicRules.length > 0) {
+    for (const rule of dynamicRules) {
+      if (!rule.isActive) continue;
+      
+      let matched = false;
+      const targetVal = rule.conditionType === 'station' ? station : 
+                        rule.conditionType === 'itemCode' ? itemCode : '';
+      
+      if (rule.operator === 'startsWith') {
+        matched = targetVal.startsWith(rule.conditionValue);
+      } else if (rule.operator === 'regex') {
+        try {
+          const re = new RegExp(rule.conditionValue, 'i');
+          matched = re.test(targetVal);
+        } catch(e) {
+          console.warn("Invalid regex in printer rule:", rule.conditionValue);
+        }
+      } else if (rule.operator === 'equals') {
+        matched = targetVal === rule.conditionValue;
+      }
+
+      if (matched && rule.targetPrinter) {
+        candidates.add(rule.targetPrinter);
+        candidates.add(`ROUTE:${rule.targetPrinter}`);
+        candidates.add(`LABEL:${rule.targetPrinter}`);
+      }
+    }
+  }
+
+  // Fallback / legacy hardcoded rules (in case dynamic rules are not passed/loaded yet)
   if (context.isFlange || itemCode.startsWith("FL") || hasFlangeTemplateTag) {
     candidates.add("MAZAK");
     candidates.add("FLANGE");
@@ -106,11 +150,12 @@ export const getPrinterRoutingTokens = (printer: PrinterRoutingTarget | null | u
 
 export const resolvePrinterForRouting = <T extends PrinterRoutingTarget>(
   printers: T[],
-  context: PrinterRoutingContext = {}
+  context: PrinterRoutingContext = {},
+  dynamicRules: PrinterRoutingRule[] = []
 ): T | null => {
   if (!Array.isArray(printers) || printers.length === 0) return null;
 
-  const candidates = getPrinterRoutingCandidates(context);
+  const candidates = getPrinterRoutingCandidates(context, dynamicRules);
   if (candidates.length === 0) return null;
 
   let bestPrinter: T | null = null;

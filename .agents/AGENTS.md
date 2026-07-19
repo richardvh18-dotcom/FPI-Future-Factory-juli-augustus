@@ -10,3 +10,6 @@
 
 ## Deployments & Versioning
 - **Version Bumping**: Every time a deployment is performed, the application version MUST be bumped (e.g., in `package.json` or `.env`) to ensure that clients automatically refresh and fetch the latest version.
+
+## Codebase Architecture & Context
+- **AI Knowledge Base**: You MUST refer to `docs/06_AI_KNOWLEDGE_BASE.md` if you need to understand how the `src/` directory is structured, how state is managed, or how components relate to each other in this specific project.

@@ -2,12 +2,18 @@
 import React, { useState, useEffect } from "react";
 import RoadmapViewer from "./RoadmapViewer";
 
-import projPlanningMd from '../../../docs/03_PROJECT_PLANNING.md?raw';
-import opsNotesMd from '../../../docs/04_OPERATIONS_NOTES_AND_TASKS.md?raw';
-import envDeployMd from '../../../docs/05_ENVIRONMENTS_AND_DEPLOYMENT.md?raw';
+import projectStructureMd from '../../../docs/01_PROJECTSTRUCTUUR_EN_ARCHITECTUUR.md?raw';
+import devGuideMd from '../../../docs/02_HANDLEIDING_ONTWIKKELAARS.md?raw';
+import featuresMd from '../../../docs/03_FEATURES_EN_MODULES.md?raw';
+import deployMd from '../../../docs/04_DEPLOYMENT_EN_OPERATIONS.md?raw';
+import ideEnvMd from '../../../docs/05_WERKOMGEVINGEN_IDE.md?raw';
+import aiKbMd from '../../../docs/06_AI_KNOWLEDGE_BASE.md?raw';
 import convSummaryMd from '../../../docs/CONVERSATION_SUMMARY.md?raw';
-import printerRoutingMd from '../../../docs/PRINTER_ROUTING_SETUP.md?raw';
 import restoreSopMd from '../../../docs/RESTORE_SOP.md?raw';
+import visionMd from '../../../docs/VISION.md?raw';
+import printRouteMd from '../../../docs/PRINTER_ROUTING_SETUP.md?raw';
+import printParityMd from '../../../docs/PRINT_PREVIEW_PARITY_VALIDATION.md?raw';
+import glassCalcMd from '../../../docs/GLASS_CALCULATION_SHEET_MAPPING.md?raw';
 
 import { useTranslation } from "react-i18next";
 import i18n from "i18next";
@@ -30,8 +36,11 @@ import {
   Loader2,
   AlertTriangle,
   FolderTree,
-  FileText
+  FileText,
+  Play
 } from "lucide-react";
+import { saveAs } from 'file-saver';
+import { migrateHardcodedConfigToFirestore } from "../../utils/migrateConfig";
 import { aiService } from "../../services/aiService";
 import { SystemDocumentationView } from "./SystemDocumentationView";
 
@@ -463,6 +472,7 @@ const ProjectStructureExpertView = () => {
   const projectStructure = getProjectStructure(t);
   const [selectedFile, setSelectedFile] = useState("");
   const [activeMainTab, setActiveMainTab] = useState<"explorer" | "docs" | "markdown" | "roadmap">("explorer");
+  const [activeSubTab, setActiveSubTab] = useState<'info' | 'scripts'>('info');
   const [activeMdFile, setActiveMdFile] = useState("CONVERSATION_SUMMARY.md");
   const [mdSearchQuery, setMdSearchQuery] = useState("");
 
@@ -478,12 +488,18 @@ const ProjectStructureExpertView = () => {
   };
 
   const markdownFiles: Record<string, { title: string, content: string }> = {
-    "03_PROJECT_PLANNING.md": { title: "Project Planning", content: projPlanningMd },
-    "04_OPERATIONS_NOTES_AND_TASKS.md": { title: "Operations & Tasks", content: opsNotesMd },
-    "05_ENVIRONMENTS_AND_DEPLOYMENT.md": { title: "Deployments", content: envDeployMd },
+    "01_PROJECTSTRUCTUUR_EN_ARCHITECTUUR.md": { title: "Projectstructuur & Architectuur", content: projectStructureMd },
+    "02_HANDLEIDING_ONTWIKKELAARS.md": { title: "Handleiding Ontwikkelaars", content: devGuideMd },
+    "03_FEATURES_EN_MODULES.md": { title: "Features & Modules", content: featuresMd },
+    "04_DEPLOYMENT_EN_OPERATIONS.md": { title: "Deployment & Operations", content: deployMd },
+    "05_WERKOMGEVINGEN_IDE.md": { title: "Werkomgevingen & IDE Setup", content: ideEnvMd },
+    "06_AI_KNOWLEDGE_BASE.md": { title: "AI Knowledge Base", content: aiKbMd },
     "CONVERSATION_SUMMARY.md": { title: "Conversation Summary", content: convSummaryMd },
-    "PRINTER_ROUTING_SETUP.md": { title: "Printer Setup", content: printerRoutingMd },
-    "RESTORE_SOP.md": { title: "Restore SOP", content: restoreSopMd }
+    "RESTORE_SOP.md": { title: "Restore SOP", content: restoreSopMd },
+    "VISION.md": { title: "Vision", content: visionMd },
+    "PRINTER_ROUTING_SETUP.md": { title: "Printer Routing Setup", content: printRouteMd },
+    "PRINT_PREVIEW_PARITY_VALIDATION.md": { title: "Print Preview Parity", content: printParityMd },
+    "GLASS_CALCULATION_SHEET_MAPPING.md": { title: "Glass Calculation Sheet", content: glassCalcMd }
   };
   const [aiExplanation, setAiExplanation] = useState("");
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -517,6 +533,19 @@ const ProjectStructureExpertView = () => {
       }
     } finally {
       setIsAiLoading(false);
+    }
+  };
+
+  const handleMigration = async () => {
+    try {
+      const result = await migrateHardcodedConfigToFirestore();
+      if (result && !result.success) {
+        alert('Migratie mislukt: ' + result.error);
+      } else {
+        alert('Migratie voltooid!');
+      }
+    } catch (e) {
+      alert('Migratie mislukt: ' + getErrorMessage(e));
     }
   };
 
@@ -617,113 +646,139 @@ const ProjectStructureExpertView = () => {
 
         {/* Detail Venster (Rechterzijde) */}
         <div className="w-1/2 p-8 bg-white overflow-y-auto">
-          {selectedFile ? (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="flex items-center space-x-3 mb-6">
-                <div className="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200">
-                  <Cpu className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-gray-900">{t(`projectStructureExpert.files.${selectedFile}.title`, detail?.title || selectedFile.split('/').pop() || '')}</h3>
-                  <p className="text-xs font-mono text-blue-600 break-all">{selectedFile}</p>
-                </div>
-              </div>
-              
-              <div className="space-y-6">
-                {detail && (
-                  <>
-                    <section>
-                      <h4 className="text-[10px] uppercase font-black text-gray-400 mb-2 tracking-widest flex items-center">
-                        <Info className="w-3 h-3 mr-1" /> {t('projectStructureExpert.functionalDescription', 'Functionele Beschrijving')}
-                      </h4>
-                      <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 leading-relaxed text-gray-700 text-sm italic shadow-inner">
-                        "{t(`projectStructureExpert.files.${selectedFile}.desc`, detail.desc)}"
-                      </div>
-                    </section>
+          {/* Info & Scripts Tabs */}
+          <div className="flex space-x-2 border-b border-gray-200 mb-4 pb-2">
+            <button
+              onClick={() => setActiveSubTab('info')}
+              className={`px-3 py-1 rounded text-sm ${activeSubTab === 'info' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}
+            >
+              Info
+            </button>
+            <button
+              onClick={() => setActiveSubTab('scripts')}
+              className={`px-3 py-1 rounded text-sm ${activeSubTab === 'scripts' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}
+            >
+              DB Scripts
+            </button>
+          </div>
 
-                    <section>
-                      <h4 className="text-[10px] uppercase font-black text-gray-400 mb-2 tracking-widest flex items-center">
-                        <Layers className="w-3 h-3 mr-1" /> {t('projectStructureExpert.systemTags', 'Systeem Tags')}
-                      </h4>
-                      <div className="flex flex-wrap gap-2">
-                        {detail.tags.map((tag: string) => (
-                          <span key={tag} className="px-3 py-1 bg-white text-blue-600 text-[10px] font-black rounded-full border-2 border-blue-50 shadow-sm uppercase tracking-tighter">
-                            #{t(`projectStructureExpert.tags.${tag}`, tag)}
-                          </span>
-                        ))}
-                      </div>
-                    </section>
+          <div className="px-6 flex-1 overflow-y-auto">
+            {activeSubTab === 'info' && selectedFile ? (
+              <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="flex items-center space-x-3 mb-6">
+                  <div className="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-200">
+                    <Cpu className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-gray-900">{t(`projectStructureExpert.files.${selectedFile}.title`, detail?.title || selectedFile.split('/').pop() || '')}</h3>
+                    <p className="text-xs font-mono text-blue-600 break-all">{selectedFile}</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-6">
+                  {detail && (
+                    <>
+                      <section>
+                        <h4 className="text-[10px] uppercase font-black text-gray-400 mb-2 tracking-widest flex items-center">
+                          <Info className="w-3 h-3 mr-1" /> {t('projectStructureExpert.functionalDescription', 'Functionele Beschrijving')}
+                        </h4>
+                        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 leading-relaxed text-gray-700 text-sm italic shadow-inner">
+                          "{t(`projectStructureExpert.files.${selectedFile}.desc`, detail.desc)}"
+                        </div>
+                      </section>
 
-                    <div className="p-5 bg-amber-50 rounded-2xl border border-amber-100 flex items-start space-x-3 shadow-sm">
-                      <Zap className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                      <section>
+                        <h4 className="text-[10px] uppercase font-black text-gray-400 mb-2 tracking-widest flex items-center">
+                          <Layers className="w-3 h-3 mr-1" /> {t('projectStructureExpert.systemTags', 'Systeem Tags')}
+                        </h4>
+                        <div className="flex flex-wrap gap-2">
+                          {detail.tags.map((tag: string) => (
+                            <span key={tag} className="px-3 py-1 bg-white text-blue-600 text-[10px] font-black rounded-full border-2 border-blue-50 shadow-sm uppercase tracking-tighter">
+                              #{t(`projectStructureExpert.tags.${tag}`, tag)}
+                            </span>
+                          ))}
+                        </div>
+                      </section>
+                    </>
+                  )}
+
+                  {/* AI Section */}
+                  {!isAiConfigured ? (
+                    <div className="p-4 bg-amber-50 rounded-2xl border-2 border-amber-200 flex items-start gap-3 shadow-sm">
+                      <AlertTriangle className="w-8 h-8 text-amber-500 shrink-0 mt-1" />
                       <div>
-                        <h4 className="text-xs font-black text-amber-900 uppercase tracking-tight">{t('projectStructureExpert.developerGuidance', 'Lead-raad voor Ontwikkelaars')}</h4>
-                        <p className="text-xs text-amber-700 mt-1 leading-normal">
-                          {t('projectStructureExpert.corePartPrefix', 'Dit bestand is een kernonderdeel van de ')}<b>{t(`projectStructureExpert.tags.${detail.tags[0]}`, detail.tags[0])}</b>{t('projectStructureExpert.corePartSuffix', ' logica. Wijzigingen hier hebben direct impact op de gebruikerservaring van de operators. Test altijd in ')}<b>{t('projectStructureExpert.previewMode', 'Preview Mode')}</b>.
+                        <h4 className="text-xs font-black text-amber-900 uppercase tracking-tight">{t('projectStructureExpert.aiNotConfigured', 'AI Assistent niet geconfigureerd')}</h4>
+                        <p className="text-xs text-amber-800 mt-1 leading-normal font-medium">
+                          {t('projectStructureExpert.aiNotConfiguredDesc', 'De backend AI-configuratie ontbreekt.')}
                         </p>
                       </div>
                     </div>
-                  </>
-                )}
+                  ) : (
+                    <div className="p-5 bg-purple-50 rounded-2xl border border-purple-100 shadow-sm">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xs font-black text-purple-900 uppercase tracking-tight flex items-center gap-2">
+                          <Bot size={16} /> {t('projectStructureExpert.aiArchitect', 'AI Architect')}
+                        </h4>
+                        {!aiExplanation && !isAiLoading && (
+                          <button onClick={handleAskAi} className="text-[10px] font-bold bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors shadow-sm">
+                            {t('projectStructureExpert.generateExplanation', 'Genereer Uitleg')}
+                          </button>
+                        )}
+                      </div>
+                      
+                      {isAiLoading && (
+                        <div className="flex items-center gap-2 text-purple-600 text-xs font-bold py-2">
+                          <Loader2 size={14} className="animate-spin" /> {t('projectStructureExpert.analyzing', 'Analyseren...')}
+                        </div>
+                      )}
 
-                {/* AI Section */}
-                {!isAiConfigured ? (
-                  <div className="p-4 bg-amber-50 rounded-2xl border-2 border-amber-200 flex items-start gap-3 shadow-sm">
-                    <AlertTriangle className="w-8 h-8 text-amber-500 shrink-0 mt-1" />
-                    <div>
-                      <h4 className="text-xs font-black text-amber-900 uppercase tracking-tight">{t('projectStructureExpert.aiNotConfigured', 'AI Assistent niet geconfigureerd')}</h4>
-                      <p className="text-xs text-amber-800 mt-1 leading-normal font-medium">
-                        {t('projectStructureExpert.aiNotConfiguredDesc', 'De backend AI-configuratie ontbreekt. Configureer de AI sleutel in Firebase Functions configuratie of server environment variables.')}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="p-5 bg-purple-50 rounded-2xl border border-purple-100 shadow-sm">
-                    <div className="flex items-center justify-between mb-3">
-                      <h4 className="text-xs font-black text-purple-900 uppercase tracking-tight flex items-center gap-2">
-                        <Bot size={16} /> {t('projectStructureExpert.aiArchitect', 'AI Architect')}
-                      </h4>
-                      {!aiExplanation && !isAiLoading && (
-                        <button onClick={handleAskAi} className="text-[10px] font-bold bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700 transition-colors shadow-sm">
-                          {t('projectStructureExpert.generateExplanation', 'Genereer Uitleg')}
-                        </button>
+                      {aiExplanation && (
+                        <div className="text-xs text-purple-800 leading-relaxed whitespace-pre-wrap bg-white/50 p-3 rounded-xl border border-purple-100">
+                          {aiExplanation}
+                        </div>
                       )}
                     </div>
-                    
-                    {isAiLoading && (
-                      <div className="flex items-center gap-2 text-purple-600 text-xs font-bold py-2">
-                        <Loader2 size={14} className="animate-spin" /> {t('projectStructureExpert.analyzing', 'Analyseren...')}
-                      </div>
-                    )}
-
-                    {aiExplanation && (
-                      <div className="text-xs text-purple-800 leading-relaxed whitespace-pre-wrap bg-white/50 p-3 rounded-xl border border-purple-100">
-                        {aiExplanation}
-                      </div>
-                    )}
-                    
-                    {!aiExplanation && !isAiLoading && !detail && (
-                      <p className="text-xs text-purple-700/60 italic">
-                        {t('projectStructureExpert.noDocumentation', 'Geen documentatie beschikbaar. Vraag de AI om dit bestand te analyseren.')}
+                  )}
+                </div>
+              </div>
+            ) : activeSubTab === 'info' ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-6">
+                <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center animate-pulse">
+                  <Box className="w-12 h-12 text-gray-200" />
+                </div>
+                <div>
+                  <h4 className="text-lg font-black text-gray-300 uppercase tracking-widest">{t('projectStructureExpert.selectComponent', 'Selecteer Component')}</h4>
+                  <p className="text-gray-400 text-sm mt-2 max-w-[250px] mx-auto italic">
+                    {t('projectStructureExpert.selectComponentDesc', 'Klik op een bestand in de boomstructuur om de technische fiches en logica te ontsluiten.')}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 rounded border border-gray-200">
+                <h3 className="font-bold text-gray-900 mb-4">Database Scripts & Migraties</h3>
+                
+                <div className="space-y-4">
+                  <div className="p-4 bg-white rounded border border-gray-200 flex items-start justify-between">
+                    <div>
+                      <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                        <Database className="h-4 w-4 text-purple-500" />
+                        Migreer Hardcoded Configs
+                      </h4>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Zet alle vaste lijsten (Product Types, Diameters, Routeringsregels) uit de code over naar Firestore.
                       </p>
-                    )}
+                    </div>
+                    <button
+                      onClick={handleMigration}
+                      className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm flex items-center gap-2"
+                    >
+                      <Play className="h-4 w-4" /> Run Migratie
+                    </button>
                   </div>
-                )}
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-6">
-              <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center animate-pulse">
-                <Box className="w-12 h-12 text-gray-200" />
-              </div>
-              <div>
-                <h4 className="text-lg font-black text-gray-300 uppercase tracking-widest">{t('projectStructureExpert.selectComponent', 'Selecteer Component')}</h4>
-                <p className="text-gray-400 text-sm mt-2 max-w-[250px] mx-auto italic">
-                  {t('projectStructureExpert.selectComponentDesc', 'Klik op een bestand in de boomstructuur om de technische fiches en logica te ontsluiten.')}
-                </p>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
         </>
       )}

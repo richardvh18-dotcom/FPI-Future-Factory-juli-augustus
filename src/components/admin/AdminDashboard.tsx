@@ -94,6 +94,7 @@ const AdminToolingMoldsView = React.lazy(() => import("./AdminToolingMoldsView")
 const PilotMigrationTool = React.lazy(() => import("./PilotMigrationTool"));
 // NIEUW: Referentie Tabel toevoegen
 const AdminReferenceTable = React.lazy(() => import("./AdminReferenceTable"));
+const ConfigManagerView = React.lazy(() => import("./ConfigManagerView"));
 // NIEUW: Monday.com/vPlan-style Planning Views
 const KanbanBoardView = React.lazy(() => import("../planning/KanbanBoardView"));
 // Fase 2: Advanced Planning Features
@@ -228,7 +229,7 @@ const AdminDashboard = () => {
           desc: "Vergelijk beschikbare productie-uren met geplande vraag.",
           icon: <TrendingUp size={24} className="text-purple-600" />,
           color: "bg-purple-50 border-purple-100",
-          roles: ["admin", "engineer", "teamleader"],
+          roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: CapacityPlanningView,
           requiredModule: "digital_planning",
         },
@@ -238,7 +239,7 @@ const AdminDashboard = () => {
           desc: "Beheer standaard tijden en normen.",
           icon: <Clock size={24} className="text-pink-600" />,
           color: "bg-pink-50 border-pink-100",
-          roles: ["admin", "engineer"],
+          roles: ["admin", "engineer", "supervisor"],
           component: ProductionTimeStandardsManager,
           requiredModule: "digital_planning",
         },
@@ -248,7 +249,7 @@ const AdminDashboard = () => {
           desc: "Visuele orderworkflow met drag-and-drop.",
           icon: <Kanban size={24} className="text-blue-600" />,
           color: "bg-blue-50 border-blue-100",
-          roles: ["admin", "engineer", "teamleader"],
+          roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: KanbanBoardView,
           requiredModule: "digital_planning",
         },
@@ -258,7 +259,7 @@ const AdminDashboard = () => {
           desc: "Critical path analyse tussen orders.",
           icon: <GitBranch size={24} className="text-purple-600" />,
           color: "bg-purple-50 border-purple-100",
-          roles: ["admin", "engineer", "teamleader"],
+          roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: OrderDependenciesView,
           requiredModule: "digital_planning",
         },
@@ -268,7 +269,7 @@ const AdminDashboard = () => {
           desc: "What-if analyse simulator.",
           icon: <Beaker size={24} className="text-purple-600" />,
           color: "bg-purple-50 border-purple-100",
-          roles: ["admin", "engineer"],
+          roles: ["admin", "engineer", "supervisor"],
           component: ScenarioPlanningView,
           requiredModule: "digital_planning",
         },
@@ -286,7 +287,7 @@ const AdminDashboard = () => {
           desc: "Uitgebreide rapporten voor productie, kwaliteit, efficiency en personeel.",
           icon: <FileText size={24} className="text-cyan-600" />,
           color: "bg-cyan-50 border-cyan-100",
-          roles: ["admin", "engineer", "teamleader"],
+          roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: AdminReportsView,
         },
         {
@@ -295,7 +296,7 @@ const AdminDashboard = () => {
           desc: "Gebundelde resultaten van controlerondes op de werkvloer.",
           icon: <ClipboardCheck size={24} className="text-cyan-600" />,
           color: "bg-cyan-50 border-cyan-100",
-          roles: ["admin", "engineer", "teamleader", "qc"],
+          roles: ["admin", "engineer", "teamleader", "qc", "supervisor"],
           component: FloorControlReportsView,
         },
       ]
@@ -312,7 +313,7 @@ const AdminDashboard = () => {
           desc: "Trek een steekproef-lot voor inspectie zonder de productie-teller te beïnvloeden.",
           icon: <ShieldCheck size={24} className="text-orange-600" />,
           color: "bg-orange-50 border-orange-100",
-          roles: ["admin", "qc", "teamleader"],
+          roles: ["admin", "qc", "teamleader", "supervisor"],
           component: QcSampleView,
         },
       ]
@@ -329,7 +330,7 @@ const AdminDashboard = () => {
           desc: "Geautomatiseerde notificaties voor events.",
           icon: <Bell size={24} className="text-blue-600" />,
           color: "bg-blue-50 border-blue-100",
-          roles: ["admin", "engineer"],
+          roles: ["admin", "engineer", "supervisor"],
           component: NotificationRulesView,
         },
         {
@@ -338,7 +339,7 @@ const AdminDashboard = () => {
           desc: "When X happens, then Y engine.",
           icon: <Zap size={24} className="text-yellow-600" />,
           color: "bg-yellow-50 border-yellow-100",
-          roles: ["admin", "engineer"],
+          roles: ["admin", "engineer", "supervisor"],
           component: AutomationRulesView,
         },
         {
@@ -347,7 +348,7 @@ const AdminDashboard = () => {
           desc: "Templates en logboek voor e-mails.",
           icon: <Mail size={24} className="text-red-500" />,
           color: "bg-red-50 border-red-100",
-          roles: ["admin"],
+          roles: ["admin", "supervisor"],
           component: AdminEmailManager,
         },
         {
@@ -356,7 +357,7 @@ const AdminDashboard = () => {
           desc: "Directe en geautomatiseerde sync tussen catalogus en planning.",
           icon: <DatabaseZap size={24} className="text-green-600" />,
           color: "bg-green-50 border-green-100",
-          roles: ["admin"],
+          roles: ["admin", "supervisor"],
           component: React.lazy(() => import("./ManualSyncDrawings")),
         },
       ]
@@ -373,7 +374,7 @@ const AdminDashboard = () => {
           desc: "Technische catalogus en verificatie.",
           icon: <Package size={24} className="text-blue-600" />,
           color: "bg-blue-50 border-blue-100",
-          roles: ["admin", "engineer"],
+          roles: ["admin", "engineer", "supervisor"],
           component: AdminProductManager,
         },
         {
@@ -382,7 +383,7 @@ const AdminDashboard = () => {
           desc: "Technische logica en toleranties.",
           icon: <Grid size={24} className="text-purple-600" />,
           color: "bg-purple-50 border-purple-100",
-          roles: ["admin", "engineer"],
+          roles: ["admin", "engineer", "supervisor"],
           component: AdminMatrixManager,
         },
         {
@@ -391,7 +392,7 @@ const AdminDashboard = () => {
           desc: "Stamdata opzoeken (Boringen, Mof-maten).",
           icon: <BookOpen size={24} className="text-amber-600" />,
           color: "bg-amber-50 border-amber-100",
-          roles: ["admin", "engineer", "teamleader"],
+          roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: AdminReferenceTable,
         },
         {
@@ -400,7 +401,7 @@ const AdminDashboard = () => {
           desc: "Infor-LN codes naar tekeningen.",
           icon: <ArrowRightLeft size={24} className="text-teal-600" />,
           color: "bg-teal-50 border-teal-100",
-          roles: ["admin", "engineer"],
+          roles: ["admin", "engineer", "supervisor"],
           component: ConversionManager,
         },
         {
@@ -409,7 +410,7 @@ const AdminDashboard = () => {
           desc: "Ontwerp labels en beheer logica.",
           icon: <BoxSelect size={24} className="text-orange-600" />,
           color: "bg-orange-50 border-orange-100",
-          roles: ["admin", "engineer"],
+          roles: ["admin", "engineer", "supervisor"],
           component: AdminLabelManager,
         },
         {
@@ -418,7 +419,7 @@ const AdminDashboard = () => {
           desc: "Centraal beheer voor alle mallen, met flens-tab voor cavity regels.",
           icon: <Settings2 size={24} className="text-sky-600" />,
           color: "bg-sky-50 border-sky-100",
-          roles: ["admin", "engineer"],
+          roles: ["admin", "engineer", "supervisor"],
           component: AdminToolingMoldsView,
         },
         {
@@ -427,7 +428,7 @@ const AdminDashboard = () => {
           desc: "Importeer Reference Operations (refOp-codes) vanuit LN naar de database voor database-gestuurde uren-classificaties.",
           icon: <Database size={24} className="text-violet-600" />,
           color: "bg-violet-50 border-violet-100",
-          roles: ["admin", "engineer"],
+          roles: ["admin", "engineer", "supervisor"],
           component: AdminRefOpsImportScreen,
         },
       ]
@@ -444,7 +445,7 @@ const AdminDashboard = () => {
           desc: "Afdelingen, machines en terminals.",
           icon: <Layout size={24} className="text-emerald-600" />,
           color: "bg-emerald-50 border-emerald-100",
-          roles: ["admin"],
+          roles: ["admin", "supervisor"],
           component: FactoryStructureManager,
         },
         {
@@ -453,7 +454,7 @@ const AdminDashboard = () => {
           desc: "Operators en machine-bezetting.",
           icon: <UserCheck size={24} className="text-indigo-600" />,
           color: "bg-indigo-50 border-indigo-100",
-          roles: ["admin", "teamleader", "engineer"],
+          roles: ["admin", "teamleader", "engineer", "supervisor"],
           component: PersonnelManager,
         },
         {
@@ -462,7 +463,7 @@ const AdminDashboard = () => {
           desc: "Tablet app voor teamleiders en QC op de werkvloer.",
           icon: <Smartphone size={24} className="text-indigo-600" />,
           color: "bg-indigo-50 border-indigo-100",
-          roles: ["admin", "engineer", "teamleader"],
+          roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: ShopFloorMobileApp,
           requiredModule: "quality_control",
         },
@@ -480,7 +481,7 @@ const AdminDashboard = () => {
           desc: "Accounts en toegangsrechten.",
           icon: <Users size={24} className="text-slate-600" />,
           color: "bg-slate-50 border-slate-100",
-          roles: ["admin"],
+          roles: ["admin", "supervisor"],
           component: AdminUsersView,
         },
         {
@@ -489,7 +490,7 @@ const AdminDashboard = () => {
           desc: "Genereer QR-code inlogpasjes voor snelle toegang.",
           icon: <QrCode size={24} className="text-indigo-600" />,
           color: "bg-indigo-50 border-indigo-100",
-          roles: ["admin"],
+          roles: ["admin", "supervisor"],
           component: AdminBadgeGenerator,
         },
         {
@@ -502,12 +503,21 @@ const AdminDashboard = () => {
           component: AdminSettingsView,
         },
         {
+          id: "config_manager",
+          title: "Factory Configuraties",
+          desc: "Beheer dynamische lijsten (diameters, types, etc).",
+          icon: <Database size={24} className="text-emerald-600" />,
+          color: "bg-emerald-50 border-emerald-100",
+          roles: ["admin", "engineer"],
+          component: ConfigManagerView,
+        },
+        {
           id: "printers",
           title: "Printer Beheer",
           desc: "Netwerk- en labelprinters configureren.",
           icon: <Printer size={24} className="text-orange-600" />,
           color: "bg-orange-50 border-orange-100",
-          roles: ["admin"],
+          roles: ["admin", "supervisor"],
           component: AdminPrinterManager,
         },
         {
@@ -516,7 +526,7 @@ const AdminDashboard = () => {
           desc: "Groepen en notificatie voorkeuren.",
           icon: <Settings size={24} className="text-rose-600" />,
           color: "bg-rose-50 border-rose-100",
-          roles: ["admin"],
+          roles: ["admin", "supervisor"],
           component: AdminMessagesManagement,
         },
         {
@@ -525,7 +535,7 @@ const AdminDashboard = () => {
           desc: "Systeem-audit trail monitoring.",
           icon: <History size={24} className="text-slate-600" />,
           color: "bg-slate-50 border-slate-100",
-          roles: ["admin"],
+          roles: ["admin", "supervisor"],
           component: AdminLogView,
         },
         {
@@ -551,7 +561,7 @@ const AdminDashboard = () => {
           desc: "Zeer gedetailleerd overzicht, AI-koppeling.",
           icon: <BookOpen size={24} className="text-indigo-600" />,
           color: "bg-indigo-50 border-indigo-100",
-          roles: ["admin", "engineer", "teamleader"],
+          roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: ProjectStructureExpertView,
         },
         {
@@ -560,7 +570,7 @@ const AdminDashboard = () => {
           desc: "AI antwoorden en kennisbank.",
           icon: <BrainCircuit size={24} className="text-fuchsia-600" />,
           color: "bg-fuchsia-50 border-fuchsia-100",
-          roles: ["admin", "engineer"],
+          roles: ["admin", "engineer", "supervisor"],
           component: AiCenterView,
           requiredModule: "ai_assistant",
         },
@@ -579,7 +589,7 @@ const AdminDashboard = () => {
           desc: "Interactieve introducties en systeemvisie presentaties.",
           icon: <PlayCircle size={24} className="text-blue-600" />,
           color: "bg-blue-50 border-blue-100",
-          roles: ["admin", "engineer", "teamleader"],
+          roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: MTPresentationLauncher,
         },
       ]

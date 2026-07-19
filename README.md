@@ -30,12 +30,14 @@ firebase deploy --only hosting,functions --project future-factory-377ef
 
 ## Projectstructuur (opgeschoond)
 
-- Documentatie: `docs/`
-	- `docs/01_DEVELOPMENT_AND_OPERATIONS.md`
-	- `docs/02_ARCHITECTURE_AND_FEATURES.md`
-	- `docs/03_PROJECT_PLANNING.md`
-	- `docs/04_OPERATIONS_NOTES_AND_TASKS.md`
-	- `docs/05_ENVIRONMENTS_AND_DEPLOYMENT.md`
-	- `docs/CONVERSATION_SUMMARY.md`
-- Hulpscripts en operationele scripts: `scripts/`
-- Analyse notebooks: `notebooks/`
+- **Documentatie:** `docs/`
+  - `docs/01_PROJECTSTRUCTUUR_EN_ARCHITECTUUR.md` - High-level architectuur en opbouw.
+  - `docs/02_HANDLEIDING_ONTWIKKELAARS.md` - Setup en daily workflow.
+  - `docs/03_FEATURES_EN_MODULES.md` - Uitleg specifieke features (Printen, AI, etc.).
+  - `docs/04_DEPLOYMENT_EN_OPERATIONS.md` - Instructies voor deploy en emergency actions.
+  - `docs/05_WERKOMGEVINGEN_IDE.md` - Uitgebreide uitleg over werken met Antigravity en VS Code / Codespaces.
+  - `docs/06_AI_KNOWLEDGE_BASE.md` - Codebase architectuur-map en referentiekader voor AI-assistenten.
+  - `docs/CONVERSATION_SUMMARY.md` - Levend logboek voor development afspraken.
+  - `docs/archief/` - Historische logboeken en oude documentatie.
+- **Hulpscripts en operationele scripts:** `scripts/`
+- **Analyse notebooks:** `notebooks/`

@@ -28,6 +28,16 @@ service cloud.firestore {
       return hasAnyRole(['admin']);
     }
 
+    function isSupervisor() {
+      return hasAnyRole(['supervisor']);
+    }
+
+    function isSafeSupervisorUpdate() {
+      let oldRole = resource.data.get('role', '');
+      let newRole = request.resource.data.get('role', '');
+      return oldRole != 'admin' && newRole != 'admin';
+    }
+
     // Pilot: production actions must keep working even when role docs are incomplete.
     function canOperateProduction() {
       return isSignedIn() || hasAnyRole([
@@ -241,10 +251,10 @@ service cloud.firestore {
     }
 
     match /future-factory/Users/Accounts/{userId} {
-      allow get: if isAdmin() || isOwnUserDoc(userId);
-      allow list: if isAdmin();
+      allow get: if isAdmin() || isSupervisor() || isOwnUserDoc(userId);
+      allow list: if isAdmin() || isSupervisor();
       allow create: if isAdmin() || validSelfProfileCreate(userId);
-      allow update: if isAdmin() || validSelfProfileUpdate(userId);
+      allow update: if isAdmin() || validSelfProfileUpdate(userId) || (isSupervisor() && isSafeSupervisorUpdate());
       allow delete: if isAdmin();
     }
 
@@ -475,6 +485,11 @@ service cloud.firestore {
     match /future-factory/settings/ai_documents/{document=**} {
       allow read: if hasUserRecord() || isSignedIn();
       allow write: if isAdmin();
+    }
+
+    match /future-factory/config/{document=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
     }
 
     match /artifacts/{appId}/{document=**} {

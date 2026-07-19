@@ -17,6 +17,7 @@ import { ref, listAll, getDownloadURL } from "firebase/storage";
 import { aiService } from "../../services/aiService";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { getPathString } from "../../config/dbPaths";
+import { normalizeMachine } from "../../utils/hubHelpers";
 
 type DbDocument = {
   id: string;
@@ -132,15 +133,27 @@ const AdminDatabaseView = () => {
   const [storageFiles, setStorageFiles] = useState<StorageEntry[]>([]);
   const [storageLoading, setStorageLoading] = useState(false);
   const [storagePath, setStoragePath] = useState("");
+  const [subPath, setSubPath] = useState("");
+
+  // Cascading Dropdowns State
+  const [exploreDept, setExploreDept] = useState("");
+  const [exploreMachine, setExploreMachine] = useState("");
+  const [deptOptions, setDeptOptions] = useState<string[]>([]);
+  const [machineOptions, setMachineOptions] = useState<string[]>([]);
+  const [isFetchingSubOptions, setIsFetchingSubOptions] = useState(false);
 
   // AI Chat State
   const [showAiChat, setShowAiChat] = useState(false);
   const [aiQuery, setAiQuery] = useState("");
   const [aiMessages, setAiMessages] = useState<ChatMessage[]>(() => {
-    const saved = localStorage.getItem("admin_db_ai_chat");
-    return saved
-      ? (JSON.parse(saved) as ChatMessage[])
-      : [{ role: 'ai', content: "Hallo! Ik ben de Database Assistent. Ik heb toegang tot de volledige structuur van de database. Wat wil je weten?" }];
+    try {
+      const saved = localStorage.getItem("admin_db_ai_chat");
+      return saved
+        ? (JSON.parse(saved) as ChatMessage[])
+        : [{ role: 'ai', content: "Hallo! Ik ben de Database Assistent. Ik heb toegang tot de volledige structuur van de database. Wat wil je weten?" }];
+    } catch (e) {
+      return [{ role: 'ai', content: "Hallo! Ik ben de Database Assistent. Ik heb toegang tot de volledige structuur van de database. Wat wil je weten?" }];
+    }
   });
   const [aiLoading, setAiLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
@@ -152,7 +165,18 @@ const AdminDatabaseView = () => {
   }, [aiMessages, showAiChat]);
 
   useEffect(() => {
-    localStorage.setItem("admin_db_ai_chat", JSON.stringify(aiMessages));
+    try {
+      localStorage.setItem("admin_db_ai_chat", JSON.stringify(aiMessages));
+    } catch (error) {
+      console.warn("LocalStorage quota exceeded for admin_db_ai_chat. Slicing messages...");
+      try {
+        // Keep only the last 10 messages if quota exceeded
+        const sliced = aiMessages.slice(-10);
+        localStorage.setItem("admin_db_ai_chat", JSON.stringify(sliced));
+      } catch (innerError) {
+        console.error("Could not save even sliced messages to LocalStorage", innerError);
+      }
+    }
   }, [aiMessages]);
 
   const generateDbContext = () => {
@@ -202,11 +226,33 @@ const AdminDatabaseView = () => {
 
     setLoading(true);
     setDocuments([]);
-    const pathArray = PATHS[selectedKey];
-    if (!Array.isArray(pathArray)) {
+    const basePathArray = PATHS[selectedKey];
+    if (!Array.isArray(basePathArray)) {
       setLoading(false);
       return;
     }
+    
+    // Bepaal definitieve pad
+    let pathArray = [...basePathArray];
+    if (exploreMachine) {
+      // Gebruik de exacte machine ID uit de dropdown (bijv. 40BH18)
+      let machinePath = exploreMachine;
+      if (machinePath === "BH18") machinePath = "40BH18"; // Fallback voor legacy BH18
+
+      // Zorg voor de juiste hoofdletter in Firebase paden (fittings -> Fittings)
+      const deptPath = exploreDept.charAt(0).toUpperCase() + exploreDept.slice(1);
+
+      pathArray = [...basePathArray, deptPath, "machines", machinePath, "items"];
+      // digital_planning uses 'orders', tracked_products uses 'items'
+      if (selectedKey === "PLANNING") pathArray[pathArray.length - 1] = "orders";
+    } else if (exploreDept) {
+      const deptPath = exploreDept.charAt(0).toUpperCase() + exploreDept.slice(1);
+      pathArray = [...basePathArray, deptPath];
+    } else if (subPath) {
+      const subSegments = subPath.split("/").map(s => s.trim()).filter(Boolean);
+      pathArray = [...basePathArray, ...subSegments];
+    }
+    
     const pathStr = pathArray.join("/");
     setActivePath(pathStr);
 
@@ -259,9 +305,87 @@ const AdminDatabaseView = () => {
     }
   };
 
+  // --- CASCADING DROPDOWN LOGICA ---
+  const fetchDepartments = async (basePathArray: string[], key: string) => {
+    setIsFetchingSubOptions(true);
+    try {
+      const colRef = collection(db, getPathString(basePathArray));
+      const snap = await getDocs(query(colRef, limit(50)));
+      let depts = snap.docs.map((d) => d.id);
+      
+      // Combineer altijd met FACTORY_CONFIG om ontbrekende "ghost" documents aan te vullen
+      if (key === "PLANNING" || key === "TRACKING") {
+        const factorySnap = await getDoc(doc(db, getPathString(PATHS.FACTORY_CONFIG)));
+        if (factorySnap.exists() && factorySnap.data().departments) {
+          const configDepts = factorySnap.data().departments.map((d: any) => d.name || d.id);
+          depts = Array.from(new Set([...depts, ...configDepts]));
+        }
+      }
+      setDeptOptions(depts);
+      setExploreDept("");
+      setMachineOptions([]);
+      setExploreMachine("");
+    } catch (e) {
+      console.error("Fetch depts error", e);
+    } finally {
+      setIsFetchingSubOptions(false);
+    }
+  };
+
+  const fetchMachinesForDept = async (dept: string) => {
+    if (!dept) {
+      setMachineOptions([]);
+      setExploreMachine("");
+      return;
+    }
+    setIsFetchingSubOptions(true);
+    try {
+      const basePathArray = PATHS[selectedKey];
+      const deptPath = dept.charAt(0).toUpperCase() + dept.slice(1);
+      const colRef = collection(db, [...basePathArray, deptPath, "machines"].join("/"));
+      const snap = await getDocs(query(colRef, limit(100)));
+      let machines = snap.docs.map((d) => d.id);
+      
+      // Combineer altijd met FACTORY_CONFIG om ontbrekende "ghost" documents aan te vullen
+      const factorySnap = await getDoc(doc(db, getPathString(PATHS.FACTORY_CONFIG)));
+      if (factorySnap.exists() && factorySnap.data().departments) {
+        const foundDept = factorySnap.data().departments.find((d: any) => d.name.toLowerCase() === dept.toLowerCase() || d.id.toLowerCase() === dept.toLowerCase());
+        if (foundDept && foundDept.stations) {
+          const configMachines = foundDept.stations.map((s: any) => s.name || s.id);
+          machines = Array.from(new Set([...machines, ...configMachines]));
+        }
+      }
+      
+      setMachineOptions(machines);
+      setExploreMachine("");
+    } catch (e) {
+      console.error("Fetch machines error", e);
+    } finally {
+      setIsFetchingSubOptions(false);
+    }
+  };
+
   useEffect(() => {
+    // Note: When selectedKey changes from the sidebar, it updates state and triggers a re-render.
+    // The effect runs with the new selectedKey but old subPath.
+    // To fix the race condition, we rely on the onClick handler in the sidebar to reset subPath.
+    // Reset handmatige invulvelden
+    setSubPath("");
+    
+    // Haal subcollectie opties op
+    const basePathArray = PATHS[selectedKey];
+    if (Array.isArray(basePathArray)) {
+      fetchDepartments(basePathArray, selectedKey);
+    }
+    
     fetchPathData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedKey]);
+
+  useEffect(() => {
+    fetchMachinesForDept(exploreDept);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exploreDept]);
 
   useEffect(() => {
     if (viewMode === "storage") {
@@ -352,7 +476,10 @@ const AdminDatabaseView = () => {
             {MODULES.map((mod) => (
               <button
                 key={mod.key}
-                onClick={() => setSelectedKey(mod.key)}
+                onClick={() => {
+                  setSelectedKey(mod.key);
+                  setSubPath("");
+                }}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold transition-all text-left ${
                   selectedKey === mod.key
                     ? "bg-blue-50 text-blue-700 border border-blue-100"
@@ -371,23 +498,89 @@ const AdminDatabaseView = () => {
           {viewMode === "database" && (
             <div className="flex-1 flex flex-col h-full">
               {/* Address Bar */}
-              <div className="h-10 bg-white border-b border-slate-200 flex items-center px-4 gap-2">
-                <span className="text-slate-400"><Terminal size={14} /></span>
-                <div className="flex-1 flex items-center text-xs text-slate-600 font-mono">
-                  <span className="text-slate-300 mr-1">/</span>
-                  {activePath
-                    ? activePath.split("/").map((seg, idx, arr) => (
-                      <span key={idx} className="flex items-center gap-2">
-                        <span
-                          className={idx === arr.length - 1 ? "text-slate-900 font-bold" : "hover:text-blue-600 cursor-pointer"}
-                        >
-                          {seg}
+              <div className="bg-white border-b border-slate-200 flex flex-col px-4 py-2 gap-2">
+                <div className="flex items-center gap-2 h-6">
+                  <span className="text-slate-400"><Terminal size={14} /></span>
+                  <div className="flex-1 flex items-center text-xs text-slate-600 font-mono">
+                    <span className="text-slate-300 mr-1">/</span>
+                    {activePath
+                      ? activePath.split("/").map((seg, idx, arr) => (
+                        <span key={idx} className="flex items-center gap-2">
+                          <span
+                            className={idx === arr.length - 1 ? "text-slate-900 font-bold" : "hover:text-blue-600 cursor-pointer"}
+                          >
+                            {seg}
+                          </span>
+                          {idx < arr.length - 1 && <span className="text-slate-300 font-bold">/</span>}
                         </span>
-                        {idx < arr.length - 1 && <span className="text-slate-300 font-bold">/</span>}
-                      </span>
-                    ))
-                    : <span className="text-slate-500">{t('common.selectModule')}</span>}
+                      ))
+                      : <span className="text-slate-500">{t('common.selectModule')}</span>}
+                  </div>
                 </div>
+                {selectedKey && (
+                  <div className="flex flex-col gap-2 mt-1 border-t border-slate-100 pt-2">
+                    
+                    {/* Cascading Dropdowns */}
+                    {(deptOptions.length > 0 || isFetchingSubOptions) && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400"><Layers size={14} /></span>
+                        <select
+                          className="px-2 py-1.5 border rounded-md font-sans text-xs bg-slate-50 focus:bg-white shadow-sm flex-1 max-w-[200px]"
+                          value={exploreDept}
+                          onChange={(e) => setExploreDept(e.target.value)}
+                        >
+                          <option value="">-- Kies Afdeling --</option>
+                          {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+
+                        {exploreDept && (
+                          <>
+                            <span className="text-slate-300 font-mono text-xs">/</span>
+                            <select
+                              className="px-2 py-1.5 border rounded-md font-sans text-xs bg-slate-50 focus:bg-white shadow-sm flex-1 max-w-[200px]"
+                              value={exploreMachine}
+                              onChange={(e) => setExploreMachine(e.target.value)}
+                            >
+                              <option value="">-- Kies Machine --</option>
+                              {machineOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                          </>
+                        )}
+                        
+                        <button 
+                          onClick={fetchPathData}
+                          disabled={loading || !exploreDept}
+                          className="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-xs font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm ml-2"
+                        >
+                          {loading ? "Laden..." : "Toon data"}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Geavanceerd: Handmatig Pad */}
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-slate-300"><SearchCode size={14} /></span>
+                      <input 
+                        type="text" 
+                        value={subPath}
+                        onChange={(e) => {
+                          setSubPath(e.target.value);
+                          if(e.target.value) { setExploreDept(""); setExploreMachine(""); }
+                        }}
+                        placeholder="Of typ geavanceerd sub-pad (bijv. Fittings/machines/40BH18)"
+                        className="flex-1 px-2 py-1.5 border rounded-md font-mono text-xs shadow-inner bg-slate-50 focus:bg-white transition-colors outline-none"
+                        onKeyDown={(e) => { if (e.key === 'Enter') fetchPathData(); }}
+                      />
+                      <button 
+                        onClick={fetchPathData}
+                        disabled={loading || !subPath}
+                        className="px-4 py-1.5 bg-slate-600 text-white rounded-md text-xs font-bold hover:bg-slate-700 disabled:opacity-50 transition-colors shadow-sm"
+                      >
+                        {loading ? "Laden..." : "Ga naar pad"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* LIST */}

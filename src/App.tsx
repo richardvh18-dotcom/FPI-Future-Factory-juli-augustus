@@ -32,6 +32,7 @@ import { useAdminAuth } from "./hooks/useAdminAuth";
 import { useSettingsData } from "./hooks/useSettingsData";
 import { useMessages } from "./hooks/useMessages";
 import { useAutoLogout } from "./hooks/useAutoLogout";
+import { usePresence } from "./hooks/usePresence";
 import { checkFeature } from "./hooks/useHasFeature";
 import { PATHS, getPathString, getArchiveItemsPath } from "./config/dbPaths";
 
@@ -100,6 +101,9 @@ const App = () => {
     5,  // Waarschuwing in minuten voor timeout
     !!user // Alleen actief als gebruiker ingelogd is
   );
+
+  // Active presence tracking (ISO 27001)
+  usePresence();
 
   // Versie-check: forceer refresh bij nieuwe versie
   const currentVersion = import.meta.env.VITE_APP_VERSION || "dev";

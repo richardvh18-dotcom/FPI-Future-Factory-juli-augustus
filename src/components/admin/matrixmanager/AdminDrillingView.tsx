@@ -29,10 +29,7 @@ import {
   Loader2,
   Target,
 } from "lucide-react";
-import {
-  STANDARD_DIAMETERS,
-  STANDARD_PRESSURES,
-} from "../../../data/constants";
+import { useFactoryConfig } from "../../../hooks/useFactoryConfig";
 
 type DrillingRecord = {
   id: string;
@@ -76,6 +73,7 @@ const AdminDrillingView = () => {
   const [drillData, setDrillData] = useState<DrillingRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const factoryConfig = useFactoryConfig();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<DrillingRecord>>({});
   const [searchTerm, setSearchTerm] = useState("");
@@ -255,9 +253,9 @@ const AdminDrillingView = () => {
               value={formData.dn}
               onChange={(e) => setFormData({ ...formData, dn: e.target.value })}
             >
-              {STANDARD_DIAMETERS.map((d) => (
-                <option key={d} value={d}>
-                  ID {d}
+              {factoryConfig.diameters.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.value}
                 </option>
               ))}
             </select>
@@ -272,9 +270,9 @@ const AdminDrillingView = () => {
               value={formData.pn}
               onChange={(e) => setFormData({ ...formData, pn: e.target.value })}
             >
-              {STANDARD_PRESSURES.map((p) => (
-                <option key={p} value={p}>
-                  PN {p}
+              {factoryConfig.pressures.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.value}
                 </option>
               ))}
             </select>

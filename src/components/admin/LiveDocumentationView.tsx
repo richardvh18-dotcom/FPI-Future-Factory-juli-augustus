@@ -3,32 +3,32 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { BookOpen, FileText } from 'lucide-react';
 
-import visionMd from '../../../docs/VISION.md?raw';
-import archMd from '../../../docs/ARCHITECTURE.md?raw';
+import projectStructureMd from '../../../docs/01_PROJECTSTRUCTUUR_EN_ARCHITECTUUR.md?raw';
+import devGuideMd from '../../../docs/02_HANDLEIDING_ONTWIKKELAARS.md?raw';
+import featuresMd from '../../../docs/03_FEATURES_EN_MODULES.md?raw';
+import deployMd from '../../../docs/04_DEPLOYMENT_EN_OPERATIONS.md?raw';
+import ideEnvMd from '../../../docs/05_WERKOMGEVINGEN_IDE.md?raw';
+import aiKbMd from '../../../docs/06_AI_KNOWLEDGE_BASE.md?raw';
 import convSummaryMd from '../../../docs/CONVERSATION_SUMMARY.md?raw';
-import devOpsMd from '../../../docs/01_DEVELOPMENT_AND_OPERATIONS.md?raw';
-import archFeatMd from '../../../docs/02_ARCHITECTURE_AND_FEATURES.md?raw';
-import projPlanMd from '../../../docs/03_PROJECT_PLANNING.md?raw';
-import envDeploy4Md from '../../../docs/04_ENVIRONMENTS_AND_DEPLOYMENT.md?raw';
-import opsNotesMd from '../../../docs/04_OPERATIONS_NOTES_AND_TASKS.md?raw';
-import envDeploy5Md from '../../../docs/05_ENVIRONMENTS_AND_DEPLOYMENT.md?raw';
+import restoreSopMd from '../../../docs/RESTORE_SOP.md?raw';
+import visionMd from '../../../docs/VISION.md?raw';
 import printRouteMd from '../../../docs/PRINTER_ROUTING_SETUP.md?raw';
 import printParityMd from '../../../docs/PRINT_PREVIEW_PARITY_VALIDATION.md?raw';
-import restoreSopMd from '../../../docs/RESTORE_SOP.md?raw';
+import glassCalcMd from '../../../docs/GLASS_CALCULATION_SHEET_MAPPING.md?raw';
 
 const docsGlob: Record<string, string> = {
-  '../../../docs/VISION.md': visionMd,
-  '../../../docs/ARCHITECTURE.md': archMd,
+  '../../../docs/01_PROJECTSTRUCTUUR_EN_ARCHITECTUUR.md': projectStructureMd,
+  '../../../docs/02_HANDLEIDING_ONTWIKKELAARS.md': devGuideMd,
+  '../../../docs/03_FEATURES_EN_MODULES.md': featuresMd,
+  '../../../docs/04_DEPLOYMENT_EN_OPERATIONS.md': deployMd,
+  '../../../docs/05_WERKOMGEVINGEN_IDE.md': ideEnvMd,
+  '../../../docs/06_AI_KNOWLEDGE_BASE.md': aiKbMd,
   '../../../docs/CONVERSATION_SUMMARY.md': convSummaryMd,
-  '../../../docs/01_DEVELOPMENT_AND_OPERATIONS.md': devOpsMd,
-  '../../../docs/02_ARCHITECTURE_AND_FEATURES.md': archFeatMd,
-  '../../../docs/03_PROJECT_PLANNING.md': projPlanMd,
-  '../../../docs/04_ENVIRONMENTS_AND_DEPLOYMENT.md': envDeploy4Md,
-  '../../../docs/04_OPERATIONS_NOTES_AND_TASKS.md': opsNotesMd,
-  '../../../docs/05_ENVIRONMENTS_AND_DEPLOYMENT.md': envDeploy5Md,
+  '../../../docs/RESTORE_SOP.md': restoreSopMd,
+  '../../../docs/VISION.md': visionMd,
   '../../../docs/PRINTER_ROUTING_SETUP.md': printRouteMd,
   '../../../docs/PRINT_PREVIEW_PARITY_VALIDATION.md': printParityMd,
-  '../../../docs/RESTORE_SOP.md': restoreSopMd
+  '../../../docs/GLASS_CALCULATION_SHEET_MAPPING.md': glassCalcMd
 };
 
 export const LiveDocumentationView = ({ t }: { t: any }) => {

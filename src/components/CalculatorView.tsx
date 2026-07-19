@@ -1,13 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Activity, RotateCcw, Ruler, Info } from "lucide-react";
-import {
-  STANDARD_DIAMETERS,
-  STANDARD_PRESSURES,
-  ALL_PRODUCT_TYPES,
-  CONNECTION_TYPES,
-} from "../data/constants";
 import { calculateZDimension } from "../utils/calculations";
+import { useFactoryConfig } from "../hooks/useFactoryConfig";
 
 interface CalculatorViewProps {
   bellDimensions?: Record<string, Record<string, Record<string, { B1?: number | string } | undefined> | undefined> | undefined> | null;
@@ -39,6 +34,7 @@ const CalculatorView = ({ bellDimensions, standardFittingDims }: CalculatorViewP
     connection: "TB/TB",
   });
   const [result, setResult] = useState<CalcResult | null>(null);
+  const factoryConfig = useFactoryConfig();
 
   useEffect(() => {
     const calcResult = calculateZDimension(
@@ -82,7 +78,7 @@ const CalculatorView = ({ bellDimensions, standardFittingDims }: CalculatorViewP
                 <div className="relative group">
                   <select value={state.type} onChange={(e) => handleChange("type", e.target.value)}
                     className="w-full appearance-none bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 text-slate-700 font-bold text-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none cursor-pointer hover:border-emerald-200">
-                    {(ALL_PRODUCT_TYPES as string[]).map((type) => <option key={type} value={type}>{type}</option>)}
+                    {factoryConfig.productTypes.map((type: any) => <option key={type.value} value={type.value}>{type.value}</option>)}
                   </select>
                   <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 group-hover:text-emerald-500 transition-colors">
                     <Info size={18} />
@@ -97,7 +93,7 @@ const CalculatorView = ({ bellDimensions, standardFittingDims }: CalculatorViewP
                 <div className="relative group">
                   <select value={state.connection} onChange={(e) => handleChange("connection", e.target.value)}
                     className="w-full appearance-none bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 text-slate-700 font-bold text-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none cursor-pointer hover:border-emerald-200">
-                    {(CONNECTION_TYPES as string[]).map((c) => <option key={c} value={c}>{c}</option>)}
+                    {factoryConfig.connectionTypes.map((c: any) => <option key={c.value} value={c.value}>{c.value}</option>)}
                   </select>
                   <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 group-hover:text-emerald-500 transition-colors">
                     <RotateCcw size={18} />
@@ -112,7 +108,7 @@ const CalculatorView = ({ bellDimensions, standardFittingDims }: CalculatorViewP
                   </label>
                   <select value={state.pressure} onChange={(e) => handleChange("pressure", e.target.value)}
                     className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-4 text-slate-700 font-bold text-sm focus:border-emerald-500 outline-none cursor-pointer hover:border-emerald-200 transition-colors">
-                    {(STANDARD_PRESSURES as (string | number)[]).map((p) => <option key={p} value={p}>PN {p}</option>)}
+                    {factoryConfig.pressures.map((p: any) => <option key={p.value} value={p.value}>PN {p.value}</option>)}
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -121,7 +117,7 @@ const CalculatorView = ({ bellDimensions, standardFittingDims }: CalculatorViewP
                   </label>
                   <select value={state.diameter} onChange={(e) => handleChange("diameter", e.target.value)}
                     className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-4 py-4 text-slate-700 font-bold text-sm focus:border-emerald-500 outline-none cursor-pointer hover:border-emerald-200 transition-colors">
-                    {(STANDARD_DIAMETERS as (string | number)[]).map((d) => <option key={d} value={d}>DN {d}</option>)}
+                    {factoryConfig.diameters.map((d: any) => <option key={d.value} value={d.value}>DN {d.value}</option>)}
                   </select>
                 </div>
               </div>

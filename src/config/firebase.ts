@@ -299,12 +299,44 @@ import { httpsCallable } from "firebase/functions";
  * logActivity - ISO 9001/27001 compliant frontend logging.
  * Roep de backend callable aan zodat deze veilig in het Audit Log geschreven wordt.
  */
+// Helper to get or create a session ID for the current browser session
+const getSessionId = () => {
+  if (typeof window === "undefined") return "server-session";
+  let sid = sessionStorage.getItem("iso_audit_session_id");
+  if (!sid) {
+    sid = `sess_${Math.random().toString(36).substr(2, 9)}_${Date.now()}`;
+    sessionStorage.setItem("iso_audit_session_id", sid);
+  }
+  return sid;
+};
+
 export const logActivity = async (userId: string, action: string, details: unknown) => {
   try {
+    const isBrowser = typeof window !== "undefined";
+    
+    // Zorg ervoor dat details altijd een object is zodat we metadata kunnen mergen
+    const extendedDetails = (typeof details === "object" && details !== null && !Array.isArray(details))
+      ? { ...details }
+      : { originalPayload: details };
+
+    if (isBrowser) {
+      Object.assign(extendedDetails, {
+        isoMetadata: {
+          userAgent: window.navigator.userAgent,
+          sessionId: getSessionId(),
+          path: window.location.pathname,
+          language: window.navigator.language,
+          screenResolution: `${window.screen.width}x${window.screen.height}`,
+          impersonatorId: sessionStorage.getItem("impersonatorId") || null,
+          clientTimestamp: new Date().toISOString()
+        }
+      });
+    }
+
     const logActivityCallable = httpsCallable(functions, "clientLogActivity");
     await logActivityCallable({
       action,
-      details: sanitizeForFirestore(details),
+      details: sanitizeForFirestore(extendedDetails),
     });
   } catch (e) {
     console.error("Logging failed:", e);

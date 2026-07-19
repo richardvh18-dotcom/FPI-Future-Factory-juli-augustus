@@ -1,8 +1,78 @@
 ### Chatvoorkeuren
 - Standaard antwoorden in het Nederlands.
+### Chatvoorkeuren
+- Standaard antwoorden in het Nederlands.
 - Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md).
 - Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
 - Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
+
+---
+
+### 📝 Openstaande Taken & Geplande Roadmap (Post-Pilot / Productie)
+
+**1. ISO 9001 / 27001 Compliancy (Audit Trail Upgrade)**
+   - **Firestore Rules (WORM):** Audit Logs onveranderbaar maken (Write-Once, Read-Many) via `firestore.rules` (geen `update` of `delete` toestaan, zelfs niet voor admins).
+   - **Verbeterde Metadata:** Standaard toevoegen van IP-adres, userAgent, sessionId, en eventuele impersonatorId aan elke audit log (`logService.ts`).
+   - **27001 Toegang & Beveiliging:** Loggen van mislukte inlogpogingen, rolwijzigingen in admin-paneel, exports van gevoelige data (CSV/PDF) en globale configuratiewijzigingen.
+   - **9001 Kwaliteit & Traceability:** Reden van afkeur (NC) verplicht loggen met actie (Scrap/Rework), wijzigingen aan specificaties/stuktijden vastleggen met 'reden van wijziging', en machine-kalibraties/vrijgaves loggen.
+
+**2. Label Template Engine (Dynamische Label-generatie UI)**
+   - Hardcoded logica uit `labelHelpers.tsx` (bijv. teksttransformaties zoals `EMT 30/10` -> `EMT Pu 30 mcw PN10 bar`) verplaatsen naar een database-model.
+   - **UI Builder:** Een interface ontwerpen in de beheeromgeving waarmee gebruikers zelf regels kunnen samenstellen (bijv. conditionele if/then/else en tekst-samenvoegingen).
+   - Flexibiliteit bieden voor toekomstige productwijzigingen en afkortingen (zoals "mcw" of "Pu") zonder code te hoeven deployen.
+
+---
+
+### Update sessie 19 July 2026 (Factory Configuraties Migratie)
+
+**Datum:** 19 July 2026 | **Branch:** FPiFF-June-rolout / main
+
+**1. Systeem Configuraties Gemigreerd naar Firestore:**
+- Hardcoded waarden uit `constants.ts` (zoals product types, diameters, drukken en connection types) zijn overgezet naar Firestore-collecties (`future-factory/config/...`).
+- Nieuwe `useFactoryConfig.ts` hook geschreven die de configuraties direct uitleest via Firestore snapshots.
+- UI gebouwd: `ConfigManagerView.tsx` om deze configuraties in-app te beheren (Toevoegen, Uitzetten, Sorteren).
+- Migratiescript (`migrateConfig.ts`) herschreven naar een efficiënte `writeBatch` om quota-overschrijdingen ("Write stream exhausted maximum allowed queued writes") te voorkomen.
+- Firestore security rules aangescherpt voor de configuratie-collecties (schrijfbaar voor ingelogde beheerders/gebruikers, globaal leesbaar).
+
+---
+
+### Update sessie 19 July 2026 (Opschonen Documentatie & Handleidingen)
+
+**Datum:** 19 July 2026 | **Branch:** FPiFF-June-rolout / main
+
+**1. Projectstructuur en Documentatie geoptimaliseerd:**
+- Bestaande (verouderde of sterk gefragmenteerde) handleidingen verplaatst naar een nieuwe `docs/archief/` map om overzicht te creëren.
+- Nieuwe gestructureerde bestanden aangemaakt voor betere on-boarding en duidelijkheid:
+  - `01_PROJECTSTRUCTUUR_EN_ARCHITECTUUR.md`
+  - `02_HANDLEIDING_ONTWIKKELAARS.md`
+  - `03_FEATURES_EN_MODULES.md`
+  - `04_DEPLOYMENT_EN_OPERATIONS.md`
+  - `05_WERKOMGEVINGEN_IDE.md` (Uitgebreide uitleg over werken met Antigravity en VS Code / Codespaces)
+  - `06_AI_KNOWLEDGE_BASE.md` (Architectuur-map specifiek gegenereerd als brein en referentiekader voor AI-assistenten)
+- De `README.md` in de root is bijgewerkt zodat deze direct linkt naar de juiste opgeschoonde bestanden.
+
+---
+
+### Update sessie 18 July 2026 (Supervisor, Audit Logs & Database Explorer)
+
+**Datum:** 18 July 2026 | **Branch:** FPiFF-June-rolout / main
+
+**1. ISO 9001 / 27001 Compliancy & Audit Logs:**
+- **Metadata verrijking (`logService.ts` / `firebase.ts`):** Alle audit logs bevatten nu standaard extra metadata zoals IP-adres, userAgent, sessionId, en impersonatorId voor striktere compliancy.
+- **Presence Tracking (`usePresence.ts` / `App.tsx`):** Live 🟢/🟡/⚪ statusindicatoren toegevoegd in `AdminUsersView` om te kunnen zien of een account niet alleen ingelogd is, maar of het actieve apparaat (laptop/tablet) op dat moment ook daadwerkelijk 'aan' en actief is.
+
+**2. Nieuwe 'Supervisor' Rol:**
+- **Rechtenmodel (`firestore.rules`):** Nieuwe rol toegevoegd net onder de Admin. Beveiligd op backend-niveau: een Supervisor heeft alleen-lezen toegang tot de gebruikerslijst, mag wachtwoorden resetten en bepaalde gebruikersgegevens aanpassen, maar mag géén gebruikers verwijderen, aanmaken, en zichzelf geen Admin maken.
+- **UI Integratie (`AdminUsersView.tsx` / `AdminDashboard.tsx`):** Knoppen voor het verwijderen/toevoegen van gebruikers worden verborgen voor Supervisors. Supervisors hebben nu ook toegang tot specifieke beheer-tegels.
+
+**3. Database Explorer Cascading Dropdowns (`AdminDatabaseView.tsx`):**
+- Vrij-tekst invoer vervangen door slimme, gelaagde (cascading) dropdowns voor "Afdeling" en "Machine".
+- **Dynamische Pathing**: Haalt sub-collecties zoals afdelingen direct uit de werkelijke Firestore documenten.
+- **Factory Config Integratie**: Zodra documenten "ghosts" zijn (wel geneste collecties, geen direct field document), valt het systeem automatisch en live terug op de globale configuratie in `FACTORY_CONFIG`.
+- **Merge met Bestaande Data**: Opties uit `getDocs()` en `FACTORY_CONFIG` worden on-the-fly samengevoegd zodat zowel expliciet gecreëerde machines als "geplande" machines altijd in de lijst staan.
+- **Path Normalization (Hoofdletters & Prefix)**:
+  - De eerste letter van de afdeling wordt altijd geforceerd naar een hoofdletter (bijv. `fittings` -> `Fittings`) omdat Firebase pathing case-sensitive is.
+  - De "40"-prefix blijft netjes behouden voor paden (e.g. `40BH18`), we gebruiken hierbij niet meer `normalizeMachine` in de pad-generatie om "ghost-mapping" problemen in de query te voorkomen.
 
 ---
 

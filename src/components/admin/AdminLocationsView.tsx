@@ -27,8 +27,8 @@ import {
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
-import { STANDARD_DIAMETERS } from "../../data/constants";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { useFactoryConfig } from "../../hooks/useFactoryConfig";
 import {
   buildScopedInventoryDocPath,
   isProductionInventoryScopedDoc,
@@ -71,6 +71,7 @@ const AdminLocationsView = ({ canEdit = false }: { canEdit?: boolean }) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+  const factoryConfig = useFactoryConfig();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -474,9 +475,9 @@ const AdminLocationsView = ({ canEdit = false }: { canEdit?: boolean }) => {
                       setFormState({ ...formState, diameter: e.target.value })
                     }
                   >
-                    {STANDARD_DIAMETERS.map((d) => (
-                      <option key={d} value={d}>
-                        {t('idMm', { id: d })}
+                    {factoryConfig.diameters.map((d: any) => (
+                      <option key={d.value} value={d.value}>
+                        {t('idMm', { id: d.value })}
                       </option>
                     ))}
                   </select>

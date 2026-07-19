@@ -1902,7 +1902,7 @@ const PrintQueueAdminView = () => {
           .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
         if (stations.length === 0) return null;
 
-        const key = String(dept?.slug || dept?.id || `dept-${idx}`);
+        const key = String(dept?.id || dept?.slug || `dept-${idx}`) + `_${idx}`;
         const label = String(dept?.name || dept?.slug || dept?.id || `Afdeling ${idx + 1}`);
         return { key, label, stations };
       })

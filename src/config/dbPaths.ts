@@ -111,6 +111,14 @@ export const PATHS: Record<string, string[]> = {
   ACCOUNT_REQUESTS: [BASE, "Users", "AccountRequests"],
   NFC_TAG_MAPPINGS: [BASE, "Users", "NFCTagMappings"], // UID of NFC-tag → personeelsnummer
 
+  // --- FACTORY LISTS & CONFIG COLLECTIONS (Collecties: oneven segmenten) ---
+  CONFIG_PRODUCT_TYPES: [BASE, "config", "product_types"],
+  CONFIG_PRODUCT_LABELS: [BASE, "config", "product_labels"],
+  CONFIG_CONNECTION_TYPES: [BASE, "config", "connection_types"],
+  CONFIG_DIAMETERS: [BASE, "config", "standard_diameters"],
+  CONFIG_PRESSURES: [BASE, "config", "standard_pressures"],
+  PRINTER_ROUTING_RULES: [BASE, "config", "printer_routing_rules"],
+
   // --- INSTELLINGEN & CONFIG (Documents: even segmenten) ---
   FACTORY_CONFIG: [BASE, "settings", "factory_configs", "main"],
   GENERAL_SETTINGS: [BASE, "settings", "general_configs", "main"],
