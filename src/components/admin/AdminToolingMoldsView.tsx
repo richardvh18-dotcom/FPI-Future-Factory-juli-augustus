@@ -1,4 +1,4 @@
-/* eslint-disable */
+
 import React, { useEffect, useMemo, useState } from "react";
 import i18n from "i18next";
 import {
@@ -229,7 +229,6 @@ const OrderSearchModal = ({ isOpen, onClose, onSelectItems, newRow, setNewRow }:
       setResults(Array.from(foundDocs.values()));
       if (foundDocs.size === 0) {
         console.warn(`⚠️ Geen resultaten gevonden voor: "${searchStr}"`);
-      } else {
       }
     } catch (e: unknown) {
       console.error("Zoekfout:", e);

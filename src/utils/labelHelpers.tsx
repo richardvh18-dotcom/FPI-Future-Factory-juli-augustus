@@ -224,18 +224,38 @@ const parseConnections = (text: string): string => {
 
   if (match) {
     const parts = [match[1], match[2], match[3]].filter(Boolean);
+    const is3WayProduct = /\b(TEE|WYE|CROSS|T-STUK|UN-TEE|EQ-TEE)\b/i.test(text);
+    if (is3WayProduct && parts.length === 2 && parts[0] === parts[1]) {
+      parts.push(parts[0]);
+    }
     return parts.join("-").toUpperCase();
   }
   return "";
 };
 
-const normalizeConnectionLine = (text: string): string =>
-  String(text || "")
+const normalizeConnectionLine = (text: string, fullDesc?: string): string => {
+  let result = String(text || "")
     .toUpperCase()
     .trim()
     .replace(/\//g, "-")
     .replace(/\s+/g, "-")
     .replace(/^(TB|CB|FL|AM|AB|CS|CF|FB|LB|SB)\1$/, "$1-$1");
+
+  const is3Way = fullDesc && /\b(TEE|WYE|CROSS|T-STUK|UN-TEE|EQ-TEE)\b/i.test(fullDesc);
+  if (is3Way) {
+    if (/^(CB-CB|TB-TB|AM-AM|AB-AB)$/i.test(result)) {
+      const code = result.split("-")[0];
+      result = `${code}-${code}-${code}`;
+    }
+  } else {
+    const parts = result.split("-").filter(Boolean);
+    if (parts.length === 3 && parts[0] === parts[1] && parts[1] === parts[2]) {
+      result = `${parts[0]}-${parts[1]}`;
+    }
+  }
+
+  return result;
+};
 
 const parseDualDimensionValues = (
   text: string | null | undefined,
@@ -539,7 +559,7 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
     }
   }
 
-  connectionLine = normalizeConnectionLine(connectionLine);
+  connectionLine = normalizeConnectionLine(connectionLine, desc);
   const isSpecialElbow =
     productType.startsWith("ELBOW") && /^(AB-AB|SB-SB)$/.test(connectionLine);
 
@@ -1256,7 +1276,7 @@ export const getQRCodeUrl = (data: unknown, size = 150): Promise<string> =>
  * Evalueert dynamische printregels uit de database om het aantal labels, formaat en tags te bepalen.
  */
 export const evaluatePrintRules = (
-  productData: Record<string, any>,
+  productData: Record<string, unknown>,
   rules: PrintRuleDef[]
 ): PrintRuleOutput => {
   // Basis/Standaard instellingen als geen enkele regel triggert

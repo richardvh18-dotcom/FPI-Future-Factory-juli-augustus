@@ -32,6 +32,7 @@ import ProductDossierModal from "./modals/ProductDossierModal";
 import ProductDetailModal from "../products/ProductDetailModal";
 import CancelOrderModal from "./modals/CancelOrderModal";
 import ConfirmationModal from "./modals/ConfirmationModal";
+import GlassCutListModal from "./modals/GlassCutListModal";
 import { FileImage } from "lucide-react";
 import { findDrawingForProduct } from "../../utils/findDrawingForProduct";
 import { format, differenceInDays } from "date-fns";
@@ -129,6 +130,7 @@ const OrderDetail = React.memo(({
   const [todoDraft, setTodoDraft] = useState("");
   const [startedDraft, setStartedDraft] = useState("");
   const [isSavingNote, setIsSavingNote] = useState(false);
+  const [showGlassCutListModal, setShowGlassCutListModal] = useState(false);
   const autoArchiveAttemptedRef = useRef<Set<string>>(new Set());
   const [toolingMolds, setToolingMolds] = useState<any[]>([]);
 
@@ -1191,6 +1193,21 @@ const OrderDetail = React.memo(({
           </div>
         </button>
 
+        {/* Smart Link for BH16, BH31, & Fitting Orders */}
+        <button
+          type="button"
+          onClick={() => setShowGlassCutListModal(true)}
+          className="p-2 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-all text-left w-full shadow-sm"
+        >
+          <span className="text-[9px] font-black text-amber-700 uppercase tracking-tight block mb-0.5">Fitting Spec</span>
+          <div className="flex items-center gap-2">
+            <FileText size={14} className="text-amber-600" />
+            <span className="font-bold text-xs text-amber-900">
+              📐 Glas- & Snijtekening
+            </span>
+          </div>
+        </button>
+
         {canEditOrderNotes ? (
           <textarea
             value={noteDraft}
@@ -1808,6 +1825,17 @@ const OrderDetail = React.memo(({
             </div>
           </div>
         </div>
+      )}
+
+      {showGlassCutListModal && (
+        <GlassCutListModal
+          isOpen={showGlassCutListModal}
+          onClose={() => setShowGlassCutListModal(false)}
+          initialProductType="tee"
+          initialPressureBar={order?.pn || order?.pressure}
+          initialInnerDiameterMm={order?.diameter || order?.dn || order?.innerDiameterMm}
+          initialBranchDiameterMm={order?.branchDiameter || order?.id1}
+        />
       )}
 
     </div>

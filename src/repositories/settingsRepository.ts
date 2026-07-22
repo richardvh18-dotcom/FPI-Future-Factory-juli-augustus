@@ -58,7 +58,7 @@ export const fetchMatrixConfig = async (): Promise<SettingsRecord> => {
  * Haalt een collectie van technische dimensies op.
  *
  * @param {'BORE_DIMENSIONS'|'CB_DIMENSIONS'|'TB_DIMENSIONS'|'FITTING_SPECS'|'SOCKET_SPECS'} pathKey
- * @returns {Promise<Array<{id: string, [key: string]: any}>>}
+ * @returns {Promise<Array<{id: string, Record<string, unknown>}>>}
  */
 export const fetchDimensions = async (pathKey: DimensionsPathKey): Promise<RepoRecord[]> => {
   if (!isValidPath(pathKey)) return [];
@@ -99,7 +99,7 @@ export const fetchAllSettings = async () => {
 /**
  * Haalt label-templates op.
  *
- * @returns {Promise<Array<{id: string, [key: string]: any}>>}
+ * @returns {Promise<Array<{id: string, Record<string, unknown>}>>}
  */
 export const fetchLabelTemplates = async () => {
   if (!isValidPath('LABEL_TEMPLATES')) return [];
@@ -110,7 +110,7 @@ export const fetchLabelTemplates = async () => {
 /**
  * Haalt printerinstellingen op.
  *
- * @returns {Promise<Array<{id: string, [key: string]: any}>>}
+ * @returns {Promise<Array<{id: string, Record<string, unknown>}>>}
  */
 export const fetchPrinters = async () => {
   if (!isValidPath('PRINTERS')) return [];

@@ -21,7 +21,7 @@ const detectMachineFromText = (value = "") => {
   return "";
 };
 
-export const resolveInventoryScope = (record: Record<string, any> = {}) => {
+export const resolveInventoryScope = (record: Record<string, unknown> = {}) => {
   const departmentId = toSegment(
     record.departmentId || record.department || record.afdeling,
     DEFAULT_DEPARTMENT

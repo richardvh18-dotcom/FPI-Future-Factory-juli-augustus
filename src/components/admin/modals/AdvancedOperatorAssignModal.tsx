@@ -1,4 +1,4 @@
-/* eslint-disable */
+
 import React, { useState, useMemo } from 'react';
 import i18n from 'i18next';
 import { X, AlertTriangle, Clock, Users, Filter, Plus, Minus } from 'lucide-react';

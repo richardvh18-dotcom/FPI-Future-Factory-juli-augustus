@@ -214,7 +214,7 @@ export const findConversionCandidate = async (unusedAppId: unknown, specs: Conve
 
 export const fetchConversions = async (
   unusedAppId: unknown,
-  lastDoc: any = null,
+  lastDoc: unknown = null,
   pageSize = 50,
   searchTerm = ""
 ) => {

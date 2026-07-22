@@ -23,7 +23,7 @@ import { isProductionInventoryScopedDoc } from '../utils/inventoryPaths';
  * Merget de legacy-collectie en de scoped sub-collecties.
  * Scoped docs krijgen voorrang bij identieke ID's (migratie-overgangsperiode).
  *
- * @returns {Promise<Array<{id: string, _source: 'legacy'|'scoped', [key: string]: any}>>}
+ * @returns {Promise<Array<{id: string, _source: 'legacy'|'scoped', Record<string, unknown>}>>}
  */
 export const fetchInventory = async () => {
   const [legacySnapshot, scopedSnapshot] = await Promise.all([

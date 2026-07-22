@@ -1,4 +1,4 @@
-/* eslint-disable */
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ShieldCheck, Send, Loader2, Camera, Keyboard, Hash, RefreshCw, Printer } from "lucide-react";

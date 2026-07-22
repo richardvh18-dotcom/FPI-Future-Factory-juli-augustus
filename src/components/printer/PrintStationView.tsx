@@ -1188,16 +1188,16 @@ const PrintStationView = () => {
     };
 
     void restoreUsbConnection();
-    // @ts-ignore
-    navigator.usb.addEventListener('connect', handleUsbConnect as EventListener);
-    // @ts-ignore
-    navigator.usb.addEventListener('disconnect', handleUsbDisconnect as EventListener);
+    if (typeof navigator !== 'undefined' && 'usb' in navigator && (navigator as any).usb) {
+      (navigator as any).usb.addEventListener('connect', handleUsbConnect as EventListener);
+      (navigator as any).usb.addEventListener('disconnect', handleUsbDisconnect as EventListener);
+    }
 
     return () => {
-      // @ts-ignore
-      navigator.usb.removeEventListener('connect', handleUsbConnect as EventListener);
-      // @ts-ignore
-      navigator.usb.removeEventListener('disconnect', handleUsbDisconnect as EventListener);
+      if (typeof navigator !== 'undefined' && 'usb' in navigator && (navigator as any).usb) {
+        (navigator as any).usb.removeEventListener('connect', handleUsbConnect as EventListener);
+        (navigator as any).usb.removeEventListener('disconnect', handleUsbDisconnect as EventListener);
+      }
     };
   }, [printers, usbDevice]);
 

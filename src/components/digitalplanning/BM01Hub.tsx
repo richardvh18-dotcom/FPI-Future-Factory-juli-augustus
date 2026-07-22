@@ -1,4 +1,4 @@
-/* eslint-disable */
+
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { FileText, Layers, Calendar, History, Package, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, Printer, X, Download, ScanBarcode, Keyboard, AlertTriangle } from "lucide-react";

@@ -20,9 +20,9 @@ import {
 
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 
-const DepartmentStationSelector = React.lazy(() => import('./DepartmentStationSelector'));
-const PlannerHub = React.lazy(() => import("./PlannerHub"));
-const TeamleaderHub = React.lazy(() => import('./TeamleaderHub'));
+import DepartmentStationSelector from "./DepartmentStationSelector";
+import PlannerHub from "./PlannerHub";
+import TeamleaderHub from "./TeamleaderHub";
 
 type AppUser = {
   role?: string;

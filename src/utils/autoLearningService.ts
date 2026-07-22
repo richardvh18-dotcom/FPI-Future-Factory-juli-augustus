@@ -163,8 +163,8 @@ export const analyzeAndUpdateStandards = async (options: AutoLearningOptions = {
         // Bereken werkelijke tijden
         const actualTimes = validProducts.map((p) => {
           const duration = calculateDuration(
-            p.timestamps?.station_start as any,
-            (p.timestamps?.completed || p.timestamps?.finished) as any
+            p.timestamps?.station_start as unknown,
+            (p.timestamps?.completed || p.timestamps?.finished) as unknown
           );
           return duration;
         }).filter((t) => t > 0);
@@ -237,8 +237,6 @@ export const analyzeAndUpdateStandards = async (options: AutoLearningOptions = {
           });
 
           results.updated++;
-
-        } else {
 
         }
 

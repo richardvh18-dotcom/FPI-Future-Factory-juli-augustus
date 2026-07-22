@@ -36,28 +36,39 @@ import { usePresence } from "./hooks/usePresence";
 import { checkFeature } from "./hooks/useHasFeature";
 import { PATHS, getPathString, getArchiveItemsPath } from "./config/dbPaths";
 
-// Lazy Loading Modules
-const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard"));
-const AdminMessagesView = lazy(() =>
-  import("./components/admin/AdminMessagesView")
-);
-const DigitalPlanningHub = lazy(() =>
-  import("./components/digitalplanning/DigitalPlanningHub")
-);
-const MobileScanner = lazy(() =>
-  import("./components/digitalplanning/MobileScanner")
-);
-const ShopFloorMobileApp = lazy(() =>
-  import("./components/planning/ShopFloorMobileApp")
-);
-const CalculatorView = lazy(() => import("./components/CalculatorView"));
-const AiAssistantView = lazy(() => import("./components/ai/AiAssistantView"));
-const AdminLogView = lazy(() => import("./components/admin/AdminLogView"));
-const QCHub = lazy(() => import("./components/qc/QCHub"));
+// Safe Lazy Loader with automatic retry and reload fallback for Vite HMR
+const safeLazy = <T extends React.ComponentType<any>>(
+  importFn: () => Promise<{ default: T }>
+) =>
+  lazy(async () => {
+    try {
+      return await importFn();
+    } catch (error) {
+      console.warn("Retrying dynamic module import after Vite HMR update...", error);
+      await new Promise((r) => setTimeout(r, 300));
+      try {
+        return await importFn();
+      } catch (err2) {
+        if (typeof window !== "undefined" && !sessionStorage.getItem("vite_lazy_reload")) {
+          sessionStorage.setItem("vite_lazy_reload", "true");
+          window.location.reload();
+        }
+        throw err2;
+      }
+    }
+  });
 
-const PrintQueueAdminView = lazy(() =>
-  import("./components/printer/PrintQueueAdminView")
-);
+// Lazy Loading Modules
+const AdminDashboard = safeLazy(() => import("./components/admin/AdminDashboard"));
+const AdminMessagesView = safeLazy(() => import("./components/admin/AdminMessagesView"));
+const DigitalPlanningHub = safeLazy(() => import("./components/digitalplanning/DigitalPlanningHub"));
+const MobileScanner = safeLazy(() => import("./components/digitalplanning/MobileScanner"));
+const ShopFloorMobileApp = safeLazy(() => import("./components/planning/ShopFloorMobileApp"));
+const CalculatorView = safeLazy(() => import("./components/CalculatorView"));
+const AiAssistantView = safeLazy(() => import("./components/ai/AiAssistantView"));
+const AdminLogView = safeLazy(() => import("./components/admin/AdminLogView"));
+const QCHub = safeLazy(() => import("./components/qc/QCHub"));
+const PrintQueueAdminView = safeLazy(() => import("./components/printer/PrintQueueAdminView"));
 const ProductDossierModal = lazy(() => import("./components/digitalplanning/modals/ProductDossierModal"));
 const TeamleaderOrderDetailModal = lazy(() => import("./components/digitalplanning/modals/TeamleaderOrderDetailModal"));
 const MTPresentation = lazy(() =>

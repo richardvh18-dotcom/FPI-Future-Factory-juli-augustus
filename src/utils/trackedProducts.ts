@@ -25,7 +25,7 @@ type ScopedTarget = {
 };
 
 type SubscribeTrackedProductsParams = {
-  db: any;
+  db: unknown;
   onData: (items: TrackedProductDoc[]) => void;
   onError?: (error: unknown) => void;
   statusExclusions?: string[];
@@ -186,7 +186,7 @@ export const trackedLotExistsActive = async ({
   lotNumber,
   excludeDocId = null,
 }: {
-  db: any;
+  db: unknown;
   lotNumber: string;
   excludeDocId?: string | null;
 }) => {

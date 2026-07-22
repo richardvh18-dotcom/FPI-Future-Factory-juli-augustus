@@ -1,4 +1,4 @@
-/* eslint-disable */
+
 import React, { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { Database, RefreshCw, Trash2, Layers, Table, SearchCode, Fingerprint, Activity, Terminal, FileText, Loader2, Folder, File, ArrowUp, Bot, Send, X } from "lucide-react";
@@ -379,13 +379,11 @@ const AdminDatabaseView = () => {
     }
     
     fetchPathData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedKey]);
+  }, [selectedKey, fetchPathData]);
 
   useEffect(() => {
     fetchMachinesForDept(exploreDept);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exploreDept]);
+  }, [exploreDept, fetchMachinesForDept]);
 
   useEffect(() => {
     if (viewMode === "storage") {

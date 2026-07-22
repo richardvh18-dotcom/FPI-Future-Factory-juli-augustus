@@ -32,6 +32,8 @@ import { toDateSafe } from "../../../utils/dateUtils";
 import StatusBadge from "../common/StatusBadge";
 import { useNotifications } from '../../../contexts/NotificationContext';
 import { useTouchKeyboardPreference } from "../../../hooks/useTouchKeyboardPreference";
+import GlassCutListModal from "../modals/GlassCutListModal";
+import { formatConnectionForDisplay } from "../../../utils/connectionFormatter";
 
 type AnyRecord = Record<string, any>;
 
@@ -91,7 +93,31 @@ const TerminalPlanningView = ({
   }, []);
   const suppressSoftKeyboard = isTouchDevice && !touchKeyboardPreferred;
 
+  const [showGlassCutListModal, setShowGlassCutListModal] = useState(false);
   const [toolingMolds, setToolingMolds] = React.useState<any[]>([]);
+
+  const parsedOrderSpecs = useMemo(() => {
+    if (!selectedOrder) return { id: undefined, id1: undefined, pn: undefined, connectionType: "cbcbcb" };
+    const desc = String(selectedOrder.itemDescription || selectedOrder.item || selectedOrder.product || "");
+    const code = String(selectedOrder.itemCode || selectedOrder.articleCode || "");
+    const text = `${desc} ${code}`;
+
+    const dimMatch = text.match(/(\d+)\s*x\s*(\d+)/i);
+    const id = dimMatch ? Number(dimMatch[1]) : undefined;
+    const id1 = dimMatch ? Number(dimMatch[2]) : undefined;
+
+    const pnMatch = text.match(/(?:PN|EST)\s*(\d+)/i);
+    const pn = pnMatch ? Number(pnMatch[1]) : undefined;
+
+    let connectionType = "cbcbcb";
+    if (/TBTB|TB\/TB/i.test(text)) {
+      connectionType = "tbtbtb";
+    } else if (/CBCB|CB\/CB|BCCB/i.test(text)) {
+      connectionType = "cbcbcb";
+    }
+
+    return { id, id1, pn, connectionType };
+  }, [selectedOrder]);
 
   React.useEffect(() => {
     const unsub = onSnapshot(
@@ -152,10 +178,8 @@ const TerminalPlanningView = ({
   };
 
   const getOrderDisplayName = (order: AnyRecord) => {
-    // Geef voorkeur aan de Omschrijving (AH) uit LN
-    return (
-      order?.itemDescription || order?.item || order?.itemCode || t("digitalplanning.terminal.unknown_product", "Onbekend product")
-    );
+    const raw = order?.itemDescription || order?.item || order?.itemCode || t("digitalplanning.terminal.unknown_product", "Onbekend product");
+    return formatConnectionForDisplay(raw);
   };
 
   const getPriorityLevel = (order: AnyRecord) => {
@@ -1042,7 +1066,7 @@ const TerminalPlanningView = ({
                   </button>
                 )}
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <button
                     onClick={() => {
                       if (onViewDrawing) {
@@ -1060,6 +1084,15 @@ const TerminalPlanningView = ({
                       <span className="ml-1 w-2 h-2 bg-blue-500 rounded-full" />
                     )}
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowGlassCutListModal(true)}
+                    className="py-4 bg-slate-100 text-slate-700 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2 border border-slate-200"
+                  >
+                    <FileText size={16} className="text-amber-600" /> 📐 Glas- & Snijtekening
+                  </button>
+
                   <button className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2">
                     <AlertCircle size={16} /> {t("digitalplanning.terminal.quality_requirements", "Kwaliteitseisen")}
                   </button>
@@ -1220,6 +1253,17 @@ const TerminalPlanningView = ({
             </div>
           </div>
         </div>
+      )}
+      {showGlassCutListModal && (
+        <GlassCutListModal
+          isOpen={showGlassCutListModal}
+          onClose={() => setShowGlassCutListModal(false)}
+          initialProductType="tee"
+          initialConnectionType={parsedOrderSpecs.connectionType}
+          initialPressureBar={selectedOrder?.pn || selectedOrder?.pressure || parsedOrderSpecs.pn}
+          initialInnerDiameterMm={selectedOrder?.diameter || selectedOrder?.dn || parsedOrderSpecs.id}
+          initialBranchDiameterMm={selectedOrder?.branchDiameter || selectedOrder?.id1 || parsedOrderSpecs.id1}
+        />
       )}
     </>
   );

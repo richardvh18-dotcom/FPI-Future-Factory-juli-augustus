@@ -1533,13 +1533,7 @@ const PrintQueueAdminView = () => {
       const device = event.device;
       if (!device) return;
 
-      const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
-      const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
-      const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
-
-      if (matchesSavedUsbDevice(device, savedVendor, savedProduct, savedPrinterId)) {
-        setUsbDevice(device);
-      }
+      setUsbDevice(device);
     };
 
     const handleUsbDisconnect = (event: any) => {
@@ -1555,10 +1549,10 @@ const PrintQueueAdminView = () => {
     };
 
     void restoreUsbConnection();
-    // @ts-ignore
-    navigator.usb.addEventListener('connect', handleUsbConnect as EventListener);
-    // @ts-ignore
-    navigator.usb.addEventListener('disconnect', handleUsbDisconnect as EventListener);
+    if (typeof navigator !== 'undefined' && 'usb' in navigator && (navigator as any).usb) {
+      (navigator as any).usb.addEventListener('connect', handleUsbConnect as EventListener);
+      (navigator as any).usb.addEventListener('disconnect', handleUsbDisconnect as EventListener);
+    };
 
     // Printers ophalen
     const unsubPrinters = onSnapshot(collection(db, getPathString(PATHS.PRINTERS)), (snapshot) => {
@@ -1688,10 +1682,10 @@ const PrintQueueAdminView = () => {
       unsubscribeRoot();
       unsubscribeScoped();
       if (unsubscribeScopedFallback) unsubscribeScopedFallback();
-      // @ts-ignore
-      navigator.usb.removeEventListener('connect', handleUsbConnect as EventListener);
-      // @ts-ignore
-      navigator.usb.removeEventListener('disconnect', handleUsbDisconnect as EventListener);
+      if (typeof navigator !== 'undefined' && 'usb' in navigator && (navigator as any).usb) {
+        (navigator as any).usb.removeEventListener('connect', handleUsbConnect as EventListener);
+        (navigator as any).usb.removeEventListener('disconnect', handleUsbDisconnect as EventListener);
+      }
     };
   }, []);
 

@@ -2,7 +2,7 @@ import { db } from "../config/firebase";
 import { collection, query, where, getDocs, limit, orderBy, documentId, collectionGroup, getDoc, doc } from "firebase/firestore";
 import { PATHS, getPathString } from "../config/dbPaths";
 
-export type AnyRecord = Record<string, any>;
+export type AnyRecord = Record<string, unknown>;
 
 export const normalizeText = (value: unknown): string => String(value || "").toLowerCase().trim();
 
@@ -107,7 +107,7 @@ export const executeOrderLabelSearch = async (
   const trackRef = collection(db, getPathString(PATHS.TRACKING));
   const planningPrefix = `${getPathString(PATHS.PLANNING)}/`;
 
-  const deepPathQueries: Array<Promise<any>> = [];
+  const deepPathQueries: Array<Promise<unknown>> = [];
   const machinePairs = await loadFactoryMachinePaths();
 
   for (const { productType, machine } of machinePairs) {
@@ -130,16 +130,16 @@ export const executeOrderLabelSearch = async (
   }
 
   const foundDocs = new Map<string, AnyRecord>();
-  const addDocs = (snap: any) => {
+  const addDocs = (snap: { docs: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }[]; exists?: () => boolean; id?: string; data?: () => Record<string, unknown> }) => {
     if (snap && snap.docs) {
-      snap.docs.forEach((d: any) => foundDocs.set(d.id, { id: d.id, ...d.data() }));
+      snap.docs.forEach((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => foundDocs.set(d.id, { id: d.id, ...d.data() }));
     }
   };
-  const addScopedPlanningDocs = (snap: any) => {
+  const addScopedPlanningDocs = (snap: { docs: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }[]; exists?: () => boolean; id?: string; data?: () => Record<string, unknown> }) => {
     if (snap && snap.docs) {
       snap.docs
-        .filter((d: any) => String(d.ref?.path || "").startsWith(planningPrefix))
-        .forEach((d: any) => foundDocs.set(d.id, { id: d.id, ...d.data() }));
+        .filter((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => String(d.ref?.path || "").startsWith(planningPrefix))
+        .forEach((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => foundDocs.set(d.id, { id: d.id, ...d.data() }));
     }
   };
 
@@ -248,7 +248,7 @@ export const executeOrderLabelSearch = async (
         }
     }
     
-    const startsWithQueries: Array<Promise<any>> = [];
+    const startsWithQueries: Array<Promise<unknown>> = [];
     Array.from(new Set(startOptions)).forEach(opt => {
         startsWithQueries.push(getDocs(query(colRef, where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(10))));
         startsWithQueries.push(getDocs(query(colRef, where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(10))));
@@ -280,7 +280,7 @@ export const executeOrderLabelSearch = async (
     const startSnaps = await Promise.all(startsWithQueries.map(p => p.catch(() => null)));
     startSnaps.forEach(addDocs);
 
-    const scopedStartsWithQueries: Array<Promise<any>> = [];
+    const scopedStartsWithQueries: Array<Promise<unknown>> = [];
     Array.from(new Set(startOptions)).forEach((opt) => {
       scopedStartsWithQueries.push(getDocs(query(collectionGroup(db, "orders"), where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(25))));
       scopedStartsWithQueries.push(getDocs(query(collectionGroup(db, "orders"), where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(25))));
@@ -293,7 +293,7 @@ export const executeOrderLabelSearch = async (
     const scopedStartSnaps = await Promise.all(scopedStartsWithQueries.map((p) => p.catch(() => null)));
     scopedStartSnaps.forEach(addScopedPlanningDocs);
     
-    const deepPathRangeQueries: Array<Promise<any>> = [];
+    const deepPathRangeQueries: Array<Promise<unknown>> = [];
     for (const { productType, machine } of machinePairs) {
       try {
         const machinePath = `${getPathString(PATHS.PLANNING)}/${productType}/machines/${machine}/orders`;

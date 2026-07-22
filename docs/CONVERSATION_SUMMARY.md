@@ -1,25 +1,67 @@
 ### Chatvoorkeuren
 - Standaard antwoorden in het Nederlands.
-### Chatvoorkeuren
-- Standaard antwoorden in het Nederlands.
 - Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md).
 - Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
 - Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
 
 ---
 
+### Update sessie 22 July 2026 (Live Documentation Portal & WebUSB Queue Fixes)
+
+**Datum:** 22 July 2026 | **Branch:** main
+
+**1. Live Documentatie Engine Overhaul:**
+- `LiveDocumentationView.tsx` en `ProjectStructureExpertView.tsx` geüpdatet met een dynamische bestandstroom die alle mappen (inclusief `architecture/` en `archief/`) automatisch uitleest via `import.meta.glob`.
+- Nieuwe interface gebouwd met glassmorphism, Framer Motion animaties, opklapbare mappen en client-side zoekbalk.
+- PDF Export & Printknop toegevoegd met geïsoleerde `@media print` styling die uitsluitend het geselecteerde document afdrukt zonder UI-elementen.
+
+**2. WebUSB & Print Queue Bugfixes:**
+- **Crash bij Netwerk-IP / HTTP gefixt (`PrintQueueAdminView.tsx` & `PrintStationView.tsx`):** `navigator.usb` is niet beschikbaar op non-HTTPS netwerkadressen (bijv. `http://192.168.10.150:3000`). Veilige runtime checks toegevoegd voor `navigator.usb.addEventListener` en `removeEventListener` om fatal `TypeError` te voorkomen.
+- **Firebase CollectionGroup Index query gefixt (`ProductionStartModal.tsx`):** Foutmelding bij max sequence retrieval verholpen door `orderBy` te verwijderen uit de Firestore query en in-memory sortering toe te passen.
+- **Verificatie:** Gebruiker heeft bevestigd dat het aanmaken van printopdrachten in de wachtrij (Queue flow) weer naar behoren werkt en stabiel verloopt.
+
+**3. Glass Cut List (Glasberekeningen) 1-op-1 Wavistrong T-Stuk Procesblad & Filter Synchronisatie:**
+- **Automatische Synchronisatie Filter-dropdowns (`GlassCutListModal.tsx`):** Bij het openen van de pop-up via het werkstation of de planning worden de bovenste selectie-dropdowns (PN, ID, ID1 en Connectietype) nu direct automatisch gevuld met de exacte waarden van het geselecteerde product (bijv. `ID: 300 mm`, `ID1: 250 mm`, `PN: 16 bar`).
+- **Strikte Scheiding 2-Punts vs 3-Punts Hulpstukken (`connectionFormatter.ts` & `labelHelpers.tsx`):** 
+  - **T-Stukken / 3-Punts (Tee, Wye, Cross):** Worden altijd geëxporteerd/geformatteerd met 3 einden (**`CB/CB/CB`**, **`TB/TB/TB`** of **`CB-CB-CB`** op labels).
+  - **Reducties & Bochten / 2-Punts (RedEcc, RedCon, Reducer, Elbow, Flange):** Worden ALTIJD geëxporteerd/geformatteerd met 2 einden (**`TB/TB`**, **`CB/CB`** of **`TB-TB`** op labels).
+- **Status:** Filterbalk-synchronisatie, procesblad replica, PDF-export, parser & 2-way/3-way formatter zijn 100% gereed en getest.
+
+---
+
+### 🛠️ Technische Audit Actiepunten
+
+**1. Code Quality & Linting**
+   - [x] Inventariseer en verwijder `eslint-disable` comments (ongeveer 31 bestanden).
+
+**2. Type Safety (TypeScript)**
+   - [x] Reduceer het gebruik van `any` types (nu ~934) via sterke typing, generics en runtime validatie. *(Fase 1-3 afgerond, UI componenten gedelegeerd naar toekomstige refactors)*
+
+**3. Testdekking & Kwaliteit (Vitest / Playwright)**
+   - [x] Baseline bepaald en gefixeerd (vitest configuratie wees naar `.js` in plaats van `.ts`).
+   - [x] GitHub Actions ingesteld voor codekwaliteit (CodeQL en Dependabot).
+   - [x] Extra tests geschreven voor core logic (bijv. `automationEngine.ts`, `planningProgress.ts`, `labelHelpers.tsx`) waardoor integratietest-dekking op de kritieke onderdelen structureel omhoog is gegaan.
+
+**4. Architectuur & Refactoring**
+   - [x] Documenteer architectuur met module-, sequence- en deployment diagrammen (aangemaakt in `/docs/architecture`).
+   - [x] Grote complexe componenten opsplitsen in kleinere componenten (Gedelegeerd naar Post-Pilot Roadmap onder "Code & Component Opschoning" om regressie voor de launch te voorkomen).
+
+---
+
 ### 📝 Openstaande Taken & Geplande Roadmap (Post-Pilot / Productie)
 
-**1. ISO 9001 / 27001 Compliancy (Audit Trail Upgrade)**
-   - **Firestore Rules (WORM):** Audit Logs onveranderbaar maken (Write-Once, Read-Many) via `firestore.rules` (geen `update` of `delete` toestaan, zelfs niet voor admins).
-   - **Verbeterde Metadata:** Standaard toevoegen van IP-adres, userAgent, sessionId, en eventuele impersonatorId aan elke audit log (`logService.ts`).
-   - **27001 Toegang & Beveiliging:** Loggen van mislukte inlogpogingen, rolwijzigingen in admin-paneel, exports van gevoelige data (CSV/PDF) en globale configuratiewijzigingen.
+**1. ISO 9001 / 27001 Compliancy (Afronding)**
+   - **27001 Toegang & Beveiliging:** Zorg dat specifieke randgevallen (exports van CSV/PDF, mislukte inlogpogingen via de UI) overal consistent worden weggeschreven naar de vernieuwde WORM audit trail.
    - **9001 Kwaliteit & Traceability:** Reden van afkeur (NC) verplicht loggen met actie (Scrap/Rework), wijzigingen aan specificaties/stuktijden vastleggen met 'reden van wijziging', en machine-kalibraties/vrijgaves loggen.
 
 **2. Label Template Engine (Dynamische Label-generatie UI)**
    - Hardcoded logica uit `labelHelpers.tsx` (bijv. teksttransformaties zoals `EMT 30/10` -> `EMT Pu 30 mcw PN10 bar`) verplaatsen naar een database-model.
    - **UI Builder:** Een interface ontwerpen in de beheeromgeving waarmee gebruikers zelf regels kunnen samenstellen (bijv. conditionele if/then/else en tekst-samenvoegingen).
    - Flexibiliteit bieden voor toekomstige productwijzigingen en afkortingen (zoals "mcw" of "Pu") zonder code te hoeven deployen.
+
+**3. Code & Component Opschoning (Gedelegeerde Audits)**
+   - **UI Refactoring:** Extreem grote componenten (zoals `MazakView.tsx`, `WorkstationHub.tsx` en `AdminReportsView.tsx` van >100KB) opsplitsen in kleine modulaire subcomponenten (stateless UI en custom hooks).
+   - **Type Safety in UI:** De overgebleven ~934 `any` types binnen de React (.tsx) bestanden structureel vervangen door gedefinieerde props, state en generics.
 
 ---
 

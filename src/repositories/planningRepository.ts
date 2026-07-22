@@ -55,7 +55,7 @@ export const subscribePlanningOrders = (onData: SnapshotCallback, onError: Error
  * Eenmalige fetch van één planningorder op document-ID.
  *
  * @param {string} orderId  Firestore document-ID
- * @returns {Promise<{id: string, [key: string]: any} | null>}
+ * @returns {Promise<{id: string, Record<string, unknown>} | null>}
  */
 export const fetchPlanningOrder = async (orderId: string): Promise<RepoRecord | null> => {
   const snap = await getDoc(doc(db, getPathString([...PATHS.PLANNING, orderId])));
@@ -68,7 +68,7 @@ export const fetchPlanningOrder = async (orderId: string): Promise<RepoRecord | 
  * @param {string} field     Veldnaam om op te filteren
  * @param {'=='|'!='|'<'|'<='|'>'|'>='} op  Operator
  * @param {*}      value     Filterwaarde
- * @returns {Promise<Array<{id: string, [key: string]: any}>>}
+ * @returns {Promise<Array<{id: string, Record<string, unknown>}>>}
  */
 export const fetchPlanningOrdersWhere = async (
   field: string,

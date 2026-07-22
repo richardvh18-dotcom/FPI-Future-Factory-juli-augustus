@@ -173,7 +173,7 @@ export const generateProductPDF = async (product: ProductRecord, role = "operato
     ]],
     body: tableData,
     theme: "grid",
-    headStyles: { fillColor: headerColor as any, fontStyle: "bold" },
+    headStyles: { fillColor: headerColor as unknown, fontStyle: "bold" },
     styles: { font: "helvetica", fontSize: 10, cellPadding: 4 },
     columnStyles: {
       0: { fontStyle: "bold", cellWidth: 40 },

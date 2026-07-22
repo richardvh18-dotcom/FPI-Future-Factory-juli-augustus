@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import tsParser from '@typescript-eslint/parser';
+import tseslint from 'typescript-eslint';
 
 export default [
   {
@@ -61,7 +62,11 @@ export default [
         console: 'readonly',
       },
     },
+    plugins: {
+      '@typescript-eslint': tseslint.plugin,
+    },
     rules: {
+      '@typescript-eslint/no-explicit-any': 'warn',
       'no-undef': 'off',
       'no-unused-vars': 'off',
       'no-useless-assignment': 'off',

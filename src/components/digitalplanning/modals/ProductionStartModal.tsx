@@ -1090,8 +1090,7 @@ const ProductionStartModal = ({
             collectionGroup(db, "items"),
             where("lotNumber", ">=", baseLotStr),
             where("lotNumber", "<=", `${baseLotStr}\uf8ff`),
-            orderBy("lotNumber", "desc"),
-            limit(5)
+            limit(50)
           );
           const scopedTrackingSnap = await getDocs(scopedTrackingTopQuery);
           scopedTrackingSnap.forEach((docSnap: any) => {

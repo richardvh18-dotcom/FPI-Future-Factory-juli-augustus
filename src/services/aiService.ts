@@ -30,9 +30,9 @@ export type AiDocument = {
     partNumbers?: string[];
     tolerances?: string[];
     warnings?: string[];
-    [key: string]: any;
+    [key: string]: unknown;
   };
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 export type CatalogProduct = {
@@ -40,8 +40,8 @@ export type CatalogProduct = {
   name?: string;
   sku?: string;
   description?: string;
-  specifications?: any;
-  tolerance?: any;
+  specifications?: unknown;
+  tolerance?: unknown;
   toleranceRange?: string;
   diameter?: string | number;
   length?: string | number;
@@ -50,7 +50,7 @@ export type CatalogProduct = {
   quantity?: number;
   minStock?: number;
   reserved?: number;
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 export type AiMemory = {
@@ -59,7 +59,7 @@ export type AiMemory = {
   content?: string;
   keywords?: string[];
   active?: boolean;
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 const getErrorMessage = (error: unknown): string => {
@@ -73,8 +73,8 @@ const clamp = (value: string, maxChars: number): string => String(value || '').s
 
 class AIService {
   public availableModel: string;
-  public functions: any;
-  public aiProxyGenerate: any;
+  public functions: unknown;
+  public aiProxyGenerate: unknown;
 
   constructor() {
     this.availableModel = 'gemini-2.5-flash';
@@ -83,7 +83,7 @@ class AIService {
     
     // Expose debug functie globally voor troubleshooting
     if (typeof window !== 'undefined') {
-      (window as any).aiDebug = {
+      (window as unknown).aiDebug = {
         listDocuments: () => this.debugListDocuments(),
         searchDocuments: (term: string) => this.debugSearchDocuments(term),
         testContext: (query: string) => this.debugTestContext(query)
@@ -101,8 +101,7 @@ class AIService {
   async debugListDocuments() {
     try {
       const docs = await this.getAiDocuments(50);
-      docs.forEach((doc, idx) => {
-      });
+      docs.forEach((doc, idx) => { /* empty */ });
       return docs;
     } catch (error) {
       console.error('Debug error:', error);
@@ -116,8 +115,7 @@ class AIService {
   async debugSearchDocuments(searchTerm: string) {
     const terms = this.extractSearchTerms(searchTerm);
     const results = await this.searchAiDocuments(searchTerm);
-    results.forEach((doc, idx) => {
-    });
+    results.forEach((doc, idx) => { /* empty */ });
     return results;
   }
 
@@ -137,10 +135,10 @@ class AIService {
    */
   async getProductionOrders(limitCount = 50) {
     try {
-      let allOrders: any[] = [];
+      let allOrders: unknown[] = [];
       const seen = new Set<string>();
 
-      const pushUnique = (rows: any[], source: string) => {
+      const pushUnique = (rows: unknown[], source: string) => {
         rows.forEach((row) => {
           const stableId = String(
             row.orderId || row.orderNumber || row.id || row.jobId || row.productOrderId || ''
@@ -161,12 +159,11 @@ class AIService {
         
         const planningOrders = snapshot.docs.map(doc => ({
           id: doc.id,
-          ...(doc.data() as Record<string, any>)
+          ...(doc.data() as Record<string, unknown>)
         }));
         
         pushUnique(planningOrders, 'PLANNING');
-      } catch (error) {
-      }
+      } catch (error) { /* empty */ }
 
       // Legacy planning pad fallback
       try {
@@ -176,12 +173,11 @@ class AIService {
 
         const legacyOrders = legacySnap.docs.map(doc => ({
           id: doc.id,
-          ...(doc.data() as Record<string, any>)
+          ...(doc.data() as Record<string, unknown>)
         }));
 
         pushUnique(legacyOrders, 'PLANNING_LEGACY');
-      } catch (error) {
-      }
+      } catch (error) { /* empty */ }
 
       // Scoped orders fallback via collectionGroup
       try {
@@ -189,12 +185,11 @@ class AIService {
 
         const scopedOrders = scopedSnap.docs.map(doc => ({
           id: doc.id,
-          ...(doc.data() as Record<string, any>)
+          ...(doc.data() as Record<string, unknown>)
         }));
 
         pushUnique(scopedOrders, 'PLANNING_SCOPED');
-      } catch (error) {
-      }
+      } catch (error) { /* empty */ }
       
       // Probeer PATHS.TRACKING
       try {
@@ -204,16 +199,14 @@ class AIService {
         
         const trackedOrders = snapshot.docs.map(doc => ({
           id: doc.id,
-          ...(doc.data() as Record<string, any>)
+          ...(doc.data() as Record<string, unknown>)
         }));
         
         pushUnique(trackedOrders, 'TRACKING');
-      } catch (error) {
-      }
+      } catch (error) { /* empty */ }
       
       // Log eerste doc structure
-      if (allOrders.length > 0) {
-      }
+      if (allOrders.length > 0) { /* empty */ }
       
       return allOrders;
       
@@ -232,10 +225,10 @@ class AIService {
   async searchProductionOrders(searchTerm: string) {
     try {
       const orders = await this.getProductionOrders(1000);
-      const normalize = (value: any) => (value ?? '').toString();
-      const collectLotNumbers = (order: any) => {
+      const normalize = (value: unknown) => (value ?? '').toString();
+      const collectLotNumbers = (order: Record<string, unknown>) => {
         const lots: string[] = [];
-        const pushLot = (value: any) => {
+        const pushLot = (value: unknown) => {
           const val = normalize(value);
           if (val) lots.push(val);
         };
@@ -268,10 +261,8 @@ class AIService {
       const lotNumberMatch = searchTerm.match(/\b\d{10,20}\b/);
       const lotNumber = lotNumberMatch ? lotNumberMatch[0] : null;
       
-      if (orderNumber) {
-      }
-      if (lotNumber) {
-      }
+      if (orderNumber) { /* empty */ }
+      if (lotNumber) { /* empty */ }
       
       // Filter orders
       const filtered = orders.filter(order => {
@@ -341,7 +332,7 @@ class AIService {
       
       return snapshot.docs.map(doc => ({
         id: doc.id,
-        ...(doc.data() as Record<string, any>)
+        ...(doc.data() as Record<string, unknown>)
       }) as CatalogProduct);
     } catch (error) {
       console.error('Error fetching catalog products:', error);
@@ -356,7 +347,7 @@ class AIService {
    * @returns {Promise<Array>} Array met meest recente activiteit
    */
   async getRecentProductionActivity(limitCount = 10) {
-    const results: any[] = [];
+    const results: unknown[] = [];
     for (const pathKey of ['TRACKING', 'PLANNING'] as const) {
       try {
         const col = collection(db, getPathString(PATHS[pathKey]));
@@ -371,7 +362,7 @@ class AIService {
             snapshot = await getDocs(query(col, limit(limitCount)));
           }
         }
-        const docs = snapshot.docs.map(d => ({ id: d.id, source: pathKey, ...(d.data() as Record<string, any>) }));
+        const docs = snapshot.docs.map(d => ({ id: d.id, source: pathKey, ...(d.data() as Record<string, unknown>) }));
         results.push(...docs);
       } catch (error) {
         console.warn(`⚠️ Kon recente activiteit niet ophalen uit ${pathKey}:`, getErrorMessage(error));
@@ -387,7 +378,7 @@ class AIService {
    * @returns {Promise<Array>} Array met tijdregistraties
    */
   async getProductionTimes(limitCount = 20) {
-    const results: any[] = [];
+    const results: unknown[] = [];
     for (const pathKey of ['TIME_LOGS'] as const) {
       try {
         const col = collection(db, getPathString(PATHS[pathKey]));
@@ -397,7 +388,7 @@ class AIService {
         } catch {
           snapshot = await getDocs(query(col, limit(limitCount)));
         }
-        const docs = snapshot.docs.map(d => ({ id: d.id, source: pathKey, ...(d.data() as Record<string, any>) }));
+        const docs = snapshot.docs.map(d => ({ id: d.id, source: pathKey, ...(d.data() as Record<string, unknown>) }));
         results.push(...docs);
       } catch (error) {
         console.warn(`⚠️ Kon tijden niet ophalen uit ${pathKey}:`, getErrorMessage(error));
@@ -428,7 +419,7 @@ class AIService {
 
       return snapshot.docs.map((docSnap) => ({
         id: docSnap.id,
-        ...(docSnap.data() as Record<string, any>),
+        ...(docSnap.data() as Record<string, unknown>),
       }) as AiDocument);
     } catch (error) {
       console.error('Error fetching AI documents:', error);
@@ -454,7 +445,7 @@ class AIService {
 
     // --- 1. Fabrieksstructuur (ploegen per afdeling) ---
     let dailyCapacityHours = 0; // totale norm-uren per werkdag op basis van ploegen
-    let departments: any[] = [];
+    let departments: unknown[] = [];
     try {
       const factorySnap = await getDoc(doc(db, getPathString(PATHS.FACTORY_CONFIG)));
       if (factorySnap.exists()) {
@@ -492,7 +483,7 @@ class AIService {
     ctx += `**Totaalaantal werkdagen: ${workdays.length} | Totale capaciteit: ${workdays.length * dailyCapacityHours} uur**\n`;
 
     // --- 3. Al bezette uren ophalen uit OCCUPANCY ---
-    const occupancyByDay: Record<string, number> = {};
+    const occupancyByDay: Record<string, number> = { /* empty */ };
     try {
       const occSnap = await getDocs(collection(db, getPathString(PATHS.OCCUPANCY)));
       occSnap.docs.forEach(d => {
@@ -507,8 +498,8 @@ class AIService {
 
     // --- 4. Geschatte resterende werkuren per lopende order (EFFICIENCY_HOURS) ---
     let totalCommittedHours = 0;
-    const behindOrders: any[] = [];
-    const activeOrders: any[] = [];
+    const behindOrders: unknown[] = [];
+    const activeOrders: unknown[] = [];
     try {
       const efficiencyRows = await fetchScopedEfficiencyHours({ db, mode: 'active', maxDocs: 100 });
       const trackingSnap = await getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(500)));
@@ -673,14 +664,14 @@ class AIService {
    * Voorspellende planning op basis van resterende uren, deadlines en beschikbare dagcapaciteit.
    * Resultaat: ETA per order, risicoscore en prioriteitenlijst.
    */
-  async getPredictivePlanningContext(scenario: any = null) {
+  async getPredictivePlanningContext(scenario: unknown = null) {
     let ctx = '\n\n## VOORSPELLENDE PLANNING (ETA + RISICO + PRIORITEIT):\n';
     ctx += '='.repeat(60) + '\n';
 
     const now = new Date();
     now.setHours(0, 0, 0, 0);
 
-    const parseDate = (value: any): Date | null => {
+    const parseDate = (value: unknown): Date | null => {
       if (!value) return null;
       const maybeDate = value?.toDate ? value.toDate() : new Date(value);
       if (!(maybeDate instanceof Date) || Number.isNaN(maybeDate.getTime())) return null;
@@ -716,7 +707,7 @@ class AIService {
       return count;
     };
 
-    const safeNum = (value: any): number => {
+    const safeNum = (value: unknown): number => {
       const n = Number(value);
       return Number.isFinite(n) ? n : 0;
     };
@@ -727,7 +718,7 @@ class AIService {
       try {
         const factorySnap = await getDoc(doc(db, getPathString(PATHS.FACTORY_CONFIG)));
         if (factorySnap.exists()) {
-          const departments = (factorySnap.data()?.departments || []) as any[];
+          const departments = (factorySnap.data()?.departments || []) as unknown[];
           const computed = departments.reduce((sum, dept) => {
             const shifts = Number(dept?.shifts) || 1;
             return sum + shifts * 8;
@@ -744,7 +735,7 @@ class AIService {
         const occSnap = await getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(500)));
         const todayIso = new Date().toISOString().slice(0, 10);
         occSnap.docs.forEach((docSnap) => {
-          const row = docSnap.data() as Record<string, any>;
+          const row = docSnap.data() as Record<string, unknown>;
           if (String(row.date || '') === todayIso) {
             occupiedToday += safeNum(row.hours || 8);
           }
@@ -765,15 +756,15 @@ class AIService {
         fetchScopedEfficiencyHours({ db, mode: 'active', maxDocs: 200 }),
         getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(1200))),
         getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(600))),
-        getDocs(query(collection(db, 'future-factory/production/data/digital_planning/orders'), limit(600))).catch(() => ({ docs: [] } as any)),
-        getDocs(query(collectionGroup(db, 'orders'), limit(1800))).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(db, 'future-factory/production/data/digital_planning/orders'), limit(600))).catch(() => ({ docs: [] } as unknown)),
+        getDocs(query(collectionGroup(db, 'orders'), limit(1800))).catch(() => ({ docs: [] } as unknown)),
       ]);
 
-      const trackingRows = trackingSnap.docs.map(d => d.data() as Record<string, any>);
+      const trackingRows = trackingSnap.docs.map(d => d.data() as Record<string, unknown>);
       const planningRowsRaw = [
-        ...planningSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, any>) })),
-        ...(planningLegacySnap?.docs || []).map((d: any) => ({ id: d.id, ...(d.data() as Record<string, any>) })),
-        ...(planningScopedSnap?.docs || []).map((d: any) => ({ id: d.id, ...(d.data() as Record<string, any>) })),
+        ...planningSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
+        ...(planningLegacySnap?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
+        ...(planningScopedSnap?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
       ];
       const planningSeen = new Set<string>();
       const planningRows = planningRowsRaw.filter((row) => {
@@ -784,13 +775,13 @@ class AIService {
         return true;
       });
 
-      const planningByOrder = new Map<string, Record<string, any>>();
+      const planningByOrder = new Map<string, Record<string, unknown>>();
       planningRows.forEach((row) => {
         const key = String(row.orderId || row.orderNumber || row.id || '').trim();
         if (key) planningByOrder.set(key, row);
       });
 
-      const predictions = (efficiencyRows as any[])
+      const predictions = (efficiencyRows as unknown[])
         .filter(row => row?.orderId)
         .map((row) => {
           const orderId = String(row.orderId);
@@ -827,7 +818,7 @@ class AIService {
           }
           const etaDate = addWorkingDays(now, etaWorkDays);
 
-          const plan = planningByOrder.get(orderId) || {};
+          const plan = planningByOrder.get(orderId) || { /* empty */ };
           const dueDate = parseDate(
             plan.deliveryDate || plan.leverDatum || plan.dueDate || plan.deadline || row.deliveryDate || row.dueDate
           );
@@ -1002,20 +993,20 @@ class AIService {
       const thisYear = new Date().getFullYear();
       const [planningSnap, planningLegacySnap, planningScopedSnap, trackingSnap, trackingScopedItemsSnap, occupancySnap, inventorySnap, archiveCurrentYearSnap, archivePrevYearSnap] = await Promise.all([
         getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(250))),
-        getDocs(query(collection(db, 'future-factory/production/data/digital_planning/orders'), limit(250))).catch(() => ({ docs: [] } as any)),
-        getDocs(query(collectionGroup(db, 'orders'), limit(800))).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(db, 'future-factory/production/data/digital_planning/orders'), limit(250))).catch(() => ({ docs: [] } as unknown)),
+        getDocs(query(collectionGroup(db, 'orders'), limit(800))).catch(() => ({ docs: [] } as unknown)),
         getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(1200))),
-        getDocs(query(collectionGroup(db, 'items'), limit(3000))).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collectionGroup(db, 'items'), limit(3000))).catch(() => ({ docs: [] } as unknown)),
         getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(200))),
         getDocs(query(collection(db, getPathString(PATHS.INVENTORY)), limit(200))),
-        getDocs(query(collection(db, getPathString(getPlanningArchivePath(thisYear))), limit(2500))).catch(() => ({ docs: [] } as any)),
-        getDocs(query(collection(db, getPathString(getPlanningArchivePath(thisYear - 1))), limit(2500))).catch(() => ({ docs: [] } as any)),
+        getDocs(query(collection(db, getPathString(getPlanningArchivePath(thisYear))), limit(2500))).catch(() => ({ docs: [] } as unknown)),
+        getDocs(query(collection(db, getPathString(getPlanningArchivePath(thisYear - 1))), limit(2500))).catch(() => ({ docs: [] } as unknown)),
       ]);
 
       const planningRowsRaw = [
-        ...planningSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, any>) })),
-        ...(planningLegacySnap?.docs || []).map((d: any) => ({ id: d.id, ...(d.data() as Record<string, any>) })),
-        ...(planningScopedSnap?.docs || []).map((d: any) => ({ id: d.id, ...(d.data() as Record<string, any>) })),
+        ...planningSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
+        ...(planningLegacySnap?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
+        ...(planningScopedSnap?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
       ];
       const planningSeen = new Set<string>();
       const planningRows = planningRowsRaw.filter((row) => {
@@ -1029,16 +1020,16 @@ class AIService {
       const trackingRowsRaw = [
         ...trackingSnap.docs.map((d) => ({
           id: d.id,
-          __path: String((d as any)?.ref?.path || ''),
-          ...(d.data() as Record<string, any>),
+          __path: String((d as unknown)?.ref?.path || ''),
+          ...(d.data() as Record<string, unknown>),
         })),
         ...(trackingScopedItemsSnap?.docs || [])
-          .map((d: any) => ({
+          .map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({
             id: d.id,
             __path: String(d?.ref?.path || ''),
-            ...(d.data() as Record<string, any>),
+            ...(d.data() as Record<string, unknown>),
           }))
-          .filter((row: any) => row.__path.includes('/production/tracked_products/')),
+          .filter((row: Record<string, unknown>) => row.__path.includes('/production/tracked_products/')),
       ];
 
       const trackingSeen = new Set<string>();
@@ -1050,15 +1041,15 @@ class AIService {
         trackingSeen.add(dedupeKey);
         return true;
       });
-      const occupancyRows = occupancySnap.docs.map(d => d.data() as Record<string, any>);
-      const inventoryRows = inventorySnap.docs.map(d => d.data() as Record<string, any>);
+      const occupancyRows = occupancySnap.docs.map(d => d.data() as Record<string, unknown>);
+      const inventoryRows = inventorySnap.docs.map(d => d.data() as Record<string, unknown>);
 
-      const isCompleted = (value: any) => {
+      const isCompleted = (value: unknown) => {
         const v = String(value || '').toLowerCase();
         return v.includes('complete') || v.includes('gereed') || v.includes('finished') || v === 'done';
       };
 
-      const hasStartSignal = (row: Record<string, any>) => {
+      const hasStartSignal = (row: Record<string, unknown>) => {
         return !!(
           row?.timestamps?.station_start ||
           row?.timestamps?.started ||
@@ -1071,7 +1062,7 @@ class AIService {
         );
       };
 
-      const hasEndSignal = (row: Record<string, any>) => {
+      const hasEndSignal = (row: Record<string, unknown>) => {
         return !!(
           row?.timestamps?.completed ||
           row?.timestamps?.finished ||
@@ -1081,13 +1072,13 @@ class AIService {
         );
       };
 
-      const getLotNumber = (row: Record<string, any>) => String(
+      const getLotNumber = (row: Record<string, unknown>) => String(
         row?.lotNumber || row?.lot || row?.batchNumber || row?.batch || row?.lotId || ''
       ).trim();
 
-      const normalize = (value: any) => String(value || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+      const normalize = (value: unknown) => String(value || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
 
-      const isActiveTrackedStatus = (row: Record<string, any>) => {
+      const isActiveTrackedStatus = (row: Record<string, unknown>) => {
         const status = normalize(row?.status);
         const step = normalize(row?.currentStep);
         const station = normalize(row?.currentStation || row?.machine || row?.originMachine);
@@ -1143,7 +1134,7 @@ class AIService {
         activeTrackingByOrder.set(orderId, (activeTrackingByOrder.get(orderId) || 0) + 1);
       });
 
-      const parseDateSafe = (value: any): Date | null => {
+      const parseDateSafe = (value: unknown): Date | null => {
         if (!value) return null;
         const d = value?.toDate ? value.toDate() : new Date(value);
         if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
@@ -1170,7 +1161,7 @@ class AIService {
         });
       };
 
-      const planningByOrder = new Map<string, Record<string, any>>();
+      const planningByOrder = new Map<string, Record<string, unknown>>();
       planningRows.forEach((row) => {
         const key = String(row.orderId || row.orderNumber || row.id || '').trim();
         if (key && !planningByOrder.has(key)) planningByOrder.set(key, row);
@@ -1196,7 +1187,7 @@ class AIService {
       if (hotOrders.length > 0) {
         ctx += '\nTop lopende orders o.b.v. actieve lotnummers:\n';
         hotOrders.forEach(([orderId, count]) => {
-          const plan = planningByOrder.get(orderId) || {};
+          const plan = planningByOrder.get(orderId) || { /* empty */ };
           const relatedLots = activeTrackingRows.filter((r) => String(r.orderId || r.orderNumber || '').trim() === orderId);
           const lotNumbers = [...new Set(relatedLots.map((r) => getLotNumber(r)).filter(Boolean))];
 
@@ -1292,8 +1283,7 @@ class AIService {
         // Check of ENIGE zoekterm matcht
         const found = searchTerms.some(term => haystack.includes(term));
         
-        if (found) {
-        }
+        if (found) { /* empty */ }
         
         return found;
       });
@@ -1328,12 +1318,12 @@ class AIService {
       return products.filter(product => {
         const codeCandidates = [
           product.sku,
-          (product as any).itemCode,
-          (product as any).articleCode,
-          (product as any).extraCode,
-          (product as any).extraCodes,
-          (product as any).partNumber,
-          (product as any).drawingNumber,
+          (product as unknown).itemCode,
+          (product as unknown).articleCode,
+          (product as unknown).extraCode,
+          (product as unknown).extraCodes,
+          (product as unknown).partNumber,
+          (product as unknown).drawingNumber,
         ].filter(Boolean).map(v => String(v).toLowerCase());
 
         const haystack = JSON.stringify({
@@ -1702,9 +1692,7 @@ class AIService {
       
       contextData = clamp(contextData, 7800);
 
-      if (contextData.length > 100) {
-      } else {
-      }
+      if (contextData.length > 100) { /* empty */ } else { /* empty */ }
       return contextData;
     } catch (error) {
       console.error('Error getting context:', error);
@@ -1716,7 +1704,7 @@ class AIService {
     return this.availableModel;
   }
 
-  async chat(messages: any[], systemPrompt: string | null = null, options = {}) {
+  async chat(messages: unknown[], systemPrompt: string | null = null, options = { /* empty */ }) {
     if (!this.isConfigured()) {
       throw new Error(i18n.t("gemini.api_disabled", "AI functionaliteit is uitgeschakeld."));
     }
@@ -1743,7 +1731,7 @@ class AIService {
    * @param {boolean} includeContext - Include productie data context
    * @returns {Promise<string>} Response
    */
-  async chatWithContext(messages: any[], systemPrompt: string | null = null, includeContext = true, options = {}) {
+  async chatWithContext(messages: unknown[], systemPrompt: string | null = null, includeContext = true, options = { /* empty */ }) {
     if (!this.isConfigured()) {
       throw new Error('AI functionaliteit is uitgeschakeld');
     }
@@ -1759,15 +1747,14 @@ class AIService {
         
         if (context && context.trim().length > 0) {
           enhancedSystemPrompt = this.composeSystemPrompt(enhancedSystemPrompt, context);
-        } else {
-        }
+        } else { /* empty */ }
       }
     }
 
     return this.chat(messages, enhancedSystemPrompt, options);
   }
 
-  async chatGoogle(messages: any[], systemPrompt: string, modelName: string, options = {}) {
+  async chatGoogle(messages: unknown[], systemPrompt: string, modelName: string, options = { /* empty */ }) {
     try {
       const response = await this.aiProxyGenerate({
         messages,
@@ -1781,7 +1768,7 @@ class AIService {
       }
 
       return text;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('AI proxy error:', error);
 
       if (error?.code === 'resource-exhausted') {
@@ -1800,7 +1787,7 @@ class AIService {
    * Sla een geleerd feit op in het AI geheugen (Firestore)
    * Wordt opgeslagen wanneer de gebruiker een antwoord goedkeurt (thumbs up)
    */
-  async saveMemory({ topic, content, sourceQuestion = "", sourceAnswer = "", userId = null, category = "approved_answer" }: Record<string, any>) {
+  async saveMemory({ topic, content, sourceQuestion = "", sourceAnswer = "", userId = null, category = "approved_answer" }: Record<string, unknown>) {
     try {
       const keywords = [...new Set([
         ...this.extractSearchTerms(topic),
@@ -1839,7 +1826,7 @@ class AIService {
       const q = query(memRef, limit(60));
       const snap = await getDocs(q);
       const memories = snap.docs
-        .map(d => ({ id: d.id, ...(d.data() as Record<string, any>) } as AiMemory))
+        .map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) } as AiMemory))
         .filter(m => m.active !== false);
 
       const terms = this.extractSearchTerms(userQuery);
@@ -1860,13 +1847,13 @@ class AIService {
   /**
    * Sla de volledige gesprekgeschiedenis op per gebruiker (max 50 berichten)
    */
-  async saveConversation({ userId, sessionId, messages }: Record<string, any>) {
+  async saveConversation({ userId, sessionId, messages }: Record<string, unknown>) {
     if (!userId || !sessionId) return;
     try {
       const conversationRef = doc(db, getPathString(PATHS.AI_CONVERSATIONS), sessionId);
       
       // Bewaar maximaal 50 berichten in de historie om Firestore document size limit (1MB) en AI token kosten te besparen
-      const toSave = messages.slice(-50).map((m: any) => ({
+      const toSave = messages.slice(-50).map((m: Record<string, unknown>) => ({
         role: m.role,
         content: (m.content || '').substring(0, 2000),
         timestamp: m.timestamp || new Date().toISOString(),

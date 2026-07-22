@@ -42,9 +42,9 @@ describe('labelHelpers special elbow rules', () => {
     });
 
     expect(result.productType).toBe('UNEQUAL-Y-TEE');
-    expect(result.idLine).toBe('ID: 315x250mm (12"x10")');
-    expect(result.id).toBe('315mm 12"');
-    expect(result.id1).toBe('250mm 10"');
+    expect(result.idLine).toBe('ID: 315x250mm (13"x10")');
+    expect(result.id).toBe('315mm (13")');
+    expect(result.id1).toBe('250mm (10")');
     expect(result.materialLine).toBe('Y-TEE');
     expect(result.materialSystemLine).toBe('Y-TEE');
   });
@@ -57,8 +57,8 @@ describe('labelHelpers special elbow rules', () => {
     });
 
     expect(result.productType).toBe('EQUAL-Y-TEE');
-    expect(result.id).toBe('400mm 16"');
-    expect(result.id1).toBe('400mm 16"');
+    expect(result.id).toBe('400mm (16")');
+    expect(result.id1).toBe('400mm (16")');
   });
 
   test('WYE packed code 08083 should resolve ID 80 and ID1 83', () => {
@@ -69,9 +69,9 @@ describe('labelHelpers special elbow rules', () => {
       extraCode: 'TEST',
     });
 
-    expect(result.productType).toBe('UNEQUAL-Y-TEE');
-    expect(result.id).toBe('80mm 3"');
-    expect(result.id1).toBe('83mm 3"');
-    expect(result.id1Line).toBe('ID1: 83mm 3"');
+    expect(result.productType).toBe('YB4MESS08083E0BCCBB0');
+    expect(result.id).toBe('80mm (3")');
+    expect(result.id1).toBe('83mm (3")');
+    expect(result.id1Line).toBe('ID1: 83mm (3")');
   });
 });

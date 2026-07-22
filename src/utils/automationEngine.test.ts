@@ -29,7 +29,8 @@ vi.mock("../config/dbPaths", () => ({
     TRACKING: ["tracking"],
     PRODUCTION_STANDARDS: ["standards"],
     AUTOMATION_EXECUTIONS: ["automation_executions"]
-  }
+  },
+  getPathString: (path: string[]) => path.join('/')
 }));
 
 vi.mock("../i18n", () => ({
@@ -194,7 +195,7 @@ describe("automationEngine", () => {
       const result = await evaluateInspectionOverdue({ daysOverdue: 7, station: "QC" });
       expect(result.triggered).toBe(true);
       expect(result.data!.overdueCount).toBe(1);
-      expect((result.data!.products as any[])[0].lotNumber).toBe("L-1");
+      expect((result.data!.products as unknown[])[0].lotNumber).toBe("L-1");
     });
   });
 
@@ -245,9 +246,35 @@ describe("automationEngine", () => {
       mockedExecuteAutomationRule.mockResolvedValueOnce({ ok: true });
       const rule = { id: "rule-42" };
 
-      const result = await executeRuleWithLogging(rule);
+      const result = await executeRuleWithLogging(rule as any);
       expect(executeAutomationRule).toHaveBeenCalledWith(rule);
       expect(result).toEqual({ ok: true });
+    });
+  });
+
+  describe("evaluateStandardDeviation", () => {
+    it("returns false if insufficient samples", async () => {
+      const { evaluateStandardDeviation } = await import("./automationEngine");
+      mockedGetDocs.mockResolvedValueOnce({
+        docs: [{ id: "s1", data: () => ({ itemCode: "ITEM", machine: "MAC", standardMinutes: 10 }) }],
+      });
+      // tracked
+      mockedGetDocs.mockResolvedValueOnce({
+        docs: [],
+      });
+      const res = await evaluateStandardDeviation({ minSamples: 5 });
+      expect(res.triggered).toBe(false);
+    });
+  });
+
+  describe("evaluateOrderStatusChange", () => {
+    it("returns true when order status matches", async () => {
+      const { evaluateOrderStatusChange } = await import("./automationEngine");
+      mockedGetDocs.mockResolvedValueOnce({
+        docs: [{ id: "p1", data: () => ({ orderId: "ORD1", status: "in_production" }) }],
+      });
+      const res = await evaluateOrderStatusChange({ targetStatus: "in_production" });
+      expect(res.triggered).toBe(true);
     });
   });
 });

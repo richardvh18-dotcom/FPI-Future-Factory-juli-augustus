@@ -24,4 +24,5 @@ export async function testGeminiAPI() {
 
 // Auto-run test
 if (typeof window !== 'undefined') {
+  // auto run
 }

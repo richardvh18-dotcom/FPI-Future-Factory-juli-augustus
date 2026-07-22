@@ -46,7 +46,7 @@ export const syncMissingDrawings = async (
     const snapshot = await getDocs(planningRef);
 
     const ordersToCheck = snapshot.docs
-      .map((d) => ({ id: d.id, ...d.data() } as Record<string, any>))
+      .map((d) => ({ id: d.id, ...d.data() } as Record<string, unknown>))
       .filter((order) => !order.articleCode || !order.drawingUrl);
 
     const total = ordersToCheck.length;
@@ -104,7 +104,7 @@ export const syncMissingDrawings = async (
           }
 
           // 2. Update Order (in digital_planning)
-          const updateData: Record<string, any> = {};
+          const updateData: Record<string, unknown> = {};
 
           if (conversion?.targetProductId) {
             updateData.articleCode = newCode;

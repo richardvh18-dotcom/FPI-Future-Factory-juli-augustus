@@ -26,7 +26,7 @@ type RepoRecord = { id: string } & Record<string, unknown>;
 /**
  * Haalt alle actieve producten op, gesorteerd op meest recent bijgewerkt.
  *
- * @returns {Promise<Array<{id: string, [key: string]: any}>>}
+ * @returns {Promise<Array<{id: string, Record<string, unknown>}>>}
  */
 export const fetchAllProducts = async () => {
   const q = query(
@@ -41,7 +41,7 @@ export const fetchAllProducts = async () => {
  * Haalt één product op via zijn Firestore document-ID.
  *
  * @param {string} productId
- * @returns {Promise<{id: string, [key: string]: any} | null>}
+ * @returns {Promise<{id: string, Record<string, unknown>} | null>}
  */
 export const fetchProduct = async (productId: string | null | undefined): Promise<RepoRecord | null> => {
   if (!productId) return null;
@@ -55,7 +55,7 @@ export const fetchProduct = async (productId: string | null | undefined): Promis
  * @param {string} field
  * @param {'=='|'!='|'<'|'<='|'>'|'>='} op
  * @param {*}      value
- * @returns {Promise<Array<{id: string, [key: string]: any}>>}
+ * @returns {Promise<Array<{id: string, Record<string, unknown>}>>}
  */
 export const fetchProductsWhere = async (
   field: string,
@@ -73,7 +73,7 @@ export const fetchProductsWhere = async (
 /**
  * Haalt de gebruikerslijst op (read-only voor admin views).
  *
- * @returns {Promise<Array<{id: string, [key: string]: any}>>}
+ * @returns {Promise<Array<{id: string, Record<string, unknown>}>>}
  */
 export const fetchUsers = async () => {
   const snap = await getDocs(collection(db, getPathString(PATHS.USERS)));

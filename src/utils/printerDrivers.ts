@@ -203,7 +203,7 @@ export const resolvePrinterDpi = (
 };
 
 /** Normaliseer de rol-/media-instellingen uit een printerprofiel. */
-export const getPrinterRollSettings = (printer: Record<string, any> = {}) => {
+export const getPrinterRollSettings = (printer: Record<string, unknown> = {}) => {
   const parsedWidth = Number.parseFloat(String(printer.rollWidthMm ?? printer.width ?? '').replace(',', '.'));
   const rollWidthMm = Number.isFinite(parsedWidth) && parsedWidth > 0 ? parsedWidth : 90;
 

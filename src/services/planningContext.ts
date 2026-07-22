@@ -143,7 +143,7 @@ export const getRawPlanningData = async (limitCount = 1000): Promise<PlanningRow
     const seenIds = new Set<string>();
     const allDocs: PlanningDoc[] = [];
     snapshots.forEach((snap) => {
-      snap.docs.forEach((d: any) => {
+      snap.docs.forEach((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => {
         if (!seenIds.has(d.id)) {
           seenIds.add(d.id);
           allDocs.push(d);
@@ -341,7 +341,7 @@ export const getLivePlanningContext = async () => {
     ]);
 
     const efficiencyMap = new Map<string, number>();
-    efficiencyRows.forEach((row: any) => {
+    efficiencyRows.forEach((row: Record<string, unknown>) => {
       if (row.orderId && row.minutesPerUnit) {
         efficiencyMap.set(String(row.orderId).toUpperCase(), Number(row.minutesPerUnit));
       }
@@ -371,9 +371,9 @@ export const getLivePlanningContext = async () => {
         let urenTeGaan = 0;
         if (normMinutes > 0) {
            urenTeGaan = (nogTeMaken * normMinutes) / 60;
-        } else if ((o as any).LNUren > 0 && o.Gepland > 0) {
+        } else if ((o as unknown).LNUren > 0 && o.Gepland > 0) {
            // Bereken resterende uren op basis van percentage nog te maken
-           urenTeGaan = ((o as any).LNUren / o.Gepland) * nogTeMaken;
+           urenTeGaan = ((o as unknown).LNUren / o.Gepland) * nogTeMaken;
         }
         
         summary.stukken += nogTeMaken;
