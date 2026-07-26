@@ -7,20 +7,6 @@ export const pwaConfig: Partial<VitePWAOptions> = {
     globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff,woff2}'],
     runtimeCaching: [
       {
-        urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
-        handler: 'NetworkFirst',
-        options: {
-          cacheName: 'firestore-cache',
-          expiration: {
-            maxEntries: 50,
-            maxAgeSeconds: 60 * 60 * 24 * 7, // 1 week
-          },
-          cacheableResponse: {
-            statuses: [0, 200],
-          },
-        },
-      },
-      {
         urlPattern: /^https:\/\/storage\.googleapis\.com\/.*/i,
         handler: 'CacheFirst',
         options: {

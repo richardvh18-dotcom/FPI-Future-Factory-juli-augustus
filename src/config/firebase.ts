@@ -215,28 +215,23 @@ const createFirestoreInstance = () => {
 
   if (typeof window !== "undefined" && window.indexedDB) {
     try {
-      const CURRENT_CACHE_VERSION = "v3";
-      const storedVersion = localStorage.getItem("fpi_firestore_cache_version");
-      if (storedVersion !== CURRENT_CACHE_VERSION) {
+      const CURRENT_APP_VERSION = import.meta.env.VITE_APP_VERSION || "0.1.114";
+      const storedVersion = localStorage.getItem("fpi_firestore_app_version");
+      if (storedVersion !== CURRENT_APP_VERSION) {
         window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef/main");
         window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef");
-        localStorage.setItem("fpi_firestore_cache_version", CURRENT_CACHE_VERSION);
-        console.log("Firestore IndexedDB cache cleared (upgraded to v3).");
+        localStorage.setItem("fpi_firestore_app_version", CURRENT_APP_VERSION);
+        console.log(`Firestore IndexedDB cache automatisch geschoond na app-upgrade naar v${CURRENT_APP_VERSION}.`);
       }
     } catch (e) {
-      console.warn("Could not check firestore cache version:", e);
+      console.warn("Kon Firestore cache versietest niet uitvoeren:", e);
     }
   }
 
-  // Enable IndexedDB offline persistence with a safe 50MB cache size limit.
-  // When quota recovery is active, force memory cache temporarily.
+  // Als geheugencache geforceerd is (bijv. na eerdere quota-fout), gebruik direct memoryLocalCache
   if (shouldUseMemoryFirestoreCache()) {
     try {
-      console.warn("Firestore persistence tijdelijk uitgeschakeld na quota-fout; memory cache actief.");
-    } catch {
-      // no-op
-    }
-    try {
+      console.warn("Firestore persistence uitgeschakeld; memory cache actief.");
       return initializeFirestore(app, {
         localCache: memoryLocalCache(),
       });
@@ -253,18 +248,23 @@ const createFirestoreInstance = () => {
       }),
     });
   } catch (error) {
-    const code = getErrorCode(error).toLowerCase();
-    const message = getErrorMessage(error);
-
-    if (
-      code !== "failed-precondition" &&
-      code !== "unimplemented" &&
-      !message.toLowerCase().includes("already been initialized")
-    ) {
-      console.warn("Firestore persistence fallback actief:", error);
+    console.warn("Firestore persistent local cache mislukt. Schakelen naar memory cache fallback:", error);
+    try {
+      if (typeof window !== "undefined" && window.indexedDB) {
+        window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef/main");
+        window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef");
+      }
+    } catch (e) {
+      console.warn("Could not delete IndexedDB database on error recovery:", e);
     }
 
-    return getFirestore(app);
+    try {
+      return initializeFirestore(app, {
+        localCache: memoryLocalCache(),
+      });
+    } catch {
+      return getFirestore(app);
+    }
   }
 };
 

@@ -6,6 +6,22 @@
 
 ---
 
+### Update sessie 26 July 2026 (Tablet Offline Working & IndexedDB Auto-Recovery Fix)
+
+**Datum:** 26 July 2026 | **Versie:** `0.1.115` | **Branch:** `main`
+
+**1. Oplossing voor Tablet Crash / Cache Corruptie na Versiebump & Slechte WiFi:**
+- **Dynamische IndexedDB Evictie (`src/config/firebase.ts`)**: Bij elke versiebump (bijv. naar `0.1.115`) vergelijkt de app nu automatisch `import.meta.env.VITE_APP_VERSION` met de opgeslagen cache-versie. Oude IndexedDB databestanden van Firestore worden automatisch en geruisloos geschoond. Dit voorkomt dat operators op tablets of mobiele schermen handmatig hun browsergeschiedenis/cache hoeven te wissen na een update.
+- **Verwijdering Dubbele ServiceWorker Firestore Caching (`vite.pwa.config.ts`)**: De Workbox PWA regel voor `firestore.googleapis.com` is verwijderd. Firestore beheert zijn eigen offline persistence via IndexedDB; Workbox onderschepte netwerk-requests wat leidde tot race conditions en corrupties bij het wegvallen van de WiFi-verbinding.
+- **Crash-proof Error Handling in Data Hooks (`useTeamleaderFirestore.ts`)**: `onSnapshot` foutafhandeling geüpdatet zodat tijdelijke offline-meldingen (`code === 'unavailable'`, `failed-precondition`, `resource-exhausted` of `indexeddb` meldingen) niet langer als fatale autorisatiefout (`permission-denied`) worden aangemerkt. Hierdoor kunnen operators op tablets bij slechte WiFi de offline gecachte planning naadloos blijven inzien en gebruiken zonder dat het scherm op een rode foutmelding springt.
+- **Grondige Cache Purge bij Versie Refresh (`App.tsx`)**: `clearBrowserAppCaches` opgeschoond om bij een automatische versie-reload zowel de Service Worker cache als de IndexedDB databestanden te vernieuwen.
+
+**2. Versiebump & Validatie:**
+- Versie gebumpt naar `0.1.115` in `package.json` en `public/version.json`.
+- `vitest run` (56 tests geslaagd) en `npm run enforce:new-ts` zonder fouten uitgevoerd.
+
+---
+
 ### Update sessie 26 July 2026 (TeamleaderHub "Te laat" Overdue Filter & Live Docs Integration)
 
 **Datum:** 26 July 2026 | **Versie:** `0.1.114` | **Branch:** `main`

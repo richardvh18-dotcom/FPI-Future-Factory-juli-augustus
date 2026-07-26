@@ -176,8 +176,26 @@ export const useTeamleaderFirestore = ({
         },
         (err: unknown) => {
           if (!isMounted) return;
-          console.error("Planning Root Sync Error:", err);
-          setDbError((err as { code?: string })?.code || "permission-denied");
+          console.warn("Planning Root Sync Notice:", err);
+          const errCode = String((err as { code?: string })?.code || "").toLowerCase();
+          const errMessage = String((err as { message?: string })?.message || "").toLowerCase();
+
+          // Negeer tijdelijke netwerkuitval (offline) en IndexedDB cache notices zodat de operator de offline planning kan blijven inzien
+          if (
+            errCode === "unavailable" ||
+            errCode === "failed-precondition" ||
+            errCode === "resource-exhausted" ||
+            errCode === "deadline-exceeded" ||
+            errMessage.includes("indexeddb") ||
+            errMessage.includes("offline")
+          ) {
+            markStreamReady();
+            return;
+          }
+
+          if (errCode === "permission-denied" || errCode === "unauthenticated") {
+            setDbError(errCode);
+          }
           markStreamReady();
         }
       );
@@ -201,9 +219,9 @@ export const useTeamleaderFirestore = ({
           mergeOrders();
           markStreamReady();
         },
-        (err: { code?: string }) => {
+        (err: { code?: string; message?: string }) => {
           if (!isMounted) return;
-          console.error("Planning Scoped Sync Error:", err);
+          console.warn("Planning Scoped Sync Notice:", err);
         }
       );
       unsubs.push(unsubScopedOrders);

@@ -158,6 +158,13 @@ const App = () => {
           const registrations = await navigator.serviceWorker.getRegistrations();
           await Promise.all(registrations.map((registration) => registration.unregister()));
         }
+
+          try {
+            window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef/main");
+            window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef");
+          } catch (e) {
+            console.warn("Could not delete IndexedDB database on version reload:", e);
+          }
       } catch (error) {
         console.warn("Kon browsercaches niet volledig leegmaken:", error);
       }
