@@ -93,6 +93,32 @@ const isFirestoreUnexpectedStateText = (text: string): boolean => {
   ) || normalized.includes("firestore (10.14.1) internal assertion failed: unexpected state");
 };
 
+const safeSetLocalStorage = (key: string, value: string): boolean => {
+  if (typeof window === "undefined" || !window.localStorage) return false;
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    try {
+      clearFirestoreLocalStorageArtifacts();
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i += 1) {
+        const k = String(window.localStorage.key(i) || "");
+        if (k && (k.startsWith("ff_") || k.includes("temp") || k.includes("cache") || k.includes("debug"))) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach((k) => {
+        try { window.localStorage.removeItem(k); } catch { /* ignore */ }
+      });
+      window.localStorage.setItem(key, value);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+};
+
 const readNumberFromStorage = (key: string): number => {
   if (typeof window === "undefined") return 0;
   try {
@@ -179,7 +205,7 @@ const installFirestoreQuotaRecovery = () => {
       // avoid full-page reloads (important on tablets with unstable Wi-Fi).
       if (isUnexpectedStateIssue && !isQuotaIssue) {
         const assertDisableForMs = 2 * 60 * 60 * 1000;
-        window.localStorage.setItem(
+        safeSetLocalStorage(
           FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY,
           String(now + assertDisableForMs),
         );
@@ -193,7 +219,7 @@ const installFirestoreQuotaRecovery = () => {
       }
 
       const disableForMs = 24 * 60 * 60 * 1000;
-      window.localStorage.setItem(FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY, String(now + disableForMs));
+      safeSetLocalStorage(FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY, String(now + disableForMs));
 
       clearFirestoreLocalStorageArtifacts();
       clearFirestoreIndexedDbArtifacts();
@@ -215,12 +241,12 @@ const createFirestoreInstance = () => {
 
   if (typeof window !== "undefined" && window.indexedDB) {
     try {
-      const CURRENT_APP_VERSION = import.meta.env.VITE_APP_VERSION || "0.1.114";
+      const CURRENT_APP_VERSION = import.meta.env.VITE_APP_VERSION || "0.1.115";
       const storedVersion = localStorage.getItem("fpi_firestore_app_version");
       if (storedVersion !== CURRENT_APP_VERSION) {
         window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef/main");
         window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef");
-        localStorage.setItem("fpi_firestore_app_version", CURRENT_APP_VERSION);
+        safeSetLocalStorage("fpi_firestore_app_version", CURRENT_APP_VERSION);
         console.log(`Firestore IndexedDB cache automatisch geschoond na app-upgrade naar v${CURRENT_APP_VERSION}.`);
       }
     } catch (e) {
