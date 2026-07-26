@@ -4,7 +4,29 @@
 - Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
 - Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
 
-### Update sessie 22 July 2026 (GitHub Actions Node.js 22 Upgrade)
+---
+
+### Update sessie 26 July 2026 (TeamleaderHub "Te laat" Overdue Filter & Live Docs Integration)
+
+**Datum:** 26 July 2026 | **Versie:** `0.1.114` | **Branch:** `main`
+
+**1. "Te laat (maken/leveren)" Filter in TeamleaderHub Volledige Lijst:**
+- Toegevoegd in `PlanningSidebar.tsx`: Filter optie `"overdue"` in de sorteer/filter selectiebalk naast `"Week + Backlog"`.
+- Bepaling van "Te laat": Evalueert zowel de geplande leverdatum (`deliveryDate`, `plannedDeliveryDate`, `plannedDate`, `dueDate`, `date`, `deadline`) ten opzichte van vandaag als de geplande week (`weekNumber`/`weekYear`) ten opzichte van de huidige week. Als de datum of week in het verleden ligt, wordt de order aangemerkt als te laat met maken of leveren.
+- Groeperingslabel & scheidingslijn `"Te laat (maken/leveren)"` toegevoegd voor de gefilterde weergave.
+- **Overdue Samenvatting Banner & Oud-naar-Nieuw Sortering**: Bij het selecteren van het `"overdue"` filter wordt de teller (bijv. `"230 orders met een totaal van 1376 producten te laat"`) als allereerste element bovenaan geplaatst. Alle achterstallige orders worden strikt gesorteerd van **oud naar nieuw** (meest achterstallige leverdatum/week als allereerste bovenaan), waardoor de meest dringende en langst openstaande orders direct bovenaan de lijst staan. De sortering op `"overdue"` negeert bovendien de Standaard Backlog-splitsing en Prio-override, waardoor alle achterstallige orders zuiver op verloopdatum/week geordend onder de banner verschijnen zonder tussentijdse `"Backlog"` kop.
+- **PDF Export Gesynchroniseerd met Actieve Filters**: Bij het klikken op de **PDF** knop in de zijbalk (`handleExportCurrentPdf`) wordt nu exact de actieve gefilterde lijst (`filteredOrders`) met alle actieve filters/sorteringen geëxporteerd. Het PDF-document bevat een rode kopbalk bij achterstand, het aantal orders en producten in de koptekst, en alle kolommen (Order #, Product, Aantal, Week, Leverdatum, Machine, Status, PO tekst).
+- **Live Documentatie Modules & Integration Scripts**: Drie dedicated documenten & scripts aangemaakt in `docs/` en `tools/integration/`:
+  - `docs/07_INTEGRATIE_NETWERK_PRINT_DAEMON.md` & `tools/integration/headless-print-daemon.js`: Volledige code & systemd/nssm instructies voor het netwerk printen zonder geopende browser-tab.
+  - `docs/08_INTEGRATIE_MACHINE_WEBHOOK_BH12.md` & `tools/integration/machine-webhook-handler.js`: Cloud Function webhook code & JSON payloads voor het automatisch gereedmelden van uitharden en borgen van oventemperaturen bij BH12.
+  - `docs/09_INTEGRATIE_ROBOT_FTP_BH18.md` & `tools/integration/robot-ftp-transfer.js`: Recept-generatie en FTP-overdracht code naar Wikkelrobot BH18.
+- Meertalige i18n vertalingen toegevoegd voor `nl`, `en`, `de` en `ar` onder `digitalplanning.sidebar`.
+
+**2. Versiebump & Validatie:**
+- Versie gebumpt naar `0.1.114` in `package.json` en `public/version.json`.
+- `vitest run` (56 tests geslaagd) en `npm run enforce:new-ts` zonder fouten uitgevoerd.
+
+---
 
 **Datum:** 22 July 2026 | **Branch:** main
 
@@ -11631,24 +11653,3 @@ F i x e d   i s s u e   w h e r e   s t a t u s   s e l e c t i o n   w a s   h 
 - Aangemaakt: `docs/04_OWNERSHIP_TRANSFER.md` met een stappenplan voor het overdragen van GitHub en Firebase naar @futurepipe.com accounts.
 - Print-acties (via USB en de wachtrij) worden nu expliciet in het Activiteiten Logboek geregistreerd, inclusief ordereferenties en lotnummers.
 
----
-
-### Update sessie 26 July 2026 (TeamleaderHub "Te laat" Overdue Filter)
-
-**Datum:** 26 July 2026 | **Versie:** `0.1.114` | **Branch:** `main`
-
-**1. "Te laat (maken/leveren)" Filter in TeamleaderHub Volledige Lijst:**
-- Toegevoegd in `PlanningSidebar.tsx`: Filter optie `"overdue"` in de sorteer/filter selectiebalk naast `"Week + Backlog"`.
-- Bepaling van "Te laat": Evalueert zowel de geplande leverdatum (`deliveryDate`, `plannedDeliveryDate`, `plannedDate`, `dueDate`, `date`, `deadline`) ten opzichte van vandaag als de geplande week (`weekNumber`/`weekYear`) ten opzichte van de huidige week. Als de datum of week in het verleden ligt, wordt de order aangemerkt als te laat met maken of leveren.
-- Groeperingslabel & scheidingslijn `"Te laat (maken/leveren)"` toegevoegd voor de gefilterde weergave.
-- **Overdue Samenvatting Banner & Oud-naar-Nieuw Sortering**: Bij het selecteren van het `"overdue"` filter wordt de teller (bijv. `"230 orders met een totaal van 1376 producten te laat"`) als allereerste element bovenaan geplaatst. Alle achterstallige orders worden strikt gesorteerd van **oud naar nieuw** (meest achterstallige leverdatum/week als allereerste bovenaan), waardoor de meest dringende en langst openstaande orders direct bovenaan de lijst staan. De sortering op `"overdue"` negeert bovendien de Standaard Backlog-splitsing en Prio-override, waardoor alle achterstallige orders zuiver op verloopdatum/week geordend onder de banner verschijnen zonder tussentijdse `"Backlog"` kop.
-- **PDF Export Gesynchroniseerd met Actieve Filters**: Bij het klikken op de **PDF** knop in de zijbalk (`handleExportCurrentPdf`) wordt nu exact de actieve gefilterde lijst (`filteredOrders`) met alle actieve filters/sorteringen geëxporteerd. Het PDF-document bevat een rode kopbalk bij achterstand, het aantal orders en producten in de koptekst, en alle kolommen (Order #, Product, Aantal, Week, Leverdatum, Machine, Status, PO tekst).
-- **Live Documentatie Modules & Integration Scripts**: Drie dedicated documenten & scripts aangemaakt in `docs/` en `tools/integration/`:
-  - `docs/07_INTEGRATIE_NETWERK_PRINT_DAEMON.md` & `tools/integration/headless-print-daemon.js`: Volledige code & systemd/nssm instructies voor het netwerk printen zonder geopende browser-tab.
-  - `docs/08_INTEGRATIE_MACHINE_WEBHOOK_BH12.md` & `tools/integration/machine-webhook-handler.js`: Cloud Function webhook code & JSON payloads voor het automatisch gereedmelden van uitharden en borgen van oventemperaturen bij BH12.
-  - `docs/09_INTEGRATIE_ROBOT_FTP_BH18.md` & `tools/integration/robot-ftp-transfer.js`: Recept-generatie en FTP-overdracht code naar Wikkelrobot BH18.
-- Meertalige i18n vertalingen toegevoegd voor `nl`, `en`, `de` en `ar` onder `digitalplanning.sidebar`.
-
-**2. Versiebump & Validatie:**
-- Versie gebumpt naar `0.1.114` in `package.json` en `public/version.json`.
-- `vitest run` (56 tests geslaagd) en `npm run enforce:new-ts` zonder fouten uitgevoerd.
