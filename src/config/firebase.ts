@@ -246,8 +246,11 @@ const createFirestoreInstance = () => {
       if (storedVersion !== CURRENT_APP_VERSION) {
         window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef/main");
         window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef");
+        try {
+          localStorage.removeItem(FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY);
+        } catch { /* ignore */ }
         safeSetLocalStorage("fpi_firestore_app_version", CURRENT_APP_VERSION);
-        console.log(`Firestore IndexedDB cache automatisch geschoond na app-upgrade naar v${CURRENT_APP_VERSION}.`);
+        console.log(`Firestore IndexedDB offline cache gereset & geactiveerd voor v${CURRENT_APP_VERSION}.`);
       }
     } catch (e) {
       console.warn("Kon Firestore cache versietest niet uitvoeren:", e);

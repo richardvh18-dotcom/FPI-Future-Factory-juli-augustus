@@ -6,6 +6,16 @@
 
 ---
 
+### Update sessie 26 July 2026 (IndexedDB Offline Persistence Her-activatie & Quota Penalty Reset)
+
+**Datum:** 26 July 2026 | **Versie:** `0.1.116` | **Branch:** `main`
+
+**1. Onmiddellijke Her-activatie van Offline IndexedDB Persistence (`src/config/firebase.ts`):**
+- **Persistence Penalty Reset**: Bij een versiebump verwijdert de app nu automatisch de eventuele `FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY` sleutel uit `localStorage`. Hierdoor vervalt de 24-uurs geheugencache straf (die eerder was ingesteld tijdens de `QuotaExceededError` van de browser), en schakelt Firestore direct weer over op de snelle **IndexedDB offline persistence**.
+- **Versie Sync**: Versie gebumpt naar `0.1.116` in `package.json` en `public/version.json`.
+
+---
+
 ### Update sessie 26 July 2026 (Tablet Offline Working & IndexedDB Auto-Recovery Fix)
 
 **Datum:** 26 July 2026 | **Versie:** `0.1.115` | **Branch:** `main`
