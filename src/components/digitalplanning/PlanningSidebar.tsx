@@ -808,12 +808,14 @@ const PlanningSidebar = ({
 
     const getOrderDateMs = (order: SidebarRecord) => {
       const candidates = [
-        order?.completedAt,
-        order?.timestamps?.finished,
-        order?.plannedDate,
         order?.deliveryDate,
+        order?.plannedDeliveryDate,
+        order?.plannedDate,
         order?.dueDate,
         order?.date,
+        order?.deadline,
+        order?.completedAt,
+        order?.timestamps?.finished,
         order?.createdAt,
         order?.updatedAt,
       ];
@@ -840,6 +842,49 @@ const PlanningSidebar = ({
       return ["in_progress", "in progress", "in-behandeling", "in behandeling", "active", "processing"].includes(status);
     };
 
+    const isOrderOverdue = (order: SidebarRecord) => {
+      const now = new Date();
+      const startOfTodayMs = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+      const deliveryRaw =
+        order?.deliveryDate ||
+        order?.plannedDeliveryDate ||
+        order?.plannedDate ||
+        order?.dueDate ||
+        order?.date ||
+        order?.deadline;
+
+      if (deliveryRaw) {
+        let dateMs: number | null = null;
+        if (typeof (deliveryRaw as any)?.toMillis === "function") {
+          dateMs = (deliveryRaw as any).toMillis();
+        } else if (typeof (deliveryRaw as any)?.toDate === "function") {
+          dateMs = (deliveryRaw as any).toDate().getTime();
+        } else if (deliveryRaw instanceof Date) {
+          dateMs = deliveryRaw.getTime();
+        } else {
+          const parsed = new Date(deliveryRaw as any).getTime();
+          if (Number.isFinite(parsed)) dateMs = parsed;
+        }
+
+        if (dateMs !== null && dateMs < startOfTodayMs) {
+          return true;
+        }
+      }
+
+      const w = Number(order?.weekNumber || order?.week);
+      const y = Number(order?.weekYear || order?.year || currentYear);
+      if (Number.isFinite(w) && w > 0 && w !== 999) {
+        const absW = y * 52 + w;
+        const absC = currentYear * 52 + currentWeek;
+        if (absW < absC) {
+          return true;
+        }
+      }
+
+      return false;
+    };
+
     let result = sourceData;
 
     // 1. Machine Filter
@@ -856,18 +901,15 @@ const PlanningSidebar = ({
     }
 
     // 2. Status Filter (actieve lijst: alleen Open/Lopend)
-    // Orders met effectief-Gereed status (produced >= plan && geen actieve lots) worden
-    // ook uitgefilterd, ook al staat de DB-status nog op 'planned'/'in_progress'.
     if (dataScope === "active") {
       result = result.filter((o) => {
         const plannedAmt = Math.max(0, getEffectivePlanQty(o));
         const finishedAmt = getFinishedUnitsForOrder(o);
         const activeAmt = getNumeric(activeTrackedByOrder.get(normalizeOrderKey(getOrderIdentity(o))));
 
-          if (!isOpenOrRunningStatus(o?.status)) {
-              // Een gesloten order hoort niet in de actieve lijst, tenzij er nog producten fysiek in behandeling zijn
-              return activeAmt > 0;
-          }
+        if (!isOpenOrRunningStatus(o?.status)) {
+          return activeAmt > 0;
+        }
 
         if (plannedAmt > 0) {
           if (finishedAmt >= plannedAmt && activeAmt === 0) return false;
@@ -914,58 +956,56 @@ const PlanningSidebar = ({
     if (term) {
       const terms = term.split(/\s+/).filter(Boolean);
       result = result.filter((order: SidebarRecord) => {
-      const searchableFields = [
-        order?.orderId,
-        order?.item,
-        order?.itemDescription,
-        order?.itemCode,
-        order?.originMachine,
-        order?.lastStation,
-        order?.currentStation,
-        order?.productId,
-        order?.project,
-        order?.projectDesc,
-        order?.machine,
-        order?.code,
-        order?.extraCode,
-        order?.lot,
-        order?.activeLot,
-        order?.lotNumber,
-        order?.lotNumbersText,
-        order?.diameter,
-        order?.diameterCode,
-        order?.drawing,
-        order?.notes,
-        order?.orderStatus,
-        order?.customer,
-        order?.week,
-        order?.weekNumber,
-        order?.plan,
-        order?.completedAt ? format(toEntryDate(order) || new Date(), "yyyy-MM-dd") : "",
-        isOrderNew(order) ? "nieuw" : "",
-        isOrderNew(order) ? "new" : "",
-        isOrderNew(order) ? "last48h" : "",
-        isOrderNew(order) ? "laatste48u" : "",
-        isOrderRecentlyAdded(order) ? "onlangs" : "",
-        isOrderRecentlyAdded(order) ? "recent" : "",
-        isOrderRecentlyAdded(order) ? "recent toegevoegd" : "",
-      ]
-        .filter((v) => v !== null && v !== undefined)
-        .map((v) => String(v).toLowerCase());
+        const searchableFields = [
+          order?.orderId,
+          order?.item,
+          order?.itemDescription,
+          order?.itemCode,
+          order?.originMachine,
+          order?.lastStation,
+          order?.currentStation,
+          order?.productId,
+          order?.project,
+          order?.projectDesc,
+          order?.machine,
+          order?.code,
+          order?.extraCode,
+          order?.lot,
+          order?.activeLot,
+          order?.lotNumber,
+          order?.lotNumbersText,
+          order?.diameter,
+          order?.diameterCode,
+          order?.drawing,
+          order?.notes,
+          order?.orderStatus,
+          order?.customer,
+          order?.week,
+          order?.weekNumber,
+          order?.plan,
+          order?.completedAt ? format(toEntryDate(order) || new Date(), "yyyy-MM-dd") : "",
+          isOrderNew(order) ? "nieuw" : "",
+          isOrderNew(order) ? "new" : "",
+          isOrderNew(order) ? "last48h" : "",
+          isOrderNew(order) ? "laatste48u" : "",
+          isOrderRecentlyAdded(order) ? "onlangs" : "",
+          isOrderRecentlyAdded(order) ? "recent" : "",
+          isOrderRecentlyAdded(order) ? "recent toegevoegd" : "",
+        ]
+          .filter((v) => v !== null && v !== undefined)
+          .map((v) => String(v).toLowerCase());
 
-      // Voeg lotnummers toe vanuit tracked/archived products
-      const orderKey = String(order?.orderId || order?.id || "").trim();
-      const trackedLots = orderLotMap.get(orderKey);
-      if (trackedLots) {
-        trackedLots.forEach((lot: string) => searchableFields.push(lot));
-      }
+        const orderKey = String(order?.orderId || order?.id || "").trim();
+        const trackedLots = orderLotMap.get(orderKey);
+        if (trackedLots) {
+          trackedLots.forEach((lot: string) => searchableFields.push(lot));
+        }
 
-      return terms.every((part) =>
-        searchableFields.some((value) => value.includes(part))
-      );
-    });
+        return terms.every((part) =>
+          searchableFields.some((value) => value.includes(part))
+        );
+      });
 
-      // Als scope 'active' is, voeg ook archiefmatches toe op basis van zoekterm
       if (dataScope === "active" && archivedOrders.length > 0) {
         const existingIds = new Set(result.map((o) => String(o?.orderId || o?.id || "").trim()));
         const archiveMatches = archivedOrders.filter((order: SidebarRecord) => {
@@ -988,12 +1028,34 @@ const PlanningSidebar = ({
       }
     }
 
-    // 4. Sorteren (standaard): Huidige/Toekomstige weken eerst, daarna Backlog (Oude weken)
+    // Filter op overdue/te laat indien 'overdue' is geselecteerd
+    if (sortMode === "overdue") {
+      result = result.filter((o) => isOrderOverdue(o));
+    }
+
+    // 4. Sorteren
     return result.sort((a, b) => {
       if (isCompletedScope) {
         const dateA = getOrderDateMs(a);
         const dateB = getOrderDateMs(b);
         if (dateA !== dateB) return dateB - dateA;
+        return (a.orderId || "").localeCompare(b.orderId || "");
+      }
+
+      if (sortMode === "overdue") {
+        // Oud naar nieuw (oudste leverdatum / week als eerste)
+        const dateA = getOrderDateMs(a);
+        const dateB = getOrderDateMs(b);
+        if (dateA !== dateB) return dateA - dateB;
+
+        const weekA = Number(a.weekNumber || a.week || 999);
+        const yearA = Number(a.weekYear || a.year || currentYear);
+        const weekB = Number(b.weekNumber || b.week || 999);
+        const yearB = Number(b.weekYear || b.year || currentYear);
+        const absWeekA = yearA * 52 + weekA;
+        const absWeekB = yearB * 52 + weekB;
+        if (absWeekA !== absWeekB) return absWeekA - absWeekB;
+
         return (a.orderId || "").localeCompare(b.orderId || "");
       }
 
@@ -1083,6 +1145,13 @@ const PlanningSidebar = ({
       return (a.orderId || "").localeCompare(b.orderId || "");
     });
   }, [sourceData, searchTerm, selectedMachine, dataScope, currentWeek, currentYear, sortMode, rejectPeriod, isRejectScope, isCompletedScope, orderStationMap, archivedOrders, orderLotMap, trackedFinishedByOrder, activeTrackedByOrder]);
+
+  const totalProductQty = useMemo(() => {
+    return filteredOrders.reduce((sum, order) => {
+      const qty = Math.max(1, getEffectivePlanQty(order) || Number(order?.plan) || Number(order?.quantity) || 1);
+      return sum + qty;
+    }, 0);
+  }, [filteredOrders]);
 
   const completedExportRows = useMemo(() => {
     if (!isCompletedScope) return [];
@@ -1514,7 +1583,7 @@ const PlanningSidebar = ({
   }, [filteredOrders, trackedProducts, archivedProducts, archivedHistoryProducts, predictedScheduleByOrder]);
 
   const handleExportCurrentPdf = async () => {
-    if (!filteredProductRows.length) return;
+    if (!filteredOrders.length) return;
 
     const [{ jsPDF }, { default: autoTable }] = await Promise.all([
       import("jspdf"),
@@ -1526,42 +1595,72 @@ const PlanningSidebar = ({
     const selectedOption = machines.find((option) => option.value === selectedMachine);
     const filterLabel = selectedOption?.label || selectedMachine;
 
+    const sortOptionLabels: Record<string, string> = {
+      week_backlog: t("digitalplanning.sidebar.sort_week_backlog", "Week + Backlog"),
+      overdue: t("digitalplanning.sidebar.sort_overdue", "Te laat (maken/leveren)"),
+      in_progress_first: t("digitalplanning.sidebar.sort_in_progress_first", "In behandeling eerst"),
+      date_asc: t("digitalplanning.sidebar.sort_date_asc", "Datum oplopend"),
+      date_desc: t("digitalplanning.sidebar.sort_date_desc", "Datum aflopend"),
+      recently_added: t("digitalplanning.sidebar.sort_recently_added", "Onlangs toegevoegd"),
+    };
+    const currentSortLabel = sortOptionLabels[sortMode] || sortMode;
+
+    const documentTitle = sortMode === "overdue"
+      ? t("digitalplanning.sidebar.pdf_title_overdue", "Overzicht Te Laat Met Maken / Leveren")
+      : t("digitalplanning.sidebar.pdf_title_default", "Planning Order & Productlijst");
+
     doc.setFontSize(14);
-    doc.text("Planning Productlijst", 14, 14);
+    doc.setFont("helvetica", "bold");
+    doc.text(documentTitle, 14, 14);
+
     doc.setFontSize(9);
-    doc.text(`Filter: ${filterLabel}`, 14, 20);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Machine: ${filterLabel}`, 14, 20);
     doc.text(`Scope: ${dataScope}`, 70, 20);
-    doc.text(`Datum: ${datePart}`, 110, 20);
-    doc.text(`Totaal: ${filteredProductRows.length}`, 155, 20);
+    doc.text(`Filter / Modus: ${currentSortLabel}`, 115, 20);
+    doc.text(`Datum: ${datePart}`, 180, 20);
+    doc.text(`Totaal: ${filteredOrders.length} orders (${totalProductQty} producten)`, 225, 20);
+
+    const exportRows = filteredOrders.map((order: SidebarRecord) => {
+      const qty = Math.max(1, getEffectivePlanQty(order) || Number(order.plan) || Number(order.quantity) || 1);
+      const deliveryDateStr = formatDeliveryDate(order);
+      const weekStr = order.weekNumber || order.week ? `W${order.weekNumber || order.week}` : "-";
+      const stationStr = getStationLabel(order.machine || order.originMachine || order.currentStation || "-");
+      const statusStr = order.status || "Gepland";
+      const poTextStr = order.notes || order.poText || order.projectDesc || "-";
+
+      return [
+        order.orderId || order.id || "-",
+        order.item || order.itemDescription || order.itemCode || "-",
+        `${qty} ST`,
+        weekStr,
+        deliveryDateStr || "-",
+        stationStr,
+        statusStr,
+        poTextStr,
+      ];
+    });
 
     autoTable(doc, {
       startY: 25,
-      styles: { fontSize: 8, cellPadding: 1.5, overflow: "linebreak" },
-      headStyles: { fillColor: [15, 23, 42], textColor: 255 },
-      head: [["Lotnummer", "Ordernummer", "Product", "Aangemaakt", "Gereed", "Voorspeld", "Station", "PO Text"]],
-      body: filteredProductRows.map((row) => [
-        row.lotNumber || "",
-        row.orderId || "",
-        row.product || "",
-        row.createdAt || "-",
-        row.finishedAt || "-",
-        row.predictedReadyDate || "-",
-        row.station || "",
-        row.poText || "",
-      ]),
+      styles: { fontSize: 8, cellPadding: 1.8, overflow: "linebreak" },
+      headStyles: { fillColor: sortMode === "overdue" ? [185, 28, 28] : [15, 23, 42], textColor: 255, fontStyle: "bold" },
+      head: [["Order #", "Product / Artikel", "Aantal", "Week", "Leverdatum / Gepland", "Machine", "Status", "Instructies / PO"]],
+      body: exportRows,
       columnStyles: {
         0: { cellWidth: 26 },
-        1: { cellWidth: 24 },
-        2: { cellWidth: 44 },
-        3: { cellWidth: 24 },
-        4: { cellWidth: 24 },
-        5: { cellWidth: 24 },
+        1: { cellWidth: 60 },
+        2: { cellWidth: 16 },
+        3: { cellWidth: 16 },
+        4: { cellWidth: 32 },
+        5: { cellWidth: 25 },
         6: { cellWidth: 22 },
-        7: { cellWidth: 80 },
+        7: { cellWidth: 70 },
       },
     });
 
-    doc.save(`planning_productlijst_${String(selectedMachine || "all").toLowerCase()}_${datePart}.pdf`);
+    const fileSuffix = sortMode === "overdue" ? "te_laat" : String(sortMode || "lijst").toLowerCase();
+    doc.save(`planning_export_${fileSuffix}_${datePart}.pdf`);
   };
 
   const getOrderDisplayName = (order: SidebarRecord) => {
@@ -1933,6 +2032,7 @@ const PlanningSidebar = ({
                   className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
                 >
                   <option value="week_backlog">{t("digitalplanning.sidebar.sort_week_backlog", "Week + Backlog")}</option>
+                  <option value="overdue">{t("digitalplanning.sidebar.sort_overdue", "Te laat (maken/leveren)")}</option>
                   <option value="in_progress_first">{t("digitalplanning.sidebar.sort_in_progress_first", "In behandeling eerst")}</option>
                   <option value="date_asc">{t("digitalplanning.sidebar.sort_date_asc", "Datum oplopend")}</option>
                   <option value="date_desc">{t("digitalplanning.sidebar.sort_date_desc", "Datum aflopend")}</option>
@@ -1985,6 +2085,30 @@ const PlanningSidebar = ({
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+        {sortMode === "overdue" && filteredOrders.length > 0 && (
+          <div className="mx-1 my-2 p-3.5 bg-gradient-to-r from-red-50 to-amber-50 border border-red-200/90 rounded-2xl flex items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center gap-3 text-red-800">
+              <div className="p-2 bg-red-600 text-white rounded-xl shadow-sm">
+                <AlertCircle size={16} />
+              </div>
+              <div>
+                <div className="text-xs font-black uppercase tracking-tight text-red-900">
+                  {t("digitalplanning.sidebar.overdue_summary", "{{orderCount}} orders met een totaal van {{totalQty}} producten te laat", {
+                    orderCount: filteredOrders.length,
+                    totalQty: totalProductQty,
+                  })}
+                </div>
+                <div className="text-[10px] font-bold text-red-600/90 mt-0.5">
+                  {filteredOrders.length} {filteredOrders.length === 1 ? 'order' : 'orders'} • {totalProductQty} {totalProductQty === 1 ? 'product' : 'producten'}
+                </div>
+              </div>
+            </div>
+            <span className="px-3 py-1 bg-red-600 text-white rounded-xl text-[11px] font-black tracking-wider uppercase shadow-sm">
+              {filteredOrders.length}
+            </span>
+          </div>
+        )}
+
         {filteredOrders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center opacity-40 w-full">
             {loadingArchive && isHistoryScope ? (

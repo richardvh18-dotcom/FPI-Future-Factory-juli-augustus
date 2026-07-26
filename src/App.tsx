@@ -459,12 +459,7 @@ const App = () => {
   if (user?.uid === bootstrapAdminUid && role === "guest") {
     content = <GodModeBootstrap />;
   } else if (!user && !authLoading) {
-    const path = window.location.pathname;
-    if (path === "/login") {
-      content = <LoginView onLogin={handleLogin} externalError={loginError} logoUrl={logoUrl} appName={appName} />;
-    } else {
-      content = <LoggedOutView />;
-    }
+    content = <LoginView onLogin={handleLogin} externalError={loginError} logoUrl={logoUrl} appName={appName} />;
   } else if (role === "guest") {
     content = <LoginView onLogin={handleLogin} externalError={loginError} logoUrl={logoUrl} appName={appName} />;
   } else if (requiresPasswordChange) {

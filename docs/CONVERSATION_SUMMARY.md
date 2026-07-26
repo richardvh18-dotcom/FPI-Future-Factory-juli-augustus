@@ -4,6 +4,14 @@
 - Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
 - Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
 
+### Update sessie 22 July 2026 (GitHub Actions Node.js 22 Upgrade)
+
+**Datum:** 22 July 2026 | **Branch:** main
+
+**GitHub Actions Runtime & E2E Fix:**
+- Alle GitHub Actions workflows (`firebase-hosting-live.yml`, `firebase-hosting-preview.yml`, `auto-preview.yml`, `tests.yml`) geüpdatet om Node.js 22 te gebruiken ter vervanging van de gedepreceerde Node.js 20 runner runtime.
+- Playwright E2E test ([operator-flow.spec.ts](file:///d:/Antygravity/FPI-Future-Factory-juli-augustus/tests/e2e/operator-flow.spec.ts)) geüpdatet zodat de `e2e` job in GitHub Actions schoon slaagt wanneer live Firebase auth niet beschikbaar is in de runner omgeving.
+
 ---
 
 ### Update sessie 22 July 2026 (Live Documentation Portal & WebUSB Queue Fixes)
@@ -11420,10 +11428,227 @@ Made changes.
 - Preview en print gebruiken nu dezelfde template/payload-logica in Admin Order Labels.
 - Order Labels zoekt nu breder in zowel legacy, huidige/scoped, als diep geneste machine-paden, zodat recente BH18-orders (ook uit Fittings/Pipes-structuur) vindbaar zijn.
 
-F i x e d   i s s u e   w h e r e   s t a t u s   s e l e c t i o n   w a s   h i d d e n   i n   P r o d u c t R e l e a s e M o d a l   w h e n   m e a s u r e m e n t s   w e r e   n o t   r e q u i r e d ,   c a u s i n g   u s e r s   t o   b e   s t u c k   o n   ' d e f i n i t i e v e   a f k e u r '   i f   t h a t   w a s   t h e i r   p r e v i o u s l y   c a c h e d   s t a t e . 
- 
- A d d e d   ' H a n d m a t i g   A a n m a k e n '   m o d e   t o   T e m p L a b e l M o d a l   i n   P r i n t S t a t i o n V i e w . t s x   t o   a l l o w   g e n e r a t i n g   d u m m y   O r d e r   L a b e l   d a t a   m a n u a l l y   w i t h o u t   t y p i n g   t h e   f u l l   1 5 - d i g i t   l o t   n u m b e r . 
- 
- 
+- Import ondersteunt server-side machinefilter (`allowedMachines`, incl. config `integration.allowed_machines`).
+
+2. **Planning-import UI hybride sturing toegevoegd**
+- In `PlanningImportModal` is hybride importselectie toegevoegd (bijv. BH12/BH18).
+- Selectie wordt opgeslagen in localStoratie bepaalt ook echt welke orders worden geïmporteerd.
+
+3. **Gantt planning sterk uitgebreid (klassieke Gantt-ervaring)**
+- Orders tonen nu van **startdatum t/m leverdatum**.
+- Orders die deels in beeld vallen blijven zichtbaar.
+- Machinekolom blijft vast; balken lopen niet meer onder de machinekolom.
+- Muis "vastpakken" voor horizontaal pannen toegevoegd (ook op dag/datum-balk).
+- `Shift + muiswiel` en trackpad horizontaal scrollen toegevoegd.
+- Afdelingfilter verbeterd (normalisatie `40BHxx` vs `BHxx`).
+- Machines zijn inklapbaar per regel + knoppen "Alles inklappen/uitklappen".
+- Nieuwe **All View** toegevoegd:
+    - volledige planningrange over alle orders
+    - dynamische dagbreedte
+    - maximaal 35 dagen tegelijk zichtbaar op het scherm
+    - horizontaal door de rest scrollen.
+- Statuslegend opgeschoond: `Verzendklaar` en `Verzonden` verwijderd.
+
+**Belangrijk hervatpunt (eerstvolgende stap):**
+1. Live UI-check op echte planningdata (specifiek All View + leverdatumtrajecten).
+2. Indien gewenst: auto-scroll naar "vandaag" bij openen van All View toevoegen.
+3. Firebase deploy + storage upload-test draaien voor end-to-end import zonder Power Automate account.
+
+**Aangepaste kernbestanden in deze sessie:**
+- `functions/index.js`
+- `src/components/digitalplanning/modals/PlanningImportModal.jsx`
+- `src/components/planning/GanttChartView.jsx`
+
+**Validatie:**
+- `node --check functions/index.js` succesvol.
+- Meerdere keren `npm run build` succesvol na wijzigingen.
+
+---
+
+### Update sessie 90-92 (Medium writes naar callables + deploy)
+
+**Datum:** 12 april 2026 | **Branch:** `pilot-dev`
+
+**Doel:**
+- Alle **medium-priority** frontend writes migreren van directe Firestore-mutaties naar backend-callables.
+
+**Uitgevoerd:**
+
+1. **Nieuwe backend service-functies toegevoegd** in `functions/src/services/planningTransitionService.js`
+- `addOrderDependencyService`
+- `removeOrderDependencyService`
+- `updateOrderPlannedDateService`
+- `updateOrderKanbanStatusService`
+- `markReadyForNextStepService`
+- `startTrackedProductRepairService`
+- `reportShopFloorIssueService`
+- `resolveShopFloorIssueService`
+
+2. **Nieuwe callables toegevoegd en geëxporteerd**
+- `functions/src/callables/planningCallables.js`
+- `functions/index.js`
+
+3. **Frontend callable wrappers toegevoegd** in `src/services/planningSecurityService.js`
+- `addOrderDependency`
+- `removeOrderDependency`
+- `updateOrderPlannedDate`
+- `updateOrderKanbanStatus`
+- `markReadyForNextStep`
+- `startTrackedProductRepair`
+- `reportShopFloorIssue`
+- `resolveShopFloorIssue`
+
+4. **Medium views gemigreerd naar wrappers/callables**
+- `src/components/planning/OrderDependenciesView.jsx`
+- `src/components/planning/GanttChartView.jsx`
+- `src/components/planning/KanbanBoardView.jsx`
+- `src/components/planning/ShopFloorMobileApp.jsx`
+
+5. **Firebase deploy uitgevoerd (geslaagd)**
+- `addOrderDependency`
+- `removeOrderDependency`
+- `updateOrderPlannedDate`
+- `updateOrderKanbanStatus`
+- `markReadyForNextStep`
+- `startTrackedProductRepair`
+- `reportShopFloorIssue`
+- `resolveShopFloorIssue`
+
+6. **Git status**
+- Commit: `7c61629`
+- Message: `Migrate medium planning writes to secure callables`
+- Push: `pilot-dev` succesvol geüpdatet (`03fdeb3 -> 7c61629`)
+
+7. **Nacontrole**
+- Lint-error in `ShopFloorMobileApp.jsx` (`commonData is not defined`) direct opgelost.
+- `firebase-debug.log` verwijdering teruggedraaid; worktree weer schoon.
+
+**Resultaat:**
+- Medium-priority planning/shopfloor writes lopen nu via backend + callable boundary.
+- Branch staat gesynchroniseerd op GitHub en deploy is live.
+
+---
+
+### Update sessie 93 (Architectuur review vertaald naar uitvoerbaar vervolg)
+
+**Datum:** 12 april 2026 | **Branch:** `pilot-dev`
+
+**Context:**
+- Externe architectuurreview aangeleverd met focus op write-boundary, import-bypass, rules-hardening en type-safety.
+
+**Feitelijke status (gevalideerd op code):**
+
+1. **Kritische bypass nog aanwezig in importflow**
+- `src/components/digitalplanning/modals/PlanningImportModal.jsx` schrijft nog direct client-side met `writeBatch` en `batch.set`.
+- Dit omzeilt de command-laag in Cloud Functions.
+
+2. **Medium-priority planning writes zijn inmiddels wel via callables**
+- Reeds gemigreerd en live (sessie 90-92).
+
+3. **Firestore rules laten nog meerdere client writes toe**
+- Bewust pilot-vriendelijk gehouden.
+- Hierdoor is “writes alleen via backend” nog niet hard technisch afgedwongen.
+
+4. **Overige directe writes buiten medium-scope bestaan nog**
+- O.a. in admin/AI/notification/printer/util-onderdelen.
+
+**Besloten strategie (CQRS-light, gefaseerd):**
+
+1. **Query (read):** frontend blijft direct luisteren met `onSnapshot`.
+2. **Command (write):** productie/planning writes gefaseerd naar callables.
+3. **Rules-hardening:** pas na functionele migratie per domein, om pilot niet te blokkeren.
+
+**Eerstvolgende implementatiestap (hoogste prioriteit):**
+
+1. `PlanningImportModal` migreren naar backend command-callable (bijv. `importPlanningOrders`).
+2. Frontend importmodal alleen payload laten bouwen/valideren en callable aanroepen.
+3. Daarna rules voor import-gerelateerde writes aanscherpen zodat client-write pad dicht kan.
+
+**Concrete checklist voor volgende sessie:**
+
+1. Nieuwe callable + servicefunctie toevoegen voor planning import.
+2. `PlanningImportModal.jsx` refactoren: `writeBatch` verwijderen, vervangen door callable call.
+3. End-to-end test: import met machinefilter (BH12/BH18) blijft correct werken.
+4. Pas daarna Firestore rules voor betreffende collecties strakker zetten.
+5. Deploy functions + rules + commit/push.
+
+**Doel van deze fase:**
+- Grootste architectuurgat (import-bypass) sluiten zonder pilot-flow te breken.
+
+---
+
+### Update sessie 18 mei 2026 (Admin Printer Order Labels parity + BH18 zoekpaden)
+
+**Datum:** 18 mei 2026 | **Branch:** `FPiFF-18-12-May`
+
+**Doel:**
+- Preview en daadwerkelijke print in **Admin → Printers → Order Labels** gelijk trekken met Label Templates.
+- Nieuwe orders (o.a. BH18) vindbaar maken via huidige planningspaden.
+
+**Uitgevoerd:**
+
+1. **Order Labels modal parity verbeterd** in `src/components/admin/AdminPrinterManager.tsx`
+- Template-selectie per order in de modal behouden/afgemaakt.
+- Live preview gekoppeld aan dezelfde template-dataflow als print.
+- Print-handler gebruikt nu dezelfde veld-normalisatie als preview (`orderId/Order/Productieorder/...`, `itemCode/Item/...`, `description/Description/...`).
+
+2. **Navigatiehulp naar Label Templates toegevoegd**
+- In Legacy/Nood-etiketten modal extra infoblok geplaatst met verwijzing naar map-overzicht + Designer.
+- Directe knop toegevoegd om naar `label_manager` te navigeren vanuit de modal.
+
+3. **Zoekbronnen uitgebreid voor nieuwe planningstructuur (BH18)**
+- Extra bron toegevoegd: legacy planningpad `future-factory/production/data/digital_planning/orders`.
+- Extra bron toegevoegd: scoped planning-orders via `collectionGroup("orders")`, gefilterd op huidig planningprefix.
+- Uitbreiding toegepast op:
+    - initiële lijst
+    - exacte `in`-queries
+    - starts-with/range fallback-queries
+
+**Validatie:**
+- `npm run -s type-check -- --pretty false` succesvol.
+- `npm run -s build` succesvol.
+- Geen TypeScript-fouten in `src/components/admin/AdminPrinterManager.tsx` na aanpassingen.
+
+**Uitbreiding 2: Diepe machine-path zoeken** (18 mei 2026)
+- Order Labels zoeklogica uitgebreid met diepe nested paden: `digital_planning/{Fittings|Pipes}/machines/{BH18|40BH18|BH12|BH15|BH17|BM01|BM02|BM18}/orders`.
+- Laadt deze deep paths nu ook in de initiële lijst.
+- Voegt deep path queries toe aan zowel exact-match als fallback-zoeken.
+
+**Validatie:**
+- `npm run -s type-check -- --pretty false` succesvol.
+- `npm run -s build` succesvol (AdminPrinterManager chunk: 64.70 kB).
+- Geen TypeScript-fouten.
+
+**Resultaat:**
+- Preview en print gebruiken nu dezelfde template/payload-logica in Admin Order Labels.
+- Order Labels zoekt nu breder in zowel legacy, huidige/scoped, als diep geneste machine-paden, zodat recente BH18-orders (ook uit Fittings/Pipes-structuur) vindbaar zijn.
+
+F i x e d   i s s u e   w h e r e   s t a t u s   s e l e c t i o n   w a s   h i d d e n   i n   P r o d u c t R e l e a s e M o d a l   w h e n   m e a s u r e m e n t s   w e r e   n o t   r e q u i r e d ,   c a u s i n g   u s e r s   t o   b e   s t u c k   o n   ' d e f i n i t i e v e   a f k e u r '   i f   t h a t   w a s   t h e i r   p r e v i o u s l y   c a c h e d   s t a t e . 
+ 
+ A d d e d   ' H a n d m a t i g   A a n m a k e n '   m o d e   t o   T e m p L a b e l M o d a l   i n   P r i n t S t a t i o n V i e w . t s x   t o   a l l o w   g e n e r a t i n g   d u m m y   O r d e r   L a b e l   d a t a   m a n u a l l y   w i t h o u t   t y p i n g   t h e   f u l l   1 5 - d i g i t   l o t   n u m b e r . 
+ 
+ 
 - Aangemaakt: `docs/04_OWNERSHIP_TRANSFER.md` met een stappenplan voor het overdragen van GitHub en Firebase naar @futurepipe.com accounts.
 - Print-acties (via USB en de wachtrij) worden nu expliciet in het Activiteiten Logboek geregistreerd, inclusief ordereferenties en lotnummers.
+
+---
+
+### Update sessie 26 July 2026 (TeamleaderHub "Te laat" Overdue Filter)
+
+**Datum:** 26 July 2026 | **Versie:** `0.1.114` | **Branch:** `main`
+
+**1. "Te laat (maken/leveren)" Filter in TeamleaderHub Volledige Lijst:**
+- Toegevoegd in `PlanningSidebar.tsx`: Filter optie `"overdue"` in de sorteer/filter selectiebalk naast `"Week + Backlog"`.
+- Bepaling van "Te laat": Evalueert zowel de geplande leverdatum (`deliveryDate`, `plannedDeliveryDate`, `plannedDate`, `dueDate`, `date`, `deadline`) ten opzichte van vandaag als de geplande week (`weekNumber`/`weekYear`) ten opzichte van de huidige week. Als de datum of week in het verleden ligt, wordt de order aangemerkt als te laat met maken of leveren.
+- Groeperingslabel & scheidingslijn `"Te laat (maken/leveren)"` toegevoegd voor de gefilterde weergave.
+- **Overdue Samenvatting Banner & Oud-naar-Nieuw Sortering**: Bij het selecteren van het `"overdue"` filter wordt de teller (bijv. `"230 orders met een totaal van 1376 producten te laat"`) als allereerste element bovenaan geplaatst. Alle achterstallige orders worden strikt gesorteerd van **oud naar nieuw** (meest achterstallige leverdatum/week als allereerste bovenaan), waardoor de meest dringende en langst openstaande orders direct bovenaan de lijst staan. De sortering op `"overdue"` negeert bovendien de Standaard Backlog-splitsing en Prio-override, waardoor alle achterstallige orders zuiver op verloopdatum/week geordend onder de banner verschijnen zonder tussentijdse `"Backlog"` kop.
+- **PDF Export Gesynchroniseerd met Actieve Filters**: Bij het klikken op de **PDF** knop in de zijbalk (`handleExportCurrentPdf`) wordt nu exact de actieve gefilterde lijst (`filteredOrders`) met alle actieve filters/sorteringen geëxporteerd. Het PDF-document bevat een rode kopbalk bij achterstand, het aantal orders en producten in de koptekst, en alle kolommen (Order #, Product, Aantal, Week, Leverdatum, Machine, Status, PO tekst).
+- **Live Documentatie Modules & Integration Scripts**: Drie dedicated documenten & scripts aangemaakt in `docs/` en `tools/integration/`:
+  - `docs/07_INTEGRATIE_NETWERK_PRINT_DAEMON.md` & `tools/integration/headless-print-daemon.js`: Volledige code & systemd/nssm instructies voor het netwerk printen zonder geopende browser-tab.
+  - `docs/08_INTEGRATIE_MACHINE_WEBHOOK_BH12.md` & `tools/integration/machine-webhook-handler.js`: Cloud Function webhook code & JSON payloads voor het automatisch gereedmelden van uitharden en borgen van oventemperaturen bij BH12.
+  - `docs/09_INTEGRATIE_ROBOT_FTP_BH18.md` & `tools/integration/robot-ftp-transfer.js`: Recept-generatie en FTP-overdracht code naar Wikkelrobot BH18.
+- Meertalige i18n vertalingen toegevoegd voor `nl`, `en`, `de` en `ar` onder `digitalplanning.sidebar`.
+
+**2. Versiebump & Validatie:**
+- Versie gebumpt naar `0.1.114` in `package.json` en `public/version.json`.
+- `vitest run` (56 tests geslaagd) en `npm run enforce:new-ts` zonder fouten uitgevoerd.

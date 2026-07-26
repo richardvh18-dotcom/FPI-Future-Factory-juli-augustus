@@ -391,6 +391,11 @@ export const ar = {
   digitalplanning: {
     sidebar: {
       sort_week_backlog: "الاسبوع + المتاخر",
+      sort_overdue: "متأخر (تصنيع/تسليم)",
+      overdue_label: "متأخر (تصنيع/تسليم)",
+      overdue_summary: "{{orderCount}} طلبات بإجمالي {{totalQty}} منتجات متأخرة",
+      pdf_title_overdue: "نظرة عامة على المتأخرات في التصنيع / التسليم",
+      pdf_title_default: "قائمة تخطيط الطلبات والمنتجات",
       sort_in_progress_first: "قيد المعالجة اولا",
       sort_date_asc: "التاريخ تصاعدي",
       sort_date_desc: "التاريخ تنازلي"

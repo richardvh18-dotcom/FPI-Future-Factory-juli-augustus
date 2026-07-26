@@ -737,6 +737,11 @@ export const de = {
     },
     sidebar: {
       sort_week_backlog: "Woche + Rueckstand",
+      sort_overdue: "Überfällig (Herstellung/Lieferung)",
+      overdue_label: "Überfällig (Herstellung/Lieferung)",
+      overdue_summary: "{{orderCount}} Aufträge mit insgesamt {{totalQty}} Produkten überfällig",
+      pdf_title_overdue: "Übersicht Überfällig Herstellung / Lieferung",
+      pdf_title_default: "Planung Auftrags- & Produktliste",
       sort_in_progress_first: "In Bearbeitung zuerst",
       sort_date_asc: "Datum aufsteigend",
       sort_date_desc: "Datum absteigend"

@@ -205,6 +205,7 @@ const LoginView = ({ onLogin, externalError, logoUrl, appName }: LoginViewProps)
                 <div className="relative group">
                   <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-cyan-500 transition-colors" size={18} />
                   <input type="email" required autoComplete="email" value={email}
+                    placeholder="E-mail"
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full pl-12 pr-4 py-3 md:py-4 bg-white border-2 border-slate-200 rounded-2xl font-bold outline-none focus:border-cyan-500 transition-all text-sm text-slate-900 placeholder:text-slate-400" />
                 </div>
@@ -217,6 +218,7 @@ const LoginView = ({ onLogin, externalError, logoUrl, appName }: LoginViewProps)
                 <div className="relative group">
                   <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-cyan-500 transition-colors" size={18} />
                   <input type={showPassword ? "text" : "password"} required autoComplete="current-password" value={password}
+                    placeholder="Wachtwoord"
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full pl-12 pr-12 py-3 md:py-4 bg-white border-2 border-slate-200 rounded-2xl font-bold outline-none focus:border-cyan-500 transition-all text-sm text-slate-900 placeholder:text-slate-400" />
                   <button type="button" onClick={() => setShowPassword(!showPassword)}
