@@ -119,6 +119,29 @@ const TerminalPlanningView = ({
     return { id, id1, pn, connectionType };
   }, [selectedOrder]);
 
+  const isSelectedOrderTee = useMemo(() => {
+    if (!selectedOrder) return false;
+    const fields = [
+      selectedOrder.item,
+      selectedOrder.itemCode,
+      selectedOrder.productId,
+      selectedOrder.productCode,
+      selectedOrder.description,
+      selectedOrder.itemDescription,
+      selectedOrder.productType,
+      selectedOrder.orderId,
+    ];
+
+    for (const field of fields) {
+      const str = String(field || "").trim();
+      if (!str) continue;
+      if (/^T[-_\s]/i.test(str)) return true;
+      if (/\b(TEE|WYE|CROSS|T-STUK|UN-TEE|EQ-TEE|EQUAL-TEE|UNEQUAL-TEE)\b/i.test(str)) return true;
+    }
+
+    return false;
+  }, [selectedOrder]);
+
   React.useEffect(() => {
     const unsub = onSnapshot(
       collection(db, getPathString(PATHS.TOOLING_MOLDS as string[])),
@@ -1085,13 +1108,15 @@ const TerminalPlanningView = ({
                     )}
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setShowGlassCutListModal(true)}
-                    className="py-4 bg-slate-100 text-slate-700 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2 border border-slate-200"
-                  >
-                    <FileText size={16} className="text-amber-600" /> 📐 Glas- & Snijtekening
-                  </button>
+                  {isSelectedOrderTee && (
+                    <button
+                      type="button"
+                      onClick={() => setShowGlassCutListModal(true)}
+                      className="py-4 bg-slate-100 text-slate-700 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2 border border-slate-200"
+                    >
+                      <FileText size={16} className="text-amber-600" /> 📐 Glas- & Snijtekening
+                    </button>
+                  )}
 
                   <button className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2">
                     <AlertCircle size={16} /> {t("digitalplanning.terminal.quality_requirements", "Kwaliteitseisen")}

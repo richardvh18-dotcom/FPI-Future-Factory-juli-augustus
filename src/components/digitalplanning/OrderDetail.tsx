@@ -195,6 +195,28 @@ const OrderDetail = React.memo(({
     });
   }, [order, products]);
 
+  const isTeeOrder = useMemo(() => {
+    if (!order) return false;
+    const fields = [
+      order.item,
+      order.itemCode,
+      order.productId,
+      order.productCode,
+      order.description,
+      order.productType,
+      order.orderId,
+    ];
+
+    for (const field of fields) {
+      const str = String(field || "").trim();
+      if (!str) continue;
+      if (/^T[-_\s]/i.test(str)) return true;
+      if (/\b(TEE|WYE|CROSS|T-STUK|UN-TEE|EQ-TEE|EQUAL-TEE|UNEQUAL-TEE)\b/i.test(str)) return true;
+    }
+
+    return false;
+  }, [order]);
+
   const normalizedRole = String(role || "").toLowerCase();
   const canEditOrderNotes = ['admin', 'teamleader', 'planner'].includes(normalizedRole);
   const canEditOrderPlan = ['admin', 'teamleader', 'planner'].includes(normalizedRole);
@@ -1193,20 +1215,22 @@ const OrderDetail = React.memo(({
           </div>
         </button>
 
-        {/* Smart Link for BH16, BH31, & Fitting Orders */}
-        <button
-          type="button"
-          onClick={() => setShowGlassCutListModal(true)}
-          className="p-2 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-all text-left w-full shadow-sm"
-        >
-          <span className="text-[9px] font-black text-amber-700 uppercase tracking-tight block mb-0.5">Fitting Spec</span>
-          <div className="flex items-center gap-2">
-            <FileText size={14} className="text-amber-600" />
-            <span className="font-bold text-xs text-amber-900">
-              📐 Glas- & Snijtekening
-            </span>
-          </div>
-        </button>
+        {/* Smart Link for Fitting T-Stuk Orders */}
+        {isTeeOrder && (
+          <button
+            type="button"
+            onClick={() => setShowGlassCutListModal(true)}
+            className="p-2 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 transition-all text-left w-full shadow-sm"
+          >
+            <span className="text-[9px] font-black text-amber-700 uppercase tracking-tight block mb-0.5">Fitting Spec</span>
+            <div className="flex items-center gap-2">
+              <FileText size={14} className="text-amber-600" />
+              <span className="font-bold text-xs text-amber-900">
+                📐 Glas- & Snijtekening
+              </span>
+            </div>
+          </button>
+        )}
 
         {canEditOrderNotes ? (
           <textarea

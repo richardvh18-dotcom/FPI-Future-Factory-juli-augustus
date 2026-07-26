@@ -6,6 +6,17 @@
 
 ---
 
+### Update sessie 26 July 2026 (Glas- & Snijtekening Knop Zichtbaarheid voor T-Stukken)
+
+**Datum:** 26 July 2026 | **Versie:** `0.1.117` | **Branch:** `main`
+
+**1. Conditionele Zichtbaarheid Glas- & Snijtekening Knop (`OrderDetail.tsx` & `TerminalPlanningView.tsx`):**
+- **T-Stuk Detectie (`isTeeOrder` / `isSelectedOrderTee`)**: De knop **"📐 Glas- & Snijtekening"** in het rechter detailscherm van de Planning en in de Terminal-weergave is nu uitsluitend zichtbaar voor T-stukken (producten waarvan de code/omschrijving begint met `T-`, `T_`, `T ` of trefwoorden zoals `TEE`, `T-STUK`, `WYE`, `CROSS`, `UN-TEE`, `EQ-TEE`, `EQUAL-TEE`, `UNEQUAL-TEE` bevat).
+- Voor alle andere producttypen (zoals pijpen, reducties of flenzen) blijft deze knop verborgen om het detailscherm overzichtelijk en relevant te houden.
+- **Versie Sync**: Versie gebumpt naar `0.1.117` in `package.json` en `public/version.json`.
+
+---
+
 ### Update sessie 26 July 2026 (IndexedDB Offline Persistence Her-activatie & Quota Penalty Reset)
 
 **Datum:** 26 July 2026 | **Versie:** `0.1.116` | **Branch:** `main`
