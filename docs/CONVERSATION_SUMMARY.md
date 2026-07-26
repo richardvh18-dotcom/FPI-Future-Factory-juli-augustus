@@ -6,6 +6,32 @@
 
 ---
 
+### Update sessie 26 July 2026 (Planning Sidebar React Key Fix & Compliance Auditing P1)
+
+**2. Compliance Auditing P1 geïmplementeerd:**
+- Structured compliance events toegevoegd voor inlogsucces/inlogfout, exporten van auditlogs (CSV/PDF), definitieve afkeuringen en tijdelijke afkeuringen.
+- Specifieke wijzigingen aan standaardproductietijden en printercalibraties worden nu ook als compliance-events gelogd.
+- Nieuwe helper en test toegevoegd in `src/services/complianceAudit.ts` en `src/services/complianceAudit.test.ts`.
+
+**3. P3 component cleanup gestart:**
+- De grote planning sidebar is nu opgedeeld in een kleinere presentational component voor individuele orderkaarten.
+- De refactor is geïmplementeerd zonder functionaliteit te wijzigen en is geverifieerd met een nieuwe unit test.
+- Daarnaast is de admin printqueue-view opgesplitst in een kleine header-component, met een extra unit test voor de renderflow.
+- Ook de time-tracking-view is verder opgesplitst via een aparte header-component, wat de hoofdview leesbaarder maakt zonder functionaliteit te wijzigen.
+- Een formeel component-refactorplan is opgeslagen in [docs/COMPONENT_REFACTOR_PLAN.md](docs/COMPONENT_REFACTOR_PLAN.md) met een prioriterde backlog voor grote views en beheerschermen.
+- De eerste concrete refactor is uitgevoerd in de admin rapportageview: de categorie-selectie is afgesplitst naar een eigen component, met een eigen test en verificatie.
+- De productie-startmodal is aangepast om een Firestore-index-afhankelijke lotsequence-query te vermijden; de sequence wordt nu bepaald via een index-vrije helper en getest.
+
+---
+
+### Update sessie 26 July 2026 (Planning Sidebar React Key Fix)
+
+**1. React Key Warning in Planning Sidebar opgelost:**
+- De duplicate React key waarschuwingen in de planninglijst zijn opgelost door elke sidebar-rij een unieke, stabiele sleutel te geven op basis van order-identiteit, item-identiteit en index.
+- Dit voorkomt onnodige render- en stateproblemen in de Teamleader/Planning sidebar en maakt de lijst robuuster bij her-rendering.
+
+---
+
 ### Update sessie 26 July 2026 (Glas- & Snijtekening Knop Zichtbaarheid voor T-Stukken)
 
 **Datum:** 26 July 2026 | **Versie:** `0.1.117` | **Branch:** `main`
@@ -117,6 +143,28 @@
 ---
 
 ### 📝 Openstaande Taken & Geplande Roadmap (Post-Pilot / Productie)
+
+**Uitvoerbare todo-checklist (prioriteiten):**
+
+**P1 — ISO 9001 / 27001 Compliancy (Afronding)**
+   - [ ] Audit events voor CSV/PDF exports en mislukte UI-inlogpogingen consistent schrijven naar de WORM audit trail.
+   - [ ] NC-afkeur-redenen verplicht loggen met actie (Scrap/Rework).
+   - [ ] Wijzigingen aan specificaties en stuktijden registreren met een verplichte reden van wijziging.
+   - [ ] Machine-kalibraties en vrijgaves in de audit trail opnemen.
+   - [ ] Testen en review van de volledige compliance-flow in productieachtige scenario's.
+
+**P2 — Label Template Engine (Dynamische Label-generatie UI)**
+   - [ ] Hardcoded label-logica uit `labelHelpers.tsx` verplaatsen naar een database-model met versiebeheer.
+   - [ ] Backend/API-opzet maken voor opslag en ophalen van labelregels per product- of template-type.
+   - [ ] UI Builder ontwerpen in de beheeromgeving voor conditionele regels en tekstsamenvoegingen.
+   - [ ] Validatie- en fallback-regels maken voor onbekende of gewijzigde productvarianten.
+   - [ ] Testen met realistische labels en productgegevens zonder code-deploys.
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits)**
+   - [ ] Grote componenten zoals `MazakView.tsx`, `WorkstationHub.tsx` en `AdminReportsView.tsx` opsplitsen in kleinere modulaire subcomponenten.
+   - [ ] Stateless UI en custom hooks isoleren om herbruikbaarheid en onderhoudbaarheid te verbeteren.
+   - [ ] De overgebleven ~934 `any` types in React `.tsx` bestanden stapsgewijs vervangen door concrete types.
+   - [ ] Per component een korte kwaliteitscheck uitvoeren met linting, typecheck en relevante tests.
 
 **1. ISO 9001 / 27001 Compliancy (Afronding)**
    - **27001 Toegang & Beveiliging:** Zorg dat specifieke randgevallen (exports van CSV/PDF, mislukte inlogpogingen via de UI) overal consistent worden weggeschreven naar de vernieuwde WORM audit trail.

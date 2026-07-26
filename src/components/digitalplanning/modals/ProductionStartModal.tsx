@@ -1034,12 +1034,7 @@ const ProductionStartModal = ({
     const counterDocId = `${safeStationId}_${weekSuffix}`;
     const counterRef = doc(db, getPathString(PATHS.COUNTERS), counterDocId);
 
-    const extractSeq = (lot: string) => {
-        if (!lot || !lot.startsWith(baseLotStr)) return 0;
-        const seqStr = lot.substring(baseLotStr.length).replace(/[^0-9]/g, '');
-        const seq = parseInt(seqStr, 10);
-        return isNaN(seq) ? 0 : seq;
-    };
+    const extractSeq = (lot: string | null | undefined) => extractLotSequence(lot, baseLotStr);
 
     existingProducts?.forEach((p: any) => {
         const seq = extractSeq(p.lotNumber || p.activeLot);
@@ -1057,54 +1052,30 @@ const ProductionStartModal = ({
     }
 
     try {
-        const trackingRef = collection(db, getPathString(PATHS.TRACKING as string[]));
-        const trackingTopSnap = await getDocs(query(
-          trackingRef,
-          where("lotNumber", ">=", baseLotStr),
-          where("lotNumber", "<=", `${baseLotStr}\uf8ff`),
-          orderBy("lotNumber", "desc"),
-          limit(1)
-        ));
-        trackingTopSnap.forEach((docSnap: any) => {
-          const seq = extractSeq(String(docSnap.data()?.lotNumber || ""));
-          if (seq > maxSeq) maxSeq = seq;
-        });
+      const trackingRef = collection(db, getPathString(PATHS.TRACKING as string[]));
+      const trackingSnap = await getDocs(query(trackingRef, limit(2000)));
+      trackingSnap.forEach((docSnap: any) => {
+        const seq = extractSeq(String(docSnap.data()?.lotNumber || ""));
+        if (seq > maxSeq) maxSeq = seq;
+      });
 
-        const archiveRef = collection(db, getPathString(getArchiveItemsPath(new Date().getFullYear())));
-        const archiveTopSnap = await getDocs(query(
-          archiveRef,
-          where("lotNumber", ">=", baseLotStr),
-          where("lotNumber", "<=", `${baseLotStr}\uf8ff`),
-          orderBy("lotNumber", "desc"),
-          limit(1)
-        ));
-        archiveTopSnap.forEach((docSnap: any) => {
-          const seq = extractSeq(String(docSnap.data()?.lotNumber || ""));
-          if (seq > maxSeq) maxSeq = seq;
-        });
+      const archiveRef = collection(db, getPathString(getArchiveItemsPath(new Date().getFullYear())));
+      const archiveSnap = await getDocs(query(archiveRef, limit(2000)));
+      archiveSnap.forEach((docSnap: any) => {
+        const seq = extractSeq(String(docSnap.data()?.lotNumber || ""));
+        if (seq > maxSeq) maxSeq = seq;
+      });
 
-        // Neem ook scoped tracking-items mee, omdat lotnummers daar primair worden opgeslagen.
-        try {
-          const trackingPathPrefix = `${(PATHS.TRACKING || []).join("/")}/`;
-          const scopedTrackingTopQuery = query(
-            collectionGroup(db, "items"),
-            where("lotNumber", ">=", baseLotStr),
-            where("lotNumber", "<=", `${baseLotStr}\uf8ff`),
-            limit(50)
-          );
-          const scopedTrackingSnap = await getDocs(scopedTrackingTopQuery);
-          scopedTrackingSnap.forEach((docSnap: any) => {
-            const path = String(docSnap.ref?.path || "");
-            if (!path.startsWith(trackingPathPrefix)) return;
-            const seq = extractSeq(docSnap.data()?.lotNumber);
-            if (seq > maxSeq) maxSeq = seq;
-          });
-        } catch (scopedErr: any) {
-            // Ignore if index or path does not exist
-        }
-
+      const trackingPathPrefix = `${(PATHS.TRACKING || []).join("/")}/`;
+      const scopedTrackingSnap = await getDocs(query(collectionGroup(db, "items"), limit(2000)));
+      scopedTrackingSnap.forEach((docSnap: any) => {
+        const path = String(docSnap.ref?.path || "");
+        if (!path.startsWith(trackingPathPrefix)) return;
+        const seq = extractSeq(docSnap.data()?.lotNumber);
+        if (seq > maxSeq) maxSeq = seq;
+      });
     } catch (error: any) {
-        console.error("Fout bij ophalen max sequence:", error);
+      console.error("Fout bij ophalen max sequence:", error);
     }
 
     try {

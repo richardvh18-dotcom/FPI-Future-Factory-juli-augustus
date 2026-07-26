@@ -30,28 +30,31 @@ import { normalizeMachine } from "../../utils/hubHelpers";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { fetchScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
 import { executeAtpsOccupancyExport, getAtpsExportMonitor, previewAtpsOccupancyExport } from "../../services/planningSecurityService";
+import AdminReportsCategorySelection from "./AdminReportsCategorySelection";
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 type LeadTimeRow = { station: string; orderId: string; hours: number };
+type FirestoreSnapshotLike = { docs?: Array<{ id?: string; data?: () => AnyRecord; }> };
+type FirestoreDbLike = typeof db;
 
 const asPath = (value: unknown): string[] =>
   Array.isArray(value) ? value.map((segment) => String(segment)) : [];
 
-const toRows = (snap: any): AnyRecord[] =>
+const toRows = (snap: FirestoreSnapshotLike | null | undefined): AnyRecord[] =>
   Array.isArray(snap?.docs)
-    ? snap.docs.map((d: any) => ({ id: d?.id, ...((d?.data?.() as AnyRecord) || {}) }))
+    ? snap.docs.map((d) => ({ id: d?.id, ...((d?.data?.() as AnyRecord) || {}) }))
     : [];
 
-const getCollectionRef = (dbRef: any, pathLike: unknown): any | null => {
+const getCollectionRef = (dbRef: FirestoreDbLike, pathLike: unknown): ReturnType<typeof collection> | null => {
   const path = asPath(pathLike);
   if (!path.length) return null;
-  return (collection as any)(dbRef, ...path);
+  return collection(dbRef, ...path);
 };
 
-const getDocRef = (dbRef: any, pathLike: unknown): any | null => {
+const getDocRef = (dbRef: FirestoreDbLike, pathLike: unknown): ReturnType<typeof doc> | null => {
   const path = asPath(pathLike);
   if (path.length < 2) return null;
-  return (doc as any)(dbRef, ...path);
+  return doc(dbRef, ...path);
 };
 
 /**
@@ -104,11 +107,11 @@ const AdminReportsView = () => {
         executeLive: false,
       });
 
-      setAtpsPreviewLast(result as AnyRecord);
+      setAtpsPreviewLast((result as AnyRecord) || null);
 
-      const totals = (result as AnyRecord)?.totals || {};
-      const mode = String((result as AnyRecord)?.mode || "passive");
-      const noopReason = String((result as AnyRecord)?.noopReason || "");
+      const totals = ((result as AnyRecord)?.totals as AnyRecord | undefined) || {};
+      const mode = String(((result as AnyRecord)?.mode as string | undefined) || "passive");
+      const noopReason = String(((result as AnyRecord)?.noopReason as string | undefined) || "");
       notify(
         `ATPS dry-run klaar: ${Number(totals.count || 0)} records, ${Number(totals.hoursWorked || 0)} uur (${mode}). ${noopReason}`.trim()
       );
@@ -124,7 +127,7 @@ const AdminReportsView = () => {
     setAtpsMonitorLoading(true);
     try {
       const result = await getAtpsExportMonitor({ runsLimit: 12, previewLimit: 8 });
-      setAtpsMonitor(result as AnyRecord);
+      setAtpsMonitor((result as AnyRecord) || null);
     } catch (error) {
       console.error("ATPS monitor ophalen fout:", error);
       notify("ATPS monitor kon niet geladen worden.");
@@ -140,7 +143,7 @@ const AdminReportsView = () => {
     setAtpsLiveLoading(true);
     try {
       const result = await executeAtpsOccupancyExport({ limit: 250 });
-      const delivery = (result as AnyRecord)?.delivery || {};
+      const delivery = ((result as AnyRecord)?.delivery as AnyRecord | undefined) || {};
       notify(
         `ATPS live export afgerond: marked ${Number(delivery.markedExported || 0)}, retry queue ${Number(delivery.queuedForRetry || 0)}.`
       );
@@ -905,7 +908,7 @@ const AdminReportsView = () => {
       const products = await fetchTrackingProductsInRange();
       const now = new Date();
 
-      const byOrder: Record<string, { orderId: string; total: number; completed: number; dueDate: any }> = {};
+      const byOrder: Record<string, { orderId: string; total: number; completed: number; dueDate: unknown }> = {};
       products.forEach((p) => {
         const orderId = p.orderId || "Geen Order";
         if (!byOrder[orderId]) {
@@ -920,7 +923,7 @@ const AdminReportsView = () => {
         if (p.status === "completed" || p.currentStep === "Finished") byOrder[orderId].completed += 1;
       });
 
-      const orders = Object.values(byOrder) as Array<{ orderId: string; total: number; completed: number; dueDate: any }>;
+      const orders = Object.values(byOrder) as Array<{ orderId: string; total: number; completed: number; dueDate: unknown }>;
       const completedOrders = orders.filter((o) => o.total > 0 && o.completed === o.total);
       const inProgressOrders = orders.filter((o) => o.completed > 0 && o.completed < o.total);
       const backlogOrders = orders.filter((o) => o.completed === 0);
@@ -1192,7 +1195,7 @@ const AdminReportsView = () => {
       const occupancyRef = getCollectionRef(readDb, readPaths.OCCUPANCY);
       const [hoursRecords, occSnap] = await Promise.all([
         fetchScopedEfficiencyHours({ db: readDb, mode: "active", maxDocs: 3000 }),
-        occupancyRef ? getDocs(query(occupancyRef, limit(3000))) : Promise.resolve({ docs: [] } as any),
+        occupancyRef ? getDocs(query(occupancyRef, limit(3000))) : Promise.resolve({ docs: [] } as FirestoreSnapshotLike),
       ]);
 
       const normalizeHours = (value: unknown) => {
@@ -1329,13 +1332,13 @@ const AdminReportsView = () => {
       const [trackingSnap, ...archiveSnaps] = await Promise.all([
         (() => {
           const trackingRef = getCollectionRef(readDb, readPaths.TRACKING);
-          if (!trackingRef) return Promise.resolve({ docs: [] } as any);
+          if (!trackingRef) return Promise.resolve({ docs: [] } as FirestoreSnapshotLike);
           return getDocs(query(trackingRef, limit(4000)));
         })(),
         ...years.map((year) =>
           getDocs(
             query(
-              (collection as any)(readDb, ...asPath(getArchiveItemsPathForSource(year))),
+              collection(readDb, ...asPath(getArchiveItemsPathForSource(year))),
               limit(4000)
             )
           )
@@ -1417,13 +1420,13 @@ const AdminReportsView = () => {
       const [trackingSnap, ...archiveSnaps] = await Promise.all([
         (() => {
           const trackingRef = getCollectionRef(readDb, readPaths.TRACKING);
-          if (!trackingRef) return Promise.resolve({ docs: [] } as any);
+          if (!trackingRef) return Promise.resolve({ docs: [] } as FirestoreSnapshotLike);
           return getDocs(query(trackingRef, limit(4000)));
         })(),
         ...years.map((year) =>
           getDocs(
             query(
-              (collection as any)(readDb, ...asPath(getArchiveItemsPathForSource(year))),
+              collection(readDb, ...asPath(getArchiveItemsPathForSource(year))),
               limit(4000)
             )
           )
@@ -1841,42 +1844,12 @@ const AdminReportsView = () => {
   // Render category selection
   if (!selectedCategory) {
     return (
-      <div className="h-full overflow-y-auto bg-slate-50 p-8">
-        <div className="max-w-7xl mx-auto">
-          {sourceBadge}
-          <div className="mb-8">
-            <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tight mb-2">
-              {t("reports.title", "Rapportage Centre")}
-            </h2>
-            <p className="text-slate-500 text-sm">
-              {t("reports.subtitle", "Selecteer een rapportage categorie om te beginnen")}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {reportCategories.map((category) => (
-              <button
-                key={category.id}
-                onClick={() => setSelectedCategory(category)}
-                className={`group p-8 rounded-3xl border-2 ${category.color} hover:shadow-xl transition-all duration-300 text-left active:scale-95`}
-              >
-                <div className="p-4 bg-white rounded-2xl shadow-md w-fit mb-6 group-hover:scale-110 transition-transform">
-                  {category.icon}
-                </div>
-                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tight mb-3">
-                  {category.title}
-                </h3>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                  {category.description}
-                </p>
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-400">
-                  {category.reports.length} rapporten beschikbaar
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+      <AdminReportsCategorySelection
+        t={t}
+        sourceBadge={sourceBadge}
+        reportCategories={reportCategories}
+        onSelectCategory={setSelectedCategory}
+      />
     );
   }
 
@@ -1950,7 +1923,7 @@ const AdminReportsView = () => {
   }
 
   const canExport = !!reportData && !loading;
-  const activeReport = selectedReport as AnyRecord;
+  const activeReport = (selectedReport || {}) as AnyRecord;
 
   // Render report view with data
   return (
