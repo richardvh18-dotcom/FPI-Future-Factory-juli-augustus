@@ -6,6 +6,12 @@
 
 ---
 
+### Update sessie 27 July 2026 (Login Compliance Hook Fix)
+
+**1. Login compliance logging herstel:**
+- De login-flow in [src/App.tsx](src/App.tsx) gebruikte `logComplianceEvent` zonder deze import te laden, waardoor de inlogactie een runtime-fout veroorzaakte.
+- De ontbrekende import is toegevoegd zodat succesvolle en mislukte inlogpogingen weer correct via de compliance-audit worden geregistreerd.
+
 ### Update sessie 26 July 2026 (Planning Sidebar React Key Fix & Compliance Auditing P1)
 
 **2. Compliance Auditing P1 geïmplementeerd:**

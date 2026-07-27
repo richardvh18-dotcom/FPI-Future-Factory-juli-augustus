@@ -5,6 +5,7 @@ import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import app, { auth, db, logActivity } from "./config/firebase";
 import { addDoc, collection, doc, getDoc, serverTimestamp, query, collectionGroup, where, limit, getDocs } from "firebase/firestore";
+import { logComplianceEvent } from "./services/complianceAudit";
 import LoggedOutView from "./components/LoggedOutView";
 
 // Basis Componenten
@@ -322,11 +323,19 @@ const App = () => {
     setLoginError(null);
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      await logActivity(userCredential.user.uid, "LOGIN", `Succesvol ingelogd via email: ${email}`);
+      await logComplianceEvent(userCredential.user.uid, "LOGIN", {
+        email,
+        method: "email",
+        success: true,
+      });
       navigate("/");
     } catch (err: any) {
       console.error("Login fout:", err);
-      await logActivity("system", "LOGIN_FAILED", `Mislukte inlogpoging voor: ${email}. Reden: ${err.code}`);
+      await logComplianceEvent("system", "LOGIN_FAILED", {
+        email,
+        reason: err?.code || "unknown",
+        success: false,
+      });
       
       let errorMessage = "E-mail of wachtwoord onjuist.";
       

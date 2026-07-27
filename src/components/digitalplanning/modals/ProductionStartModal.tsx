@@ -38,6 +38,7 @@ import { resolvePrinterForRouting } from "../../../utils/printRouting";
 import LabelVisualPreview from "../../printer/LabelVisualPreview";
 import { useLabelPreview } from "../../../hooks/useLabelPreview";
 import InternalQrImage from "../../../utils/InternalQrImage";
+import { extractLotSequence } from "./lotSequenceHelpers";
 
 /**
  * DPI-aware PIXELS_PER_MM for print preview parity
