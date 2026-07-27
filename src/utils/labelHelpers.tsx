@@ -445,21 +445,14 @@ const resolvePlaceholderValue = (data: AnyRecord, key: string): string => {
     return String(directValue);
   }
 
-  // Backward-compatible aliasing for templates that use {code}.
   if (key === "code") {
-    const fallback =
-      getNestedValue(data, "extraCode") ??
-      getNestedValue(data, "itemCode") ??
-      getNestedValue(data, "productId");
-    return fallback !== undefined && fallback !== null ? String(fallback) : "";
+    const fallback = getNestedValue(data, "extraCode") ?? getNestedValue(data, "Code");
+    return fallback !== undefined && fallback !== null && String(fallback) !== "" ? String(fallback) : "";
   }
 
   if (key === "extraCode") {
-    const fallback =
-      getNestedValue(data, "code") ??
-      getNestedValue(data, "itemCode") ??
-      getNestedValue(data, "productId");
-    return fallback !== undefined && fallback !== null ? String(fallback) : "";
+    const fallback = getNestedValue(data, "extraCode") ?? getNestedValue(data, "Code");
+    return fallback !== undefined && fallback !== null && String(fallback) !== "" ? String(fallback) : "";
   }
 
   return "";
@@ -759,7 +752,7 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
     flangePressureLine,
     flangeConnectionLine,
     flangeDrillingLine,
-    code: data.code || data.itemCode || data.productId || "",
+    code: data.code || data.extraCode || data.Code || "",
     extraCode: data.extraCode || data.Code || "",
 
     lotNumber: lotNumber,

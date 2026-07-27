@@ -6,15 +6,36 @@
 
 ---
 
-### Update sessie 27 July 2026 (Login Compliance Hook Fix & Progress Save)
+### Update sessie 27 July 2026 (Component tests centralisatie)
 
-**1. Login compliance logging herstel:**
-- De login-flow in [src/App.tsx](src/App.tsx) gebruikte `logComplianceEvent` zonder deze import te laden, waardoor de inlogactie een runtime-fout veroorzaakte.
-- De ontbrekende import is toegevoegd zodat succesvolle en mislukte inlogpogingen weer correct via de compliance-audit worden geregistreerd.
+- De bestaande componenttests zijn samengebracht onder één centrale structuur in [src/test](src/test), met submappen voor admin-, planning- en digitalplanning-componenten.
+- De relevante testbestanden zijn verplaatst naar [src/test/components](src/test/components) en de imports zijn aangepast zodat ze zonder extra configuratie blijven werken.
+- Verificatie uitgevoerd met `npx vitest run src/test/components/**/*.test.tsx`; 4 testbestanden en 4 tests zijn geslaagd.
 
-**2. Voortgang opgeslagen:**
-- De actuele fixes zijn lokaal gecommit met commit `a618246` en vastgelegd in de repo-status voor verdere voortgang.
-- De wijzigingen zijn gerelateerd aan compliance-logging in de login-flow en de lot-sequence-helper in de productie-startmodal.
+### Update sessie 27 July 2026 (Print Queue Fallback & Regression Test)
+
+**5. FL-label Extra Code fallback fix:**
+- De label-placeholder resolver in [src/utils/labelHelpers.tsx](src/utils/labelHelpers.tsx) is aangepast zodat `{extraCode}` en `{code}` alleen worden gevuld met een echte extraCode/code-waarde en niet meer terugvallen op `itemCode`.
+- Dit voorkomt dat een label zonder extraCode onterecht de itemCode toont op de Extra Code-positie.
+- De wijziging is geverifieerd met een nieuwe Vitest-regressietest in [src/utils/labelHelpers.test.ts](src/utils/labelHelpers.test.ts).
+
+**1. Print queue fallback hardening:**
+- De backend print-queue service in [functions/src/services/printingService.ts](functions/src/services/printingService.ts) is aangepast zodat een mislukte scoped Firestore write niet meer stilletjes het label-queueproces doet verdwijnen.
+- Bij een scoped write-fout valt het systeem nu over op een root-level queue document, waardoor printjobs voor operator/admin flows beter behouden blijven.
+- De service ondersteunt nu een kleine dependency seam voor test injectie, zonder de productie-flow te wijzigen.
+
+**2. Regression test toegevoegd:**
+- Er is een targeted Vitest-regressietest toegevoegd in [tests/printingService.test.ts](tests/printingService.test.ts) die het fallback-gedrag verifieert wanneer de scoped write faalt.
+- De test is lokaal uitgevoerd en geslaagd.
+
+**3. Build validatie:**
+- De Cloud Functions zijn succesvol gecompileerd met `npm --prefix functions run build`.
+
+**4. Handmatige live validatie met operator-flow:**
+- De operator-flow is handmatig getest met de door de gebruiker aangeleverde operator-credentials.
+- De test heeft succesvol een echte print-queue entry geproduceerd op het pad `/future-factory/production/print_queue/Fittings/machines/40BH18/items/H320knjpnNNB5AXEBwq2` met status `pending`.
+- De gecreëerde queue document bevat de verwachte metadata voor order, lotnummer, printer, requester en label-parameters.
+- Na aanvullende validatie is bevestigd dat opeenvolgende jobs achter elkaar correct in de wachtrij terechtkomen en dat de wachtrij persistent blijft, ook wanneer de printer tijdelijk niet beschikbaar is.
 
 ### Update sessie 26 July 2026 (Planning Sidebar React Key Fix & Compliance Auditing P1)
 
@@ -168,6 +189,7 @@
    - [ ] Backend/API-opzet maken voor opslag en ophalen van labelregels per product- of template-type.
    - [ ] UI Builder ontwerpen in de beheeromgeving voor conditionele regels en tekstsamenvoegingen.
    - [ ] Validatie- en fallback-regels maken voor onbekende of gewijzigde productvarianten.
+   - [ ] Extra Code placeholder-resolutie voor FL-labels harden en standaardiseren (zodat `{extraCode}` en `{code}` niet meer terugvallen op `itemCode`; regressietest toegevoegd).
    - [ ] Testen met realistische labels en productgegevens zonder code-deploys.
 
 **P3 — Code & Component Opschoning (Gedelegeerde Audits)**

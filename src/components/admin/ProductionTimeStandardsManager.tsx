@@ -34,6 +34,7 @@ import { PATHS, getPathString } from "../../config/dbPaths";
 import { formatMinutes } from "../../utils/efficiencyCalculator";
 import { analyzeAndUpdateStandards } from "../../utils/autoLearningService";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { logComplianceEvent } from "../../services/complianceAudit";
 
 type StandardRecord = {
   id: string;
@@ -193,6 +194,12 @@ const ProductionTimeStandardsManager = () => {
       });
 
       await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Production standard added: ${newEntry.itemCode} (${newEntry.machine})`);
+      await logComplianceEvent(auth.currentUser?.uid || "system", "SPECIFICATION_CHANGE", {
+        action: "add_standard",
+        itemCode: newEntry.itemCode.trim(),
+        machine: newEntry.machine.trim(),
+        standardMinutes: parseFloat(newEntry.standardMinutes),
+      });
 
       setNewEntry({ itemCode: "", machine: "", standardMinutes: "", description: "" });
       setStatus({ type: "success", message: t('productionStandards.success_added', "Standaard toegevoegd") });
@@ -215,6 +222,11 @@ const ProductionTimeStandardsManager = () => {
       );
 
       await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Production standard updated: ${id}`);
+      await logComplianceEvent(auth.currentUser?.uid || "system", "SPECIFICATION_CHANGE", {
+        action: "update_standard",
+        standardId: id,
+        updates,
+      });
 
       setEditMode(null);
       setStatus({ type: "success", message: t('productionStandards.success_updated', "Standaard bijgewerkt") });
@@ -240,6 +252,10 @@ const ProductionTimeStandardsManager = () => {
     try {
       await deleteDoc(docPath(PATHS.PRODUCTION_STANDARDS, id));
       await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Production standard deleted: ${id}`);
+      await logComplianceEvent(auth.currentUser?.uid || "system", "SPECIFICATION_CHANGE", {
+        action: "delete_standard",
+        standardId: id,
+      });
       setStatus({ type: "success", message: t('productionStandards.success_deleted', "Standaard verwijderd") });
       setTimeout(() => setStatus(null), 3000);
     } catch (error) {

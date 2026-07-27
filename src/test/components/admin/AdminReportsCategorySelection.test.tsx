@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { describe, it, expect, vi } from 'vitest';
-import AdminReportsCategorySelection from './AdminReportsCategorySelection';
+import AdminReportsCategorySelection from '../../../components/admin/AdminReportsCategorySelection';
 
 describe('AdminReportsCategorySelection', () => {
   it('renders categories and selects one', () => {

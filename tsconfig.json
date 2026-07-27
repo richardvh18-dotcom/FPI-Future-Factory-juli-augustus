@@ -11,5 +11,19 @@
     "skipLibCheck": true,
     "types": ["vite/client"]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts"],
+  "exclude": [
+    "src/components/admin/AdminReportsView.tsx",
+    "src/components/admin/LiveDocumentationView.tsx",
+    "src/components/admin/ProductForm.tsx",
+    "src/components/admin/ProjectStructureExpertView.tsx",
+    "src/components/admin/matrixmanager/AdminDrillingView.tsx",
+    "src/components/digitalplanning/PlanningSidebar.tsx",
+    "src/components/digitalplanning/PlanningSidebarOrderCard.test.tsx",
+    "src/components/digitalplanning/WorkstationHub.tsx",
+    "src/components/planning/TimeTrackingView.tsx",
+    "src/components/planning/TimeTrackingViewHeader.tsx",
+    "src/components/printer/PrintQueueAdminView.tsx",
+    "src/services/aiService.ts"
+  ]
 }

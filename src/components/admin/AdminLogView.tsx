@@ -36,6 +36,7 @@ import {
   type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
+import { logComplianceEvent } from "../../services/complianceAudit";
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, parse, isValid } from "date-fns";
 import { nl } from "date-fns/locale";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
@@ -577,6 +578,11 @@ const AdminLogView = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    void logComplianceEvent(auth.currentUser?.uid || "system", "EXPORT", {
+      exportKind: "audit_csv",
+      recordCount: filteredLogs.length,
+      scope: "audit_logs",
+    });
   };
 
   const handleExportPDF = async () => {
@@ -640,6 +646,11 @@ const AdminLogView = () => {
       });
 
       doc.save(`audit_log_${format(new Date(), "yyyyMMdd")}.pdf`);
+      void logComplianceEvent(auth.currentUser?.uid || "system", "EXPORT", {
+        exportKind: "audit_pdf",
+        recordCount: filteredLogs.length,
+        scope: "audit_logs",
+      });
     } catch (err: unknown) {
       console.error("PDF generation failed:", err);
       notify(t('adminLogView.pdfError'));

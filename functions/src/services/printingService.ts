@@ -1,7 +1,22 @@
 // @ts-nocheck
 
-const { db, admin } = require('../config/firebase');
-const { DB_PATHS } = require('../config/dbPaths');
+const getFirebaseDependencies = (dependencies = {}) => {
+  if (dependencies.db && dependencies.admin) {
+    return dependencies;
+  }
+
+  const { db, admin } = require('../config/firebase');
+  return { db, admin };
+};
+
+const getDbPaths = (dependencies = {}) => {
+  if (dependencies.dbPaths) {
+    return dependencies.dbPaths;
+  }
+
+  const { DB_PATHS } = require('../config/dbPaths');
+  return DB_PATHS;
+};
 
 // Bitmap-gebaseerde labels kunnen aanzienlijk groter zijn dan legacy tekst-ZPL.
 // Blijf ruim onder Firestore documentlimiet (~1 MiB) maar voorkom onnodige rejects.
@@ -9,7 +24,6 @@ const MAX_ZPL_LENGTH = 700000;
 const MAX_METADATA_LENGTH = 16000;
 const MAX_PRINT_QUANTITY = 200;
 const PRINTER_ID_PATTERN = /^[a-zA-Z0-9._:-]{2,80}$/;
-const PRINT_QUEUE_COLLECTION = DB_PATHS.PRINT_QUEUE;
 const DEFAULT_DEPARTMENT = 'Fittings';
 const DEFAULT_MACHINE = 'UNASSIGNED';
 
@@ -115,7 +129,7 @@ const inferScopedDepartment = (metadata = {}) => {
  * @param {object} context - Firebase function context with auth
  * @returns {Promise<string>} - Document ID of queued print job
  */
-async function queuePrintJobService(printerId, zplData, metadata = {}, context) {
+async function queuePrintJobService(printerId, zplData, metadata = {}, context, dependencies = {}) {
   const normalizedPrinterId = String(printerId || '').trim();
   const normalizedZpl = String(zplData || '');
   const requestSource = String(metadata?.source || '').trim().toLowerCase();
@@ -137,39 +151,76 @@ async function queuePrintJobService(printerId, zplData, metadata = {}, context) 
     throw new Error(`Aantal labels moet tussen 1 en ${MAX_PRINT_QUANTITY} liggen.`);
   }
 
-  const sanitizedMetadata = sanitizeFirestoreValue({
+  const { db: firestoreDb, admin: firestoreAdmin } = getFirebaseDependencies(dependencies);
+  const dbPaths = getDbPaths(dependencies);
+  const printQueueCollection = dependencies.dbPaths?.PRINT_QUEUE || dbPaths.PRINT_QUEUE;
+
+  let normalizedMetadata = sanitizeFirestoreValue({
     ...metadata,
     requesterEmail: context.auth?.token?.email || 'unknown',
     requesterName: context.auth?.token?.name || 'unknown',
-  });
+  }) || {};
 
-  if (JSON.stringify(sanitizedMetadata || {}).length > MAX_METADATA_LENGTH) {
-    throw new Error('Metadata is te groot.');
+  const metadataSize = JSON.stringify(normalizedMetadata || {}).length;
+  if (metadataSize > MAX_METADATA_LENGTH) {
+    const trimmed = { ...normalizedMetadata };
+    delete trimmed.variables;
+    delete trimmed.lots;
+    delete trimmed.previewData;
+    delete trimmed.template;
+    delete trimmed.elements;
+    trimmed._metadataTrimmed = true;
+    trimmed._metadataTrimReason = 'oversized';
+    normalizedMetadata = trimmed;
   }
 
-  const queueRef = db.collection(PRINT_QUEUE_COLLECTION);
+  if (JSON.stringify(normalizedMetadata || {}).length > MAX_METADATA_LENGTH) {
+    normalizedMetadata = {
+      requesterEmail: context.auth?.token?.email || 'unknown',
+      requesterName: context.auth?.token?.name || 'unknown',
+      source: String(metadata?.source || ''),
+      orderId: String(metadata?.orderId || metadata?.productionOrder || metadata?.jobId || ''),
+      lotNumber: String(metadata?.lotNumber || ''),
+      quantity: Number(metadata?.quantity ?? metadata?.copies ?? 1),
+      _metadataTrimmed: true,
+      _metadataTrimReason: 'hard-limit',
+    };
+  }
+
+  const queueRef = firestoreDb.collection(printQueueCollection);
   const docRef = queueRef.doc();
-  const scopedDepartment = inferScopedDepartment(sanitizedMetadata || {});
-  const scopedMachine = inferScopedMachine(normalizedPrinterId, sanitizedMetadata || {});
-  const scopedRef = db.doc(`${PRINT_QUEUE_COLLECTION}/${scopedDepartment}/machines/${scopedMachine}/items/${docRef.id}`);
+  const scopedDepartment = inferScopedDepartment(normalizedMetadata || {});
+  const scopedMachine = inferScopedMachine(normalizedPrinterId, normalizedMetadata || {});
+  const scopedRef = firestoreDb.doc(`${printQueueCollection}/${scopedDepartment}/machines/${scopedMachine}/items/${docRef.id}`);
+  const rootRef = queueRef.doc(docRef.id);
 
   const jobData = {
     id: docRef.id,
     printerId: normalizedPrinterId,
     zpl: normalizedZpl,
     status: 'pending',
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: firestoreAdmin.firestore.FieldValue.serverTimestamp(),
     createdBy: context.auth?.uid || 'unknown',
-    metadata: sanitizedMetadata,
+    metadata: normalizedMetadata,
     retryCount: 0,
     departmentId: scopedDepartment,
     machineId: scopedMachine,
     _scopeType: 'print_queue',
   };
 
-  await scopedRef.set(jobData, { merge: true });
-
-  return docRef.id;
+  try {
+    await scopedRef.set(jobData, { merge: true });
+    return docRef.id;
+  } catch (scopedError) {
+    console.warn('[printingService] Scoped print queue write failed; falling back to root queue document.', scopedError?.message || scopedError);
+    try {
+      await rootRef.set(jobData, { merge: true });
+      return docRef.id;
+    } catch (rootError) {
+      console.error('[printingService] Both scoped and root print queue writes failed.', rootError?.message || rootError);
+      throw rootError;
+    }
+  }
 }
 
 module.exports = {

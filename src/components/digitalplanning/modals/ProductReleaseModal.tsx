@@ -9,6 +9,7 @@ import { useNotifications } from '../../../contexts/NotificationContext';
 import { useProgressOperationsStore } from '../../../contexts/ProgressOperationContext';
 import { rejectTrackedProductFinal, tempRejectTrackedProduct, advanceTrackedProduct } from "../../../services/planningSecurityService";
 import { useFormPersistence } from "../../../hooks/useFormPersistence";
+import { logComplianceEvent } from "../../../services/complianceAudit";
 
 const PILOT_ALLOW_INCOMPLETE_LOSSEN_MEASUREMENTS = true;
 
@@ -792,6 +793,21 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
           status === "approved" ? "PRODUCT_RELEASE" : status === "temp_reject" ? "QUALITY_TEMP_REJECT" : "QUALITY_REJECT_FINAL",
           `Release modal: ${selectedTargets.length} lot(s), station ${product?.currentStation || product?.machine || "onbekend"}, status ${status}${measurementsStr}`
         );
+        if (status === "temp_reject") {
+          await logComplianceEvent(auth.currentUser?.uid || "system", "QUALITY_REJECT_TEMP", {
+            count: selectedTargets.length,
+            reasons: selectedReasons,
+            note: comment,
+            station: product?.currentStation || product?.machine || "onbekend",
+          });
+        } else if (status === "rejected") {
+          await logComplianceEvent(auth.currentUser?.uid || "system", "QUALITY_REJECT", {
+            count: selectedTargets.length,
+            reasons: selectedReasons,
+            note: comment,
+            station: product?.currentStation || product?.machine || "onbekend",
+          });
+        }
 
         clearPersistedForm();
         setFormState({

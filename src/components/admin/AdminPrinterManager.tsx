@@ -55,6 +55,7 @@ import PrintQueueAdminView from "../printer/PrintQueueAdminView";
 import AutoScaledLabelPreview from "../printer/AutoScaledLabelPreview";
 import InternalQrImage from "../../utils/InternalQrImage";
 import { useNotifications } from "../../contexts/NotificationContext";
+import { logComplianceEvent } from "../../services/complianceAudit";
 import { useLabelCatalog } from "../../hooks/useLabelCatalog";
 import { useFormPersistence } from "../../hooks/useFormPersistence";
 import { serializeRoutingKeys } from "../../utils/printRouting";
@@ -1259,6 +1260,11 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         updatedAt: serverTimestamp(),
       });
       await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Printer calibration updated: ${printer.name}`);
+      await logComplianceEvent(auth.currentUser?.uid || "system", "CALIBRATION_CHANGE", {
+        printerName: printer.name,
+        calibrationOffsetXMm: payload.calibrationOffsetXMm,
+        calibrationOffsetYMm: payload.calibrationOffsetYMm,
+      });
       showSuccess(`Calibratie opgeslagen voor ${printer.name}.`);
       setCalibrationPrinter(null);
       setShowTestMenu(null);

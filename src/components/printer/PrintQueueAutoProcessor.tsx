@@ -4,6 +4,7 @@ import { db } from '../../config/firebase';
 import { PATHS, getPathString } from '../../config/dbPaths';
 import { transitionPrintQueueJobStatus } from '../../services/planningSecurityService';
 import { printRawUsbToDevice, isUsbDirectSupported, parseUsbId } from '../../utils/usbPrintService';
+import { getPrinterForQueueJob } from './printQueueProcessorHelpers';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -534,19 +535,17 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       return;
     }
 
-    const activePrinterId = currentPrinterId || getCurrentPrinterId(printers, usbDevice);
-    if (!activePrinterId) return;
+    const pendingJobs = printJobs
+      .filter((job) => job.status === 'pending')
+      .sort((a, b) => tsToMillis(a.createdAt) - tsToMillis(b.createdAt));
 
-    const pendingJobs = printJobs.filter((job) => {
-      if (job.status !== 'pending') return false;
-      return job.printerId === activePrinterId;
-    }).sort((a, b) => tsToMillis(a.createdAt) - tsToMillis(b.createdAt));
-
-    if (pendingJobs.length === 0) return;
+    if (pendingJobs.length === 0) {
+      return;
+    }
 
     if (!usbDevice) {
       if (!isUsbDirectSupported()) return;
-      // Probeer de USB verbinding te herstellen aangezien er werk in de wachtrij staat
+      // Laat jobs in de wachtrij liggen totdat de printer weer beschikbaar is.
       const restoreUsb = async () => {
         const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
         const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
@@ -554,7 +553,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
 
         try {
           const devices = await navigator.usb.getDevices();
-          
+
           const matchesSavedUsbDevice = (
             device: USBDevice,
             sv?: string | null,
@@ -600,7 +599,12 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       isProcessingRef.current = true;
       try {
         for (const job of pendingJobs) {
-          const routingViolation = getPrinterRoutingViolation(job, currentPrinter);
+          const targetPrinter = getPrinterForQueueJob(job, currentPrinter, printers);
+          if (!targetPrinter) {
+            continue;
+          }
+
+          const routingViolation = getPrinterRoutingViolation(job, targetPrinter);
           if (routingViolation) {
             console.warn(`[PrintQueueAutoProcessor] ${routingViolation} jobId=${job.id}`);
             continue;
@@ -633,7 +637,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             const shouldCutAtEnd = hasBatchSequence ? batchSeqIndex === batchSeqTotal : true;
             const basePayload = normalizeQueuePrintPayload(content, getJobQuantity(job), isPreBatchedJob);
             const payload = enforceCutModeOnBatchPayload(basePayload, shouldCutAtEnd, isPreBatchedJob);
-            
+
             await printRawUsbToDevice({ device: usbDevice, content: payload });
 
             await transitionPrintQueueJobStatus({

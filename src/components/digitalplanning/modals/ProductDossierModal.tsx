@@ -39,6 +39,7 @@ import { renderLabelToBitmapZpl } from "../../../utils/unifiedLabelRenderEngine"
 import ConfirmationModal from "./ConfirmationModal";
 import { formatDateTimeSafe, toDateSafe } from "../../../utils/dateUtils";
 import { useNotifications } from '../../../contexts/NotificationContext';
+import { logComplianceEvent } from '../../../services/complianceAudit';
 import {
   rejectTrackedProductFinal,
   queuePrintJob,
@@ -781,6 +782,14 @@ const ProductDossierModal = ({
         "QUALITY_REJECT_FINAL",
         `Definitieve afkeur: lot ${product.lotNumber || product.id}, order ${displayOrderId}, redenen: ${reasonLabels}${rejectNote ? `; opmerking: ${rejectNote}` : ""}`
       );
+      await logComplianceEvent(user?.uid || "system", "QUALITY_REJECT", {
+        productId: product?.id || "",
+        lotNumber: product?.lotNumber || "",
+        orderId: displayOrderId,
+        reasons: rejectReasons,
+        note: rejectNote || "",
+        source: "ProductDossierModal",
+      });
     } catch (err: unknown) {
       console.error("Fout bij definitieve afkeur:", getErrorMessage(err));
     } finally {

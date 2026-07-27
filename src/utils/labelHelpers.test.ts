@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'vitest';
-import { processLabelData } from './labelHelpers';
+import { processLabelData, resolveLabelContent } from './labelHelpers';
 
 describe('labelHelpers special elbow rules', () => {
+  test('extra code placeholders should not fall back to itemCode', () => {
+    expect(resolveLabelContent('{extraCode}', { itemCode: 'ITEM-123' })).toBe('');
+    expect(resolveLabelContent('{extraCode}', { itemCode: 'ITEM-123', extraCode: 'A1G9' })).toBe('A1G9');
+    expect(resolveLabelContent('{code}', { itemCode: 'ITEM-123' })).toBe('');
+    expect(resolveLabelContent('{code}', { itemCode: 'ITEM-123', extraCode: 'A1G9' })).toBe('A1G9');
+  });
+
   test('AB/AB elbow should force 45° and append ADJUSTING', () => {
     const result = processLabelData({
       item: 'Elbow AB/AB 300mm',

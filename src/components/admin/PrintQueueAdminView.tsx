@@ -8,6 +8,7 @@ import { Loader2, RefreshCw, Trash2, Wifi, WifiOff, AlertTriangle, CheckCircle }
 import { useTranslation } from 'react-i18next';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { requeuePrintQueueJob, deletePrintQueueJob } from '../../services/planningSecurityService';
+import PrintQueueAdminViewHeader from './PrintQueueAdminViewHeader';
 
 type TimestampLike = {
   toDate: () => Date;
@@ -192,8 +193,10 @@ const PrintQueueAdminView = () => {
 
   return (
     <div className="p-4 md:p-8">
-      <h1 className="text-3xl font-bold mb-2">{t('printQueue.managementTitle', 'Print Wachtrij Beheer')}</h1>
-      <p className="text-slate-600 mb-6">{t('printQueue.managementSubtitle', 'Monitor de status van printopdrachten en verbonden printer listeners.')}</p>
+      <PrintQueueAdminViewHeader
+        title="printQueue.managementTitle"
+        subtitle="printQueue.managementSubtitle"
+      />
 
       <div className="mb-8">
         <h2 className="text-xl font-bold mb-3">{t('printQueue.printerListeners', 'Printer Listeners')}</h2>
