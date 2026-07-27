@@ -6,11 +6,15 @@
 
 ---
 
-### Update sessie 27 July 2026 (Login Compliance Hook Fix)
+### Update sessie 27 July 2026 (Login Compliance Hook Fix & Progress Save)
 
 **1. Login compliance logging herstel:**
 - De login-flow in [src/App.tsx](src/App.tsx) gebruikte `logComplianceEvent` zonder deze import te laden, waardoor de inlogactie een runtime-fout veroorzaakte.
 - De ontbrekende import is toegevoegd zodat succesvolle en mislukte inlogpogingen weer correct via de compliance-audit worden geregistreerd.
+
+**2. Voortgang opgeslagen:**
+- De actuele fixes zijn lokaal gecommit met commit `a618246` en vastgelegd in de repo-status voor verdere voortgang.
+- De wijzigingen zijn gerelateerd aan compliance-logging in de login-flow en de lot-sequence-helper in de productie-startmodal.
 
 ### Update sessie 26 July 2026 (Planning Sidebar React Key Fix & Compliance Auditing P1)
 
