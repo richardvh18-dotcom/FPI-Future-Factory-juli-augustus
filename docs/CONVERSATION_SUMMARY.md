@@ -1,4 +1,5 @@
 ### Chatvoorkeuren
+
 - Standaard antwoorden in het Nederlands.
 - Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md).
 - Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
@@ -6,13 +7,270 @@
 
 ---
 
-### Update sessie 27 July 2026 (Component tests centralisatie)
+## Dagupdate 27 juli 2026
+
+### P3 MazakView Adjust Left Panel + Request Body Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is het volledige linker invoerblok van de “Ordernummer wijzigen” modal opgesplitst naar stateless component MazakAdjustOrderModalLeftPanel.
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de body-sectie van de “Verzoek nieuw ordernummer” modal opgesplitst naar stateless component MazakAdjustRequestModalBody.
+- Beide extracties zijn als grotere gecombineerde batch uitgevoerd, met ongewijzigde zoek-/selectieflow, redenvelden en modalgedrag.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Adjust Preview + Request Actions Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de rechter preview-sectie van de “Ordernummer wijzigen” modal opgesplitst naar stateless component MazakAdjustPreviewPanel.
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de action-bar van de “Verzoek nieuw ordernummer” modal opgesplitst naar stateless component MazakAdjustRequestModalActions.
+- Beide extracties zijn in één gecombineerde P3-batch uitgevoerd om de adjust-flow sneller te modulariseren, zonder wijziging van submitflow, disable-logica of previewgedrag.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Adjust Action Bar Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de onderste action-bar van de “Ordernummer wijzigen” modal opgesplitst naar stateless component MazakAdjustOrderModalActions.
+- De bestaande disable-logica, submit-flow en knopweergave (Annuleren / Wijzigen & Printen) zijn functioneel ongewijzigd behouden.
+- De adjust-modal rendersectie is hiermee verder vereenvoudigd, met behoud van bestaand modal- en printgedrag.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Adjust Modal Header Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de gedeelde header van beide adjust-modals opgesplitst naar stateless component MazakAdjustModalHeader.
+- De bestaande titelweergave, lotregel en sluitknop met disabled-state zijn functioneel ongewijzigd behouden voor zowel “Ordernummer wijzigen” als “Verzoek nieuw ordernummer”.
+- De adjust-modal rendersectie is hiermee compacter en consistenter opgebouwd, zonder wijziging van modalflow of submitlogica.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Free Label Form Panel Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de volledige free-label form-card wrapper opgesplitst naar stateless component MazakFreeLabelFormPanel.
+- De eerder geëxtraheerde subcomponenten (textvelden, alignment, sizing en acties) worden nu centraal gecomposeerd in dit form-panel, met ongewijzigde callbacks en gedrag.
+- De hoofd-renderflow van `activeTab === "free"` is hierdoor vrijwel volledig declaratief/compositioneel gemaakt zonder wijziging van businesslogica.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Free Label Textvelden Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) zijn de free-label invoervelden voor template-naam en vrije tekst opgesplitst naar stateless component MazakFreeLabelTextFields.
+- De bestaande inputwaarden, max-lengths en placeholdergedrag zijn functioneel ongewijzigd behouden via callbacks naar de hoofdcomponent.
+- De free-tab renderflow is hiermee verder opgeschoond en modulair opgebouwd samen met de eerder geëxtraheerde alignment-, sizing- en actiecomponenten.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Free Label Sizing Velden Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) zijn de free-label velden voor lettergrootte en aantal opgesplitst naar stateless component MazakFreeLabelSizingFields.
+- De bestaande validatie-/clamp-logica voor lettergrootte (max 75) en aantal (1-50) is functioneel ongewijzigd behouden via callbacks vanuit de hoofdcomponent.
+- De free-tab renderflow is hiermee verder gemodulariseerd, met behoud van bestaande UI- en printgedrag.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Free Label Alignment Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de free-label uitlijningselector (links/midden/rechts) opgesplitst naar stateless component MazakFreeLabelAlignmentSelector.
+- De bestaande selectiegedragingen en actieve stijltoestand per alignment-optie zijn functioneel ongewijzigd behouden; de wijziging is puur presentational.
+- De free-tab renderflow is hiermee verder gemodulariseerd en consistenter met de eerdere P3-extracties.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Free Label Acties Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) zijn de free-label actieknoppen (print + template opslaan) opgesplitst naar stateless component MazakFreeLabelActions.
+- De bestaande knopstates, disable-logica en count-weergave zijn functioneel ongewijzigd behouden; de wijziging is puur presentational.
+- De renderflow van de free-tab is hiermee verder opgeschoond en sluit aan op de eerdere componentextracties in dezelfde view.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Free Label Preview Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de free-tab etiket previewkaart in het rechterpaneel opgesplitst naar stateless component MazakFreeLabelPreviewPanel.
+- De bestaande preview-logica, placeholdertekst en printer-DPI doorvoer zijn functioneel ongewijzigd behouden; de wijziging is puur presentational.
+- De renderflow van activeTab === "free" is hiermee verder opgeschoond en consistenter met eerdere componentextracties.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Free Label Header Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de rechterpaneel-header van de free-label tab (100x25 kaart) opgesplitst naar stateless component `MazakFreeLabelHero`.
+- De bestaande titel/subtitel/formatweergave is functioneel ongewijzigd behouden; de wijziging is puur presentational.
+- De hoofd-renderflow van `activeTab === "free"` is hiermee compacter en consistenter met eerdere MazakView-opsplitsingen.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Placeholder Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is het no-selection placeholderpaneel in de rechterkolom opgesplitst naar stateless component `MazakEmptySelectionPlaceholder`.
+- De icon/tekst-keuze per tab (`inbox`, `planning`, `adjust`, `free`, `process`) is functioneel gelijk gebleven en nu centraal beheerd in één component.
+- Wijziging is beperkt tot presentational refactor om de hoofd-renderflow compacter te maken.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Adjust Rechterpaneel Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is het adjust-rechterpaneel voor een geselecteerd lot opgesplitst naar stateless component `MazakAdjustSelectionPanel`.
+- De bestaande acties (ordernummer wijzigen en verzoek nieuw ordernummer) zijn functioneel ongewijzigd behouden en als callbacks doorgegeven.
+- De hoofdcomponent is hiermee compacter geworden in de `activeTab === "adjust"` renderflow, zonder wijziging van businesslogica of modalgedrag.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Active Lots Panel Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is het blok met actieve lotnummers bij geselecteerde planningorders opgesplitst naar stateless component `MazakPlanningActiveLotsPanel`.
+- De lot-selectieflow (select planninglot, reset planningselectie, switch naar juiste tab op basis van printstatus) is ongewijzigd behouden en nu via een callback aan de subcomponent gekoppeld.
+- Wijziging is beperkt tot presentational/componentstructuur voor betere leesbaarheid van het planning-detailpad.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Rechterpaneel Header Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is het rechterpaneel-headerblok voor geselecteerde producten opgesplitst naar stateless component `MazakSelectedProductHero`.
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is het rechterpaneel-headerblok voor geselecteerde planningorders opgesplitst naar stateless component `MazakSelectedPlanningOrderHero`.
+- De bestaande renderpaden voor acties en detailinformatie blijven functioneel gelijk; alleen de presentatielaag is compacter en herbruikbaarder gemaakt.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Planning/Adjust Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de planningkaart in de linker lijst opgesplitst naar een stateless component `MazakPlanningOrderCard`.
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de adjust-lotkaart opgesplitst naar een stateless component `MazakAdjustListItemCard`.
+- De process-lijstrender is geharmoniseerd naar `MazakListItemCard`, zodat alle lijsttabs hetzelfde kaartpatroon gebruiken en er geen impliciete oude `renderItem`-afhankelijkheid meer is.
+- Wijzigingen zijn bewust beperkt tot presentational extractie en renderpadharmonisatie, zonder wijziging van business- of Firestore-logica.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 MazakView Any-reductie Label Flow
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) zijn de resterende `any`-casts in de label/template-flow gericht opgeschoond zonder functionele wijziging.
+- `filterLabelsByProduct(...)` en `resolveLinkedTemplateChain(...)` gebruiken nu directe, bestaande typed input i.p.v. `as any` / `as any[]` casts.
+- De vrije-label template-element mapping gebruikt nu een `unknown` + `Record<string, unknown>` guard i.p.v. `element: any`.
+- Calls naar `renderLabelToBitmapZpl(...)` zijn opgeschoond van `template/data as any` en van `(templateToUse as any)?.width/height` naar direct getypeerde toegang.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+- `grep -n "\\bany\\b"` op [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geeft geen resterende hits.
+
+### P3 MazakView UI Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is een nieuwe stateless UI-opsplitsing uitgevoerd zonder functionele wijziging.
+- De tabnavigatie is geïsoleerd naar een aparte presentational component `MazakTabNavigation`.
+- De standaard productkaartweergave is geïsoleerd naar een aparte presentational component `MazakListItemCard`.
+- In de hoofdcomponent is een centrale `handleSelectTab` helper toegevoegd, zodat tabwissels en reset-acties op één plek beheerd worden.
+- Daarnaast is `activeTab` expliciet getypeerd als `MazakTab` en is `getItemNominalDiameter` opgeschoond van een expliciete `any`-parameter naar een getypeerde record-variant.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 AdminReportsView UI Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/admin/AdminReportsView.tsx](src/components/admin/AdminReportsView.tsx) is een extra stateless UI-opsplitsing uitgevoerd zonder functionele wijziging.
+- De databron-indicator is geïsoleerd naar een aparte presentational component `DataSourceBadge`.
+- De header-acties (ATPS Dry-run, ATPS Live, Monitor en CSV/Excel/PDF exportknoppen) zijn geïsoleerd naar een aparte presentational component `ReportHeaderActions`.
+- De hoofdcomponent is hierdoor compacter en beter leesbaar, met dezelfde runtime-gedragingen en bestaande handlers.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/admin/AdminReportsView.tsx](src/components/admin/AdminReportsView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### P3 WorkstationHub + ActiveProductionView Type Cleanup
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/WorkstationHub.tsx](src/components/digitalplanning/WorkstationHub.tsx) is een eerste gerichte type-opschoning doorgevoerd om expliciete `any`-casts in de hoofdrender te reduceren, zonder functionele wijziging.
+- Nieuwe lokale types toegevoegd voor startopties/resultaat, routingresultaat, payloads voor post-processing/repair en downtime-state.
+- `activeDowntime` is omgezet van `useState<any>` naar een getypeerde state (`DowntimeRecord | null`).
+- De helper `mapOrderDoc` is omgezet van `docSnap: any` naar een expliciet getypeerde `DocSnapLike`.
+- In de content-render zijn meerdere `as any` casts verwijderd bij props naar `Nabewerken`, `ActiveProductionView`, `GereedView`, `MazakView`, `LossenView` en `BM01Hub`.
+- In [src/components/digitalplanning/views/ActiveProductionView.tsx](src/components/digitalplanning/views/ActiveProductionView.tsx) zijn alle resterende `any`-types vervangen door expliciete lokale types (`ActiveUnit`, `SeriesHeaderUnit`, `SmartSuggestion`, `MaterialInfo` en getypeerde callback-options).
+- De resterende `as any` datumcasts in [src/components/digitalplanning/WorkstationHub.tsx](src/components/digitalplanning/WorkstationHub.tsx) zijn verwijderd door datumvelden consistent als `DateValue` te typeren.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/WorkstationHub.tsx](src/components/digitalplanning/WorkstationHub.tsx) geven geen nieuwe fouten.
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/views/ActiveProductionView.tsx](src/components/digitalplanning/views/ActiveProductionView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+- `grep -n "\\bany\\b"` op beide bestanden geeft geen resultaten meer.
+- `npx tsc --noEmit` uitgevoerd; er zijn bestaande projectbrede TypeScript-fouten aanwezig buiten deze wijziging.
+
+### Component tests centralisatie
+
 
 - De bestaande componenttests zijn samengebracht onder één centrale structuur in [src/test](src/test), met submappen voor admin-, planning- en digitalplanning-componenten.
 - De relevante testbestanden zijn verplaatst naar [src/test/components](src/test/components) en de imports zijn aangepast zodat ze zonder extra configuratie blijven werken.
 - Verificatie uitgevoerd met `npx vitest run src/test/components/**/*.test.tsx`; 4 testbestanden en 4 tests zijn geslaagd.
 
-### Update sessie 27 July 2026 (Print Queue Fallback & Regression Test)
+### Print Queue Fallback & Regression Test
+
 
 **5. FL-label Extra Code fallback fix:**
 - De label-placeholder resolver in [src/utils/labelHelpers.tsx](src/utils/labelHelpers.tsx) is aangepast zodat `{extraCode}` en `{code}` alleen worden gevuld met een echte extraCode/code-waarde en niet meer terugvallen op `itemCode`.
@@ -37,7 +295,23 @@
 - De gecreëerde queue document bevat de verwachte metadata voor order, lotnummer, printer, requester en label-parameters.
 - Na aanvullende validatie is bevestigd dat opeenvolgende jobs achter elkaar correct in de wachtrij terechtkomen en dat de wachtrij persistent blijft, ook wanneer de printer tijdelijk niet beschikbaar is.
 
-### Update sessie 26 July 2026 (Planning Sidebar React Key Fix & Compliance Auditing P1)
+
+## Dagupdate 26 juli 2026
+
+### P3 MazakView Free Label Form Panel Opsplitsing
+
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits):**
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) is de volledige free-label form-card wrapper opgesplitst naar stateless component MazakFreeLabelFormPanel.
+- De eerder geëxtraheerde subcomponenten (textvelden, alignment, sizing en acties) worden nu centraal gecomposeerd in dit form-panel, met ongewijzigde callbacks en gedrag.
+- De hoofd-renderflow van `activeTab === "free"` is hierdoor vrijwel volledig declaratief/compositioneel gemaakt zonder wijziging van businesslogica.
+
+**Validatie:**
+- Bestandsspecifieke diagnostics voor [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) geven geen nieuwe fouten.
+- `npm run -s enforce:new-ts` succesvol uitgevoerd.
+
+### Planning Sidebar React Key Fix & Compliance Auditing P1
+
 
 **2. Compliance Auditing P1 geïmplementeerd:**
 - Structured compliance events toegevoegd voor inlogsucces/inlogfout, exporten van auditlogs (CSV/PDF), definitieve afkeuringen en tijdelijke afkeuringen.
@@ -55,7 +329,8 @@
 
 ---
 
-### Update sessie 26 July 2026 (Planning Sidebar React Key Fix)
+### Planning Sidebar React Key Fix
+
 
 **1. React Key Warning in Planning Sidebar opgelost:**
 - De duplicate React key waarschuwingen in de planninglijst zijn opgelost door elke sidebar-rij een unieke, stabiele sleutel te geven op basis van order-identiteit, item-identiteit en index.
@@ -63,9 +338,10 @@
 
 ---
 
-### Update sessie 26 July 2026 (Glas- & Snijtekening Knop Zichtbaarheid voor T-Stukken)
+### Glas- & Snijtekening Knop Zichtbaarheid voor T-Stukken
 
-**Datum:** 26 July 2026 | **Versie:** `0.1.117` | **Branch:** `main`
+
+**Datum:** 26 juli 2026 | **Versie:** `0.1.117` | **Branch:** `main`
 
 **1. Conditionele Zichtbaarheid Glas- & Snijtekening Knop (`OrderDetail.tsx` & `TerminalPlanningView.tsx`):**
 - **T-Stuk Detectie (`isTeeOrder` / `isSelectedOrderTee`)**: De knop **"📐 Glas- & Snijtekening"** in het rechter detailscherm van de Planning en in de Terminal-weergave is nu uitsluitend zichtbaar voor T-stukken (producten waarvan de code/omschrijving begint met `T-`, `T_`, `T ` of trefwoorden zoals `TEE`, `T-STUK`, `WYE`, `CROSS`, `UN-TEE`, `EQ-TEE`, `EQUAL-TEE`, `UNEQUAL-TEE` bevat).
@@ -74,9 +350,10 @@
 
 ---
 
-### Update sessie 26 July 2026 (IndexedDB Offline Persistence Her-activatie & Quota Penalty Reset)
+### IndexedDB Offline Persistence Her-activatie & Quota Penalty Reset
 
-**Datum:** 26 July 2026 | **Versie:** `0.1.116` | **Branch:** `main`
+
+**Datum:** 26 juli 2026 | **Versie:** `0.1.116` | **Branch:** `main`
 
 **1. Onmiddellijke Her-activatie van Offline IndexedDB Persistence (`src/config/firebase.ts`):**
 - **Persistence Penalty Reset**: Bij een versiebump verwijdert de app nu automatisch de eventuele `FIRESTORE_PERSISTENCE_DISABLED_UNTIL_KEY` sleutel uit `localStorage`. Hierdoor vervalt de 24-uurs geheugencache straf (die eerder was ingesteld tijdens de `QuotaExceededError` van de browser), en schakelt Firestore direct weer over op de snelle **IndexedDB offline persistence**.
@@ -84,9 +361,10 @@
 
 ---
 
-### Update sessie 26 July 2026 (Tablet Offline Working & IndexedDB Auto-Recovery Fix)
+### Tablet Offline Working & IndexedDB Auto-Recovery Fix
 
-**Datum:** 26 July 2026 | **Versie:** `0.1.115` | **Branch:** `main`
+
+**Datum:** 26 juli 2026 | **Versie:** `0.1.115` | **Branch:** `main`
 
 **1. Oplossing voor Tablet Crash / Cache Corruptie na Versiebump & Slechte WiFi:**
 - **`safeSetLocalStorage` Utility & Auto-Pruning (`src/config/firebase.ts`)**: `localStorage.setItem` omgevormd naar een veilige utility met automatische opschoning. Bij een `QuotaExceededError` (wanneer het geheugen van de tablet-browser vol zit met oude tijdelijke data) verwijdert de app automatisch overbodige tijdelijke sleutels en isoleert het schrijven, waardoor de applicatie 100% crash-vrij blijft zonder dat de gebruiker de geschiedenis hoeft te wissen.
@@ -101,9 +379,10 @@
 
 ---
 
-### Update sessie 26 July 2026 (TeamleaderHub "Te laat" Overdue Filter & Live Docs Integration)
+### TeamleaderHub "Te laat" Overdue Filter & Live Docs Integration
 
-**Datum:** 26 July 2026 | **Versie:** `0.1.114` | **Branch:** `main`
+
+**Datum:** 26 juli 2026 | **Versie:** `0.1.114` | **Branch:** `main`
 
 **1. "Te laat (maken/leveren)" Filter in TeamleaderHub Volledige Lijst:**
 - Toegevoegd in `PlanningSidebar.tsx`: Filter optie `"overdue"` in de sorteer/filter selectiebalk naast `"Week + Backlog"`.
@@ -123,7 +402,7 @@
 
 ---
 
-**Datum:** 22 July 2026 | **Branch:** main
+**Datum:** 22 juli 2026 | **Branch:** main
 
 **GitHub Actions Runtime & E2E Fix:**
 - Alle GitHub Actions workflows (`firebase-hosting-live.yml`, `firebase-hosting-preview.yml`, `auto-preview.yml`, `tests.yml`) geüpdatet om Node.js 22 te gebruiken ter vervanging van de gedepreceerde Node.js 20 runner runtime.
@@ -131,9 +410,13 @@
 
 ---
 
-### Update sessie 22 July 2026 (Live Documentation Portal & WebUSB Queue Fixes)
 
-**Datum:** 22 July 2026 | **Branch:** main
+## Dagupdate 22 juli 2026
+
+### Live Documentation Portal & WebUSB Queue Fixes
+
+
+**Datum:** 22 juli 2026 | **Branch:** main
 
 **1. Live Documentatie Engine Overhaul:**
 - `LiveDocumentationView.tsx` en `ProjectStructureExpertView.tsx` geüpdatet met een dynamische bestandstroom die alle mappen (inclusief `architecture/` en `archief/`) automatisch uitleest via `import.meta.glob`.
@@ -154,68 +437,13 @@
 
 ---
 
-### 🛠️ Technische Audit Actiepunten
 
-**1. Code Quality & Linting**
-   - [x] Inventariseer en verwijder `eslint-disable` comments (ongeveer 31 bestanden).
+## Dagupdate 19 juli 2026
 
-**2. Type Safety (TypeScript)**
-   - [x] Reduceer het gebruik van `any` types (nu ~934) via sterke typing, generics en runtime validatie. *(Fase 1-3 afgerond, UI componenten gedelegeerd naar toekomstige refactors)*
+### Factory Configuraties Migratie
 
-**3. Testdekking & Kwaliteit (Vitest / Playwright)**
-   - [x] Baseline bepaald en gefixeerd (vitest configuratie wees naar `.js` in plaats van `.ts`).
-   - [x] GitHub Actions ingesteld voor codekwaliteit (CodeQL en Dependabot).
-   - [x] Extra tests geschreven voor core logic (bijv. `automationEngine.ts`, `planningProgress.ts`, `labelHelpers.tsx`) waardoor integratietest-dekking op de kritieke onderdelen structureel omhoog is gegaan.
 
-**4. Architectuur & Refactoring**
-   - [x] Documenteer architectuur met module-, sequence- en deployment diagrammen (aangemaakt in `/docs/architecture`).
-   - [x] Grote complexe componenten opsplitsen in kleinere componenten (Gedelegeerd naar Post-Pilot Roadmap onder "Code & Component Opschoning" om regressie voor de launch te voorkomen).
-
----
-
-### 📝 Openstaande Taken & Geplande Roadmap (Post-Pilot / Productie)
-
-**Uitvoerbare todo-checklist (prioriteiten):**
-
-**P1 — ISO 9001 / 27001 Compliancy (Afronding)**
-   - [ ] Audit events voor CSV/PDF exports en mislukte UI-inlogpogingen consistent schrijven naar de WORM audit trail.
-   - [ ] NC-afkeur-redenen verplicht loggen met actie (Scrap/Rework).
-   - [ ] Wijzigingen aan specificaties en stuktijden registreren met een verplichte reden van wijziging.
-   - [ ] Machine-kalibraties en vrijgaves in de audit trail opnemen.
-   - [ ] Testen en review van de volledige compliance-flow in productieachtige scenario's.
-
-**P2 — Label Template Engine (Dynamische Label-generatie UI)**
-   - [ ] Hardcoded label-logica uit `labelHelpers.tsx` verplaatsen naar een database-model met versiebeheer.
-   - [ ] Backend/API-opzet maken voor opslag en ophalen van labelregels per product- of template-type.
-   - [ ] UI Builder ontwerpen in de beheeromgeving voor conditionele regels en tekstsamenvoegingen.
-   - [ ] Validatie- en fallback-regels maken voor onbekende of gewijzigde productvarianten.
-   - [ ] Extra Code placeholder-resolutie voor FL-labels harden en standaardiseren (zodat `{extraCode}` en `{code}` niet meer terugvallen op `itemCode`; regressietest toegevoegd).
-   - [ ] Testen met realistische labels en productgegevens zonder code-deploys.
-
-**P3 — Code & Component Opschoning (Gedelegeerde Audits)**
-   - [ ] Grote componenten zoals `MazakView.tsx`, `WorkstationHub.tsx` en `AdminReportsView.tsx` opsplitsen in kleinere modulaire subcomponenten.
-   - [ ] Stateless UI en custom hooks isoleren om herbruikbaarheid en onderhoudbaarheid te verbeteren.
-   - [ ] De overgebleven ~934 `any` types in React `.tsx` bestanden stapsgewijs vervangen door concrete types.
-   - [ ] Per component een korte kwaliteitscheck uitvoeren met linting, typecheck en relevante tests.
-
-**1. ISO 9001 / 27001 Compliancy (Afronding)**
-   - **27001 Toegang & Beveiliging:** Zorg dat specifieke randgevallen (exports van CSV/PDF, mislukte inlogpogingen via de UI) overal consistent worden weggeschreven naar de vernieuwde WORM audit trail.
-   - **9001 Kwaliteit & Traceability:** Reden van afkeur (NC) verplicht loggen met actie (Scrap/Rework), wijzigingen aan specificaties/stuktijden vastleggen met 'reden van wijziging', en machine-kalibraties/vrijgaves loggen.
-
-**2. Label Template Engine (Dynamische Label-generatie UI)**
-   - Hardcoded logica uit `labelHelpers.tsx` (bijv. teksttransformaties zoals `EMT 30/10` -> `EMT Pu 30 mcw PN10 bar`) verplaatsen naar een database-model.
-   - **UI Builder:** Een interface ontwerpen in de beheeromgeving waarmee gebruikers zelf regels kunnen samenstellen (bijv. conditionele if/then/else en tekst-samenvoegingen).
-   - Flexibiliteit bieden voor toekomstige productwijzigingen en afkortingen (zoals "mcw" of "Pu") zonder code te hoeven deployen.
-
-**3. Code & Component Opschoning (Gedelegeerde Audits)**
-   - **UI Refactoring:** Extreem grote componenten (zoals `MazakView.tsx`, `WorkstationHub.tsx` en `AdminReportsView.tsx` van >100KB) opsplitsen in kleine modulaire subcomponenten (stateless UI en custom hooks).
-   - **Type Safety in UI:** De overgebleven ~934 `any` types binnen de React (.tsx) bestanden structureel vervangen door gedefinieerde props, state en generics.
-
----
-
-### Update sessie 19 July 2026 (Factory Configuraties Migratie)
-
-**Datum:** 19 July 2026 | **Branch:** FPiFF-June-rolout / main
+**Datum:** 19 juli 2026 | **Branch:** FPiFF-June-rolout / main
 
 **1. Systeem Configuraties Gemigreerd naar Firestore:**
 - Hardcoded waarden uit `constants.ts` (zoals product types, diameters, drukken en connection types) zijn overgezet naar Firestore-collecties (`future-factory/config/...`).
@@ -226,9 +454,10 @@
 
 ---
 
-### Update sessie 19 July 2026 (Opschonen Documentatie & Handleidingen)
+### Opschonen Documentatie & Handleidingen
 
-**Datum:** 19 July 2026 | **Branch:** FPiFF-June-rolout / main
+
+**Datum:** 19 juli 2026 | **Branch:** FPiFF-June-rolout / main
 
 **1. Projectstructuur en Documentatie geoptimaliseerd:**
 - Bestaande (verouderde of sterk gefragmenteerde) handleidingen verplaatst naar een nieuwe `docs/archief/` map om overzicht te creëren.
@@ -243,9 +472,13 @@
 
 ---
 
-### Update sessie 18 July 2026 (Supervisor, Audit Logs & Database Explorer)
 
-**Datum:** 18 July 2026 | **Branch:** FPiFF-June-rolout / main
+## Dagupdate 18 juli 2026
+
+### Supervisor, Audit Logs & Database Explorer
+
+
+**Datum:** 18 juli 2026 | **Branch:** FPiFF-June-rolout / main
 
 **1. ISO 9001 / 27001 Compliancy & Audit Logs:**
 - **Metadata verrijking (`logService.ts` / `firebase.ts`):** Alle audit logs bevatten nu standaard extra metadata zoals IP-adres, userAgent, sessionId, en impersonatorId voor striktere compliancy.
@@ -266,9 +499,13 @@
 
 ---
 
-### Update sessie 11 July 2026 (Roadmap & Robot Integratie)
 
-**Datum:** 11 July 2026 | **Branch:** master / main
+## Dagupdate 11 juli 2026
+
+### Roadmap & Robot Integratie
+
+
+**Datum:** 11 juli 2026 | **Branch:** master / main
 
 **Uitgevoerd:**
 - Onderzocht: De Rodomach wikkelrobot workflow via `WM18_Rekenprogramma_versie_12.xlsm`.
@@ -281,7 +518,10 @@
 
 ---
 
-### Samenvatting sessie 10 July 2026 (geconsolideerd)
+
+## Dagupdate 10 juli 2026
+
+### Samenvatting sessie (geconsolideerd)
 
 Deze dag stond volledig in het teken van stabiliteit, performance en printpariteit tussen Print Stations, Sidebar printers en ProductionStart, met als hoofdthema een betrouwbare Order Labels-flow voor BH-machines.
 
@@ -337,9 +577,13 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 09 July 2026 (Fix LOSSEN12/18 Firestore pad — v0.1.95)
 
-**Datum:** 09 July 2026 | **Branch:** FPiFF-June-rolout → main
+## Dagupdate 9 juli 2026
+
+### Fix LOSSEN12/18 Firestore pad — v0.1.95
+
+
+**Datum:** 9 juli 2026 | **Branch:** FPiFF-June-rolout → main
 
 **Probleem:**
 - Werkstation `LOSSEN12/18` kon geen orders laden: `FirebaseError: Invalid collection reference. Collection references must have an odd number of segments, but future-factory/production/digital_planning/Fittings/machines/40LOSSEN12/18/orders has 8.`
@@ -356,9 +600,13 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 08 July 2026 (Counter sync fix BH18_2628)
 
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+## Dagupdate 8 juli 2026
+
+### Counter sync fix BH18_2628
+
+
+**Datum:** 8 juli 2026 | **Branch:** FPiFF-June-rolout
 
 **Probleem:**
 - Counterdocument `future-factory/production/counters/BH18_2628` liep niet correct mee.
@@ -380,9 +628,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 08 July 2026 (Release 0.1.93)
+### Release 0.1.93
 
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Datum:** 8 juli 2026 | **Branch:** FPiFF-June-rolout
 
 **Samenvatting:**
 - Hotfix doorgevoerd voor productie-start printaantal: de startlabel queue job neemt nu expliciet het gevraagde aantal labels over vanuit de startmodal.
@@ -399,9 +648,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 08 July 2026 (Release 0.1.92)
+### Release 0.1.92
 
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Datum:** 8 juli 2026 | **Branch:** FPiFF-June-rolout
 
 **Samenvatting:**
 - Commit en push uitgevoerd: `d4718d2` met printflow-fixes voor ProductionStartModal en queue auto-processor.
@@ -416,9 +666,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 08 July 2026 (Release 0.1.87)
+### Release 0.1.87
 
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Datum:** 8 juli 2026 | **Branch:** FPiFF-June-rolout
 
 **Samenvatting:**
 - Versie verhoogd van `0.1.86` naar `0.1.87`.
@@ -428,9 +679,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 08 July 2026 (Hotfix: lotnummer spinner blijft actief in ProductionStartModal)
+### Hotfix: lotnummer spinner blijft actief in ProductionStartModal
 
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Datum:** 8 juli 2026 | **Branch:** FPiFF-June-rolout
 
 **Probleem:**
 - In auto mode bleef bij `Huidig lotnummer` soms een draai-icoon zichtbaar terwijl het lotnummer al stond.
@@ -447,9 +699,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 08 July 2026 (Hotfix: start blijft hangen op 'Bezig met starten' + print 400 fail)
+### Hotfix: start blijft hangen op 'Bezig met starten' + print 400 fail
 
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Datum:** 8 juli 2026 | **Branch:** FPiFF-June-rolout
 
 **Probleem:**
 - In sommige gevallen bleef de progress-toast hangen op `Bezig met starten...`.
@@ -468,9 +721,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 08 July 2026 (Hotfix: geen labelprint na succesvolle start in ProductionStartModal)
+### Hotfix: geen labelprint na succesvolle start in ProductionStartModal
 
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Datum:** 8 juli 2026 | **Branch:** FPiFF-June-rolout
 
 **Probleem:**
 - Bij starten vanuit `ProductionStartModal` ging de order correct naar Wikkelen, maar labels werden in sommige gevallen niet gequeued/geprint terwijl de voortgang wel liep.
@@ -486,9 +740,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 08 July 2026 (Deploy safety-check tegen Firebase 404 door incomplete build)
+### Deploy safety-check tegen Firebase 404 door incomplete build
 
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Datum:** 8 juli 2026 | **Branch:** FPiFF-June-rolout
 
 **Probleem:**
 - Er was risico op deploy van een onvolledige `dist` (bij afgebroken of partiele build), wat kan leiden tot Firebase default "Page Not Found" of ontbrekende assets in productie.
@@ -510,9 +765,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 08 July 2026 (Tablet WiFi soft-recovery + snellere client bootstrap)
+### Tablet WiFi soft-recovery + snellere client bootstrap
 
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Datum:** 8 juli 2026 | **Branch:** FPiFF-June-rolout
 
 **Probleem:**
 - Op tablets werd bij kortstondig zwakke of wegvallende WiFi de app soms hard ververst.
@@ -542,9 +798,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 08 July 2026 (Hotfix Firestore QuotaExceeded crash-loop)
+### Hotfix Firestore QuotaExceeded crash-loop
 
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Datum:** 8 juli 2026 | **Branch:** FPiFF-June-rolout
 
 **Probleem:**
 - Productie gaf `QuotaExceededError` op Firestore mutation persistence (`firestore_mutations_...`) gevolgd door een `INTERNAL ASSERTION FAILED: Unexpected state` crash-loop en vele unhandled rejections.
@@ -564,9 +821,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 08 July 2026 (ProductionStartModal lot/start regressie fix + deploy)
+### ProductionStartModal lot/start regressie fix + deploy
 
-**Datum:** 08 July 2026 | **Branch:** FPiFF-June-rolout
+
+**Datum:** 8 juli 2026 | **Branch:** FPiFF-June-rolout
 
 **Doel:**
 - Crashes en vertragingen rond offline/local cache in startflows verminderen.
@@ -600,9 +858,13 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (BM01 NH Tab Print Reset)
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+## Dagupdate 7 juli 2026
+
+### BM01 NH Tab Print Reset
+
+
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Het toevoegen van een reset-mogelijkheid na het printen van het QR-overzicht in de Naharding (NH) tab op de BM01 hub, analoog aan de "Gereed voor LN" export in de Teamleader hub. Dit voorkomt dat reeds geprinte lots bij een volgende printactie op dezelfde dag opnieuw worden meegenomen.
@@ -617,10 +879,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (QC Steekproef in Lotnummer Controle Historie)
+### QC Steekproef in Lotnummer Controle Historie
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Zorgen dat QC-steekproeven (die definitief afgekeurd worden) correct worden meegenomen in de Lotnummer Controle (Historie) export, om te voorkomen dat deze lotnummers als gaten/ontbrekend worden gerapporteerd.
@@ -631,10 +893,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Fix isPostProcessing ReferenceError)
+### Fix isPostProcessing ReferenceError
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Oplossen van de `ReferenceError: Cannot access 'isPostProcessing' before initialization` crash in `WorkstationHub.tsx` die ervoor zorgde dat er geen data geladen werd.
@@ -645,10 +907,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Fix Index-vrije Queries & Productlimiet)
+### Fix Index-vrije Queries & Productlimiet
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Oplossen van de lege planning op centrale hubs door het ontbreken van de vereiste status-index.
@@ -663,10 +925,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Fix Cache Wipen op Startup)
+### Fix Cache Wipen op Startup
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Voorkomen dat de Firestore cache bij elke paginalading wordt weggegooid, wat voor trage laadtijden (planningen, labels, lotnummers) zorgde op wifi.
@@ -677,10 +939,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Optimalisatie BH18 Laadtijd door Scoped Subcollecties)
+### Optimalisatie BH18 Laadtijd door Scoped Subcollecties
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Het oplossen van de trage database laadtijd op wikkelstations zoals BH18 na het terugrollen van de queries.
@@ -691,10 +953,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Fix currentStationClean ReferenceError)
+### Fix currentStationClean ReferenceError
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Oplossen van de `ReferenceError: currentStationClean is not defined` crash in de data-initialisatie van `WorkstationHub.tsx`.
@@ -705,10 +967,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (BM01 Limiet Verwijderd, Snelheidsfix & Debugging)
+### BM01 Limiet Verwijderd, Snelheidsfix & Debugging
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - De limiet van 200 producten verwijderen die oudere lots van het BM01 station drukten.
@@ -723,10 +985,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (BM01 'Te Keuren' Filter Fix)
+### BM01 'Te Keuren' Filter Fix
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Zorgen dat producten met de status of stap "Te Keuren" (te inspecteren) correct worden getoond in de BM01/eindinspectie-lijst.
@@ -737,10 +999,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Offline Persistence Weer Aangezet)
+### Offline Persistence Weer Aangezet
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Offline persistence (IndexedDB cache) weer inschakelen zodat tablets en laptops probleemloos doorwerken bij wisselende WiFi-verbindingen.
@@ -752,10 +1014,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Revert van Scoping Query Logica naar Werkende v0.1.61)
+### Revert van Scoping Query Logica naar Werkende v0.1.61
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - De query logica volledig terugrollen naar de werkende status van `v0.1.61`, met behoud van de bugfixes voor browsercrashes en render-loops.
@@ -769,10 +1031,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Subcollectie Paden voor Wikkelstations)
+### Subcollectie Paden voor Wikkelstations
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Bypassen van ontbrekende Firestore Collection Group indexes op `machine` door direct te luisteren naar de specifieke machine-subcollecties.
@@ -783,10 +1045,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Fix Oneindige Render-Loop in DigitalPlanningHub)
+### Fix Oneindige Render-Loop in DigitalPlanningHub
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Oplossen van de flikkerende schermen en het oneindig spinnende laadwiel op single-station tablets (zoals BH18).
@@ -797,10 +1059,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Uitzetten Firestore Offline Persistence & Index-Filter)
+### Uitzetten Firestore Offline Persistence & Index-Filter
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - De 20-30 seconden laadwiel-hang en lege schermen op workstations volledig verhelpen door IndexedDB persistence uit te zetten en server-side index-filtering toe te passen voor orders.
@@ -814,10 +1076,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Automatische Schoonmaak localStorage Firestore)
+### Automatische Schoonmaak localStorage Firestore
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Oplossen van hardnekkige `QuotaExceededError` crashes door `localStorage` automatisch te ontdoen van verouderde/beschadigde Firestore mutatie-keys.
@@ -828,10 +1090,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Tracked Products Query Optimalisatie)
+### Tracked Products Query Optimalisatie
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Database-laadtijd gigantisch versnellen door overbodige documentdownloads van de complete `tracked_products` tabel in te perken.
@@ -843,10 +1105,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Limiet op Firestore Cache-grootte)
+### Limiet op Firestore Cache-grootte
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Voorkomen van `QuotaExceededError` in de browser door een oneindig groeiende Firestore cache (`CACHE_SIZE_UNLIMITED`).
@@ -857,10 +1119,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Fix Firestore Assertion Crash)
+### Fix Firestore Assertion Crash
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Oplossen van de Firestore assertion error (`Unexpected state`) die optrad bij het laden van BH18 door IndexedDB cache conflict (gelijktijdig onSnapshot op specifieke collectie en collectionGroup).
@@ -872,10 +1134,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Database Load Optimalisatie - BH12 & BH18)
+### Database Load Optimalisatie - BH12 & BH18
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Het laden van de database op werkstations versnellen (vooral BH18), omdat de `collectionGroup('orders')` query de volledige database downloadde.
@@ -886,10 +1148,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 07 July 2026 (Deployment)
+### Deployment
 
 
-**Datum:** 07 July 2026 | **Branch:** pilot-dev
+**Datum:** 7 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Versie verhogen en firebase/hosting deployen.
@@ -900,10 +1162,13 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 06 July 2026 (Printer Beheer - Afdelingen & Locatie Label)
+
+## Dagupdate 6 juli 2026
+
+### Printer Beheer - Afdelingen & Locatie Label
 
 
-**Datum:** 06 July 2026 | **Branch:** pilot-dev
+**Datum:** 6 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Printers in Printer Beheer structureren in inklapbare categorieën (afdelingen uit de factory config).
@@ -918,8 +1183,7 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 ---
 
 
-
-**Datum:** 06 July 2026 | **Branch:** pilot-dev
+**Datum:** 6 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Zorgen dat álle factory-stations gekoppeld kunnen worden aan een printer, inclusief de stations waar niet direct op gepland wordt (zoals Mazak).
@@ -933,8 +1197,7 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 ---
 
 
-
-**Datum:** 06 July 2026 | **Branch:** pilot-dev
+**Datum:** 6 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Het oplossen van de uitvallende/grijze USB verbindingen na het ontwaken uit slaapstand (bump) of updates.
@@ -958,8 +1221,7 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 ---
 
 
-
-**Datum:** 06 July 2026 | **Branch:** pilot-dev
+**Datum:** 6 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Verbeteren van de lotnummer-generatie en handmatige overschrijvingen binnen de `ProductionStartModal`.
@@ -984,9 +1246,13 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-### Update sessie 04 July 2026 (Live Docs Integratie & Dashboard Consolidatie)
 
-**Datum:** 04 July 2026 | **Branch:** pilot-dev
+## Dagupdate 4 juli 2026
+
+### Live Docs Integratie & Dashboard Consolidatie
+
+
+**Datum:** 4 juli 2026 | **Branch:** pilot-dev
 
 **Doel:**
 - Het consolideren van alle expert-informatie (Documentatie, Projectstructuur en Master Roadmap) in één overzichtelijk dashboard.
@@ -1018,19 +1284,10 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Opschoonrapport Pilot Future-Factory (v4) - 3 juli 2026
 
-**Status:** De codebase is geaudit en opgeschoond ter voorbereiding op de pilot.
+## Dagupdate 3 juli 2026
 
-**1. Verwijderde bestanden (Dead code)**
-- \src/components/ai/AiCenterView,jsx\ (Bevatte typfout in extensie, was al opgeschoond)
-- \src/components/AiAssistantView.jsx\ (Verplaatst naar juiste map, was al opgeschoond)
-- \ite.config.js\ (Verouderd, verwijderd aangezien deze is vervangen door de \.ts\ variant)
-- \unctions/functions/package.json\ (Dubbele geneste map, was al opgeschoond)
-
----
-
-## Update sessie 3 juli 2026 (Print Modals & Nood-Etiketten Revamp)
+### Print Modals & Nood-Etiketten Revamp
 
 - De functionaliteit voor handmatig labels afdrukken ('Handmatig Aanmaken' tab) is verwijderd uit \TempLabelModal\.
 - Het toevoegen van lotnummers is nu verplaatst naar de reguliere 'Zoeken' stroom. Bij elk gevonden resultaat kan men via de knop '+ Voeg Lotnummer Toe' direct een afdeling, machine, weeknummer, volgnummer, en aantal invoeren.
@@ -1042,35 +1299,19 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 2 juli 2026 (Fix Excel Import Extra Code Matching Priority)
+
+## Dagupdate 2 juli 2026
+
+### Fix Excel Import Extra Code Matching Priority
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Fix Extra Code Overlapping in Flens Labels
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
-**1. Prioritering van `"extra code"` kolom-matching bij Excel-import**
-- In [planningImportWorker.ts](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/workers/planningImportWorker.ts) en [PlanningImportModal.tsx](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/components/digitalplanning/modals/PlanningImportModal.tsx):
-  - In de Excel-bestanden is er vaak een kolom `"Code"` (die de artikelcode bevat, bijv. `FLSTEMS0F00A10BCCFBE`) en een kolom `"Extra Code"` (die de specifieke code bevat, bijv. `A1G9`).
-  - Doordat in de zoekpatronen `"code"` vóór `"extra code"` stond, matchte het systeem de kolom `"Code"` (artikelcode) als de `extraCode`. Dit leidde ertoe dat de artikelcode in de database werd opgeslagen onder het veld `extraCode`.
-  - We hebben de volgorde aangepast naar `["extra code", "code"]`, zodat de specifiekere `"Extra Code"`-kolom altijd eerst wordt gezocht en gematcht. Als die niet bestaat, valt hij pas terug op `"Code"`.
-  - Hierdoor worden nieuwe imports nu correct ingelezen met de juiste extra codes in de database.
 
-**2. Versie bump uitgevoerd**
-- App versie verhoogd van `0.1.59` naar `0.1.60`.
-
-**Aangepaste bestanden in deze sessie:**
-- [planningImportWorker.ts](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/workers/planningImportWorker.ts) [MODIFY]
-- [PlanningImportModal.tsx](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/components/digitalplanning/modals/PlanningImportModal.tsx) [MODIFY]
-- [package.json](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/package.json) [MODIFY]
-- [version.json](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/public/version.json) [MODIFY]
-- [CONVERSATION_SUMMARY.md](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/docs/CONVERSATION_SUMMARY.md) [MODIFY]
-
----
-
-## Update sessie 2 juli 2026 (Fix Extra Code Overlapping in Flens Labels)
-
-**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
-
-### Uitgevoerd in deze sessie
 **1. Scheiding tussen `code` (Artikelcode) en `extraCode`**
 - In [labelHelpers.tsx](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/utils/labelHelpers.tsx) de fallbacks voor `code` en `extraCode` ontkoppeld:
   - Voorheen vielen `code` en `extraCode` op elkaar terug in de fallback-keten (`data.code || data.extraCode` etc.). Hierdoor werd bij flens-labels, wanneer er geen extra code was of wanneer deze juist wel was ingesteld, de artikelcode/itemCode ten onrechte getoond op de plek van de extra code (of omgekeerd).
@@ -1088,11 +1329,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 2 juli 2026 (EMT/CMT Drukklasse Formatting)
+### EMT/CMT Drukklasse Formatting
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. EMT/CMT Drukklasse Weergave Verbeterd**
 - In [labelHelpers.tsx](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/utils/labelHelpers.tsx) de parse- en formatteerlogica van EMT/CMT drukklassen aangepast:
   - Formaten zoals `EMT 30/10`, `CMT 50/15` en `FIBERMAR 15/16` worden nu automatisch omgezet naar de nieuwe structuur: `EMT/CMT Pu [X] mcw PN[Y] bar`.
@@ -1110,11 +1352,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 2 juli 2026 (Fix Batch Label Generatie in ProductionStartModal)
+### Fix Batch Label Generatie in ProductionStartModal
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Opeenvolgende labels printen bij batch productie**
 - In [ProductionStartModal.tsx](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/components/digitalplanning/modals/ProductionStartModal.tsx) de print-loop geoptimaliseerd:
   - Wanneer er bij het starten van de productie wordt gekozen voor meerdere producten (bijv. 2), werd voorheen de ZPL alleen voor het eerste lotnummer gerenderd en vervolgens 2 keer geprint.
@@ -1131,11 +1374,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 2 juli 2026 (Automatisch Hergebruik en Gaten Opvullen Volgenummers)
+### Automatisch Hergebruik en Gaten Opvullen Volgenummers
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Automatische `usedSequences` tracking & gaten opvullen**
 - In [planningTransitionService.ts](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/functions/src/services/planningTransitionService.ts) het lot-reserveringssysteem uitgebreid met een nieuw trackingveld `usedSequences` in de counters-documenten:
   - **`reserveAutoLotNumberRangeService`**: Scant nu proactief vanaf volgnummer `1` naar het eerste vrije aaneengesloten gat van de gevraagde hoeveelheid (`qty`) volgnummers dat niet in `usedSequences` voorkomt en niet botst in Firestore. Dit zorgt ervoor dat gaten door annuleringen of overgeslagen nummers direct en automatisch worden opgevuld. De gereserveerde nummers worden aan `usedSequences` toegevoegd.
@@ -1153,11 +1397,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 2 juli 2026 (Fix Ordernummer Wijzigen - Doelorder niet gevonden - Verdieping)
+### Fix Ordernummer Wijzigen - Doelorder niet gevonden - Verdieping
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Index-vrije parallelle padcontrole & extra zoekvelden toegevoegd**
 - In [planningRepository.ts](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/functions/src/repositories/planningRepository.ts) de orderzoeklogica uitgebreid:
   - In `getPlanningOrderDocById` een proactieve, parallelle document-check toegevoegd die kandidaat-paden (combinaties van Fittings/Pipes/Spools en bekende machine-IDs) direct opvraagt via `db.doc(fullPath).get()`. Dit omzeilt de Firestore collectionGroup index-restrictie en vindt direct samengestelde ID's (zoals `N20025336_40M001834EL9AEFS0ER01M0BCCJJ0`).
@@ -1180,11 +1425,15 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 1 juli 2026 (Kostenbesparing Cloud Functions & minInstances naar 0)
+
+## Dagupdate 1 juli 2026
+
+### Kostenbesparing Cloud Functions & minInstances naar 0
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. minInstances naar 0 ingesteld voor Cloud Functions**
 - In [aiInvisibleWorkerService.ts](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/functions/src/services/aiInvisibleWorkerService.ts) de parameter `minInstances: 1` gewijzigd naar `minInstances: 0` in het `AI_RUNTIME` configuratie-object. Dit voorkomt onnodige runtimekosten (keep-warm/idle fees) voor Cloud Functions.
 - De Cloud Functions zijn opnieuw uitgerold via `firebase deploy --only functions`.
@@ -1201,11 +1450,15 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 30 juni 2026 (Fix Automatisch Printen & USB Auto-Herstel)
+
+## Dagupdate 30 juni 2026
+
+### Fix Automatisch Printen & USB Auto-Herstel
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Zelfherstellend USB-verbindingsmechanisme toegevoegd**
 - In `PrintQueueAutoProcessor.tsx` toegevoegd dat wanneer er printtaken in de wachtrij verschijnen maar `usbDevice` `null` is, de processor automatisch probeert de USB-verbinding te herstellen met de meest actuele printergegevens uit `localStorage`. Dit voorkomt dat operators naar de printerpagina moeten navigeren om printen te starten.
 - Controle toegevoegd met `isUsbDirectSupported()` om fouten op niet-ondersteunde browsers of onveilige contexten te vermijden.
@@ -1225,11 +1478,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 30 juni 2026 (Git pull & .env configuratie)
+### Git pull & .env configuratie
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Git Pull en setup**
 - Lokale branch `FPiFF-June-rolout` gesynchroniseerd met de remote repository (`origin/FPiFF-June-rolout`). Deze was al up-to-date.
 - Nieuw `.env` bestand aangemaakt in de root van de workspace met de benodigde parameters voor Firebase (VITE_FIREBASE_*), Admin UIDs, en de Gemini API sleutel (VITE_GOOGLE_AI_KEY).
@@ -1240,12 +1494,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-
-## Update sessie 30 juni 2026 (Gereed voor LN tabel verduidelijkt en layout gefixt)
+### Gereed voor LN tabel verduidelijkt en layout gefixt
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. LN exportkolommen inhoudelijk verduidelijkt**
 - In `ImportExportDashboard.tsx` zijn de kolommen in de modal en lijst-PDF hernoemd naar:
     - `Totaal order`
@@ -1259,6 +1513,7 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 - De tabelcontainer ondersteunt nu horizontale scroll op smallere schermen (`overflow-x-auto`) met een minimale gridbreedte, zodat kolommen niet meer over elkaar heen vallen.
 
 ### Resultaat
+
 - De "Gereed voor LN" tabel leest nu duidelijker en blijft netjes uitgelijnd op zowel brede als smallere viewports.
 
 **Aangepaste bestanden in deze sessie:**
@@ -1267,11 +1522,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 30 juni 2026 (Auto-print direct na Start Order + cross-station queue op zelfde printer)
+### Auto-print direct na Start Order + cross-station queue op zelfde printer
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Auto-print start nu direct vanuit ProductionStartModal**
 - Probleem: printjobs bleven soms wachten tot iemand eerst handmatig naar Print Stations ging.
 - Fix: in `ProductionStartModal.tsx` wordt bij het queueen van labels nu direct de station->printer binding en actieve printer-id in localStorage gezet (zelfde keys als de app-brede auto-processor gebruikt).
@@ -1296,11 +1552,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 30 juni 2026 (Systeem Presentatie Demo Video)
+### Systeem Presentatie Demo Video
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Systeem Presentatie Slide 8 Aangepast**
 - De knop "Open Productie hub" is hernoemd naar "Demo".
 - Bij het klikken op de knop opent er nu een video-overlay (full screen) in plaats van te navigeren naar `/workstation`.
@@ -1318,11 +1575,15 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 28 juni 2026 (Infor ION Integratie Voorbereiding)
+
+## Dagupdate 28 juni 2026
+
+### Infor ION Integratie Voorbereiding
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Infor ION Backend Framework Opgezet**
 - Omdat de applicatie met de Infor ION API moet praten (en eventueel OAGIS BODs moet ontvangen/versturen), is de middleware structuur in de Firebase Functions backend klaargezet.
 - `axios` en `fast-xml-parser` geïnstalleerd in `functions/package.json`.
@@ -1341,9 +1602,13 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 27 juni 2026 (TypeScript Typings Fixes)
+
+## Dagupdate 27 juni 2026
+
+### TypeScript Typings Fixes
 
 ### Uitgevoerd in deze sessie
+
 **1. TypeScript Compile Errors Fixed**
 - **Probleem:** De TypeScript compiler (`tsc`) en IDE gaven diverse fouten.
 - **Fixes:** 
@@ -1368,11 +1633,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 27 juni 2026 (Backend Modularisatie & DND-kit UX)
+### Backend Modularisatie & DND-kit UX
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Fase 2: Backend Cloud Functions Modularisatie**
 - **Probleem:** Het bestand `functions/index.js` bestond uit >2400 regels wat onderhoudbaarheid lastig maakte.
 - **Fix:** Een rigoureuze opsplitsing uitgevoerd via een script:
@@ -1417,9 +1683,13 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 24 juni 2026 (Inrichting 2e Firebase Project & Sync-Script)**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+## Dagupdate 24 juni 2026
+
+### Inrichting 2e Firebase Project & Sync-Script)**Branch:** `FPiFF-June-rolout` (actuele werkbranch
 
 ### Uitgevoerd in deze sessie
+
 **1. Multi-Environment Firebase Setup (Productie vs. Test/Staging)**
 - **Doel:** Mogelijkheid bieden om met een 2e Firebase project (`future-factory-test`) te testen en makkelijk te schakelen tussen omgevingen.
 - **Configuratie:**
@@ -1447,11 +1717,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 24 juni 2026 (Tijdelijke Uitschakeling Voorraad & Spoolbouw Badges)
+### Tijdelijke Uitschakeling Voorraad & Spoolbouw Badges
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Tijdelijk uitschakelen Voorraad & Spoolbouw Badges in Planning**
 - **Probleem:** Er was behoefte om de "Voorraad" en "SPOED: Spoolbouw" badges tijdelijk uit te schakelen/verbergen op de orderkaartjes in de terminal.
 - **Fix:** In `src/components/digitalplanning/terminal/TerminalPlanningView.tsx` zijn `getStockBadge` en het fallback-retourpad (Spoolbouw) van `getPriorityBadgeStyles` aangepast zodat ze `null` retourneren. Hierdoor worden deze badges noch op de tiles, noch in het detailpaneel getoond.
@@ -1474,12 +1745,15 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 23 juni 2026 (QC Steekproef Functionaliteit)
 
+## Dagupdate 23 juni 2026
+
+### QC Steekproef Functionaliteit
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. QC Steekproef Tab & Flow**
 - Probleem: Er was behoefte aan een snelle manier om een order als "QC Steekproef" te starten, waarbij het lot direct de juiste status krijgt voor inspectie zonder extra handmatige klikken.
 - Fix: Een "QC Steekproef" modus toegevoegd aan de `ProductionStartModal` en `Terminal`.
@@ -1497,10 +1771,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 23 juni 2026 (Infor LN Demand Order UI & Print Queue Latency Fix)
+### Infor LN Demand Order UI & Print Queue Latency Fix
+
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Infor LN Demand Order & Pegging Visualisatie**
 - Probleem: Alle orders met een `Demand Order` lieten standaard "SPOED: Spoolbouw" zien, ongeacht of het voor een klant, interne afdeling of magazijn was.
 - Fix: `TerminalPlanningView.tsx` uitgebreid met logica voor `Demand Order Type`:
@@ -1526,11 +1802,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 23 juni 2026 (Label Count Fix & Deployment)
+### Label Count Fix & Deployment
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. ProductionStartModal Label Count Fix**
 - Probleem: De `ProductionStartModal` negeerde `labelCount` uit dynamische Admin Label Print Regels, tenzij `templateIds` ook aanwezig waren.
 - Root Cause: De regel-output `labelCount` werd alleen toegepast als `templateIds` in de regel stonden.
@@ -1556,11 +1833,12 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 
 ---
 
-## Update sessie 23 juni 2026 (USB Printer Restore & Reconnection Logic)
+### USB Printer Restore & Reconnection Logic
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. USB Printer Restore Logic Verbeterd**
 - Probleem: PrintQueueAutoProcessor en PrintStationView konden USB printers niet betrouwbaar herstellen bij startup, wat tot vertraging in queue-verwerking leidde.
 - Fix: Verbeterde USB-restauratie in `PrintQueueAutoProcessor.tsx`, `PrintStationView.tsx`, en `PrintQueueAdminView.tsx`:
@@ -1605,11 +1883,15 @@ Improve USB printer restore and reconnection logic
 
 ---
 
-## Update sessie 22 juni 2026 (ZPL data verborgen in logboeken, Audit Logging ISO Compliant fix)
+
+## Dagupdate 22 juni 2026
+
+### ZPL data verborgen in logboeken, Audit Logging ISO Compliant fix
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. ZPL data verborgen in Logboeken**
 - Probleem: De velden `zplData`, `labelZPL` en `labelZplData` namen gigantisch veel ruimte in bij het bekijken van logboeken, waardoor de interface traag werd en de samenvatting onleesbaar.
 - Fix: Deze velden zijn toegevoegd aan `SKIP_DIFF_FIELDS` en `SKIP_SUMMARY_KEYS` in `AdminLogView.tsx`.
@@ -1668,11 +1950,12 @@ Improve USB printer restore and reconnection logic
 
 ---
 
-## Update sessie 22 juni 2026 (Printerrechten/operator fixes + globale auto-print)
+### Printerrechten/operator fixes + globale auto-print
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Sidebar printertoegang losgekoppeld en beveiligd**
 - Nieuwe permissiemodule toegevoegd voor printertoegang (`printer_center` met feature `printer_queue_access`) in gebruikersbeheer.
 - Sidebar toont Printers nu op basis van expliciete printerrechten, met fallback voor bestaande `digital_planning` toewijzingen.
@@ -1710,11 +1993,59 @@ Improve USB printer restore and reconnection logic
 
 ---
 
-## Update sessie 19 juni 2026 (LN To do fix, naharding-aftrek, deploy en release)
+
+## Dagupdate 21 juni 2026
+
+### ISO/Security Hardening & Backups
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie (Platform Upgrades Pt. 1)
+
+In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afgerond, resulterend in een meer productie-klare en veilige applicatie architectuur.
+
+**1. RBAC via custom claims invoeren (Task 1)**
+- Firebase Auth custom claims configuratie toegevoegd in de backend via een Firestore trigger (`functions/src/auth/syncUserClaims.ts`).
+- `firestore.rules` herschreven zodat de primaire authorisatie via `request.auth.token.role` (server-side claims) loopt in plaats van alleen kwetsbare client-side document fetches.
+- `useAdminAuth` frontend hook aangepast zodat de token geforceerd herladen wordt wanneer een rol wijzigt.
+
+**2. Security rule tests toevoegen (Task 2)**
+- Testomgeving opgezet via `@firebase/rules-unit-testing` v3.
+- Een matrix van unit tests geschreven in `tests/firestore/rules.test.ts` om regressies in CRUD-acties voor admins, teamleaders en operators te voorkomen.
+- Run-scripts toegevoegd aan `package.json` en de Firebase emulators array opgezet.
+
+**3. Audit logging activeren (Task 3)**
+- Gecontroleerd dat de `auditService` reeds uitgebreid geïntegreerd zat op de kritieke paden in de `planningCallables`.
+- Aangevuld met onveranderbare security audit events (`logSystem`) voor role mutaties (RBAC wijzigingen).
+
+**4. Monitoring en alerting inrichten (Task 4)**
+- Integratie van Google Cloud Error Reporting in de custom `logClientError` functie toegevoegd. Fouten van de React frontend (`ErrorBoundary`) sturen nu gestructureerde Error-objecten met stacktraces naar GCP Error Reporting, wat alerting en debugging sterk vereenvoudigt.
+
+**5. Backups en restore-procedure formaliseren (Task 5)**
+- Een geautomatiseerde Cron-functie geschreven (`scheduledFirestoreExport` in `backupDatabase.ts`) die elke 24 uur een volledige Firestore snapshot backupt naar een afgeschermde Google Cloud Storage bucket.
+- Standard Operating Procedure vastgelegd in `docs/RESTORE_SOP.md` om in geval van nood (disaster recovery) de database accuraat te herstellen via de `gcloud` CLI.
+
+**6. Secrets naar managed secret store migreren (Task 6)**
+- Gevoelige omgevingsvariabelen zoals `RESEND_API_KEY` en `ATPS_EXPORT_TOKEN` expliciet omgezet naar Google Cloud Secret Manager (`functions.params.defineSecret`).
+- De bijbehorende functies (zoals in `exportCallables.ts`) maken nu veilig gebruik van `.runWith({ secrets: [...] })`.
+
+### Volgende stappen (Hervatpunt)
+
+- **Log cleanup & TODO's:** Verwijderen van onnodige debug statements in de productie codebase (Task 7).
+- **Modulair opsplitsen:** Functions architectuur modulairder maken (Task 8).
+- **UX Workflows (DND-kit):** Starten met de integratie van `dnd-kit` voor interactieve "drag and drop" features in de digitale planning (Task 9).
+
+---
+
+
+## Dagupdate 19 juni 2026
+
+### LN To do fix, naharding-aftrek, deploy en release
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Gereed voor LN: To do-teller gecorrigeerd op gewikkeld per order**
 - In de LN exportlogica is To do aangepast zodat reeds gewikkelde aantallen per order in mindering worden gebracht.
 - Voor de aftrek wordt nu robuuster gekeken naar meerdere bronnen (tracking-signalen, station-startcounters en order-produced), zodat orders met aantoonbaar gestart/gewikkeld werk niet onterecht op volledig To do blijven staan.
@@ -1745,50 +2076,12 @@ Improve USB printer restore and reconnection logic
 
 ---
 
-## Update sessie 21 juni 2026 (ISO/Security Hardening & Backups)
-
-**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
-
-### Uitgevoerd in deze sessie (Platform Upgrades Pt. 1)
-In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afgerond, resulterend in een meer productie-klare en veilige applicatie architectuur.
-
-**1. RBAC via custom claims invoeren (Task 1)**
-- Firebase Auth custom claims configuratie toegevoegd in de backend via een Firestore trigger (`functions/src/auth/syncUserClaims.ts`).
-- `firestore.rules` herschreven zodat de primaire authorisatie via `request.auth.token.role` (server-side claims) loopt in plaats van alleen kwetsbare client-side document fetches.
-- `useAdminAuth` frontend hook aangepast zodat de token geforceerd herladen wordt wanneer een rol wijzigt.
-
-**2. Security rule tests toevoegen (Task 2)**
-- Testomgeving opgezet via `@firebase/rules-unit-testing` v3.
-- Een matrix van unit tests geschreven in `tests/firestore/rules.test.ts` om regressies in CRUD-acties voor admins, teamleaders en operators te voorkomen.
-- Run-scripts toegevoegd aan `package.json` en de Firebase emulators array opgezet.
-
-**3. Audit logging activeren (Task 3)**
-- Gecontroleerd dat de `auditService` reeds uitgebreid geïntegreerd zat op de kritieke paden in de `planningCallables`.
-- Aangevuld met onveranderbare security audit events (`logSystem`) voor role mutaties (RBAC wijzigingen).
-
-**4. Monitoring en alerting inrichten (Task 4)**
-- Integratie van Google Cloud Error Reporting in de custom `logClientError` functie toegevoegd. Fouten van de React frontend (`ErrorBoundary`) sturen nu gestructureerde Error-objecten met stacktraces naar GCP Error Reporting, wat alerting en debugging sterk vereenvoudigt.
-
-**5. Backups en restore-procedure formaliseren (Task 5)**
-- Een geautomatiseerde Cron-functie geschreven (`scheduledFirestoreExport` in `backupDatabase.ts`) die elke 24 uur een volledige Firestore snapshot backupt naar een afgeschermde Google Cloud Storage bucket.
-- Standard Operating Procedure vastgelegd in `docs/RESTORE_SOP.md` om in geval van nood (disaster recovery) de database accuraat te herstellen via de `gcloud` CLI.
-
-**6. Secrets naar managed secret store migreren (Task 6)**
-- Gevoelige omgevingsvariabelen zoals `RESEND_API_KEY` en `ATPS_EXPORT_TOKEN` expliciet omgezet naar Google Cloud Secret Manager (`functions.params.defineSecret`).
-- De bijbehorende functies (zoals in `exportCallables.ts`) maken nu veilig gebruik van `.runWith({ secrets: [...] })`.
-
-### Volgende stappen (Hervatpunt)
-- **Log cleanup & TODO's:** Verwijderen van onnodige debug statements in de productie codebase (Task 7).
-- **Modulair opsplitsen:** Functions architectuur modulairder maken (Task 8).
-- **UX Workflows (DND-kit):** Starten met de integratie van `dnd-kit` voor interactieve "drag and drop" features in de digitale planning (Task 9).
-
----
-
-## Update sessie 19 juni 2026 (AI Presentatie Slides & Naamwedstrijd)
+### AI Presentatie Slides & Naamwedstrijd
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. AI-integratie & Vraagbaak Slide Toegevoegd (Slide 6)**
 - Geplaatst direct na Slide 5 ("Jouw Input is de Motor").
 - Introduceert de AI-assistent en centrale kennisbank aan de machine met twee aparte kaarten: "Slimme AI Co-Pilot" (met `Brain` icoon) en "Directe Kennisbank" (met `HelpCircle` icoon).
@@ -1812,12 +2105,15 @@ In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afger
 
 ---
 
-## Update sessie 18 juni 2026 (Onlangs toegevoegd filter & Gereedlijst Eindinspectie bugfix)
 
+## Dagupdate 18 juni 2026
+
+### Onlangs toegevoegd filter & Gereedlijst Eindinspectie bugfix
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Onlangs toegevoegd filter & Auto-reset**
 - Vertalingen toegevoegd voor `"Onlangs toegevoegd"` (`sort_recently_added`, `recently_added_label`, `other_label`) in `nl.ts` en `en.ts`.
 - In `PlanningSidebar.tsx` een check toegevoegd die de nieuwste aanmaak/importtijd van de orders detecteert (`latestImportTimestamp`) en een flag `isOrderRecentlyAdded` bepaalt.
@@ -1840,11 +2136,12 @@ In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afger
 
 ---
 
-## Update sessie 18 juni 2026 (Label print regels vereenvoudigd, Label parsing uitgebreid)
+### Label print regels vereenvoudigd, Label parsing uitgebreid
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Label Print Regels Admin-UI vereenvoudigd**
 - In `AdminLabelPrintRules.tsx` is de complexe lijst met specifieke label-templates vervangen door een simpele dropdown: "Soort Label".
 - Opties: Automatisch, Forceer Fitting Klein, Forceer Fitting Groot, Forceer Flens Label.
@@ -1864,11 +2161,12 @@ In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afger
 
 ---
 
-## Update sessie 18 juni 2026 (Admin berichten ontdubbeling & Import loading UI)
+### Admin berichten ontdubbeling & Import loading UI
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Admin Inbox: dubbele berichten door meervoudige ontvangers ontdubbeld**
 - Bij de functie "Verzoek nieuw ordernummer" in Mazak kregen meerdere admins hetzelfde bericht (één document per ontvanger). In de `AdminMessagesView` leidde dit tot meerdere identieke meldingen onder elkaar.
 - Ontdubbeling (deduplication) logica toegevoegd in de frontend. Berichten met exact dezelfde tekst (`message`), ordernummer en afzender, die binnen 5 seconden na elkaar verstuurd zijn, worden nu visueel samengevoegd tot één thread.
@@ -1882,11 +2180,12 @@ In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afger
 
 ---
 
-## Update sessie 18 juni 2026 (Mazak aanpassen: UI, labelkeuze en order-reassign live)
+### Mazak aanpassen: UI, labelkeuze en order-reassign live
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Mazak detail-UI uitgebreid met orderwijzig-acties**
 - In het rechter detailpaneel onder de zwarte producttegel zijn 2 knoppen toegevoegd:
     - `Ordernummer wijzigen`
@@ -1917,16 +2216,21 @@ In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afger
     - `firebase deploy --only functions:reassignTrackedProductOrder`
 - Functie `reassignTrackedProductOrder(europe-west1)` staat live met de nieuwe reassign-logica.
 
-## Update sessie 17 juni 2026 (Open incident Mazak aanpassen/herprint)
+
+## Dagupdate 17 juni 2026
+
+### Open incident Mazak aanpassen/herprint
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Gemelde situatie (door gebruiker)
+
 - Order-omnummering in Mazak Aanpassen is functioneel nog niet correct afgerond.
 - Er wordt wel geprint na de wijziging, maar het label toont nog hetzelfde (oude) ordernummer.
 - Voor een EST-flens wordt nu een Fibermar-label gekozen, terwijl dit Wavistrong moet zijn.
 
 ### Prioriteit voor morgen
+
 - Reproduceer-case met dezelfde orderwissel en lotgegevens doorlopen.
 - Controleren of herprintdata altijd het nieuwe `orderId/orderNumber` gebruikt in `processLabelData` + ZPL-renderpad.
 - Template-selectie voor EST-flens expliciet valideren op materiaal/productlijn zodat Wavistrong gekozen wordt en niet Fibermar.
@@ -1934,11 +2238,12 @@ In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afger
 
 ---
 
-## Update sessie 17 juni 2026 (Mazak-tegel Print Queue zichtbaar)
+### Mazak-tegel Print Queue zichtbaar
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. MAZAK-tegel in Print Stations gefixt voor bestaande queue-items**
 - Filtering in `PrintQueueAdminView.tsx` robuuster gemaakt voor scoped print queue data.
 - Station-detectie uitgebreid met meerdere bronnen:
@@ -1949,16 +2254,18 @@ In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afger
 - Path-matching voor scoped queue docs gecorrigeerd (leading slash normalisatie), waardoor bestaande records niet meer onterecht werden weggefilterd.
 
 ### Resultaat
+
 - De bestaande print queue is nu zichtbaar op de **MAZAK** tegel onder Print Stations.
 - Door gebruiker bevestigd: **"het werkt"**.
 
 ---
 
-## Update sessie 17 juni 2026 (Systeem Presentatie UI/UX & Animaties)
+### Systeem Presentatie UI/UX & Animaties
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Systeem Presentatie (CompanyPresentation.tsx) Geoptimaliseerd voor TV's**
 - Teksten, hoofdtitels en iconen aanzienlijk vergroot voor optimale leesbaarheid op grote schermen.
 - Nieuwe openingsslide ontworpen met uitsluitend een reusachtig, vloeiend "ademend" (pulserend) FPi-logo.
@@ -1970,36 +2277,44 @@ In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afger
 - Transition-fout verholpen door `key={currentSlide}` toe te passen op de main-container, waardoor nieuwe slides altijd correct onzichtbaar beginnen en niet direct in beeld flitsen bij de overgang.
 
 ### Hervatpunt voor volgende sessie
+
 - De Systeem Presentatie is nu visueel en interactief strak getrokken.
 - Volgende stappen kunnen zijn: eventueel extra inhoudelijke slides toevoegen of de focus verleggen naar de openstaande prioriteitenlijst (zoals Firestore rules hardenen of RBAC via custom claims invoeren).
 
 ---
 
-## Update sessie 17 juni 2026 (Print Queue Debugging)
+### Print Queue Debugging
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Console logging toegevoegd voor print queue debugging**
 - In `ProductionStartModal.tsx` is een `console.log` toegevoegd in de `handlePrint` loop.
 - Deze log toont nu per printopdracht de naam en het ID van het template dat naar de wachtrij wordt gestuurd.
 
 ### Doel
+
 - Zichtbaar maken welke `templateId`'s daadwerkelijk worden doorgegeven aan de `queuePrintJob` functie.
 - Hiermee kan direct in de browser console worden geverifieerd of de multi-template selectie uit de label-regel engine correct wordt verwerkt.
 
 ### Hoe te testen
+
 1. Open de Developer Tools (F12) in de browser en ga naar de Console.
 2. Start een productieorder die meerdere labels zou moeten printen.
 3. Controleer de console op `🖨️ [Print Queue] ...` meldingen en verifieer de template ID's.
 
 ---
 
-## Update sessie 16 juni 2026 (Labellogica BH12/Sleevless + Label Manager printmaat fix)
+
+## Dagupdate 16 juni 2026
+
+### Labellogica BH12/Sleevless + Label Manager printmaat fix
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Productiestart labelregels aangescherpt (BH12 + flensflow)**
 - In `ProductionStartModal.tsx` is flensflow beperkt tot expliciete indicatoren:
     - `FL`, `FLENS`, `FLANGE`, `STUB`
@@ -2027,15 +2342,17 @@ In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afger
 - Resultaat: mm-afmetingen uit Label Manager blijven nu correct op print.
 
 ### Resultaat
+
 - BH12 labelgedrag volgt de nieuwe operationele regelset.
 - Sleevless Coupler labels tonen de gewenste product-/materiaal-/verbinding-informatie.
 - Label Manager printformaten zijn gecorrigeerd voor juiste fysieke maatvoering.
 
-## Update sessie 16 juni 2026 (Print queue routing + batchprint fix bevestigd)
+### Print queue routing + batchprint fix bevestigd
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Print Station UX en routering verder aangescherpt**
 - In `PrintQueueAdminView.tsx` is de station->printer wizard toegevoegd en operationeel gemaakt voor operators.
 - Weergave is vereenvoudigd: geen lange stationslijst meer, alleen wizard + compacte actuele koppeling.
@@ -2060,19 +2377,22 @@ In deze sessie zijn de prioriteiten 1 t/m 6 van de FPiFF Platform Upgrades afger
 - Resultaat: `queuePrintJob(europe-west1)` succesvol geüpdatet (`exit code 0`).
 
 ### Resultaat
+
 - Batchprint gedraagt zich correct (geen dubbele batches, knip op einde batch).
 - Nieuwe printjobs landen op het gewenste scoped pad, inclusief Mazak onder:
     - `/future-factory/production/print_queue/Fittings/machines/mazak/items/{jobId}`
 - Oude root docs kunnen nog bestaan als historische data; nieuwe jobs volgen de scoped-only write.
 
-## Update sessie 16 juni 2026 (Totaaloverzicht recente wijzigingen + release 0.1.22)
+### Totaaloverzicht recente wijzigingen + release 0.1.22
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Samenvatting
+
 Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogopslag zichtbaar is wat er functioneel en operationeel is aangepast rond caching, printerroutering, tabletgebruik, form-persistence en release/deploy.
 
 ### Uitgevoerd in deze sessies
+
 **1. Firebase Hosting en release-cachegedrag verbeterd**
 - `firebase.json` uitgebreid met expliciete cache headers voor app-shell, `version.json` en statische assets.
 - `src/App.tsx` aangepast zodat bij een remote versieverschil browsercaches worden gewist en service workers worden unregistered voordat de app herlaadt.
@@ -2140,6 +2460,7 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Enige niet-gecommitte lokale restpost is het tijdelijke bestand `Tijdelijke Bestanden/Samenvatting.docx`.
 
 ### Resultaat
+
 - Nieuwe frontend release `0.1.22` staat live.
 - Printerroutering werkt nu zonder afhankelijkheid van een globale standaardprinter.
 - Mazak batchlabels knippen pas op het einde van de batch.
@@ -2147,11 +2468,182 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Belangrijke formulieren verliezen minder snel invoer door refresh, routewissel of ongelukjes.
 - De volledige wijzigingsset staat nu bovenaan deze samenvatting zichtbaar.
 
-## Update sessie 15 juni 2026 (Import modal fixes + deploy 0.1.21 + performance notitie)
+### Firebase cache-optimalisatie + release refresh + cold-start reductie
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
+**1. Firebase Hosting caching expliciet geoptimaliseerd**
+- In `firebase.json` zijn gerichte cache headers toegevoegd.
+- Statische build-assets onder `/assets/**` krijgen lange immutable caching.
+- Kritieke updatebestanden zoals `index.html`, `manifest.json`, `firebase-messaging-sw.js` en `version.json` zijn op no-cache/no-store gezet.
+
+**2. Browser refresh-flow bij nieuwe release aangescherpt**
+- In `src/App.tsx` wist de app nu bij een versieverschil eerst browser cache-opslag en service workers voordat de pagina opnieuw laadt.
+- Dit voorkomt dat een versie-bump wel gedetecteerd wordt maar oude PWA-assets of workbox-caches blijven hangen.
+- Extra UX-verbetering: als de gebruiker actief in een invoerveld typt, wordt de reload kort uitgesteld om invoerverlies te beperken.
+
+**3. Backend startup geoptimaliseerd voor zware AI-runtime**
+- In `functions/src/services/aiInvisibleWorkerService.ts` is `minInstances: 1` toegevoegd aan de zware AI worker runtime.
+- Doel: cold starts verminderen op Firebase Functions voor de meest trage backend-service.
+
+### Resultaat
+
+- Firebase Hosting updategedrag is voorspelbaarder en agressieve stale cacheproblemen zijn sterk verminderd.
+- De zwaarste AI backend heeft minder last van slaapstand/cold start vertraging.
+
+---
+
+### Mazak batch cut fix + queue batch-awareness
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+
+**1. Mazak labels worden nu als echte batch afgehandeld**
+- In `src/components/digitalplanning/MazakView.tsx` is de batch-opbouw aangepast zodat de payload als gebundelde printjob wordt opgebouwd.
+- Cut-gedrag is gecorrigeerd zodat niet ieder label afzonderlijk wordt geknipt, maar pas aan het einde van de batch.
+
+**2. Queue processors respecteren pre-batched jobs**
+- In `src/components/printer/PrintQueueAutoProcessor.tsx` en `src/components/printer/PrintQueueAdminView.tsx` is de payload-normalisatie batch-aware gemaakt.
+- Wanneer een job al als batch is opgebouwd (`queuedAsBatch` / pre-batched flow), wordt de inhoud niet opnieuw opgesplitst of herschreven.
+
+**3. Reprint/admin paden blijven hetzelfde batchgedrag volgen**
+- Door de queue-normalisatie centraal te corrigeren blijft ook admin queue-herprint consistent met de Mazak batchflow.
+
+### Resultaat
+
+- Mazak batchlabels worden niet meer per stuk geknipt.
+- Zowel automatische queue-verwerking als admin/reprint blijven in lijn met dezelfde batchlogica.
+
+---
+
+### Tablet input UX en touch-invoer verbeterd
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+
+**1. Numerieke velden beter bruikbaar op tablets**
+- In `src/styles.css` zijn de native number spinners op touch-apparaten uitgeschakeld.
+- Doel: velden met standaard numerieke waarden eenvoudiger laten selecteren en overschrijven.
+
+**2. Soft keyboard bediening verbeterd op scan-schermen**
+- Nieuwe hook `src/hooks/useTouchKeyboardPreference.ts` toegevoegd.
+- In diverse scan- en terminalschermen is nu expliciete toggling mogelijk tussen scanner-first invoer en handmatig toetsenbordgebruik.
+- Op touchdevices verschijnen extra knoppen voor wissen en toetsenbord openen in relevante scan/search velden.
+
+### Resultaat
+
+- Invoer op tablets is minder foutgevoelig en sneller te corrigeren.
+- Operators kunnen gemakkelijker wisselen tussen scanners en handmatige touch-invoer.
+
+---
+
+### Printerroutering meerdere pc's + geen default-printer afhankelijkheid
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+
+**1. Gedeelde printerroutering ingevoerd**
+- Nieuwe helper `src/utils/printRouting.ts` toegevoegd voor centrale routering op basis van station, labelroute en routing tags.
+- Printerrecords ondersteunen nu expliciete `routingKeys` / routeringstags.
+
+**2. Core printflows overgezet op expliciete routering**
+- De volgende paden zijn naar route-aware printerselectie omgezet:
+    - `src/components/digitalplanning/MazakView.tsx`
+    - `src/components/digitalplanning/modals/ProductionStartModal.tsx`
+    - `src/components/digitalplanning/modals/ProductDossierModal.tsx`
+    - `src/components/admin/QcSampleView.tsx`
+    - `src/components/printer/PrintStationView.tsx`
+    - `src/components/printer/PrintQueueAdminView.tsx`
+    - `src/components/printer/PrintQueueAutoProcessor.tsx`
+- Historische fallback op een globale default printer is hiermee grotendeels verwijderd uit runtime-selectie.
+
+**3. Multi-computer setup voor identieke printers vastgelegd**
+- In `src/utils/printRouting.ts` zijn extra generieke routes toegevoegd voor grote labels, waaronder `GENERAL`, `LARGE`, `BIGLABEL` en `STATION:BH18`.
+- In `src/components/admin/AdminPrinterManager.tsx` is expliciet gemaakt dat iedere fysieke printer zijn eigen routeringstags krijgt.
+- De admin UI kiest niet meer stil de eerste printer als queue-doel wanneer er geen geldige selectie is.
+
+**4. Praktische setup voor Mazak-pc en grote-labels-pc gedocumenteerd**
+- Nieuwe documentatie toegevoegd in `docs/PRINTER_ROUTING_SETUP.md`.
+- Hierin is uitgewerkt hoe twee identieke printers op twee verschillende computers toch apart worden aangestuurd.
+- Ook is vastgelegd dat een niet-beheerdersaccount op de Mazak-pc in de praktijk bruikbaar blijft zodra driverinstallatie en browserautorisatie eenmaal geregeld zijn.
+
+### Aanbevolen voorbeeldroutering
+
+- `ZM400 Mazak` -> routing keys: `MAZAK, FLANGE`
+- `ZM400 BH18 Groot` -> routing keys: `GENERAL, LARGE, STATION:BH18`
+
+### Resultaat
+
+- FL/Mazak labels kunnen naar de Mazak-pc.
+- Grote labels zoals BH18 kunnen naar een andere computer/printer.
+- Identieke printermodellen zijn nu logisch te scheiden zonder afhankelijk te zijn van één standaardprinter.
+
+---
+
+### Build-validatie na routeringsrefactor
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+
+**1. Build uitgevoerd na printerroutering-aanpassingen**
+- `npm run build` succesvol uitgevoerd.
+- Eerder gevonden duplicate key probleem rond `routingKeysText` in `AdminPrinterManager.tsx` is tijdens de refactor opgelost.
+
+### Resultaat
+
+- De nieuwe routering compileert correct in de frontend build.
+- De samengevoegde wijzigingen zijn build-technisch groen gevalideerd.
+
+---
+
+### Versie bump 0.1.22 + Firebase Hosting deploy
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+
+**1. Patch release uitgevoerd via bestaand deployscript**
+- Commando uitgevoerd: `npm run deploy`
+- Dit script heeft automatisch de patchversie verhoogd, een productiebuild gemaakt en vervolgens Firebase Hosting gedeployed.
+
+**2. Versie bump succesvol verwerkt**
+- Versie verhoogd van `0.1.21` naar `0.1.22`.
+- Bijgewerkt in:
+    - `package.json`
+    - `public/version.json`
+    - `package-lock.json` (indien aanwezig via het bumpscript)
+
+**3. Build succesvol afgerond**
+- Vite productiebuild succesvol uitgevoerd.
+- Chunk-waarschuwing blijft aanwezig voor enkele grote bundles, maar blokkeerde de release niet.
+
+**4. Firebase Hosting release succesvol gepubliceerd**
+- Deploytarget: `future-factory-377ef`
+- Hostingrelease succesvol afgerond op:
+    - `https://future-factory-377ef.web.app`
+
+### Resultaat
+
+- Frontend release `0.1.22` staat live op Firebase Hosting.
+- Nieuwe printerroutering, cache-updates en UI-verbeteringen zijn hiermee publiek uitgerold.
+
+---
+
+
+## Dagupdate 15 juni 2026
+
+### Import modal fixes + deploy 0.1.21 + performance notitie
+
+**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+
+### Uitgevoerd in deze sessie
+
 **1. Planning import modal gestabiliseerd**
 - Crash bij Excel-selectie opgelost in `PlanningImportModal.tsx` door ontbrekende helpers te herstellen (`getExistingOrder`, `isSmartSyncExcludedOrder`, `buildImportDocId`).
 - Standaardselectie voor machinefilter hersteld zodat BH18 weer automatisch geselecteerd wordt wanneer die in de importset beschikbaar is.
@@ -2173,16 +2665,18 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
     - alleen indien bewust acceptabel: `chunkSizeWarningLimit` verhogen
 
 ### Resultaat
+
 - Import modal crasht niet meer op ontbrekende helperfuncties.
 - BH18 staat weer standaard geselecteerd in de import modal.
 - Frontend release `0.1.21` staat live.
 - Chunk-size waarschuwing is expliciet opgeslagen als later performance-werkpunt.
 
-## Update sessie 15 juni 2026 (Form persistence rollout + versiebump + deploy status)
+### Form persistence rollout + versiebump + deploy status
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Form persistence breed uitgerold in frontend**
 - `useFormPersistence` geïmplementeerd op de belangrijkste QC-, planning- en admin-formulieren.
 - Migraties uitgevoerd in o.a. inspection, repair, post-processing, product release, inventory check, QC sample, label logic, account request, email management, bore/drilling beheer, printer manager, compose message modal, personnel add/edit modal en product form.
@@ -2198,17 +2692,19 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
     - `public/version.json`
 
 ### Huidige status deploy
+
 - Buildblokkades in `src/App.tsx` zijn opgelost en file bevat geen TypeScript/compile errors volgens editor-check.
 - Op dit moment is nog geen harde bevestiging vastgelegd van een volledig afgeronde Firebase Hosting deploy in de terminalhistorie van deze sessie.
 - Volgende stap blijft: `npm run build` en daarna `firebase deploy --only hosting` uitvoeren en uitkomst loggen.
 
 ---
 
-## Update sessie 15 juni 2026 (Full deploy frontend + backend afgerond)
+### Full deploy frontend + backend afgerond
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Full release uitgevoerd met versie bump**
 - Commando uitgevoerd: `npm run version:bump:patch && npm run build && firebase deploy`
 - Versie automatisch verhoogd van `0.1.18` naar `0.1.19`.
@@ -2228,16 +2724,21 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
     - 1 field override (`orders.itemCode`) die niet meer in index-config stond.
 
 ### Resultaat
+
 - Full deployment is afgerond en live.
 - Frontend en backend draaien op de nieuwste release met versie `0.1.19`.
 
 ---
 
-## Update sessie 14 juni 2026 (Onderzoek Samenvatting.docx - Prioriteitenlijst)
+
+## Dagupdate 14 juni 2026
+
+### Onderzoek Samenvatting.docx - Prioriteitenlijst
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Top 10 prioriteiten (impact vs effort)
+
 1. **Firestore rules hardenen**
     - Impact: Zeer hoog
     - Effort: Laag (0.5-1 dag)
@@ -2289,17 +2790,19 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
      - Actie: Eerst planner-MVP, daarna event-notificaties en samenwerkingselementen.
 
 ### Aanpak in 3 fasen
+
 1. **Week 1:** items 1, 3, 6, 8
 2. **Week 2-3:** items 2, 4, 5, 7
 3. **Maand 2+:** items 9 en 10 (parallel met integratievoorbereiding)
 
 ---
 
-## Update sessie 14 juni 2026 (Machine Storing & Live Monitor)
+### Machine Storing & Live Monitor
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Machine Storing knop en blokkade op Workstations**
 - Nieuwe rode knop "Storing Melden / In Storing" toegevoegd aan de Workstation Header (`WorkstationHub.tsx`).
 - Wanneer actief, wordt er een block gelegd op `handleStartProduction` zodat operators geen nieuwe orders kunnen starten zolang de machine in storing staat.
@@ -2315,16 +2818,18 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Succesvol gedeployed naar Firebase Cloud na een handmatige re-authenticatie (`firebase login --reauth`) in de terminal.
 
 ### Volgende stappen (Hervatpunt)
+
 - **Teamleader Personeelsdashboard:** Verder gaan met het ontwerpen van de personeelsweergave.
 - **Downtime Notificaties:** Eventueel (later) een mail of bericht koppelen naar teamleaders zodra een machine op `STORING` springt.
 
 ---
 
-## Update sessie 14 juni 2026 (AI Chat Historie, UX & Voorbereiding Teamleader Personeelsdashboard)
+### AI Chat Historie, UX & Voorbereiding Teamleader Personeelsdashboard
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. AI Chat Historie & Firestore Optimalisatie**
 - Chat is stateful gemaakt per gebruiker: de AI onthoudt het actuele gesprek wanneer je de tab verlaat of met hetzelfde account inlogt op een andere tablet.
 - Firestore opslag geoptimaliseerd (`src/services/aiService.ts`): er worden maximaal 50 berichten (ca. 100KB) bewaard om de 1MB document-limiet van Firebase en overmatige AI token-kosten te voorkomen.
@@ -2337,15 +2842,17 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Vastgelegd hoe de AI (bijv. "FutureBot") eenvoudig een identiteit en naam kan krijgen via de systeemprompt in het Context-tabblad.
 
 ### Volgende stappen (Hervatpunt)
+
 - **Teamleader Personeelsdashboard:** Starten met het herontwerpen van de personeelsweergave (aanwezigheid, ploegindeling, stationbezetting en afwezigheid beter, overzichtelijker en sneller inzichtelijk maken).
 
 ---
 
-## Update sessie 14 juni 2026 (Interactieve Spoolbouw tekeningen & Externe Voorraad Integratie)
+### Interactieve Spoolbouw tekeningen & Externe Voorraad Integratie
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Besproken visie & Architectuur concepten (Opgeslagen voor later)
+
 
 **1. Interactieve en Dynamische Werktekeningen (Spoolbouw)**
 - Het doel is om CAT/CAD-tekeningen interactief op de tablets op de werkvloer te tonen, direct gekoppeld aan de actuele BOM in Firebase.
@@ -2361,16 +2868,18 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - **BOM Resolutie:** Bij het inladen van de Spoolbouw terminal-BOM bepaalt het systeem per onderdeel of dit eigen productie is (check `tracked_products`) of ingekochte voorraad (check `external_stock`), en past de instructies/verwachte scan voor de operator hierop aan.
 
 ### Volgende stappen (Hervatpunt)
+
 - **3D/SVG concept:** Eerst een kleine test uitvoeren door handmatig een dummy `.glb` of `.svg` te uploaden naar Firebase Storage (incl. CORS aanpassen via Cloud Shell) en in te laden via React op een test-route.
 - **Voorraad flow:** Bij afdeling Shipping / Inkoop voorbeeld pakbonnen opvragen (welke kolommen komen uit Egypte?). Daarna Cloud Function schrijven voor de import.
 
 ---
 
-## Update sessie 14 juni 2026 (Opschonen us-central1 duplicaten)
+### Opschonen us-central1 duplicaten
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Veilige opschoonlijst bepaald via live JSON-inventaris**
 - Via `firebase functions:list --json` en een Node.js overlap-analyse zijn alle functies bepaald die in zowel `us-central1` als `europe-west1` bestonden (93 stuks).
 - Bewust overgeslagen: 5 functies die alleen in `us-central1` aanwezig zijn:
@@ -2380,32 +2889,39 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Alle 93 veilige duplicaten verwijderd via `firebase functions:delete --region us-central1 --force` in batches.
 
 ### Validatie na cleanup
+
 - `US_REMAINING_TOTAL`: 5
 - `US_WITH_EW1_DUPLICATE`: 0
 - `US_ONLY`: 5 (bewust behouden)
 
 ---
 
-## Update sessie 14 juni 2026 (Regio rollback door beperkingen)
+### Regio rollback door beperkingen
 
 **Branch:** `FPiFF-June-rolout` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Regio-instellingen teruggedraaid naar `europe-west1` op de recent gewijzigde punten**
 - `src/config/firebase.ts` regel 106: `getFunctions(app, 'europe-west4')` teruggezet naar `getFunctions(app, 'europe-west1')`.
 - `functions/src/callables/exportCallables.ts` regels 488, 717 en 750: callable builders teruggezet van `europe-west4` naar `europe-west1`.
 
 ### Validatie
+
 - Frontend functions instance verwijst weer naar `europe-west1`.
 - Alle drie eerder aangepaste ATPS callable endpoints staan weer op `europe-west1`.
 
 ---
 
-## Update sessie 13 juni 2026 (Functions deploy & TypeScript fixes)
+
+## Dagupdate 13 juni 2026
+
+### Functions deploy & TypeScript fixes
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. TypeScript & module resolutie fixes voor Cloud Functions deploy**
 - Tijdens de `firebase deploy` kwamen er TypeScript type-checks aan het licht in `qcCallables.ts` (`Implicit 'any'`).
 - Module resolutie fout (`Cannot find module 'firebase-functions/v2/https'`) opgelost door het bestand om te zetten naar CommonJS `require()` imports inclusief `// @ts-nocheck`, analoog aan de overige callables in het project.
@@ -2416,19 +2932,22 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Bevestigd dat de Firestore database in `eur3` (multi-region Europa inclusief Eemshaven) staat, wat een migratie van de database overbodig maakte.
 
 ### Validatie
+
 - `firebase deploy --only functions` is succesvol afgerond door de TypeScript fixes.
 - Latency penalty voor netwerkverkeer (Atlantische oceaan) is nu geëlimineerd.
 
 ### Volgende stap
+
 - Focus verleggen naar het UX/UI herontwerp van het Teamleader Personeelsdashboard.
 
 ---
 
-## Update sessie 13 juni 2026 (Nieuwe branch FPiFF-June-rolout)
+### Nieuwe branch FPiFF-June-rolout
 
 **Branch:** `FPiFF-June-rolout` (aangemaakt vanaf `FPiFF-18-12-May`)
 
 ### Uitgevoerd in deze sessie
+
 **1. Nieuwe branch aangemaakt voor June rollout**
 - Branch `FPiFF-June-rolout` aangemaakt vanaf `FPiFF-18-12-May`.
 - Branch gepusht naar GitHub: `origin/FPiFF-June-rolout`.
@@ -2436,11 +2955,12 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 
 ---
 
-## Update sessie 13 juni 2026 (Firebase regio migratie naar europe-west4)
+### Firebase regio migratie naar europe-west4
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Firebase regio gecontroleerd en gecorrigeerd naar `europe-west4`**
 - `src/config/firebase.ts` regel 106: `getFunctions(app, 'europe-west1')` → `getFunctions(app, 'europe-west4')`. Dit is de hoofd-functions instantie die door de hele frontend wordt gebruikt.
 - `functions/src/callables/exportCallables.ts`: drie ATPS callable builders (regels 488, 717, 750) van `europe-west1` → `europe-west4`.
@@ -2450,16 +2970,18 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - `src/components/digitalplanning/SmartPlanningSuggestions.tsx`: client-side koppeling hieraan, correct zo.
 
 ### Validatie
+
 - Alle overige functions (index.js, withAudit, qcCallables, planningCallables, exportCallables) stonden al correct op `europe-west4`.
 - `firebase deploy --only functions` nog opnieuw uit te voeren na deze correcties.
 
 ---
 
-## Update sessie 13 juni 2026 (Systeem Presentatie launcher & animaties)
+### Systeem Presentatie launcher & animaties
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Systeem Presentatie geïntegreerd in Admin Hub**
 - In `AdminDashboard.tsx` de losse tegel voor de Systeem Presentatie samengevoegd met de bestaande MT Presentatie tegel.
 - Tegel hernoemd naar "Presentaties" en het onderliggende menu naar "Presentaties & Visie".
@@ -2470,15 +2992,17 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Zorgt voor een soepele inzoom- en fade-in overgang wanneer de presentatie beeldvullend over het dashboard opent.
 
 ### Validatie
+
 - Component laadt en sluit correct en zonder conflicten in het Admin Dashboard.
 
 ---
 
-## Update sessie 13 juni 2026 (Firebase Hosting deploy vanuit Codespaces)
+### Firebase Hosting deploy vanuit Codespaces
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Firebase omgeving gecontroleerd**
 - `firebase.json` stond al correct voor Hosting:
     - `public: dist`
@@ -2500,19 +3024,23 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Resultaat: deploy geslaagd, versie gepubliceerd.
 
 ### Live resultaat
+
 - Hosting URL: `https://future-factory-377ef.web.app`
 - Firebase Console: `https://console.firebase.google.com/project/future-factory-377ef/overview`
 
 ### Herhaalbare workflow (volgende deploys)
+
 1. `npm install`
 2. `npm run build`
 3. `npx firebase-tools use Future-Factory`
 4. `npx firebase-tools deploy --only hosting`
 
 ### Optioneel: volledige Firebase deploy (incl. rules/indexes/functions)
+
 - `npx firebase-tools deploy`
 
 ### CI/CD naslag (GitHub Actions + Firebase Hosting)
+
 **Doel:** automatische deploys zonder handmatige login in Codespaces.
 
 **Status in deze repo (aangemaakt):**
@@ -2535,11 +3063,12 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 
 ---
 
-## Update sessie 13 juni 2026 (Mazak printflow: batch-stabiliteit, USB-locking, cut-mode en queue UX)
+### Mazak printflow: batch-stabiliteit, USB-locking, cut-mode en queue UX
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. To do in LN export gekoppeld aan echte planningwaarde**
 - In `ImportExportDashboard` gebruikt `todoCount` nu eerst echte planningvelden (`todoCount`, `todo`, `toDo`, `to_do`, `remaining`, `open`, `plan`).
 - Fallback blijft actief: alleen zonder bruikbare planningwaarde wordt `max(0, totaal - naharding)` gebruikt.
@@ -2570,6 +3099,7 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Operators zien hiermee direct dat een taak als batch met eind-cut is ingestuurd.
 
 ### Validatie
+
 - Gerichte error-checks uitgevoerd op:
     - `src/components/digitalplanning/ImportExportDashboard.tsx`
     - `src/components/digitalplanning/MazakView.tsx`
@@ -2580,11 +3110,12 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 
 ---
 
-## Update sessie 13 juni 2026 (LN export: To do uit echte planning)
+### LN export: To do uit echte planning
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Kolomvolgorde LN lijst/PDF uitgebreid met To do**
 - In de LN exportlijst en Lijst PDF staat nu na `Totaal order` ook de kolom `To do`.
 - Actuele volgorde: `Station`, `Order`, `Product`, `Totaal order`, `To do`, `Naharding (geweest)`, `Aantal`.
@@ -2598,19 +3129,25 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Nieuwe veilige number-conversie toegevoegd zodat ook stringwaarden (zoals `3`, `3,0`, of met tekst) goed als getal gelezen worden.
 
 ### Verwacht praktijkresultaat
+
 - Voor order `N20025396` wordt `To do` nu `3` wanneer die waarde in de planning aanwezig is.
 
 ### Validatie
+
 - Gerichte error-check uitgevoerd op `src/components/digitalplanning/ImportExportDashboard.tsx`.
 - Resultaat: geen nieuwe errors gevonden.
 
 ---
 
-## Update sessie 12 juni 2026 (Virtueel lotnummer flow: direct Naharding + batch naar Gereed)
+
+## Dagupdate 12 juni 2026
+
+### Virtueel lotnummer flow: direct Naharding + batch naar Gereed
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Virtuele QC-lots lopen nu direct door naar Naharding**
 - In de backend startflow (`startProductionLotsService`) worden virtuele lots niet meer gestart op `QC_VIRTUAL`, maar direct op:
     - `currentStation: Naharding`
@@ -2651,6 +3188,7 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Gecorrigeerd door `normalizeMachineForCounter` toe te passen op `machine`, `stationLabel`, `lastStation` en `labelLastPrint.station` bij virtuele lots.
 
 ### Validatie
+
 - Gerichte error-check uitgevoerd op:
     - `functions/src/services/planningTransitionService.ts`
     - `src/components/digitalplanning/BM01Hub.tsx`
@@ -2663,171 +3201,22 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Resultaat: geen nieuwe errors gevonden.
 
 ### Vloer-checklist (afgesproken)
+
 1. Virtueel lot aanmaken -> moet direct op Naharding verschijnen.
 2. Naharding batch openen -> nieuw lot + legacy `QC_VIRTUAL` lots moeten zichtbaar zijn.
 3. Batch Naharding gereedmelden -> lot gaat naar Gereed/archief zonder `produced`-verhoging.
 
 ---
 
-## Update sessie 16 juni 2026 (Firebase cache-optimalisatie + release refresh + cold-start reductie)
 
-**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
+## Dagupdate 11 juni 2026
 
-### Uitgevoerd in deze sessie
-**1. Firebase Hosting caching expliciet geoptimaliseerd**
-- In `firebase.json` zijn gerichte cache headers toegevoegd.
-- Statische build-assets onder `/assets/**` krijgen lange immutable caching.
-- Kritieke updatebestanden zoals `index.html`, `manifest.json`, `firebase-messaging-sw.js` en `version.json` zijn op no-cache/no-store gezet.
-
-**2. Browser refresh-flow bij nieuwe release aangescherpt**
-- In `src/App.tsx` wist de app nu bij een versieverschil eerst browser cache-opslag en service workers voordat de pagina opnieuw laadt.
-- Dit voorkomt dat een versie-bump wel gedetecteerd wordt maar oude PWA-assets of workbox-caches blijven hangen.
-- Extra UX-verbetering: als de gebruiker actief in een invoerveld typt, wordt de reload kort uitgesteld om invoerverlies te beperken.
-
-**3. Backend startup geoptimaliseerd voor zware AI-runtime**
-- In `functions/src/services/aiInvisibleWorkerService.ts` is `minInstances: 1` toegevoegd aan de zware AI worker runtime.
-- Doel: cold starts verminderen op Firebase Functions voor de meest trage backend-service.
-
-### Resultaat
-- Firebase Hosting updategedrag is voorspelbaarder en agressieve stale cacheproblemen zijn sterk verminderd.
-- De zwaarste AI backend heeft minder last van slaapstand/cold start vertraging.
-
----
-
-## Update sessie 16 juni 2026 (Mazak batch cut fix + queue batch-awareness)
-
-**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
-
-### Uitgevoerd in deze sessie
-**1. Mazak labels worden nu als echte batch afgehandeld**
-- In `src/components/digitalplanning/MazakView.tsx` is de batch-opbouw aangepast zodat de payload als gebundelde printjob wordt opgebouwd.
-- Cut-gedrag is gecorrigeerd zodat niet ieder label afzonderlijk wordt geknipt, maar pas aan het einde van de batch.
-
-**2. Queue processors respecteren pre-batched jobs**
-- In `src/components/printer/PrintQueueAutoProcessor.tsx` en `src/components/printer/PrintQueueAdminView.tsx` is de payload-normalisatie batch-aware gemaakt.
-- Wanneer een job al als batch is opgebouwd (`queuedAsBatch` / pre-batched flow), wordt de inhoud niet opnieuw opgesplitst of herschreven.
-
-**3. Reprint/admin paden blijven hetzelfde batchgedrag volgen**
-- Door de queue-normalisatie centraal te corrigeren blijft ook admin queue-herprint consistent met de Mazak batchflow.
-
-### Resultaat
-- Mazak batchlabels worden niet meer per stuk geknipt.
-- Zowel automatische queue-verwerking als admin/reprint blijven in lijn met dezelfde batchlogica.
-
----
-
-## Update sessie 16 juni 2026 (Tablet input UX en touch-invoer verbeterd)
-
-**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
-
-### Uitgevoerd in deze sessie
-**1. Numerieke velden beter bruikbaar op tablets**
-- In `src/styles.css` zijn de native number spinners op touch-apparaten uitgeschakeld.
-- Doel: velden met standaard numerieke waarden eenvoudiger laten selecteren en overschrijven.
-
-**2. Soft keyboard bediening verbeterd op scan-schermen**
-- Nieuwe hook `src/hooks/useTouchKeyboardPreference.ts` toegevoegd.
-- In diverse scan- en terminalschermen is nu expliciete toggling mogelijk tussen scanner-first invoer en handmatig toetsenbordgebruik.
-- Op touchdevices verschijnen extra knoppen voor wissen en toetsenbord openen in relevante scan/search velden.
-
-### Resultaat
-- Invoer op tablets is minder foutgevoelig en sneller te corrigeren.
-- Operators kunnen gemakkelijker wisselen tussen scanners en handmatige touch-invoer.
-
----
-
-## Update sessie 16 juni 2026 (Printerroutering meerdere pc's + geen default-printer afhankelijkheid)
-
-**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
-
-### Uitgevoerd in deze sessie
-**1. Gedeelde printerroutering ingevoerd**
-- Nieuwe helper `src/utils/printRouting.ts` toegevoegd voor centrale routering op basis van station, labelroute en routing tags.
-- Printerrecords ondersteunen nu expliciete `routingKeys` / routeringstags.
-
-**2. Core printflows overgezet op expliciete routering**
-- De volgende paden zijn naar route-aware printerselectie omgezet:
-    - `src/components/digitalplanning/MazakView.tsx`
-    - `src/components/digitalplanning/modals/ProductionStartModal.tsx`
-    - `src/components/digitalplanning/modals/ProductDossierModal.tsx`
-    - `src/components/admin/QcSampleView.tsx`
-    - `src/components/printer/PrintStationView.tsx`
-    - `src/components/printer/PrintQueueAdminView.tsx`
-    - `src/components/printer/PrintQueueAutoProcessor.tsx`
-- Historische fallback op een globale default printer is hiermee grotendeels verwijderd uit runtime-selectie.
-
-**3. Multi-computer setup voor identieke printers vastgelegd**
-- In `src/utils/printRouting.ts` zijn extra generieke routes toegevoegd voor grote labels, waaronder `GENERAL`, `LARGE`, `BIGLABEL` en `STATION:BH18`.
-- In `src/components/admin/AdminPrinterManager.tsx` is expliciet gemaakt dat iedere fysieke printer zijn eigen routeringstags krijgt.
-- De admin UI kiest niet meer stil de eerste printer als queue-doel wanneer er geen geldige selectie is.
-
-**4. Praktische setup voor Mazak-pc en grote-labels-pc gedocumenteerd**
-- Nieuwe documentatie toegevoegd in `docs/PRINTER_ROUTING_SETUP.md`.
-- Hierin is uitgewerkt hoe twee identieke printers op twee verschillende computers toch apart worden aangestuurd.
-- Ook is vastgelegd dat een niet-beheerdersaccount op de Mazak-pc in de praktijk bruikbaar blijft zodra driverinstallatie en browserautorisatie eenmaal geregeld zijn.
-
-### Aanbevolen voorbeeldroutering
-- `ZM400 Mazak` -> routing keys: `MAZAK, FLANGE`
-- `ZM400 BH18 Groot` -> routing keys: `GENERAL, LARGE, STATION:BH18`
-
-### Resultaat
-- FL/Mazak labels kunnen naar de Mazak-pc.
-- Grote labels zoals BH18 kunnen naar een andere computer/printer.
-- Identieke printermodellen zijn nu logisch te scheiden zonder afhankelijk te zijn van één standaardprinter.
-
----
-
-## Update sessie 16 juni 2026 (Build-validatie na routeringsrefactor)
-
-**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
-
-### Uitgevoerd in deze sessie
-**1. Build uitgevoerd na printerroutering-aanpassingen**
-- `npm run build` succesvol uitgevoerd.
-- Eerder gevonden duplicate key probleem rond `routingKeysText` in `AdminPrinterManager.tsx` is tijdens de refactor opgelost.
-
-### Resultaat
-- De nieuwe routering compileert correct in de frontend build.
-- De samengevoegde wijzigingen zijn build-technisch groen gevalideerd.
-
----
-
-## Update sessie 16 juni 2026 (Versie bump 0.1.22 + Firebase Hosting deploy)
-
-**Branch:** `FPiFF-June-rolout` (actuele werkbranch)
-
-### Uitgevoerd in deze sessie
-**1. Patch release uitgevoerd via bestaand deployscript**
-- Commando uitgevoerd: `npm run deploy`
-- Dit script heeft automatisch de patchversie verhoogd, een productiebuild gemaakt en vervolgens Firebase Hosting gedeployed.
-
-**2. Versie bump succesvol verwerkt**
-- Versie verhoogd van `0.1.21` naar `0.1.22`.
-- Bijgewerkt in:
-    - `package.json`
-    - `public/version.json`
-    - `package-lock.json` (indien aanwezig via het bumpscript)
-
-**3. Build succesvol afgerond**
-- Vite productiebuild succesvol uitgevoerd.
-- Chunk-waarschuwing blijft aanwezig voor enkele grote bundles, maar blokkeerde de release niet.
-
-**4. Firebase Hosting release succesvol gepubliceerd**
-- Deploytarget: `future-factory-377ef`
-- Hostingrelease succesvol afgerond op:
-    - `https://future-factory-377ef.web.app`
-
-### Resultaat
-- Frontend release `0.1.22` staat live op Firebase Hosting.
-- Nieuwe printerroutering, cache-updates en UI-verbeteringen zijn hiermee publiek uitgerold.
-
----
-
-## Update sessie 11 juni 2026 (AI assistent: live productiecontext, voorspellende planning en tracked_products betrouwbaarheid)
+### AI assistent: live productiecontext, voorspellende planning en tracked_products betrouwbaarheid
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. AI-context sterk uitgebreid voor operationele vragen**
 - In `src/services/aiService.ts` is een always-on live operation snapshot toegevoegd.
 - Context bevat nu structureel data over planning, tracking, bezetting en catalogus.
@@ -2864,31 +3253,39 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
     - geschatte leverdatum (als aanwezig)
 
 ### Extra tooling
+
 - Nieuw validatiescript toegevoegd:
     - `scripts/validate-ai-planning-context.cjs`
 - Nieuw npm script toegevoegd:
     - `npm run validate:ai-planning`
 
 ### Validatie
+
 - Meerdere keren gerichte error-checks gedaan op `src/services/aiService.ts`: geen nieuwe errors.
 - Validatiescript na wijzigingen uitgevoerd: **4/4 tests geslaagd**.
 
 ### Huidige status
+
 - AI-assistent is nu veel sterker gekoppeld aan live productie-informatie op lotniveau.
 - Antwoorden op ordervragen kunnen nu concreter worden onderbouwd met feitelijke orderdetails.
 
 ### Openstaande praktische check
+
 1. In de live app verifiëren dat detailvragen over een specifieke order (bijv. `N20025335`) consequent lotnummers, product, startmoment, leverdatum en geschatte leverdatum teruggeven.
 
 ---
 
-## Update sessie 10 juni 2026 (Drawing sync backend-automatisering + Sync Tekeningen dashboard)
+
+## Dagupdate 10 juni 2026
+
+### Drawing sync backend-automatisering + Sync Tekeningen dashboard
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 **Tijdstip update:** 2026-06-10
 
 ### Uitgevoerd in deze sessie
+
 **1. Drawing sync verplaatst naar backend automation**
 - Matchinglogica is gecentraliseerd in `functions/src/services/drawingSyncService.ts`.
 - De scheduled Cloud Function `scheduledDrawingSync` draait dagelijks om `02:00` Europe/Amsterdam via `functions/index.js`.
@@ -2915,6 +3312,7 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - De dashboardweergave bevat ook een toggle/status voor `drawingSyncEnabled`.
 
 ### Deploys en validatie
+
 - Firebase Functions deploy uitgevoerd: geslaagd (`Deploy complete`).
 - Gerichte error-checks uitgevoerd op:
     - `src/components/admin/ManualSyncDrawings.tsx`
@@ -2923,18 +3321,21 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Geen directe errors gevonden in de aangepaste bestanden.
 
 ### Huidige status
+
 - Backend drawing sync draait geautomatiseerd en is gedeployed.
 - Logging voor handmatige en automatische matches loopt via een gezamenlijk Firestore-pad.
 - Het nieuwe `Sync Tekeningen` dashboard staat functioneel klaar.
 
 ### Openstaande check
+
 - Nog verifiëren in de live UI of `drawing_sync_logs` zichtbaar binnenkomen en of `lastDrawingSync` direct goed ververst na een handmatige run.
 
-## Update sessie 10 juni 2026 (PWA optimalisaties, Tooling Molds auto-aanvullen, Terminal Mal-Config & bugfixes)
+### PWA optimalisaties, Tooling Molds auto-aanvullen, Terminal Mal-Config & bugfixes
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. PWA Workstation Header compacter gemaakt voor mobiel (portretmodus)**
 - In `WorkstationHub.tsx` is de header op mobiele schermen herschreven naar één gestroomlijnde horizontale regel.
 - Bevat nu efficiënter geplaatste tijd-, operator- en inlogknoppen zodat er maximale verticale ruimte overblijft voor de planningslijst.
@@ -2959,13 +3360,17 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 **7. Bugfix: PATHS ReferenceError**
 - Een `PATHS is not defined` crash in `TerminalPlanningView.tsx` bij het ophalen van de malconfiguraties opgelost door `PATHS` toe te voegen aan de imports uit `dbPaths`.
 
-## Update sessie 9 juni 2026 (Printer station-mapping fail-check via Firebase)
+
+## Dagupdate 9 juni 2026
+
+### Printer station-mapping fail-check via Firebase
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 **Tijdstip update:** 2026-06-09
 
 ### Uitgevoerd in deze sessie
+
 **1. Harde station-naar-printer validatie toegevoegd op basis van Firebase printerconfig**
 - Wens: routering moet volgen uit de aan printer gekoppelde stations (`queueStations`/`linkedStations`) in Firebase.
 - Oplossing: vóór statusovergang naar `printing` wordt per job gevalideerd of job-station(s) binnen de toegestane stations van de actieve printer vallen.
@@ -2979,24 +3384,28 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Benign handling voor `INVALID_PRINT_QUEUE_TRANSITION` blijft actief om onterechte taakfouten bij gelijktijdige verwerking te vermijden.
 
 ### Relevante bestanden
+
 - `src/components/printer/PrintQueueAdminView.tsx`
 - `src/components/printer/PrintQueueAutoProcessor.tsx`
 
 ### Validatie
+
 - Gerichte error-check op aangepaste bestanden: geen nieuwe errors.
 - Frontend build uitgevoerd (`npm run build`): geslaagd.
 
 ### Huidige status
+
 - Station-routering volgt nu hard de printerstations uit Firebase.
 - Verkeerd gerouteerde jobs worden geblokkeerd en niet geprint.
 
-## Update sessie 9 juni 2026 (Release-actie: versie bump + Vercel productie-deploy)
+### Release-actie: versie bump + Vercel productie-deploy
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 **Tijdstip update:** 2026-06-09
 
 ### Uitgevoerd in deze sessie
+
 **1. Voortgang opgeslagen in conversatiesamenvatting**
 - Laatste status van Wikkelen batch/groep-gereedmelden en print queue overgangsfix is vastgelegd.
 
@@ -3007,17 +3416,19 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Huidige branch is gedeployed naar Vercel production.
 
 ### Huidige status
+
 - Conversatievoortgang staat bijgewerkt.
 - Patchversie is verhoogd.
 - Laatste productieversie staat live op Vercel.
 
-## Update sessie 9 juni 2026 (Wikkelen batch/groep gereedmelden + print queue overgangsrace)
+### Wikkelen batch/groep gereedmelden + print queue overgangsrace
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 **Tijdstip update:** 2026-06-09
 
 ### Uitgevoerd in deze sessie
+
 **1. Wikkelen gereedmelden uitgebreid naar batch/groep op alle stations**
 - Root cause: multi-select voor gereedmelden in terminal-wikkelen stond hard beperkt tot `BH18`, waardoor batchactie elders niet beschikbaar was.
 - Oplossing: station-lock verwijderd zodat batchselectie in Wikkelen op alle stations werkt.
@@ -3034,28 +3445,35 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Effect: onterechte taakfouten zoals `Taak UjYPWbAzBkniwnftitr0 mislukt: Ongeldige print queue statusovergang` worden niet meer als mislukking getoond wanneer de taak ondertussen al door een andere processor verwerkt is.
 
 ### Relevante bestanden
+
 - `src/components/digitalplanning/terminal/TerminalProductionView.tsx`
 - `src/components/digitalplanning/views/ActiveProductionView.tsx`
 - `src/components/printer/PrintQueueAdminView.tsx`
 - `src/components/printer/PrintQueueAutoProcessor.tsx`
 
 ### Deploys en validatie
+
 - Frontend builds uitgevoerd (`npm run build`): geslaagd.
 - Error-checks op aangepaste bestanden: geen nieuwe errors.
 - Firebase hosting deploy uitgevoerd: geslaagd (`Deploy complete`).
 - Hosting URL: `https://future-factory-377ef.web.app`.
 
 ### Huidige status
+
 - Gereedmelden in Wikkelen ondersteunt nu batch/groep op alle relevante stations.
 - Print queue overgangsraces veroorzaken geen onterechte taakfoutmeldingen meer.
 
-## Update sessie 8 juni 2026 (Batch-start teller + printer-loop regressie)
+
+## Dagupdate 8 juni 2026
+
+### Batch-start teller + printer-loop regressie
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 **Tijdstip update:** 2026-06-08
 
 ### Uitgevoerd in deze sessie
+
 **1. Productiestart met meerdere stuks gefixt (teller werd genegeerd)**
 - Root cause: in `ProductionStartModal` werd `totalToProduce` voor bepaalde flows nog afgeleid uit fallback-logica i.p.v. strikt uit de ingevoerde teller (`stringCount`).
 - Oplossing: `totalToProduce` gebruikt nu consequent de tellerwaarde, zodat bij teller `2` ook effectief `2` stuks gestart worden.
@@ -3074,28 +3492,35 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Oplossing: automatische string-lot batchprint staat nu standaard uit en draait alleen nog wanneer `generalSettings.enableStringLotBatchPrint` expliciet aan staat.
 
 ### Deploys en validatie
+
 - Meerdere frontend builds uitgevoerd (`npm run build`): geslaagd.
 - Hosting meerdere keren gedeployed naar Firebase: geslaagd (`Deploy complete`).
 - Hosting URL: `https://future-factory-377ef.web.app`.
 - Gerichte error-checks op aangepaste bestanden: geen nieuwe errors.
 
 ### Relevante bestanden
+
 - `src/components/digitalplanning/modals/ProductionStartModal.tsx`
 - `src/components/digitalplanning/WorkstationHub.tsx`
 - `src/components/digitalplanning/Terminal.tsx`
 
 ### Huidige status
+
 - Tellerwaarde in startmodal is leidend voor productie-aantal.
 - Multi-start bouwt en verstuurt expliciete lotnummerreeksen.
 - Onverwachte extra lotnummer-printjobs zijn standaard uitgeschakeld.
 
-## Update sessie 5 juni 2026 (Tablet UX fixes: toetsenbord-popups + onderbalk ruimteherstel)
+
+## Dagupdate 5 juni 2026
+
+### Tablet UX fixes: toetsenbord-popups + onderbalk ruimteherstel
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 **Tijdstip update:** 2026-06-05 09:15:00 UTC
 
 ### Uitgevoerd in deze sessie
+
 **1. Ongewenste tablet keyboard-popups teruggedrongen**
 - `ProductionStartModal` autofocus-gedrag is beperkt op touch/coarse-pointer devices.
 - In manuele flow wordt niet meer agressief automatisch gefocust op order/lot input op tablets.
@@ -3112,28 +3537,32 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Hierdoor blijven onderkant planning en onderste deel van de Start-productie knop zichtbaar.
 
 ### Relevante bestanden
+
 - `src/components/digitalplanning/modals/ProductionStartModal.tsx`
 - `src/components/digitalplanning/modals/TraceModal.tsx`
 - `src/components/digitalplanning/WorkstationHub.tsx`
 - `src/components/digitalplanning/terminal/TerminalProductionView.tsx`
 
 ### Validatie
+
 - Gerichte error-checks uitgevoerd op alle aangepaste bestanden.
 - Geen nieuwe errors gevonden.
 
 ### Huidige status
+
 - Tablet keyboard opent niet meer onnodig bij KPI modal en manuele startflow.
 - De storende onderbalk/onderruimte is visueel en functioneel teruggebracht.
 
 ---
 
-## Update sessie 5 juni 2026 (Gekoppelde labels A/B + verticale preview-stack)
+### Gekoppelde labels A/B + verticale preview-stack
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 **Tijdstip update:** 2026-06-05 08:30:13 UTC
 
 ### Uitgevoerd in deze sessie
+
 **1. Planning en Wikkelen zoekstate ontkoppeld in terminal-flow**
 - In de workstation terminal is de gedeelde zoekstate opgesplitst:
     - `planningSearch` voor Planning-tab
@@ -3168,6 +3597,7 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Hierdoor is de leesbaarheid beter bij kleine labelmaten.
 
 ### Relevante bestanden
+
 - `src/components/digitalplanning/Terminal.tsx`
 - `src/utils/orderLabelTemplateUtils.ts`
 - `src/components/admin/AdminLabelDesigner.tsx`
@@ -3176,21 +3606,27 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - `src/components/printer/PrintQueueAdminView.tsx`
 
 ### Validatie
+
 - Gerichte error-checks uitgevoerd op alle aangepaste bestanden.
 - Geen nieuwe errors gevonden.
 
 ### Huidige status
+
 - Gekoppelde labels zijn configureerbaar in de labelmaker.
 - Printflows sturen gekoppelde labels nu automatisch sequentieel naar de queue/USB.
 - Previews tonen gekoppelde kleine labels als verticale stack voor betere operator-bruikbaarheid.
 
 ---
 
-## Update sessie 2 juni 2026 (Auto-print route-onafhankelijk + lotnummerpool auto/manual geharmoniseerd)
+
+## Dagupdate 2 juni 2026
+
+### Auto-print route-onafhankelijk + lotnummerpool auto/manual geharmoniseerd
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Auto-print losgekoppeld van zichtbare Print Queue pagina**
 - Root cause: printqueue-verwerking draaide alleen wanneer `PrintQueueAdminView` gemount was.
 - Oplossing: globale achtergrondprocessor toegevoegd:
@@ -3213,26 +3649,30 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Hint wordt debounced berekend op basis van de actuele poolstand.
 
 ### Relevante bestanden
+
 - `src/App.tsx`
 - `src/components/printer/PrintQueueAutoProcessor.tsx`
 - `src/components/digitalplanning/modals/ProductionStartModal.tsx`
 
 ### Validatie
+
 - Gerichte error-checks op alle aangepaste bestanden uitgevoerd: geen nieuwe errors.
 - Gebruikersbevestiging ontvangen dat auto-print nu werkt.
 
 ### Huidige status
+
 - Printqueue wordt nu ook verwerkt wanneer de printpagina niet open staat.
 - Lotnummers in auto-modus verspringen niet meer tussen preview en start.
 - Handmatige en auto-lotnummers komen uit één doorlopende pool en blijven betrouwbaar doortellen.
 
 ---
 
-## Update sessie 2 juni 2026 (Mazak vrije labels uitgebreid + templates opgeslagen)
+### Mazak vrije labels uitgebreid + templates opgeslagen
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Vrij label als losse Mazak-tab naast Gereedmelden**
 - De vrije-label functionaliteit is verplaatst naar een aparte tab `Vrij label` naast `Gereedmelden`.
 - De order/reprint modal blijft daardoor schoon voor reguliere productlabels.
@@ -3254,21 +3694,25 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Activity logging uitgebreid voor traceerbaarheid van vrije-label prints.
 
 ### Relevante bestanden
+
 - `src/components/digitalplanning/MazakView.tsx`
 
 ### Validatie
+
 - Gerichte error-check op `MazakView.tsx` uitgevoerd: geen nieuwe errors.
 
 ### Huidige status
+
 - Mazak operators kunnen nu losse vrije labels maken, opmaken (align + grote fonts), hergebruiken via opgeslagen templates en direct printen op 90x35.
 
 ---
 
-## Update sessie 2 juni 2026 (Lighthouse 203 DPI bitmap-fix + A2G3 jointcode verificatie)
+### Lighthouse 203 DPI bitmap-fix + A2G3 jointcode verificatie
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Bitmap print-DPI geharmoniseerd voor Lighthouse/Zebra flows**
 - Root cause: in een deel van de printflows kreeg driver-DPI voorrang op een handmatig ingestelde printer-DPI, waardoor een Lighthouse-profiel nog op 300 DPI kon renderen.
 - Oplossing: gedeelde helper `resolvePrinterDpi` toegevoegd met vaste prioriteit:
@@ -3287,25 +3731,32 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
     - `ID >= 150` → `Joint code : EST32`
 
 ### Relevante bestanden
+
 - `src/utils/printerDrivers.ts`
 - `src/components/printer/PrintStationView.tsx`
 - `src/components/printer/PrintQueueAdminView.tsx`
 - `src/utils/labelHelpers.tsx` (verificatie jointcode-logica)
 
 ### Validatie
+
 - Gerichte error-check op aangepaste bestanden uitgevoerd: geen nieuwe errors.
 
 ### Huidige status
+
 - Bitmap print houdt nu rekening met expliciet ingestelde 203 DPI op printerprofielniveau, ook in Lighthouse-gerelateerde routes.
 - A2G3 jointcode-regels zijn functioneel bevestigd en traceerbaar in de code.
 
 ---
 
-## Update sessie 1 juni 2026 (Vercel productie-deploy)
+
+## Dagupdate 1 juni 2026
+
+### Vercel productie-deploy
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Productie-deploy naar Vercel uitgevoerd**
 - Deploy gestart vanuit projectroot met `vercel --prod`.
 - Deploystatus succesvol afgerond op Vercel.
@@ -3325,11 +3776,12 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 
 ---
 
-## Update sessie 1 juni 2026 (Operator printregels + ProductionStartModal koppeling)
+### Operator printregels + ProductionStartModal koppeling
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Operator printregels UX herwerkt in Admin Label Logic**
 - De sectienaam is opgeschoond; de ongewenste suffix `(eenvoudig)` is al eerder verwijderd en de operatorregels zijn verder verfijnd.
 - De backendlijst `Opgeslagen regels (backend)` staat nu onder het invulformulier in plaats van erboven.
@@ -3361,29 +3813,34 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Hierdoor hoort een order zoals `A2G3` met diameter `150` nu automatisch het kleine label te kiezen en `1` label te printen wanneer de operatorregel dat voorschrijft.
 
 ### Relevante bestanden
+
 - `src/components/admin/AdminLabelLogic.tsx`
 - `src/components/digitalplanning/modals/ProductionStartModal.tsx`
 
 ### Validatie
+
 - Gerichte error-checks uitgevoerd op beide aangepaste bestanden: geen nieuwe errors.
 
 ### Huidige status
+
 - Operator printregels kunnen nu betrouwbaar worden toegevoegd, opgeslagen, gekopieerd, verwijderd en teruggezien vanuit de backendlijst.
 - Lege hoekvelden blokkeren de opslag niet meer.
 - `ProductionStartModal` gebruikt nu zowel het correcte labelaantal als de correcte klein/groot labelvoorkeur uit de operatorregels.
 
 ### Eerstvolgende stap bij vervolg
+
 1. In de UI live verifiëren dat een order als `ELB 350 90` automatisch op `2` labels groot uitkomt.
 2. In de UI live verifiëren dat een order als `A2G3` met diameter `150` automatisch op `1` klein label uitkomt.
 3. Indien nog nodig: een kleine debug-indicator toevoegen in `ProductionStartModal` die laat zien welke operatorregel precies gematcht is.
 
 ---
 
-## Update sessie 1 juni 2026 (MT presentatie i18n + voortgang opgeslagen)
+### MT presentatie i18n + voortgang opgeslagen
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. MT presentatie volledig vertaalbaar gemaakt via i18n-keys**
 - `mtPresentation` sleutelset toegevoegd in alle taalbestanden:
     - `src/lang/nl.ts`
@@ -3406,11 +3863,15 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 
 ---
 
-## Update sessie 31 mei 2026 (RI-canonisatie + typed path migratie afgerond)
+
+## Dagupdate 31 mei 2026
+
+### RI-canonisatie + typed path migratie afgerond
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. RI als canonieke meettype doorgetrokken in backend en frontend (met fallback op legacy Brix)**
 - Backend services en callables bijgewerkt zodat `ri` leidend is en `brix` als legacy input/compatibiliteit blijft ondersteund.
 - QC UI-flows bijgewerkt zodat nieuwe metingen standaard op RI lopen.
@@ -3426,6 +3887,7 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 - Script ondersteunt dry-run/apply, scope-keuze (`all|measurements|records`) en optioneel `--keep-source`.
 
 ### Verificatie migratie
+
 - Dry-run: 4 kandidaten in `qc_measurements/live/types/brix/items` en 4 kandidaten in `qc_records/live/types/brix/items`.
 - Apply: 8/8 documenten succesvol gemigreerd, 0 mislukt.
 - Nacontrole telling:
@@ -3435,15 +3897,17 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
     - `future-factory/production/qc_records/live/types/brix/items: 0`
 
 ### Extra validatie
+
 - Gerichte error-checks op aangepaste QC-bestanden en `ProductDossierModal.tsx` uitgevoerd zonder nieuwe fouten.
 
 ---
 
-## Update sessie 31 mei 2026 (Legacy QC Brix migratie uitgevoerd)
+### Legacy QC Brix migratie uitgevoerd
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Legacy Brix-metingen operationeel verplaatst naar nieuwe directorystructuur**
 - Een gerichte migratie uitgevoerd voor de 4 legacy documenten uit:
     - `future-factory/production/qc_measurements`
@@ -3471,21 +3935,24 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
     - `qcRecordsBrixCount: 4`
 
 ### Gemigreerde document IDs
+
 - `LFE6JMOtXiOsxWmZJfLR`
 - `e7sHiu5HrxeKCFrwK5Ac`
 - `gOavdNNzGr6ITrK2nwN0`
 - `pjpNotrzpnYI5SdjbHTN`
 
 ### Productdossier impact
+
 - `ProductDossierModal.tsx` gebruikt geen directe padquery op `qc_measurements` of `qc_records` en vereiste voor deze migratie geen aanvullende wijziging.
 
 ---
 
-## Update sessie 31 mei 2026 (QC Steekproef robuustheid & dubbele teller fix)
+### QC Steekproef robuustheid & dubbele teller fix
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Dashboard routing hersteld voor QC Steekproef**
 - Fallback ingebouwd in `AdminDashboard.tsx` zodat de oude bookmark/link ID (`qshe_virtual_lots`) netjes doorverwijst naar de nieuwe ID (`qc_sample`), waarmee de foutmelding "Component laden..." is opgelost.
 
@@ -3502,11 +3969,15 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
 
 ---
 
-## Update sessie 30 mei 2026 (Queue stabilisatie, exacte herprint en BH18 labelregel)
+
+## Dagupdate 30 mei 2026
+
+### Queue stabilisatie, exacte herprint en BH18 labelregel
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. BH18 businessregel voor labelaantal doorgevoerd**
 - Nieuwe regel in `ProductionStartModal`: op BH18 en diameter `> 200` altijd `2` labels.
 - Zowel als UI-default (`labelCount`) als in effectieve printquantity (`labelsToPrint`) afgedwongen.
@@ -3544,19 +4015,22 @@ Deze update zet de volledige recente wijzigingsset bovenaan, zodat in één oogo
     - originele quantity wordt meegenomen indien aanwezig.
 
 ### Operationele observaties
+
 - Meldingen zoals `background.js window is not defined`, `serviceWorker frame removed` en `rokt-icons preload` zijn geclassificeerd als browser/extensie-ruis, niet als app-blocker.
 - Dev-server lock op poort `3000` tijdens sessie verholpen door proces-opruiming en herstart.
 
 ### Huidige status
+
 - Queue aanmaak en statusovergangen functioneren weer stabiel.
 - Herprint vindt records terug en print exacte eerdere queue-kopie zonder template-interactie.
 - BH18 labelregel voor diameter `> 200` staat actief.
 
-## Update sessie 30 mei 2026 (Wavistrong labelpositie gefinaliseerd)
+### Wavistrong labelpositie gefinaliseerd
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Wavistrong label-layout gericht bijgesteld**
 - Verticale tekst op de rechterzijde is 1 mm naar links gezet voor de Wavistrong-layout.
 - `WAVISTRONG`-kop is verder omhoog gezet (eindwaarde: `-1.5 mm` verticale nudge).
@@ -3589,17 +4063,20 @@ Groot
 - Voor `EST 8` resulteert dit in `116 psi` (niet 115), en dit is bewust zo gelaten op verzoek van user.
 
 ### Validatie
+
 - Type/error checks op aangepaste bestanden: geen nieuwe errors.
 
 ### Huidige status
+
 - User heeft bevestigd tevreden te zijn met de labelpositie.
 - Wavistrong-offsets en PSI-gedrag zijn nu vastgelegd als huidige baseline.
 
-## Update sessie 30 mei 2026 (Printer fontgrootte finetuning voortgezet)
+### Printer fontgrootte finetuning voortgezet
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Oude payload-routes verder afgedicht (oorzaak: geen zichtbaar effect op papier)**
 - In queue/reprint flows werd op meerdere plekken oude opgeslagen `labelZPL`/job-payload hergebruikt.
 - Aangepast zodat waar template + variabelen beschikbaar zijn, opnieuw live bitmap-rendering wordt gedaan via de actuele engine.
@@ -3617,23 +4094,30 @@ Groot
 - Signature bijgewerkt mee met schaalstappen (o.a. `BITMAP_V3_TS160`).
 
 ### Validatie
+
 - Type/error checks uitgevoerd op de aangepaste printbestanden: geen nieuwe errors.
 - User feedback bevestigd dat output zichtbaar de goede kant op gaat (letters merkbaar beter/groter dan eerdere prints).
 
 ### Huidige status
+
 - Printeroutput is aantoonbaar verbeterd en beweegt richting gewenste grootte.
 - Nog niet definitief vastgesteld als eindinstelling; laatste stap is fine-tunen rond de huidige schaal (nu `1.60`).
 
 ### Eerstvolgende stap
+
 1. Volgende fysieke testprint op dezelfde flow om te bepalen of `1.60` de sweet spot is.
 2. Indien nét te groot: terugzetten naar `1.58` (of `1.55`) als compromis.
 3. Indien nog te klein: beperkte verhoging naar `1.62` met behoud van `strokeBoost: 0`.
 
-## Update sessie 29 mei 2026 (Nieuwe openstaande punten & wensen verzameld)
+
+## Dagupdate 29 mei 2026
+
+### Nieuwe openstaande punten & wensen verzameld
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### 📝 Actuele Takenlijst / Wensen voor komende sessies:
+
 1. ~~**Productdossier:** Brekingsindex waarden en volgorde aanpassen.~~ (✅ Afgerond)
 2. ~~**Gereedmeld schermen (Nabewerken/BM01/Mazak/etc.):** Duidelijkere productbenamingen tonen.~~ (✅ Afgerond)
 3. ~~**Terminal / Wikkelstap:** Productnaam prominenter weergeven.~~ (✅ Afgerond)
@@ -3643,9 +4127,10 @@ Groot
 
 ---
 
-## Update sessie 29 mei 2026 (Teamleader Dashboard opschoning - Punt 4 afgerond)
+### Teamleader Dashboard opschoning - Punt 4 afgerond
 
 ### Uitgevoerd in deze sessie
+
 **1. Oude LN-verwijzingen en KPI's verwijderd**
 - De oude LN-export voor Stationdetails en de LN-vergelijkingsexport uit de Teamleader pop-ups zijn verwijderd.
 - In `TeamleaderDashboard.tsx` zijn de 3 specifieke "LN vs FF" (mismatch) KPI-tegels weggehaald.
@@ -3657,22 +4142,25 @@ Groot
 
 ---
 
-## Update sessie 29 mei 2026 (Externe review verwerkt naar actiepunten)
+### Externe review verwerkt naar actiepunten
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Samenvatting van de externe beoordeling
+
 - Nieuwe versie is duidelijk volwassener: van modern pilot-prototype naar semi-enterprise manufacturing platform.
 - Sterke vooruitgang op TypeScript-adoptie, modulariteit, CI/CD governance en frontend-architectuur.
 - Geconstateerde score-inschatting uit review: **8.6/10** enterprise-readiness (met vooral winst op maintainability en developer maturity).
 
 ### Bevestigde sterke punten om te behouden
+
 1. TypeScript-first ontwikkelrichting en typed component/service lagen vasthouden.
 2. Modulaire React-architectuur en scheiding van verantwoordelijkheden verder doorzetten.
 3. DevOps-discipline behouden: hooks, tests, CI-workflows en kwaliteitsgates actief houden.
 4. Focus op kernwaarde blijven benutten: productieplanning, operations workflows, dashboards en cloud deployment.
 
 ### Geprioriteerde actiepunten (app-specifiek)
+
 1. **QC-rapportage consolideren**
 - Eén overzicht per lot met metingen, afkeur, correcties, historiek en export naar PDF/Excel.
 - QC-schermen eenduidiger maken zodat operators en teamleaders dezelfde status en dezelfde labels zien.
@@ -3698,30 +4186,35 @@ Groot
 - Audit trail standaard maken voor productie-start/stop, QC-bewerkingen, statuswissels en printacties.
 
 ### Aanvullende platformacties
+
 1. Offline/poor-connectivity strategie uitwerken voor tablets en werkvloerflows.
 2. Backend-service laag verder centraliseren om directe frontend writes te beperken.
 3. ERP-integratiepad definiëren voor orders, masterdata en terugkoppeling van productie/QC.
 4. Machine-connectivity pilot voorbereiden voor OPC UA / MQTT / PLC-signalen.
 
 ### Concreet vervolgschema (uitvoerbaar)
+
 1. **Sprint 1:** QC-rapportages + teamleader personeelsdashboard.
 2. **Sprint 2:** planning board + realtime notificaties.
 3. **Sprint 3:** print/label betrouwbaarheid + security/audit hardening.
 4. **Sprint 4:** offline support + ERP/machine-connectiviteit scope.
 
 ### Doelstatus na uitvoering
+
 - Positionering blijft: modern cloud manufacturing platform met sterke SaaS-architectuur.
 - Verschuiving richting volwaardige enterprise-MES kenmerken door security, auditability, planning, rapportage en connectiviteit structureel af te dekken.
 
-## Update sessie 29 mei 2026 (Monday/VPlan-richting verwerkt naar productactiepunten)
+### Monday/VPlan-richting verwerkt naar productactiepunten
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Strategische verschuiving
+
 - Bevestigd productinzicht: de volgende groeifase zit vooral in **UX + workflow intelligence + collaboration**.
 - Richtingdoel: van puur MES-functionaliteit naar een modern manufacturing operations platform met sterke menselijke workflow-ondersteuning.
 
 ### Topprioriteiten (hoogste impact)
+
 1. **Drag-drop planning board (timeline/Gantt)**
 - Interactieve planning met slepen tussen machines/lijnen.
 - Live rescheduling met conflict-detectie en capaciteitsvisualisatie.
@@ -3744,26 +4237,33 @@ Groot
 - Persona-specifieke dashboards met bruikbare operationele inzichten.
 
 ### Aanvullende verbeteringen (sterk aanbevolen)
+
 1. Smart filtering en opgeslagen views per rol (planner/machine/QC/maintenance).
 2. Visual production board (kanban + swimlanes + drag/drop + machine-occupancy).
 3. UX-hiërarchie verbeteren (minder modals, meer inline editing, rustiger informatiearchitectuur).
 4. No-code configuratiepad voor workflows, velden, dashboards en automatiseringsregels.
 
 ### Uitvoeringsvolgorde (praktisch)
+
 1. Eerst planning board + collaboration fundament (grootste zichtbare productwaarde).
 2. Daarna notification engine + workflow automation (operationele versnelling).
 3. Vervolgens analytics dashboards + slimme views (sturing en schaalbaarheid).
 4. Tot slot no-code configuratie en UX-polish (adoptie en differentiatie).
 
 ### Verwachte marktimpact
+
 - Positionering verschuift van “nog een MES” naar “modern manufacturing operations platform”.
 - Sterkere concurrentiepositie tegenover workflow-first platforms door combinatie van shopfloor diepgang en SaaS-gebruiksgemak.
 
-## Update sessie 28 mei 2026 (Print nog afwijkend na bitmap-only hardening)
+
+## Dagupdate 28 mei 2026
+
+### Print nog afwijkend na bitmap-only hardening
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Bitmap-only printpad verder afgedwongen in actieve schermflows**
 - Runtime-fallbacks naar karakter-ZPL in de primaire labelschermen verder verwijderd.
 - Geen-template fallbacklabels worden nu ook via dezelfde bitmap render-engine opgebouwd i.p.v. handmatige tekst-ZPL strings.
@@ -3782,23 +4282,27 @@ Groot
 - Doel: zichtbaar vollere letterstammen op papier zonder verdere previewwijzigingen.
 
 ### Validatie
+
 - Type/script foutcontrole uitgevoerd op alle aangepaste print/preview bestanden: geen nieuwe errors.
 
 ### Huidige status
+
 - Preview wordt door gebruiker als beter beoordeeld.
 - Fysieke printeroutput blijft volgens gebruiker nog te dun/kleiner dan gewenst, ondanks meerdere bitmap-only tuningstappen.
 - Laatste user-feedback: “totaal geen enkele verandering in de printeroutput”.
 
 ### Eerstvolgende gerichte stap
+
 1. Runtime-verificatie toevoegen op het daadwerkelijke printpad (expliciete marker/log in actieve knopflow) om hard te bevestigen dat de gebruikte printactie de nieuwe bitmap pipeline raakt.
 2. Als marker niet verschijnt: resterend oud printpad identificeren en omzetten.
 3. Als marker wel verschijnt: printerprofielspecifieke fysieke output-tuning (darkness/speed/media + eventueel hogere `strokeBoost`) gericht op het gebruikte device.
 
-## Update sessie 28 mei 2026 (Print/Preview 1-op-1 parity doorbraak)
+### Print/Preview 1-op-1 parity doorbraak
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Printpaden geforceerd naar bitmap-only rendering (geen karakter-ZPL fallback meer in actieve UI-flows)**
 - Legacy/nood en reguliere printflows in de belangrijkste schermen zijn geconvergeerd naar één bitmap-renderpad via `renderLabelToBitmapZpl`.
 - Oude `generatePrintData`-branches in runtime schermflows zijn verwijderd of buiten het actieve pad gebracht.
@@ -3822,23 +4326,27 @@ Groot
 - Dit pakt het effect aan waarbij fonts op print kleiner uitvielen dan in de preview bij verschillende DPI-profielen.
 
 ### Validatie
+
 - Type/script foutcontrole uitgevoerd op alle gewijzigde print/preview-bestanden: geen nieuwe errors.
 - Dev server is tussentijds meerdere keren herstart voor hertest.
 
 ### Huidige status
+
 - Architectuur staat nu op één bronpad voor print: bitmap-only render.
 - Preview gebruikt op de printschermen dezelfde bitmap-logica als printoutput.
 - Laatste functionele check blijft: fysieke printerhertest per template/printerprofiel om te bevestigen dat visuele parity nu 1-op-1 is in praktijk.
 
 ### Eerstvolgende stap bij resterende afwijking
+
 1. Pending queue-jobs regenereren met de nieuwste renderer (oude jobs kunnen nog oudere payload bevatten).
 2. Daarna pas printerprofiel-tuning (darkness/speed/media) uitvoeren als fysieke output nog afwijkt.
 
-## Update sessie 28 mei 2026 (Hervatting: Print parity + QC stabilisatie vervolg)
+### Hervatting: Print parity + QC stabilisatie vervolg
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Samenvattende status bij hervatten
+
 **1. Order Labels printpariteit staat functioneel goed, maar vraagt nog laatste visuele afronding**
 - Legacy/Nood printpad is in eerdere stappen geforceerd naar bitmap-route om stille fallback naar karakter-ZPL te voorkomen.
 - Kernlayout, QR-positie en kolomuitlijning zijn sterk verbeterd, maar er blijft nog een klein risico op typografie/wrap-verschillen tussen preview en fysieke print bij specifieke templates.
@@ -3853,20 +4361,43 @@ Groot
 - Brix-items hebben admin-only bewerkpad via veilige callable en weekgroepering volgt nu primair `measuredAt` i.p.v. opslagtijd.
 
 ### Openstaande controlepunten (hoogste prioriteit)
+
 1. Print Stations: één-op-één visuele vergelijking doen tussen preview en fysieke print op de resterende typografiegevallen (titel-clipping en verticale tekstgedrag).
 2. ProductionStartModal: op werkvloerflow opnieuw valideren dat queue print zonder rechtenfout doorloopt.
 3. QC Brix: in productiecheck bevestigen dat admin-edit, weekgroepering en opslag in gekoppelde dossiers stabiel blijven onder realistische invoer.
 
 ### Concreet hervatplan
+
 1. Eerst gerichte regressietest op labels uitvoeren met dezelfde template/printer-combinatie en afwijkingen direct loggen per element.
 2. Daarna ProductionStartModal end-to-end nalopen met echte operatorflow (start -> queue -> printimport).
 3. Tot slot QC Brix controle afronden op historische en nieuwe metingen, inclusief weekgroepering en admin-edit pad.
 
-## Update sessie 27 mei 2026 (Print parity routes + ProductionStartModal rechtenfix)
+### ATPS -> App leidend voor aanwezigheid
+
+### Vastgelegd gesprekspunt
+
+- Gewenste primaire richting is **ATPS -> app** voor aanwezigheid en afmelding.
+- Scenario dat leidend moet zijn:
+    - Medewerker logt in ATPS in (aanwezig op terrein/afdeling) -> app mag aanwezigheid/afdelingsuren laten lopen.
+    - Medewerker meldt zich daarna op tablet/app aan op machine -> vanaf dat moment tellen productie-uren op machine.
+    - Medewerker logt via ATPS uit -> app moet medewerker direct van machine/werkplek afmelden en uren stoppen.
+- Koppeling moet dus aanwezigheid vanuit ATPS als bron gebruiken, met machine-productie als tweede stap in de app.
+
+**2. Tellers & Virtuele Lots**
+- Virtuele lots (`isVirtualLot: true`) worden nu 100% genegeerd in de ordertellers (`startedAmount`, `liveStartedAmount`, `productionProgressMap`) in de `WorkstationHub`, `Terminal`, `PlanningSidebar` en `OrderDetail`.
+- Hierdoor kunnen QC operators naar hartenlust virtuele lots aanmaken voor inspectie zonder dat de productieteller van de order voortijdig afneemt of de planning in de war raakt.
+
+---
+
+
+## Dagupdate 27 mei 2026
+
+### Print parity routes + ProductionStartModal rechtenfix
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Print Stations Legacy/Nood labels naar geforceerde bitmap-route**
 - In `src/components/printer/PrintStationView.tsx` is de template-flow expliciet op bitmap-print gezet (`useBitmapForLegacyTemplate = true`).
 - Doel: voorkomen dat deze route stil terugvalt op karakter-ZPL en daardoor afwijkende verticale positionering/schaal geeft t.o.v. preview.
@@ -3878,21 +4409,24 @@ Groot
 - Doel: permissie-afhandeling via server-side securitycontext in plaats van directe client write (oorzaak van "onvoldoende rechten" in startflow).
 
 ### Validatie
+
 - Type/script foutcontrole op beide gewijzigde bestanden: geen errors.
 - Productiebuild uitgevoerd en geslaagd:
     - `npm run build` succesvol.
 - Dev server herstart op poort 3000 voor directe hertest in github.dev context.
 
 ### Testfocus voor vervolgstap
+
 1. `Print Stations -> Order Labels Legacy/Nood` met hetzelfde template/printer controleren op zichtbare bitmap-parity.
 2. `ProductionStartModal` opnieuw doorlopen om te bevestigen dat queue print zonder permissiefout verwerkt wordt.
 3. Bij resterende mismatch: route-specifieke runtime logging toevoegen om te verifiëren dat de uiteindelijke payload daadwerkelijk `^GFA` bevat.
 
-## Update sessie 27 mei 2026 (QC Brix stabilisatie, admin-bewerken & weeknummer-fix)
+### QC Brix stabilisatie, admin-bewerken & weeknummer-fix
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. QC save backend gestabiliseerd (500/INTERNAL opgelost op Brix pad)**
 - Root-cause in backendpad aangescherpt: Firestore updates schreven bij Brix soms `undefined` waarden door (o.a. optionele velden), wat server-side fouten kon triggeren.
 - `functions/src/services/qcService.ts` aangepast zodat alleen gedefinieerde velden worden doorgezet in updates.
@@ -3933,6 +4467,7 @@ Groot
 - Parsing uitgebreid zodat ook formaat `dd-mm-jjjj hh:mm` robuust wordt ondersteund.
 
 ### Deploy & validatie
+
 - Meerdere gerichte Firebase deploys succesvol uitgevoerd op project `future-factory-377ef`:
     - `saveQcMeasurement`
     - `saveQcInspection`
@@ -3940,15 +4475,20 @@ Groot
 - Lokale foutcontroles op gewijzigde frontend/backendbestanden zonder nieuwe errors.
 
 ### Resultaatstatus
+
 - QC Brix opslaan werkt stabieler met betere foutdiagnose.
 - Historische metingen groeperen nu op de juiste kalenderweek van het daadwerkelijke meetmoment.
 - Admins kunnen bestaande Brix-metingen nu direct in de lijst bewerken via veilige backend-callable flow.
 
-## Update sessie 26 mei 2026 (QC callable auth/preview stabilisatie)
+
+## Dagupdate 26 mei 2026
+
+### QC callable auth/preview stabilisatie
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Root-cause analyse van QC save fouten op preview**
 - De eerdere 500-crash (`res.on is not a function`) is geanalyseerd via Firebase logs en herleid naar callable-wrapping/signature problemen.
 - 401 meldingen op preview zijn opgesplitst in:
@@ -3976,15 +4516,18 @@ Groot
     - `https://futurefactoryapp-pq2fyp3pu-richard-van-heerdes-projects.vercel.app`
 
 ### Niet-blockerende ruis (bewust onderscheiden)
+
 - `background.js: window is not defined` komt uit extension/script-context, niet uit app-core.
 - `rokt-icons.woff preload not used` is een performance waarschuwing, geen blocker voor QC save.
 
 ### Hervatpunt voor volgende sessie
+
 1. User-side hertest op nieuwste preview met expliciete app-login + hard refresh.
 2. Bij nieuwe fout direct de exacte request/response van `/api/callables/saveQcMeasurement` en de laatste functions logs vergelijken.
 3. Optioneel: audit logging pad (`withAudit` + rawRequest serialisatie) verder opschonen voor stillere logs.
 
 ### Vervolgnotities (aanvulling op stabilisatie)
+
 **1. Backend data-koppeling is nu strikter en robuuster**
 - `saveQcMeasurementService` en `saveQcInspectionService` zoeken het gekoppelde productdossier via drie stappen:
     - expliciet `trackedProductPath` (als meegegeven),
@@ -4002,14 +4545,16 @@ Groot
 - Zonder geldige sessie wordt direct een gebruikersgerichte foutmelding gegeven (niet pas ná een backend roundtrip).
 
 ### Status na deze aanvulling
+
 - De stabilisatie bestaat nu uit drie lagen: correcte Gen2 callable-signature, expliciete preview-routering en preflight-auth guard.
 - Open risico blijft vooral omgevingsafhankelijk (preview domain/CORS/deployment protection), niet de kernlogica van de QC save zelf.
 
-## Update sessie 26 mei 2026 (Virtuele Lotuitgifte / QC Hub fixes)
+### Virtuele Lotuitgifte / QC Hub fixes
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Virtuele Lotuitgifte (QC) UX & Functionaliteit**
 - "QSHE" terminologie overal vervangen door "QC".
 - Layout geoptimaliseerd voor mobiel: de actieve order dropdown staat nu direct onder de machinekeuze in een verticale lijst.
@@ -4019,27 +4564,12 @@ Groot
 - Teller-fix voor Auto-lot: het systeem kijkt nu correct naar bestaande lotnummers (inclusief LN geïmporteerde reeksen) en de *originele* machienaam van de order, zodat de reeks netjes doorloopt (bijv. van `...0006` naar `...0007`).
 - Directe **Print Label** knop toegevoegd na succesvolle uitgifte, welke een A4 HTML printvenster opent met QR code en ordergegevens.
 
-## Update sessie 28 mei 2026 (ATPS -> App leidend voor aanwezigheid)
-
-### Vastgelegd gesprekspunt
-- Gewenste primaire richting is **ATPS -> app** voor aanwezigheid en afmelding.
-- Scenario dat leidend moet zijn:
-    - Medewerker logt in ATPS in (aanwezig op terrein/afdeling) -> app mag aanwezigheid/afdelingsuren laten lopen.
-    - Medewerker meldt zich daarna op tablet/app aan op machine -> vanaf dat moment tellen productie-uren op machine.
-    - Medewerker logt via ATPS uit -> app moet medewerker direct van machine/werkplek afmelden en uren stoppen.
-- Koppeling moet dus aanwezigheid vanuit ATPS als bron gebruiken, met machine-productie als tweede stap in de app.
-
-**2. Tellers & Virtuele Lots**
-- Virtuele lots (`isVirtualLot: true`) worden nu 100% genegeerd in de ordertellers (`startedAmount`, `liveStartedAmount`, `productionProgressMap`) in de `WorkstationHub`, `Terminal`, `PlanningSidebar` en `OrderDetail`.
-- Hierdoor kunnen QC operators naar hartenlust virtuele lots aanmaken voor inspectie zonder dat de productieteller van de order voortijdig afneemt of de planning in de war raakt.
-
----
-
-## Update sessie 26 mei 2026 (Brix Formulier QAQC-W11 Auto-Selectie & i18n Voorbereiding)
+### Brix Formulier QAQC-W11 Auto-Selectie & i18n Voorbereiding
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Herstructurering Brix Meting Formulier (`AddLabMeasurementModal.tsx`)**
 - Volgorde van het formulier exact afgestemd op de fysieke werkinstructies: Operator (Personeelsnummer) -> Meetstation -> Datum/Tijd/Ploeg -> Lotnummer -> Hars -> IPD -> Brekingsindex.
 - **Ploeg-bepaling geautomatiseerd:** Wordt nu op de achtergrond afgeleid van het gekozen tijdstip (Vroeg/Middag/Nacht) en is read-only.
@@ -4048,16 +4578,18 @@ Groot
 - De berekende ratio en de goedkeurings-zone (Area A/B/C) hangen nu 100% af van de geselecteerde Tabel + Gemeten Brekingsindex, conform fabriekspraktijk.
 
 ### Hervatpunt voor volgende sessie
+
 - De kwaliteitscontrole-verbeteringen staan nu live in de code.
 - We kunnen direct door met het geplande i18n-werk. **Start de i18n vertaling voor `src/components/planning/AutomationRulesView.jsx`** (vervangen van vaste teksten door `t()` calls).
 
 ---
 
-## Update sessie 26 mei 2026 (Voorbereiding i18n migratie & roadmap update - ochtend)
+### Voorbereiding i18n migratie & roadmap update - ochtend
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Huidige Status & Planning
+
 **1. i18n Literal Strings Opschoning**
 - Er is een actuele analyse gemaakt (`i18n-literal-report.txt`) met betrekking tot resterende hardcoded teksten (~1904 meldingen over ~84 bestanden).
 - Diverse bestanden zijn in het verleden al omgezet (o.a. `PersonnelManager`, `AdminLabelLogic`, `TeamleaderHub`).
@@ -4072,6 +4604,7 @@ Groot
 - Tevens moeten ontbrekende namespaces (zoals `verification`, `planner` en `productionStandards`) nog worden aangevuld in `de.js` en `ar.js`.
 
 ### Hervatpunt voor volgende sessie
+
 - Pak de i18n migratie daadwerkelijk op voor bovengenoemde drie bestanden: `AutomationRulesView`, `ShopFloorMobileApp`, en `CapacityPlanningView`.
 - Voeg de vereiste translation-keys toe aan de taalbestanden.
 - Werk na afronding van deze batch `translation-tasks.txt` bij en rapporteer of check het resultaat.
@@ -4079,11 +4612,15 @@ Groot
 
 ---
 
-## Update sessie 25 mei 2026 (Factory Configurator uitbreiding, ATM-stijl Lab Invoer & Slimme Lot-Validatie)
+
+## Dagupdate 25 mei 2026
+
+### Factory Configurator uitbreiding, ATM-stijl Lab Invoer & Slimme Lot-Validatie
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Factory Configurator Update (`FactoryStructureManager.tsx`)**
 - Machines en meetpunten hebben nu gerichte categorieën in de dropdown (o.a. Weegschaal, Hars tap, Frees, Boor frees, Afzuiging, Ovens).
 - Status-vinkjes toegevoegd om specifiek te markeren of iets een "Productie machine" is, of behoort tot "Overige (Brix, Lab, Harskeuken, etc)".
@@ -4104,11 +4641,15 @@ Groot
 
 ---
 
-## Update sessie 24 mei 2026 (Harscontrole formulierstructuur, afdelingstegels en dossierkoppeling)
+
+## Dagupdate 24 mei 2026
+
+### Harscontrole formulierstructuur, afdelingstegels en dossierkoppeling
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Brix-weergave uitgebreid naar afdelingsturing met 3 tegels:**
 - De Brix-flow in `LabMeasurementsView` is uitgebreid met drie expliciete afdelings-tegels: **Fittings**, **Spoolbouw**, **Buizen**.
 - Per afdeling kan nu specifiek gefilterd worden op **harskeuken**.
@@ -4146,21 +4687,27 @@ Groot
 - De bestaande QAQC-W11 afgeleide berekening en classificatie naar Area A/B/C is intact gebleven in het Brix-formulier.
 
 ### Opmerking m.b.t. PDF-referentie
+
 - Referentiebestand: `Tijdelijke Bestanden/PDF/2026-05-22 15-17.pdf`.
 - In deze container bleek dit PDF een scan-afbeelding zonder tekstlaag; standaard tools (`pdftotext`, `pdfinfo`, `pdftoppm`) waren niet beschikbaar.
 - Daarom is de formulierstructuur in deze sessie inhoudelijk en visueel benaderd op basis van de opgegeven werkvloerlogica en bestaande QC-context.
 
 ### Hervatpunt voor volgende sessie
+
 1. Indien gewenst: exacte 1-op-1 veldlabels en volgorde afstemmen op het fysieke PDF-formulier aan de hand van een screenshot of veldlijst.
 2. Eventueel extra uitbreidbare afdelingconfig toevoegen (meer harskeukens/aftappunten zonder code-aanpassing via centrale config).
 
 ---
 
-## Update sessie 23 mei 2026 (Algoritme ontdekking QC Hub / Lab Metingen - Brix/Brekingsindex)
+
+## Dagupdate 23 mei 2026
+
+### Algoritme ontdekking QC Hub / Lab Metingen - Brix/Brekingsindex
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Ontdekking Algoritme (QAQC-W11):**
 - Er is een wiskundige formule (algoritme) afgeleid uit het QC document (QAQC-W11) voor het berekenen van de acceptabele brekingsindex/mengverhouding voor Epoxyhars (Epikote 828, Der 336 etc.) en IPD. 
 - Dit algoritme wordt later gebruikt in de **QC Hub** (bij de Brix & Lab Metingen tab) voor het automatisch valideren of een ingevoerde meting binnen de toleranties (Acceptatieniveau A/B/C) valt.
@@ -4181,11 +4728,15 @@ Waarbij:
 
 ---
 
-## Update sessie 22 mei 2026 (QC Hub, Lab Metingen, ISO Compliance & PDF Paspoort)
+
+## Dagupdate 22 mei 2026
+
+### QC Hub, Lab Metingen, ISO Compliance & PDF Paspoort
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Kwaliteitscontrole (QC) Hub & Lab Metingen:**
 - De `QCHub` is volledig dynamisch gemaakt en luistert realtime (via `onSnapshot`) naar `qc_measurements` en `qc_inspections`.
 - Weergave gesplitst: In de Lab Metingen tab kan nu geschakeld worden tussen **Brix Metingen** en **Tg Metingen**.
@@ -4212,11 +4763,15 @@ Waarbij:
 
 ---
 
-## Update sessie 21 mei 2026 (Header ruimtebesparing & Vite Import Fix)
+
+## Dagupdate 21 mei 2026
+
+### Header ruimtebesparing & Vite Import Fix
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. UI/UX: Ruimtebesparing in Matrix Manager:**
 - De header van het "Matrix Manager" admin paneel en de bijbehorende navigatietabs (zoals Beschikbaarheid, Tolerantie Manager, Bibliotheek, etc.) zijn samengevoegd in één strakke, vaste menubalk.
 - Overtollige en dubbele headers (zoals extra "Matrix Hub" teksten en de globale "Root Synchronized" knop) in `AdminDashboard.tsx` en `AdminMatrixManager.tsx` zijn slim geïntegreerd of weggehaald om maximale verticale schermruimte terug te winnen voor de datatabellen.
@@ -4232,11 +4787,12 @@ Waarbij:
 
 ---
 
-## Update sessie 21 mei 2026 (Toleranties & Kwaliteitscontrole)
+### Toleranties & Kwaliteitscontrole
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Tolerantie Manager Bulk-Acties:**
 - In de Matrix Hub (Toleranties) zijn range-filters toegevoegd voor Diameter (ID), Drukklasse (PN) en Hoek.
 - Met de nieuwe "Bulk" knop kun je een ingestelde tolerantie in één keer toepassen op alle gefilterde producten.
@@ -4256,11 +4812,12 @@ Waarbij:
 
 ---
 
-## Update sessie 21 mei 2026 (Vloercontrole & Actieve Lots uitgebreid)
+### Vloercontrole & Actieve Lots uitgebreid
 
 **Branch:** `FPiFF-18-12-May` (actuele werkbranch)
 
 ### Uitgevoerd in deze sessie
+
 **1. Vloercontrole (Ronde) geüpgraded:**
 - Je hoeft niet meer per se een specifiek station of machine te kiezen. De app toont nu direct een overzicht van *alle actieve producten* op de vloer.
 
@@ -4278,19 +4835,25 @@ Waarbij:
 
 ---
 
-## Update sessie 20 mei 2026 (Fix: PrintStationView zoekfunctie permissies)
+
+## Dagupdate 20 mei 2026
+
+### Fix: PrintStationView zoekfunctie permissies
 
 ### Opslagmoment sessie 20 mei 2026 (Labelprint parity vervolg - einde dag)
+
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Huidige status
+
 - Workstation BH12-issue is afgerond (user-validatie: verdwenen).
 - Focus volledig verschoven naar Order Labels printpariteit (preview vs fysieke print).
 - Printkwaliteit is duidelijk verbeterd: hoofdlayout, QR-positie en linker/rechter verticale kolommen staan nu functioneel goed.
 - Dossier is nog niet afgerond: user meldt nog mismatch met preview voor typografie/regelgedrag (o.a. `WAVISTRONG` clipping en verticale tekst die in print anders wrapt/schaalt dan in preview).
 
 ### Technische wijzigingen in dit vervolgstuk
+
 - `src/components/digitalplanning/WorkstationHub.tsx`
     - BH12 station-derivatie strikt gemaakt op `40BH12`-pad, zodat brede fallback-data niet teruglekt.
 - `src/components/printer/PrintStationView.tsx`
@@ -4308,10 +4871,12 @@ Waarbij:
     - Verticale tekst-wrap niet meer geforceerd op minimaal 2 regels; `maxLines` wordt gerespecteerd.
 
 ### Validatie
+
 - `npm run type-check` bleef groen na de wijzigingen.
 - Meerdere printfoto-rondes uitgevoerd en vergeleken met preview; regressies tussendoor zijn direct teruggedraaid/gefikst.
 
 ### Openstaand bij hervatten (morgen)
+
 1. Eén-op-één vergelijking maken tussen actuele preview en laatste print op de twee resterende typografieverschillen:
      - titelregel clipping (`WAVISTRONG` eindteken),
      - rechter verticale tekst: exact 1-regel gedrag gelijk aan preview.
@@ -4320,9 +4885,11 @@ Waarbij:
 
 ### Opslagmoment sessie 20 mei 2026 (Workstation BH12 zichtbaarheidsfix + terug naar labels)
 
+
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze stap
+
 - Workstation-probleem opgelost waarbij BH12/LOSSEN12-18 nog orders bleef tonen na het leegmaken van het machinepad.
 - In `src/components/digitalplanning/WorkstationHub.tsx` is de station-derivatie voor BH12 strikter gemaakt:
     - BH12 accepteert nu alleen orders waarvan `__docPath`/`sourcePath` daadwerkelijk `40BH12` bevat.
@@ -4330,9 +4897,11 @@ Waarbij:
 - Validatie uitgevoerd: `npm run type-check` is groen.
 
 ### Gebruikersvalidatie
+
 - User bevestigd: "het is weg".
 
 ### Hervatpunt (label stuk)
+
 1. Terug naar labelprint-pariteit (preview vs fysieke print).
 2. Focus op verticale kolommen/offsets in `src/utils/zplHelper.ts` en vergelijking met Legacy-output.
 3. Beslissen of bitmap-route (`^GFA`) leidend blijft of dat template-offsets verder moeten worden bijgesteld.
@@ -4340,31 +4909,37 @@ Waarbij:
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie
+
 **1. Firestore permissies voor factory_configs aangepast**
 - Geanalyseerd waarom `PrintStationView.tsx` op de fabrieksvloer faalde om orders te vinden, terwijl dit in de Admin-weergave wel werkte.
 - Oorzaak: `loadFactoryMachinePaths` leest `future-factory/settings/factory_configs/main`. De Firestore-regels vereisten hiervoor een volledig `UserRecord` (`hasUserRecord()`). Omdat terminal-accounts op de vloer vaak alleen `isSignedIn()` hebben en geen volledig UserRecord in de database, retourneerde de query een lege lijst. Hierdoor werden de nested order-paden nooit doorzocht.
 - **Fix:** In `firestore.rules` (en `firestore.rules.production`) is specifiek voor `factory_configs/main` de leesrechten verlaagd naar `allow read: if isSignedIn();`. Dit geeft de werkstations veilig toegang tot de machinelijst, zonder algemene settings open te zetten.
 
 ### Resultaat / Hervatpunt
+
 - De uitgebreide zoekopdracht via `handleOrderLabelSearch` in `PrintStationView` kan nu succesvol de benodigde `deepPathQueries` genereren.
 - Order `N20025243` en vergelijkbare BH18/scoped orders zullen nu wél gevonden worden op de Terminal.
 - **Volgende stap (optioneel):** De 150 regels tellende zoeklogica uit beide bestanden (`AdminPrinterManager` & `PrintStationView`) ontdubbelen naar een enkele `src/utils/orderLabelSearch.ts` helper voor blijvende pariteit.
 
 ### Gewijzigde bestanden (kern)
+
 - `firestore.rules`
 - `firestore.rules.production`
 
 ### Validatie / Controlepunten
+
 - Root cause bevestigd via code-analyse van de pad-opbouw in de zoekflow (`loadFactoryMachinePaths` -> `deepPathQueries`).
 - De rule-wijziging is bewust minimaal gehouden: alleen `future-factory/settings/factory_configs/main` kreeg ruimere leesrechten voor ingelogde werkstations.
 - Overige settings- en productiecollecties blijven onder bestaande strengere autorisatiechecks vallen.
 
 ### Volgende stap bij hervatten
+
 1. In de werkvloer-UI verifiëren dat zoeken op `N20025243` direct resultaat geeft zonder adminrechten.
 2. Eventueel diagnostische logs rond `machinePaths.length` en `deepPathQueries.length` kort laten staan tijdens de eerstvolgende productiecheck.
 3. Daarna duplicatie verwijderen door gedeelde zoekhelper te introduceren en beide views daarop aan te sluiten.
 
 ### Vervolgnotitie sessie 20 mei 2026 (Labelprint font/verticale tekst debug)
+
 
 **Huidige focus:**
 - De labelvoorbeelden in de Label Maker, Legacy Order Labels en Order Labels gebruiken nu dezelfde preview-fontstack (`Lucida Console` / `Courier New` / monospace).
@@ -4378,11 +4953,15 @@ Waarbij:
 
 ---
 
-## Update sessie 19 mei 2026 (Order Labels Pariteit & Gedeeltelijk Zoeken)
+
+## Dagupdate 19 mei 2026
+
+### Order Labels Pariteit & Gedeeltelijk Zoeken
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie
+
 **1. Uitgebreide "Ultimate Fallback" Zoekfunctie**
 - `PrintStationView` en `PrintQueueAdminView` (zowel het hoofdscherm als de pop-ups) zijn voorzien van robuuste zoeklogica.
 - Ondersteuning voor Gedeeltelijk Zoeken toegevoegd: typen van (minimaal 3) tekens zoals `243` doorzoekt nu lokaal de brede plannings- en archiefdata op ordernummer- of ID-matches.
@@ -4398,24 +4977,28 @@ Waarbij:
 - In plaats daarvan begint de modal met een schone lei en een zoekprompt ("Zoek een order of lotnummer..."). Dit verbetert de initiële laadtijd en het overzicht aanzienlijk.
 
 ### Hervatpunt voor de volgende sessie
+
 - De Order Labels en Herdruk-flows in de beheerders- en werkvloerweergave zijn nu accuraat en krachtig doorzoekbaar.
 - Volgende stappen kunnen zich richten op het doorvoeren van deze zelfde opschoning in `PrintStationView` (werkvloer), of het oppakken van een andere prioriteit.
 
 ---
 
-## Update sessie 19 mei 2026 (Opslagmoment: PrintStationView zoekfunctie debuggen)
+### Opslagmoment: PrintStationView zoekfunctie debuggen
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie
+
 **1. Pariteit geprobeerd tussen AdminPrinterManager en PrintStationView**
 - Er is getracht de uitgebreide zoeklogica (inclusief short-circuit BH18 fallbacks en `loadFactoryMachinePaths` diep-zoeken) uit de Admin weergave te kopiëren naar de werkvloer `PrintStationView.tsx`.
 - Doel: Order `N20025243` vindbaar maken op de werkvloer.
 
 ### Huidige Status / Probleem
+
 - Ondanks dat de code in `PrintStationView.tsx` nu vrijwel identiek is aan `AdminPrinterManager.tsx` (waar het wél werkt), blijft de zoekopdracht op de werkvloer aangeven dat er niets is gevonden.
 
 ### Hervatpunt voor de volgende sessie
+
 - **Stap 1:** Onderzoeken waarom `PrintStationView.tsx` faalt om de order te vinden. Mogelijke oorzaken:
   - `loadFactoryMachinePaths` levert misschien een lege array op omdat de Firestore-rechten anders zijn of `factoryConfig` niet goed wordt ingeladen in deze component.
   - De `uniqueOptions` of normalize logic breekt de query voortijdig af.
@@ -4424,11 +5007,15 @@ Waarbij:
 
 ---
 
-## Update sessie 18 mei 2026 (Order Labels BH18 zoekdebug + background task indexfix)
+
+## Dagupdate 18 mei 2026
+
+### Order Labels BH18 zoekdebug + background task indexfix
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie
+
 **1. Order Labels popup-zoekflow uitgebreid**
 - De zoekfunctie in `src/components/admin/AdminPrinterManager.tsx` is meerdere keren aangescherpt voor de flow Sidebar → Printers → Order Labels.
 - Er zijn extra fallback-lagen toegevoegd voor legacy/nood-etiketten zoeken, inclusief:
@@ -4446,19 +5033,22 @@ Waarbij:
 - De codebase bleef compileerbaar terwijl de Order Labels zoeklogica verder werd verfijnd.
 
 ### Gewijzigde bestanden (kern)
+
 - `src/components/admin/AdminPrinterManager.tsx`
 - `src/contexts/BackgroundTaskContext.tsx`
 
 ### Hervatpunt
+
 - De BH18-zoekflow in Order Labels moet opnieuw in de UI getest worden met `N20025243`.
 - Als de popup nog steeds niets toont, is de volgende stap om de zichtbare zoekdiagnostiek te lezen en te bepalen of het een rules/read-probleem of een filterprobleem is.
 ---
 
-## Update sessie 18 mei 2026 (Structuur Refactor: Modals)
+### Structuur Refactor: Modals
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie
+
 **1. Projectstructuur opgeschoond**
 - Op verzoek van de gebruiker zijn diverse modal-gerelateerde bestanden verplaatst naar de `src/components/digitalplanning/modals/` map voor een logischere structuur.
 - Betreft de volgende bestanden:
@@ -4478,6 +5068,7 @@ Waarbij:
 - Deze stap borgt dat het om een pure structuurwijziging gaat (geen functionele scope creep), met een veilig hervatpunt voor de daaropvolgende performance-rondes.
 
 ### Gewijzigde bestanden (kern)
+
 - `src/components/digitalplanning/modals/ProductMoveModal.tsx`
 - `src/components/digitalplanning/modals/TeamleaderModalContext.tsx`
 - `src/components/digitalplanning/modals/TeamleaderModals.tsx`
@@ -4485,15 +5076,17 @@ Waarbij:
 - `src/components/digitalplanning/TeamleaderHub.tsx`
 
 ### Volgende stappen (Hervatpunt)
+
 - **Stap 1:** E2E Playwright test (`operator-flow.spec.ts`) inrichten en draaien ter regressiebescherming.
 - **Stap 2:** Verdere performance optimalisaties doorvoeren waar nodig.
 ---
 
-## Update sessie 18 mei 2026 (Zustand Performance Refactors voor Hubs & Notificaties)
+### Zustand Performance Refactors voor Hubs & Notificaties
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie
+
 **1. Zustand Migratie: Teamleader Hub & Modals**
 - `TeamleaderModalContext.tsx` is omgebouwd naar een efficiënte Zustand store (`useTeamleaderModalStore`).
 - `TeamleaderHub.tsx`, `TeamleaderModals.tsx` en `useTeamleaderEventHandlers.ts` zijn aangepast om selectief (granulair) state te lezen. 
@@ -4511,16 +5104,18 @@ Waarbij:
 - Componenten zoals `ProgressToast`, `ProductReleaseModal`, `ProductionStartModal` en `BackgroundTaskOverlay` direct aangesloten op specifieke selectors om onnodige re-renders te stoppen.
 
 ### Volgende stappen (Hervatpunt)
+
 - **Stap 1:** Applicatie lokaal builden/testen (`npm run type-check && npm run build`) ter verificatie.
 - **Stap 2:** E2E Playwright test (`operator-flow.spec.ts`) inrichten en draaien ter regressiebescherming.
 - **Stap 3:** Zustand optimalisaties desgewenst doorzetten naar `WorkstationHub.tsx` (Terminal weergave op de vloer).
 ---
 
-## Update sessie 18 mei 2026 (Playwright E2E Operator Flow uitgewerkt)
+### Playwright E2E Operator Flow uitgewerkt
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie
+
 **1. E2E Test Ingericht (Operator Flow)**
 - De ruwe Playwright test in `tests/e2e/operator-flow.spec.ts` is volledig uitgeschreven.
 - Test-scenario dekt nu de flow voor terminal/werkstation `BM18`:
@@ -4533,15 +5128,15 @@ Waarbij:
 
 ---
 
-## Update sessie 16 mei 2026 (batch-afsluiting PrintQueue + ShopFloor strict TS)
 
----
+## Dagupdate 17 mei 2026
 
-## Update sessie 17 mei 2026 (TypeScript 100% afgerond, Offline cache & Playwright E2E setup)
+### TypeScript 100% afgerond, Offline cache & Playwright E2E setup
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie
+
 **1. TypeScript "Any-Killer" volledig afgerond (0 fouten!)**
 - De laatste complexe modals (`ProductionStartModal`, `TeamleaderExportModal`, `ReferenceOpsImportModal`, `ProductDossierModal`) zijn strict-getypeerd.
 - Globale check via `npm run type-check` geeft 0 fouten. De codebase is daarmee robuust, veilig en klaar voor verdere opschaling.
@@ -4556,6 +5151,7 @@ Waarbij:
 - Template bestand `tests/e2e/operator-flow.spec.ts` aangemaakt met het raamwerk voor de kritieke inlog- en scan-flow.
 
 ### Pauzestand & Hervatpunt
+
 Het daadwerkelijk uitprogrammeren van de Playwright interacties is op dit punt gepauzeerd.
 
 **Eerstvolgende stappen bij hervatten (Kiezen):**
@@ -4565,36 +5161,50 @@ Het daadwerkelijk uitprogrammeren van de Playwright interacties is op dit punt g
 **Branch:** `FPiFF-18-12-May`
 
 ### Afgerond in deze batch
+
 - `src/components/printer/PrintQueueAdminView.tsx` volledig strict-getypt en gevalideerd: **0 fouten** in gerichte type-check.
 - `src/components/planning/ShopFloorMobileApp.tsx` tweede grote type-pass afgerond (state inferentie, helper signatures, scan-result model, modal/prop typing, null/unknown guards): **0 fouten** in gerichte type-check.
 
 ### Wat technisch is aangepast
+
 - Firestore- en callback-typing verder genormaliseerd met expliciete signatures.
 - `scanResult` model gestabiliseerd zodat scanner-UI en modal-flow zonder `unknown`/`undefined` property errors compileert.
 - Meerdere inferentieproblemen in order/machine aggregaties opgelost via expliciete `useMemo<T>` en tussentypes (`OrderWithProducts`, `MachineStat`).
 - Product-move en repair flows gehard met veilige string coercions en consistente actor/user-id logging.
 
 ### Gevalideerde status op afsluitmoment
+
 - Commando: `npm run -s type-check -- --pretty false > /tmp/tscheck.out 2>&1; grep -n "ShopFloorMobileApp.tsx" /tmp/tscheck.out`
 - Resultaat: geen regels terug voor `ShopFloorMobileApp.tsx`.
 
 ### Hervatpunt voor volgende sessie
+
 - Door met de volgende resterende strict TypeScript clusters buiten deze twee bestanden (toplijst opnieuw bepalen met globale type-check en dan volgende hotspot kiezen).
 
-## Update sessie 16 mei 2026 (Opslagmoment TS Any-Killer en Implicit Any analyse)
+
+## Dagupdate 16 mei 2026
+
+### batch-afsluiting PrintQueue + ShopFloor strict TS
+
+---
+
+### Opslagmoment TS Any-Killer en Implicit Any analyse
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in de afgelopen stappen
+
 - **TypeScript Any-Killer op grote bestanden:** Intensieve opschoning op de hoofdbestanden `Terminal.tsx`, `WorkstationHub.tsx` en `ProductDossierModal.tsx`.
 - **Hardnekkige `never[]` fouten:** Door strenge inferentie in React component props bleven onderliggende weergaves (zoals `TerminalPlanningView`) klagen over arrays.
 - **Fallback via Node Scripts:** Omdat standaard file-patches stuk liepen op de identieke regels in de enorme bestanden, zijn er custom Node-scripts ingezet die via Regex robuuste `as any` en `String(t(...))` casts forceerden. Dit heeft de complexe union-conflicten succesvol gedempt.
 
 ### Actuele status van het project
+
 - Er zijn momenteel nog **~2458 TypeScript fouten over 50 bestanden**.
 - Het overgrote deel hiervan is getransformeerd naar **"implicit any"** fouten (zoals `TS7031`, `TS7006`, `TS7034`). Dit betekent dat door onze verstrenging parameters zoals `(order) => ...` nu klagen dat ze geen expliciet type hebben gekregen.
 
 ### Eerstvolgende stap (bij hervatten)
+
 - De drie zwaarst getroffen bestanden direct aanpakken om in één klap ~192 fouten weg te werken:
   1. `ProductionStartModal.tsx` (111 fouten)
   2. `TeamleaderExportModal.tsx` (45 fouten)
@@ -4603,11 +5213,12 @@ Het daadwerkelijk uitprogrammeren van de Playwright interacties is op dit punt g
 
 ---
 
-## Update sessie 16 mei 2026 (Grootschalige Strict TS & Any-Killer Cleanup voltooid)
+### Grootschalige Strict TS & Any-Killer Cleanup voltooid
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Volledig opgeschoonde bestanden (0 TypeScript fouten)
+
 In deze massieve sessie is de "Any-Killer" strategie in hoog tempo succesvol doorgevoerd. De volgende bestanden zijn nu 100% type-clean en valideren zonder fouten in de strict-mode TypeScript compiler:
 
 **Admin & Matrix Manager:**
@@ -4627,12 +5238,14 @@ In deze massieve sessie is de "Any-Killer" strategie in hoog tempo succesvol doo
 - `CancelOrderModal.tsx`, `DrillDownModal.tsx`, `OperatorLinkModal.tsx`, `PlanningImportModal.tsx`, `CapacityImportModal.tsx`, `InspectionModal.tsx`, `LoanPersonnelModal.tsx`, `PostProcessingFinishModal.tsx`
 
 ### Toegepaste Technische Oplossingen (Patronen)
+
 - **Firestore Spread-paths gefixt:** `doc(db, ...PATHS.X)` is structureel vervangen door veilige string-paths: `doc(db, getPathString(PATHS.X))`. Dit elimineerde talloze hardnekkige overload-fouten in de V9 SDK.
 - **Inferentie problemen verholpen:** Overal expliciete generics gebruikt (`useState<Type>()`) om `never[]` en `implicit any` inferenties te stoppen.
 - **Component Boundaries:** Grote hoeveelheden ontbrekende `Props` interfaces toegevoegd, zodat data veilig wordt overgedragen naar child-componenten.
 - **Nullability & Unknown guards:** Consistente toepassing van `getErrorMessage`, string-coercions, null-checks en expliciete `HTMLElement` casts voor DOM events.
 
 ### Actueel Hervatpunt
+
 - De enorme compiler-foutlijst is effectief gedecimeerd. De iteratie is gepauzeerd in `ProductDossierModal.tsx`.
 - De eerste laag van `ProductDossierModal.tsx` (imports, props, label-templates en basis handlers) is getypeerd en gepatcht.
 - **Eerstvolgende stap:** Het resterende gedeelte van `ProductDossierModal.tsx` afronden (vooral admin-auth roles, station/history array shapes en de laatste tuple-path calls). 
@@ -4640,11 +5253,15 @@ In deze massieve sessie is de "Any-Killer" strategie in hoog tempo succesvol doo
 
 ---
 
-## Update sessie 15 mei 2026 (strict TS admin cleanup hervat)
+
+## Dagupdate 15 mei 2026
+
+### strict TS admin cleanup hervat
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerde strict-TypeScript cleanup
+
 - File-scoped Any-Killer / strict-typing fixes afgerond en gevalideerd voor:
     - `src/components/admin/AdminToolingMoldsView.tsx`
     - `src/components/admin/AdminUsersView.tsx`
@@ -4655,6 +5272,7 @@ In deze massieve sessie is de "Any-Killer" strategie in hoog tempo succesvol doo
     - `src/components/admin/NFCTagRegistrationModal.tsx`
 
 ### Terugkerende technische fixpatronen
+
 - Expliciete `useState<T>()`-generics toegevoegd om `never[]` en `null`-inferentie te stoppen.
 - Firestore-calls genormaliseerd naar string-path helpers via `getPathString(PATHS.X)` of lokale `colPath` / `docPath` wrappers.
 - `unknown`-veilige error handling toegepast in plaats van directe `.message` / `.code` toegang.
@@ -4662,10 +5280,12 @@ In deze massieve sessie is de "Any-Killer" strategie in hoog tempo succesvol doo
 - In `.ts` / `.tsx` bestanden geen `.tsx` import-extensies gebruiken.
 
 ### Validatie-aanpak
+
 - Na elke inhoudelijke patch direct een gerichte type-check uitgevoerd met `npm run -s type-check -- --pretty false 2>&1 | grep -n "BestandsNaam\.tsx"`.
 - Alle hierboven genoemde bestanden komen na hun laatste validatie niet meer terug in de type-check output.
 
 ### Actueel hervatpunt
+
 - Nieuwe topcluster na de laatste check zit nu in `src/components/admin/PersonnelManager.tsx`.
 - Eerste zichtbare fouten daar:
     - `.tsx` importpad in TS-bestand (`TS5097`)
@@ -4674,6 +5294,7 @@ In deze massieve sessie is de "Any-Killer" strategie in hoog tempo succesvol doo
     - Firestore spread-path fouten
 
 ### Beste vervolgstap
+
 - Verdergaan in `src/components/admin/PersonnelManager.tsx` met precies dezelfde volgorde:
     - imports corrigeren
     - props/state expliciet typen
@@ -4681,6 +5302,7 @@ In deze massieve sessie is de "Any-Killer" strategie in hoog tempo succesvol doo
     - direct file-scoped valideren
 
 ### Vervolg 16 mei 2026 (strict TS admin cleanup, PersonnelManager)
+
 - Hervatting gestart op `src/components/admin/PersonnelManager.tsx` met focus op dezelfde Any-Killer volgorde.
 - Reeds aangepakt in dit bestand:
     - Firestore pad-gebruik genormaliseerd richting string-path aanpak met `getPathString(PATHS.X)`.
@@ -4695,93 +5317,109 @@ In deze massieve sessie is de "Any-Killer" strategie in hoog tempo succesvol doo
     - Overgebleven document-ID paden expliciet vernauwen naar `string` op callsites waar Firestore strikt is.
     - Daarna opnieuw gerichte check: `npm run -s type-check -- --pretty false 2>&1 | grep -n "PersonnelManager\.tsx"` tot deze file schoon is.
 
-## Update sessie 15 mei 2026 (performance TODO vastgelegd)
+### performance TODO vastgelegd
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Eerstvolgend vervolgpunt (opgeslagen voor later)
+
 - TypeScript-cleanup vervolgen bij `src/components/admin/AdminLogView.tsx`; vorige sessie heeft `AdminLabelDesigner.tsx`, `AdminLabelManager.tsx` en `AdminLocationsView.tsx` uit de globale typecheck-foutlijst gehaald, waardoor `AdminLogView.tsx` nu de actuele topcluster is.
 
 ### Context
+
 - Build is groen (`npm run -s build`), maar Vite geeft chunk-size waarschuwingen.
 
 ### Opgeslagen actie voor later
+
 - Performance-optimalisatie later uitvoeren via Vite/Rollup chunking:
     - Gerichte `manualChunks` in `vite.config.ts` voor zware vendor-bundels (o.a. firebase, xlsx, jspdf, pdfjs).
     - Waar zinvol extra lazy-loading (`dynamic import()`) op zware admin/views.
     - Na wijziging opnieuw valideren met `npm run -s build` en chunk-verdeling vergelijken.
 
 ### Status
+
 - **Niet nu uitgevoerd**, expliciet opgeslagen als later uit te voeren taak.
 
-## Update sessie 15 mei 2026 (grote variant-opruiming + build groen)
+### grote variant-opruiming + build groen
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerde cleanup
+
 - Grootschalige opschoning van overbodige `.js`-varianten uitgevoerd in `src` waar al een `.ts` of `.tsx`-variant bestond.
 - Verwijderd: **277** bestanden.
 - Na verwijdering is de overlapcheck tussen `.js` en `.ts/.tsx` in `src` op **0** uitgekomen.
 
 ### Opgevolgde buildfixes
+
 - Build brak eerst op syntaxproblemen in `src/components/ai/AiAssistantView.tsx`; die map-/haakjesfouten zijn gecorrigeerd.
 - Daarna is een import/export mismatch in `src/App.tsx` opgelost door `ProgressToast` als default import te gebruiken.
 
 ### Validatie
+
 - `npm run -s build` slaagt nu volledig.
 - Alleen Vite chunk-size waarschuwingen blijven over; geen compilefouten meer.
 
 ### Effect
+
 - De app gebruikt nu consequent de TypeScript-bronnen waar die aanwezig zijn.
 - Overbodige legacy `.js`-dubbelingen zijn uit `src` verwijderd, waardoor verborgen TS/TSX-fouten zichtbaar werden en direct zijn hersteld.
 
 ### Vervolg
+
 - Blijven letten op eventuele resterende `.js`-only bestanden zonder `.ts/.tsx`-tegenhanger.
 - Eventuele verdere type- of buildproblemen kunnen nu vanuit de echte bronbestanden worden opgeschoond.
 
-## Update sessie 15 mei 2026 (hervatting vervolg 4)
+### hervatting vervolg 4
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerde Any-Killer micro-batch
+
 - `@ts-nocheck` verwijderd in 3 volgende targetbestanden:
     - `src/components/digitalplanning/views/PlanningListView.js`
     - `src/components/admin/UniversalRescueTool.js`
     - `src/components/digitalplanning/DigitalPlanningHub.js`
 
 ### Validatie
+
 - `get_errors` uitgevoerd op alle 3 aangepaste bestanden: **geen errors**.
 - Actuele momentopname resterende `@ts-nocheck` in `src`: **161**.
 
 ### Vervolg
+
 - Volgende micro-batch: opnieuw 3 kleinste resterende bestanden en direct valideren.
 
 ---
 
-## Update sessie 15 mei 2026 (hervatting vervolg 3)
+### hervatting vervolg 3
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerde Any-Killer micro-batch
+
 - `@ts-nocheck` verwijderd in 3 volgende kleine targetbestanden:
     - `src/components/planning/KanbanBoardView.js`
     - `src/components/admin/AdminProductListView.js`
     - `src/components/admin/matrixmanager/AvailabilityView.js`
 
 ### Validatie
+
 - `get_errors` uitgevoerd op alle 3 aangepaste bestanden: **geen errors**.
 - Actuele momentopname resterende `@ts-nocheck` in `src`: **164**.
 
 ### Vervolg
+
 - Verder met de volgende 3 kleinste resterende targets in dezelfde micro-batch aanpak.
 
 ---
 
-## Update sessie 15 mei 2026 (hervatting vervolg 2)
+### hervatting vervolg 2
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerde Any-Killer micro-batches
+
 - Extra **2 micro-batches** uitgevoerd na het vorige hervatblok, telkens low-risk (alleen `@ts-nocheck` verwijderd).
 - Batch A:
     - `src/components/printer/LighthousePrintView.js`
@@ -4793,55 +5431,68 @@ In deze massieve sessie is de "Any-Killer" strategie in hoog tempo succesvol doo
     - `src/components/personnel/PersonnelListView.js`
 
 ### Validatie
+
 - `get_errors` uitgevoerd op alle 6 aangepaste bestanden: **geen errors**.
 - Actuele momentopname resterende `@ts-nocheck` in `src`: **167**.
 
 ### Vervolg
+
 - Doorgaan met de volgende 3 kleinste resterende targets, met dezelfde werkwijze: micro-batch + directe validatie.
 
 ---
 
-## Update sessie 15 mei 2026 (vervolg na opslagfout chat)
+### vervolg na opslagfout chat
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Context
+
 - Vorige chat-run viel weg tijdens opslaan; deze vervolgstap herneemt dezelfde Any-Killer lijn zonder functionele refactors.
 
 ### Uitgevoerde Any-Killer micro-batch
+
 - `@ts-nocheck` verwijderd in 3 kleine targetbestanden:
     - `src/components/digitalplanning/modals/LoanPersonnelModal.js`
     - `src/components/admin/UserStationManager.js`
     - `src/components/admin/matrixmanager/MatrixView.js`
 
 ### Validatie
+
 - `get_errors` uitgevoerd op alle 3 aangepaste bestanden: **geen errors**.
 - Actuele momentopname resterende `@ts-nocheck` in `src`: **173**.
 
 ### Vervolg
+
 - Volgende stap blijft: opnieuw de kleinste resterende `@ts-nocheck` bestanden in micro-batches aanpakken en direct per batch valideren.
 
 ---
 
-## Update sessie 14 mei 2026 (Any-Killer samengevat, 1 stuk)
+
+## Dagupdate 14 mei 2026
+
+### Any-Killer samengevat, 1 stuk
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Kernsamenvatting
+
 - De Any-Killer lijn is op 14 mei in meerdere kleine batches doorgezet met steeds dezelfde werkwijze: `@ts-nocheck` verwijderen, lokale types toevoegen, strict-narrowing toepassen en direct globaal valideren.
 - Focus lag op low-risk, incrementele opschoning van utilities, componentgrenzen en enkele service/test-randen, zonder brede functionele refactors.
 
 ### Afgeronde werkpakketten (geconsolideerd)
+
 - Utility batches rond working time, manual sync, workstation/infor en planning/tracking helpers.
 - Verdere strict-typing fixes op o.a. pdf/error/inventory/hub/printer gerelateerde bestanden.
 - Vervolg-mini-batches op Teamleader hubs/panels/helpers plus `aiServiceTest.ts` met API-afstemming op de actuele `aiService`-interface.
 
 ### Technische aanpak
+
 - Lokale shape-types en expliciete functie-signatures toegevoegd.
 - Null/unknown/date narrowing en index-guards toegepast waar strict mode daarom vroeg.
 - Compatibiliteitscasts behouden op legacy-randen waar upstream nog `unknown`-gebaseerde signatures gebruikt.
 
 ### Validatiestatus
+
 - Tijdens alle batches herhaald globale validatie uitgevoerd met `npm run type-check -- --pretty false`.
 - Eindstatus van deze samengevoegde 14-mei run: **EXIT_CODE: 0**.
 - Resterende `@ts-nocheck` in `src`: **150**.
@@ -4850,9 +5501,11 @@ De voortgang is daarna opgeslagen met --no-verify, zodat je werk niet verloren g
 Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden en fix ik eventuele resterende issues meteen.
 
 ### Hervatpunt
+
 - Volgende stap blijft: opnieuw de 3 kleinste resterende `@ts-nocheck` bestanden in `src` selecteren, lokaal typeren en direct globaal valideren.
 
 ### Vervolgcheckpoint (14 mei 2026, later in dezelfde run)
+
 - Extra mini-batches uitgevoerd met dezelfde low-risk aanpak (alleen `@ts-nocheck` verwijderd, geen functionele wijzigingen).
 - In totaal **6 extra bestanden** opgeschoond:
     - `src/components/products/ProductCard.tsx`
@@ -4869,10 +5522,12 @@ Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden 
 - Actuele momentopname resterende `@ts-nocheck` in `src`: **239**.
 
 ### Vervolgcheckpoint (15 mei 2026, na Copilot-uitval)
+
 - Any-Killer direct hervat op dezelfde branch in **5 commits** op 15 mei, met focus op kleine component-batches.
 - Batches 2 t/m 5 bleven low-risk en gericht per 3 bestanden; batch 1 was inhoudelijk Any-Killer, maar bevatte daarnaast ook brede repo-nevenwijzigingen/artifacts.
 
 ### Afgeronde mini-batches (15 mei)
+
 - **Batch 1 (doelbestanden volgens commit-omschrijving)**
     - `src/components/digitalplanning/terminal/useTerminalGereedData.ts`
     - `src/components/digitalplanning/modals/LotOverrideModal.tsx`
@@ -4895,6 +5550,7 @@ Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden 
     - `src/components/teamleader/TeamleaderGanttView.tsx`
 
 ### Commit snapshot (15 mei)
+
 - `2242083` - Any-Killer batch 1 (brede commit met veel extra bestandswijzigingen)
 - `3cf3c5d` - Any-Killer batch 2
 - `d86bc89` - Any-Killer batch 3
@@ -4902,17 +5558,22 @@ Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden 
 - `e9dc970` - Any-Killer batch 5
 
 ### Notitie voor vervolg
+
 - `docs/CONVERSATION_SUMMARY.md` is in deze keten al eerder geraakt; dit blok herstelt de ontbrekende continuiteit na de weggevallen Copilot-run.
 - In de brede batch-1 commit zaten ook niet-kernbestanden (o.a. tijdelijke `.jpg` artifacts); voor Any-Killer-volgorde zijn de drie doelbestanden hierboven leidend.
 - Volgende stap blijft gelijk: opnieuw de kleinste resterende `@ts-nocheck` targets oppakken in micro-batches en na elke batch direct valideren.
 
 ---
 
-## Update sessie 12 mei 2026 (MT Presentatie optimalisaties & nieuwe slides)
+
+## Dagupdate 12 mei 2026
+
+### MT Presentatie optimalisaties & nieuwe slides
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Gebruikersverzoeken & Doelen:
+
 - Optimalisatie van de MT Presentatie code (performance & toegankelijkheid).
 - Verduidelijken van de datastroom (Gatekeeper Cloud Functions).
 - Kosten-slide updaten: lay-out verbeteren, GitHub kosten verhogen naar €50-75, en een voetnoot toevoegen.
@@ -4920,6 +5581,7 @@ Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden 
 - Overdracht-slide (SSO) tekst aanpassen en beter leesbaar maken.
 
 ### Uitgevoerde acties:
+
 **1. Code & Performance Optimalisaties (`MTPresentation.tsx`)**
 - `changeSlide` functie gememoized met `useCallback` en de event listener voor toetsenbordnavigatie geoptimaliseerd (bindt nu slechts 1 keer i.p.v. bij elke slidedraai).
 - `aria-label`s toegevoegd aan de navigatieknoppen voor betere toegankelijkheid.
@@ -4931,18 +5593,21 @@ Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden 
 - **Overdracht:** Headers en teksten vergroot voor betere leesbaarheid op afstand. Microsoft SSO tekst specifiek aangepast naar: "Hoofdgebruikers kunnen inloggen met hun eigen @futurepipe.com mail en account."
 
 ### Gewijzigde bestanden:
+
 - `src/components/MTPresentation.tsx`
 
 ---
 
-## Update sessie 12 mei 2026 (Archieforder ophogen + terug naar planning)
+### Archieforder ophogen + terug naar planning
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Gebruikersverzoek
+
 - Een order die al volledig in archief staat moet alsnog opgehoogd kunnen worden en direct terugkomen in de planning.
 
 ### Uitgevoerd in deze sessie
+
 - Backend uitgebreid zodat `updatePlanningOrderDetails` nu ook archieforders kan vinden en heropenen:
     - Als order niet actief gevonden wordt, zoekt de service nu in `archivePlanningPath`.
     - Bij een ophoging wordt de order automatisch teruggezet naar de actieve planningcollectie.
@@ -4956,10 +5621,12 @@ Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden 
     - Deze actie is gekoppeld via `TeamleaderDetailPane` en `TeamleaderHub` naar de event handler.
 
 ### Validatie
+
 - `get_errors` op alle aangepaste bestanden: geen errors.
 - Volledige `npm run type-check` is uitgevoerd en faalt op bestaande projectbrede Any-Killer fouten buiten deze wijziging (ongewijzigde utility-bestanden).
 
 ### Gewijzigde bestanden
+
 - `functions/src/services/planningTransitionService.ts`
 - `functions/src/callables/planningCallables.ts`
 - `src/services/planningSecurityService.ts`
@@ -4970,15 +5637,17 @@ Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden 
 
 ---
 
-## Update sessie 12 mei 2026 (Any-Killer vervolgcheckpoint opgeslagen)
+### Any-Killer vervolgcheckpoint opgeslagen
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Doel van deze vervolgstap
+
 - Verdergaan op pijler 4 (strict TypeScript) met kleine, veilige fixes per bestand.
 - Nieuwe actuele blockers direct valideren met gerichte type-checks.
 
 ### In deze vervolgstap afgerond
+
 - `src/components/CalculatorView.tsx`
     - TS2345 blocker opgelost door prop-typen gelijk te trekken met de matrix-typen van `calculateZDimension`.
 - `src/utils/conversionLogic.ts`
@@ -4995,6 +5664,7 @@ Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden 
     - Functie-annotaties toegevoegd om strict-fouten te elimineren.
 
 ### Validatie (gericht)
+
 - Type-check herhaald op de aangepaste bestanden:
     - `CalculatorView.tsx`
     - `conversionLogic.ts`
@@ -5006,19 +5676,25 @@ Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden 
 - Resultaat: geen actuele matches meer voor deze set.
 
 ### Actuele vervolgstap
+
 - Volgende Any-Killer target: `src/utils/automationEngine.test.ts` (mock-typing + resterende implicit-any).
 
 ---
 
-## Update sessie 11 mei 2026 (Any-Killer voortgang + actuele status)
+
+## Dagupdate 11 mei 2026
+
+### Any-Killer voortgang + actuele status
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Doel van deze run
+
 - Doorgaan op pijler 4: strikte TypeScript opschoning ("Any-Killer") in kleine, veilige batches.
 - Per bestand valideren met gerichte type-checks om regressies te beperken.
 
 ### In deze run afgerond
+
 - Eerder in deze keten strict-clean gemaakt en gevalideerd:
     - `src/services/planningContext.ts`
     - `src/services/planningSecurityService.ts`
@@ -5035,6 +5711,7 @@ Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden 
     - Resultaat: geen actuele matches meer in de type-check voor deze drie bestanden.
 
 ### Actuele topfouten (nu)
+
 - Eerste actuele blocker in de nieuwste run:
     - `src/components/CalculatorView.tsx` (TS2345, type mismatch rond matrixdata)
 - Grootste foutcluster daarna:
@@ -5042,18 +5719,21 @@ Als je wilt, run ik nu direct een gerichte lint/type-check op deze 21 bestanden 
     - `src/utils/conversionLogic.ts` (veel implicit any + nullable/string narrowing)
 
 ### Notities
+
 - In de workspace staan diagnostische outputbestanden van eerdere runs (`type_check_output*.txt`, `type_check_report.txt`); deze bevatten historische snapshots en zijn niet leidend voor de actuele status.
 
 ### Eerstvolgende stap (bij vervolg)
+
 - Starten met `src/components/CalculatorView.tsx` (single-error quick win), daarna gefaseerd `src/utils/conversionLogic.ts` in kleine type-batches.
 
 ---
 
-## Update sessie 11 mei 2026 (Strategische Roadmap & Volgende Aanbevelingen)
+### Strategische Roadmap & Volgende Aanbevelingen
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Strategisch Actieplan voor Enterprise-Readiness (Vastgelegd)
+
 Nu de fundering staat en de pilot draait, ligt de focus voor de komende periode op vijf strategische pijlers:
 
 1. **Van Context API naar Zustand (Performance):** 
@@ -5070,6 +5750,7 @@ Nu de fundering staat en de pilot draait, ligt de focus voor de komende periode 
 *Eerstvolgende stap:* Bepalen welke van deze 5 pijlers als eerste wordt opgepakt en hier technisch mee starten.
 
 ### Vervolguitwerking (concrete roadmap)
+
 
 #### Prioriteit en volgorde (aanbevolen)
 1. **E2E Testing (Playwright) eerst**  
@@ -5118,11 +5799,12 @@ Nu de fundering staat en de pilot draait, ligt de focus voor de komende periode 
 
 ---
 
-## Update sessie 11 mei 2026 (Voorbereiding QR & Export optimalisaties)
+### Voorbereiding QR & Export optimalisaties
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Gebruikersverzoeken & Doelen:
+
 **1. BM01 (Dagoverzicht & Tabs)**
 - **Tab-volgorde wijzigen:** `Planning` → `Te Keuren` → `NH` → `Gereed` → `LN`.
 - **Lijstweergave:** In de tabs 'Gereed' en 'NH' terug naar een simpele weergave met uitsluitend lotnummers.
@@ -5133,16 +5815,21 @@ Nu de fundering staat en de pilot draait, ligt de focus voor de komende periode 
 - **Filteren:** Een keuzemenu toevoegen zodat er geëxporteerd/geprint kan worden op een specifieke locatie (bijv. alleen "Lossen", "Nabewerken" of "Mazak").
 
 ### Uitgevoerde acties:
+
 - `TeamleaderExportModal.tsx` aangepast: De dropdown toont in de 'Lotnummers'-weergave nu alle dynamische locaties. PDF en Excel exports worden netjes gegroepeerd en gesorteerd geprint op de hudige locatie van de items.
 - *Notitie:* De besproken optimalisaties voor BM01 (tab-volgorde, versimpelde lijsten, QR-sortering op ordernummer) zijn al eerder in het proces succesvol afgerond.
 
 ---
 
-## Update sessie 10 mei 2026 (Functions TypeScript afgerond + productie deploy Firebase/Vercel)
+
+## Dagupdate 10 mei 2026
+
+### Functions TypeScript afgerond + productie deploy Firebase/Vercel
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie:
+
 **1. Cloud Functions TypeScript migratie volledig afgerond**
 - Gefaseerde migratie uitgevoerd van `functions/src` van `.js` naar `.ts`.
 - Eerst low-risk lagen gemigreerd (utils, config, auth), daarna repository/service-laag, en als laatste alle callables.
@@ -5173,19 +5860,25 @@ Nu de fundering staat en de pilot draait, ligt de focus voor de komende periode 
 - Alias bevestigd: `https://future-factory.vercel.app`.
 
 ### Validatie:
+
 - Firebase hosting endpoint reageert met HTTP 200.
 - Vercel productie endpoint reageert met HTTP 200.
 
 ### Opmerking:
+
 - Tijdens Firebase index-sync zijn 1 bestaande Firestore index en 1 field override verwijderd omdat deze niet in de lokale `firestore.indexes.json` stonden (standaard sync-gedrag van deploy).
 
 ---
 
-## Update sessie 9 mei 2026 (Audit Logging Middleware - Actiepunt 3)
+
+## Dagupdate 9 mei 2026
+
+### Audit Logging Middleware - Actiepunt 3
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie:
+
 **1. Audit Logging Middleware (`withAudit`) opgezet in backend**
 - Nieuw bestand `functions/src/utils/withAudit.js` aangemaakt.
 - Deze Higher Order Function wikkelt Cloud Functions in een try/catch blok en logt automatisch de `_STARTED`, `_SUCCESS`, en `_FAILED` statussen via de `auditService`.
@@ -5206,11 +5899,12 @@ Nu de fundering staat en de pilot draait, ligt de focus voor de komende periode 
 
 ---
 
-## Update sessie 9 mei 2026 (Git push + persistente auth setup)
+### Git push + persistente auth setup
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie:
+
 **1. Push naar nieuwe repository afgerond**
 - Commit `8e22a0d` succesvol gepubliceerd naar `richardvh18-dotcom/Future-Factory-Fpi` op branch `FPiFF-18-12-May`.
 - Verificatie uitgevoerd met fetch/status zodat lokale branch en remote branch gelijk lopen.
@@ -5227,19 +5921,22 @@ Nu de fundering staat en de pilot draait, ligt de focus voor de komende periode 
 - Validatie: `git push --dry-run origin FPiFF-18-12-May` geeft `Everything up-to-date`.
 
 ### Resultaat:
+
 - `git push origin FPiFF-18-12-May` en `git pull` kunnen nu via normale origin-URL gebruikt worden.
 - Geen noodzaak meer om tokens in de commandoregel te zetten voor deze repo.
 
 ---
 
-## Update sessie 9 mei 2026 (Senior Code Review Evaluatie & Actieplan)
+### Senior Code Review Evaluatie & Actieplan
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Context:
+
 De codebase heeft een Senior Code Review ondergaan. Het algemene oordeel is zeer positief (8.8/10 voor architectuur). De transitie naar een CQRS-light architectuur waarbij mutaties via backend callables lopen, wordt als een grote, enterprise-waardige stap gezien. Om de resterende technische schuld aan te pakken, is een nieuw strategisch actieplan vastgelegd.
 
 ### Vastgelegd Actieplan (Prioriteiten):
+
 
 **1. Firestore Rules Opschonen & Over-engineering aanpakken (Direct uitgevoerd)**
 - Alle overgebleven, complexe client-side validatieregels uit `firestore.rules` verwijderd.
@@ -5260,11 +5957,12 @@ De codebase heeft een Senior Code Review ondergaan. Het algemene oordeel is zeer
 
 ---
 
-## Update sessie 9 mei 2026 (Laatste TypeScript cleanup + aiService importfix)
+### Laatste TypeScript cleanup + aiService importfix
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie:
+
 **1. Laatste `src` JavaScript-bestanden gemigreerd naar TypeScript**
 - Overgebleven `.js`-bestanden in `src/` hernoemd naar `.ts`.
 - `// @ts-nocheck` toegevoegd op de gemigreerde bestanden om functioneel gedrag stabiel te houden tijdens deze afrondende migratiestap.
@@ -5289,6 +5987,7 @@ De codebase heeft een Senior Code Review ondergaan. Het algemene oordeel is zeer
 - Effect: Rollup/Vite warning over ontbrekende default export uit `aiService.ts` verdwenen.
 
 ### Validatie:
+
 - `npm run type-check` ✅
 - `npm run build` ✅
 - `npm run ts:refresh-baseline` ✅
@@ -5296,16 +5995,21 @@ De codebase heeft een Senior Code Review ondergaan. Het algemene oordeel is zeer
 - `get_errors` (workspace) ✅ geen errors
 
 ### Resultaat:
+
 - `src/` bevat nu **0** `.js/.jsx` bestanden volgens de TypeScript baseline.
 - Laatste bekende AI import/export mismatch is opgelost zonder regressies in build.
 
 ---
 
-## Update sessie 8 mei 2026 (Smart Planning AI & Sidebar UI Optimalisaties)
+
+## Dagupdate 8 mei 2026
+
+### Smart Planning AI & Sidebar UI Optimalisaties
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie:
+
 **1. AI Planningsassistent (Smart Planning)**
 - Nieuwe visuele module (`SmartPlanningSuggestions.tsx`) direct geïntegreerd bovenaan de Teamleader Hub (Volledige Lijst).
 - Module toont de top 5 prioriteitsorders gebaseerd op een weging tussen vrachtwagen/leverdatum en order type.
@@ -5327,11 +6031,12 @@ De codebase heeft een Senior Code Review ondergaan. Het algemene oordeel is zeer
 
 ---
 
-## Update sessie 8 mei 2026 (later) — TypeScript migratie Components Batch
+### (later) — TypeScript migratie Components Batch
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie:
+
 - Batch migratie van resterende `.jsx` bestanden in `src/components/` naar `.tsx` afgerond.
 - Betreffende mappen: `admin`, `ai`, `debug`, `digitalplanning`, `notifications`, `personnel`, `planning`, `printer`, `products`, `teamleader`.
 - Voor alle bestanden is de `.jsx` extensie gewijzigd naar `.tsx` en `// @ts-nocheck` toegevoegd op de eerste regel.
@@ -5340,16 +6045,18 @@ De codebase heeft een Senior Code Review ondergaan. Het algemene oordeel is zeer
 
 ---
 
-## Update sessie 8 mei 2026 (avond) — TypeScript migratie Fase 6–7 + non-component cleanup
+### (avond) — TypeScript migratie Fase 6–7 + non-component cleanup
 
 **Branch:** `FPiFF-18-12-May`
 
 ### Baseline voortgang
+
 - Start sessie: 178 resterende `.js/.jsx` bestanden
 - Einde sessie: **155 resterende** `.js/.jsx` bestanden (uitsluitend `src/components/`)
 - Gemigreerd: **23 bestanden** in deze sessie
 
 ### Gemigreerde bestanden
+
 
 | Fase | Bestanden |
 |------|-----------|
@@ -5358,6 +6065,7 @@ De codebase heeft een Senior Code Review ondergaan. Het algemene oordeel is zeer
 | **Laatste 3** | `src/config/firebase.js` → `.ts`, `src/main.jsx` → `.tsx`, `src/App.jsx` → `.tsx` |
 
 ### Fixes toegepast
+
 - `planningContext.ts`: `collection(db, getPathString(p))` voor alle 3 spread-paths
 - `planningSecurityService.ts`: `(payload.priority as string)` cast voor `.includes()`
 - `efficiencyCalculator.ts`: `(startTime as any).toDate` voor Firestore timestamps
@@ -5369,25 +6077,29 @@ De codebase heeft een Senior Code Review ondergaan. Het algemene oordeel is zeer
 - Vite cache gecleared: `rm -rf node_modules/.vite`
 
 ### Huidig status
+
 - type-check ✅ · build ✅ · enforce:new-ts ✅
 - Baseline: 155 bestanden
 - **Enige resterende migratie:** `src/components/` — 152 `.jsx` bestanden
 
 ### Hervatpunt volgende sessie
+
 - Start met componenten per submap: `admin`, `ai`, `debug`, `digitalplanning`, `notifications`, `personnel`, `planning`, `printer`, `products`, `teamleader`
 - Strategie: batch-rename `.jsx` → `.tsx` + `// @ts-nocheck` per submap, daarna type-check + build
 - Na elke batch: `npm run type-check && npm run build && npm run ts:refresh-baseline && npm run enforce:new-ts`
 
 ---
 
-## Update sessie 8 mei 2026 — TypeScript migratie batches 6–11
+### TypeScript migratie batches 6–11
 
 **Branch:** `FPiFF-18-12-May` | **Laatste commit:** `d85c8b1`
 
 ### Baseline
+
 - Start: ~233 `.js/.jsx` bestanden → Na batch 11: **207 resterende** `.js/.jsx` bestanden
 
 ### Gemigreerde bestanden per batch
+
 
 | Batch | Commit | Bestanden |
 |-------|--------|-----------|
@@ -5402,6 +6114,7 @@ De codebase heeft een Senior Code Review ondergaan. Het algemene oordeel is zeer
 | 11 | `d85c8b1` | TeamleaderDetailPane, ProductPassportModal, TerminalManualInput, InternalQrImage, hubHelpers, ProgressOperationContext, findDrawingForProduct |
 
 ### Kritieke patronen (import pinning)
+
 - `.jsx` importers → altijd explicit `.tsx`/`.ts` extensie pinnen (Vite HMR cache fix)
 - `.tsx`/`.ts` importers → GEEN extensie (TS verbiedt `.tsx` extensie zonder `allowImportingTsExtensions`)
 - `useRef(null)` + cast i.p.v. `useRef<HTMLDivElement>()` (ESLint no-undef op DOM globals)
@@ -5409,6 +6122,7 @@ De codebase heeft een Senior Code Review ondergaan. Het algemene oordeel is zeer
 - JSX-bestanden die nog niet gemigreerd zijn: casten als `React.ComponentType<any>` bij gebruik in TSX
 
 ### Commit workflow
+
 ```
 npm run type-check && npm run build && npm run ts:refresh-baseline && npm run enforce:new-ts && git add -A && git commit
 ```
@@ -5417,7 +6131,10 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
-## Update sessie 7 mei 2026 (TypeScript migratie hervatpunt)
+
+## Dagupdate 7 mei 2026
+
+### TypeScript migratie hervatpunt
 
 **Status:**
 - TypeScript guardrail actief: `npm run enforce:new-ts` (nieuwe `.js/.jsx` in `src/` geblokkeerd)
@@ -5436,7 +6153,128 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
-## Sessie 7 mei 2026 — Senior Programmer Review (stappen 1–4)
+### BH Machine Planning Filter Simplificatie
+
+**Digitale planning / Workstation Hub & Terminal:**
+- Complexiteit uit de BH-machine (wikkelstations) order filtering gehaald in `Terminal.jsx` en `WorkstationHub.jsx`.
+- Volledige overstap naar een strikte, enkele waarheidsbron gebaseerd op het UI "Te doen" veld (`Plan - (Gemaakt - Afkeur)`).
+- Oude lappenmiddelen zoals `shouldHideBH18PlanningOrder`, afhankelijkheid van downstream stations, en expliciete (soms legacy) LN database counters zoals `started_BH18` of `toDoQty` volledig verwijderd.
+- Dit verhelpt het bug-scenario (o.a. zichtbaar op order N20024607) waarbij orders met Te doen = 0 toch in het overzicht bleven hangen omdat de achterliggende LN counter de actuele werkelijkheid achterliep.
+- Hardcoded test-blacklist set (`TEMP_HIDDEN_ORDER_IDS`) met N20025138 en N20024916 uit `Terminal.jsx` gesloopt omdat deze nu robuust afgevangen worden door de live 'Te doen' logica.
+- Bestaande regressietesten (`npm run test:regression:bh18`) succesvol doorgelopen.
+
+**Digitale planning / Teamleader Volledige Lijst (`OrderDetail.jsx`):**
+- Opgelost dat orders met uitsluitend geannuleerde (`CANCELLED`/`DELETED`) lots toch als "In behandeling" werden geteld, doordat de app terugviel op oude LN-counters (bijv. `started_BH18`).
+- Logica aangepast: de app vertrouwt nu 100% op de lokale database als er tracking data is, óók als al die tracking data geannuleerd is. Hierdoor wordt de vervuilde LN-teller genegeerd en kloppen "Start Aantal" (0), "In behandeling" (0) en "To do" (weer gelijk aan Orderhoeveelheid) exact met de werkelijkheid en de Terminal weergave.
+
+---
+
+### Update sessie 151 (Repository pattern, error handling, services, audit log UI, nieuwe repo)
+
+**Datum:** 7 mei 2026 | **Branch:** `FPiFF-18-12-May` | **Commit:** `e5bba0f`
+
+### Gebruikersverzoeken & Doelen:
+
+1. Hook refactoring voltooien (repository pattern)
+2. Frontend dom maken (business rules uit components)
+3. Error handling standaardiseren
+4. Echte services bouwen
+5. Audit log UI leesbaarder maken
+6. Nieuwe repository aanmaken van huidige branch
+
+### Uitgevoerde acties:
+
+
+**1. Repository pattern (6 hooks) ✅**
+- Alle hooks gebruiken nu `src/repositories/` i.p.v. directe Firestore imports
+- `isActivePlanningOrder` + `ACTIVE_PLANNING_STATUSES` toegevoegd aan `trackingHelpers.js`
+- Nieuwe bestanden: `planningRepository.js`, `productsRepository.js`, `settingsRepository.js`, `inventoryRepository.js`
+
+**2. Frontend dom maken ✅**
+- `usePlanningData` vereenvoudigd — geen inline business logic meer
+- Statusfiltering via `isActivePlanningOrder` uit trackingHelpers
+
+**3. Error handling standaardiseren ✅**
+- `functions/src/utils/errorHandler.js` — `handleCallableError`, `ERROR_MAP` (43 codes)
+- `src/utils/errorHandler.js` — `parseCallableError`, `logAndParseError` (NL berichten)
+- 45 catch blocks in `planningCallables.js` herschreven naar `handleCallableError`
+
+**4. Echte services bouwen ✅**
+- `updateProductionStandard` callable: auth + role-check + auditlogging
+- `autoLearningService` + `automationEngine`: directe Firestore writes vervangen door callable
+- `updateProductionStandard` wrapper toegevoegd aan `planningSecurityService.js`
+
+**5. Audit log UI leesbaarder ✅ (`AdminLogView.jsx`)**
+- `SmartDiffView`: tabel Was/Wordt, changed fields geel gemarkeerd, doorgestreept rood → groen
+- Timestamps `{seconds, nanoseconds}` → `dd-MM-yyyy HH:mm:ss`
+- `formatObjectDetails` herschreven: "Order X op werkstation Y · lotnummer Z, totaal N"
+- Technische paden (`orderDocPath`, `orderSourcePath`) worden weggelaten uit de samenvatting
+- `{ }` knop per rij voor toggle naar ruwe JSON (voor auditeurs)
+- Bug gefixed: `before/after: null` toonde onterecht lege diff
+
+**6. Nieuwe repository aangemaakt ✅**
+- `https://github.com/richardvh18-dotcom/Future-Factory-Fpi` (private)
+- Branch `FPiFF-18-12-May` gepusht als `main`
+
+### Nieuwe bestanden
+
+- `src/repositories/` (4 bestanden)
+- `src/utils/errorHandler.js`
+- `functions/src/utils/errorHandler.js`
+- `src/contexts/BackgroundTaskContext.jsx`
+- `src/components/notifications/BackgroundTaskOverlay.jsx`
+- `functions/src/callables/exportCallables.js`
+
+### Build status
+
+- ✓ 2825 modules transformed (frontend)
+- ✓ functions laadt foutloos
+
+---
+
+### Update sessie 150 (BH18 tijdelijke filtering, versie bump en productie deploy)
+
+**Datum:** 7 mei 2026 | **Branch:** `FPiFF-18-12-May`
+
+### Gebruikersverzoeken & Doelen:
+
+- BH18 workstation-lijst corrigeren: alleen relevante lopende orders tonen en specifiek twee foutieve orders tijdelijk verbergen.
+- Productie-deploy uitvoeren naar Vercel.
+- Versie bumpen voor automatische client refresh.
+- Deze context expliciet opslaan voor snelle hervatting in de volgende sessie.
+
+### Uitgevoerde acties:
+
+**1. Tijdelijke BH18 workaround (`Terminal.jsx`)**
+- Tijdelijke blacklist toegevoegd in de workstation filtering:
+    - `N20025138`
+    - `N20024916`
+- Doel: operationeel rust creëren terwijl de structurele BH18-filterlogica later definitief wordt hersteld.
+
+**2. Regressie-herstel op filterlogica (`Terminal.jsx`)**
+- Meerdere agressieve hide-regels zijn teruggedraaid omdat daardoor ook legitieme lopende orders verdwenen.
+- Huidige staat is bewust conservatief gehouden om false positives te beperken.
+
+**3. Productie deploy + versie bump**
+- Vercel productie deploy uitgevoerd met build-env:
+    - `VITE_APP_VERSION=0.1.5`
+- Versie bijgewerkt in:
+    - `public/version.json` → `0.1.5`
+    - `package.json` → `0.1.5`
+- Productie alias actief: `https://future-factory.vercel.app`
+
+**4. Vastlegging prioriteit voor vervolg**
+- Repo memory aangemaakt met prio-item om dit als eerste op te pakken:
+    - `memories/repo/bh18-conversie-prio.md`
+
+### Eerstvolgende prioriteit (opstartpunt volgende sessie):
+
+- Tijdelijke blacklist verwijderen.
+- Definitieve BH18-regel implementeren op station-specifieke waarheid
+    (`currentStation/currentStep + started_BH18 + madeCount`), zonder false positives.
+- Kaartteller en filter op exact dezelfde databron laten draaien.
+
+### Senior Programmer Review (stappen 1–4)
 
 **Repository overgang:**
 - Gestart in `richardvh18-dotcom/FPIFF-30-1`, branch `FPiFF-18-12-May`
@@ -5488,212 +6326,21 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 - Doel: eenvoudiger debuggen, minder setter-props, betere schaalbaarheid voor nieuwe modals.
 
 ---
-## Update sessie 7 mei 2026 (BH Machine Planning Filter Simplificatie)
 
-**Digitale planning / Workstation Hub & Terminal:**
-- Complexiteit uit de BH-machine (wikkelstations) order filtering gehaald in `Terminal.jsx` en `WorkstationHub.jsx`.
-- Volledige overstap naar een strikte, enkele waarheidsbron gebaseerd op het UI "Te doen" veld (`Plan - (Gemaakt - Afkeur)`).
-- Oude lappenmiddelen zoals `shouldHideBH18PlanningOrder`, afhankelijkheid van downstream stations, en expliciete (soms legacy) LN database counters zoals `started_BH18` of `toDoQty` volledig verwijderd.
-- Dit verhelpt het bug-scenario (o.a. zichtbaar op order N20024607) waarbij orders met Te doen = 0 toch in het overzicht bleven hangen omdat de achterliggende LN counter de actuele werkelijkheid achterliep.
-- Hardcoded test-blacklist set (`TEMP_HIDDEN_ORDER_IDS`) met N20025138 en N20024916 uit `Terminal.jsx` gesloopt omdat deze nu robuust afgevangen worden door de live 'Te doen' logica.
-- Bestaande regressietesten (`npm run test:regression:bh18`) succesvol doorgelopen.
 
-**Digitale planning / Teamleader Volledige Lijst (`OrderDetail.jsx`):**
-- Opgelost dat orders met uitsluitend geannuleerde (`CANCELLED`/`DELETED`) lots toch als "In behandeling" werden geteld, doordat de app terugviel op oude LN-counters (bijv. `started_BH18`).
-- Logica aangepast: de app vertrouwt nu 100% op de lokale database als er tracking data is, óók als al die tracking data geannuleerd is. Hierdoor wordt de vervuilde LN-teller genegeerd en kloppen "Start Aantal" (0), "In behandeling" (0) en "To do" (weer gelijk aan Orderhoeveelheid) exact met de werkelijkheid en de Terminal weergave.
+## Dagupdate 6 mei 2026
 
----
-## Update sessie 28 april 2026
-
-**Digitale planning / Slimme Sync:**
-- Handmatige orderaanpassing voor `N20024781` zorgde voor onterechte afwijking in Slimme Sync.
-- Uitsluiting toegevoegd aan de bestaande businessguard-lijst in:
-    - `src/components/digitalplanning/modals/PlanningImportModal.jsx`
-- Effect: `N20024781` wordt niet meer als Slimme Sync-afwijking behandeld in de importflow.
-- Validatie: geen editor errors op aangepast bestand.
-
-**Vercel productie deploy:**
-- Productie deployment uitgevoerd via CLI vanaf huidige workspace.
-- Command: `npx vercel --prod --yes`
-- Status: Ready
-- Deployment ID: `dpl_31zVQ7bnKSw1XWfST3HeXQbYGdXt`
-- Productie URL:
-    - `https://futurefactoryapp-5w8xq3q25-richard-van-heerdes-projects.vercel.app`
-- Alias live:
-    - `https://future-factory.vercel.app`
-2899f1f - feat: Add delivery date change detection to Smart Sync and improve date parsing (richardvh18-dotcom)\n\n## Update session (Leverdatum Sync & Datum-parsing)\n- Nieuwe parameter 'leverdatum' toegevoegd aan Slimme Sync om wijzigingen te detecteren.\n- UI-indicatie toegevoegd voor gewijzigde leverdata (oude datum doorgestreept).\n- Datumvergelijking verbeterd voor verschillende formaten (bijv. 27-03 vs 27-3) door conversie naar YYYY-MM-DD.\n- Case-insensitive vergelijking voor PO Text toegevoegd.\n- Orders N20024731 en N20024607 tijdelijk uitgesloten van sync.
-## Update sessie 105 (Lossen 12/18 routingfix, scannerfocus Lossen/BM01, push + Vercel productie)
-
-**Datum:** 21 april 2026 | **Branch:** `FF-2-4-26`
-
-**Gebruikersmeldingen:**
-- Station `Lossen 12/18` bleef weer leeg.
-- In `Lossen` en `BM01` was de scan lotnummer-balk niet direct actief; er moest opnieuw in het veld worden geklikt.
-- Daarna verzoek om direct te pushen en naar Vercel productie te deployen.
-
-**Root cause / analyse:**
-- In `LossenView` was de centrale filtering weer inconsistent met de afgesproken routingregels.
-- De weergavelogica liet voor oorsprong `BH12/BH15/BH17` weer diameter-routing meespelen, terwijl deze origins exclusief bij `Lossen 12/18` horen.
-- Scannerfocus in `Lossen` en `BM01` vertrouwde op enkele losse focus-calls; bij modal/venster-state kon focus verloren gaan.
-
-**Fixes uitgevoerd:**
-- Bestand aangepast: `src/components/digitalplanning/LossenView.jsx`
-    - Routingfiltering gehard met expliciete sets:
-        - `LOSSEN_1218_DIRECT_STATIONS = {BH12,BH15,BH17,12,15,17}`
-        - `LOSSEN_1218_BH18_STATIONS = {BH18,18}`
-    - Nieuwe helperlogica toegevoegd:
-        - `hasOriginInSet(...)`
-        - `shouldBelongToLossen1218(...)`
-    - Gedrag nu:
-        - `BH12/BH15/BH17` altijd exclusief op `Lossen 12/18`
-        - alleen `BH18` splitst nog op diameter naar centraal `LOSSEN` of `Lossen 12/18`
-
-- Bestand aangepast: `src/components/digitalplanning/LossenView.jsx` en `src/components/digitalplanning/BM01Hub.jsx`
-    - Scannerfocus robuust gemaakt via `focusScanInput()` + `scheduleScanFocus()`.
-    - Focus wordt nu hersteld bij:
-        - eerste render
-        - klikken buiten interactieve controls
-        - window/tab focus terugkeer
-        - sluiten van actie/finish-modal
-    - Inputvelden kregen `autoFocus` voor directe activatie.
-
-**Validatie:**
-- Type/editor errors op beide gewijzigde bestanden: geen errors.
-- Gerichte lintcheck:
-    - `npx eslint src/components/digitalplanning/LossenView.jsx src/components/digitalplanning/BM01Hub.jsx`
-    - Resultaat: alleen bestaande warnings, geen errors.
-- Productiebuild succesvol:
-    - `npm run build`
-
-**Git / release:**
-- Commit gemaakt met alleen functionele codewijzigingen:
-    - `fd53a4d` — `Fix Lossen 12/18 routing and scanner autofocus in Lossen/BM01`
-- Push uitgevoerd naar origin:
-    - branch `FF-2-4-26`
-
-**Vercel productie deploy:**
-- Command uitgevoerd: `npx vercel deploy --prod --yes`
-- Production deployment geslaagd.
-- Deployment URL:
-    - `https://futurefactoryapp-906oudr74-richard-van-heerdes-projects.vercel.app`
-- Alias live:
-    - `https://future-factory.vercel.app`
-
-**Nog lokaal gewijzigd (niet in release-commit):**
-- `.firebase/hosting.ZGlzdA.cache`
-- `CONVERSATION_SUMMARY.md`
-
----
-
----
-
-## Update sessie 151 (Repository pattern, error handling, services, audit log UI, nieuwe repo)
-
-**Datum:** 7 mei 2026 | **Branch:** `FPiFF-18-12-May` | **Commit:** `e5bba0f`
-
-### Gebruikersverzoeken & Doelen:
-1. Hook refactoring voltooien (repository pattern)
-2. Frontend dom maken (business rules uit components)
-3. Error handling standaardiseren
-4. Echte services bouwen
-5. Audit log UI leesbaarder maken
-6. Nieuwe repository aanmaken van huidige branch
-
-### Uitgevoerde acties:
-
-**1. Repository pattern (6 hooks) ✅**
-- Alle hooks gebruiken nu `src/repositories/` i.p.v. directe Firestore imports
-- `isActivePlanningOrder` + `ACTIVE_PLANNING_STATUSES` toegevoegd aan `trackingHelpers.js`
-- Nieuwe bestanden: `planningRepository.js`, `productsRepository.js`, `settingsRepository.js`, `inventoryRepository.js`
-
-**2. Frontend dom maken ✅**
-- `usePlanningData` vereenvoudigd — geen inline business logic meer
-- Statusfiltering via `isActivePlanningOrder` uit trackingHelpers
-
-**3. Error handling standaardiseren ✅**
-- `functions/src/utils/errorHandler.js` — `handleCallableError`, `ERROR_MAP` (43 codes)
-- `src/utils/errorHandler.js` — `parseCallableError`, `logAndParseError` (NL berichten)
-- 45 catch blocks in `planningCallables.js` herschreven naar `handleCallableError`
-
-**4. Echte services bouwen ✅**
-- `updateProductionStandard` callable: auth + role-check + auditlogging
-- `autoLearningService` + `automationEngine`: directe Firestore writes vervangen door callable
-- `updateProductionStandard` wrapper toegevoegd aan `planningSecurityService.js`
-
-**5. Audit log UI leesbaarder ✅ (`AdminLogView.jsx`)**
-- `SmartDiffView`: tabel Was/Wordt, changed fields geel gemarkeerd, doorgestreept rood → groen
-- Timestamps `{seconds, nanoseconds}` → `dd-MM-yyyy HH:mm:ss`
-- `formatObjectDetails` herschreven: "Order X op werkstation Y · lotnummer Z, totaal N"
-- Technische paden (`orderDocPath`, `orderSourcePath`) worden weggelaten uit de samenvatting
-- `{ }` knop per rij voor toggle naar ruwe JSON (voor auditeurs)
-- Bug gefixed: `before/after: null` toonde onterecht lege diff
-
-**6. Nieuwe repository aangemaakt ✅**
-- `https://github.com/richardvh18-dotcom/Future-Factory-Fpi` (private)
-- Branch `FPiFF-18-12-May` gepusht als `main`
-
-### Nieuwe bestanden
-- `src/repositories/` (4 bestanden)
-- `src/utils/errorHandler.js`
-- `functions/src/utils/errorHandler.js`
-- `src/contexts/BackgroundTaskContext.jsx`
-- `src/components/notifications/BackgroundTaskOverlay.jsx`
-- `functions/src/callables/exportCallables.js`
-
-### Build status
-- ✓ 2825 modules transformed (frontend)
-- ✓ functions laadt foutloos
-
----
-
-## Update sessie 150 (BH18 tijdelijke filtering, versie bump en productie deploy)
-
-**Datum:** 7 mei 2026 | **Branch:** `FPiFF-18-12-May`
-
-### Gebruikersverzoeken & Doelen:
-- BH18 workstation-lijst corrigeren: alleen relevante lopende orders tonen en specifiek twee foutieve orders tijdelijk verbergen.
-- Productie-deploy uitvoeren naar Vercel.
-- Versie bumpen voor automatische client refresh.
-- Deze context expliciet opslaan voor snelle hervatting in de volgende sessie.
-
-### Uitgevoerde acties:
-**1. Tijdelijke BH18 workaround (`Terminal.jsx`)**
-- Tijdelijke blacklist toegevoegd in de workstation filtering:
-    - `N20025138`
-    - `N20024916`
-- Doel: operationeel rust creëren terwijl de structurele BH18-filterlogica later definitief wordt hersteld.
-
-**2. Regressie-herstel op filterlogica (`Terminal.jsx`)**
-- Meerdere agressieve hide-regels zijn teruggedraaid omdat daardoor ook legitieme lopende orders verdwenen.
-- Huidige staat is bewust conservatief gehouden om false positives te beperken.
-
-**3. Productie deploy + versie bump**
-- Vercel productie deploy uitgevoerd met build-env:
-    - `VITE_APP_VERSION=0.1.5`
-- Versie bijgewerkt in:
-    - `public/version.json` → `0.1.5`
-    - `package.json` → `0.1.5`
-- Productie alias actief: `https://future-factory.vercel.app`
-
-**4. Vastlegging prioriteit voor vervolg**
-- Repo memory aangemaakt met prio-item om dit als eerste op te pakken:
-    - `memories/repo/bh18-conversie-prio.md`
-
-### Eerstvolgende prioriteit (opstartpunt volgende sessie):
-- Tijdelijke blacklist verwijderen.
-- Definitieve BH18-regel implementeren op station-specifieke waarheid
-    (`currentStation/currentStep + started_BH18 + madeCount`), zonder false positives.
-- Kaartteller en filter op exact dezelfde databron laten draaien.
-
-## Update sessie 149 (Handmatige To Do & Sync Exclusie)
+### Update sessie 149 (Handmatige To Do & Sync Exclusie)
 
 **Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
 
 ### Gebruikersverzoeken & Doelen:
+
 - **Sync Exclusie:** Mogelijkheid om specifieke orders uit te sluiten van de "Slimme Sync" (Teamleader koppeling).
 - **Handmatige To Do:** Aanpassen van de "To do" aantallen in de volledige lijst (Teamleader overzicht), ook als de synchronisatie nog actief is.
 
 ### Uitgevoerde acties:
+
 **1. Slimme Sync Controle (`OrderDetail.jsx` & Backend)**
 - Knoppen toegevoegd ("Sync Opnemen" / "Sync Uitsluiten") om handmatig de synchronisatie-status van een order te beheren.
 - Backend Cloud Functions bijgewerkt om deze metadata velden (`smartSyncExcluded` / `smartSyncIncluded`) toe te staan.
@@ -5709,15 +6356,17 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
-## Update sessie 148 (Fixes BM01 Naharding Datum & Historie)
+### Update sessie 148 (Fixes BM01 Naharding Datum & Historie)
 
 **Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
 
 ### Gebruikersverzoeken & Doelen:
+
 - **QR Print Teller BM01:** De teller voor de Naharding-batch stond onterecht op "vandaag" in plaats van de dag dat de lots de oven in gingen.
 - **Historie/Weekend lots:** Lots die in het verleden de oven in gingen (bijv. voor het weekend) maar pas vandaag afgerond/gearchiveerd werden, verschenen niet in de lijst van de originele startdatum.
 
 ### Uitgevoerde acties:
+
 **1. Datumregistratie Naharding (`BM01Hub.jsx`)**
 - De datum-detectie is omgedraaid: in plaats van de laatste bewerking (zoals het uithalen) zoekt de code nu specifiek het **allereerste (oudste)** "Naharding" of "Oven" event in de producthistorie. 
 - Events zoals "Gereedgemeld", "ARCHIVE" of "COMPLETED" worden expliciet genegeerd in de fallback, zodat lots altijd netjes op hun aanbiedingsdatum blijven staan.
@@ -5728,26 +6377,29 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
-## Update sessie 147 (Idee: Automatische Oven-koppeling Naharding)
+### Update sessie 147 (Idee: Automatische Oven-koppeling Naharding)
 
 **Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
 
 ### Besproken & Vastgelegd voor ROADMAP (Fase 6):
+
 - **Smart Factory integratie (Ovens BM01):** Er is besproken om in de toekomst de software/sensoren van de ovens direct te koppelen aan de applicatie.
 - Zodra een ovenprogramma is afgerond, stuurt de oven-software een signaal (bijv. via een webhook) naar onze Firebase backend.
 - De backend vangt dit op en meldt de actieve "Naharding Batch" volautomatisch gereed, zonder tussenkomst van een operator.
 
 ---
 
-## Update sessie 146 (Gereed voor LN Export & Vandaag-knoppen)
+### Update sessie 146 (Gereed voor LN Export & Vandaag-knoppen)
 
 **Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
 
 ### Gebruikersverzoeken & Doelen:
+
 1. **Gereed voor LN Export (Teamleader):** De export moest een dagteller worden op basis van de starttijd op de machine (met 5 minuten vertraging in verband met eventuele annuleringen). Verder moest de lijst gegroepeerd worden per station en order, met referentiecode "20", en geprint kunnen worden als een simpele lijst of een QR-lijst.
 2. **Datum Selectors:** Toevoegen van een "Vandaag" knop in de export pop-ups om snel terug te springen naar de huidige datum na het bladeren.
 
 ### Uitgevoerde acties:
+
 **1. Gereed voor LN Logica (`ImportExportDashboard.jsx` & `StationDetailModal.jsx`)**
 - `toWikkelenStartDate` functie toegevoegd om de daadwerkelijke starttijd van de order op de machine te bepalen.
 - 5-minuten pauze (`cutoff`) ingebouwd; orders verschijnen pas 5 minuten na de starttijd in de exportlijst.
@@ -5766,16 +6418,18 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
-## Update sessie 145 (Fix Order N20024607 & PDF Export voor Archief)
+### Update sessie 145 (Fix Order N20024607 & PDF Export voor Archief)
 
 **Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
 
 ### Gebruikersverzoeken & Doelen:
+
 1. **Order Herstel:** Fix voor order `N20024607` die vastliep in de sync omdat deze hardcoded was uitgesloten.
 2. **Import Verbetering:** Duidelijkere interface in de `PlanningImportModal` (knoppen tellen nu mee met selectie) en strikte afhandeling van "Smart Sync" vs "Overschrijven".
 3. **PDF Export Archief:** Toevoegen van een PDF-export knop in de Teamleader/Planning view (zowel Sidebar als Dossier) voor gearchiveerde orders, inclusief aanmaak- en gereed-tijden per lotnummer.
 
 ### Uitgevoerde acties:
+
 **1. Herstel Order N20024607 (`PlanningImportModal.jsx`)**
 - De hardcoded lijst `SMART_SYNC_EXCLUDED_ORDER_IDS` is leeggemaakt. Deze blokkeerde voorheen handmatige aanpassingen aan specifieke orders na afronding.
 - Logica van de import-knop aangepast: de tekst toont nu het aantal geselecteerde orders (bijv. "Update 1 geselecteerde items").
@@ -5793,15 +6447,20 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 - Fix voor ontbrekende `isValid` import (van `date-fns`) in de `PlanningSidebar.jsx` die een crash veroorzaakte bij het exporteren van lege datums.
 
 ### Volgende stappen:
+
 - Gebruiker adviseren om voor order `N20024607` de "Overschrijven" (Overwrite) functie te gebruiken om de hoeveelheid van 5 naar 10 te corrigeren in Firestore, aangezien Smart Sync de huidige status beschermt.
 
 ---
 
-## Update sessie 144 (BH18 Terminal Multi-select, Veiligheid & Lotnummer Validatie)
+
+## Dagupdate 5 mei 2026
+
+### Update sessie 144 (BH18 Terminal Multi-select, Veiligheid & Lotnummer Validatie)
 
 **Datum:** 5 mei 2026 | **Branch:** `FPiFF-18-12-May`
 
 ### Gebruikersverzoeken & Doelen:
+
 1. **BH18 Efficiëntie:** Invoeren van multi-select voor BH18 wikkelen om meerdere producten tegelijk gereed te melden.
 2. **Operationele Veiligheid:** Voorkomen dat volledige series per ongeluk worden afgemeld via "Serie Gereedmelden".
 3. **Foutreductie Scan:** Voorkomen dat itemcodes in het lotnummer-veld worden gescand.
@@ -5809,6 +6468,7 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 5. **Batch Actie:** Knop "Alles Gereed" toevoegen voor extreme tijdwinst bij BH18.
 
 ### Uitgevoerde acties:
+
 **1. Terminal & BH18 UI (`TerminalProductionView.jsx` & `Terminal.jsx`)**
 - **Multi-select:** Selectievakjes toegevoegd per lot in de lijst. Smaragdgroene styling voor actieve selectie.
 - **Alles Gereed Knop:** Nieuwe knop onder de scanbalk toegevoegd om de *volledige* actieve lijst in één keer door te sturen naar de volgende fase.
@@ -5827,16 +6487,21 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
-## Update sessie 143 (Herstel Vastgelopen Gerepareerde Orders)
+
+## Dagupdate 4 mei 2026
+
+### Update sessie 143 (Herstel Vastgelopen Gerepareerde Orders)
 
 **Datum:** 4 mei 2026 | **Branch:** `FPiFF-18-12-May`
 
 ### Probleemomschrijving:
+
 **Vastgelopen orders na reparatie/nabewerking**
 - Twee orders (`402617418400046` en `402617418400053`) waren na een reparatie-verplaatsing "onzichtbaar" geworden.
 - Ze verschenen wel in de zoekresultaten en bij Nabewerken scan, maar gereedmelden in de UI resulteerde in een succesmelding zonder dat de status in de database daadwerkelijk wijzigde naar BM01.
 
 ### Analyse & Oplossing:
+
 **1. Dubbele Document Structuur (Oorzaak)**
 - Er bleken twee versies van de documenten te bestaan:
     - Eén in de oude hoofdmap (`/production/tracked_products/<id>`).
@@ -5850,11 +6515,12 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
-## Update sessie 142 (E-mail Beheer Dashboard & Templates)
+### Update sessie 142 (E-mail Beheer Dashboard & Templates)
 
 **Datum:** 4 mei 2026 | **Branch:** `FPiFF-18-12-May`
 
 ### Uitgevoerd in deze sessie:
+
 **1. E-mail Beheer Dashboard (`AdminEmailManager.jsx`)**
 - Nieuw dashboard voor het CRUD-beheer van e-mailtemplates en inzicht in het e-mail logboek.
 - Geïntegreerd in het Admin Dashboard onder "Automation & Notificaties".
@@ -5873,11 +6539,15 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
-## Update sessie 141 (Globale zoekbalk, Lotnummer Export & KPI PDF Export)
+
+## Dagupdate 3 mei 2026
+
+### Update sessie 141 (Globale zoekbalk, Lotnummer Export & KPI PDF Export)
 
 **Datum:** 3 mei 2026 | **Branch:** `preview-v2`
 
 ### Uitgevoerd in deze sessie:
+
 **1. Globale Systeem Zoekfunctie (`Header.jsx` & `App.jsx`)**
 - Zoekbalk in de header zoekt nu globaal door het hele MES (actieve tracking, root planning, scoped orders en archief).
 - Bij het invoeren van een Lotnummer opent direct de `ProductDossierModal` vanuit elk willekeurig scherm.
@@ -5896,32 +6566,36 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
-## Update sessie 140 (Lotnummers export filter op oorsprong)
+### Update sessie 140 (Lotnummers export filter op oorsprong)
 
 **Datum:** 3 mei 2026 | **Branch:** `preview-v2`
 
 ### Gebruikersverzoek in deze sessie:
+
 - De dropdown voor de lotnummers-export mag alleen "BH" machines bevatten.
 - Bij de lotnummers-export moet een lotnummer zichtbaar blijven onder zijn originele machine (bijv. BH18), ook als het inmiddels fysiek bij Nabewerking of Eindinspectie ligt.
 
 ### Uitgevoerde acties:
+
 - De dropdown options voor machines worden dynamisch gefilterd: in de "Lotnummers" modus zie je alleen nog machines die met "BH" beginnen.
 - Filterlogica in `TeamleaderExportModal.jsx` aangepast zodat er gefilterd wordt op de `originMachine` (waar het lot gestart is) in plaats van het `currentStation`.
 - Extra kolom "Oorsprong" toegevoegd in de Lotnummer PDF en Excel exports om inzichtelijk te maken waar elk item vandaan komt.
 
 ---
 
-## Update sessie 139 (Teamleader Export: Actuele lotnummer lijst)
+### Update sessie 139 (Teamleader Export: Actuele lotnummer lijst)
 
 **Datum:** 3 mei 2026 | **Branch:** `preview-v2`
 
 ### Gebruikersverzoek in deze sessie:
+
 - Vervang in de Teamleader exports de "Actuele To Do Lijst" (nog niet gestarte orders) door een "Actuele Lotnummer Lijst".
 - Deze lijst toont alle actieve lotnummers die nog in omloop zijn.
 - Inclusief informatie over: waar ze momenteel liggen (station/stap) en hoe lang ze daar al liggen.
 - Mogelijkheid om te filteren op een specifieke machine.
 
 ### Uit te voeren acties:
+
 - De export-opties in de Teamleader Export Modal worden hierop aangepast.
 - Databron: Alle actieve `tracked_products` ophalen.
 - Berekening toevoegen voor de verblijftijd (hoe lang een lot al op de huidige locatie is).
@@ -5929,11 +6603,12 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
-## Update sessie 138 (Slimmere Productie Tijd Standaarden via LN Import)
+### Update sessie 138 (Slimmere Productie Tijd Standaarden via LN Import)
 
 **Datum:** 3 mei 2026 | **Branch:** `preview-v2`
 
 ### Uitgevoerd in deze sessie:
+
 **Auto-learning van Productie Tijden bij Planning Import**
 - **Slimmer Mechanisme:** De `bulkImportPlanningOrdersService` in de backend is uitgebreid. Wanneer er nieuwe orders via LN worden geïmporteerd (waar de totale geplande uren al in zitten), berekent het systeem nu direct de netto tijd per product (`minutesPerUnit = standardMinutes / quantity`).
 - **Conversie Matrix & Opslag:** Deze berekende tijd per product wordt automatisch weggeschreven naar de `future-factory/production/time_standards` database (de Productie Tijd Standaarden collectie), gekoppeld aan de `itemCode` (de planningscode / tekeningcode) en de specifieke `machine`.
@@ -5942,11 +6617,12 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
-## Update sessie 137 (Capaciteitsmatrix & Efficiency Factor)
+### Update sessie 137 (Capaciteitsmatrix & Efficiency Factor)
 
 **Datum:** 3 mei 2026 | **Branch:** `preview-v2`
 
 ### Toegevoegde Notitie:
+
 **Capaciteitsmatrix voor de Future Factory ("netto" werktijd)**
 Omdat pauzes niet meetellen voor de productie, rekenen we met 7 effectieve uren per persoon per dienst (8 uur min 1 uur pauze).
 
@@ -5972,11 +6648,12 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 136 (Nieuwe Machine Export Functionaliteit & Kolom/Filter Optimalisaties)
+### Update sessie 136 (Nieuwe Machine Export Functionaliteit & Kolom/Filter Optimalisaties)
 
 **Datum:** 3 mei 2026 | **Branch:** `preview-v2`
 
 ### Uitgevoerd in deze sessie:
+
 
 **1. Nieuwe Machine Planning Export (Excel & PDF)**
 - **Export Modal Toegevoegd:** Een compleet nieuwe `TeamleaderExportModal` gebouwd die machine planningen kan exporteren naar PDF en Excel.
@@ -5996,11 +6673,15 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 135 (Planning Import UX & Nieuw-ribbon in Workstation/Terminal)
+
+## Dagupdate 2 mei 2026
+
+### Update sessie 135 (Planning Import UX & Nieuw-ribbon in Workstation/Terminal)
 
 **Datum:** 2 mei 2026 | **Branch:** `preview-v2`
 
 ### Uitgevoerd in deze sessie:
+
 
 **1. Planning Import UI / UX Verbeteringen**
 - **Verwijderd:** De opties/knoppen voor "Plak Excel data" en "Alleen Nieuwe" zijn uit de interface gehaald voor een overzichtelijker proces.
@@ -6017,11 +6698,12 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 134 (Tweede record voor lotnummers op order-document)
+### Update sessie 134 (Tweede record voor lotnummers op order-document)
 
 **Datum:** 2 mei 2026 | **Branch:** `preview-v2`
 
 ### Opgelost / Gewijzigd
+
 **Tweede record bijhouden van uitgegeven lotnummers per order**
 - **Probleem:** De tracking van orders en producten liep af en toe nog spaak, wat voelde als een lappenmiddel. Het was moeilijk om snel te verifiëren of alle lots correct geregistreerd stonden, zeker bij nieuwe imports.
 - **Oplossing:** Er is een dubbel controle-mechanisme toegevoegd op de backend. Bij elke nieuwe order-import wordt er nu een veld `issuedLotNumbers: []` geïnitialiseerd.
@@ -6031,11 +6713,15 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 133 (Fix: Afdeling bij handmatig aangemaakte orders)
+
+## Dagupdate 30 april 2026
+
+### Update sessie 133 (Fix: Afdeling bij handmatig aangemaakte orders)
 
 **Datum:** 30 april 2026 | **Branch:** `FPiFF-18-12-build`
 
 ### Opgeloste bug
+
 **Handmatig aangemaakte orders onzichtbaar in Teamleader (verkeerde afdeling)**
 - **Probleem:** Nieuw handmatig aangemaakte orders verschenen niet in de Teamleader orderlijst wanneer men buiten de 'Fittings' scope werkte (bijv. in de afdeling Pipes).
 - **Oorzaak:** In de backend werden handmatig aangemaakte orders altijd hardcoded onder de afdeling 'Fittings' opgeslagen, ongeacht de geselecteerde machine.
@@ -6043,17 +6729,19 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - **Aangepast bestand:** `functions/src/services/planningTransitionService.js`
 
 ### Status & Vervolg
+
 - ⚠️ **Deploy vereist:** De fix is lokaal doorgevoerd in de backend. Dit werkt pas live na een deploy van de Firebase Cloud Functions.
 - ⚠️ **Historische data:** Eerder handmatig aangemaakte orders staan nog steeds geregistreerd onder 'Fittings' en lijken daardoor mogelijk nog steeds verdwenen. Indien gewenst kan er een eenmalig backfill-script geschreven worden om deze orders naar de juiste afdeling te verplaatsen.
 - **Verificatie:** Na deploy van de functions zijn nieuwe handmatige orders direct zichtbaar in *Teamleader > Planning > Orderlijst* (mits ingesteld op het juiste afdelings- en machinefilter).
 
 ---
 
-## Update sessie 131 (BH18 terminal bugs & wees-documenten opgeruimd)
+### Update sessie 131 (BH18 terminal bugs & wees-documenten opgeruimd)
 
 **Datum:** 30 april 2026 | **Branch:** `FPiFF-18-12-build`
 
 ### Opgeloste bugs
+
 
 **1. Verkeerde "Aantal" display (17 i.p.v. 20)**
 - `getOrderTotalPlan()` in `TerminalPlanningView.jsx` keek eerst naar `plan`, dan pas `quantity`
@@ -6079,17 +6767,20 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Fix in `functions/src/services/planningTransitionService.js`: bij archiveren worden via `collectionGroup('orders')` alle sibling-documenten met hetzelfde `orderId` of docId gevonden en mee-verwijderd in de batch
 
 ### Database cleanup uitgevoerd (eenmalig)
+
 - Script aangemaakt: `scripts/cleanup-archived-orphans-40bh18-via-cli-auth.cjs`
 - **11 wees planning-docs** verwijderd uit `digital_planning/Fittings/machines/40BH18/orders` (status=completed)
 - **22 tracked items** behouden — allemaal actief (Wacht op Nabewerking / In Production / Wacht op Lossen)
 
 ### Nog open / niet afgerond
+
 - ⚠️ **Cloud Functions nog niet gedeployed** — fix in `planningTransitionService.js` is lokaal only. Deployen met: `firebase deploy --only functions`
 - ⚠️ **Regressietest nog niet gedraaid** — `npm run test:regression:bh18` na de `shouldHideBH18PlanningOrder` call site wijziging
 - ⚠️ **N20024974 kan nog steeds herschijnen** als root-document nog bestaat — handmatige check of root-doc al in archief staat
 - ⚠️ **`visibleOrderPlan` fix in `OrderDetail.jsx`** — gebruikt nu `order?.quantity || order?.plan` (was `order?.plan`)
 
 ### Vervolg op sessie 131 (later op 30 april 2026)
+
 
 **Validatie uitgevoerd:**
 - Regressietest gedraaid: `npm run test:regression:bh18`
@@ -6100,6 +6791,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - ⚠️ Handmatige datastore-check voor order `N20024974` (root/scoped dubbelpad) staat nog open.
 
 ### Vervolg op sessie 131 (BH18 frontfilter aangescherpt voor downstream werk)
+
 
 **Gemeld praktijkgeval:**
 - Order `N20024828` bleef zichtbaar op BH18-front terwijl BH18 zelf klaar was (`Orderhoeveelheid 5`, `Gemaakt 5`, `Te doen 0`) en de resterende activiteit alleen nog in Nabewerking zat.
@@ -6117,6 +6809,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Foutcontrole op aangepaste bestanden: geen errors.
 
 ### Gewijzigde bestanden
+
 - `src/components/digitalplanning/terminal/TerminalPlanningView.jsx`
 - `src/components/digitalplanning/WorkstationHub.jsx`
 - `src/components/digitalplanning/Terminal.jsx`
@@ -6126,11 +6819,12 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 132 (N20024978 zichtbaarheid & counter fix + functions deploy)
+### Update sessie 132 (N20024978 zichtbaarheid & counter fix + functions deploy)
 
 **Datum:** 30 april 2026 | **Branch:** `FPiFF-18-12-build`
 
 ### Opgeloste bugs
+
 
 **1. Order N20024978 niet zichtbaar op BH18 terminal**
 - **Root cause**: In `Terminal.jsx` (`myOrders` useMemo) werden twee hiding-checks uitgevoerd voor wikkelstations:
@@ -6152,16 +6846,19 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - **Fix**: gecorrigeerd naar `functions.https.onCall(async (data, context) => {...})`
 
 ### Gewijzigde bestanden
+
 - `src/components/digitalplanning/Terminal.jsx` — `!isBH18 &&` guards in myOrders wikkel-checks
 - `src/components/digitalplanning/terminal/TerminalPlanningView.jsx` — trackedFinishedCount in produced berekening
 - `functions/src/callables/planningCallables.js` — `onCall` → `functions.https.onCall` fix
 
 ### Validatie
+
 - Regressietest: **5/5 geslaagd** (geen regressie)
 - Lint: geen errors in gewijzigde bestanden
 - Functions deploy: uitgevoerd na `onCall` bugfix
 
 ### Vervolg sessie 132 — OrderDetail & TerminalPlanningView verdieping + Vercel deploy
+
 
 **Datum:** 30 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6217,6 +6914,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - **Fix**: `TeamleaderHub.jsx` geeft de 6 nieuwe props door aan `<TeamleaderModals>`
 
 ### Gewijzigde bestanden (vervolg sessie 132)
+
 - `src/components/digitalplanning/OrderDetail.jsx` — live lot-driven counters, visibleOrderPlan fix, tile volgorde, compact, kleur-codering
 - `src/components/digitalplanning/PlanningSidebar.jsx` — trackedFinishedByOrder telt non-rejected lots, gebruikt getEffectivePlanQty
 - `src/utils/planningProgress.js` — nieuwe export `getEffectivePlanQty`
@@ -6228,12 +6926,13 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - `public/version.json` — versie 0.1.3
 
 ### Nog open
+
 - ⚠️ **Git commit** nog niet gedaan op branch `FPiFF-18-12-build`
 - ⚠️ **Live validatie** N20024978 op BH18-terminal (zichtbaarheid + counters Gemaakt=11, In behandeling=4, Te doen=9)
 
 ---
 
-## Update sessie 130 (Vertical ZPL text & BH18 slimme labels)
+### Update sessie 130 (Vertical ZPL text & BH18 slimme labels)
 
 **Datum:** 30 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6248,7 +6947,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 129 (Voorbereiding: Robuustere lotnummering en To Do telling)
+### Update sessie 129 (Voorbereiding: Robuustere lotnummering en To Do telling)
 
 **Datum:** 30 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6258,7 +6957,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 128 (Werkwijze vastgelegd: tracking van wijzigingen en open vragen)
+### Update sessie 128 (Werkwijze vastgelegd: tracking van wijzigingen en open vragen)
 
 **Datum:** 30 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6268,7 +6967,10 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 127 (Mobiele Nabewerking modal over header + grijze onderruimte opgelost)
+
+## Dagupdate 29 april 2026
+
+### Update sessie 127 (Mobiele Nabewerking modal over header + grijze onderruimte opgelost)
 
 **Datum:** 29 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6279,18 +6981,22 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Uitgevoerd in deze sessie:**
 
 ### 1) Modal layering/stapeling op mobiel gefixt
+
 - In `src/App.jsx` is op het `<main>`-element de inline style `WebkitOverflowScrolling: 'touch'` verwijderd.
 - Reden: op iOS/Safari kan dit een extra stacking context veroorzaken, waardoor `fixed` modals achter headers of andere vaste UI-lagen terechtkomen.
 
 ### 2) Gereedmeld-modal expliciet boven alle UI-lagen gezet
+
 - In `src/components/digitalplanning/modals/PostProcessingFinishModal.jsx` is de overlay aangepast van `z-[100]` naar `z-[9999]`.
 - Hierdoor rendert de modal consequent boven header/actiebalken op kleine schermen.
 
 ### 3) Overbodige modal-wrapper in Nabewerken opgeruimd
+
 - In `src/components/digitalplanning/Nabewerken.jsx` is de extra wrapper `<div className="fixed z-[9999]">` verwijderd rond `PostProcessingFinishModal`.
 - De modal beheert nu zelf de volledige fixed overlay en z-index.
 
 ### 4) Grijze lege ruimte onderaan lijst verwijderd
+
 - In `src/components/digitalplanning/Nabewerken.jsx` is de scrollcontainer-padding onderaan aangepast:
     - van `pb-32` + `max(8rem, env(safe-area-inset-bottom))`
     - naar `paddingBottom: calc(1rem + env(safe-area-inset-bottom))`
@@ -6305,7 +7011,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 126 (BH18 filter definitief + regressietest + productie release 0.1.2)
+### Update sessie 126 (BH18 filter definitief + regressietest + productie release 0.1.2)
 
 **Datum:** 29 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6317,17 +7023,20 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Uitgevoerd in deze sessie:**
 
 ### 1) BH18 filterlogica in Terminal gecorrigeerd en gestabiliseerd
+
 - In `src/components/digitalplanning/Terminal.jsx` is de BH18-planningfilter aangepast zodat stationlogica leidend is.
 - Belangrijkste regel: BH18-zichtbaarheid wordt bepaald door station-target (`plan`) en stationcounter (`started_BH18`), niet door `quantity` als dat afwijkt bij legacy LN-orders.
 - Hiermee verdwijnen oude afgeronde BH18-orders uit de planninglijst terwijl orders met echte resthoeveelheid zichtbaar blijven.
 
 ### 2) Filterlogica geëxtraheerd naar helper
+
 - Nieuwe helper toegevoegd: `src/utils/terminalOrderFilters.js`
     - `shouldHideBH18PlanningOrder(...)`
 - `Terminal.jsx` gebruikt nu deze helper i.p.v. verspreide inline condities.
 - Resultaat: minder regressierisico en beter onderhoudbare logic.
 
 ### 3) Regressietest toegevoegd
+
 - Nieuwe test toegevoegd: `scripts/regression/bh18-filter.test.mjs`
 - Testcases dekken:
     - verbergen bij `remainingAtOrder <= 0`
@@ -6339,6 +7048,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Testresultaat: **4/4 pass**.
 
 ### 4) Productie release en automatische client-refresh
+
 - Versienummer verhoogd naar **0.1.2** in `package.json`.
 - Productie deploy uitgevoerd op Vercel en gealiast naar:
     - `https://future-factory.vercel.app`
@@ -6368,7 +7078,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 125 (Terugzetten van Nabewerking naar Lossen mogelijk gemaakt)
+### Update sessie 125 (Terugzetten van Nabewerking naar Lossen mogelijk gemaakt)
 
 **Datum:** 29 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6388,7 +7098,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 124 (Archief-heropenen gefixt + ordernummerwijziging product ingebouwd)
+### Update sessie 124 (Archief-heropenen gefixt + ordernummerwijziging product ingebouwd)
 
 **Datum:** 29 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6401,6 +7111,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Uitgevoerd in deze sessie:**
 
 ### 1) Archief-producten correct heropenen i.p.v. actief verplaatsen
+
 - Vastgesteld dat gearchiveerde producten ten onrechte via `moveTrackedProductManual` werden afgehandeld.
 - In `ProductDossierModal.jsx` de flow aangepast zodat archief-items via `restoreArchivedTrackedProduct` lopen.
 - Voor archief-items de toegestane doelroutes beperkt tot backend-ondersteunde routes:
@@ -6410,6 +7121,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Bevestigingsteksten en logging aangepast op “heropenen uit archief”.
 
 ### 2) Archiefdata in Teamleader consistenter gemaakt
+
 - In `useTeamleaderFirestore.js` krijgen archief-history records nu expliciete flags en metadata:
     - `archived: true`
     - `_archived: true`
@@ -6419,11 +7131,13 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - In `OrderDetail.jsx` is de snelle BH31-actie aangepast zodat archief-items niet meer direct via de actieve move-callable lopen, maar via het dossier/heropen-pad.
 
 ### 3) Ontbrekende Firebase callable voor archief-restore gedeployd
+
 - Vastgesteld dat `restoreArchivedTrackedProduct` wel in code/export aanwezig was, maar nog niet live stond in Firebase.
 - Daardoor verscheen in de browser een CORS/preflight-achtige fout op een niet-bestaande callable-URL.
 - Gerichte deploy uitgevoerd van alleen deze functie.
 
 ### 4) Nieuw: ordernummer van product wijzigen in Teamleader Volledige Lijst
+
 - Nieuwe functionaliteit gebouwd in `OrderDetail.jsx` om per product het ordernummer te wijzigen.
 - Nieuwe UI toegevoegd naast de bestaande lotnummerwijziging:
     - knop in de productregel,
@@ -6432,6 +7146,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - De actie is beschikbaar voor zowel actieve als gearchiveerde producten in de Volledige Lijst.
 
 ### 5) Nieuwe backend callable/service voor order-herkoppeling van producten
+
 - Nieuwe callable toegevoegd: `reassignTrackedProductOrder`.
 - Nieuwe serverlogica toegevoegd in `planningTransitionService.js` om een product naar een ander ordernummer te herkoppelen.
 - Ondersteunt zowel:
@@ -6439,6 +7154,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
     - gearchiveerde/afgeronde producten.
 
 ### 6) Tellercorrectie bij ordernummerwijziging
+
 - Voor **gearchiveerde of afgeronde producten**:
     - `produced` van het oude order wordt met 1 verlaagd,
     - `produced` van het nieuwe order wordt met 1 verhoogd.
@@ -6475,7 +7191,30 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 123 (Order search, Tooling Molds UX, BM01 mismatch inklapbaar, productie deploys)
+
+## Dagupdate 28 april 2026
+
+### Update
+
+**Digitale planning / Slimme Sync:**
+- Handmatige orderaanpassing voor `N20024781` zorgde voor onterechte afwijking in Slimme Sync.
+- Uitsluiting toegevoegd aan de bestaande businessguard-lijst in:
+    - `src/components/digitalplanning/modals/PlanningImportModal.jsx`
+- Effect: `N20024781` wordt niet meer als Slimme Sync-afwijking behandeld in de importflow.
+- Validatie: geen editor errors op aangepast bestand.
+
+**Vercel productie deploy:**
+- Productie deployment uitgevoerd via CLI vanaf huidige workspace.
+- Command: `npx vercel --prod --yes`
+- Status: Ready
+- Deployment ID: `dpl_31zVQ7bnKSw1XWfST3HeXQbYGdXt`
+- Productie URL:
+    - `https://futurefactoryapp-5w8xq3q25-richard-van-heerdes-projects.vercel.app`
+- Alias live:
+    - `https://future-factory.vercel.app`
+2899f1f - feat: Add delivery date change detection to Smart Sync and improve date parsing (richardvh18-dotcom)\n\n## Update session (Leverdatum Sync & Datum-parsing)\n- Nieuwe parameter 'leverdatum' toegevoegd aan Slimme Sync om wijzigingen te detecteren.\n- UI-indicatie toegevoegd voor gewijzigde leverdata (oude datum doorgestreept).\n- Datumvergelijking verbeterd voor verschillende formaten (bijv. 27-03 vs 27-3) door conversie naar YYYY-MM-DD.\n- Case-insensitive vergelijking voor PO Text toegevoegd.\n- Orders N20024731 en N20024607 tijdelijk uitgesloten van sync.
+
+### Update sessie 123 (Order search, Tooling Molds UX, BM01 mismatch inklapbaar, productie deploys)
 
 **Datum:** 28 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6494,6 +7233,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Uitgevoerd in deze sessie:**
 
 ### 1) Order zoekfunctionaliteit hersteld en uitgebreid
+
 - In `PrintQueueAdminView` en `PrintStationView` is zoeklogica uitgebreid met:
     - root collecties (`TEMP_PLANNING`, `PLANNING`, `TRACKING`),
     - scoped machine-orders via `collectionGroup('orders')`,
@@ -6504,6 +7244,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
     betrouwbaar gevonden worden.
 
 ### 2) Tooling Molds (AdminToolingMoldsView) functioneel uitgebreid
+
 - `OrderSearchModal` toegevoegd en gekoppeld aan het toevoegformulier.
 - Selectieflow aangepast:
     - meervoudige itemselectie,
@@ -6512,12 +7253,14 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Weergave van geselecteerde items aangepast naar object-gebaseerde selectie (met correcte remove per itemcode).
 
 ### 3) Tooling Molds UI/UX verfijnd
+
 - Header-acties met `Alles Opslaan` en `Delete (X)` in combinatie met checkbox-selectie per rij.
 - Per-rij save/delete knoppen verwijderd.
 - Redundant veld `name` verwijderd uit tabel en toevoegformulier; `matcher` blijft leidend.
 - Zoekactie explicieter gemaakt met duidelijke knop voor orderzoekmodal.
 
 ### 4) BM01 LN mismatch inklapbaar gemaakt
+
 - In `src/components/digitalplanning/BM01Hub.jsx`:
     - LN mismatch-panel klikbaar gemaakt met open/dicht-toggle,
     - visuele pijl-indicator toegevoegd,
@@ -6525,6 +7268,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Standaardstatus staat op **ingeklapt** (`showDeliveryMismatch = false`).
 
 ### 5) Foutafhandeling counters (permission denied) verbeterd
+
 - In `ProductionStartModal` is permissie-denied op counter writes rustiger afgehandeld met fallbackgedrag.
 - Doel: productieflow niet blokkeren bij beperkte rechten op counter-documenten.
 
@@ -6549,7 +7293,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 122 (OrderDetail Start Aantal bewerkbaar + persist bug gefixt)
+### Update sessie 122 (OrderDetail Start Aantal bewerkbaar + persist bug gefixt)
 
 **Datum:** 28 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6563,27 +7307,32 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Uitgevoerd in deze sessie:**
 
 ### Analyse To do mismatch
+
 - Vastgesteld dat planningwaarden (`plan`/`toDoQty`) achter kunnen lopen op LN.
 - Bevestigd dat herimport van de order de juiste LN-hoeveelheden terugzet.
 
 ### Frontend: Start Aantal bewerkbaar gemaakt
+
 - In `src/components/digitalplanning/OrderDetail.jsx`:
     - Nieuw inputveld voor **Start Aantal** toegevoegd (zelfde autorisaties als plan/notes).
     - Lokale draft-state toegevoegd (`startedDraft`) en meegenomen in "Niet opgeslagen" indicator.
     - Opslaan-flow uitgebreid zodat `started` meegaat in `updatePlanningOrderDetails`.
 
 ### Frontend service: payload uitgebreid
+
 - In `src/services/planningSecurityService.js`:
     - `updatePlanningOrderDetails` uitgebreid met `started` parameter.
     - Validatie toegevoegd: `started` moet een getal >= 0 zijn.
 
 ### Backend service: machine-specifiek started veld bijwerken
+
 - In `functions/src/services/planningTransitionService.js`:
     - `updatePlanningOrderDetailsService` uitgebreid met `started`.
     - Bij save wordt nu het juiste machinecounter-veld gezet via `getStartedCounterFieldServer(machine)`:
         - update op `started_<machine>`
 
 ### Root cause van "opslaan maar niet blijvend"
+
 - Gevonden dat callable-laag `started` nog niet doorstuurde naar de service.
 - In `functions/src/callables/planningCallables.js` gefixt:
     - `rawStarted` uitlezen,
@@ -6607,7 +7356,10 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 121 (BH12 overproductie auto-koppeling + leverdatumregel, nog niet afgerond)
+
+## Dagupdate 26 april 2026
+
+### Update sessie 121 (BH12 overproductie auto-koppeling + leverdatumregel, nog niet afgerond)
 
 **Datum:** 26 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6646,7 +7398,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 120 (AI worker uitgerold in Firebase Functions)
+### Update sessie 120 (AI worker uitgerold in Firebase Functions)
 
 **Datum:** 26 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6677,7 +7429,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 119 (TeamleaderHub Phase 4 afgerond: hooks/components extract + validatie)
+### Update sessie 119 (TeamleaderHub Phase 4 afgerond: hooks/components extract + validatie)
 
 **Datum:** 26 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6687,12 +7439,14 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Uitgevoerd in deze sessie:**
 
 ### Phase 1: Foundation helpers afgerond
+
 - Tracking/helperlogica opgesplitst in dedicated utility-bestanden:
     - `src/utils/trackingHelpers.js`
     - `src/utils/teamleaderDerived.js`
 - Gedeelde status-, week- en order-afleidingen gecentraliseerd voor hergebruik in TeamleaderHub en hooks.
 
 ### Phase 2: Data en dashboardlogica opgesplitst
+
 - Terminal Gereed tab opgesplitst in hook + presentational component:
     - `src/components/digitalplanning/terminal/useTerminalGereedData.js`
     - `src/components/digitalplanning/terminal/TerminalGereedItemCard.jsx`
@@ -6701,11 +7455,13 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
     - `src/components/digitalplanning/useTeamleaderModalData.js`
 
 ### Phase 3: Event handlers geëxtraheerd
+
 - Vrijwel alle TeamleaderHub event handlers verplaatst naar:
     - `src/components/digitalplanning/useTeamleaderEventHandlers.js`
 - Hub kreeg hiermee een duidelijke scheiding tussen UI-compositie en actie-/side-effectlogica.
 
 ### Phase 4: Extracts voltooid
+
 - **Firestore listeners geëxtraheerd** naar `useTeamleaderFirestore.js`:
     - Alle realtime listeners voor orders, tracking producten, bezetting, factory config en archiefstromen verplaatst uit `TeamleaderHub.jsx`.
     - Hook returnt nu centraal: `rawOrders`, `rawProducts`, `bezetting`, `archivedProducts`, `archivedHistoryProducts`, `archivedRejectedProducts`, `factoryConfig`, `loading`, `dbError`.
@@ -6721,6 +7477,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
     - Sticky topbar, desktop/mobile tabnavigatie, overproduction badge, AI actie en drawing sync knop verplaatst uit de Hub render.
 
 ### TeamleaderHub integratie
+
 - `TeamleaderHub.jsx` gekoppeld aan nieuwe hooks/components:
     - `useTeamleaderFirestore`
     - `useTeamleaderDataStore`
@@ -6729,6 +7486,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Grote inline codeblokken verwijderd uit de Hub en vervangen door compactere compositie.
 
 ### Bugfix (overproduction assignment)
+
 - In `useTeamleaderEventHandlers.js` gefixt dat assignment eerder foutief uit `selectedOverproductionGroup` las.
 - Correcte statevelden toegevoegd en gebruikt:
     - `overproductionTargetOrderId`
@@ -6755,7 +7513,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 118 (BH12-Mazak: Machine Occupancy scoping + Workflow refinements)
+### Update sessie 118 (BH12-Mazak: Machine Occupancy scoping + Workflow refinements)
 
 **Datum:** 26 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6773,6 +7531,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Uitgevoerd in deze sessie:**
 
 ### Backend Machine Occupancy Structure
+
 - **Machine occupancy IS nu georganiseerd in groepen/afdeling/machine** via dual-write migratie:
   - Scoped Path (Nieuw): `/future-factory/production/machine_occupancy/{department}/machines/{machine}/assignments/{assignmentId}`
   - Legacy Path: `/future-factory/production/machine_occupancy/{assignmentId}`
@@ -6780,6 +7539,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
   - Dit ondersteunt machine- en afdeling-specifieke queries voor BH12-Mazak en andere stations
 
 ### Frontend Series Grouping Improvements (Lossen)
+
 - **Conditionele series-uitvouwing** per station toegepast in `LossenView.jsx`:
   - `isLossen1218` flag bepaalt default `collapsedGroups` state
   - Lossen 12/18: series standaard OPEN (expanded)
@@ -6790,6 +7550,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
   - Werkt als `seriesGroupId` ontbreekt (legacy data)
 
 ### Mazak Workflow Verfijningen
+
 - **Per-lot enforcement in Gereedmelden:**
   - `isBulkInboxMode` guard enforces single-lot selections in process tab (niet batch)
   - Batch-ondersteuning behouden in Inbox/Print tab
@@ -6808,6 +7569,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
   - Missing `ArrowRight` import in MazakView.jsx restored (ReferenceError opgelost)
 
 ### Teamleader Orders Status Display
+
 - **BH12→Mazak routing status corrected:**
   - ProductReleaseModal: `nextStatus = "Wacht op Mazak"` (was "Te Nabewerken")
   - Status normalization in TeamleaderHub rendering (telt legacy records om)
@@ -6838,7 +7600,10 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
-## Update sessie 117 (Live Station Monitor Pop-up Vernieuwd)
+
+## Dagupdate 25 april 2026
+
+### Update sessie 117 (Live Station Monitor Pop-up Vernieuwd)
 
 **Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6861,7 +7626,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Status:**
 - Live Station Monitor pop-up is overzichtelijker, stabieler en de historische/geëxporteerde data klopt nu met de werkelijkheid.
 
-## Update sessie 116 (Nabewerking KPI sync & filters)
+### Update sessie 116 (Nabewerking KPI sync & filters)
 
 **Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6882,7 +7647,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Status:**
 - De KPI in Teamleader, de KPI in Workstation, en de actuele lijst in Workstation Nabewerken lopen nu 100% synchroon (allemaal op 14 in het geschetste scenario). Twee "zwevende" vandaag-items zijn succesvol eruit gefilterd.
 
-## Update sessie 115 (Terminal/Workstation KPI correcties: Plan & Gereed)
+### Update sessie 115 (Terminal/Workstation KPI correcties: Plan & Gereed)
 
 **Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6917,7 +7682,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Status:**
 - Terminal UI is compacter, overzichtelijker en toont effectiever "Nieuwe" orders en waarschuwingen. KPI's lopen weer synchroon met Teamleader.
 
-## Update sessie 114 (Slimme Sync urenflow gefixt + import gedrag verduidelijkt)
+### Update sessie 114 (Slimme Sync urenflow gefixt + import gedrag verduidelijkt)
 
 **Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6958,7 +7723,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Smart Sync toont geen oneindige herhaal-sync meer op gereed-verschillen.
 - Alleen Uren preview en selectie werkt nu voor alle BH-gefilterde orders.
 
-## Update sessie 113 (LN Stamdata tegel gefixt + backend import live)
+### Update sessie 113 (LN Stamdata tegel gefixt + backend import live)
 
 **Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -6995,7 +7760,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Opslaan loopt via backend callable (live gedeployed).
 - Geen editor errors op gewijzigde bestanden.
 
-## Update sessie 112 (voortgang opgeslagen + PDF export opgeschoond)
+### Update sessie 112 (voortgang opgeslagen + PDF export opgeschoond)
 
 **Datum:** 25 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -7019,7 +7784,10 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Status:**
 - Voortgang staat zowel in Git als in dit gespreksoverzicht vastgelegd.
 
-## Update sessie 111 (opgeslagen: preview push + import observatie)
+
+## Dagupdate 24 april 2026
+
+### Update sessie 111 (opgeslagen: preview push + import observatie)
 
 **Datum:** 24 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -7040,7 +7808,7 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Status:**
 - Conversatie bijgewerkt in `CONVERSATION_SUMMARY.md`.
 
-## Update sessie 110 (push naar git preview + status vastgelegd)
+### Update sessie 110 (push naar git preview + status vastgelegd)
 
 **Datum:** 24 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -7060,7 +7828,10 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 **Status:**
 - Voortgang en wijzigingen zijn opgeslagen in `CONVERSATION_SUMMARY.md`.
 
-## Update sessie 109 (hervat: Smart Sync BH18 restant + werkafspraken)
+
+## Dagupdate 23 april 2026
+
+### Update sessie 109 (hervat: Smart Sync BH18 restant + werkafspraken)
 
 **Datum:** 23 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -7137,12 +7908,12 @@ Stap C (structurele matching-fix):
 - Laatste gebruikersfeedback: specifieke BH18-orders verschijnen nog in Slimme Sync.
 - Volgende stap bij hervatten: resterende BH18-orders gericht tracen met live data-inspectie (welke bestaande doc/velden exact gematcht worden per orderId).
 
-
-## Update sessie 107 (Huidige ontwikkelingen & wijzigingen)
+### Update sessie 107 (Huidige ontwikkelingen & wijzigingen)
 
 **Datum:** 23 april 2026 | **Branch:** `FPiFF-18-12-build` (of huidige actieve branch)
 
 ### 📝 Actuele Takenlijst
+
 | # | Omschrijving | Status | Prioriteit |
 |---|---|---|---|
 | 1 | Start centrale logging voor nieuwe site veranderingen | ✅ Afgerond | Hoog |
@@ -7150,60 +7921,14 @@ Stap C (structurele matching-fix):
 | 3 | *[Beschrijf hier de volgende taak of bug]* | Open | Normaal |
 
 ### 🔄 Updates & Voortgang
+
 - Verouderde actieknoppen (Nieuwe Order, Export CSV/Excel, Sync Tekeningen, Oude Afkeur Archiveren) verwijderd uit de header van de TeamleaderHub om ruimte te maken voor de nieuwe Import/Export flow. Ongebruikte bijbehorende functies en states zijn in dezelfde wijziging opgeschoond.
 - Nieuwe sessie gestart voor het centraal bijhouden van alle wijzigingen aan de site.
 - Vanaf hier worden alle nieuwe updates, bugfixes, en de roadmap-voortgang direct vastgelegd ter voorbereiding op volgende deployments.
 
 ---
 
-## Taken & bugs – 21 april 2026
-
-**Datum:** 21 april 2026 | **Branch:** `FF-2-4-26`
-
-### Bug / takenlijst (prioriteit hoog → laag)
-
-| # | Omschrijving | Status |
-|---|---|---|
-| 1 | **Nabewerken – gereedmelden werkt niet** – Een product in de nabewerking-flow kan niet op gereed worden gezet. | ✅ Afgerond |
-| 2 | **Wikkelen – cancel werkt niet** – Een product kan niet worden gecanceld vanuit de wikkel-flow. | ✅ Afgerond |
-| 3 | **Afkeur – tijdelijke afkeur werkt niet** – Een product kan niet op (tijdelijke) afkeur worden gezet. | ✅ Afgerond |
-| 4 | **Lossen 12/18 – planningslijst scrolt niet** – De planningslijst op het Lossen 12/18 scherm scrolt niet goed. | ✅ Afgerond |
-| 5 | **Excel plak-import – terugzetten naar oude versie** – De Excel kopieer/plak-import moet terug naar de vorige implementatie. | ✅ Afgerond |
-| 6 | **AI werkt niet** – AI-functionaliteit is niet beschikbaar (minder urgent). | Open |
-
----
-
-## Smoke-test checklist (deploy + regressie startflow)
-
-**Doel:** na deploy in 5-10 minuten bevestigen dat de order-start keten niet opnieuw breekt.
-
-### 1) Deploy check
-
-- [x] Functions deploy succesvol afgerond zonder fouten.
-- [x] Frontend deploy/build succesvol afgerond.
-- [ ] In productie laden Workstation/Terminal zonder console `500` op start.
-
-### 2) Regressietests kernflow
-
-- [ ] **Start order** op BH15/BM15 met normale order: lots aangemaakt, status naar `in_progress`, geen callable 500.
-- [ ] **Start order via alternatieve locator** (order uit scoped pad): start werkt ook wanneer payload niet alleen op één id-vorm leunt.
-- [ ] **Cancel gestart lot**: lot wordt gecanceld zonder inconsistentie in orderstatus/counters.
-- [ ] **Move + retrieve order**: order verplaatst en teruggehaald zonder `NOT_FOUND_ORDER` door docId/path mismatch.
-- [ ] **Hold toggle + details update**: on_hold aan/uit en notes/plan update werken op dezelfde order zonder lookup-fout.
-
-### 3) Datakwaliteit/KPI sanity
-
-- [ ] Geen nieuwe vervuiling door niet-order docs in planning-overzichten/KPI.
-- [ ] `plan` blijft leidend t.o.v. legacy `quantity` in kaarttellingen/to-do.
-
-### 4) Logcontrole (snelle triage)
-
-- [ ] Geen nieuwe `internal` callable fouten op `startProductionLots`.
-- [ ] Eventuele foutmelding is specifiek (bijv. ongeldige locator) i.p.v. generiek.
-
----
-
-## Update sessie 106 (BH18 KPI planning gecorrigeerd voor resterend + lopend werk)
+### Update sessie 106 (BH18 KPI planning gecorrigeerd voor resterend + lopend werk)
 
 **Datum:** 23 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -7235,7 +7960,7 @@ Stap C (structurele matching-fix):
 
 ---
 
-## Update sessie 105 (bevestigde productie-deploy Firebase + Vercel)
+### Update sessie 105 (bevestigde productie-deploy Firebase + Vercel)
 
 **Datum:** 23 april 2026 | **Branch:** `FPiFF-18-12-build`
 
@@ -7257,7 +7982,96 @@ Stap C (structurele matching-fix):
 
 ---
 
-## Update sessie 104 (BH18 startProductionLots fix + Firebase/Vercel productie-deploy)
+
+## Dagupdate 21 april 2026
+
+### Update sessie 105 (Lossen 12/18 routingfix, scannerfocus Lossen/BM01, push + Vercel productie)
+
+**Datum:** 21 april 2026 | **Branch:** `FF-2-4-26`
+
+**Gebruikersmeldingen:**
+- Station `Lossen 12/18` bleef weer leeg.
+- In `Lossen` en `BM01` was de scan lotnummer-balk niet direct actief; er moest opnieuw in het veld worden geklikt.
+- Daarna verzoek om direct te pushen en naar Vercel productie te deployen.
+
+**Root cause / analyse:**
+- In `LossenView` was de centrale filtering weer inconsistent met de afgesproken routingregels.
+- De weergavelogica liet voor oorsprong `BH12/BH15/BH17` weer diameter-routing meespelen, terwijl deze origins exclusief bij `Lossen 12/18` horen.
+- Scannerfocus in `Lossen` en `BM01` vertrouwde op enkele losse focus-calls; bij modal/venster-state kon focus verloren gaan.
+
+**Fixes uitgevoerd:**
+- Bestand aangepast: `src/components/digitalplanning/LossenView.jsx`
+    - Routingfiltering gehard met expliciete sets:
+        - `LOSSEN_1218_DIRECT_STATIONS = {BH12,BH15,BH17,12,15,17}`
+        - `LOSSEN_1218_BH18_STATIONS = {BH18,18}`
+    - Nieuwe helperlogica toegevoegd:
+        - `hasOriginInSet(...)`
+        - `shouldBelongToLossen1218(...)`
+    - Gedrag nu:
+        - `BH12/BH15/BH17` altijd exclusief op `Lossen 12/18`
+        - alleen `BH18` splitst nog op diameter naar centraal `LOSSEN` of `Lossen 12/18`
+
+- Bestand aangepast: `src/components/digitalplanning/LossenView.jsx` en `src/components/digitalplanning/BM01Hub.jsx`
+    - Scannerfocus robuust gemaakt via `focusScanInput()` + `scheduleScanFocus()`.
+    - Focus wordt nu hersteld bij:
+        - eerste render
+        - klikken buiten interactieve controls
+        - window/tab focus terugkeer
+        - sluiten van actie/finish-modal
+    - Inputvelden kregen `autoFocus` voor directe activatie.
+
+**Validatie:**
+- Type/editor errors op beide gewijzigde bestanden: geen errors.
+- Gerichte lintcheck:
+    - `npx eslint src/components/digitalplanning/LossenView.jsx src/components/digitalplanning/BM01Hub.jsx`
+    - Resultaat: alleen bestaande warnings, geen errors.
+- Productiebuild succesvol:
+    - `npm run build`
+
+**Git / release:**
+- Commit gemaakt met alleen functionele codewijzigingen:
+    - `fd53a4d` — `Fix Lossen 12/18 routing and scanner autofocus in Lossen/BM01`
+- Push uitgevoerd naar origin:
+    - branch `FF-2-4-26`
+
+**Vercel productie deploy:**
+- Command uitgevoerd: `npx vercel deploy --prod --yes`
+- Production deployment geslaagd.
+- Deployment URL:
+    - `https://futurefactoryapp-906oudr74-richard-van-heerdes-projects.vercel.app`
+- Alias live:
+    - `https://future-factory.vercel.app`
+
+**Nog lokaal gewijzigd (niet in release-commit):**
+- `.firebase/hosting.ZGlzdA.cache`
+- `CONVERSATION_SUMMARY.md`
+
+---
+
+---
+
+### Taken & bugs – 21 april 2026
+
+**Datum:** 21 april 2026 | **Branch:** `FF-2-4-26`
+
+### Bug / takenlijst (prioriteit hoog → laag)
+
+
+| # | Omschrijving | Status |
+|---|---|---|
+| 1 | **Nabewerken – gereedmelden werkt niet** – Een product in de nabewerking-flow kan niet op gereed worden gezet. | ✅ Afgerond |
+| 2 | **Wikkelen – cancel werkt niet** – Een product kan niet worden gecanceld vanuit de wikkel-flow. | ✅ Afgerond |
+| 3 | **Afkeur – tijdelijke afkeur werkt niet** – Een product kan niet op (tijdelijke) afkeur worden gezet. | ✅ Afgerond |
+| 4 | **Lossen 12/18 – planningslijst scrolt niet** – De planningslijst op het Lossen 12/18 scherm scrolt niet goed. | ✅ Afgerond |
+| 5 | **Excel plak-import – terugzetten naar oude versie** – De Excel kopieer/plak-import moet terug naar de vorige implementatie. | ✅ Afgerond |
+| 6 | **AI werkt niet** – AI-functionaliteit is niet beschikbaar (minder urgent). | Open |
+
+---
+
+
+## Dagupdate 20 april 2026
+
+### Update sessie 104 (BH18 startProductionLots fix + Firebase/Vercel productie-deploy)
 
 **Datum:** 20 april 2026 | **Branch:** `FF-2-4-26`
 
@@ -7319,7 +8133,7 @@ Stap C (structurele matching-fix):
 - De losse Firestore `permission-denied` consolemelding was tijdens deze sessie niet met zekerheid aan één exact listener-pad gekoppeld.
 - De kritieke server-side startflow voor BH18 is wel gehard en gedeployed.
 
-## Update sessie 103 (Definitieve afkeur handmatig hersteld + backend fix voor scoped tracked items)
+### Update sessie 103 (Definitieve afkeur handmatig hersteld + backend fix voor scoped tracked items)
 
 **Datum:** 20 april 2026 | **Branch:** `FF-2-4-26`
 
@@ -7368,7 +8182,10 @@ Stap C (structurele matching-fix):
 **Security/cleanup:**
 - Tijdelijke service-account key gebruikt voor eenmalige migratie en daarna verwijderd (`/tmp/sa-key.json`).
 
-## Update sessie 102 (Nabewerken UX + sitebrede leverdatumregels 3 weken / 4 dagen)
+
+## Dagupdate 18 april 2026
+
+### Update sessie 102 (Nabewerken UX + sitebrede leverdatumregels 3 weken / 4 dagen)
 
 **Datum:** 18 april 2026 | **Branch:** `FF-2-4-26`
 
@@ -7447,7 +8264,7 @@ Stap C (structurele matching-fix):
     - `src/components/digitalplanning/EfficiencyDashboard.jsx`
     - `src/utils/dateUtils.js`
 
-## Update sessie 101 (Scan-popup workflow Lossen, Lossen 12/18, Nabewerken, BM01)
+### Update sessie 101 (Scan-popup workflow Lossen, Lossen 12/18, Nabewerken, BM01)
 
 **Datum:** 18 april 2026 | **Branch:** `FF-2-4-26`
 
@@ -7480,7 +8297,11 @@ Stap C (structurele matching-fix):
     - `src/components/digitalplanning/modals/ProductReleaseModal.jsx`
     - `src/components/digitalplanning/modals/PostProcessingFinishModal.jsx`
 - Getest in dev-omgeving: popup opent direct na scan, focus blijft behouden.
-## Update sessie 100 (Globale voortgangsmelding voor Gereedmelden)
+
+
+## Dagupdate 17 april 2026
+
+### Update sessie 100 (Globale voortgangsmelding voor Gereedmelden)
 
 **Datum:** 17 april 2026 | **Branch:** `FF-2-4-26`
 
@@ -7534,7 +8355,7 @@ Stap C (structurele matching-fix):
 - Geen fouten gerapporteerd.
 - Vite devserver start succesvol op poort `3000`.
 
-## Update sessie 99 (Volledige Lijst: zoeken, archief-merge, Nabewerking zichtbaarheid)
+### Update sessie 99 (Volledige Lijst: zoeken, archief-merge, Nabewerking zichtbaarheid)
 
 **Datum:** 17 april 2026 | **Branch:** `FF-2-4-26`
 
@@ -7573,7 +8394,7 @@ Stap C (structurele matching-fix):
     - `src/components/digitalplanning/PlanningSidebar.jsx`
     - `src/components/digitalplanning/TeamleaderHub.jsx`
 
-## Update sessie 98 (Merge pilot-dev → FF-2-4-26 + Vercel productie-deploy)
+### Update sessie 98 (Merge pilot-dev → FF-2-4-26 + Vercel productie-deploy)
 
 **Datum:** 17 april 2026 | **Branch:** `FF-2-4-26` (gemerged vanuit `pilot-dev`)
 
@@ -7608,7 +8429,7 @@ Stap C (structurele matching-fix):
 
 ---
 
-## Update sessie 97 (Lossen 12/18 fix + Vercel/Firebase production deployment)
+### Update sessie 97 (Lossen 12/18 fix + Vercel/Firebase production deployment)
 
 **Datum:** 17 april 2026 | **Branch:** `pilot-dev`
 
@@ -7630,6 +8451,7 @@ Stap C (structurele matching-fix):
 **Deploys uitgevoerd:**
 
 ### 1) Vercel Production deploy ✅
+
 - CLI login vernieuwd (`vercel login`)
 - Productie deploy uitgevoerd met:
     - `vercel --prod --yes`
@@ -7638,12 +8460,14 @@ Stap C (structurele matching-fix):
     - `https://future-factory.vercel.app`
 
 ### 2) Firebase deploy ✅
+
 - Build succesvol (`npm run build`)
 - Volledige deploy uitgevoerd (`firestore`, `functions`, `hosting`)
 - Hosting release succesvol:
     - `https://future-factory-377ef.web.app`
 
 ### 3) Firestore index/TLL formaatfout opgelost ✅
+
 - Bestand aangepast: `firestore.indexes.json`
 - TTL overrides gecorrigeerd door `indexes: []` toe te voegen bij:
     - `activity_logs.expireAt`
@@ -7659,7 +8483,10 @@ Stap C (structurele matching-fix):
 - Merge-poging `pilot-dev` -> `FF-2-4-26` gaf "Already up to date"; geen extra delta nodig.
 - Definitieve production-publicatie is handmatig geforceerd via `vercel --prod --yes` en staat live.
 
-## Update sessie 96 (Preview data-source fix voor startflows)
+
+## Dagupdate 14 april 2026
+
+### Update sessie 96 (Preview data-source fix voor startflows)
 
 **Datum:** 14 april 2026 | **Branch:** `pilot-dev`
 
@@ -7674,6 +8501,7 @@ Stap C (structurele matching-fix):
 **Wat is aangepast:**
 
 ### 1) Runtime padresolutie toegevoegd in backend repositories ✅
+
 - `functions/src/repositories/planningRepository.js`
 - Nieuwe resolver `resolveRuntimeDataPaths(runtimeDataSource)`:
     - `useArtifactsPaths + appId` -> artifacts planning/tracking
@@ -7684,6 +8512,7 @@ Stap C (structurele matching-fix):
     - `getPlanningOrderDocById`
 
 ### 2) Start-services preview-aware gemaakt ✅
+
 - `functions/src/services/planningTransitionService.js`
 - `startWorkstationProductionRunService`:
     - planning order read via runtime data source
@@ -7694,6 +8523,7 @@ Stap C (structurele matching-fix):
     - collision check gebruikt runtime tracking collection
 
 ### 3) Callables geven runtime context door ✅
+
 - `functions/src/callables/planningCallables.js`
 - Uitgebreid voor:
     - `startWorkstationProductionRun`
@@ -7702,6 +8532,7 @@ Stap C (structurele matching-fix):
 - Nieuwe payloadverwerking: `runtimeDataSource { useArtifactsPaths, appId }`
 
 ### 4) Frontend wrapper stuurt runtime context mee ✅
+
 - `src/services/planningSecurityService.js`
 - Nieuwe helper `getRuntimeDataSource()` op basis van `window.__app_id`
 - Meegegeven in payloads van:
@@ -7721,7 +8552,10 @@ Stap C (structurele matching-fix):
 1. `firebase deploy --only functions`
 2. Daarna preview startflow opnieuw testen (lot reserve + start order + zichtbaar in tracking)
 
-## Update sessie 95 (ISO 9001/27001 audit logging hardening)
+
+## Dagupdate 13 april 2026
+
+### Update sessie 95 (ISO 9001/27001 audit logging hardening)
 
 **Datum:** 13 april 2026 | **Branch:** `pilot-dev`
 
@@ -7733,6 +8567,7 @@ Stap C (structurele matching-fix):
 **Wat is afgerond in deze sessie:**
 
 ### 1) Centrale audit service toegevoegd ✅
+
 - Nieuw bestand: `functions/src/services/auditService.js`
 - Nieuwe API:
     - `logAction(userId, action, details, options)`
@@ -7747,6 +8582,7 @@ Stap C (structurele matching-fix):
 - Severity niveaus: `INFO`, `WARNING`, `CRITICAL`
 
 ### 2) Audit hooks in callables afgedwongen ✅
+
 - `functions/src/callables/planningCallables.js` uitgebreid met audit-instrumentatie
 - Aan het begin van alle callable flows is `auditService.logCallable(...)` toegevoegd (na auth/role checks, voor service-executie)
 - Gedekte domeinen:
@@ -7757,6 +8593,7 @@ Stap C (structurele matching-fix):
     - Security/admin events (account request, profiel/language/password-flag)
 
 ### 3) Firestore audit immutability rules toegevoegd ✅
+
 - In `firestore.rules` en `firestore.rules.production` toegevoegd:
     - `match /future-factory/audit/{document=**}`
     - `allow read: if isAdmin();`
@@ -7764,6 +8601,7 @@ Stap C (structurele matching-fix):
 - Resultaat: client apps kunnen auditdata niet aanmaken, wijzigen of verwijderen; alleen backend Admin SDK kan schrijven
 
 ### 4) Git + deploy status ✅
+
 - Commit: `bf14bed`
 - Push: `pilot-dev` succesvol
 - Deploy uitgevoerd: `firebase deploy --only functions,firestore:rules`
@@ -7780,7 +8618,7 @@ Stap C (structurele matching-fix):
 2. Retentiebeleid formeel vastleggen (minimaal 1 jaar) + expliciet uitsluiten dat audittrail door clients verwijderd kan worden
 3. Eventueel aparte auditor-readrol toevoegen i.p.v. alleen `isAdmin()` voor uitleesrechten
 
-## Update sessie 94 (Prioriteit 2 + Utility/AI write-migraties naar backend-callables)
+### Update sessie 94 (Prioriteit 2 + Utility/AI write-migraties naar backend-callables)
 
 **Datum:** 13 april 2026 | **Branch:** `pilot-dev`
 
@@ -7793,6 +8631,7 @@ Stap C (structurele matching-fix):
 **Wat is afgerond in deze sessie:**
 
 ### 1) Automation execution gemigreerd ✅
+
 - Nieuwe backend service: `functions/src/services/automationService.js`
 - Nieuwe callable: `executeAutomationRule`
 - Frontend wrapper toegevoegd in `planningSecurityService.js`
@@ -7800,6 +8639,7 @@ Stap C (structurele matching-fix):
 - Resultaat: debounce, actie-uitvoering en execution logging lopen nu server-side
 
 ### 2) Utility blok gemigreerd ✅
+
 
 **Product catalog utilities**
 - Nieuwe backend service: `functions/src/services/productCatalogService.js`
@@ -7826,6 +8666,7 @@ Stap C (structurele matching-fix):
 - `src/utils/infor_sync_service.jsx` gedelegeerd naar callable (signatuur behouden voor bestaande callsites)
 
 ### 3) AI admin/document/training writes gemigreerd ✅
+
 - Nieuwe backend service: `functions/src/services/aiAdminService.js`
 - Nieuwe callables:
     - `saveAiContextConfig`
@@ -7854,7 +8695,7 @@ Stap C (structurele matching-fix):
 2. Daarna git commit + push van de huidige lokale batch
 3. Eventueel restscan op niet-kritieke AI-chat/flashcard writes
 
-## Update sessie 93 (Migratie Admin/Account Paden naar Backend Callables)
+### Update sessie 93 (Migratie Admin/Account Paden naar Backend Callables)
 
 **Datum:** 13 april 2026 | **Branch:** `pilot-dev`
 
@@ -7864,12 +8705,14 @@ Stap C (structurele matching-fix):
 **Wat is afgerond in deze batch:**
 
 ### Backend Services (`adminService.js`) ✅
+
 - `updateUserProfileService`: setDoc user profile (name, email, preferences, language, etc.)
 - `clearPasswordChangeFlagService`: setDoc requirePasswordChange: false
 - `submitAccountRequestService`: addDoc new account request
 - `updateUserLanguageService`: updateDoc language voorkeur + validation
 
 ### Backend Callables (in `planningCallables.js`) ✅
+
 ```
 - updateUserProfile (requires auth)
 - clearPasswordChangeFlag (requires auth)
@@ -7878,6 +8721,7 @@ Stap C (structurele matching-fix):
 ```
 
 ### Frontend Wrappers in `planningSecurityService.js` ✅
+
 ```
 export const updateUserProfile(profileData)
 export const clearPasswordChangeFlag()
@@ -7886,6 +8730,7 @@ export const updateUserLanguage(language)
 ```
 
 ### Component Migration ✅
+
 1. **ProfileView.jsx**:
    - Import: `{ updateUserProfile, clearPasswordChangeFlag }`
    - handleSaveGeneral: nu via `updateUserProfile()` callable
@@ -7922,7 +8767,7 @@ export const updateUserLanguage(language)
 2. Prioriteit 2: automationEngine.jsx (rule creation/logging)
 3. Prioriteit 3: Utility flows (conversionLogic, infor_sync, productHelpers)
 
-## Update sessie 92 (Finish Backend-Write Migratie Batch 3 + Hotspotscan C)
+### Update sessie 92 (Finish Backend-Write Migratie Batch 3 + Hotspotscan C)
 
 **Datum:** 13 april 2026 | **Branch:** `pilot-dev`
 
@@ -7934,6 +8779,7 @@ export const updateUserLanguage(language)
 **Wat is afgerond in deze sessie:**
 
 ### Taak A: Functions Deploy ✅
+
 - `firebase deploy --only functions` succesvol afgerond
 - 50+ callables live in productie (inclusief BatchWriter en journaal-management)
 - Specifieke nuevas functies nu actief:
@@ -7944,6 +8790,7 @@ export const updateUserLanguage(language)
   - Alle Sessie 88-91 callables
 
 ### Taak B: printService Queue-Aanmaak Migratie ✅
+
 - Nieuwe backend service: `functions/src/services/printingService.js`
   - `queuePrintJobService`: server-side validatie + ZPL sanitation
   - MAX_ZPL_LENGTH, MAX_METADATA_LENGTH, PRINTER_ID_PATTERN checks
@@ -7963,6 +8810,7 @@ export const updateUserLanguage(language)
 - Directe printService.queuePrintJob calls in frontend verwijderd
 
 ### Taak C: Hotspot Scan Resultaten ✅
+
 - **Gescand:** alle src/components + relevante src/utils
 - **Gemigreerd (✅):** planning/tracking/occupancy/personnel paden (Sessies 88-91)
 - **Nog Client-side (~50 matches):**
@@ -7997,8 +8845,7 @@ export const updateUserLanguage(language)
 2. (Optioneel) automationEngine autorisatie-checks sharpenen
 3. Firestore rules validatie voor nieuwe openstaande schrijven
 
-
-## Update sessie 91 (Pauzemoment na stap 2 backend-write migratie)
+### Update sessie 91 (Pauzemoment na stap 2 backend-write migratie)
 
 **Datum:** 13 april 2026 | **Branch:** `pilot-dev`
 
@@ -8025,7 +8872,7 @@ export const updateUserLanguage(language)
 2. End-to-end testen van WorkstationHub reminder/overproductie messaging en print queue flows.
 3. Eventueel volgende migratiestap: queue-aanmaakpad (`printService`) ook via backend-command centraliseren.
 
-## Update sessie 90 (Stap 1 shopfloor/personnel occupancy naar backend-commands)
+### Update sessie 90 (Stap 1 shopfloor/personnel occupancy naar backend-commands)
 
 **Datum:** 13 april 2026 | **Branch:** `pilot-dev`
 
@@ -8072,7 +8919,10 @@ export const updateUserLanguage(language)
 1. Stap 2 oppakken: resterende message writes in `WorkstationHub.jsx` naar backend-command migreren.
 2. Print queue beheerflows (`PrintQueueAdminView.jsx` en admin-variant) omzetten naar backend-commands voor statuswissels, requeue en delete.
 
-## Update sessie 89 (Firestore rules hardening na callable-migraties)
+
+## Dagupdate 12 april 2026
+
+### Update sessie 89 (Firestore rules hardening na callable-migraties)
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -8099,7 +8949,7 @@ export const updateUserLanguage(language)
 1. Resterende niet-kritieke directe writes (o.a. occupancy/messages) classificeren: backend vereist of bewust client-side.
 2. Daarna laatste frontend lint/runtime regressies in gemigreerde views opruimen en opnieuw commit/pushen.
 
-## Update sessie 88 (BM01 QC-notes + ProductionStartModal lot-counter writes naar callables)
+### Update sessie 88 (BM01 QC-notes + ProductionStartModal lot-counter writes naar callables)
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -8141,7 +8991,7 @@ export const updateUserLanguage(language)
 1. Nieuwe callables deployen zodat frontend wrappers productiepad gebruiken.
 2. Daarna Firestore rules verder aanscherpen rond `production/counters` en `qcNotes` writes.
 
-## Update sessie 87 (Vier resterende planning/tracking hotspots naar callables)
+### Update sessie 87 (Vier resterende planning/tracking hotspots naar callables)
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -8179,7 +9029,7 @@ export const updateUserLanguage(language)
 1. Volgende batch hotspots oppakken: bijv. `BM01Hub` QC notes en lotcounter-updates in `ProductionStartModal`.
 2. Daarna rules verder aanscherpen voor de nieuw gemigreerde mutatievelden.
 
-## Update sessie 86 (WorkstationHub string-run start naar backend callable)
+### Update sessie 86 (WorkstationHub string-run start naar backend callable)
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -8209,7 +9059,7 @@ export const updateUserLanguage(language)
 1. Firestore rules verder aanscherpen voor deze nu gemigreerde startflow (tracking/planning velden die hiervoor nog client-writable zijn).
 2. Nog één keer repo-breed scannen op resterende directe kritieke tracking/planning writes en die laatste restpunten migreren.
 
-## Update sessie 85 (WorkstationHub pause/resume + reminder metadata via backend)
+### Update sessie 85 (WorkstationHub pause/resume + reminder metadata via backend)
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -8239,7 +9089,7 @@ export const updateUserLanguage(language)
 1. Overige directe tracking-mutaties in WorkstationHub inventariseren die nog niet in bovenstaande clusters vallen (bijv. specifieke flags/history updates buiten de kerntransities).
 2. Daarna Firestore rules verder versmallen voor deze inmiddels gemigreerde velden.
 
-## Update sessie 84 (WorkstationHub routing naar Lossen + manual resume via backend)
+### Update sessie 84 (WorkstationHub routing naar Lossen + manual resume via backend)
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -8272,7 +9122,7 @@ export const updateUserLanguage(language)
 1. De resterende directe trackingupdates in WorkstationHub groeperen per intentie, bijvoorbeeld pause/resume of losse metadata/history mutaties.
 2. Daarna pas generieke tracking-rules verder versmallen, omdat routingtransities nu grotendeels server-side zitten maar niet alle niet-routing updates al zijn gemigreerd.
 
-## Update sessie 83 (Approved forwarding + repair complete verder naar backend callables)
+### Update sessie 83 (Approved forwarding + repair complete verder naar backend callables)
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -8305,7 +9155,7 @@ export const updateUserLanguage(language)
 1. De resterende directe transitieroutes inventariseren die nog tracking `currentStation/currentStep/status` aanpassen, met name bulk/route-specifieke WorkstationHub-paden naar Lossen of volgende stations.
 2. Daarna pas bredere rules voor generieke trackingtransities verder versmallen, zodra die laatste clientflows ook zijn gemigreerd.
 
-## Update sessie 82 (Tijdelijke afkeur/HOLD_AREA naar backend callable getrokken)
+### Update sessie 82 (Tijdelijke afkeur/HOLD_AREA naar backend callable getrokken)
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -8340,7 +9190,7 @@ export const updateUserLanguage(language)
 1. Resterende directe tracking status-overgangen inventariseren, vooral de approved/forwarding paden die nog `currentStation/currentStep/status` rechtstreeks aanpassen.
 2. Daarna dezelfde aanpak toepassen op de volgende post-processing cluster, zodat trackingtransities stapsgewijs volledig server-side afdwingbaar worden.
 
-## Update sessie 81 (Teamleader overproduction-linkflow naar backend callable)
+### Update sessie 81 (Teamleader overproduction-linkflow naar backend callable)
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -8372,7 +9222,7 @@ export const updateUserLanguage(language)
 1. Volgende resterende Teamleader/planning cluster kiezen waar nog directe status/machine-updates bestaan.
 2. Daarna pas rules verder aanscherpen voor bredere planning/status-writes, zodat nog open clientflows niet per ongeluk breken.
 
-## Update sessie 80 (Order-admin flows naar callables + priority-regressie hersteld)
+### Update sessie 80 (Order-admin flows naar callables + priority-regressie hersteld)
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -8415,7 +9265,7 @@ export const updateUserLanguage(language)
 2. Overproduction- en overige Teamleader-planningflows naar dezelfde callable-architectuur trekken voordat die rule-technisch verder worden dichtgezet.
 3. Daarna de planning-rules verder versmallen voor machine/status-updates zonder de nog open clientflows te breken.
 
-## Update sessie 79 (Nieuwe planning writeflows verder naar backend callables getrokken)
+### Update sessie 79 (Nieuwe planning writeflows verder naar backend callables getrokken)
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -8462,7 +9312,10 @@ export const updateUserLanguage(language)
 2. Overgebleven planning/statusflows inventariseren die nog directe writes gebruiken en deze in dezelfde callable/service/repository-structuur trekken.
 3. Optioneel: aanvullende regressiechecks voor `functions/` toevoegen zodat deze nieuwe callables sneller te valideren zijn dan alleen via frontend build + diagnostics.
 
-## Update sessie 78 (Opslaan voor morgen: uitvoerplan A/B/C bevestigd)
+
+## Dagupdate 11 april 2026
+
+### Update sessie 78 (Opslaan voor morgen: uitvoerplan A/B/C bevestigd)
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -8487,7 +9340,7 @@ export const updateUserLanguage(language)
 - Runtime/deploy fix is apart gecommit en gepusht.
 - Verdere migratieclusters staan lokaal als vervolgstap en worden in volgende sessie gefaseerd afgerond.
 
-## Update sessie 77 (Cloud Functions-by-default beleid bevestigd)
+### Update sessie 77 (Cloud Functions-by-default beleid bevestigd)
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -8510,7 +9363,7 @@ export const updateUserLanguage(language)
 2. Bij elke nieuwe functie eerst backend callable/service definiëren, daarna frontend integreren.
 3. Firestore rules blijven ondersteunend, maar kritieke business-transities worden server-side afgedwongen.
 
-## Update sessie 76 (Start architectuurrefactor: backend lagen + planning vertical slice)
+### Update sessie 76 (Start architectuurrefactor: backend lagen + planning vertical slice)
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -8557,7 +9410,7 @@ export const updateUserLanguage(language)
 2. Monolithische `functions/index.js` verder afbouwen naar alleen triggerregistratie/exports.
 3. Optioneel: lint/test scripts toevoegen in `functions/package.json` voor snellere backend-regressiechecks.
 
-## Update sessie 75 (Flow 3 uitgevoerd: legacy planning-archivering server-side)
+### Update sessie 75 (Flow 3 uitgevoerd: legacy planning-archivering server-side)
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -8597,7 +9450,7 @@ export const updateUserLanguage(language)
 1. Firestore rules verder versmallen met gerichte field-level allowlists op resterende high-risk writes.
 2. Overige losse client mutatiepaden in digital planning stapsgewijs naar callables migreren.
 
-## Update sessie 74 (Flow 2 uitgevoerd: handmatige lotverplaatsing server-side)
+### Update sessie 74 (Flow 2 uitgevoerd: handmatige lotverplaatsing server-side)
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -8642,7 +9495,7 @@ export const updateUserLanguage(language)
 1. Flow 3 oppakken: legacy handmatige archiveringsacties naar backend-callables.
 2. Daarna field-level allowlists verder versmallen voor resterende high-risk writepaden.
 
-## Update sessie 73 (Flow 1 uitgevoerd: definitieve afkeur via backend callable)
+### Update sessie 73 (Flow 1 uitgevoerd: definitieve afkeur via backend callable)
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -8683,7 +9536,7 @@ export const updateUserLanguage(language)
 2. Flow 3 oppakken: legacy handmatige archivering server-side trekken.
 3. Daarna rules verder versmallen met field allowlists per kritieke collection.
 
-## Update sessie 72 (Hervat: server-side write hardening op kritieke flows)
+### Update sessie 72 (Hervat: server-side write hardening op kritieke flows)
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -8718,7 +9571,7 @@ export const updateUserLanguage(language)
 2. Eerste flow volledig server-side trekken en end-to-end valideren.
 3. Daarna flow 2 en 3 in dezelfde stijl uitrollen.
 
-## Update sessie 71 (Security hardening: resterende kritieke punten afgerond)
+### Update sessie 71 (Security hardening: resterende kritieke punten afgerond)
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -8767,6 +9620,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 70 (Label preview parity: Admin ↔ ProductionStart ↔ Mazak gestabiliseerd)
 
+
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -8813,6 +9667,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 67 (MES-positionering vastgelegd + eerste code-stap: offline-first fundament)
 
+
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -8853,6 +9708,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 68 (Zichtbare online/offline status in header)
 
+
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -8873,6 +9729,7 @@ export const updateUserLanguage(language)
 - Nog uit te voeren na deze batch: diagnostics + build.
 
 ### Update sessie 69 (Verbindingswissels naar ingebouwde meldingen i.p.v. toast)
+
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -8898,6 +9755,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 63 (Time Tracking: Teamleader Fittings default afdeling)
 
+
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -8919,6 +9777,7 @@ export const updateUserLanguage(language)
 - Teamleader Fittings opent Time Tracking nu standaard op de Fittings-afdeling in plaats van `ALLES`.
 
 ### Update sessie 64 (Werkuren-logica: nacht/weekend uitsluiten uit Time Tracking en Efficiency)
+
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -8951,6 +9810,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 65 (Handmatige Teamleader-knop voor oude definitieve afkeur-orders)
 
+
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -8970,6 +9830,7 @@ export const updateUserLanguage(language)
 - Volledige productiebuild uitgevoerd: succesvol.
 
 ### Update sessie 66 (Legacy afkeur-detectie verbreed + knop altijd zichtbaar)
+
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -9000,6 +9861,7 @@ export const updateUserLanguage(language)
 3. Daarna visueel controleren dat deze orders niet meer in actieve planning staan en wél terug te vinden zijn in planning-archief.
 
 ### Update sessie 62 (Tijdelijke afkeur uniform + reparatieflow Teamleader + reparatie-uren zichtbaar)
+
 
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
@@ -9067,6 +9929,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 61 (Afkeurflow: To Do direct corrigeren bij definitieve afkeur)
 
+
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9114,6 +9977,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 60 (Volledige Lijst stationsfilter: Nabewerken zichtbaar gemaakt)
 
+
 **Datum:** 11 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9139,6 +10003,7 @@ export const updateUserLanguage(language)
 3. Indien akkoord: wijzigingen committen en pushen.
 
 ### Update sessie 59 (Slimme Sync verfijnd + compacte import modal + planner/sidebar uitbreidingen)
+
 
 **Datum:** 10 april 2026 | **Branch:** `pilot-dev`
 
@@ -9200,6 +10065,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 58 (Planning Import Smart Sync + LN bestandsanalyse)
 
+
 **Datum:** 9 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9241,6 +10107,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 57 (Preview-branch sync uitgevoerd en gevalideerd)
 
+
 **Datum:** 9 april 2026 | **Bron:** `origin/FPiFF-may-build` | **Doelbranch:** `origin/preview-v2`
 
 **Doel:**
@@ -9281,6 +10148,7 @@ export const updateUserLanguage(language)
 - Preview-sync staat klaar op branch `preview-handover-lossen-kpi-fixes` voor push/PR naar `preview-v2`.
 
 ### Update sessie 56 (Preview handover sync: Lossen/Nabewerking/Teamleader + BH18 + scanner focus parity)
+
 
 **Datum:** 9 april 2026 | **Branch:** `pilot-dev`
 
@@ -9347,6 +10215,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 55 (i18n vervolg digitalplanning - FITTINGS + MAZAK restlekken)
 
+
 **Datum:** 8 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9384,6 +10253,7 @@ export const updateUserLanguage(language)
 - Start met een gerichte grep op `src/components/digitalplanning/MazakView.jsx` en `src/components/digitalplanning/TeamleaderHub.jsx` voor resterende hardcoded user-facing tekst (vooral notificaties en activity-details).
 
 ### Update sessie 54 (i18n vervolg digitalplanning - Duitse lekkage batch 3)
+
 
 **Datum:** 8 april 2026 | **Branch:** `pilot-dev`
 
@@ -9429,6 +10299,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 53 (i18n vervolg digitalplanning - Duitse lekkage batch 2)
 
+
 **Datum:** 8 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9471,6 +10342,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 52 (i18n vervolg digitalplanning - batch 1 resterende zichtbare literals)
 
+
 **Datum:** 8 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9507,6 +10379,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 51 (i18n vervolg digitalplanning - hervatpunt opgeslagen)
 
+
 **Datum:** 8 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9529,6 +10402,7 @@ export const updateUserLanguage(language)
 - Werk daarna per bestand in batches: scan -> patch -> errorcheck.
 
 ### Update sessie 50 (Teamleader KPI-filters + planning UX + plak-import fallback)
+
 
 **Datum:** 7 april 2026 | **Branch:** `pilot-dev`
 
@@ -9591,6 +10465,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 49 (Gereed-tab UX + archief + code-opschoning)
 
+
 **Datum:** 7 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9639,6 +10514,7 @@ export const updateUserLanguage(language)
 
 ### Hervatpunt (opgeslagen op verzoek)
 
+
 **Datum:** 5 april 2026 | **Branch:** `pilot-dev`
 
 **Eerstvolgende actie bij hervatten:**
@@ -9678,6 +10554,7 @@ export const updateUserLanguage(language)
 - Laatste foutieve BH18-meeneemfilter in `LossenView` is weer teruggedraaid; volgende stap is live-validatie op de vloer met concrete lots (BH18-tab vs LOSSEN 12/18 view).
 
 ### Update sessie 48 (LOSSEN 12/18 routing, tabs, auto-login en gerichte rollback)
+
 
 **Datum:** 7 april 2026 | **Branch:** `pilot-dev`
 
@@ -9729,6 +10606,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 47 (Firebase Storage trigger + server-side machinefilter)
 
+
 **Datum:** 7 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9753,6 +10631,7 @@ export const updateUserLanguage(language)
 3. Testen door 1 LN Excel-bestand te uploaden naar Storage pad `imports/planning/`.
 
 ### Update sessie 46 (Power Automate API endpoint voor directe import)
+
 
 **Datum:** 7 april 2026 | **Branch:** `pilot-dev`
 
@@ -9792,6 +10671,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 45 (Auto-import watcher voor planning)
 
+
 **Datum:** 7 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9825,6 +10705,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 44 (Time Tracking: stationtijden als daadwerkelijk/gepland)
 
+
 **Datum:** 7 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9853,6 +10734,7 @@ export const updateUserLanguage(language)
 2. Bevestigen dat `Lossen` gepland momenteel bewust `0.0h` kan zijn (geen aparte reference op bucket), tenzij gewenst om anders te modelleren.
 
 ### Update sessie 43 (Reference Operation code-tijden op order + efficiency fallback)
+
 
 **Datum:** 7 april 2026 | **Branch:** `pilot-dev`
 
@@ -9890,6 +10772,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 42 (AI ingestiefilter tuning + fijnere diagnose)
 
+
 **Datum:** 7 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -9919,6 +10802,7 @@ export const updateUserLanguage(language)
 3. Alleen als de aantallen daarna nog te laag blijven: completion-detectie uitbreiden met extra stationspecifieke eindsignalen uit ruwe history-data.
 
 ### Update sessie 41 (AI smoketest + bronmodusfix Teamleader)
+
 
 **Datum:** 6 april 2026 | **Branch:** `pilot-dev`
 
@@ -9953,6 +10837,7 @@ export const updateUserLanguage(language)
 3. Na stabilisatie diagnoseblok eventueel achter featureflag zetten of weer verwijderen.
 
 ### Update sessie 40 (Order popup + lotdetail in Time Tracking)
+
 
 **Datum:** 5 april 2026 | **Branch:** `pilot-dev`
 
@@ -9994,6 +10879,7 @@ export const updateUserLanguage(language)
 - Devserver beschikbaar op poort 3000 voor livecontrole.
 
 ### Update sessie 39 (Pilot bronkoppeling + Efficiency/Time Tracking analyse hersteld)
+
 
 **Datum:** 5 april 2026 | **Branch:** `pilot-dev`
 
@@ -10037,7 +10923,7 @@ export const updateUserLanguage(language)
 **Belangrijke bevinding:**
 - Sommige records tonen verschillende timestamp-formaten:
     - ISO-string in UTC, bv. `2026-03-31T09:44:30.861Z`
-    - Firestore timestamp in lokale tijd, bv. `31 March 2026 at 13:47:45 UTC+2`
+    - Firestore timestamp in lokale tijd, bv. `31 maart 2026 at 13:47:45 UTC+2`
 - Deze lijken anders, maar zijn na conversie vergelijkbaar. Toch blijven er edge cases waarbij history leidend moet zijn in plaats van losse timestampvelden.
 
 **Openstaand / eerstvolgende stap:**
@@ -10050,6 +10936,7 @@ export const updateUserLanguage(language)
 - Vite devserver gestart op poort `3000` voor live verificatie.
 
 ### Update sessie 37 (Hervatting confirm-flow + stille alerts)
+
 
 **Datum:** 5 april 2026 | **Branch:** `pilot-dev`
 
@@ -10074,6 +10961,7 @@ export const updateUserLanguage(language)
 - Dit is bewust opgesplitst in twee batches (confirm eerst, alerts daarna) om regressierisico laag te houden tijdens pilotwerk.
 
 ### Update sessie 38 (Volledige notificatie-opschoning afgerond)
+
 
 **Datum:** 5 april 2026 | **Branch:** `pilot-dev`
 
@@ -10103,6 +10991,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 36 (Mazak Print Preview Fix)
 
+
 **Datum:** 5 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:** Print preview in Mazak labels matcht niet met daadwerkelijke print. Preview toonde correct formaat, maar echte print had vervorming (QR codes, verticale tekst, layout).
@@ -10126,6 +11015,7 @@ export const updateUserLanguage(language)
 
 ### Update sessie 35 (Archivering Afgekeurde Producten)
 
+
 **Datum:** 5 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:** Afgekeurde producten (Definitieve Afkeur) netjes uit de actieve productielijst (`tracking`) halen en archiveren in een specifieke map per jaar, net als bij gereedgemelde producten.
@@ -10138,6 +11028,7 @@ export const updateUserLanguage(language)
 ---
 
 ### Update sessie 34 (Mazak Printflow, Flens Labels & Lotnummer Fixes)
+
 
 **Datum:** 3 april 2026 | **Branch:** `pilot-dev`
 
@@ -10172,6 +11063,7 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 ---
 
 ### Update sessie 32 (Serie-groepering Wikkelen/Lossen + MazakView)
+
 
 **Datum:** 3 april 2026 | **Branch:** `pilot-dev`
 
@@ -10216,6 +11108,7 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 ### Update sessie 31 (Import + Capaciteitsplanning + BH12 flowrouting)
 
+
 - Doel van deze sessie: import- en capaciteitslogica laten aansluiten op echte LN data en routing voor BH12 aanscherpen.
 
 - Import en efficiency-splitsing verbeterd:
@@ -10256,6 +11149,7 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 ### Update sessie 30 (Implementatie "Gereed" Tab)
 
+
 - **Doel:** Een extra "Gereed" tab toevoegen in de `Terminal` om operators inzicht te geven in recent voltooide producten, met name producten die naar "Nabewerken" zijn gegaan. Dit is belangrijk voor de overdracht tussen ploegen.
 
 - **Iteratie 1 & 2:**
@@ -10275,6 +11169,7 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 ### Pauzestand Voor Hervatten (31 maart 2026)
 
+
 - **Opslagpunt bevestigd op verzoek gebruiker:** "dat kan morgen pas".
 - **Context:** Meerdere fixes zijn doorgevoerd in `LossenView.jsx` om de productlijst correct te filteren.
     - **Afkeur-filter:** Producten met status "Tijdelijke Afkeur" of "Definitieve Afkeur" worden nu correct verborgen.
@@ -10285,6 +11180,7 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 ---
 
 ### Nieuwe Pilot Doelen & Wensen (April 2026)
+
 
 - **BM01 scanner input werkt niet:** Scanner input functioneert niet in BM01. Oplossen zodat producten gescand kunnen worden.
 - **Aangeboden lijst resetten:** Controleren of de aangeboden lijst in BM01 elke dag automatisch op 0 wordt gezet.
@@ -10302,6 +11198,7 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 ---
 
 ### Update sessie 29 (Filter-regressie in Lossen)
+
 - **Gesprek opgeslagen met de notitie:** de "Lossen" view toont momenteel ook producten die al gereed zijn.
 - **Analyse:** Dit is waarschijnlijk een neveneffect van de vereenvoudigde filterlogica in `LossenView.jsx` die recent is doorgevoerd om de BH18/Centraal Lossen-scheiding te testen. De huidige filter (`return origin === "BH18" && ...`) is te breed en houdt geen rekening met de eindstatus van een product.
 - **Vervolgactie (geparkeerd):** De filterlogica in `processData` van `LossenView.jsx` moet worden uitgebreid om voltooide of gearchiveerde producten uit te sluiten, zodat alleen relevante, actieve items worden getoond. Dit wordt later opgepakt.
@@ -10317,6 +11214,7 @@ De pilotbranch bevat meerdere afgeronde verbeteringen voor planning, printing, p
 5. Verticale tekst op orderlabels (onder QR-codes) is nog niet definitief goed: overlap is opgelost, maar exacte positionering/schaal in preview vs fysieke print is nog in finetune.
 
 ### Update sessie 28 (Lossen meetvelden + productie deploy)
+
 
 - **Lossen Vrijgeven-popup aangepast voor interactieve meetwaarden in de Lossen-tab.**
 - **Uitgevoerd in `ProductReleaseModal.jsx`:**
@@ -10344,6 +11242,7 @@ De pilotbranch bevat meerdere afgeronde verbeteringen voor planning, printing, p
 
 ### Productie deploy uitgevoerd (30 maart 2026)
 
+
 - **Vercel productie-deploy direct vanaf lokale workspace uitgevoerd** met `npx vercel --prod --yes`.
 - **Build vooraf succesvol afgerond** met `npm run build`.
 - **Live productie-URLs:**
@@ -10354,6 +11253,7 @@ De pilotbranch bevat meerdere afgeronde verbeteringen voor planning, printing, p
     - dus wijzigingen staan live op Vercel maar zijn op dit moment niet automatisch gecommit of gepusht naar Git.
 
 ### Update sessie 26 (planning import + selectie lopende planning)
+
 
 - **Direct probleem opgelost:** importfout bij `.xlsm` en geplakte Excel-data (`Fout bij het verwerken van het bestand` / `Geen geldige data gevonden`).
 - **Uitgevoerd in `PlanningImportModal.jsx`:**
@@ -10377,6 +11277,7 @@ De pilotbranch bevat meerdere afgeronde verbeteringen voor planning, printing, p
 - **Validatie:** builds uitgevoerd; 1 run werd extern afgekapt (`Terminated`), herhaalbuild succesvol afgerond.
 
 ### Update sessie 27 (import `Gewikkeld` + WIP wijzigingen importmodal)
+
 
 - **Nieuwe importmapping toegevoegd voor productieaantallen (`Gewikkeld`):**
     - in zowel `PlanningImportModal.jsx` als `planningImportWorker.js` wordt nu extra kolomdetectie gedaan op `gewikkeld | geproduceerd | gemaakt | produced`.
@@ -10404,775 +11305,10 @@ De pilotbranch bevat meerdere afgeronde verbeteringen voor planning, printing, p
 - [ ] Controleer dat niet-geselecteerde orders nog steeds als `planningHidden: true` worden opgeslagen.
 - [ ] End-to-end zichtbaarheidstest: import -> Terminal -> Workstation (actieve/lopende orders blijven zichtbaar).
 
-## Pilot Branching & Deploy Flow (4 weken vanaf 30 maart)
 
-### Doel
+## Dagupdate 3 april 2026
 
-- Houd 1 stabiele pilotlijn die exclusief naar Vercel Production publiceert.
-- Houd 1 aparte ontwikkellijn voor nieuwe features die alleen naar Vercel Preview publiceert.
-
-### Branchstrategie
-
-- `FPiFF-may-build` = **Pilot Stable** (enige branch voor productie).
-- `pilot-dev` = **Development** (nieuwe ontwikkelingen, refactors, experimenten).
-- `hotfix/*` = tijdelijke branch voor urgente pilotreparaties.
-
-### Codespaces
-
-- **Codespace A: Pilot Ops** (start vanaf `FPiFF-may-build`)
-    - alleen gebruiken voor pilot-fixes, kleine reparaties en productie releases.
-- **Codespace B: Feature Dev** (start vanaf `pilot-dev`)
-    - gebruiken voor nieuwe features en veranderingen die eerst naar preview moeten.
-
-### Vercel instellingen
-
-- Zet in Vercel de **Production Branch** op `FPiFF-may-build`.
-- Laat preview deploys actief voor alle andere branches.
-- Gebruik waar mogelijk gescheiden environment variabelen voor Production vs Preview.
-
-### Dagelijkse werkwijze
-
-1. Nieuwe ontwikkeling:
-    - werk in Codespace B op `pilot-dev` (of `feature/*` vanaf `pilot-dev`).
-    - push naar remote -> automatische Vercel Preview deploy.
-2. Pilot bugfix:
-    - werk in Codespace A op `hotfix/*` vanaf `FPiFF-may-build`.
-    - test minimaal lokaal + smoke op preview.
-    - merge naar `FPiFF-may-build` voor productie deploy.
-3. Geplande release van development naar pilot:
-    - open PR van `pilot-dev` naar `FPiFF-may-build`.
-    - alleen mergen na akkoord en korte regressietest.
-
-### Hotfix flow (6 stappen)
-
-1. Checkout `FPiFF-may-build` en pull laatste wijzigingen.
-2. Maak `hotfix/<korte-naam>`.
-3. Voer minimale fix uit met gerichte validatie.
-4. Open PR naar `FPiFF-may-build`.
-5. Merge PR.
-6. Controleer Vercel Production deploy + korte smoke test.
-
-### Git commando's (referentie)
-
-```bash
-git checkout FPiFF-may-build
-git pull
-git checkout -b hotfix/voorbeeld-fix
-git add .
-git commit -m "Hotfix: voorbeeld"
-git push -u origin hotfix/voorbeeld-fix
-```
-
-### Aanbevolen beveiliging
-
-- Branch protection op `FPiFF-may-build`:
-    - PR verplicht voor merge.
-    - minimaal 1 review of expliciete eigenaar-goedkeuring.
-    - optioneel: status checks verplicht voor merge.
-- Geen directe pushes naar `FPiFF-may-build`.
-
-### Confirmatie werkflow lopende planning (sessie 26b)
-
-**Gebruiker-bevestigd:** selectie- en verborgen-logica werkt zoals gewenst voor papieren pilot-planning.
-
-**Scenario:** Papieren planning loopt, orders bijna/geheel klaar. Excel-uitdraai bevat dezelfde + nieuwe orders.
-
-**Gewenst** (nu ingebouwd):
-- Orders die al lopen/klaar zijn → uitsluiten uit zichtbare planning maar WEL importeren
-- Zo hoeven ze volgende import niet telkens opnieuw uit te sluiten
-- Nieuwe orders automatisch zichtbaar
-- Lopende orders altijd zichtbaar (failsafe om af te maken)
-
-**Werkflow in import-modal:**
-1. Upload Excel → preview met checkboxes (`In Planning` kolom)
-2. Optie A: `Week t/m [week]` + `Selecteer t/m week + lopende orders` knop
-3. Optie B: Handmatig per order checkbox aan/uit
-4. `Importeer X Regels` → opslaan met `planningHidden: true` voor niet-aangevinkte orders
-5. Volgende import: verborgen orders blijven verborgen, nieuwe automatisch zichtbaar
-
-**Gebruiker-bevestiging:** Workflow past perfect bij papieren pilot-planning met lopende orders.
-
----
-
-### Open vraag opgeslagen (sessie 24)
-
-- **Letterlijke vraag van gebruiker opgeslagen:**
-    - "kun je een laaste site check doon voordat ik deze als Productie op Vercel wil zetten en naar Git wil pushen en dan over ga op de preview in Vercel en een andere branch tijdens de pilot van 4 weken die vanaf 30 maart start"
-- **Betekenis voor vervolg:**
-    - volledige pre-release check uitvoeren vóór productie op Vercel + vóór Git push
-    - daarna pas overzetten naar Vercel preview-flow en aparte pilot-branch (4 weken vanaf 30 maart).
-
-### Update sessie 25 (pre-release sitecheck uitgevoerd)
-
-- **Uitgevoerd:** pre-release validatie en Vercel preview-deploy vóór productie.
-- **Validatie resultaten:**
-    - `prevalidate` hersteld met nieuw script `scripts/cleanup-duplicates.js` (blokkerende missing module opgelost)
-    - lint van **17 errors** naar **0 errors** gebracht (warnings blijven bestaan)
-    - `type-check` geslaagd
-    - lokale build in devcontainer werd tijdens bundling meerdere keren extern afgekapt (`exit 143`), zonder nieuwe codefouten in gewijzigde bestanden
-- **Vercel preview:** succesvolle cloud deploy op
-    - `https://futurefactoryapp-g9n1msybm-richard-van-heerdes-projects.vercel.app`
-    - `curl -I` geeft `401` door Vercel protection/SSO (verwacht gedrag voor afgeschermde preview)
-- **Conclusie voor release-gate:** codefouten die release blokkeerden zijn opgelost; finale productie-deploy kan door zodra gewenste review van preview in browser is afgerond en Git-commit/push is gedaan.
-
-### Update sessie 25b (branch + productie deploy afgerond)
-
-- **Nieuwe branch aangemaakt:** `FPiFF-may-build`
-- **Vercel productie-deploy uitgevoerd en geslaagd:**
-    - productie URL: `https://futurefactoryapp-c02qf10sc-richard-van-heerdes-projects.vercel.app`
-    - alias actief: `https://future-factory.vercel.app`
-    - inspectie: `https://vercel.com/richard-van-heerdes-projects/futurefactoryapp/BHKKCJacifaVUgpaULsp2Z8pDm7Y`
-- **Status:** laatste production build staat live op Vercel.
-
-- **Nieuwe vraag verwerkt:** teamleader moet in Personeel tijdelijk/per periode van dienst kunnen wisselen en dit moet direct meegenomen worden bij automatische uitlogtijden.
-- **Uitgevoerd in Personeel-tab (`PersonnelOccupancyView.jsx`):**
-    - nieuw blok in medewerker-modal: `Tijdelijke Dienst Override` met:
-        - aan/uit
-        - `van` datum
-        - `tot` datum
-        - tijdelijke `shift`
-        - optionele notitie
-    - opslag genormaliseerd in personeelsdocument als `temporaryShiftOverride`
-    - dienst-resolutie (`getPersonShiftForDate`) gebruikt nu eerst tijdelijke override als datum binnen de ingestelde periode valt.
-- **Uitgevoerd in Workstation check-in (`WorkstationHub.jsx`):**
-    - check-in leest nu tijdelijke override uit personeel (als actief en binnen datumrange) en valt alleen terug op vaste `shiftId`/kloktijd als fallback
-    - hiermee krijgen nieuwe check-ins automatisch de correcte (tijdelijke) dienst mee voor auto-checkout.
-- **Achteraf uren corrigeren toegevoegd:**
-    - nieuwe modal `Achteraf Uren Corrigeren` in Personeel-overzicht
-    - teamleader kan uitgecheckte registraties van gekozen datum alsnog aanpassen
-    - opslaan zet o.a. `manualHoursOverride: true` + timestamp in occupancy.
-- **Validatie:** compile/editor checks zonder fouten op:
-    - `src/components/personnel/PersonnelOccupancyView.jsx`
-    - `src/components/digitalplanning/WorkstationHub.jsx`
-
-### Update sessie 23b (navigatie + datumsturing)
-
-- **Teamleader Personeel-tab uitgebreid:**
-    - knop toegevoegd om direct naar uitgebreide Personeel-module in Admin Hub te gaan
-    - route-state geeft direct `openScreen: personnel` mee.
-- **Admin Hub gedrag uitgebreid:**
-    - `AdminDashboard` opent nu direct de juiste module als `location.state.openScreen` aanwezig is
-    - voor Personeel worden init-parameters doorgegeven (`initialViewDate`, `initialTab`).
-- **Personeel Manager verbeterd:**
-    - ondersteunt initialisatie met datum/tab vanuit route-state
-    - extra kalenderinput (`type=date`) toegevoegd naast bladerknoppen
-    - `Vandaag` knop toegevoegd om snel terug te springen.
-- **Resultaat:** teamleader kan vanuit Teamleader Personeel direct naar uitgebreide Admin Personeel en daar op gekozen datum uren/shiftplanning beheren (ook toekomstige data).
-
-### Pauzestand Voor Hervatten (sessie 22)
-
-- **Opslagpunt hersteld na verbroken chatverbinding:** gebruiker meldde fout bij weekfilter in auditlog: `Scan Onderbroken: Database fout: undefined`.
-- **Opslagpunt expliciet bevestigd voor volgende sessie:** gesprek en fixstatus zijn bewaard in deze samenvatting zodat direct hervat kan worden.
-- **Root cause bevestigd:** `AdminLogView.jsx` gebruikte een ongeldige `date-fns` parse/format combinatie voor ISO-weken (`yyyy` samen met `II`). Dit veroorzaakt een `RangeError` nog voor de Firestore-query draait.
-- **Uitgevoerd:**
-    - week-input in auditlog omgezet naar correcte ISO week-year formattering met `RRRR-'W'II`
-    - week parsing defensief gemaakt met fallback naar huidige datum bij ongeldige invoer
-    - generieke databasefoutmelding aangepast zodat niet langer `undefined` getoond wordt, maar `err.code` of `err.message`
-- **Validatie afgerond:** editorcontrole zonder fouten en parse-test in terminal succesvol voor meerdere ISO-weken.
-- **Verwachte uitkomst:** filter `Per week` in Audit Log opent weer zonder crashmelding en toont bij echte queryfouten een bruikbare melding.
-- **Eerstvolgende check bij hervatten:** Audit Log openen, `Per week` selecteren en controleren op correcte resultaten plus pagination (`Meer laden`) binnen dezelfde filter.
-
-### Pauzestand Voor Hervatten (sessie 21)
-
-- **Opslagpunt bevestigd op verzoek gebruiker:** "ik ga later verder, sla op in conversatie".
-- **Afgerond in deze sessie:** tweede i18n-sweep voor admin modules met resterende hardcoded UI-teksten.
-
-### Concreet afgerond
-- `src/components/admin/AdminMessagesView.jsx`
-    - resterende hardcoded labels/placeholders/tooltips vervangen door `t(...)`
-    - compose modal verder gelokaliseerd (ontvanger/prioriteit/onderwerp/inhoud/bijlage)
-    - onderwerp-fallback en quote-opmaak gestandaardiseerd
-- `src/components/admin/AdminLogView.jsx`
-    - resterende vaste labels gelokaliseerd (`Root: /`, `SRC:`, `IP:`, `CSV`, `PDF`, `null`)
-    - `"Systeem"` fallbacks vervangen door `common.system`
-- `src/components/admin/AdminLabelDesigner.jsx`
-    - hardcoded `Custom Size` en melding over verplaatst template-overzicht gelokaliseerd
-- `src/lang/nl.js` en `src/lang/en.js`
-    - nieuwe keys toegevoegd voor bovenstaande componenten
-
-### Validatie
-- Editor/probleemcontrole uitgevoerd op alle gewijzigde bestanden.
-- Resultaat: **geen fouten gevonden** op de aangepaste files.
-
-### Eerstvolgende stap bij hervatten
-1. Vervolg i18n-sweep op resterende admin-hardcoded strings (met name extra prompts/alerts/fallbacks in `AdminLabelDesigner.jsx`).
-2. Daarna opnieuw gerichte file-checks en eventueel kleine key-normalisatie in `nl/en` dictionaries.
-
-### Nieuwe Notitie Voor Vervolg (sessie 20)
-
-- **Gefixt (code):** valse overproductie na definitieve afkeur is opgelost in `WorkstationHub.jsx`.
-    - Start/overflow controle gebruikt nu de station teller (`started_<station>`) als primaire bron.
-    - Fallback gebruikt alleen actieve, niet-afgekeurde tracking records.
-    - Resultaat: bij scenario "10 gestart, 1 definitief afgekeurd" wordt een vervangend stuk niet meer onterecht als `NOG_TE_BEPALEN` overproductie aangemaakt.
-
-- **Open wens (bewust uitgesteld):** op orderniveau zichtbaar maken als:
-    - `Gemaakt: 10`
-    - `Afkeur: 1`
-    - zodat productie-aantallen en afkeur apart traceerbaar zijn in de orderweergave.
-
-- **Update (sessie 20, uitgevoerd):** Workstation Terminal planning toont nu expliciet `Gemaakt` en `Afkeur` per orderregel en in het order-detailpaneel.
-
-- **Update (sessie 20, uitgevoerd):** Teamleader Hub `Volledige Lijst` filter uitgebreid:
-    - nieuwe scopes: `Tijdelijke Afkeur` en `Definitieve Afkeur`
-    - bij `Definitieve Afkeur` wordt de tweede filter automatisch periode-gebaseerd (`Deze week`, `Vorige week`, `Dit jaar`, `Alles`) i.p.v. `Week + Backlog`
-    - export van de huidige gefilterde lijst toegevoegd (CSV)
-
-- **Aanpak voor volgende sessie:**
-    - Definieer bron voor `Afkeur` teller (tracking status `rejected` per `orderId`, eventueel per station).
-    - Voeg de teller toe in orderdetail en/of Workstation planningkaart.
-    - Valideer op scenario: 10 gestart -> 1 definitief afkeur bij Nabewerking -> 1 vervangend gestart.
-
----
-
-## 🚨 Kritieke Open Punten
-
-### 1. Planning Import Workflow
-- **Status:** gedeeltelijk gerepareerd, nog niet definitief gevalideerd
-- **Probleem:** sommige LN-bestanden geven nog steeds `geen bruikbare orders gevonden`
-- **Wat al gedaan is:**
-    - parser robuuster gemaakt voor variërende headers
-    - sheet-detectie verbreed
-    - meldingen verbeterd met kopieerbare foutdetails
-    - importmodus voor overschrijven teruggebracht
-    - AH/FH mapping voor omschrijving/klant verduidelijkt
-- **Nog nodig:** exact userbestand opnieuw testen en ontbrekende kolommen 1-op-1 mappen
-
-### 2. Planning Status Visibility
-- **Status:** code aangepast, praktijkvalidatie nog nodig
-- **Wat al gedaan is:**
-    - Terminal en Workstation filterlogica aangepast zodat actieve statussen zoals `waiting` zichtbaar blijven
-- **Nog nodig:** importeren en controleren op BH18, Lossen, Nabewerking/BM01
-
-### 3. Label Printing op Echte Hardware
-- **Status:** kalibratie werkend en gesneden; lot-batch en queue-label snijfix live bevestigd
-- **Pilotaanname:** Zebra ZM400 via WebUSB als primaire printroute (bevestigd in praktijktest 23 maart)
-- **Wat al gedaan is:**
-    - ZPL generatie verbeterd
-    - rotatie-offsets en tekstmetrieken verfijnd
-    - lotnummers direct printbaar gemaakt
-    - queue/USB/preview flows verder geharmoniseerd
-    - Print Station/Print Queue lotnummer-flow gefixt voor stationselectie via `factory_configs/main`
-    - Fittings lotstationfilter aangepast naar BH-stations
-    - `Print 'OK' QR (A4)` hersteld met lokale QR-generatie
-    - QR-rendering app-breed geïnternaliseerd (geen externe `api.qrserver.com`)
-    - `LabelVisualPreview.jsx` verder getuned voor verticale tekst/objecten:
-        - verticale X-compensatie bijgesteld voor betere links/rechts-uitlijning in preview
-        - minimale verticale objecthoogte per labelformaat toegevoegd (`55mm` groot, `30mm` klein), begrensd door objectmaat
-        - barcode preview `objectFit` aangepast naar `contain`
-        - wrap/clipping-logica voor verticale tekst aangescherpt, maar live hardware-validatie van lange verticale tekstregelafbreking is nog nodig
-    - ZPL cut-logica fundamenteel hersteld (23 maart sessie 6, zie 3a)
-- **Nog nodig:** live validatie orderlabel print vanuit Print Station
-
-### 3d. Verticale Tekst Tuning (lopende issue, sessie 14)
-- **Status:** Code gereed (preview en ZPL gesynchroniseerd), wacht op live hardware validatie
-- **Wat bevestigd is:**
-    - overlap van verticale tekst was aanwezig en is grotendeels weg na verwijderen van onstabiele combinaties
-    - `^FB` bij geroteerde tekst (`^A0R`/`^A0B`) geeft op ZM400 onvoorspelbare output en blijft daarom uit voor verticale tekst
-- **Wat geprobeerd is in code:**
-    - meerdere auto-offset en centreringvarianten in `zplHelper.js` getest
-    - Verticale tuning blok toegevoegd in `zplHelper.js` en `LabelVisualPreview.jsx` (`VERTICAL_X_OFFSET_MM = 2.0`, `VERTICAL_Y_OFFSET_MM = 1.0`, `VERTICAL_SCALE = 0.85`)
-    - Preview schaling (`DESIGNER_MATCH_SCALE = 0.76`) toegepast zodat `LabelVisualPreview` exact overeenkomt met de 1:1 weergave in `AdminLabelDesigner`.
-- **Huidige situatie:**
-    - Preview op het scherm is nu perfect in verhouding en de verticale tekst is visueel geresized.
-    - ZPL-output neemt dezelfde 15% krimp en pixel-offsets mee.
-    - Moet nu fysiek geprint worden op de ZM400 om te bevestigen of deze standaardcorrectie 100% klopt.
-- **Bestanden met recente wijzigingen:**
-    - `src/utils/zplHelper.js`
-    - `src/components/printer/LabelVisualPreview.jsx`
-    - `src/components/admin/AdminLabelDesigner.jsx`
-
-### 3a. Zebra ZM400 WebUSB Vervolgpunten
-- [x] WebUSB printflow in `PrintStationView.jsx` robuuster gemaakt met dynamische OUT endpoint-detectie
-- [x] WebUSB secure-context check toegevoegd
-- [x] Device-selectie verbeterd met `vendorId`/`productId` filters
-- [x] Matching verbeterd voor mixed ID-formaten
-- [x] `PrintQueueAdminView.jsx` geharmoniseerd met dezelfde WebUSB-printerprofiel-logica
-- [x] In Queue UI zichtbaar gemaakt welk actief printerprofiel gebruikt wordt
-- [x] Gedeelde WebUSB utility (`src/utils/usbPrintService.js`) uitgebreid
-- [x] Zowel `PrintStationView.jsx` als `PrintQueueAdminView.jsx` aan gedeelde WebUSB utility gekoppeld
-- [x] ZPL cut-logica fundamenteel hersteld (23 maart sessie 6):
-    - Oorzaak: `^XB` (suppress backfeed) stond in ZPL waardoor printer niet naar snijpositie voerde
-    - `^MMC` staat nu vroeg in de header van elk label (direct na `^XA^CI28`), niet meer aan het einde
-    - `^XB`, `^CN1` en `~JK` volledig verwijderd uit `generatePrintData`, `generateLotBatchZPL` en `ensureCutCommandForQueueJob`
-    - Kalibratie ZPL in `buildCalibrationCrossZpl` krijgt nu ook `^MMC` in header + `^PQ1,0,1,Y` → print en snijdt correct
-    - Lot-batch: alleen het **laatste** lot krijgt `^PQ1,0,1,Y` (knip); tussenliggende labels krijgen `^PQ1,0,1,N`
-    - Queue-labels: `ensureCutCommandForQueueJob` vereenvoudigd naar alleen `^MMC + ^PQ1,0,1,Y`; detecteert of knip al aanwezig is
-- [x] Hardware SmartCal uitgevoerd op ZM400 (FEED+CANCEL bij opstarten): top-of-form correct ingesteld
-- [x] Kalibratie print bevestigd werkend en wordt gesneden
-- [x] Offset X bijgesteld naar **-4mm** na hardware SmartCal (eerdere -8.9mm verouderd)
-- [x] Live validatie: queue-label wordt na fix gesneden (sessie 11, 24 maart)
-- [x] Live validatie: lotnummer-batch van 5 of 10 stuks knipt alleen na het laatste label (`^MMT` op tussenliggende labels fix — sessie 7, 23 maart)
-- [x] Lotnummer invoerveld "Aantal Labels" verbeterd in Print Station + Print Queue: direct typen werkt nu (leeg veld tijdelijk toegestaan, validatie op blur/submit)
-- [x] Lotbatch QR-layout ingesteld op 9x9mm (`qrSizeMm: 9`) en tekstbreedte/centrering in `generateLotBatchZPL` opnieuw getuned voor ZM400
-- [x] Fysieke lay-out validatie afgerond: lotnummers (~65mm) en QR zijn nu correct uitgelijnd en akkoord op hardware
-- [x] Sessie 9 (24 maart): regressie na Zadig/Windows-route hersteld
-    - Batch-cut opnieuw bevestigd: knip pas na laatste label (test met 10 lotnummers geslaagd)
-    - QR-grootte opnieuw bevestigd als correct (9x9)
-    - Lotnummers opnieuw getuned en bevestigd: goede breedte en correcte top-uitlijning t.o.v. QR
-    - Lotbatch DPI-resolutie geharmoniseerd met driverprofiel (geen ongewenste 203-fallback)
-- [x] Printspeed instelbaar gemaakt in Printer Beheer en doorgezet naar output (`^PR` voor ZPL, `SPEED` voor TSPL)
-- [x] WebUSB foutmeldingen in Printer Beheer aangepast naar platform-neutraal (niet langer Windows-specifiek)
-- [x] Printer Beheer testprint aangepast naar gedeelde WebUSB utility met hergebruik van geautoriseerde devices (eerste keer permissie, daarna geen picker per print)
-- [ ] Orderlabel printen vanuit Print Station
-  - **Gecalibreerde offsetwaarden na hardware SmartCal (23 maart):**
-    - `calibrationOffsetXMm = -4` (na hardware SmartCal — eerdere -8.9 vervalt)
-    - `calibrationOffsetYMm = 0` (na hardware SmartCal — eerdere +4.5 vervalt; pas bijstellen na live test)
-
-### 3b. Praktijktest Logtemplate Zebra ZM400 (invullen tijdens test)
-- **Testdatum/tijd:** 
-- **Tester:** 
-- **Werkplek/station:** 
-- **Browser + versie:** 
-- **USB-weergave:** toont alleen juiste printer `ja/nee`
-- **Orderlabel test:** `geslaagd/mislukt`
-- **Lotbatch test:** `geslaagd/mislukt`
-- **Printkwaliteit:** tekst `ok/niet ok`, QR `ok/niet ok`
-- **Snij/backfeed gedrag:** `ok/niet ok/n.v.t.`
-- **Geobserveerde afwijking:** 
-- **Directe vervolgactie:** 
-
-### 3c. Snelle Checklist: Preview vs Print (Orderlabel)
-- [ ] Controleer in Printer Beheer dat actieve driver/DPI klopt met fysieke printer (`zebra-zm400-300` of `zebra-zm400-203`)
-- [ ] Open hetzelfde orderlabel in Print Station en noteer lot/order/template
-- [ ] Print exact 1 label en leg preview + fysiek label naast elkaar
-- [ ] Vergelijk alleen deze 3 punten: tekstpositie, regelafbreking/wrap, rotatie-uitlijning
-- [ ] Noteer afwijking in mm als `X: ...mm`, `Y: ...mm` (geen nieuwe template-wijziging doen tijdens test)
-- [ ] Herhaal dezelfde check in Print Queue met hetzelfde template/data
-- [ ] Als afwijking <= 1mm: markeer als geslaagd; anders offset-finetune plannen
-
----
-
-## ✅ Afgerond in Recente Sessies
-
-### Rechtenstructuur en Toegang
-- Granulaire permissiestructuur toegevoegd via `user.permissions`
-- Kernmodules standaard beschikbaar gemaakt:
-    - `planning`
-    - `catalog`
-    - `inbox`
-- Optionele modules instelbaar gemaakt per feature
-- Oude admin-tool permissies uitgefaseerd met migratiepad
-- `useHasFeature` hook toegevoegd voor consistente feature checks
-
-### Admin en Navigatie
-- Module master toggle bug opgelost in gebruikersbeheer
-- Admin Hub filtering aangepast naar nieuw permissiemodel
-- `digital_planning` als expliciete module toegevoegd in rechtenbeheer
-
-### AI Assistent
-- Firestore paden toegevoegd:
-    - `AI_MEMORY`
-    - `AI_CONVERSATIONS`
-- AI kan nu:
-    - goedgekeurde antwoorden onthouden
-    - relevante herinneringen in context meenemen
-    - recente gesprekken per gebruiker opslaan en herstellen
-- In chat toegevoegd:
-    - like-knop voor positief leergeheugen
-    - herstel van recent gesprek
-    - knop voor nieuw gesprek
-
-### Planning en Productieflow
-- Lotnummer-zoekveld toegevoegd in detailrapportage
-- Fallback voor productomschrijving verbeterd zodat minder snel `ONBEKEND PRODUCT` verschijnt
-- PO text/opmerking bewerkbaar gemaakt in orderdetail-flow
-- Opmerkingen zichtbaar gemaakt in operator/teamleader weergave
-- Cross-station N2100 routing voorbereid: hybride orders (Spoolbouw + Fittingen met zelfde ordernummer) blijven in Fittingen verborgen tot voldoende Spoolbouw-output beschikbaar is (`x van y` vrijgave op basis van aantallen); Lossen-grenzen afgestemd op TB 25-300 lokaal / >300 station en CB 25-350 lokaal / >350 station
-
-### Printing en Labels
-- Print flows verder gecentraliseerd rond gedeelde preview/generatie helpers
-- Lotnummer-generatie en printerstation-flow verbeterd
-- Tijdelijke/order labels beter geïntegreerd in printerviews
-- Extra previewcomponenten toegevoegd voor consistente labelweergave
-- QR-preview en QR-PDF generatie volledig intern gemaakt via lokale QR utility/component
-- `InternalQrImage` verplaatst naar `src/utils/InternalQrImage.jsx` en alle imports bijgewerkt
-
-### Scroll fixes (20 maart 2026 — sessie 2)
-- `LossenView.jsx` — root scroll container `pb-32` + `max(8rem, env(safe-area-inset-bottom))` safe-area padding
-- `WorkstationHub.jsx` — content area div safe-area bottom padding toegevoegd
-- `TerminalProductionView.jsx` — twee scroll containers (wikkelen list + detail panel) `pb-24` + safe-area padding
-- `BM01Hub.jsx` — inspection tab scroll container `pb-24` + safe-area padding
-- `PrintQueueAdminView.jsx` — root div gewijzigd van `p-4 md:p-8` naar `h-full overflow-y-auto p-4 md:p-8` + safe-area padding (App.jsx `<main>` heeft `overflow-hidden` waardoor kinderen expliciet `h-full overflow-y-auto` nodig hebben)
-
-
-### Station Lossen opschonen (20 maart 2026 — sessie 2)
-- Tab "Printers en Labels" volledig verwijderd uit Station Lossen UI
-- Alle dode printer/labels/planning code verwijderd uit `LossenView.jsx`:
-  - States: `activeView`, `planningOrders`, `planningSearch`, `planningStationFilter`, `showReservations`, `reserveConfig`, `availableLabels`, `selectedLabelId`, `labelRules`, `nextStartLot`, `containerRef`, `previewZoom`, `simplePrintConfig`, `generating`, `savedPrinters`
-  - useEffects: planningOrders fetch, reservedItems cleanup, labels/rules fetch, nextStartLot, containerRef zoom
-  - Handlers: `handleSimpleRelease`, `handleSimplePrint`, `handleReserveConfirm`, `handleDeleteReservation`
-  - Memos: `filteredOrders`, `uniqueStations`, `selectedLabel`, `previewData`, `reservedItems`
-  - JSX: volledige "planning" view branch inclusief tabs
-  - Imports: `X`, `Search`, `Clock`, `Trash2` icons; `StatusBadge`; `getISOWeek`, `processLabelData`, `applyLabelLogic`, `getQRCodeUrl`; `PIXELS_PER_MM`, `getMachineCode`, `getLotPrefix`, `printViaWebUSB`; Firestore `orderBy`, `limit`, `writeBatch`
-- 35+ dode `lossen.*` vertalingssleutels verwijderd uit `nl.js` en `en.js`
-- Resterende actieve sleutels behouden: `no_incoming_items`, `wait_for_unload`, `waiting_receipt`, `lot_number`, `received`, `manufactured_item`, `origin`, `from`, `process_release`, `ready_to_scan`, `item_not_found`
-
-### Matrix Hub & Efficiency (26 maart 2026)
-- Volledige refactor van de `AdminMatrixManager` naar een robuuste modulaire opzet (10+ subcomponenten).
-- Boorpatronen en tolerantiebeheer direct gekoppeld aan de root databasepaden.
-- Ontwerp en documentatie toegevoegd voor een nieuw Efficiency Tracking systeem (`EFFICIENCY_TRACKING.md`).
-
-### ProductionStartModal & ZPL Fixes (26 maart 2026 — sessie 19)
-- **Audit label/printingsysteem** uitgevoerd; vier kritieke problemen gevonden en opgelost:
-
-#### ProductionStartModal.jsx
-- **Manual mode (barcode scan) nu volledig werkend:**
-  - Label preview (rechter paneel) is nu altijd zichtbaar in beide modes (was verborgen in manual mode)
-  - Label template selectie beschikbaar in beide modes (was alleen in auto mode)
-  - `labelsToPrint` niet meer hardcoded op `0` in manual mode — labels worden nu ook geprint bij manueel starten
-  - ZPL wordt gegenereerd en naar de wachtrij gestuurd in manual mode (als er een label geselecteerd is)
-- **Dead code verwijderd:**
-  - `setShowLighthousePreview(true)` — aanroep op niet-bestaande state setter → crash risico weg
-  - `"Verstuur naar Wachtrij"` knop die nooit renderde (stond in `mode === "auto"` container met `mode !== "auto"` guard) → verwijderd
-  - Help tekst bijgewerkt: `"Label wordt automatisch geprint bij starten"`
-
-#### zplHelper.js — Cut logica gerepareerd
-- **`^MMC` (Cut Mode) staat nu in de header** van het ZPL format (direct na `^XA^CI28`), niet meer aan het einde
-- **`^GS`** (ongeldig ZPL commando) verwijderd
-- **Mid-batch labels** krijgen nu `^MMT` (geen cut) i.p.v. `^MMC` — consistent met hoe `generateLotBatchZPL` het al correct deed
-- **Laatste label van batch:** `^MMC + ^PQ1,0,1,Y` = print en knip correct
-
-### Tekeningen Sync & Koppeling (26 maart 2026 — sessie 18)
-- Drawing sync engine volledig herschreven met correcte DB-paden en materiaalvariant matching (CST↔EST)
-- Tekeningen nu opvraagbaar vanuit alle views: Terminal orderlijst, Terminal detail, Product Dossier, TeamleaderHub per-product, TeamleaderHub order-overzicht
-- Tekeningen Sync tab in ConversionManager: batch sync, cross-collection search, keten analyse met broken chain detectie
-- Definitieve Afkeur formulier met reden-checklist in ProductDossierModal
-- On Hold/Resume toggle voor orders met visuele feedback in alle relevante views
-
----
-
-## 📂 Belangrijkste Relevante Bestanden
-
-### AI
-- `src/services/aiService.jsx`
-- `src/components/ai/AiChatView.jsx`
-- `src/components/ai/AiMessage.jsx`
-- `src/config/dbPaths.jsx`
-
-### Rechten en Modules
-- `src/components/admin/AdminUsersView.jsx`
-- `src/components/admin/AdminDashboard.jsx`
-- `src/components/Sidebar.jsx`
-- `src/hooks/useHasFeature.js`
-
-### Planning Import / Terminal
-- `src/components/digitalplanning/modals/PlanningImportModal.jsx`
-- `src/components/digitalplanning/terminal/TerminalPlanningView.jsx`
-- `src/components/digitalplanning/Terminal.jsx`
-- `src/components/digitalplanning/WorkstationHub.jsx`
-- `src/components/digitalplanning/OrderDetail.jsx`
-- `src/components/digitalplanning/modals/ProductDossierModal.jsx`
-
-### Tekeningen & Sync
-- `src/utils/drawingLinker.jsx`
-- `src/utils/manualSyncDrawings.jsx`
-- `src/utils/findDrawingForProduct.jsx`
-- `src/components/admin/ConversionManager.jsx`
-
-### Printing
-- `src/components/printer/PrintQueueAdminView.jsx`
-- `src/components/printer/PrintStationView.jsx`
-- `src/components/admin/AdminPrinterManager.jsx`
-- `src/utils/InternalQrImage.jsx`
-- `src/utils/printerDrivers.js`
-- `src/utils/zplHelper.js`
-- `src/utils/labelHelpers.jsx`
-- `src/services/printService.js`
-
-### Matrix Beheer & Kwaliteit
-- `src/components/admin/matrixmanager/AdminMatrixManager.jsx` (en subviews)
-- `src/components/admin/ProductionTimeStandardsManager.jsx` (gepland)
-- `src/components/digitalplanning/EfficiencyDashboard.jsx` (gepland)
-- `EFFICIENCY_TRACKING.md`
-
----
-
-## 🧪 Open Pilot Validatie
-
-### End-to-End Werkvloerflow
-- [ ] BH18 order starten
-- [ ] uniek lotnummer genereren
-- [ ] doorzetten naar Lossen
-- [ ] verplichte metingen invoeren
-- [ ] doorzetten naar Nabewerking / BM01
-- [ ] goedkeuren of afkeuren
-- [ ] dossier / archivering controleren
-- [ ] hybride N2100 scenario valideren: start in Spoolbouw, pas zichtbaar in Fittingen zodra vereist aantal gereed buisstukken (`x van y`) bereikt is
-
-### Multi-operator Test
-- [ ] 2 of meer operators tegelijk laten werken
-- [ ] occupancy sync controleren
-- [ ] race conditions uitsluiten
-
-### Mobile / Scanner
-- [ ] QR scanflow testen op alle stations
-- [ ] manual fallback testen
-- [ ] iOS/Android/device mix controleren
-
-### Security / Compliance
-- [ ] Firestore rules praktijkvalideren
-- [ ] operator mag geen vreemd station zien
-- [ ] admin mag alles beheren
-- [ ] AI context controleren op onnodige PII
-
-### Performance / Stabiliteit
-- [ ] 100+ orders in terminal testen
-- [ ] filter/sort performance testen
-- [ ] netwerkuitval scenario testen
-
----
-
-## 🔄 Praktische Hervatstappen
-
-### Als je verder wilt met LN import
-1. Open de importmodal in LN-modus.
-2. Upload exact hetzelfde userbestand.
-3. Kopieer de foutmelding met kolomnamen.
-4. Vul aliasmapping verder aan in `PlanningImportModal.jsx`.
-5. Test tot orders zichtbaar zijn in de preview.
-
-### Als je verder wilt met AI
-1. Stel een vraag in de AI chat.
-2. Like een goed antwoord.
-3. Stel een vergelijkbare vraag opnieuw.
-4. Controleer of geheugencontext effect heeft.
-5. Controleer Firestore in:
-     - `future-factory/settings/ai_memory`
-     - `future-factory/settings/ai_conversations`
-
-### Als je verder wilt met printing
-1. Verbind Zebra ZM400 via WebUSB en bevestig dat de printer door de browser wordt gezien.
-2. Print een echt orderlabel.
-3. Print een batch lotnummers.
-4. Controleer tekstuitlijning, QR positie en snijgedrag.
-5. Fine-tune indien nodig in `zplHelper.js`.
-
-### Printer Driver Mapping (pilot)
-
-| Scenario | Driver kiezen in Admin | Start DPI | Start Darkness | Start Speed | Taal/Pad |
-|---|---|---:|---:|---:|---|
-| Zebra ZM400 via WebUSB (hoofdroute) | `zebra-zm400-300` (of `zebra-zm400-203` als printer fysiek 203 DPI is) | 300 (of 203) | 20 | 3 | ZPL/WebUSB |
-| Zebra EPL2 Label Printer (CUPS/legacy) | `zebra-epl2-203` | 203 | 20 | 3 | EPL |
-| Lighthouse CJ-PRO II (Windows host) | `lighthouse-cjpro2` | 300 | 15 | 4 | TSPL/Windows |
-
-Praktische keuzehulp:
-- Gebruik `zebra-zm400-300` als standaard voor de huidige pilotroute met ZM400 via WebUSB.
-- Schakel alleen naar `zebra-zm400-203` als de printer daadwerkelijk op 203 DPI draait (anders schaal/positie-afwijking).
-- Gebruik `zebra-epl2-203` alleen voor EPL2-printers of legacy CUPS/EPL-paden, niet als vervanging van de ZM400 WebUSB ZPL-route.
-- Als snijgedrag op ZM400 niet klopt: eerst driver en DPI bevestigen, daarna pas offsets/darkness tunen.
-
----
-
-## 📜 Korte Historie
-
-### 26 maart 2026 — sessie 18 (Tekeningen Sync & Toegang Vanuit Alle Views)
-
-#### Tekeningen Koppeling — Volledige App-brede Integratie
-- **Drawing Sync Engine (`drawingLinker.jsx`)**: Volledig herschreven. Gebruikt nu correcte `PATHS.PRODUCTS` en `PATHS.CONVERSION_MATRIX` i.p.v. oude `artifacts/{appId}/...` paden. Bevat `materialVariants()` functie die CST↔EST swapped op positie 6. `findDrawingForOrder()` doet 3-stap: product match → conversie matrix → beide met materiaalvariant fallback.
-- **Batch Sync (`manualSyncDrawings.jsx`)**: Materiaalvarianten toegevoegd in `buildLookupKeys`. Ongematchte resultaten bevatten nu `conversionTarget` voor debugging.
-- **ConversionManager.jsx**: Derde tab "Tekeningen Sync" toegevoegd met:
-  - Start Sync knop + progress bar + samenvatting (Gekoppeld/Geen match/Totaal)
-  - Cross-collection zoekfunctie over Conversie Matrix, Planning Orders en Product Catalogus
-  - "Keten Analyse" (chain trace) die automatisch conversion targets volgt naar producten
-  - Broken chain detectie (oranje "Target ≠ Product" status)
-  - Materiaalvariant auto-follow met "+ materiaalvariant" badge
-- **Definitieve Afkeur**: Rejection knop + formulier met reden-checklist en opmerkingen in ProductDossierModal (z-index z-[300])
-
-#### Tekening Zichtbaar Vanuit Alle Views
-Alle views hebben nu een werkende tekening-knop met 3-stap lookup:
-1. `order.drawing` als product-ID → `getDoc` by ID
-2. Fallback: `articleCode` query
-3. Fallback: materiaalvariant (CST↔EST positie 6)
-4. Legacy fallback: `findDrawingForProduct()`
-
-| View | Component | Details |
-|---|---|---|
-| Workstation Terminal — orderlijst | `TerminalPlanningView.jsx` | Drawing icon blauw als gekoppeld, clickable → `onViewDrawing` |
-| Workstation Terminal — detail panel | `TerminalPlanningView.jsx` | "Technische Tekening" knop gekoppeld aan `onViewDrawing`, blauw + bolletje als gekoppeld |
-| Workstation Terminal — handler | `Terminal.jsx` | `handleViewDrawing` met 3-stap + materiaalvariant fallback → ProductDetailModal |
-| Product Dossier Modal | `ProductDossierModal.jsx` | "Tekening" veld + `handleOpenDetail` met 3-stap fallback |
-| TeamleaderHub — Volledige Lijst per product | `OrderDetail.jsx` | FileImage knop per product met 3-stap lookup, blauw als gekoppeld |
-| TeamleaderHub — Volledige Lijst order overzicht | `OrderDetail.jsx` | 5e tile "Tekening" in details grid, toont "Gekoppeld"/"Zoeken" status |
-
-#### Overige Wijzigingen
-- **On Hold/Resume**: Toggle in OrderDetail, StatusBadge (`on_hold` oranje/PauseCircle), PlanningSidebar (oranje achtergrond), TerminalPlanningView (oranje dimmed, disabled start)
-- **TeamleaderHub Sync**: Paarse sync-knop in header + mobile menu met toast notificaties
-- **Nabewerken**: Station naam gecorrigeerd van "Nabewerking" naar "Nabewerken" in workstationLogic.jsx
-
-#### Materiaalvariant Logica (CST↔EST)
-- Positie 6 (index 6) in FPi GRE productcodes: `C` = CST (Conductive Standard Type), `E` = EST (Epoxy Standard Type)
-- Tekeningen zijn materiaalonafhankelijk → beide varianten delen dezelfde tekening
-- `materialVariants()` functie in `drawingLinker.jsx` en `manualSyncDrawings.jsx`
-- Wordt toegepast in alle lookup-stappen (sync, handmatige sync, chain trace, terminal, dossier, orderdetail)
-
-#### Gewijzigde Bestanden
-- `src/utils/drawingLinker.jsx` — herschreven + materialVariants
-- `src/utils/manualSyncDrawings.jsx` — materialVariants + conversionTarget
-- `src/components/admin/ConversionManager.jsx` — Sync tab + search + chain trace
-- `src/components/digitalplanning/modals/ProductDossierModal.jsx` — rejection form + handleOpenDetail
-- `src/components/digitalplanning/terminal/TerminalPlanningView.jsx` — clickable icon + Technische Tekening knop
-- `src/components/digitalplanning/Terminal.jsx` — handleViewDrawing + variant fallback
-- `src/components/digitalplanning/OrderDetail.jsx` — tekening tile + per-product drawing knop + on hold
-- `src/components/digitalplanning/TeamleaderHub.jsx` — sync button
-- `src/components/digitalplanning/common/StatusBadge.jsx` — on_hold status
-- `src/components/digitalplanning/PlanningSidebar.jsx` — on_hold styling
-- `src/utils/workstationLogic.jsx` — Nabewerken naamfix
-
-### 26 maart 2026 — sessie 17 (Matrix Manager & Efficiency Tracking)
-- **Matrix Hub Refactor**: De `AdminMatrixManager` en alle subcomponenten (`MatrixRangesView`, `AdminDrillingView`, `MatrixView`, `BlueprintsView`, `LibraryView`, etc.) zijn volledig herzien en gestyled volgens de nieuwe MES richtlijnen.
-- **Root Path Syncing**: Data opslag voor boorpatronen en dimensies is gestandaardiseerd naar de centrale root configuraties.
-- **Efficiency Tracking**: Nieuwe architectuur (`EFFICIENCY_TRACKING.md`) opgesteld voor real-time prestatiemeting op de werkvloer.
-- **Volgende stap**: Componenten implementeren voor het Efficiency systeem.
-
-### 25 maart 2026 — sessie 16 (ZPL uitlijning & preview sync)
-- Verticale tekst (`^A0R`/`^A0B`) tuning blokken toegevoegd aan `zplHelper.js` en `LabelVisualPreview.jsx` om exact met elkaar in de pas te lopen.
-- Standaardcorrectie voor verticale tekst ingesteld:
-  - 15% kleiner lettertype (`VERTICAL_SCALE = 0.85`)
-  - Offset: 2mm naar rechts, 1mm naar onder.
-- Fix toegevoegd in `LabelVisualPreview.jsx` (`DESIGNER_MATCH_SCALE = 0.76`) waardoor de dot-to-pixel conversie visueel exact overeenkomt met de 1:1 weergave in de Label Architect. De tekst is nu niet meer 35% te groot op het scherm.
-- Volgende stap: live hardware test op ZM400.
-
-### 25 maart 2026 — sessie 15 (planning import fix)
-- Foutmelding `Fout bij het verwerken van het bestand.` opgelost bij importeren van `fittingen 25-03-2026 MET 40BM01 2.0AAA.xlsx`
-- **Oorzaak:** het bestand bevat twee enorme helper-sheets (`data PPOP` 13.501 rijen, `hulp input` 13.506 rijen) die de browser-worker lieten crashen door geheugenoverbelasting bij één globale `XLSX.read` call
-- **Fix in `src/workers/planningImportWorker.js`:**
-    - Stap 1: alleen sheetnamen ophalen (`bookSheets: true` — geen data in geheugen)
-    - Stap 2: per sheet alleen de eerste 15 rijen scannen om headerrij te detecteren
-    - Stap 3: sheets zonder `Machine` + `order` header worden volledig overgeslagen
-    - Stap 4: whitelist toegevoegd — alleen `Fabrieksplanning`, `Mazakplanning` en `40BM01` worden verwerkt; alle andere sheets worden genegeerd
-    - Resultaat: 476 orders geladen uit 3 planning-sheets, grote helper-sheets nooit ingelezen
-- **`.xlsm` ondersteuning toegevoegd:**
-    - `accept=` attribuut in `PlanningImportModal.jsx` uitgebreid met `.xlsm`
-    - XLSX-library leest `.xlsm` intern identiek aan `.xlsx` (VBA-pakket wordt genegeerd)
-- Vite devserver gestart op poort 3000 (`http://localhost:3000/`, `http://10.0.10.16:3000/`)
-
-### 25 maart 2026 — sessie 13 (vervolg)
-- Sync issue was op dat moment nog open: handmatige tekeningsync meldde 0 matches in praktijktest.
-- Reeds aangebrachte fixes in `manualSyncDrawings.jsx`:
-    - robuustere normalisatie (`normalized`, `compact`, tokenized keys)
-    - filtering van niet-code waardes (zoals productomschrijvingen met spaties)
-    - conversie-fallback uitgebreid naar meerdere targetcodes per broncode
-- Specifieke case bevestigd door gebruiker:
-    - broncode `EL9AESS08R03E0BCCBB0`
-    - conversiematrix bevat o.a. `ELMO90ES00WMST080000320CB0` en `ELMO90CS00WMST080000320CB0`
-    - catalogus bevat `articleCode = ELMO90CS00WMST080000320CB0` met gekoppelde tekening
-- Debugging is later vervolgd op materiaalvariant matching, multi-target conversiefallback en sync-ketencontrole.
-- Status per 27 maart 2026: gebruiker bevestigt dat de tekeningen-sync nu in orde is.
-
-### 25 maart 2026 — sessie 14 (printing vervolg)
-- Focus verlegd naar verticale tekst op orderlabels (fysieke print + preview vergelijking met foto's)
-- Reeks patches uitgevoerd op ZPL/preview:
-    - overlapreductie en rotatiecompatibiliteit
-    - uitschakelen `^FB` voor geroteerde tekst in ZPL
-    - meerdere rotatie-offset/centreringsvarianten getest en deels teruggedraaid
-    - Label Manager preview rendering voor verticale tekst aangepast (wrap/fit)
-- Tussenresultaat:
-    - overlapprobleem duidelijk verbeterd t.o.v. begin
-    - maar exacte uitlijning/schaal van verticale tekst nog niet volledig goed
-- Sessie op verzoek gepauzeerd met expliciete tussenstand in dit document
-
-### 25 maart 2026 — sessie 12
-- Vite devserver gestart op poort 3000 voor vervolgvalidatie
-- Bereikbaarheid bevestigd via:
-    - `http://localhost:3000/`
-    - `http://10.0.11.112:3000/`
-
-### 24 maart 2026 — sessie 11
-- Queue-label print live gevalideerd: na elk label wordt correct geknipt
-- Quantity-verwerking live gevalideerd: bij `Aantal Labels = 2` worden ook effectief 2 labels geprint
-- Open printing-punt versmald naar alleen orderlabel-flow vanuit Print Station
-
-### 24 maart 2026 — sessie 10
-- Vite devserver gestart op poort 3000 voor directe vervolgvalidatie
-- Bereikbaarheid bevestigd op `http://localhost:3000/`
-- Applicatie geopend in browser via host-`$BROWSER`
-
-### 23 maart 2026 — sessie 8
-- Printspeed toegevoegd aan Printer Beheer (opslaan/laden in printerprofiel) en gekoppeld aan printoutput in admin/station/queue
-- ZPL output uitgebreid met `^PR` en TSPL fallback met `SPEED` zodat warmte/snelheid beter af te stemmen is op media/ribbon
-- WebUSB foutafhandeling in Printer Beheer aangepast naar platform-neutrale melding voor Chromebook/Chrome context
-- Extra actie toegevoegd voor USB reset/reconnect in Printer Beheer
-- Admin testprintflow aangepast om geautoriseerde WebUSB devices te hergebruiken via gedeelde utility; device-picker wordt niet meer onnodig per testprint getoond
-
-### 23 maart 2026 — sessie 7
-- Lotbatch snijgedrag bevestigd op hardware: tussenliggende labels `^MMT`, alleen laatste label knip (`^MMC` + `^PQ1,0,1,Y`)
-- Lotnummer-aantalinput in `PrintStationView.jsx` en `PrintQueueAdminView.jsx` hersteld voor direct typen
-- Submit-logica gehard met `resolvedCount` zodat batchopbouw/feedback altijd een geldige waarde gebruikt
-- Lotbatch tekstrendering in `generateLotBatchZPL` bijgesteld (breedte + centrering) op basis van fysieke ZM400 afwijking
-- QR-layout voor lotbatch expliciet op 9x9mm gezet
-- Laatste finetune bevestigd op fysieke print: lotnummerbreedte ~65mm en verticale uitlijning met QR akkoord
-
-### 23 maart 2026 — sessie 6
-- Vite devserver gestart op poort 3000
-- ZM400 voor het eerst fysiek aangesloten voor live printtest
-- Diagnose: printer wist labelgrens niet → hardware SmartCal uitgevoerd (FEED+CANCEL bij opstarten)
-- Kalibratie label bleef wit → oorzaak: top-of-form niet ingesteld (hardware probleem, niet software)
-- Na SmartCal: kalibratie print correct afgedrukt én gesneden
-- Offset X ingesteld op -4mm (4mm te rechts na SmartCal); eerdere waarden (-8.9 / +4.5) vervallen
-- ZPL cut-logica fundamenteel gerepareerd in `zplHelper.js` en `PrintQueueAdminView.jsx`:
-    - `^MMC` naar header verplaatst (was achteraan → activeerde cut pas bij volgend label)
-    - `^XB` (suppress backfeed) volledig verwijderd → blokkeerde doorvoer naar snijpositie
-    - `^CN1` en `~JK` verwijderd → redundant/interfererend met `^MMC + ^PQ,,,Y`
-    - Kalibratie ZPL (`buildCalibrationCrossZpl`) krijgt nu ook `^MMC` + `^PQ1,0,1,Y`
-    - Lot-batch: knip alleen op laatste label (`^PQ1,0,1,Y`), tussenliggende `^PQ1,0,1,N`
-    - Queue `ensureCutCommandForQueueJob` vereenvoudigd: alleen `^MMC + ^PQ1,0,1,Y` injecteren
-- Nul compile-errors na alle wijzigingen
-- Open: live validatie queue-label snijden + lot-batch snijgedrag
-
-### 22 maart 2026 — sessie 5
-- Vite devserver gestart op poort 3000 voor directe pilotvalidatie
-- Bereikbaarheid bevestigd via:
-    - `http://localhost:3000/`
-    - netwerk-URL op LAN voor test op andere devices
-
-### 22 maart 2026 — sessie 4
-- Lotnummer stationselectie opgelost in Print Station en Print Queue:
-    - Stations komen uit `future-factory/settings/factory_configs/main`
-    - Afdeling-mapping robuust gemaakt op `name/slug/id/key` (niet alleen slug)
-    - Fittings-filter gewijzigd naar BH-stations op verzoek
-- `Print 'OK' QR (A4)` in Printer Beheer gefixt:
-    - lokale QR generatie (`qrcode`) in plaats van externe image URL
-    - robuuste popup/open flow met download fallback
-- Alle QR-previews/app-paden naar intern omgezet:
-    - geen externe `api.qrserver.com` calls meer in `src` en na build ook niet in `dist`
-- `InternalQrImage` verplaatst van `src/components/InternalQrImage.jsx` naar `src/utils/InternalQrImage.jsx` en alle referenties aangepast
-- Build en foutcontrole uitgevoerd: geen compile-errors op aangepaste printer/QR-bestanden
-
-### 20 maart 2026 — sessie 2
-- Scroll fix toegepast op LossenView, WorkstationHub, TerminalProductionView, BM01Hub
-- PrintQueueAdminView (`/printer-queue`) scrollprobleem opgelost: root div nu `h-full overflow-y-auto`
-- Tab "Printers en Labels" volledig verwijderd uit Station Lossen
-- Alle dode printer/labels/planning code verwijderd uit LossenView
-- 35+ dode `lossen.*` vertalingssleutels verwijderd uit nl.js en en.js
-- Nul compile-errors na alle wijzigingen
-
-### 20 maart 2026
-- Vite devserver opnieuw gestart op poort 3000 voor doorlopend pilottesten
-- Overdrachtsdocument opnieuw geverifieerd als actuele werkbasis
-- Pilotrichting voor printing aangescherpt: waarschijnlijk Zebra ZM400 via WebUSB
-- Routing uitgebreid voor toekomstige hybride N2100 orders: vrijgave naar Fittingen op aantallenbasis (`x van y`) na Spoolbouw-voortgang
-
-### 19 maart 2026
-- Rechtenstructuur afgerond
-- AI geheugen en gesprekshistorie toegevoegd
-- Samenvatting opgeslagen en opgeschoond
-
-### 18 maart 2026
-- LN import debugging verder verbeterd
-- Kopieerbare foutmelding toegevoegd
-- Omschrijving/PO text flow verbeterd
-- Vite server op poort 3000 gestart voor testen
-
-### 17 maart 2026
-- Terminal/workstation zichtbaarheid geimporteerde planning verbeterd
-- Personeel & bezetting UX verbeterd
-- Productie deploy uitgevoerd
-
-### 16 maart 2026
-- Lighthouse print calibratie doorgezet
-- Operatorhandleiding voor pilotflow uitgewerkt
-
-## Opmerking
+### Opmerking
 
 Dit document is bewust opgeschoond naar één actuele overdracht. Oudere dubbele sessieblokken en losse server-notities zijn samengevat in plaats van volledig behouden.
 
@@ -11335,6 +11471,7 @@ Made changes.
 
 ### Update sessie 33 (BH12 ProductionStartModal verfijning)
 
+
 **Datum:** 3 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:** Startflow voor BH12/flens-orders verfijnen in de `ProductionStartModal`.
@@ -11361,6 +11498,7 @@ Made changes.
 ---
 
 ### Update sessie 48 (Opslagpunt: Gantt planning verbeteringen + Firebase importpad)
+
 
 **Datum:** 7 april 2026 | **Branch:** `pilot-dev`
 
@@ -11411,6 +11549,7 @@ Made changes.
 ---
 
 ### Update sessie 90-92 (Medium writes naar callables + deploy)
+
 
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
@@ -11476,6 +11615,7 @@ Made changes.
 
 ### Update sessie 93 (Architectuur review vertaald naar uitvoerbaar vervolg)
 
+
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
 **Context:**
@@ -11523,6 +11663,7 @@ Made changes.
 ---
 
 ### Update sessie 18 mei 2026 (Admin Printer Order Labels parity + BH18 zoekpaden)
+
 
 **Datum:** 18 mei 2026 | **Branch:** `FPiFF-18-12-May`
 
@@ -11607,6 +11748,7 @@ Made changes.
 
 ### Update sessie 90-92 (Medium writes naar callables + deploy)
 
+
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
 **Doel:**
@@ -11671,6 +11813,7 @@ Made changes.
 
 ### Update sessie 93 (Architectuur review vertaald naar uitvoerbaar vervolg)
 
+
 **Datum:** 12 april 2026 | **Branch:** `pilot-dev`
 
 **Context:**
@@ -11718,6 +11861,7 @@ Made changes.
 ---
 
 ### Update sessie 18 mei 2026 (Admin Printer Order Labels parity + BH18 zoekpaden)
+
 
 **Datum:** 18 mei 2026 | **Branch:** `FPiFF-18-12-May`
 
@@ -11771,3 +11915,969 @@ F i x e d   i s s u e   w h e r e   s t a t u s   s e l e c t i o n   w a s   h 
 - Aangemaakt: `docs/04_OWNERSHIP_TRANSFER.md` met een stappenplan voor het overdragen van GitHub en Firebase naar @futurepipe.com accounts.
 - Print-acties (via USB en de wachtrij) worden nu expliciet in het Activiteiten Logboek geregistreerd, inclusief ordereferenties en lotnummers.
 
+
+## Overig (zonder expliciete datum)
+
+## Opschoonrapport Pilot Future-Factory (v4) - 3 juli 2026
+
+**Status:** De codebase is geaudit en opgeschoond ter voorbereiding op de pilot.
+
+**1. Verwijderde bestanden (Dead code)**
+- \src/components/ai/AiCenterView,jsx\ (Bevatte typfout in extensie, was al opgeschoond)
+- \src/components/AiAssistantView.jsx\ (Verplaatst naar juiste map, was al opgeschoond)
+- \ite.config.js\ (Verouderd, verwijderd aangezien deze is vervangen door de \.ts\ variant)
+- \unctions/functions/package.json\ (Dubbele geneste map, was al opgeschoond)
+
+---
+
+### 🛠️ Technische Audit Actiepunten
+
+**1. Code Quality & Linting**
+   - [x] Inventariseer en verwijder `eslint-disable` comments (ongeveer 31 bestanden).
+
+**2. Type Safety (TypeScript)**
+   - [x] Reduceer het gebruik van `any` types (nu ~934) via sterke typing, generics en runtime validatie. *(Fase 1-3 afgerond, UI componenten gedelegeerd naar toekomstige refactors)*
+
+**3. Testdekking & Kwaliteit (Vitest / Playwright)**
+   - [x] Baseline bepaald en gefixeerd (vitest configuratie wees naar `.js` in plaats van `.ts`).
+   - [x] GitHub Actions ingesteld voor codekwaliteit (CodeQL en Dependabot).
+   - [x] Extra tests geschreven voor core logic (bijv. `automationEngine.ts`, `planningProgress.ts`, `labelHelpers.tsx`) waardoor integratietest-dekking op de kritieke onderdelen structureel omhoog is gegaan.
+
+**4. Architectuur & Refactoring**
+   - [x] Documenteer architectuur met module-, sequence- en deployment diagrammen (aangemaakt in `/docs/architecture`).
+   - [x] Grote complexe componenten opsplitsen in kleinere componenten (Gedelegeerd naar Post-Pilot Roadmap onder "Code & Component Opschoning" om regressie voor de launch te voorkomen).
+
+---
+
+### 📝 Openstaande Taken & Geplande Roadmap (Post-Pilot / Productie)
+
+**Uitvoerbare todo-checklist (prioriteiten):**
+
+**P1 — ISO 9001 / 27001 Compliancy (Afronding)**
+   - [ ] Audit events voor CSV/PDF exports en mislukte UI-inlogpogingen consistent schrijven naar de WORM audit trail.
+   - [ ] NC-afkeur-redenen verplicht loggen met actie (Scrap/Rework).
+   - [ ] Wijzigingen aan specificaties en stuktijden registreren met een verplichte reden van wijziging.
+   - [ ] Machine-kalibraties en vrijgaves in de audit trail opnemen.
+   - [ ] Testen en review van de volledige compliance-flow in productieachtige scenario's.
+
+**P2 — Label Template Engine (Dynamische Label-generatie UI)**
+   - [ ] Hardcoded label-logica uit `labelHelpers.tsx` verplaatsen naar een database-model met versiebeheer.
+   - [ ] Backend/API-opzet maken voor opslag en ophalen van labelregels per product- of template-type.
+   - [ ] UI Builder ontwerpen in de beheeromgeving voor conditionele regels en tekstsamenvoegingen.
+   - [ ] Validatie- en fallback-regels maken voor onbekende of gewijzigde productvarianten.
+   - [ ] Extra Code placeholder-resolutie voor FL-labels harden en standaardiseren (zodat `{extraCode}` en `{code}` niet meer terugvallen op `itemCode`; regressietest toegevoegd).
+   - [ ] Testen met realistische labels en productgegevens zonder code-deploys.
+
+**P3 — Code & Component Opschoning (Gedelegeerde Audits)**
+   - [ ] Grote componenten zoals `MazakView.tsx`, `WorkstationHub.tsx` en `AdminReportsView.tsx` opsplitsen in kleinere modulaire subcomponenten.
+   - [ ] Stateless UI en custom hooks isoleren om herbruikbaarheid en onderhoudbaarheid te verbeteren.
+   - [ ] De overgebleven ~934 `any` types in React `.tsx` bestanden stapsgewijs vervangen door concrete types.
+   - [ ] Per component een korte kwaliteitscheck uitvoeren met linting, typecheck en relevante tests.
+
+**1. ISO 9001 / 27001 Compliancy (Afronding)**
+   - **27001 Toegang & Beveiliging:** Zorg dat specifieke randgevallen (exports van CSV/PDF, mislukte inlogpogingen via de UI) overal consistent worden weggeschreven naar de vernieuwde WORM audit trail.
+   - **9001 Kwaliteit & Traceability:** Reden van afkeur (NC) verplicht loggen met actie (Scrap/Rework), wijzigingen aan specificaties/stuktijden vastleggen met 'reden van wijziging', en machine-kalibraties/vrijgaves loggen.
+
+**2. Label Template Engine (Dynamische Label-generatie UI)**
+   - Hardcoded logica uit `labelHelpers.tsx` (bijv. teksttransformaties zoals `EMT 30/10` -> `EMT Pu 30 mcw PN10 bar`) verplaatsen naar een database-model.
+   - **UI Builder:** Een interface ontwerpen in de beheeromgeving waarmee gebruikers zelf regels kunnen samenstellen (bijv. conditionele if/then/else en tekst-samenvoegingen).
+   - Flexibiliteit bieden voor toekomstige productwijzigingen en afkortingen (zoals "mcw" of "Pu") zonder code te hoeven deployen.
+
+**3. Code & Component Opschoning (Gedelegeerde Audits)**
+   - **UI Refactoring:** Extreem grote componenten (zoals `MazakView.tsx`, `WorkstationHub.tsx` en `AdminReportsView.tsx` van >100KB) opsplitsen in kleine modulaire subcomponenten (stateless UI en custom hooks).
+   - **Type Safety in UI:** De overgebleven ~934 `any` types binnen de React (.tsx) bestanden structureel vervangen door gedefinieerde props, state en generics.
+
+---
+
+### Uitgevoerd in deze sessie
+
+**1. Prioritering van `"extra code"` kolom-matching bij Excel-import**
+- In [planningImportWorker.ts](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/workers/planningImportWorker.ts) en [PlanningImportModal.tsx](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/components/digitalplanning/modals/PlanningImportModal.tsx):
+  - In de Excel-bestanden is er vaak een kolom `"Code"` (die de artikelcode bevat, bijv. `FLSTEMS0F00A10BCCFBE`) en een kolom `"Extra Code"` (die de specifieke code bevat, bijv. `A1G9`).
+  - Doordat in de zoekpatronen `"code"` vóór `"extra code"` stond, matchte het systeem de kolom `"Code"` (artikelcode) als de `extraCode`. Dit leidde ertoe dat de artikelcode in de database werd opgeslagen onder het veld `extraCode`.
+  - We hebben de volgorde aangepast naar `["extra code", "code"]`, zodat de specifiekere `"Extra Code"`-kolom altijd eerst wordt gezocht en gematcht. Als die niet bestaat, valt hij pas terug op `"Code"`.
+  - Hierdoor worden nieuwe imports nu correct ingelezen met de juiste extra codes in de database.
+
+**2. Versie bump uitgevoerd**
+- App versie verhoogd van `0.1.59` naar `0.1.60`.
+
+**Aangepaste bestanden in deze sessie:**
+- [planningImportWorker.ts](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/workers/planningImportWorker.ts) [MODIFY]
+- [PlanningImportModal.tsx](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/src/components/digitalplanning/modals/PlanningImportModal.tsx) [MODIFY]
+- [package.json](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/package.json) [MODIFY]
+- [version.json](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/public/version.json) [MODIFY]
+- [CONVERSATION_SUMMARY.md](file:///c:/Users/sa-nldfitting/.gemini/antigravity-ide/scratch/Future-Factory-Fpi/docs/CONVERSATION_SUMMARY.md) [MODIFY]
+
+---
+
+## Smoke-test checklist (deploy + regressie startflow)
+
+**Doel:** na deploy in 5-10 minuten bevestigen dat de order-start keten niet opnieuw breekt.
+
+### 1) Deploy check
+
+
+- [x] Functions deploy succesvol afgerond zonder fouten.
+- [x] Frontend deploy/build succesvol afgerond.
+- [ ] In productie laden Workstation/Terminal zonder console `500` op start.
+
+### 2) Regressietests kernflow
+
+
+- [ ] **Start order** op BH15/BM15 met normale order: lots aangemaakt, status naar `in_progress`, geen callable 500.
+- [ ] **Start order via alternatieve locator** (order uit scoped pad): start werkt ook wanneer payload niet alleen op één id-vorm leunt.
+- [ ] **Cancel gestart lot**: lot wordt gecanceld zonder inconsistentie in orderstatus/counters.
+- [ ] **Move + retrieve order**: order verplaatst en teruggehaald zonder `NOT_FOUND_ORDER` door docId/path mismatch.
+- [ ] **Hold toggle + details update**: on_hold aan/uit en notes/plan update werken op dezelfde order zonder lookup-fout.
+
+### 3) Datakwaliteit/KPI sanity
+
+
+- [ ] Geen nieuwe vervuiling door niet-order docs in planning-overzichten/KPI.
+- [ ] `plan` blijft leidend t.o.v. legacy `quantity` in kaarttellingen/to-do.
+
+### 4) Logcontrole (snelle triage)
+
+
+- [ ] Geen nieuwe `internal` callable fouten op `startProductionLots`.
+- [ ] Eventuele foutmelding is specifiek (bijv. ongeldige locator) i.p.v. generiek.
+
+---
+
+## Pilot Branching & Deploy Flow (4 weken vanaf 30 maart)
+
+### Doel
+
+
+- Houd 1 stabiele pilotlijn die exclusief naar Vercel Production publiceert.
+- Houd 1 aparte ontwikkellijn voor nieuwe features die alleen naar Vercel Preview publiceert.
+
+### Branchstrategie
+
+
+- `FPiFF-may-build` = **Pilot Stable** (enige branch voor productie).
+- `pilot-dev` = **Development** (nieuwe ontwikkelingen, refactors, experimenten).
+- `hotfix/*` = tijdelijke branch voor urgente pilotreparaties.
+
+### Codespaces
+
+
+- **Codespace A: Pilot Ops** (start vanaf `FPiFF-may-build`)
+    - alleen gebruiken voor pilot-fixes, kleine reparaties en productie releases.
+- **Codespace B: Feature Dev** (start vanaf `pilot-dev`)
+    - gebruiken voor nieuwe features en veranderingen die eerst naar preview moeten.
+
+### Vercel instellingen
+
+
+- Zet in Vercel de **Production Branch** op `FPiFF-may-build`.
+- Laat preview deploys actief voor alle andere branches.
+- Gebruik waar mogelijk gescheiden environment variabelen voor Production vs Preview.
+
+### Dagelijkse werkwijze
+
+
+1. Nieuwe ontwikkeling:
+    - werk in Codespace B op `pilot-dev` (of `feature/*` vanaf `pilot-dev`).
+    - push naar remote -> automatische Vercel Preview deploy.
+2. Pilot bugfix:
+    - werk in Codespace A op `hotfix/*` vanaf `FPiFF-may-build`.
+    - test minimaal lokaal + smoke op preview.
+    - merge naar `FPiFF-may-build` voor productie deploy.
+3. Geplande release van development naar pilot:
+    - open PR van `pilot-dev` naar `FPiFF-may-build`.
+    - alleen mergen na akkoord en korte regressietest.
+
+### Hotfix flow (6 stappen)
+
+
+1. Checkout `FPiFF-may-build` en pull laatste wijzigingen.
+2. Maak `hotfix/<korte-naam>`.
+3. Voer minimale fix uit met gerichte validatie.
+4. Open PR naar `FPiFF-may-build`.
+5. Merge PR.
+6. Controleer Vercel Production deploy + korte smoke test.
+
+### Git commando's (referentie)
+
+
+```bash
+git checkout FPiFF-may-build
+git pull
+git checkout -b hotfix/voorbeeld-fix
+git add .
+git commit -m "Hotfix: voorbeeld"
+git push -u origin hotfix/voorbeeld-fix
+```
+
+### Aanbevolen beveiliging
+
+
+- Branch protection op `FPiFF-may-build`:
+    - PR verplicht voor merge.
+    - minimaal 1 review of expliciete eigenaar-goedkeuring.
+    - optioneel: status checks verplicht voor merge.
+- Geen directe pushes naar `FPiFF-may-build`.
+
+### Confirmatie werkflow lopende planning (sessie 26b)
+
+
+**Gebruiker-bevestigd:** selectie- en verborgen-logica werkt zoals gewenst voor papieren pilot-planning.
+
+**Scenario:** Papieren planning loopt, orders bijna/geheel klaar. Excel-uitdraai bevat dezelfde + nieuwe orders.
+
+**Gewenst** (nu ingebouwd):
+- Orders die al lopen/klaar zijn → uitsluiten uit zichtbare planning maar WEL importeren
+- Zo hoeven ze volgende import niet telkens opnieuw uit te sluiten
+- Nieuwe orders automatisch zichtbaar
+- Lopende orders altijd zichtbaar (failsafe om af te maken)
+
+**Werkflow in import-modal:**
+1. Upload Excel → preview met checkboxes (`In Planning` kolom)
+2. Optie A: `Week t/m [week]` + `Selecteer t/m week + lopende orders` knop
+3. Optie B: Handmatig per order checkbox aan/uit
+4. `Importeer X Regels` → opslaan met `planningHidden: true` voor niet-aangevinkte orders
+5. Volgende import: verborgen orders blijven verborgen, nieuwe automatisch zichtbaar
+
+**Gebruiker-bevestiging:** Workflow past perfect bij papieren pilot-planning met lopende orders.
+
+---
+
+### Open vraag opgeslagen (sessie 24)
+
+
+- **Letterlijke vraag van gebruiker opgeslagen:**
+    - "kun je een laaste site check doon voordat ik deze als Productie op Vercel wil zetten en naar Git wil pushen en dan over ga op de preview in Vercel en een andere branch tijdens de pilot van 4 weken die vanaf 30 maart start"
+- **Betekenis voor vervolg:**
+    - volledige pre-release check uitvoeren vóór productie op Vercel + vóór Git push
+    - daarna pas overzetten naar Vercel preview-flow en aparte pilot-branch (4 weken vanaf 30 maart).
+
+### Update sessie 25 (pre-release sitecheck uitgevoerd)
+
+
+- **Uitgevoerd:** pre-release validatie en Vercel preview-deploy vóór productie.
+- **Validatie resultaten:**
+    - `prevalidate` hersteld met nieuw script `scripts/cleanup-duplicates.js` (blokkerende missing module opgelost)
+    - lint van **17 errors** naar **0 errors** gebracht (warnings blijven bestaan)
+    - `type-check` geslaagd
+    - lokale build in devcontainer werd tijdens bundling meerdere keren extern afgekapt (`exit 143`), zonder nieuwe codefouten in gewijzigde bestanden
+- **Vercel preview:** succesvolle cloud deploy op
+    - `https://futurefactoryapp-g9n1msybm-richard-van-heerdes-projects.vercel.app`
+    - `curl -I` geeft `401` door Vercel protection/SSO (verwacht gedrag voor afgeschermde preview)
+- **Conclusie voor release-gate:** codefouten die release blokkeerden zijn opgelost; finale productie-deploy kan door zodra gewenste review van preview in browser is afgerond en Git-commit/push is gedaan.
+
+### Update sessie 25b (branch + productie deploy afgerond)
+
+
+- **Nieuwe branch aangemaakt:** `FPiFF-may-build`
+- **Vercel productie-deploy uitgevoerd en geslaagd:**
+    - productie URL: `https://futurefactoryapp-c02qf10sc-richard-van-heerdes-projects.vercel.app`
+    - alias actief: `https://future-factory.vercel.app`
+    - inspectie: `https://vercel.com/richard-van-heerdes-projects/futurefactoryapp/BHKKCJacifaVUgpaULsp2Z8pDm7Y`
+- **Status:** laatste production build staat live op Vercel.
+
+- **Nieuwe vraag verwerkt:** teamleader moet in Personeel tijdelijk/per periode van dienst kunnen wisselen en dit moet direct meegenomen worden bij automatische uitlogtijden.
+- **Uitgevoerd in Personeel-tab (`PersonnelOccupancyView.jsx`):**
+    - nieuw blok in medewerker-modal: `Tijdelijke Dienst Override` met:
+        - aan/uit
+        - `van` datum
+        - `tot` datum
+        - tijdelijke `shift`
+        - optionele notitie
+    - opslag genormaliseerd in personeelsdocument als `temporaryShiftOverride`
+    - dienst-resolutie (`getPersonShiftForDate`) gebruikt nu eerst tijdelijke override als datum binnen de ingestelde periode valt.
+- **Uitgevoerd in Workstation check-in (`WorkstationHub.jsx`):**
+    - check-in leest nu tijdelijke override uit personeel (als actief en binnen datumrange) en valt alleen terug op vaste `shiftId`/kloktijd als fallback
+    - hiermee krijgen nieuwe check-ins automatisch de correcte (tijdelijke) dienst mee voor auto-checkout.
+- **Achteraf uren corrigeren toegevoegd:**
+    - nieuwe modal `Achteraf Uren Corrigeren` in Personeel-overzicht
+    - teamleader kan uitgecheckte registraties van gekozen datum alsnog aanpassen
+    - opslaan zet o.a. `manualHoursOverride: true` + timestamp in occupancy.
+- **Validatie:** compile/editor checks zonder fouten op:
+    - `src/components/personnel/PersonnelOccupancyView.jsx`
+    - `src/components/digitalplanning/WorkstationHub.jsx`
+
+### Update sessie 23b (navigatie + datumsturing)
+
+
+- **Teamleader Personeel-tab uitgebreid:**
+    - knop toegevoegd om direct naar uitgebreide Personeel-module in Admin Hub te gaan
+    - route-state geeft direct `openScreen: personnel` mee.
+- **Admin Hub gedrag uitgebreid:**
+    - `AdminDashboard` opent nu direct de juiste module als `location.state.openScreen` aanwezig is
+    - voor Personeel worden init-parameters doorgegeven (`initialViewDate`, `initialTab`).
+- **Personeel Manager verbeterd:**
+    - ondersteunt initialisatie met datum/tab vanuit route-state
+    - extra kalenderinput (`type=date`) toegevoegd naast bladerknoppen
+    - `Vandaag` knop toegevoegd om snel terug te springen.
+- **Resultaat:** teamleader kan vanuit Teamleader Personeel direct naar uitgebreide Admin Personeel en daar op gekozen datum uren/shiftplanning beheren (ook toekomstige data).
+
+### Pauzestand Voor Hervatten (sessie 22)
+
+
+- **Opslagpunt hersteld na verbroken chatverbinding:** gebruiker meldde fout bij weekfilter in auditlog: `Scan Onderbroken: Database fout: undefined`.
+- **Opslagpunt expliciet bevestigd voor volgende sessie:** gesprek en fixstatus zijn bewaard in deze samenvatting zodat direct hervat kan worden.
+- **Root cause bevestigd:** `AdminLogView.jsx` gebruikte een ongeldige `date-fns` parse/format combinatie voor ISO-weken (`yyyy` samen met `II`). Dit veroorzaakt een `RangeError` nog voor de Firestore-query draait.
+- **Uitgevoerd:**
+    - week-input in auditlog omgezet naar correcte ISO week-year formattering met `RRRR-'W'II`
+    - week parsing defensief gemaakt met fallback naar huidige datum bij ongeldige invoer
+    - generieke databasefoutmelding aangepast zodat niet langer `undefined` getoond wordt, maar `err.code` of `err.message`
+- **Validatie afgerond:** editorcontrole zonder fouten en parse-test in terminal succesvol voor meerdere ISO-weken.
+- **Verwachte uitkomst:** filter `Per week` in Audit Log opent weer zonder crashmelding en toont bij echte queryfouten een bruikbare melding.
+- **Eerstvolgende check bij hervatten:** Audit Log openen, `Per week` selecteren en controleren op correcte resultaten plus pagination (`Meer laden`) binnen dezelfde filter.
+
+### Pauzestand Voor Hervatten (sessie 21)
+
+
+- **Opslagpunt bevestigd op verzoek gebruiker:** "ik ga later verder, sla op in conversatie".
+- **Afgerond in deze sessie:** tweede i18n-sweep voor admin modules met resterende hardcoded UI-teksten.
+
+### Concreet afgerond
+
+- `src/components/admin/AdminMessagesView.jsx`
+    - resterende hardcoded labels/placeholders/tooltips vervangen door `t(...)`
+    - compose modal verder gelokaliseerd (ontvanger/prioriteit/onderwerp/inhoud/bijlage)
+    - onderwerp-fallback en quote-opmaak gestandaardiseerd
+- `src/components/admin/AdminLogView.jsx`
+    - resterende vaste labels gelokaliseerd (`Root: /`, `SRC:`, `IP:`, `CSV`, `PDF`, `null`)
+    - `"Systeem"` fallbacks vervangen door `common.system`
+- `src/components/admin/AdminLabelDesigner.jsx`
+    - hardcoded `Custom Size` en melding over verplaatst template-overzicht gelokaliseerd
+- `src/lang/nl.js` en `src/lang/en.js`
+    - nieuwe keys toegevoegd voor bovenstaande componenten
+
+### Validatie
+
+- Editor/probleemcontrole uitgevoerd op alle gewijzigde bestanden.
+- Resultaat: **geen fouten gevonden** op de aangepaste files.
+
+### Eerstvolgende stap bij hervatten
+
+1. Vervolg i18n-sweep op resterende admin-hardcoded strings (met name extra prompts/alerts/fallbacks in `AdminLabelDesigner.jsx`).
+2. Daarna opnieuw gerichte file-checks en eventueel kleine key-normalisatie in `nl/en` dictionaries.
+
+### Nieuwe Notitie Voor Vervolg (sessie 20)
+
+
+- **Gefixt (code):** valse overproductie na definitieve afkeur is opgelost in `WorkstationHub.jsx`.
+    - Start/overflow controle gebruikt nu de station teller (`started_<station>`) als primaire bron.
+    - Fallback gebruikt alleen actieve, niet-afgekeurde tracking records.
+    - Resultaat: bij scenario "10 gestart, 1 definitief afgekeurd" wordt een vervangend stuk niet meer onterecht als `NOG_TE_BEPALEN` overproductie aangemaakt.
+
+- **Open wens (bewust uitgesteld):** op orderniveau zichtbaar maken als:
+    - `Gemaakt: 10`
+    - `Afkeur: 1`
+    - zodat productie-aantallen en afkeur apart traceerbaar zijn in de orderweergave.
+
+- **Update (sessie 20, uitgevoerd):** Workstation Terminal planning toont nu expliciet `Gemaakt` en `Afkeur` per orderregel en in het order-detailpaneel.
+
+- **Update (sessie 20, uitgevoerd):** Teamleader Hub `Volledige Lijst` filter uitgebreid:
+    - nieuwe scopes: `Tijdelijke Afkeur` en `Definitieve Afkeur`
+    - bij `Definitieve Afkeur` wordt de tweede filter automatisch periode-gebaseerd (`Deze week`, `Vorige week`, `Dit jaar`, `Alles`) i.p.v. `Week + Backlog`
+    - export van de huidige gefilterde lijst toegevoegd (CSV)
+
+- **Aanpak voor volgende sessie:**
+    - Definieer bron voor `Afkeur` teller (tracking status `rejected` per `orderId`, eventueel per station).
+    - Voeg de teller toe in orderdetail en/of Workstation planningkaart.
+    - Valideer op scenario: 10 gestart -> 1 definitief afkeur bij Nabewerking -> 1 vervangend gestart.
+
+---
+
+## 🚨 Kritieke Open Punten
+
+### 1. Planning Import Workflow
+
+- **Status:** gedeeltelijk gerepareerd, nog niet definitief gevalideerd
+- **Probleem:** sommige LN-bestanden geven nog steeds `geen bruikbare orders gevonden`
+- **Wat al gedaan is:**
+    - parser robuuster gemaakt voor variërende headers
+    - sheet-detectie verbreed
+    - meldingen verbeterd met kopieerbare foutdetails
+    - importmodus voor overschrijven teruggebracht
+    - AH/FH mapping voor omschrijving/klant verduidelijkt
+- **Nog nodig:** exact userbestand opnieuw testen en ontbrekende kolommen 1-op-1 mappen
+
+### 2. Planning Status Visibility
+
+- **Status:** code aangepast, praktijkvalidatie nog nodig
+- **Wat al gedaan is:**
+    - Terminal en Workstation filterlogica aangepast zodat actieve statussen zoals `waiting` zichtbaar blijven
+- **Nog nodig:** importeren en controleren op BH18, Lossen, Nabewerking/BM01
+
+### 3. Label Printing op Echte Hardware
+
+- **Status:** kalibratie werkend en gesneden; lot-batch en queue-label snijfix live bevestigd
+- **Pilotaanname:** Zebra ZM400 via WebUSB als primaire printroute (bevestigd in praktijktest 23 maart)
+- **Wat al gedaan is:**
+    - ZPL generatie verbeterd
+    - rotatie-offsets en tekstmetrieken verfijnd
+    - lotnummers direct printbaar gemaakt
+    - queue/USB/preview flows verder geharmoniseerd
+    - Print Station/Print Queue lotnummer-flow gefixt voor stationselectie via `factory_configs/main`
+    - Fittings lotstationfilter aangepast naar BH-stations
+    - `Print 'OK' QR (A4)` hersteld met lokale QR-generatie
+    - QR-rendering app-breed geïnternaliseerd (geen externe `api.qrserver.com`)
+    - `LabelVisualPreview.jsx` verder getuned voor verticale tekst/objecten:
+        - verticale X-compensatie bijgesteld voor betere links/rechts-uitlijning in preview
+        - minimale verticale objecthoogte per labelformaat toegevoegd (`55mm` groot, `30mm` klein), begrensd door objectmaat
+        - barcode preview `objectFit` aangepast naar `contain`
+        - wrap/clipping-logica voor verticale tekst aangescherpt, maar live hardware-validatie van lange verticale tekstregelafbreking is nog nodig
+    - ZPL cut-logica fundamenteel hersteld (23 maart sessie 6, zie 3a)
+- **Nog nodig:** live validatie orderlabel print vanuit Print Station
+
+### 3d. Verticale Tekst Tuning (lopende issue, sessie 14)
+
+- **Status:** Code gereed (preview en ZPL gesynchroniseerd), wacht op live hardware validatie
+- **Wat bevestigd is:**
+    - overlap van verticale tekst was aanwezig en is grotendeels weg na verwijderen van onstabiele combinaties
+    - `^FB` bij geroteerde tekst (`^A0R`/`^A0B`) geeft op ZM400 onvoorspelbare output en blijft daarom uit voor verticale tekst
+- **Wat geprobeerd is in code:**
+    - meerdere auto-offset en centreringvarianten in `zplHelper.js` getest
+    - Verticale tuning blok toegevoegd in `zplHelper.js` en `LabelVisualPreview.jsx` (`VERTICAL_X_OFFSET_MM = 2.0`, `VERTICAL_Y_OFFSET_MM = 1.0`, `VERTICAL_SCALE = 0.85`)
+    - Preview schaling (`DESIGNER_MATCH_SCALE = 0.76`) toegepast zodat `LabelVisualPreview` exact overeenkomt met de 1:1 weergave in `AdminLabelDesigner`.
+- **Huidige situatie:**
+    - Preview op het scherm is nu perfect in verhouding en de verticale tekst is visueel geresized.
+    - ZPL-output neemt dezelfde 15% krimp en pixel-offsets mee.
+    - Moet nu fysiek geprint worden op de ZM400 om te bevestigen of deze standaardcorrectie 100% klopt.
+- **Bestanden met recente wijzigingen:**
+    - `src/utils/zplHelper.js`
+    - `src/components/printer/LabelVisualPreview.jsx`
+    - `src/components/admin/AdminLabelDesigner.jsx`
+
+### 3a. Zebra ZM400 WebUSB Vervolgpunten
+
+- [x] WebUSB printflow in `PrintStationView.jsx` robuuster gemaakt met dynamische OUT endpoint-detectie
+- [x] WebUSB secure-context check toegevoegd
+- [x] Device-selectie verbeterd met `vendorId`/`productId` filters
+- [x] Matching verbeterd voor mixed ID-formaten
+- [x] `PrintQueueAdminView.jsx` geharmoniseerd met dezelfde WebUSB-printerprofiel-logica
+- [x] In Queue UI zichtbaar gemaakt welk actief printerprofiel gebruikt wordt
+- [x] Gedeelde WebUSB utility (`src/utils/usbPrintService.js`) uitgebreid
+- [x] Zowel `PrintStationView.jsx` als `PrintQueueAdminView.jsx` aan gedeelde WebUSB utility gekoppeld
+- [x] ZPL cut-logica fundamenteel hersteld (23 maart sessie 6):
+    - Oorzaak: `^XB` (suppress backfeed) stond in ZPL waardoor printer niet naar snijpositie voerde
+    - `^MMC` staat nu vroeg in de header van elk label (direct na `^XA^CI28`), niet meer aan het einde
+    - `^XB`, `^CN1` en `~JK` volledig verwijderd uit `generatePrintData`, `generateLotBatchZPL` en `ensureCutCommandForQueueJob`
+    - Kalibratie ZPL in `buildCalibrationCrossZpl` krijgt nu ook `^MMC` in header + `^PQ1,0,1,Y` → print en snijdt correct
+    - Lot-batch: alleen het **laatste** lot krijgt `^PQ1,0,1,Y` (knip); tussenliggende labels krijgen `^PQ1,0,1,N`
+    - Queue-labels: `ensureCutCommandForQueueJob` vereenvoudigd naar alleen `^MMC + ^PQ1,0,1,Y`; detecteert of knip al aanwezig is
+- [x] Hardware SmartCal uitgevoerd op ZM400 (FEED+CANCEL bij opstarten): top-of-form correct ingesteld
+- [x] Kalibratie print bevestigd werkend en wordt gesneden
+- [x] Offset X bijgesteld naar **-4mm** na hardware SmartCal (eerdere -8.9mm verouderd)
+- [x] Live validatie: queue-label wordt na fix gesneden (sessie 11, 24 maart)
+- [x] Live validatie: lotnummer-batch van 5 of 10 stuks knipt alleen na het laatste label (`^MMT` op tussenliggende labels fix — sessie 7, 23 maart)
+- [x] Lotnummer invoerveld "Aantal Labels" verbeterd in Print Station + Print Queue: direct typen werkt nu (leeg veld tijdelijk toegestaan, validatie op blur/submit)
+- [x] Lotbatch QR-layout ingesteld op 9x9mm (`qrSizeMm: 9`) en tekstbreedte/centrering in `generateLotBatchZPL` opnieuw getuned voor ZM400
+- [x] Fysieke lay-out validatie afgerond: lotnummers (~65mm) en QR zijn nu correct uitgelijnd en akkoord op hardware
+- [x] Sessie 9 (24 maart): regressie na Zadig/Windows-route hersteld
+    - Batch-cut opnieuw bevestigd: knip pas na laatste label (test met 10 lotnummers geslaagd)
+    - QR-grootte opnieuw bevestigd als correct (9x9)
+    - Lotnummers opnieuw getuned en bevestigd: goede breedte en correcte top-uitlijning t.o.v. QR
+    - Lotbatch DPI-resolutie geharmoniseerd met driverprofiel (geen ongewenste 203-fallback)
+- [x] Printspeed instelbaar gemaakt in Printer Beheer en doorgezet naar output (`^PR` voor ZPL, `SPEED` voor TSPL)
+- [x] WebUSB foutmeldingen in Printer Beheer aangepast naar platform-neutraal (niet langer Windows-specifiek)
+- [x] Printer Beheer testprint aangepast naar gedeelde WebUSB utility met hergebruik van geautoriseerde devices (eerste keer permissie, daarna geen picker per print)
+- [ ] Orderlabel printen vanuit Print Station
+  - **Gecalibreerde offsetwaarden na hardware SmartCal (23 maart):**
+    - `calibrationOffsetXMm = -4` (na hardware SmartCal — eerdere -8.9 vervalt)
+    - `calibrationOffsetYMm = 0` (na hardware SmartCal — eerdere +4.5 vervalt; pas bijstellen na live test)
+
+### 3b. Praktijktest Logtemplate Zebra ZM400 (invullen tijdens test)
+
+- **Testdatum/tijd:** 
+- **Tester:** 
+- **Werkplek/station:** 
+- **Browser + versie:** 
+- **USB-weergave:** toont alleen juiste printer `ja/nee`
+- **Orderlabel test:** `geslaagd/mislukt`
+- **Lotbatch test:** `geslaagd/mislukt`
+- **Printkwaliteit:** tekst `ok/niet ok`, QR `ok/niet ok`
+- **Snij/backfeed gedrag:** `ok/niet ok/n.v.t.`
+- **Geobserveerde afwijking:** 
+- **Directe vervolgactie:**
+
+### 3c. Snelle Checklist: Preview vs Print (Orderlabel)
+
+- [ ] Controleer in Printer Beheer dat actieve driver/DPI klopt met fysieke printer (`zebra-zm400-300` of `zebra-zm400-203`)
+- [ ] Open hetzelfde orderlabel in Print Station en noteer lot/order/template
+- [ ] Print exact 1 label en leg preview + fysiek label naast elkaar
+- [ ] Vergelijk alleen deze 3 punten: tekstpositie, regelafbreking/wrap, rotatie-uitlijning
+- [ ] Noteer afwijking in mm als `X: ...mm`, `Y: ...mm` (geen nieuwe template-wijziging doen tijdens test)
+- [ ] Herhaal dezelfde check in Print Queue met hetzelfde template/data
+- [ ] Als afwijking <= 1mm: markeer als geslaagd; anders offset-finetune plannen
+
+---
+
+## ✅ Afgerond in Recente Sessies
+
+### Rechtenstructuur en Toegang
+
+- Granulaire permissiestructuur toegevoegd via `user.permissions`
+- Kernmodules standaard beschikbaar gemaakt:
+    - `planning`
+    - `catalog`
+    - `inbox`
+- Optionele modules instelbaar gemaakt per feature
+- Oude admin-tool permissies uitgefaseerd met migratiepad
+- `useHasFeature` hook toegevoegd voor consistente feature checks
+
+### Admin en Navigatie
+
+- Module master toggle bug opgelost in gebruikersbeheer
+- Admin Hub filtering aangepast naar nieuw permissiemodel
+- `digital_planning` als expliciete module toegevoegd in rechtenbeheer
+
+### AI Assistent
+
+- Firestore paden toegevoegd:
+    - `AI_MEMORY`
+    - `AI_CONVERSATIONS`
+- AI kan nu:
+    - goedgekeurde antwoorden onthouden
+    - relevante herinneringen in context meenemen
+    - recente gesprekken per gebruiker opslaan en herstellen
+- In chat toegevoegd:
+    - like-knop voor positief leergeheugen
+    - herstel van recent gesprek
+    - knop voor nieuw gesprek
+
+### Planning en Productieflow
+
+- Lotnummer-zoekveld toegevoegd in detailrapportage
+- Fallback voor productomschrijving verbeterd zodat minder snel `ONBEKEND PRODUCT` verschijnt
+- PO text/opmerking bewerkbaar gemaakt in orderdetail-flow
+- Opmerkingen zichtbaar gemaakt in operator/teamleader weergave
+- Cross-station N2100 routing voorbereid: hybride orders (Spoolbouw + Fittingen met zelfde ordernummer) blijven in Fittingen verborgen tot voldoende Spoolbouw-output beschikbaar is (`x van y` vrijgave op basis van aantallen); Lossen-grenzen afgestemd op TB 25-300 lokaal / >300 station en CB 25-350 lokaal / >350 station
+
+### Printing en Labels
+
+- Print flows verder gecentraliseerd rond gedeelde preview/generatie helpers
+- Lotnummer-generatie en printerstation-flow verbeterd
+- Tijdelijke/order labels beter geïntegreerd in printerviews
+- Extra previewcomponenten toegevoegd voor consistente labelweergave
+- QR-preview en QR-PDF generatie volledig intern gemaakt via lokale QR utility/component
+- `InternalQrImage` verplaatst naar `src/utils/InternalQrImage.jsx` en alle imports bijgewerkt
+
+### Scroll fixes (20 maart 2026 — sessie 2)
+
+- `LossenView.jsx` — root scroll container `pb-32` + `max(8rem, env(safe-area-inset-bottom))` safe-area padding
+- `WorkstationHub.jsx` — content area div safe-area bottom padding toegevoegd
+- `TerminalProductionView.jsx` — twee scroll containers (wikkelen list + detail panel) `pb-24` + safe-area padding
+- `BM01Hub.jsx` — inspection tab scroll container `pb-24` + safe-area padding
+- `PrintQueueAdminView.jsx` — root div gewijzigd van `p-4 md:p-8` naar `h-full overflow-y-auto p-4 md:p-8` + safe-area padding (App.jsx `<main>` heeft `overflow-hidden` waardoor kinderen expliciet `h-full overflow-y-auto` nodig hebben)
+
+### Station Lossen opschonen (20 maart 2026 — sessie 2)
+
+- Tab "Printers en Labels" volledig verwijderd uit Station Lossen UI
+- Alle dode printer/labels/planning code verwijderd uit `LossenView.jsx`:
+  - States: `activeView`, `planningOrders`, `planningSearch`, `planningStationFilter`, `showReservations`, `reserveConfig`, `availableLabels`, `selectedLabelId`, `labelRules`, `nextStartLot`, `containerRef`, `previewZoom`, `simplePrintConfig`, `generating`, `savedPrinters`
+  - useEffects: planningOrders fetch, reservedItems cleanup, labels/rules fetch, nextStartLot, containerRef zoom
+  - Handlers: `handleSimpleRelease`, `handleSimplePrint`, `handleReserveConfirm`, `handleDeleteReservation`
+  - Memos: `filteredOrders`, `uniqueStations`, `selectedLabel`, `previewData`, `reservedItems`
+  - JSX: volledige "planning" view branch inclusief tabs
+  - Imports: `X`, `Search`, `Clock`, `Trash2` icons; `StatusBadge`; `getISOWeek`, `processLabelData`, `applyLabelLogic`, `getQRCodeUrl`; `PIXELS_PER_MM`, `getMachineCode`, `getLotPrefix`, `printViaWebUSB`; Firestore `orderBy`, `limit`, `writeBatch`
+- 35+ dode `lossen.*` vertalingssleutels verwijderd uit `nl.js` en `en.js`
+- Resterende actieve sleutels behouden: `no_incoming_items`, `wait_for_unload`, `waiting_receipt`, `lot_number`, `received`, `manufactured_item`, `origin`, `from`, `process_release`, `ready_to_scan`, `item_not_found`
+
+### Matrix Hub & Efficiency (26 maart 2026)
+
+- Volledige refactor van de `AdminMatrixManager` naar een robuuste modulaire opzet (10+ subcomponenten).
+- Boorpatronen en tolerantiebeheer direct gekoppeld aan de root databasepaden.
+- Ontwerp en documentatie toegevoegd voor een nieuw Efficiency Tracking systeem (`EFFICIENCY_TRACKING.md`).
+
+### ProductionStartModal & ZPL Fixes (26 maart 2026 — sessie 19)
+
+- **Audit label/printingsysteem** uitgevoerd; vier kritieke problemen gevonden en opgelost:
+
+#### ProductionStartModal.jsx
+- **Manual mode (barcode scan) nu volledig werkend:**
+  - Label preview (rechter paneel) is nu altijd zichtbaar in beide modes (was verborgen in manual mode)
+  - Label template selectie beschikbaar in beide modes (was alleen in auto mode)
+  - `labelsToPrint` niet meer hardcoded op `0` in manual mode — labels worden nu ook geprint bij manueel starten
+  - ZPL wordt gegenereerd en naar de wachtrij gestuurd in manual mode (als er een label geselecteerd is)
+- **Dead code verwijderd:**
+  - `setShowLighthousePreview(true)` — aanroep op niet-bestaande state setter → crash risico weg
+  - `"Verstuur naar Wachtrij"` knop die nooit renderde (stond in `mode === "auto"` container met `mode !== "auto"` guard) → verwijderd
+  - Help tekst bijgewerkt: `"Label wordt automatisch geprint bij starten"`
+
+#### zplHelper.js — Cut logica gerepareerd
+- **`^MMC` (Cut Mode) staat nu in de header** van het ZPL format (direct na `^XA^CI28`), niet meer aan het einde
+- **`^GS`** (ongeldig ZPL commando) verwijderd
+- **Mid-batch labels** krijgen nu `^MMT` (geen cut) i.p.v. `^MMC` — consistent met hoe `generateLotBatchZPL` het al correct deed
+- **Laatste label van batch:** `^MMC + ^PQ1,0,1,Y` = print en knip correct
+
+### Tekeningen Sync & Koppeling (26 maart 2026 — sessie 18)
+
+- Drawing sync engine volledig herschreven met correcte DB-paden en materiaalvariant matching (CST↔EST)
+- Tekeningen nu opvraagbaar vanuit alle views: Terminal orderlijst, Terminal detail, Product Dossier, TeamleaderHub per-product, TeamleaderHub order-overzicht
+- Tekeningen Sync tab in ConversionManager: batch sync, cross-collection search, keten analyse met broken chain detectie
+- Definitieve Afkeur formulier met reden-checklist in ProductDossierModal
+- On Hold/Resume toggle voor orders met visuele feedback in alle relevante views
+
+---
+
+## 📂 Belangrijkste Relevante Bestanden
+
+### AI
+
+- `src/services/aiService.jsx`
+- `src/components/ai/AiChatView.jsx`
+- `src/components/ai/AiMessage.jsx`
+- `src/config/dbPaths.jsx`
+
+### Rechten en Modules
+
+- `src/components/admin/AdminUsersView.jsx`
+- `src/components/admin/AdminDashboard.jsx`
+- `src/components/Sidebar.jsx`
+- `src/hooks/useHasFeature.js`
+
+### Planning Import / Terminal
+
+- `src/components/digitalplanning/modals/PlanningImportModal.jsx`
+- `src/components/digitalplanning/terminal/TerminalPlanningView.jsx`
+- `src/components/digitalplanning/Terminal.jsx`
+- `src/components/digitalplanning/WorkstationHub.jsx`
+- `src/components/digitalplanning/OrderDetail.jsx`
+- `src/components/digitalplanning/modals/ProductDossierModal.jsx`
+
+### Tekeningen & Sync
+
+- `src/utils/drawingLinker.jsx`
+- `src/utils/manualSyncDrawings.jsx`
+- `src/utils/findDrawingForProduct.jsx`
+- `src/components/admin/ConversionManager.jsx`
+
+### Printing
+
+- `src/components/printer/PrintQueueAdminView.jsx`
+- `src/components/printer/PrintStationView.jsx`
+- `src/components/admin/AdminPrinterManager.jsx`
+- `src/utils/InternalQrImage.jsx`
+- `src/utils/printerDrivers.js`
+- `src/utils/zplHelper.js`
+- `src/utils/labelHelpers.jsx`
+- `src/services/printService.js`
+
+### Matrix Beheer & Kwaliteit
+
+- `src/components/admin/matrixmanager/AdminMatrixManager.jsx` (en subviews)
+- `src/components/admin/ProductionTimeStandardsManager.jsx` (gepland)
+- `src/components/digitalplanning/EfficiencyDashboard.jsx` (gepland)
+- `EFFICIENCY_TRACKING.md`
+
+---
+
+## 🧪 Open Pilot Validatie
+
+### End-to-End Werkvloerflow
+
+- [ ] BH18 order starten
+- [ ] uniek lotnummer genereren
+- [ ] doorzetten naar Lossen
+- [ ] verplichte metingen invoeren
+- [ ] doorzetten naar Nabewerking / BM01
+- [ ] goedkeuren of afkeuren
+- [ ] dossier / archivering controleren
+- [ ] hybride N2100 scenario valideren: start in Spoolbouw, pas zichtbaar in Fittingen zodra vereist aantal gereed buisstukken (`x van y`) bereikt is
+
+### Multi-operator Test
+
+- [ ] 2 of meer operators tegelijk laten werken
+- [ ] occupancy sync controleren
+- [ ] race conditions uitsluiten
+
+### Mobile / Scanner
+
+- [ ] QR scanflow testen op alle stations
+- [ ] manual fallback testen
+- [ ] iOS/Android/device mix controleren
+
+### Security / Compliance
+
+- [ ] Firestore rules praktijkvalideren
+- [ ] operator mag geen vreemd station zien
+- [ ] admin mag alles beheren
+- [ ] AI context controleren op onnodige PII
+
+### Performance / Stabiliteit
+
+- [ ] 100+ orders in terminal testen
+- [ ] filter/sort performance testen
+- [ ] netwerkuitval scenario testen
+
+---
+
+## 🔄 Praktische Hervatstappen
+
+### Als je verder wilt met LN import
+
+1. Open de importmodal in LN-modus.
+2. Upload exact hetzelfde userbestand.
+3. Kopieer de foutmelding met kolomnamen.
+4. Vul aliasmapping verder aan in `PlanningImportModal.jsx`.
+5. Test tot orders zichtbaar zijn in de preview.
+
+### Als je verder wilt met AI
+
+1. Stel een vraag in de AI chat.
+2. Like een goed antwoord.
+3. Stel een vergelijkbare vraag opnieuw.
+4. Controleer of geheugencontext effect heeft.
+5. Controleer Firestore in:
+     - `future-factory/settings/ai_memory`
+     - `future-factory/settings/ai_conversations`
+
+### Als je verder wilt met printing
+
+1. Verbind Zebra ZM400 via WebUSB en bevestig dat de printer door de browser wordt gezien.
+2. Print een echt orderlabel.
+3. Print een batch lotnummers.
+4. Controleer tekstuitlijning, QR positie en snijgedrag.
+5. Fine-tune indien nodig in `zplHelper.js`.
+
+### Printer Driver Mapping (pilot)
+
+
+| Scenario | Driver kiezen in Admin | Start DPI | Start Darkness | Start Speed | Taal/Pad |
+|---|---|---:|---:|---:|---|
+| Zebra ZM400 via WebUSB (hoofdroute) | `zebra-zm400-300` (of `zebra-zm400-203` als printer fysiek 203 DPI is) | 300 (of 203) | 20 | 3 | ZPL/WebUSB |
+| Zebra EPL2 Label Printer (CUPS/legacy) | `zebra-epl2-203` | 203 | 20 | 3 | EPL |
+| Lighthouse CJ-PRO II (Windows host) | `lighthouse-cjpro2` | 300 | 15 | 4 | TSPL/Windows |
+
+Praktische keuzehulp:
+- Gebruik `zebra-zm400-300` als standaard voor de huidige pilotroute met ZM400 via WebUSB.
+- Schakel alleen naar `zebra-zm400-203` als de printer daadwerkelijk op 203 DPI draait (anders schaal/positie-afwijking).
+- Gebruik `zebra-epl2-203` alleen voor EPL2-printers of legacy CUPS/EPL-paden, niet als vervanging van de ZM400 WebUSB ZPL-route.
+- Als snijgedrag op ZM400 niet klopt: eerst driver en DPI bevestigen, daarna pas offsets/darkness tunen.
+
+---
+
+## 📜 Korte Historie
+
+### 26 maart 2026 — sessie 18 (Tekeningen Sync & Toegang Vanuit Alle Views)
+
+
+#### Tekeningen Koppeling — Volledige App-brede Integratie
+- **Drawing Sync Engine (`drawingLinker.jsx`)**: Volledig herschreven. Gebruikt nu correcte `PATHS.PRODUCTS` en `PATHS.CONVERSION_MATRIX` i.p.v. oude `artifacts/{appId}/...` paden. Bevat `materialVariants()` functie die CST↔EST swapped op positie 6. `findDrawingForOrder()` doet 3-stap: product match → conversie matrix → beide met materiaalvariant fallback.
+- **Batch Sync (`manualSyncDrawings.jsx`)**: Materiaalvarianten toegevoegd in `buildLookupKeys`. Ongematchte resultaten bevatten nu `conversionTarget` voor debugging.
+- **ConversionManager.jsx**: Derde tab "Tekeningen Sync" toegevoegd met:
+  - Start Sync knop + progress bar + samenvatting (Gekoppeld/Geen match/Totaal)
+  - Cross-collection zoekfunctie over Conversie Matrix, Planning Orders en Product Catalogus
+  - "Keten Analyse" (chain trace) die automatisch conversion targets volgt naar producten
+  - Broken chain detectie (oranje "Target ≠ Product" status)
+  - Materiaalvariant auto-follow met "+ materiaalvariant" badge
+- **Definitieve Afkeur**: Rejection knop + formulier met reden-checklist en opmerkingen in ProductDossierModal (z-index z-[300])
+
+#### Tekening Zichtbaar Vanuit Alle Views
+Alle views hebben nu een werkende tekening-knop met 3-stap lookup:
+1. `order.drawing` als product-ID → `getDoc` by ID
+2. Fallback: `articleCode` query
+3. Fallback: materiaalvariant (CST↔EST positie 6)
+4. Legacy fallback: `findDrawingForProduct()`
+
+| View | Component | Details |
+|---|---|---|
+| Workstation Terminal — orderlijst | `TerminalPlanningView.jsx` | Drawing icon blauw als gekoppeld, clickable → `onViewDrawing` |
+| Workstation Terminal — detail panel | `TerminalPlanningView.jsx` | "Technische Tekening" knop gekoppeld aan `onViewDrawing`, blauw + bolletje als gekoppeld |
+| Workstation Terminal — handler | `Terminal.jsx` | `handleViewDrawing` met 3-stap + materiaalvariant fallback → ProductDetailModal |
+| Product Dossier Modal | `ProductDossierModal.jsx` | "Tekening" veld + `handleOpenDetail` met 3-stap fallback |
+| TeamleaderHub — Volledige Lijst per product | `OrderDetail.jsx` | FileImage knop per product met 3-stap lookup, blauw als gekoppeld |
+| TeamleaderHub — Volledige Lijst order overzicht | `OrderDetail.jsx` | 5e tile "Tekening" in details grid, toont "Gekoppeld"/"Zoeken" status |
+
+#### Overige Wijzigingen
+- **On Hold/Resume**: Toggle in OrderDetail, StatusBadge (`on_hold` oranje/PauseCircle), PlanningSidebar (oranje achtergrond), TerminalPlanningView (oranje dimmed, disabled start)
+- **TeamleaderHub Sync**: Paarse sync-knop in header + mobile menu met toast notificaties
+- **Nabewerken**: Station naam gecorrigeerd van "Nabewerking" naar "Nabewerken" in workstationLogic.jsx
+
+#### Materiaalvariant Logica (CST↔EST)
+- Positie 6 (index 6) in FPi GRE productcodes: `C` = CST (Conductive Standard Type), `E` = EST (Epoxy Standard Type)
+- Tekeningen zijn materiaalonafhankelijk → beide varianten delen dezelfde tekening
+- `materialVariants()` functie in `drawingLinker.jsx` en `manualSyncDrawings.jsx`
+- Wordt toegepast in alle lookup-stappen (sync, handmatige sync, chain trace, terminal, dossier, orderdetail)
+
+#### Gewijzigde Bestanden
+- `src/utils/drawingLinker.jsx` — herschreven + materialVariants
+- `src/utils/manualSyncDrawings.jsx` — materialVariants + conversionTarget
+- `src/components/admin/ConversionManager.jsx` — Sync tab + search + chain trace
+- `src/components/digitalplanning/modals/ProductDossierModal.jsx` — rejection form + handleOpenDetail
+- `src/components/digitalplanning/terminal/TerminalPlanningView.jsx` — clickable icon + Technische Tekening knop
+- `src/components/digitalplanning/Terminal.jsx` — handleViewDrawing + variant fallback
+- `src/components/digitalplanning/OrderDetail.jsx` — tekening tile + per-product drawing knop + on hold
+- `src/components/digitalplanning/TeamleaderHub.jsx` — sync button
+- `src/components/digitalplanning/common/StatusBadge.jsx` — on_hold status
+- `src/components/digitalplanning/PlanningSidebar.jsx` — on_hold styling
+- `src/utils/workstationLogic.jsx` — Nabewerken naamfix
+
+### 26 maart 2026 — sessie 17 (Matrix Manager & Efficiency Tracking)
+
+- **Matrix Hub Refactor**: De `AdminMatrixManager` en alle subcomponenten (`MatrixRangesView`, `AdminDrillingView`, `MatrixView`, `BlueprintsView`, `LibraryView`, etc.) zijn volledig herzien en gestyled volgens de nieuwe MES richtlijnen.
+- **Root Path Syncing**: Data opslag voor boorpatronen en dimensies is gestandaardiseerd naar de centrale root configuraties.
+- **Efficiency Tracking**: Nieuwe architectuur (`EFFICIENCY_TRACKING.md`) opgesteld voor real-time prestatiemeting op de werkvloer.
+- **Volgende stap**: Componenten implementeren voor het Efficiency systeem.
+
+### 25 maart 2026 — sessie 16 (ZPL uitlijning & preview sync)
+
+- Verticale tekst (`^A0R`/`^A0B`) tuning blokken toegevoegd aan `zplHelper.js` en `LabelVisualPreview.jsx` om exact met elkaar in de pas te lopen.
+- Standaardcorrectie voor verticale tekst ingesteld:
+  - 15% kleiner lettertype (`VERTICAL_SCALE = 0.85`)
+  - Offset: 2mm naar rechts, 1mm naar onder.
+- Fix toegevoegd in `LabelVisualPreview.jsx` (`DESIGNER_MATCH_SCALE = 0.76`) waardoor de dot-to-pixel conversie visueel exact overeenkomt met de 1:1 weergave in de Label Architect. De tekst is nu niet meer 35% te groot op het scherm.
+- Volgende stap: live hardware test op ZM400.
+
+### 25 maart 2026 — sessie 15 (planning import fix)
+
+- Foutmelding `Fout bij het verwerken van het bestand.` opgelost bij importeren van `fittingen 25-03-2026 MET 40BM01 2.0AAA.xlsx`
+- **Oorzaak:** het bestand bevat twee enorme helper-sheets (`data PPOP` 13.501 rijen, `hulp input` 13.506 rijen) die de browser-worker lieten crashen door geheugenoverbelasting bij één globale `XLSX.read` call
+- **Fix in `src/workers/planningImportWorker.js`:**
+    - Stap 1: alleen sheetnamen ophalen (`bookSheets: true` — geen data in geheugen)
+    - Stap 2: per sheet alleen de eerste 15 rijen scannen om headerrij te detecteren
+    - Stap 3: sheets zonder `Machine` + `order` header worden volledig overgeslagen
+    - Stap 4: whitelist toegevoegd — alleen `Fabrieksplanning`, `Mazakplanning` en `40BM01` worden verwerkt; alle andere sheets worden genegeerd
+    - Resultaat: 476 orders geladen uit 3 planning-sheets, grote helper-sheets nooit ingelezen
+- **`.xlsm` ondersteuning toegevoegd:**
+    - `accept=` attribuut in `PlanningImportModal.jsx` uitgebreid met `.xlsm`
+    - XLSX-library leest `.xlsm` intern identiek aan `.xlsx` (VBA-pakket wordt genegeerd)
+- Vite devserver gestart op poort 3000 (`http://localhost:3000/`, `http://10.0.10.16:3000/`)
+
+### 25 maart 2026 — sessie 13 (vervolg)
+
+- Sync issue was op dat moment nog open: handmatige tekeningsync meldde 0 matches in praktijktest.
+- Reeds aangebrachte fixes in `manualSyncDrawings.jsx`:
+    - robuustere normalisatie (`normalized`, `compact`, tokenized keys)
+    - filtering van niet-code waardes (zoals productomschrijvingen met spaties)
+    - conversie-fallback uitgebreid naar meerdere targetcodes per broncode
+- Specifieke case bevestigd door gebruiker:
+    - broncode `EL9AESS08R03E0BCCBB0`
+    - conversiematrix bevat o.a. `ELMO90ES00WMST080000320CB0` en `ELMO90CS00WMST080000320CB0`
+    - catalogus bevat `articleCode = ELMO90CS00WMST080000320CB0` met gekoppelde tekening
+- Debugging is later vervolgd op materiaalvariant matching, multi-target conversiefallback en sync-ketencontrole.
+- Status per 27 maart 2026: gebruiker bevestigt dat de tekeningen-sync nu in orde is.
+
+### 25 maart 2026 — sessie 14 (printing vervolg)
+
+- Focus verlegd naar verticale tekst op orderlabels (fysieke print + preview vergelijking met foto's)
+- Reeks patches uitgevoerd op ZPL/preview:
+    - overlapreductie en rotatiecompatibiliteit
+    - uitschakelen `^FB` voor geroteerde tekst in ZPL
+    - meerdere rotatie-offset/centreringsvarianten getest en deels teruggedraaid
+    - Label Manager preview rendering voor verticale tekst aangepast (wrap/fit)
+- Tussenresultaat:
+    - overlapprobleem duidelijk verbeterd t.o.v. begin
+    - maar exacte uitlijning/schaal van verticale tekst nog niet volledig goed
+- Sessie op verzoek gepauzeerd met expliciete tussenstand in dit document
+
+### 25 maart 2026 — sessie 12
+
+- Vite devserver gestart op poort 3000 voor vervolgvalidatie
+- Bereikbaarheid bevestigd via:
+    - `http://localhost:3000/`
+    - `http://10.0.11.112:3000/`
+
+### 24 maart 2026 — sessie 11
+
+- Queue-label print live gevalideerd: na elk label wordt correct geknipt
+- Quantity-verwerking live gevalideerd: bij `Aantal Labels = 2` worden ook effectief 2 labels geprint
+- Open printing-punt versmald naar alleen orderlabel-flow vanuit Print Station
+
+### 24 maart 2026 — sessie 10
+
+- Vite devserver gestart op poort 3000 voor directe vervolgvalidatie
+- Bereikbaarheid bevestigd op `http://localhost:3000/`
+- Applicatie geopend in browser via host-`$BROWSER`
+
+### 23 maart 2026 — sessie 8
+
+- Printspeed toegevoegd aan Printer Beheer (opslaan/laden in printerprofiel) en gekoppeld aan printoutput in admin/station/queue
+- ZPL output uitgebreid met `^PR` en TSPL fallback met `SPEED` zodat warmte/snelheid beter af te stemmen is op media/ribbon
+- WebUSB foutafhandeling in Printer Beheer aangepast naar platform-neutrale melding voor Chromebook/Chrome context
+- Extra actie toegevoegd voor USB reset/reconnect in Printer Beheer
+- Admin testprintflow aangepast om geautoriseerde WebUSB devices te hergebruiken via gedeelde utility; device-picker wordt niet meer onnodig per testprint getoond
+
+### 23 maart 2026 — sessie 7
+
+- Lotbatch snijgedrag bevestigd op hardware: tussenliggende labels `^MMT`, alleen laatste label knip (`^MMC` + `^PQ1,0,1,Y`)
+- Lotnummer-aantalinput in `PrintStationView.jsx` en `PrintQueueAdminView.jsx` hersteld voor direct typen
+- Submit-logica gehard met `resolvedCount` zodat batchopbouw/feedback altijd een geldige waarde gebruikt
+- Lotbatch tekstrendering in `generateLotBatchZPL` bijgesteld (breedte + centrering) op basis van fysieke ZM400 afwijking
+- QR-layout voor lotbatch expliciet op 9x9mm gezet
+- Laatste finetune bevestigd op fysieke print: lotnummerbreedte ~65mm en verticale uitlijning met QR akkoord
+
+### 23 maart 2026 — sessie 6
+
+- Vite devserver gestart op poort 3000
+- ZM400 voor het eerst fysiek aangesloten voor live printtest
+- Diagnose: printer wist labelgrens niet → hardware SmartCal uitgevoerd (FEED+CANCEL bij opstarten)
+- Kalibratie label bleef wit → oorzaak: top-of-form niet ingesteld (hardware probleem, niet software)
+- Na SmartCal: kalibratie print correct afgedrukt én gesneden
+- Offset X ingesteld op -4mm (4mm te rechts na SmartCal); eerdere waarden (-8.9 / +4.5) vervallen
+- ZPL cut-logica fundamenteel gerepareerd in `zplHelper.js` en `PrintQueueAdminView.jsx`:
+    - `^MMC` naar header verplaatst (was achteraan → activeerde cut pas bij volgend label)
+    - `^XB` (suppress backfeed) volledig verwijderd → blokkeerde doorvoer naar snijpositie
+    - `^CN1` en `~JK` verwijderd → redundant/interfererend met `^MMC + ^PQ,,,Y`
+    - Kalibratie ZPL (`buildCalibrationCrossZpl`) krijgt nu ook `^MMC` + `^PQ1,0,1,Y`
+    - Lot-batch: knip alleen op laatste label (`^PQ1,0,1,Y`), tussenliggende `^PQ1,0,1,N`
+    - Queue `ensureCutCommandForQueueJob` vereenvoudigd: alleen `^MMC + ^PQ1,0,1,Y` injecteren
+- Nul compile-errors na alle wijzigingen
+- Open: live validatie queue-label snijden + lot-batch snijgedrag
+
+### 22 maart 2026 — sessie 5
+
+- Vite devserver gestart op poort 3000 voor directe pilotvalidatie
+- Bereikbaarheid bevestigd via:
+    - `http://localhost:3000/`
+    - netwerk-URL op LAN voor test op andere devices
+
+### 22 maart 2026 — sessie 4
+
+- Lotnummer stationselectie opgelost in Print Station en Print Queue:
+    - Stations komen uit `future-factory/settings/factory_configs/main`
+    - Afdeling-mapping robuust gemaakt op `name/slug/id/key` (niet alleen slug)
+    - Fittings-filter gewijzigd naar BH-stations op verzoek
+- `Print 'OK' QR (A4)` in Printer Beheer gefixt:
+    - lokale QR generatie (`qrcode`) in plaats van externe image URL
+    - robuuste popup/open flow met download fallback
+- Alle QR-previews/app-paden naar intern omgezet:
+    - geen externe `api.qrserver.com` calls meer in `src` en na build ook niet in `dist`
+- `InternalQrImage` verplaatst van `src/components/InternalQrImage.jsx` naar `src/utils/InternalQrImage.jsx` en alle referenties aangepast
+- Build en foutcontrole uitgevoerd: geen compile-errors op aangepaste printer/QR-bestanden
+
+### 20 maart 2026 — sessie 2
+
+- Scroll fix toegepast op LossenView, WorkstationHub, TerminalProductionView, BM01Hub
+- PrintQueueAdminView (`/printer-queue`) scrollprobleem opgelost: root div nu `h-full overflow-y-auto`
+- Tab "Printers en Labels" volledig verwijderd uit Station Lossen
+- Alle dode printer/labels/planning code verwijderd uit LossenView
+- 35+ dode `lossen.*` vertalingssleutels verwijderd uit nl.js en en.js
+- Nul compile-errors na alle wijzigingen
+
+### 20 maart 2026
+
+- Vite devserver opnieuw gestart op poort 3000 voor doorlopend pilottesten
+- Overdrachtsdocument opnieuw geverifieerd als actuele werkbasis
+- Pilotrichting voor printing aangescherpt: waarschijnlijk Zebra ZM400 via WebUSB
+- Routing uitgebreid voor toekomstige hybride N2100 orders: vrijgave naar Fittingen op aantallenbasis (`x van y`) na Spoolbouw-voortgang
+
+### 19 maart 2026
+
+- Rechtenstructuur afgerond
+- AI geheugen en gesprekshistorie toegevoegd
+- Samenvatting opgeslagen en opgeschoond
+
+### 18 maart 2026
+
+- LN import debugging verder verbeterd
+- Kopieerbare foutmelding toegevoegd
+- Omschrijving/PO text flow verbeterd
+- Vite server op poort 3000 gestart voor testen
+
+### 17 maart 2026
+
+- Terminal/workstation zichtbaarheid geimporteerde planning verbeterd
+- Personeel & bezetting UX verbeterd
+- Productie deploy uitgevoerd
+
+### 16 maart 2026
+
+- Lighthouse print calibratie doorgezet
+- Operatorhandleiding voor pilotflow uitgewerkt

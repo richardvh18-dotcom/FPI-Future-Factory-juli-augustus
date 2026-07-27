@@ -164,6 +164,8 @@ type SeriesHeaderRow = {
 
 type DisplayRow = ProductItem | SeriesHeaderRow;
 
+type MazakTab = "planning" | "inbox" | "process" | "adjust" | "free";
+
 type SavedFreeLabelTemplate = {
   id: string;
   name: string;
@@ -420,12 +422,1033 @@ const templateExtraCodeTokens = (template: LabelTemplate): string[] => {
   return Array.from(new Set(flattened.map((entry) => entry.toUpperCase()).filter(Boolean)));
 };
 
-const getItemNominalDiameter = (item: any): number => {
+const getItemNominalDiameter = (item: Record<string, unknown>): number => {
   const itemIdentifier = [item?.item, item?.itemCode, item?.itemDescription].join(" ").toUpperCase();
   const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
   const parsed = match ? parseInt(match[1], 10) : parseInt(String(item?.diameter || item?.dn || "0"), 10);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+type TranslateFn = (key: string, fallback?: string) => string;
+
+type MazakTabNavigationProps = {
+  activeTab: MazakTab;
+  onSelectTab: (tab: MazakTab) => void;
+  t: TranslateFn;
+};
+
+const MazakTabNavigation = ({ activeTab, onSelectTab, t }: MazakTabNavigationProps) => (
+  <div className="p-2 bg-slate-50 border-b border-slate-200 shrink-0 shadow-sm">
+    <div className="flex justify-center overflow-x-auto">
+      <div className="flex bg-slate-200 p-1 rounded-2xl w-full max-w-2xl min-w-[320px]">
+        <button
+          onClick={() => onSelectTab("planning")}
+          className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "planning" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+        >
+          Planning
+        </button>
+        <button
+          onClick={() => onSelectTab("inbox")}
+          className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "inbox" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+        >
+          {t("mazak.tab_inbox", "Inbox / Printen")}
+        </button>
+        <button
+          onClick={() => onSelectTab("process")}
+          className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "process" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+        >
+          {t("mazak.tab_complete", "Gereedmelden")}
+        </button>
+        <button
+          onClick={() => onSelectTab("adjust")}
+          className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "adjust" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+        >
+          {t("mazak.tab_adjust", "Aanpassen")}
+        </button>
+        <button
+          onClick={() => onSelectTab("free")}
+          className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "free" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+        >
+          {t("mazak.tab_free_label", "Vrij label")}
+        </button>
+      </div>
+    </div>
+  </div>
+);
+
+type MazakListItemCardProps = {
+  item: ProductItem;
+  activeTab: MazakTab;
+  isSelected: boolean;
+  onSelect: (item: ProductItem) => void;
+  t: TranslateFn;
+};
+
+const MazakListItemCard = ({ item, activeTab, isSelected, onSelect, t }: MazakListItemCardProps) => (
+  <div
+    onClick={() => onSelect(item)}
+    className={`bg-white border-2 rounded-2xl p-3 shadow-sm hover:border-blue-300 transition-all group animate-in slide-in-from-bottom-2 cursor-pointer ${isSelected ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-100"}`}
+  >
+    <div className="flex justify-between items-start mb-2">
+      <div className="text-left">
+        <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">{item.orderId}</span>
+        <span className="font-black text-slate-900 text-base tracking-tighter">{item.lotNumber}</span>
+        <p className="text-[10px] font-bold text-slate-500 mt-0.5 truncate max-w-[180px]">{item.item}</p>
+      </div>
+      <div className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${activeTab === "inbox" ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"}`}>
+        {activeTab === "inbox" ? t("mazak.print_badge", "Printen") : t("mazak.complete_badge", "Gereedmelden")}
+      </div>
+    </div>
+    <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
+      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{t("lossen.manufactured_item")}</p>
+      <p className="text-[10px] font-mono font-bold text-slate-700 truncate">{item.itemCode}</p>
+      {item.lastStation && (
+        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-200/60 opacity-80">
+          <History size={10} className="text-blue-500" />
+          <span className="text-[8px] font-black text-slate-500 uppercase italic">
+            {t("mazak.from_station", "Van")}: {item.lastStation}
+          </span>
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+type MazakPlanningOrderCardProps = {
+  order: PlanningOrder;
+  isSelected: boolean;
+  onSelect: (order: PlanningOrder) => void;
+  orderMaterialBadge: string;
+  orderProduced: number;
+  orderTotal: number;
+  orderDeliveryLabel: string;
+  orderDeliveryColorClass: string;
+  t: TranslateFn;
+};
+
+const MazakPlanningOrderCard = ({
+  order,
+  isSelected,
+  onSelect,
+  orderMaterialBadge,
+  orderProduced,
+  orderTotal,
+  orderDeliveryLabel,
+  orderDeliveryColorClass,
+  t,
+}: MazakPlanningOrderCardProps) => (
+  <div
+    onClick={() => onSelect(order)}
+    className={`min-h-[100px] px-4 py-3 rounded-3xl border-2 transition-all flex items-center justify-between relative overflow-hidden cursor-pointer ${
+      isSelected
+        ? "bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-100 translate-x-1"
+        : "bg-white border-slate-100 hover:border-blue-300"
+    }`}
+  >
+    <div className="flex items-center gap-4 flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="inline-block px-3 py-1 bg-slate-200 text-slate-800 rounded-lg text-sm font-black uppercase tracking-wider border border-slate-300 shadow-sm">
+            {t("productionStartModal.labels.order", "Order")}: {String(order.orderId || "-")}
+          </span>
+          {orderMaterialBadge && (
+            <span className="inline-block px-2.5 py-1 bg-sky-100 text-sky-700 border border-sky-200 rounded-lg text-[11px] font-black uppercase tracking-wide">
+              {orderMaterialBadge}
+            </span>
+          )}
+        </div>
+        <h4 className="font-black text-base sm:text-lg leading-tight uppercase text-slate-900 mb-1 line-clamp-2">
+          {String(order.item || "-")}
+        </h4>
+      </div>
+    </div>
+    <div className="flex flex-col items-end gap-1.5 text-right shrink-0 ml-4">
+      <StatusBadge status={order.status} />
+      <span className="text-xs font-black text-slate-700 uppercase tracking-tighter">
+        {t("digitalplanning.terminal.made", "Gemaakt")}: {orderProduced} / {orderTotal} ST
+      </span>
+      <span className={`text-xs uppercase tracking-tighter ${orderDeliveryColorClass}`}>
+        {orderDeliveryLabel}
+      </span>
+    </div>
+  </div>
+);
+
+type MazakAdjustListItemCardProps = {
+  item: ProductItem;
+  isSelected: boolean;
+  onSelect: (item: ProductItem) => void;
+  t: TranslateFn;
+};
+
+const MazakAdjustListItemCard = ({ item, isSelected, onSelect, t }: MazakAdjustListItemCardProps) => {
+  const stage = item.mazakLabelPrinted
+    ? t("mazak.complete_badge", "Gereedmelden")
+    : t("mazak.print_badge", "Printen");
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item)}
+      className={`w-full text-left bg-white border-2 rounded-2xl p-4 shadow-sm transition-all ${isSelected ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-100 hover:border-blue-200"}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{item.orderId || "-"}</p>
+          <p className="text-base font-black text-slate-900">{item.lotNumber || item.id || "-"}</p>
+          <p className="text-xs font-bold text-slate-600 mt-1 truncate">{item.item || "-"}</p>
+          <p className="text-[10px] font-black text-slate-400 uppercase mt-1">{item.itemCode || "-"}</p>
+        </div>
+        <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${item.mazakLabelPrinted ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
+          {stage}
+        </span>
+      </div>
+    </button>
+  );
+};
+
+type MazakSelectedProductHeroProps = {
+  product: ProductItem;
+  onClear: () => void;
+  t: TranslateFn;
+};
+
+const MazakSelectedProductHero = ({ product, onClear, t }: MazakSelectedProductHeroProps) => (
+  <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
+    <div className="flex justify-between items-start mb-8 relative z-10">
+      <div>
+        <button
+          onClick={onClear}
+          className="lg:hidden p-2 bg-white/10 rounded-full mb-4 inline-block"
+        >
+          <ArrowLeft size={20} />
+        </button>
+        <div className="mb-2">
+          <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base font-black uppercase tracking-widest border border-white/40 shadow-sm">
+            {t("productionStartModal.labels.order", "Order")}: {product.orderId}
+          </span>
+        </div>
+        <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
+          {product.item || "-"}
+        </h2>
+        <p className="text-xs font-bold text-white/60 mt-1">
+          {product.itemCode || "-"}
+        </p>
+      </div>
+      <div className="flex items-start gap-3">
+        <StatusBadge status={product.status} />
+        <button onClick={onClear} className="p-2 rounded-full text-slate-300 hover:bg-white/10">
+          <X size={20} />
+        </button>
+      </div>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-white/10 pt-8 relative z-10">
+      <div>
+        <p className="text-[10px] font-black text-white/40 uppercase mb-1">Lotnummer</p>
+        <p className="text-lg font-black text-sky-300">{product.lotNumber || "-"}</p>
+      </div>
+      <div>
+        <p className="text-[10px] font-black text-white/40 uppercase mb-1">Wikkelmachine</p>
+        <p className="text-lg font-black text-amber-300">{product.lastStation || "Onbekend"}</p>
+      </div>
+      <div>
+        <p className="text-[10px] font-black text-white/40 uppercase mb-1">Status</p>
+        <p className="text-lg font-black text-blue-300 uppercase">{String(product.status || "-")}</p>
+      </div>
+    </div>
+  </div>
+);
+
+type MazakSelectedPlanningOrderHeroProps = {
+  order: PlanningOrder;
+  materialBadge: string;
+  deliveryLabel: string;
+  quantity: number;
+  produced: number;
+  t: TranslateFn;
+  onClear: () => void;
+};
+
+const MazakSelectedPlanningOrderHero = ({
+  order,
+  materialBadge,
+  deliveryLabel,
+  quantity,
+  produced,
+  t,
+  onClear,
+}: MazakSelectedPlanningOrderHeroProps) => (
+  <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
+    <div className="flex justify-between items-start mb-8 relative z-10">
+      <div>
+        <button
+          onClick={onClear}
+          className="lg:hidden p-2 bg-white/10 rounded-full mb-4 inline-block"
+        >
+          <ArrowLeft size={20} />
+        </button>
+        <div className="mb-2">
+          <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base font-black uppercase tracking-widest border border-white/40 shadow-sm">
+            {t("productionStartModal.labels.order", "Order")}: {order.orderId}
+          </span>
+        </div>
+        <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
+          {order.item || "-"}
+        </h2>
+        <p className="text-xs font-bold text-white/60 mt-1">
+          {order.itemCode || "-"}
+        </p>
+        {materialBadge && (
+          <div className="mt-2">
+            <span className="inline-block px-2.5 py-1 bg-sky-300 text-sky-950 rounded-lg text-[11px] font-black uppercase tracking-wide">
+              {materialBadge}
+            </span>
+          </div>
+        )}
+      </div>
+      <StatusBadge status={order.status} />
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-white/10 pt-8 relative z-10">
+      <div>
+        <p className="text-[10px] font-black text-white/40 uppercase mb-1">
+          {t("digitalplanning.order_detail.delivery_date_aq", "Leverdatum (AQ)")}
+        </p>
+        <p className="text-lg font-black text-sky-300">
+          {deliveryLabel}
+        </p>
+      </div>
+      <div>
+        <p className="text-[10px] font-black text-white/40 uppercase mb-1">
+          {t("digitalplanning.order_detail.total_plan", "Orderhoeveelheid")}
+        </p>
+        <p className="text-lg font-black text-amber-300">
+          {quantity} {t("digitalplanning.terminal.pieces", "stuks")}
+        </p>
+      </div>
+      <div>
+        <p className="text-[10px] font-black text-white/40 uppercase mb-1">
+          {t("digitalplanning.terminal.made", "Gemaakt")}
+        </p>
+        <p className="text-lg font-black text-blue-300">
+          {produced} {t("digitalplanning.terminal.pieces", "stuks")}
+        </p>
+      </div>
+    </div>
+  </div>
+);
+
+type MazakPlanningActiveLotsPanelProps = {
+  products: ProductItem[];
+  onSelectProduct: (product: ProductItem) => void;
+  t: TranslateFn;
+};
+
+const MazakPlanningActiveLotsPanel = ({ products, onSelectProduct, t }: MazakPlanningActiveLotsPanelProps) => (
+  <div className="border-t border-white/10 pt-6 mt-6 relative z-10">
+    <p className="text-[10px] font-black text-white/40 uppercase mb-3 tracking-widest">
+      {t("digitalplanning.terminal.active_lots", "Actieve lotnummers")} ({products.length})
+    </p>
+    {products.length === 0 ? (
+      <p className="text-xs font-bold text-white/60 italic">
+        {t("mazak.no_active_lots_for_order", "Nog geen actieve lotnummers voor deze order.")}
+      </p>
+    ) : (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {products.map((product) => {
+          const lotKey = String(product?.lotNumber || product?.id || "-");
+          return (
+            <button
+              key={String(product?.id || lotKey)}
+              type="button"
+              onClick={() => onSelectProduct(product)}
+              className="text-left px-3 py-2 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 transition-all"
+            >
+              <p className="text-xs font-black text-white uppercase tracking-wide">{lotKey}</p>
+              <p className="text-[10px] font-bold text-white/70 truncate">
+                {String(product?.item || product?.itemCode || "-")}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+    )}
+  </div>
+);
+
+type MazakAdjustSelectionPanelProps = {
+  product: ProductItem;
+  onChangeOrder: () => void;
+  onRequestNewOrder: () => void;
+  t: TranslateFn;
+};
+
+const MazakAdjustSelectionPanel = ({
+  product,
+  onChangeOrder,
+  onRequestNewOrder,
+  t,
+}: MazakAdjustSelectionPanelProps) => (
+  <>
+    <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
+      <div className="mb-4">
+        <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base font-black uppercase tracking-widest border border-white/40 shadow-sm">
+          {t("productionStartModal.labels.order", "Order")}: {product.orderId || "-"}
+        </span>
+      </div>
+      <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
+        {product.item || "-"}
+      </h2>
+      <p className="text-xs font-bold text-white/60 mt-1">{product.itemCode || "-"}</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-white/10 pt-6 mt-6">
+        <div>
+          <p className="text-[10px] font-black text-white/40 uppercase mb-1">Lotnummer</p>
+          <p className="text-lg font-black text-sky-300">{product.lotNumber || product.id || "-"}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-black text-white/40 uppercase mb-1">Huidige fase</p>
+          <p className="text-lg font-black text-amber-300">
+            {product.mazakLabelPrinted
+              ? t("mazak.complete_badge", "Gereedmelden")
+              : t("mazak.print_badge", "Printen")}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+      <button
+        onClick={onChangeOrder}
+        className="p-6 bg-white rounded-3xl border-2 border-slate-100 hover:border-blue-400 hover:shadow-lg transition-all flex flex-col items-center justify-center gap-3 group"
+      >
+        <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
+          <ArrowRight size={32} />
+        </div>
+        <span className="text-sm font-black uppercase tracking-widest text-slate-700 group-hover:text-blue-700">
+          Ordernummer wijzigen
+        </span>
+      </button>
+      <button
+        onClick={onRequestNewOrder}
+        className="p-6 bg-white rounded-3xl border-2 border-slate-100 hover:border-amber-400 hover:shadow-lg transition-all flex flex-col items-center justify-center gap-3 group"
+      >
+        <div className="p-4 bg-amber-50 text-amber-600 rounded-2xl group-hover:bg-amber-500 group-hover:text-white transition-colors">
+          <Tag size={32} />
+        </div>
+        <span className="text-sm font-black uppercase tracking-widest text-slate-700 group-hover:text-amber-700">
+          Verzoek nieuw ordernummer
+        </span>
+      </button>
+    </div>
+  </>
+);
+
+type MazakEmptySelectionPlaceholderProps = {
+  activeTab: MazakTab;
+  t: TranslateFn;
+};
+
+const MazakEmptySelectionPlaceholder = ({ activeTab, t }: MazakEmptySelectionPlaceholderProps) => (
+  <div className="flex-1 flex flex-col items-center justify-center opacity-30 text-center text-left">
+    {activeTab === "inbox" ? (
+      <Printer size={80} className="mb-6 text-slate-200" />
+    ) : activeTab === "planning" ? (
+      <History size={80} className="mb-6 text-slate-200" />
+    ) : activeTab === "free" ? (
+      <Tag size={80} className="mb-6 text-slate-200" />
+    ) : (
+      <ClipboardCheck size={80} className="mb-6 text-slate-200" />
+    )}
+    <h4 className="text-2xl font-black uppercase italic text-slate-300 text-left">
+      {activeTab === "inbox"
+        ? t("mazak.select_to_print", "Selecteer order om te printen")
+        : activeTab === "planning"
+          ? t("mazak.select_planned_order", "Selecteer geplande order")
+          : activeTab === "adjust"
+            ? t("mazak.adjust_pick_product", "Selecteer lot voor aanpassen")
+            : activeTab === "free"
+              ? t("mazak.free_label_ready", "Vrij label gereed om te printen")
+              : t("mazak.select_to_process", "Selecteer order om te verwerken")}
+    </h4>
+  </div>
+);
+
+type MazakFreeLabelHeroProps = {
+  t: TranslateFn;
+};
+
+const MazakFreeLabelHero = ({ t }: MazakFreeLabelHeroProps) => (
+  <div className="bg-slate-900 rounded-[35px] p-6 text-white border-4 border-blue-500/20 relative overflow-hidden shadow-xl text-left">
+    <span className="text-[8px] font-black text-blue-400 uppercase block mb-1 text-left">{t("mazak.free_label_header", "Vrij label")}</span>
+    <h2 className="text-3xl font-black italic leading-none text-left">100 x 25 mm</h2>
+    <p className="text-xs font-bold text-white/70 mt-2">{t("mazak.free_label_subtitle", "Print losse labels met vrije tekst")}</p>
+  </div>
+);
+
+type MazakFreeLabelPreviewPanelProps = {
+  template: LabelTemplate;
+  freeText: string;
+  printerDpi: number;
+  t: TranslateFn;
+};
+
+const MazakFreeLabelPreviewPanel = ({ template, freeText, printerDpi, t }: MazakFreeLabelPreviewPanelProps) => (
+  <div className="bg-white rounded-[40px] p-8 border border-slate-200 shadow-sm text-left">
+    <div className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-2 mb-4">
+      <Printer size={12} className="text-blue-500" /> {t("productionStartModal.labels.labelPreview", "Etiket preview")}
+    </div>
+    <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
+      <AutoScaledLabelPreview
+        label={template}
+        data={{ freeText: freeText || t("mazak.free_label_preview_placeholder", "Vrije tekst preview") }}
+        className="w-full"
+        printerDpi={printerDpi}
+        maxScale={1}
+        exactBitmapPreview
+      />
+    </div>
+  </div>
+);
+
+type MazakFreeLabelActionsProps = {
+  printing: boolean;
+  savingFreeTemplate: boolean;
+  freeLabelText: string;
+  freeLabelTemplateName: string;
+  freeLabelQuantity: number;
+  onPrint: () => void;
+  onSaveTemplate: () => void;
+  t: TranslateFn;
+};
+
+const MazakFreeLabelActions = ({
+  printing,
+  savingFreeTemplate,
+  freeLabelText,
+  freeLabelTemplateName,
+  freeLabelQuantity,
+  onPrint,
+  onSaveTemplate,
+  t,
+}: MazakFreeLabelActionsProps) => (
+  <>
+    <button
+      onClick={onPrint}
+      disabled={printing || !freeLabelText.trim()}
+      className="w-full py-4 bg-blue-600 text-white rounded-[22px] font-black uppercase text-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+    >
+      {printing ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
+      {printing
+        ? t("common.loading", "Laden...")
+        : t("mazak.print_free_labels", "Print {{count}} vrij label(s)", { count: Math.max(1, Math.min(50, Number(freeLabelQuantity) || 1)) })}
+    </button>
+
+    <button
+      onClick={onSaveTemplate}
+      disabled={savingFreeTemplate || !freeLabelTemplateName.trim() || !freeLabelText.trim()}
+      className="w-full py-3 bg-slate-100 text-slate-700 rounded-[18px] font-black uppercase text-xs hover:bg-slate-200 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+    >
+      {savingFreeTemplate ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+      {savingFreeTemplate
+        ? t("common.loading", "Laden...")
+        : t("mazak.save_free_label_template", "Opslaan als template")}
+    </button>
+  </>
+);
+
+type MazakFreeLabelAlignmentSelectorProps = {
+  align: "left" | "center" | "right";
+  onSelectAlign: (align: "left" | "center" | "right") => void;
+  t: TranslateFn;
+};
+
+const MazakFreeLabelAlignmentSelector = ({
+  align,
+  onSelectAlign,
+  t,
+}: MazakFreeLabelAlignmentSelectorProps) => (
+  <div>
+    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
+      {t("mazak.free_label_alignment", "Uitlijning")}
+    </label>
+    <div className="grid grid-cols-3 gap-2">
+      <button
+        type="button"
+        onClick={() => onSelectAlign("left")}
+        className={`px-3 py-3 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${align === "left" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
+      >
+        {t("common.left", "Links")}
+      </button>
+      <button
+        type="button"
+        onClick={() => onSelectAlign("center")}
+        className={`px-3 py-3 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${align === "center" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
+      >
+        {t("common.center", "Midden")}
+      </button>
+      <button
+        type="button"
+        onClick={() => onSelectAlign("right")}
+        className={`px-3 py-3 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${align === "right" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
+      >
+        {t("common.right", "Rechts")}
+      </button>
+    </div>
+  </div>
+);
+
+type MazakFreeLabelSizingFieldsProps = {
+  freeLabelFontSize: number;
+  freeLabelQuantity: number;
+  onChangeFontSize: (value: unknown) => void;
+  onChangeQuantity: (value: string) => void;
+  t: TranslateFn;
+};
+
+const MazakFreeLabelSizingFields = ({
+  freeLabelFontSize,
+  freeLabelQuantity,
+  onChangeFontSize,
+  onChangeQuantity,
+  t,
+}: MazakFreeLabelSizingFieldsProps) => (
+  <>
+    <div>
+      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
+        {t("mazak.free_label_font_size", "Lettergrootte")}
+      </label>
+      <input
+        type="number"
+        min={6}
+        max={75}
+        value={String(freeLabelFontSize)}
+        onChange={(e) => {
+          onChangeFontSize(e.target.value);
+        }}
+        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500"
+      />
+      <p className="mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+        {t("mazak.free_label_font_size_hint", "Vrij invoerbaar, max 75 pt")}
+      </p>
+    </div>
+
+    <div>
+      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
+        {t("mazak.quantity", "Aantal")}
+      </label>
+      <input
+        type="number"
+        min={1}
+        max={50}
+        value={freeLabelQuantity}
+        onChange={(e) => {
+          onChangeQuantity(String(e.target.value || "1"));
+        }}
+        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500"
+      />
+      <p className="mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+        {t("mazak.fixed_free_label_size", "Vast formaat: 100x25 mm")}
+      </p>
+    </div>
+  </>
+);
+
+type MazakFreeLabelTextFieldsProps = {
+  freeLabelTemplateName: string;
+  freeLabelText: string;
+  onChangeTemplateName: (value: string) => void;
+  onChangeFreeText: (value: string) => void;
+  t: TranslateFn;
+};
+
+const MazakFreeLabelTextFields = ({
+  freeLabelTemplateName,
+  freeLabelText,
+  onChangeTemplateName,
+  onChangeFreeText,
+  t,
+}: MazakFreeLabelTextFieldsProps) => (
+  <>
+    <div>
+      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
+        {t("mazak.free_label_template_name", "Template naam")}
+      </label>
+      <input
+        type="text"
+        value={freeLabelTemplateName}
+        onChange={(e) => onChangeTemplateName(e.target.value)}
+        maxLength={80}
+        placeholder={t("mazak.free_label_template_name_placeholder", "Bijv. Waarschuwing rood")}
+        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500"
+      />
+    </div>
+
+    <div>
+      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
+        {t("mazak.free_label_text", "Vrije tekst")}
+      </label>
+      <textarea
+        value={freeLabelText}
+        onChange={(e) => onChangeFreeText(e.target.value)}
+        rows={6}
+        maxLength={250}
+        placeholder={t("mazak.free_label_placeholder", "Typ hier de tekst voor het vrije label...")}
+        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500 resize-none"
+      />
+    </div>
+  </>
+);
+
+type MazakFreeLabelFormPanelProps = {
+  freeLabelTemplateName: string;
+  freeLabelText: string;
+  freeLabelAlign: "left" | "center" | "right";
+  freeLabelFontSize: number;
+  freeLabelQuantity: number;
+  printing: boolean;
+  savingFreeTemplate: boolean;
+  onChangeTemplateName: (value: string) => void;
+  onChangeFreeText: (value: string) => void;
+  onSelectAlign: (align: "left" | "center" | "right") => void;
+  onChangeFontSize: (value: unknown) => void;
+  onChangeQuantity: (value: string) => void;
+  onPrint: () => void;
+  onSaveTemplate: () => void;
+  t: TranslateFn;
+};
+
+const MazakFreeLabelFormPanel = ({
+  freeLabelTemplateName,
+  freeLabelText,
+  freeLabelAlign,
+  freeLabelFontSize,
+  freeLabelQuantity,
+  printing,
+  savingFreeTemplate,
+  onChangeTemplateName,
+  onChangeFreeText,
+  onSelectAlign,
+  onChangeFontSize,
+  onChangeQuantity,
+  onPrint,
+  onSaveTemplate,
+  t,
+}: MazakFreeLabelFormPanelProps) => (
+  <div className="bg-white rounded-[40px] p-8 border border-slate-200 shadow-sm space-y-5 text-left">
+    <MazakFreeLabelTextFields
+      freeLabelTemplateName={freeLabelTemplateName}
+      freeLabelText={freeLabelText}
+      onChangeTemplateName={onChangeTemplateName}
+      onChangeFreeText={onChangeFreeText}
+      t={t}
+    />
+
+    <MazakFreeLabelAlignmentSelector
+      align={freeLabelAlign}
+      onSelectAlign={onSelectAlign}
+      t={t}
+    />
+
+    <MazakFreeLabelSizingFields
+      freeLabelFontSize={freeLabelFontSize}
+      freeLabelQuantity={freeLabelQuantity}
+      onChangeFontSize={onChangeFontSize}
+      onChangeQuantity={onChangeQuantity}
+      t={t}
+    />
+
+    <MazakFreeLabelActions
+      printing={printing}
+      savingFreeTemplate={savingFreeTemplate}
+      freeLabelText={freeLabelText}
+      freeLabelTemplateName={freeLabelTemplateName}
+      freeLabelQuantity={freeLabelQuantity}
+      onPrint={onPrint}
+      onSaveTemplate={onSaveTemplate}
+      t={t}
+    />
+  </div>
+);
+
+type MazakAdjustModalHeaderProps = {
+  title: string;
+  lotLabel: string;
+  onClose: () => void;
+  disabled: boolean;
+};
+
+const MazakAdjustModalHeader = ({
+  title,
+  lotLabel,
+  onClose,
+  disabled,
+}: MazakAdjustModalHeaderProps) => (
+  <div className="flex justify-between items-center mb-6">
+    <div>
+      <h3 className="text-2xl font-black text-slate-800 uppercase italic">
+        {title}
+      </h3>
+      <p className="text-sm text-slate-500 font-bold mt-1">
+        Lot: {lotLabel}
+      </p>
+    </div>
+    <button
+      onClick={onClose}
+      className="p-2 rounded-full text-slate-400 hover:bg-slate-100 transition-colors"
+      disabled={disabled}
+    >
+      <X size={24} />
+    </button>
+  </div>
+);
+
+type MazakAdjustOrderModalActionsProps = {
+  submitting: boolean;
+  canSubmit: boolean;
+  onCancel: () => void;
+  onSubmit: () => Promise<void>;
+};
+
+const MazakAdjustOrderModalActions = ({
+  submitting,
+  canSubmit,
+  onCancel,
+  onSubmit,
+}: MazakAdjustOrderModalActionsProps) => (
+  <div className="mt-6 pt-6 border-t border-slate-100 flex justify-end gap-3 shrink-0">
+    <button
+      onClick={onCancel}
+      className="px-6 py-3 rounded-xl bg-slate-100 text-slate-600 font-black uppercase text-xs hover:bg-slate-200 transition-all disabled:opacity-50"
+      disabled={submitting}
+    >
+      Annuleren
+    </button>
+    <button
+      onClick={onSubmit}
+      disabled={!canSubmit}
+      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-xs hover:bg-blue-700 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg"
+    >
+      {submitting ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
+      Wijzigen & Printen
+    </button>
+  </div>
+);
+
+type MazakAdjustRequestModalActionsProps = {
+  submitting: boolean;
+  canSubmit: boolean;
+  onCancel: () => void;
+  onSubmit: () => Promise<void>;
+  t: TranslateFn;
+};
+
+const MazakAdjustRequestModalActions = ({
+  submitting,
+  canSubmit,
+  onCancel,
+  onSubmit,
+  t,
+}: MazakAdjustRequestModalActionsProps) => (
+  <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+    <button
+      onClick={onCancel}
+      className="px-6 py-3 rounded-xl bg-slate-100 text-slate-600 font-black uppercase text-xs hover:bg-slate-200 transition-all disabled:opacity-50"
+      disabled={submitting}
+    >
+      Annuleren
+    </button>
+    <button
+      onClick={onSubmit}
+      disabled={!canSubmit}
+      className="px-6 py-3 bg-amber-500 text-white rounded-xl font-black uppercase text-xs hover:bg-amber-600 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg"
+    >
+      {submitting ? <Loader2 size={16} className="animate-spin" /> : <Tag size={16} />}
+      {t("mazak.adjust_send_request", "Verzoek nieuw ordernummer versturen")}
+    </button>
+  </div>
+);
+
+type MazakAdjustPreviewPanelProps = {
+  hasTargetOrder: boolean;
+  previewTemplates: LabelTemplate[];
+  previewData: Record<string, unknown>;
+  printerDpi: number;
+};
+
+const MazakAdjustPreviewPanel = ({
+  hasTargetOrder,
+  previewTemplates,
+  previewData,
+  printerDpi,
+}: MazakAdjustPreviewPanelProps) => (
+  <div className="flex-1 min-h-0 bg-slate-50 rounded-2xl p-6 border border-slate-100 flex flex-col">
+    <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4">
+      Nieuw Label Voorbeeld
+    </p>
+    {hasTargetOrder ? (
+      <div className="flex-1 min-h-0 flex flex-col">
+        {previewTemplates.length > 0 ? (
+          <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2 max-h-[42vh]">
+            {previewTemplates.map((template) => (
+              <div key={template.id} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+                <p className="text-[9px] font-bold text-slate-400 mb-2 uppercase">{template.name}</p>
+                <AutoScaledLabelPreview
+                  label={template}
+                  data={previewData}
+                  printerDpi={printerDpi}
+                  maxScale={0.36}
+                  exactBitmapPreview
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400 font-bold italic">Geen geschikt flens-template gevonden.</p>
+        )}
+      </div>
+    ) : (
+      <div className="flex-1 flex items-center justify-center">
+        <p className="text-xs text-slate-400 font-bold italic text-center">
+          Selecteer een doelorder om het nieuwe label te zien.
+        </p>
+      </div>
+    )}
+  </div>
+);
+
+type MazakAdjustOrderModalLeftPanelProps = {
+  adjustOrderSearch: string;
+  selectedAdjustFlangeSize: string;
+  selectedAdjustOrderFamily: string;
+  adjustTargetOrders: PlanningOrder[];
+  selectedAdjustTargetOrder: PlanningOrder | null;
+  adjustReason: string;
+  onChangeAdjustOrderSearch: (value: string) => void;
+  onSelectAdjustTargetOrder: (order: PlanningOrder) => void;
+  onChangeAdjustReason: (value: string) => void;
+  t: TranslateFn;
+};
+
+const MazakAdjustOrderModalLeftPanel = ({
+  adjustOrderSearch,
+  selectedAdjustFlangeSize,
+  selectedAdjustOrderFamily,
+  adjustTargetOrders,
+  selectedAdjustTargetOrder,
+  adjustReason,
+  onChangeAdjustOrderSearch,
+  onSelectAdjustTargetOrder,
+  onChangeAdjustReason,
+  t,
+}: MazakAdjustOrderModalLeftPanelProps) => (
+  <div className="flex-1 space-y-4">
+    <div className="relative">
+      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+      <input
+        type="text"
+        value={adjustOrderSearch}
+        onChange={(e) => onChangeAdjustOrderSearch(e.target.value)}
+        placeholder={t("mazak.adjust_target_search", "Zoek doelorder (ordernummer of type)...")}
+        className="w-full pl-11 pr-4 py-3 bg-slate-50 border-2 border-slate-100 focus:border-blue-500 rounded-xl font-bold text-sm outline-none transition-all placeholder:text-slate-300"
+      />
+    </div>
+
+    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">
+      {selectedAdjustFlangeSize
+        ? t("mazak.adjust_size_filter_active", "Filter actief: alleen flensmaat FL {{size}}", { size: selectedAdjustFlangeSize })
+        : selectedAdjustOrderFamily
+          ? t("mazak.adjust_family_filter_active", "Filter actief: alleen orders met ID-reeks {{family}}", { family: selectedAdjustOrderFamily })
+          : t("mazak.adjust_family_filter_missing", "Geen FL-maat of 3-cijferige ID-reeks gevonden op bronorder; filter niet toegepast")}
+    </p>
+
+    <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+      {adjustTargetOrders.length === 0 ? (
+        <p className="text-xs font-bold text-slate-500 italic px-1">
+          Geen passende order gevonden.
+        </p>
+      ) : (
+        adjustTargetOrders.map((order) => {
+          const orderKey = String(order.id || order.orderId || "");
+          const isSelected = String(selectedAdjustTargetOrder?.id || selectedAdjustTargetOrder?.orderId || "") === orderKey;
+          return (
+            <button
+              key={orderKey}
+              type="button"
+              onClick={() => onSelectAdjustTargetOrder(order)}
+              className={`w-full text-left px-3 py-2 rounded-xl border transition-all ${isSelected ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-200"}`}
+            >
+              <p className="text-xs font-black text-slate-800 uppercase tracking-wide">{order.orderId || "-"}</p>
+              <p className="text-[11px] font-bold text-slate-600 truncate">{order.item || "-"}</p>
+            </button>
+          );
+        })
+      )}
+    </div>
+
+    <div>
+      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
+        {t("mazak.adjust_reason", "Opmerking / waarom (Verplicht)")}
+      </label>
+      <textarea
+        value={adjustReason}
+        onChange={(e) => onChangeAdjustReason(e.target.value)}
+        rows={3}
+        maxLength={300}
+        placeholder={t("mazak.adjust_reason_placeholder", "Waarom wordt dit lot aan een ander ordernummer gekoppeld?")}
+        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-blue-500 resize-none"
+      />
+    </div>
+  </div>
+);
+
+type MazakAdjustRequestModalBodyProps = {
+  adjustReason: string;
+  adjustRequestNote: string;
+  onChangeAdjustReason: (value: string) => void;
+  onChangeAdjustRequestNote: (value: string) => void;
+  t: TranslateFn;
+};
+
+const MazakAdjustRequestModalBody = ({
+  adjustReason,
+  adjustRequestNote,
+  onChangeAdjustReason,
+  onChangeAdjustRequestNote,
+  t,
+}: MazakAdjustRequestModalBodyProps) => (
+  <div className="space-y-4 mb-6">
+    <p className="text-xs font-bold text-slate-600">
+      {t("mazak.adjust_no_existing_order_help", "Als er nog geen passende order in de planning staat, stuur je een bericht voor een nieuw ordernummer. Dit product blijft geparkeerd totdat het nieuwe order bestaat en je de aanpassing kunt uitvoeren.")}
+    </p>
+    <div>
+      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
+        Reden (Verplicht)
+      </label>
+      <textarea
+        value={adjustReason}
+        onChange={(e) => onChangeAdjustReason(e.target.value)}
+        rows={3}
+        maxLength={300}
+        placeholder="Waarom is een nieuw ordernummer nodig?"
+        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-amber-400 resize-none"
+      />
+    </div>
+    <div>
+      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
+        Opmerking
+      </label>
+      <textarea
+        value={adjustRequestNote}
+        onChange={(e) => onChangeAdjustRequestNote(e.target.value)}
+        rows={2}
+        maxLength={500}
+        placeholder={t("mazak.adjust_request_note", "Extra toelichting voor planner/teamleader (optioneel)")}
+        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-amber-400 resize-none"
+      />
+    </div>
+  </div>
+);
 
 const extractQueuedJobId = (value: unknown): string => {
   if (typeof value === "string") return value.trim();
@@ -483,7 +1506,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const selectedProductRef = useRef<ProductItem | null>(null);
 
-  const [activeTab, setActiveTab] = useState("inbox"); // 'planning' | 'inbox' | 'process' | 'adjust' | 'free'
+  const [activeTab, setActiveTab] = useState<MazakTab>("inbox");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [bulkSeriesProducts, setBulkSeriesProducts] = useState<ProductItem[]>([]);
   const [showPrintModal, setShowPrintModal] = useState(false);
@@ -747,7 +1770,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const filteredLabels = useMemo<LabelTemplate[]>(() => {
     if (!selectedProduct) return [];
 
-    const productFiltered = filterLabelsByProduct(availableLabels as any, selectedProduct as any, {
+    const productFiltered = filterLabelsByProduct(availableLabels, selectedProduct, {
       excludeTempOrderLabels: true,
     }) as LabelTemplate[];
 
@@ -782,7 +1805,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const selectedRoutingTags = useMemo<string[]>(() => {
     if (!selectedLabelId) return [];
 
-    const chain = resolveLinkedTemplateChain(availableLabels as any[], selectedLabelId, { maxDepth: 4 }) as LabelTemplate[];
+    const chain = resolveLinkedTemplateChain(availableLabels, selectedLabelId, { maxDepth: 4 }) as LabelTemplate[];
     const templates = chain.length > 0
       ? chain
       : availableLabels.filter((template) => String(template?.id || "") === String(selectedLabelId));
@@ -820,7 +1843,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   );
 
   const resolvePreferredFlangeTemplatesForProduct = useCallback((product: ProductItem): LabelTemplate[] => {
-    const productFiltered = filterLabelsByProduct(availableLabels as any, product as any, {
+    const productFiltered = filterLabelsByProduct(availableLabels, product, {
       excludeTempOrderLabels: true,
     }) as LabelTemplate[];
 
@@ -836,7 +1859,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
     const preferredRoot = rankedFlange[0];
 
-    const linked = resolveLinkedTemplateChain(availableLabels as any[], String(preferredRoot?.id || ""), { maxDepth: 4 }) as LabelTemplate[];
+    const linked = resolveLinkedTemplateChain(availableLabels, String(preferredRoot?.id || ""), { maxDepth: 4 }) as LabelTemplate[];
     const allowedIds = new Set(flangeOnly.map((template) => String(template.id || "")));
     const linkedFlange = linked.filter((template) => hasFlangeTag(template) && allowedIds.has(String(template.id || "")));
     if (linkedFlange.length > 0) return linkedFlange;
@@ -886,10 +1909,11 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const freeLabelTemplate = useMemo<LabelTemplate>(() => {
     return {
       ...FREE_TEXT_LABEL_TEMPLATE,
-      elements: (FREE_TEXT_LABEL_TEMPLATE.elements || []).map((element: any) => {
-        if (!element || typeof element !== "object" || element.type !== "text") return element;
+      elements: (FREE_TEXT_LABEL_TEMPLATE.elements || []).map((element: unknown) => {
+        const candidate = element as Record<string, unknown> | null;
+        if (!candidate || candidate.type !== "text") return element;
         return {
-          ...element,
+          ...candidate,
           align: freeLabelAlign,
           fontSize: freeLabelFontSize,
         };
@@ -1076,7 +2100,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const isBulkInboxMode = activeTab === "inbox" && bulkSeriesProducts.length > 1;
   const selectedTemplateChain = useMemo<LabelTemplate[]>(() => {
     if (!selectedLabelId) return [];
-    const chain = resolveLinkedTemplateChain(availableLabels as any[], selectedLabelId, { maxDepth: 4 }) as LabelTemplate[];
+    const chain = resolveLinkedTemplateChain(availableLabels, selectedLabelId, { maxDepth: 4 }) as LabelTemplate[];
     return chain.filter((template) => hasFlangeTag(template));
   }, [availableLabels, selectedLabelId]);
   const effectiveTemplateChain = selectedTemplateChain.length > 0
@@ -1394,13 +2418,13 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     for (let idx = 0; idx < templatesToPrint.length; idx++) {
       const templateToUse = templatesToPrint[idx];
       const zplCode = await renderLabelToBitmapZpl({
-        template: templateToUse as any,
-        data: processedData as any,
+        template: templateToUse,
+        data: processedData,
         printerDpi: mazakPrinterDpi,
         darkness: 15,
         printSpeed: 3,
-        widthMm: Number((templateToUse as any)?.width) || 90,
-        heightMm: Number((templateToUse as any)?.height) || 40,
+        widthMm: Number(templateToUse?.width) || 90,
+        heightMm: Number(templateToUse?.height) || 40,
       });
 
       if (!String(zplCode || "").trim()) {
@@ -1493,13 +2517,13 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
         for (let idx = 0; idx < templatesToPrint.length; idx++) {
           const templateToUse = templatesToPrint[idx];
           const zplCode = await renderLabelToBitmapZpl({
-            template: templateToUse as any,
-            data: processedData as any,
+            template: templateToUse,
+            data: processedData,
             printerDpi: mazakPrinterDpi,
             darkness: 15,
             printSpeed: 3,
-            widthMm: Number((templateToUse as any)?.width) || 90,
-            heightMm: Number((templateToUse as any)?.height) || 40,
+            widthMm: Number(templateToUse?.width) || 90,
+            heightMm: Number(templateToUse?.height) || 40,
           });
 
           if (!String(zplCode || "").trim()) {
@@ -1625,8 +2649,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       }
 
       const zplCode = await renderLabelToBitmapZpl({
-        template: freeLabelTemplate as any,
-        data: { freeText: normalizedFreeText } as any,
+        template: freeLabelTemplate,
+        data: { freeText: normalizedFreeText },
         printerDpi: mazakPrinterDpi,
         darkness: 15,
         printSpeed: 3,
@@ -2127,46 +3151,12 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     );
   }
 
-  const renderItem = (item: ProductItem) => (
-    <div
-      key={item.id}
-      onClick={() => handleItemClick(item)}
-      className={`bg-white border-2 rounded-2xl p-3 shadow-sm hover:border-blue-300 transition-all group animate-in slide-in-from-bottom-2 cursor-pointer ${selectedProduct?.id === item.id ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-100"}`}
-    >
-      <div className="flex justify-between items-start mb-2">
-        <div className="text-left">
-          <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">
-            {item.orderId}
-          </span>
-          <span className="font-black text-slate-900 text-base tracking-tighter">
-            {item.lotNumber}
-          </span>
-          <p className="text-[10px] font-bold text-slate-500 mt-0.5 truncate max-w-[180px]">
-            {item.item}
-          </p>
-        </div>
-        <div className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${activeTab === "inbox" ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"}`}>
-          {activeTab === "inbox" ? t("mazak.print_badge", "Printen") : t("mazak.complete_badge", "Gereedmelden")}
-        </div>
-      </div>
-      <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
-        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
-          {t("lossen.manufactured_item")}
-        </p>
-        <p className="text-[10px] font-mono font-bold text-slate-700 truncate">
-          {item.itemCode}
-        </p>
-        {item.lastStation && (
-          <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-200/60 opacity-80">
-            <History size={10} className="text-blue-500" />
-            <span className="text-[8px] font-black text-slate-500 uppercase italic">
-              {t("mazak.from_station", "Van")}: {item.lastStation}
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  const handleSelectTab = (tab: MazakTab) => {
+    setActiveTab(tab);
+    setSelectedProduct(null);
+    setSelectedPlanningOrder(null);
+    setBulkSeriesProducts([]);
+  };
 
   const currentList = activeTab === "inbox"
     ? inboxItems
@@ -2181,42 +3171,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   return (
     <div className="flex flex-col h-full overflow-hidden bg-white">
       
-      <div className="p-2 bg-slate-50 border-b border-slate-200 shrink-0 shadow-sm">
-        <div className="flex justify-center overflow-x-auto">
-          <div className="flex bg-slate-200 p-1 rounded-2xl w-full max-w-2xl min-w-[320px]">
-            <button 
-              onClick={() => { setActiveTab("planning"); setSelectedProduct(null); setSelectedPlanningOrder(null); setBulkSeriesProducts([]); }}
-              className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "planning" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              Planning
-            </button>
-            <button 
-              onClick={() => { setActiveTab("inbox"); setSelectedProduct(null); setSelectedPlanningOrder(null); setBulkSeriesProducts([]); }}
-              className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "inbox" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              {t("mazak.tab_inbox", "Inbox / Printen")}
-            </button>
-            <button 
-              onClick={() => { setActiveTab("process"); setSelectedProduct(null); setSelectedPlanningOrder(null); setBulkSeriesProducts([]); }}
-              className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "process" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              {t("mazak.tab_complete", "Gereedmelden")}
-            </button>
-            <button
-              onClick={() => { setActiveTab("adjust"); setSelectedProduct(null); setSelectedPlanningOrder(null); setBulkSeriesProducts([]); }}
-              className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "adjust" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              {t("mazak.tab_adjust", "Aanpassen")}
-            </button>
-            <button
-              onClick={() => { setActiveTab("free"); setSelectedProduct(null); setSelectedPlanningOrder(null); setBulkSeriesProducts([]); }}
-              className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "free" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              {t("mazak.tab_free_label", "Vrij label")}
-            </button>
-          </div>
-        </div>
-      </div>
+      <MazakTabNavigation activeTab={activeTab} onSelectTab={handleSelectTab} t={t} />
 
       <style>{`
         @keyframes scan-pulse {
@@ -2534,41 +3489,17 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                             <div className="flex-1 h-px bg-slate-200"></div>
                           </div>
                         )}
-                        <div
-                          onClick={() => setSelectedPlanningOrder(order)}
-                          className={`min-h-[100px] px-4 py-3 rounded-3xl border-2 transition-all flex items-center justify-between relative overflow-hidden cursor-pointer ${
-                            selectedPlanningOrder?.id === order.id
-                              ? "bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-100 translate-x-1"
-                              : "bg-white border-slate-100 hover:border-blue-300"
-                          }`}
-                        >
-                          <div className="flex items-center gap-4 flex-1 overflow-hidden">
-                            <div className="flex-1 overflow-hidden">
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className="inline-block px-3 py-1 bg-slate-200 text-slate-800 rounded-lg text-sm font-black uppercase tracking-wider border border-slate-300 shadow-sm">
-                                  {t("productionStartModal.labels.order", "Order")}: {String(order.orderId || "-")}
-                                </span>
-                                {orderMaterialBadge && (
-                                  <span className="inline-block px-2.5 py-1 bg-sky-100 text-sky-700 border border-sky-200 rounded-lg text-[11px] font-black uppercase tracking-wide">
-                                    {orderMaterialBadge}
-                                  </span>
-                                )}
-                              </div>
-                              <h4 className="font-black text-base sm:text-lg leading-tight uppercase text-slate-900 mb-1 line-clamp-2">
-                                {String(order.item || "-")}
-                              </h4>
-                            </div>
-                          </div>
-                          <div className="flex flex-col items-end gap-1.5 text-right shrink-0 ml-4">
-                            <StatusBadge status={order.status} />
-                            <span className="text-xs font-black text-slate-700 uppercase tracking-tighter">
-                              {t("digitalplanning.terminal.made", "Gemaakt")}: {orderProduced} / {orderTotal} ST
-                            </span>
-                            <span className={`text-xs uppercase tracking-tighter ${orderDeliveryColorClass}`}>
-                              {orderDeliveryLabel}
-                            </span>
-                          </div>
-                        </div>
+                        <MazakPlanningOrderCard
+                          order={order}
+                          isSelected={selectedPlanningOrder?.id === order.id}
+                          onSelect={setSelectedPlanningOrder}
+                          orderMaterialBadge={orderMaterialBadge}
+                          orderProduced={orderProduced}
+                          orderTotal={orderTotal}
+                          orderDeliveryLabel={orderDeliveryLabel}
+                          orderDeliveryColorClass={orderDeliveryColorClass}
+                          t={t}
+                        />
                       </React.Fragment>
                     );
                   });
@@ -2611,7 +3542,16 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                 );
               }
 
-              return renderItem(item);
+              return (
+                <MazakListItemCard
+                  key={String(item.id || item.lotNumber || "")}
+                  item={item}
+                  activeTab={activeTab}
+                  isSelected={selectedProduct?.id === item.id}
+                  onSelect={handleItemClick}
+                  t={t}
+                />
+              );
               })
             ) : activeTab === "adjust" ? (
               <>
@@ -2631,29 +3571,14 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                   {filteredAdjustProducts.map((item) => {
                     const key = String(item.id || item.lotNumber || "");
                     const isSelected = String(selectedAdjustProduct?.id || selectedAdjustProduct?.lotNumber || "") === key;
-                    const stage = item.mazakLabelPrinted
-                      ? t("mazak.complete_badge", "Gereedmelden")
-                      : t("mazak.print_badge", "Printen");
-
                     return (
-                      <button
+                      <MazakAdjustListItemCard
                         key={key}
-                        type="button"
-                        onClick={() => setSelectedAdjustProduct(item)}
-                        className={`w-full text-left bg-white border-2 rounded-2xl p-4 shadow-sm transition-all ${isSelected ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-100 hover:border-blue-200"}`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{item.orderId || "-"}</p>
-                            <p className="text-base font-black text-slate-900">{item.lotNumber || item.id || "-"}</p>
-                            <p className="text-xs font-bold text-slate-600 mt-1 truncate">{item.item || "-"}</p>
-                            <p className="text-[10px] font-black text-slate-400 uppercase mt-1">{item.itemCode || "-"}</p>
-                          </div>
-                          <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${item.mazakLabelPrinted ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
-                            {stage}
-                          </span>
-                        </div>
-                      </button>
+                        item={item}
+                        isSelected={isSelected}
+                        onSelect={setSelectedAdjustProduct}
+                        t={t}
+                      />
                     );
                   })}
                 </div>
@@ -2699,7 +3624,16 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                 )}
               </div>
             ) : (
-              processItems.map(item => renderItem(item))
+              processItems.map((item) => (
+                <MazakListItemCard
+                  key={String(item.id || item.lotNumber || "")}
+                  item={item}
+                  activeTab={activeTab}
+                  isSelected={selectedProduct?.id === item.id}
+                  onSelect={handleItemClick}
+                  t={t}
+                />
+              ))
             )}
           </div>
         )}
@@ -2708,147 +3642,37 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       <div className={`flex-1 bg-slate-50 p-6 md:p-8 overflow-y-auto custom-scrollbar ${(!selectedProduct && !selectedPlanningOrder && !selectedAdjustProduct && activeTab !== "free" && activeTab !== "adjust") ? "hidden lg:flex" : "flex"} flex-col`}>
         {activeTab === "free" ? (
           <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-500 text-left w-full">
-            <div className="bg-slate-900 rounded-[35px] p-6 text-white border-4 border-blue-500/20 relative overflow-hidden shadow-xl text-left">
-              <span className="text-[8px] font-black text-blue-400 uppercase block mb-1 text-left">{t("mazak.free_label_header", "Vrij label")}</span>
-              <h2 className="text-3xl font-black italic leading-none text-left">100 x 25 mm</h2>
-              <p className="text-xs font-bold text-white/70 mt-2">{t("mazak.free_label_subtitle", "Print losse labels met vrije tekst")}</p>
-            </div>
+            <MazakFreeLabelHero t={t} />
 
-            <div className="bg-white rounded-[40px] p-8 border border-slate-200 shadow-sm space-y-5 text-left">
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-                  {t("mazak.free_label_template_name", "Template naam")}
-                </label>
-                <input
-                  type="text"
-                  value={freeLabelTemplateName}
-                  onChange={(e) => setFreeLabelTemplateName(e.target.value)}
-                  maxLength={80}
-                  placeholder={t("mazak.free_label_template_name_placeholder", "Bijv. Waarschuwing rood")}
-                  className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500"
-                />
-              </div>
+            <MazakFreeLabelFormPanel
+              freeLabelTemplateName={freeLabelTemplateName}
+              freeLabelText={freeLabelText}
+              freeLabelAlign={freeLabelAlign}
+              freeLabelFontSize={freeLabelFontSize}
+              freeLabelQuantity={freeLabelQuantity}
+              printing={printing}
+              savingFreeTemplate={savingFreeTemplate}
+              onChangeTemplateName={setFreeLabelTemplateName}
+              onChangeFreeText={setFreeLabelText}
+              onSelectAlign={setFreeLabelAlign}
+              onChangeFontSize={(value) => {
+                setFreeLabelFontSize(clampFreeLabelFontSize(value));
+              }}
+              onChangeQuantity={(value) => {
+                const parsed = Number.parseInt(String(value || "1"), 10);
+                setFreeLabelQuantity(Number.isFinite(parsed) ? Math.max(1, Math.min(50, parsed)) : 1);
+              }}
+              onPrint={handlePrintFreeLabels}
+              onSaveTemplate={handleSaveFreeLabelTemplate}
+              t={t}
+            />
 
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-                  {t("mazak.free_label_text", "Vrije tekst")}
-                </label>
-                <textarea
-                  value={freeLabelText}
-                  onChange={(e) => setFreeLabelText(e.target.value)}
-                  rows={6}
-                  maxLength={250}
-                  placeholder={t("mazak.free_label_placeholder", "Typ hier de tekst voor het vrije label...")}
-                  className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500 resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-                  {t("mazak.free_label_alignment", "Uitlijning")}
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setFreeLabelAlign("left")}
-                    className={`px-3 py-3 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${freeLabelAlign === "left" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
-                  >
-                    {t("common.left", "Links")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFreeLabelAlign("center")}
-                    className={`px-3 py-3 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${freeLabelAlign === "center" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
-                  >
-                    {t("common.center", "Midden")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setFreeLabelAlign("right")}
-                    className={`px-3 py-3 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${freeLabelAlign === "right" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
-                  >
-                    {t("common.right", "Rechts")}
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-                  {t("mazak.free_label_font_size", "Lettergrootte")}
-                </label>
-                <input
-                  type="number"
-                  min={6}
-                  max={75}
-                  value={String(freeLabelFontSize)}
-                  onChange={(e) => {
-                    setFreeLabelFontSize(clampFreeLabelFontSize(e.target.value));
-                  }}
-                  className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500"
-                />
-                <p className="mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-                  {t("mazak.free_label_font_size_hint", "Vrij invoerbaar, max 75 pt")}
-                </p>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-                  {t("mazak.quantity", "Aantal")}
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={freeLabelQuantity}
-                  onChange={(e) => {
-                    const value = Number.parseInt(String(e.target.value || "1"), 10);
-                    setFreeLabelQuantity(Number.isFinite(value) ? Math.max(1, Math.min(50, value)) : 1);
-                  }}
-                  className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500"
-                />
-                <p className="mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-                  {t("mazak.fixed_free_label_size", "Vast formaat: 100x25 mm")}
-                </p>
-              </div>
-
-              <button
-                onClick={handlePrintFreeLabels}
-                disabled={printing || !freeLabelText.trim()}
-                className="w-full py-4 bg-blue-600 text-white rounded-[22px] font-black uppercase text-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {printing ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
-                {printing
-                  ? t("common.loading", "Laden...")
-                  : t("mazak.print_free_labels", "Print {{count}} vrij label(s)", { count: Math.max(1, Math.min(50, Number(freeLabelQuantity) || 1)) })}
-              </button>
-
-              <button
-                onClick={handleSaveFreeLabelTemplate}
-                disabled={savingFreeTemplate || !freeLabelTemplateName.trim() || !freeLabelText.trim()}
-                className="w-full py-3 bg-slate-100 text-slate-700 rounded-[18px] font-black uppercase text-xs hover:bg-slate-200 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {savingFreeTemplate ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                {savingFreeTemplate
-                  ? t("common.loading", "Laden...")
-                  : t("mazak.save_free_label_template", "Opslaan als template")}
-              </button>
-            </div>
-
-            <div className="bg-white rounded-[40px] p-8 border border-slate-200 shadow-sm text-left">
-              <div className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-2 mb-4">
-                <Printer size={12} className="text-blue-500" /> {t("productionStartModal.labels.labelPreview", "Etiket preview")}
-              </div>
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                <AutoScaledLabelPreview
-                  label={freeLabelTemplate}
-                  data={{ freeText: freeLabelText || t("mazak.free_label_preview_placeholder", "Vrije tekst preview") }}
-                  className="w-full"
-                  printerDpi={mazakPrinterDpi}
-                  maxScale={1}
-                  exactBitmapPreview
-                />
-              </div>
-            </div>
+            <MazakFreeLabelPreviewPanel
+              template={freeLabelTemplate}
+              freeText={freeLabelText}
+              printerDpi={mazakPrinterDpi}
+              t={t}
+            />
           </div>
         ) : activeTab === "adjust" ? (
           <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-500 w-full">
@@ -2862,106 +3686,21 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                 </p>
               </div>
             ) : (
-              <>
-                <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
-                  <div className="mb-4">
-                    <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base font-black uppercase tracking-widest border border-white/40 shadow-sm">
-                      {t("productionStartModal.labels.order", "Order")}: {selectedAdjustProduct.orderId || "-"}
-                    </span>
-                  </div>
-                  <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
-                    {selectedAdjustProduct.item || "-"}
-                  </h2>
-                  <p className="text-xs font-bold text-white/60 mt-1">{selectedAdjustProduct.itemCode || "-"}</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-white/10 pt-6 mt-6">
-                    <div>
-                      <p className="text-[10px] font-black text-white/40 uppercase mb-1">Lotnummer</p>
-                      <p className="text-lg font-black text-sky-300">{selectedAdjustProduct.lotNumber || selectedAdjustProduct.id || "-"}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-white/40 uppercase mb-1">Huidige fase</p>
-                      <p className="text-lg font-black text-amber-300">
-                        {selectedAdjustProduct.mazakLabelPrinted
-                          ? t("mazak.complete_badge", "Gereedmelden")
-                          : t("mazak.print_badge", "Printen")}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                  <button
-                    onClick={() => setShowAdjustOrderModal(true)}
-                    className="p-6 bg-white rounded-3xl border-2 border-slate-100 hover:border-blue-400 hover:shadow-lg transition-all flex flex-col items-center justify-center gap-3 group"
-                  >
-                    <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                      <ArrowRight size={32} />
-                    </div>
-                    <span className="text-sm font-black uppercase tracking-widest text-slate-700 group-hover:text-blue-700">
-                      Ordernummer wijzigen
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => setShowRequestNewOrderModal(true)}
-                    className="p-6 bg-white rounded-3xl border-2 border-slate-100 hover:border-amber-400 hover:shadow-lg transition-all flex flex-col items-center justify-center gap-3 group"
-                  >
-                    <div className="p-4 bg-amber-50 text-amber-600 rounded-2xl group-hover:bg-amber-500 group-hover:text-white transition-colors">
-                      <Tag size={32} />
-                    </div>
-                    <span className="text-sm font-black uppercase tracking-widest text-slate-700 group-hover:text-amber-700">
-                      Verzoek nieuw ordernummer
-                    </span>
-                  </button>
-                </div>
-              </>
+              <MazakAdjustSelectionPanel
+                product={selectedAdjustProduct}
+                onChangeOrder={() => setShowAdjustOrderModal(true)}
+                onRequestNewOrder={() => setShowRequestNewOrderModal(true)}
+                t={t}
+              />
             )}
           </div>
         ) : selectedProduct ? (
           <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-500 w-full">
-            <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
-              <div className="flex justify-between items-start mb-8 relative z-10">
-                <div>
-                  <button
-                    onClick={() => setSelectedProduct(null)}
-                    className="lg:hidden p-2 bg-white/10 rounded-full mb-4 inline-block"
-                  >
-                    <ArrowLeft size={20} />
-                  </button>
-                  <div className="mb-2">
-                    <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base font-black uppercase tracking-widest border border-white/40 shadow-sm">
-                      {t("productionStartModal.labels.order", "Order")}: {selectedProduct.orderId}
-                    </span>
-                  </div>
-                  <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
-                    {selectedProduct.item || "-"}
-                  </h2>
-                  <p className="text-xs font-bold text-white/60 mt-1">
-                    {selectedProduct.itemCode || "-"}
-                  </p>
-                </div>
-                <div className="flex items-start gap-3">
-                  <StatusBadge status={selectedProduct.status} />
-                  <button onClick={() => setSelectedProduct(null)} className="p-2 rounded-full text-slate-300 hover:bg-white/10">
-                    <X size={20} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-white/10 pt-8 relative z-10">
-                <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase mb-1">Lotnummer</p>
-                  <p className="text-lg font-black text-sky-300">{selectedProduct.lotNumber || "-"}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase mb-1">Wikkelmachine</p>
-                  <p className="text-lg font-black text-amber-300">{selectedProduct.lastStation || "Onbekend"}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase mb-1">Status</p>
-                  <p className="text-lg font-black text-blue-300 uppercase">{String(selectedProduct.status || "-")}</p>
-                </div>
-              </div>
-            </div>
+            <MazakSelectedProductHero
+              product={selectedProduct}
+              onClear={() => setSelectedProduct(null)}
+              t={t}
+            />
 
             <div className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-sm">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3026,124 +3765,30 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
           </div>
         ) : selectedPlanningOrder ? (
           <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-500 w-full">
-            <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
-              <div className="flex justify-between items-start mb-8 relative z-10">
-                <div>
-                  <button
-                    onClick={() => setSelectedPlanningOrder(null)}
-                    className="lg:hidden p-2 bg-white/10 rounded-full mb-4 inline-block"
-                  >
-                    <ArrowLeft size={20} />
-                  </button>
-                  <div className="mb-2">
-                    <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base font-black uppercase tracking-widest border border-white/40 shadow-sm">
-                      {t("productionStartModal.labels.order", "Order")}: {selectedPlanningOrder.orderId}
-                    </span>
-                  </div>
-                  <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
-                    {selectedPlanningOrder.item || "-"}
-                  </h2>
-                  <p className="text-xs font-bold text-white/60 mt-1">
-                    {selectedPlanningOrder.itemCode || "-"}
-                  </p>
-                  {selectedPlanningOrderMaterialBadge && (
-                    <div className="mt-2">
-                      <span className="inline-block px-2.5 py-1 bg-sky-300 text-sky-950 rounded-lg text-[11px] font-black uppercase tracking-wide">
-                        {selectedPlanningOrderMaterialBadge}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <StatusBadge status={selectedPlanningOrder.status} />
-              </div>
+            <MazakSelectedPlanningOrderHero
+              order={selectedPlanningOrder}
+              materialBadge={selectedPlanningOrderMaterialBadge}
+              deliveryLabel={selectedPlanningOrderDeliveryLabel}
+              quantity={selectedPlanningOrderQuantity}
+              produced={selectedPlanningOrderProduced}
+              t={t}
+              onClear={() => setSelectedPlanningOrder(null)}
+            />
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-white/10 pt-8 relative z-10">
-                <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase mb-1">
-                    {t("digitalplanning.order_detail.delivery_date_aq", "Leverdatum (AQ)")}
-                  </p>
-                  <p className="text-lg font-black text-sky-300">
-                    {selectedPlanningOrderDeliveryLabel}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase mb-1">
-                    {t("digitalplanning.order_detail.total_plan", "Orderhoeveelheid")}
-                  </p>
-                  <p className="text-lg font-black text-amber-300">
-                    {selectedPlanningOrderQuantity} {t("digitalplanning.terminal.pieces", "stuks")}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase mb-1">
-                    {t("digitalplanning.terminal.made", "Gemaakt")}
-                  </p>
-                  <p className="text-lg font-black text-blue-300">
-                    {selectedPlanningOrderProduced} {t("digitalplanning.terminal.pieces", "stuks")}
-                  </p>
-                </div>
-              </div>
-
-              <div className="border-t border-white/10 pt-6 mt-6 relative z-10">
-                <p className="text-[10px] font-black text-white/40 uppercase mb-3 tracking-widest">
-                  {t("digitalplanning.terminal.active_lots", "Actieve lotnummers")} ({activePlanningOrderProducts.length})
-                </p>
-                {activePlanningOrderProducts.length === 0 ? (
-                  <p className="text-xs font-bold text-white/60 italic">
-                    {t("mazak.no_active_lots_for_order", "Nog geen actieve lotnummers voor deze order.")}
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {activePlanningOrderProducts.map((product) => {
-                      const lotKey = String(product?.lotNumber || product?.id || "-");
-                      return (
-                        <button
-                          key={String(product?.id || lotKey)}
-                          type="button"
-                          onClick={() => {
-                            setSelectedPlanningOrder(null);
-                            setBulkSeriesProducts([]);
-                            setSelectedProduct(product);
-                            setActiveTab(product?.mazakLabelPrinted ? "process" : "inbox");
-                          }}
-                          className="text-left px-3 py-2 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 transition-all"
-                        >
-                          <p className="text-xs font-black text-white uppercase tracking-wide">{lotKey}</p>
-                          <p className="text-[10px] font-bold text-white/70 truncate">
-                            {String(product?.item || product?.itemCode || "-")}
-                          </p>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
+            <MazakPlanningActiveLotsPanel
+              products={activePlanningOrderProducts}
+              onSelectProduct={(product) => {
+                setSelectedPlanningOrder(null);
+                setBulkSeriesProducts([]);
+                setSelectedProduct(product);
+                setActiveTab(product?.mazakLabelPrinted ? "process" : "inbox");
+              }}
+              t={t}
+            />
 
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center opacity-30 text-center text-left">
-            {activeTab === "inbox" ? (
-               <Printer size={80} className="mb-6 text-slate-200" />
-            ) : activeTab === "planning" ? (
-               <History size={80} className="mb-6 text-slate-200" />
-            ) : activeTab === "free" ? (
-              <Tag size={80} className="mb-6 text-slate-200" />
-            ) : (
-               <ClipboardCheck size={80} className="mb-6 text-slate-200" />
-            )}
-            <h4 className="text-2xl font-black uppercase italic text-slate-300 text-left">
-              {activeTab === "inbox"
-                ? t("mazak.select_to_print", "Selecteer order om te printen")
-                : activeTab === "planning"
-                  ? t("mazak.select_planned_order", "Selecteer geplande order")
-                  : activeTab === "adjust"
-                    ? t("mazak.adjust_pick_product", "Selecteer lot voor aanpassen")
-                    : activeTab === "free"
-                      ? t("mazak.free_label_ready", "Vrij label gereed om te printen")
-                      : t("mazak.select_to_process", "Selecteer order om te verwerken")}
-            </h4>
-          </div>
+          <MazakEmptySelectionPlaceholder activeTab={activeTab} t={t} />
         )}
       </div>
 
@@ -3151,142 +3796,49 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       {showAdjustOrderModal && selectedAdjustProduct && (
         <div className="fixed inset-0 z-[500] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
           <div className="bg-white rounded-[30px] shadow-2xl w-full max-w-4xl p-6 sm:p-8 max-h-[95vh] flex flex-col overflow-hidden">
-            <div className="flex justify-between items-center mb-6 shrink-0">
-              <div>
-                <h3 className="text-2xl font-black text-slate-800 uppercase italic">
-                  Ordernummer wijzigen
-                </h3>
-                <p className="text-sm text-slate-500 font-bold mt-1">
-                  Lot: {selectedAdjustProduct.lotNumber || selectedAdjustProduct.id}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowAdjustOrderModal(false)}
-                className="p-2 rounded-full text-slate-400 hover:bg-slate-100 transition-colors"
+            <div className="shrink-0">
+              <MazakAdjustModalHeader
+                title="Ordernummer wijzigen"
+                lotLabel={String(selectedAdjustProduct.lotNumber || selectedAdjustProduct.id || "-")}
+                onClose={() => setShowAdjustOrderModal(false)}
                 disabled={adjustSubmitting}
-              >
-                <X size={24} />
-              </button>
+              />
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col lg:flex-row gap-6">
               {/* Left side: Search & Input */}
-              <div className="flex-1 space-y-4">
-                  <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                    <input
-                      type="text"
-                      value={adjustOrderSearch}
-                      onChange={(e) => setAdjustOrderSearch(e.target.value)}
-                      placeholder={t("mazak.adjust_target_search", "Zoek doelorder (ordernummer of type)...")}
-                      className="w-full pl-11 pr-4 py-3 bg-slate-50 border-2 border-slate-100 focus:border-blue-500 rounded-xl font-bold text-sm outline-none transition-all placeholder:text-slate-300"
-                    />
-                  </div>
-
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">
-                    {selectedAdjustFlangeSize
-                      ? t("mazak.adjust_size_filter_active", "Filter actief: alleen flensmaat FL {{size}}", { size: selectedAdjustFlangeSize })
-                      : selectedAdjustOrderFamily
-                        ? t("mazak.adjust_family_filter_active", "Filter actief: alleen orders met ID-reeks {{family}}", { family: selectedAdjustOrderFamily })
-                        : t("mazak.adjust_family_filter_missing", "Geen FL-maat of 3-cijferige ID-reeks gevonden op bronorder; filter niet toegepast")}
-                  </p>
-
-                  <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                    {adjustTargetOrders.length === 0 ? (
-                      <p className="text-xs font-bold text-slate-500 italic px-1">
-                        Geen passende order gevonden.
-                      </p>
-                    ) : (
-                      adjustTargetOrders.map((order) => {
-                        const orderKey = String(order.id || order.orderId || "");
-                        const isSelected = String(selectedAdjustTargetOrder?.id || selectedAdjustTargetOrder?.orderId || "") === orderKey;
-                        return (
-                          <button
-                            key={orderKey}
-                            type="button"
-                            onClick={() => setSelectedAdjustTargetOrder(order)}
-                            className={`w-full text-left px-3 py-2 rounded-xl border transition-all ${isSelected ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-200"}`}
-                          >
-                            <p className="text-xs font-black text-slate-800 uppercase tracking-wide">{order.orderId || "-"}</p>
-                            <p className="text-[11px] font-bold text-slate-600 truncate">{order.item || "-"}</p>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-                      {t("mazak.adjust_reason", "Opmerking / waarom (Verplicht)")}
-                    </label>
-                    <textarea
-                      value={adjustReason}
-                      onChange={(e) => setAdjustReason(e.target.value)}
-                      rows={3}
-                      maxLength={300}
-                      placeholder={t("mazak.adjust_reason_placeholder", "Waarom wordt dit lot aan een ander ordernummer gekoppeld?")}
-                      className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-blue-500 resize-none"
-                    />
-                  </div>
-              </div>
+              <MazakAdjustOrderModalLeftPanel
+                adjustOrderSearch={adjustOrderSearch}
+                selectedAdjustFlangeSize={selectedAdjustFlangeSize}
+                selectedAdjustOrderFamily={selectedAdjustOrderFamily}
+                adjustTargetOrders={adjustTargetOrders}
+                selectedAdjustTargetOrder={selectedAdjustTargetOrder}
+                adjustReason={adjustReason}
+                onChangeAdjustOrderSearch={setAdjustOrderSearch}
+                onSelectAdjustTargetOrder={setSelectedAdjustTargetOrder}
+                onChangeAdjustReason={setAdjustReason}
+                t={t}
+              />
 
               {/* Right side: Preview */}
-              <div className="flex-1 min-h-0 bg-slate-50 rounded-2xl p-6 border border-slate-100 flex flex-col">
-                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4">
-                   Nieuw Label Voorbeeld
-                 </p>
-                 {selectedAdjustTargetOrder ? (
-                   <div className="flex-1 min-h-0 flex flex-col">
-                     {adjustPreviewTemplates.length > 0 ? (
-                       <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2 max-h-[42vh]">
-                         {adjustPreviewTemplates.map((template, idx) => (
-                            <div key={template.id} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
-                              <p className="text-[9px] font-bold text-slate-400 mb-2 uppercase">{template.name}</p>
-                              <AutoScaledLabelPreview
-                                label={template}
-                                data={adjustPreviewData}
-                                printerDpi={mazakPrinterDpi}
-                                maxScale={0.36}
-                                exactBitmapPreview
-                              />
-                            </div>
-                         ))}
-                       </div>
-                     ) : (
-                       <p className="text-xs text-slate-400 font-bold italic">Geen geschikt flens-template gevonden.</p>
-                     )}
-                   </div>
-                 ) : (
-                   <div className="flex-1 flex items-center justify-center">
-                     <p className="text-xs text-slate-400 font-bold italic text-center">
-                       Selecteer een doelorder om het nieuwe label te zien.
-                     </p>
-                   </div>
-                 )}
-              </div>
+              <MazakAdjustPreviewPanel
+                hasTargetOrder={!!selectedAdjustTargetOrder}
+                previewTemplates={adjustPreviewTemplates}
+                previewData={adjustPreviewData as Record<string, unknown>}
+                printerDpi={mazakPrinterDpi}
+              />
             </div>
 
-            <div className="mt-6 pt-6 border-t border-slate-100 flex justify-end gap-3 shrink-0">
-               <button
-                 onClick={() => setShowAdjustOrderModal(false)}
-                 className="px-6 py-3 rounded-xl bg-slate-100 text-slate-600 font-black uppercase text-xs hover:bg-slate-200 transition-all disabled:opacity-50"
-                 disabled={adjustSubmitting}
-               >
-                 Annuleren
-               </button>
-               <button
-                 onClick={async () => {
-                   await handleSubmitOrderReassign();
-                   if (adjustSubmitting) return; // wait till finish
-                   setShowAdjustOrderModal(false);
-                 }}
-                 disabled={adjustSubmitting || !selectedAdjustTargetOrder || !adjustReason.trim()}
-                 className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-xs hover:bg-blue-700 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg"
-               >
-                 {adjustSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
-                 Wijzigen & Printen
-               </button>
-            </div>
+            <MazakAdjustOrderModalActions
+              submitting={adjustSubmitting}
+              canSubmit={!adjustSubmitting && !!selectedAdjustTargetOrder && !!adjustReason.trim()}
+              onCancel={() => setShowAdjustOrderModal(false)}
+              onSubmit={async () => {
+                await handleSubmitOrderReassign();
+                if (adjustSubmitting) return; // wait till finish
+                setShowAdjustOrderModal(false);
+              }}
+            />
           </div>
         </div>
       )}
@@ -3295,77 +3847,32 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       {showRequestNewOrderModal && selectedAdjustProduct && (
         <div className="fixed inset-0 z-[500] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
           <div className="bg-white rounded-[30px] shadow-2xl w-full max-w-xl p-6 sm:p-8 flex flex-col overflow-hidden">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h3 className="text-2xl font-black text-slate-800 uppercase italic">
-                  Verzoek nieuw ordernummer
-                </h3>
-                <p className="text-sm text-slate-500 font-bold mt-1">
-                  Lot: {selectedAdjustProduct.lotNumber || selectedAdjustProduct.id}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowRequestNewOrderModal(false)}
-                className="p-2 rounded-full text-slate-400 hover:bg-slate-100 transition-colors"
-                disabled={adjustSubmitting}
-              >
-                <X size={24} />
-              </button>
-            </div>
+            <MazakAdjustModalHeader
+              title="Verzoek nieuw ordernummer"
+              lotLabel={String(selectedAdjustProduct.lotNumber || selectedAdjustProduct.id || "-")}
+              onClose={() => setShowRequestNewOrderModal(false)}
+              disabled={adjustSubmitting}
+            />
 
-            <div className="space-y-4 mb-6">
-                  <p className="text-xs font-bold text-slate-600">
-                    {t("mazak.adjust_no_existing_order_help", "Als er nog geen passende order in de planning staat, stuur je een bericht voor een nieuw ordernummer. Dit product blijft geparkeerd totdat het nieuwe order bestaat en je de aanpassing kunt uitvoeren.")}
-                  </p>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-                      Reden (Verplicht)
-                    </label>
-                    <textarea
-                      value={adjustReason}
-                      onChange={(e) => setAdjustReason(e.target.value)}
-                      rows={3}
-                      maxLength={300}
-                      placeholder="Waarom is een nieuw ordernummer nodig?"
-                      className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-amber-400 resize-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-                      Opmerking
-                    </label>
-                    <textarea
-                      value={adjustRequestNote}
-                      onChange={(e) => setAdjustRequestNote(e.target.value)}
-                      rows={2}
-                      maxLength={500}
-                      placeholder={t("mazak.adjust_request_note", "Extra toelichting voor planner/teamleader (optioneel)")}
-                      className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-amber-400 resize-none"
-                    />
-                  </div>
-            </div>
+            <MazakAdjustRequestModalBody
+              adjustReason={adjustReason}
+              adjustRequestNote={adjustRequestNote}
+              onChangeAdjustReason={setAdjustReason}
+              onChangeAdjustRequestNote={setAdjustRequestNote}
+              t={t}
+            />
 
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-               <button
-                 onClick={() => setShowRequestNewOrderModal(false)}
-                 className="px-6 py-3 rounded-xl bg-slate-100 text-slate-600 font-black uppercase text-xs hover:bg-slate-200 transition-all disabled:opacity-50"
-                 disabled={adjustSubmitting}
-               >
-                 Annuleren
-               </button>
-               <button
-                 onClick={async () => {
-                   await handleRequestNewOrderFromPlanner();
-                   if (adjustSubmitting) return; // will wait
-                   setShowRequestNewOrderModal(false);
-                 }}
-                 disabled={adjustSubmitting || !adjustReason.trim()}
-                 className="px-6 py-3 bg-amber-500 text-white rounded-xl font-black uppercase text-xs hover:bg-amber-600 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg"
-               >
-                 {adjustSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Tag size={16} />}
-                 {t("mazak.adjust_send_request", "Verzoek nieuw ordernummer versturen")}
-               </button>
-            </div>
+            <MazakAdjustRequestModalActions
+              submitting={adjustSubmitting}
+              canSubmit={!adjustSubmitting && !!adjustReason.trim()}
+              onCancel={() => setShowRequestNewOrderModal(false)}
+              onSubmit={async () => {
+                await handleRequestNewOrderFromPlanner();
+                if (adjustSubmitting) return; // will wait
+                setShowRequestNewOrderModal(false);
+              }}
+              t={t}
+            />
           </div>
         </div>
       )}

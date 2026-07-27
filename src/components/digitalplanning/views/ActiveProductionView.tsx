@@ -18,14 +18,67 @@ import {
 } from "../../../utils/workstationLogic";
 import { formatDateTimeSafe, toDateSafe } from "../../../utils/dateUtils";
 
-type AnyRecord = Record<string, any>;
+type ActiveUnit = {
+  id?: string;
+  lotNumber?: string;
+  orderId?: string;
+  item?: string;
+  itemCode?: string;
+  status?: string;
+  currentStep?: string;
+  startTime?: unknown;
+  note?: string;
+  reminderSent?: boolean;
+  seriesGroupId?: string;
+  seriesOrderNumber?: string;
+  inspection?: {
+    status?: string;
+    timestamp?: unknown;
+    reasons?: string[];
+  };
+  [key: string]: unknown;
+};
+
+type SeriesHeaderUnit = ActiveUnit & {
+  isSeriesHeader: true;
+  seriesGroupId: string;
+  seriesUnits: ActiveUnit[];
+  seriesCount: number;
+};
+
+type DisplayUnit = ActiveUnit | SeriesHeaderUnit;
+
+type SmartSuggestionOrder = {
+  orderId?: string;
+  weekNumber?: string | number;
+};
+
+type SmartSuggestion = {
+  product?: string;
+  count?: number;
+  weeks?: Array<string | number>;
+  orders?: SmartSuggestionOrder[];
+};
+
+type ProcessUnitOptions = {
+  bulkUnits?: ActiveUnit[];
+  source?: string;
+};
+
+type MaterialInfo = {
+  warning?: string;
+  colorClasses?: string;
+  icon?: React.ReactNode;
+  type?: string;
+  label?: string;
+};
 
 type ActiveProductionViewProps = {
-  activeUnits?: AnyRecord[];
-  smartSuggestions?: AnyRecord[];
+  activeUnits?: ActiveUnit[];
+  smartSuggestions?: SmartSuggestion[];
   selectedStation?: string;
-  onProcessUnit: (...args: any[]) => void;
-  onClickUnit: (unit: AnyRecord) => void;
+  onProcessUnit: (unit: ActiveUnit, options?: ProcessUnitOptions) => void;
+  onClickUnit: (unit: ActiveUnit) => void;
 };
 
 const ActiveProductionView = ({
@@ -36,7 +89,7 @@ const ActiveProductionView = ({
   onClickUnit,
 }: ActiveProductionViewProps) => {
   const { t } = useTranslation();
-  const isSeriesEligibleUnit = React.useCallback((unit: AnyRecord) => {
+  const isSeriesEligibleUnit = React.useCallback((unit: ActiveUnit) => {
     const statusUpper = String(unit?.status || "").toUpperCase();
     const stepUpper = String(unit?.currentStep || "").toUpperCase();
     return statusUpper !== "REJECTED" && stepUpper !== "REJECTED";
@@ -50,7 +103,7 @@ const ActiveProductionView = ({
     return match[1];
   }, []);
 
-  const resolveSeriesGroupKey = React.useCallback((unit: AnyRecord) => {
+  const resolveSeriesGroupKey = React.useCallback((unit: ActiveUnit) => {
     const explicitGroupId = String(unit?.seriesGroupId || "").trim();
     if (explicitGroupId) return explicitGroupId;
     if (!isSeriesEligibleUnit(unit)) return "";
@@ -67,9 +120,9 @@ const ActiveProductionView = ({
     String(selectedStation || "").toUpperCase().replace(/\s/g, "") === "MAZAK";
 
   const groupedSeries = React.useMemo(() => {
-    if (isMazakStation) return new Map<string, AnyRecord[]>();
-    const grouped = new Map<string, AnyRecord[]>();
-    (activeUnits || []).forEach((unit: AnyRecord) => {
+    if (isMazakStation) return new Map<string, ActiveUnit[]>();
+    const grouped = new Map<string, ActiveUnit[]>();
+    (activeUnits || []).forEach((unit: ActiveUnit) => {
       const groupId = resolveSeriesGroupKey(unit);
       if (!groupId) return;
       if (!grouped.has(groupId)) grouped.set(groupId, []);
@@ -103,9 +156,9 @@ const ActiveProductionView = ({
     if (!Array.isArray(activeUnits) || activeUnits.length === 0) return [];
 
     const renderedHeaders = new Set<string>();
-    const rows: AnyRecord[] = [];
+    const rows: DisplayUnit[] = [];
 
-    activeUnits.forEach((unit: AnyRecord) => {
+    activeUnits.forEach((unit: ActiveUnit) => {
       const groupId = resolveSeriesGroupKey(unit);
       const group = groupId ? groupedSeries.get(groupId) || [] : [];
       const isSeriesGroup = groupId && group.length > 1;
@@ -133,7 +186,7 @@ const ActiveProductionView = ({
     return rows;
   }, [activeUnits, groupedSeries, collapsedGroups, resolveSeriesGroupKey]);
 
-  const formatTimeLabel = (value: any) => {
+  const formatTimeLabel = (value: unknown) => {
     const date = toDateSafe(value);
     if (!date) return "";
 
@@ -161,15 +214,15 @@ const ActiveProductionView = ({
         <div className="p-2 pb-6 md:pb-8">
           {activeUnits.length > 0 ? (
             <div className="space-y-2">
-              {displayUnits.map((unit: AnyRecord) => {
+              {displayUnits.map((unit: DisplayUnit) => {
                 if (unit.isSeriesHeader) {
                   const groupUnits = unit.seriesUnits || [];
                   const isCollapsed = !!collapsedGroups[unit.seriesGroupId];
                   const processableUnits = groupUnits.filter(
-                    (groupUnit: AnyRecord) => !["Finished", "REJECTED"].includes(groupUnit?.currentStep)
+                    (groupUnit: ActiveUnit) => !["Finished", "REJECTED"].includes(String(groupUnit?.currentStep || ""))
                   );
                   const lotLabels = groupUnits
-                    .map((groupUnit: AnyRecord) => String(groupUnit?.lotNumber || groupUnit?.id || "").trim())
+                    .map((groupUnit: ActiveUnit) => String(groupUnit?.lotNumber || groupUnit?.id || "").trim())
                     .filter(Boolean)
                     .join(", ");
 
@@ -223,7 +276,7 @@ const ActiveProductionView = ({
                   );
                 }
 
-                const matInfo = getMaterialInfo(unit.item) as any;
+                const matInfo = getMaterialInfo(unit.item) as MaterialInfo;
                 const isTempReject =
                   unit.inspection?.status === "Tijdelijke afkeur";
                 const isOverdue =
@@ -351,7 +404,7 @@ const ActiveProductionView = ({
             </h3>
           </div>
           <div className="p-3 space-y-3">
-            {smartSuggestions.map((sug: AnyRecord, idx: number) => (
+            {smartSuggestions.map((sug: SmartSuggestion, idx: number) => (
               <div
                 key={idx}
                 className="bg-purple-50 rounded-xl p-3 border border-purple-100"
@@ -368,11 +421,11 @@ const ActiveProductionView = ({
                       {t("digitalplanning.active_production.combine_orders_help", "Product {{product}} appears {{count}}x in week {{weeks}}.", {
                         product: sug.product,
                         count: sug.count,
-                        weeks: sug.weeks.join(" & "),
+                        weeks: Array.isArray(sug.weeks) ? sug.weeks.join(" & ") : "",
                       })}
                     </p>
                     <div className="flex flex-wrap gap-1">
-                      {sug.orders.map((o: AnyRecord) => (
+                      {(sug.orders || []).map((o: SmartSuggestionOrder) => (
                         <span
                           key={o.orderId}
                           className="px-1.5 py-0.5 bg-white rounded text-[9px] font-mono font-bold text-purple-500 border border-purple-100"

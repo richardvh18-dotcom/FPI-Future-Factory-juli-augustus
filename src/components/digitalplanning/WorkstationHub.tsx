@@ -63,6 +63,8 @@ type TimestampLike = {
   seconds?: number;
 };
 
+type DateValue = TimestampLike | string | number | Date | null | undefined;
+
 type PlanningOrder = {
   id?: string;
   orderId?: string;
@@ -134,18 +136,65 @@ type OccupancyEntry = {
   id?: string;
   machineId?: string;
   station?: string;
-  date?: TimestampLike | string | number | Date | null;
+  date?: DateValue;
   shift?: string;
   isActive?: boolean;
   checkedOutAt?: unknown;
   operatorNumber?: string;
   operatorName?: string;
   hoursWorked?: number | string;
-  shiftEffectiveStart?: unknown;
-  checkedInAt?: unknown;
+  shiftEffectiveStart?: DateValue;
+  checkedInAt?: DateValue;
   isSecondary?: boolean;
   hoursAdjusted?: boolean;
   [key: string]: unknown;
+};
+
+type DowntimeRecord = {
+  id: string;
+  [key: string]: unknown;
+};
+
+type StartProductionOptions = {
+  lotNumbers?: unknown[];
+  seriesGroupId?: string;
+  isFlangeSeries?: boolean;
+};
+
+type StartProductionResult = {
+  overflowLots?: string[];
+  autoAssignedOverflow?: {
+    linkedCount?: number;
+    targetOrderId?: string;
+    routeStation?: string;
+  };
+};
+
+type MoveLotOptions = {
+  isRepairMove?: boolean;
+  repairInstruction?: string;
+};
+
+type PostProcessingPayload = {
+  note?: string;
+  reasons?: string[];
+};
+
+type RepairCompletePayload = {
+  actions?: string[];
+  notes?: string;
+};
+
+type RoutingToLossenResult = {
+  switchedToLossenTab?: boolean;
+};
+
+type DocSnapLike = {
+  id: string;
+  data: () => Record<string, unknown>;
+  ref: {
+    path: string;
+  };
 };
 
 type PersonnelEntry = {
@@ -412,7 +461,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     try {
       const now = new Date();
       const previousHours = Number(occ.hoursWorked || 0);
-      const checkedInDate = toDateSafe(occ.shiftEffectiveStart as any) || toDateSafe(occ.checkedInAt as any);
+      const checkedInDate = toDateSafe(occ.shiftEffectiveStart) || toDateSafe(occ.checkedInAt);
       const elapsedHours = checkedInDate ? Math.max(0, (now.getTime() - checkedInDate.getTime()) / 3600000) : 0;
       
       const breakHours = (SHIFT_CONFIG[occ.shiftKey as ShiftKey]?.breakMinutes ?? 0) / 60;
@@ -475,7 +524,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
   const [checkedInOperator, setCheckedInOperator] = useState<PersonnelEntry | null>(null);
   const [dismissedPromptShift, setDismissedPromptShift] = useState<ShiftKey | null>(null);
   const [timeHeartbeat, setTimeHeartbeat] = useState<number>(Date.now());
-  const [activeDowntime, setActiveDowntime] = useState<any>(null);
+  const [activeDowntime, setActiveDowntime] = useState<DowntimeRecord | null>(null);
 
   useEffect(() => {
     if (!selectedStation) return;
@@ -728,7 +777,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       let rootOrders: PlanningOrder[] = [];
       let scopedOrders: PlanningOrder[] = [];
 
-      const mapOrderDoc = (docSnap: any): PlanningOrder | null => {
+      const mapOrderDoc = (docSnap: DocSnapLike): PlanningOrder | null => {
         const data = docSnap.data();
         const explicitScopeType = String(data?._scopeType || "").trim();
         const resolvedOrderId = String(data?.orderId || data?.orderNumber || "").trim();
@@ -1239,7 +1288,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
             const targetBucket = expiredBuckets.find(b => shiftMatchesBucket(entry.shift, b)) as ShiftKey;
             
             const previousHours = Number(entry.hoursWorked || 0);
-            const checkedInDate = toDateSafe(entry.shiftEffectiveStart as any) || toDateSafe(entry.checkedInAt as any);
+            const checkedInDate = toDateSafe(entry.shiftEffectiveStart) || toDateSafe(entry.checkedInAt);
             
             // LET OP: bij auto-checkout gebruiken we de officiële checkout-tijd van de shift, NIET de huidige tijd (now)
             // anders zou een iPad die pas om 18:00 aangaat, de VROEGE dienst uren tot 18:00 doorrekenen.
@@ -1508,7 +1557,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         await saveOccupancyAssignments({
           records: activeEntries.map((entry) => {
             const previousHours = Number(entry.hoursWorked || 0);
-            const checkedInDate = toDateSafe(entry.shiftEffectiveStart as any) || toDateSafe(entry.checkedInAt as any);
+            const checkedInDate = toDateSafe(entry.shiftEffectiveStart) || toDateSafe(entry.checkedInAt);
             const elapsedHours = checkedInDate ? Math.max(0, (now.getTime() - checkedInDate.getTime()) / 3600000) : 0;
             const finalHours = entry.isSecondary ? 0 : Number((previousHours + elapsedHours).toFixed(2));
             return {
@@ -2168,7 +2217,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
        if (p.status === "rejected" || p.currentStep === "REJECTED") return;
        
        const eventDate = p.timestamps?.lossen_start || p.timestamps?.wikkelen_end || p.timestamps?.finished || p.archivedAt;
-      const d = toDateSafe(eventDate as any);
+      const d = toDateSafe(eventDate);
        if (d && d >= startOfWeekDate) {
            doneThisWeek++;
        }
@@ -2256,7 +2305,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
   };
 
   const handleStartProduction = async (
-    order: any,
+    order: PlanningOrder,
     customLotNumber: string,
     stringCount = 1,
     _manualOrderInput?: string,
@@ -2264,7 +2313,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     _selectedOperatorName?: string,
     labelZplData?: string,
     labelTemplateId?: string,
-    startOptions: any = {}
+    startOptions: StartProductionOptions = {}
   ) => {
     if (!currentUser || !customLotNumber) return;
     
@@ -2289,13 +2338,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         : [];
       const batchCount = explicitLotNumbers.length > 0 ? explicitLotNumbers.length : Math.max(1, parseInt(String(stringCount), 10) || 1);
       const seriesGroupId = String(startOptions?.seriesGroupId || "").trim() || null;
-      let overflowItems = [];
+      let overflowItems: string[] = [];
 
       const stationOperators = occupancy
         .filter((occ) => {
           if (occ.station !== selectedStation) return false;
           if (!occ.date) return false;
-          const occDate = toDateSafe(occ.date as any) || new Date();
+          const occDate = toDateSafe(occ.date) || new Date();
           occDate.setHours(0, 0, 0, 0);
           const today = new Date();
           today.setHours(0, 0, 0, 0);
@@ -2304,7 +2353,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         .map((occ) => occ.operatorNumber)
         .filter(Boolean);
 
-      const startResult: any = await startWorkstationProductionRun({
+      const startResult = (await startWorkstationProductionRun({
         orderDocId: order.id,
         lotStart: customLotNumber,
         stringCount: batchCount,
@@ -2319,7 +2368,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         lotNumbers: explicitLotNumbers,
         stationOperators,
         source: "WorkstationHub",
-      });
+      })) as StartProductionResult;
 
       overflowItems = Array.isArray(startResult?.overflowLots) ? startResult.overflowLots : [];
       const autoAssignedOverflow = startResult?.autoAssignedOverflow || null;
@@ -2376,7 +2425,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
   };
 
   // Handler voor handmatig verplaatsen van product (Nieuw toegevoegd voor Dossier)
-  const handleMoveLot = async (lotNumber: string, newStation: string, options: any = {}) => {
+  const handleMoveLot = async (lotNumber: string, newStation: string, options: MoveLotOptions = {}) => {
     if (!lotNumber || !newStation) return;
     try {
       const isRepairMove = Boolean(options?.isRepairMove);
@@ -2445,7 +2494,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
     }
   };
 
-  const handlePostProcessingFinish = async (status: string, data: any) => {
+  const handlePostProcessingFinish = async (status: string, data: PostProcessingPayload) => {
     const itemToFinish = useWorkstationStore.getState().itemToFinish;
     if (!itemToFinish) return;
     const productId = itemToFinish.id || itemToFinish.lotNumber;
@@ -2567,7 +2616,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
           if (stationName !== "LOSSEN") return false;
           
           if (!occ.date) return false;
-          const occDate = toDateSafe(occ.date as any) || new Date();
+          const occDate = toDateSafe(occ.date) || new Date();
           occDate.setHours(0, 0, 0, 0);
           const today = new Date();
           today.setHours(0, 0, 0, 0);
@@ -2577,14 +2626,14 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         .map(occ => occ.operatorNumber)
         .filter(Boolean);
 
-      const routingResult: any = await routeTrackedProductsToLossen({
+      const routingResult = (await routeTrackedProductsToLossen({
         productIds: targets.map((target) => target?.id || target?.lotNumber).filter(Boolean),
         originStation: selectedStation,
         centralStation: "LOSSEN",
         centralOperators: lossenOperators,
         actorLabel: currentUser?.email || "Operator",
         source: "WorkstationHub",
-      });
+      })) as RoutingToLossenResult;
 
       await logWorkstationActivity(
         "PRODUCT_TO_LOSSEN",
@@ -2600,7 +2649,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
   };
 
   // NIEUW: Afhandelen van reparatie op BH31
-  const handleRepairComplete = async (data: any) => {
+  const handleRepairComplete = async (data: RepairCompletePayload) => {
       const itemToRepair = useWorkstationStore.getState().itemToRepair;
       if (!itemToRepair) return;
       try {
@@ -3038,11 +3087,11 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
           <>
             {activeTab === "winding" && (
               ((selectedStation || "").toUpperCase().replace(/\s/g, "").includes("NABEWERK")) ? (
-            <Nabewerken products={visibleRawProducts as any} orders={rawOrders as any} />
+            <Nabewerken products={visibleRawProducts} orders={rawOrders} />
               ) : (
                 <ActiveProductionView
-                activeUnits={activeUnitsHere as any}
-              smartSuggestions={[] as any}
+                activeUnits={activeUnitsHere}
+              smartSuggestions={[]}
                   selectedStation={selectedStation}
                   onProcessUnit={handleProcessUnit}
                   
@@ -3054,19 +3103,19 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
               <div className="h-full bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                 {isWorkstationGereedTab ? (
                   <GereedView
-                  products={visibleRawProducts as any}
+                  products={visibleRawProducts}
                     stationId={selectedStation}
                   />
                 ) : ((selectedStation || "").toUpperCase().replace(/\s/g, "").includes("NABEWERK")) ? (
-              <Nabewerken products={visibleRawProducts as any} orders={rawOrders as any} />
+              <Nabewerken products={visibleRawProducts} orders={rawOrders} />
                 ) : (String(selectedStation || "").toUpperCase().replace(/\s/g, "") === "MAZAK") ? (
                   <MazakView
-                  products={visibleRawProducts as any}
+                  products={visibleRawProducts}
                     stationId={selectedStation}
                   />
                 ) : (
                 <LossenView
-                products={visibleRawProducts as any}
+                products={visibleRawProducts}
                     stationId={selectedStation}
                     appId={currentAppId}
                   />
@@ -3078,8 +3127,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
                 {isBM01 ? (
                   <BM01Hub 
                     onBack={handleBack} 
-                  orders={rawOrders as any}
-                  products={rawProducts as any}
+                  orders={rawOrders}
+                  products={rawProducts}
                     onMoveLot={handleMoveLot}
                   />
                 ) : (
