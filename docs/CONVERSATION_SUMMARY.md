@@ -7,6 +7,16 @@
 
 ---
 
+## Dagupdate 29 juli 2026
+
+### TypeScript-hardening en git-push
+
+- De resterende TypeScript-problemen in de planning- en admincomponenten zijn opgepakt en gecorrigeerd, inclusief compatibele `t`-callback typing, expliciete map-typing en type-safe access in utility modules.
+- De relevante validatie is uitgevoerd met `npx tsc --noEmit --pretty false`, die zonder TypeScript-fouten is afgerond.
+- Na de code-updates is de huidige werkstaat gepusht naar Git.
+
+---
+
 ## Dagupdate 27 juli 2026
 
 ### P3 MazakView Adjust Left Panel + Request Body Opsplitsing
