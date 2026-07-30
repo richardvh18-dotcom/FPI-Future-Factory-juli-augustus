@@ -7,6 +7,24 @@
 
 ---
 
+## Dagupdate 30 juli 2026
+
+### WM18-import fallback en robuuste opslag
+
+- De WM18-wikkelrobot-import is robuuster gemaakt door de uploadstroom niet meer volledig afhankelijk te maken van Firebase Storage en Firestore writes in een onstabiele backend-context.
+- Als Storage een upload weigert, wordt de import nu lokaal in de browser opgeslagen als fallback-record, zodat de data toch zichtbaar en bruikbaar blijft.
+- De admin-view voor WM18-importbeheer is aangepast zodat de gebruiker direct ziet dat de import lokaal is opgeslagen wanneer Firebase Storage niet beschikbaar is.
+- Een nieuwe fallback-service in [src/services/wm18ImportStorageService.ts](src/services/wm18ImportStorageService.ts) slaat de import lokaal op in browser-storage en ondersteunt laden, verwijderen en hergebruik van de record.
+- Een regressietest is toegevoegd in [tests/wm18ImportStorageService.test.ts](tests/wm18ImportStorageService.test.ts) om de lokale fallback-flow te verifiëren.
+- Validatie: `npx vitest run tests/wm18ImportStorageService.test.ts` is succesvol uitgevoerd met 1 passing test, en `npm run type-check` is zonder TypeScript-fouten afgerond.
+
+### Gateway-voorbereiding en presence-hardening
+
+- De algemene presence-write-loop is tijdelijk uitgeschakeld in [src/hooks/usePresence.ts](src/hooks/usePresence.ts) om Firestore write-pressure te beperken die de WM18-import anders blokkeerde.
+- De admin-gateway-view in [src/components/admin/GatewayPcAdminView.tsx](src/components/admin/GatewayPcAdminView.tsx) en de ondersteunende service in [src/services/gatewayPcService.ts](src/services/gatewayPcService.ts) zijn verder gehardend voor de toekomstige lokale Node.js gateway-bridge.
+
+---
+
 ## Dagupdate 29 juli 2026
 
 ### TypeScript-hardening en git-push
@@ -36,11 +54,12 @@
 
 ### WM18-structuur omgezet naar productcatalogus
 
-- Het tijdelijke Excel-beheer is uitgebreid met een echte WM18-productcatalogus met menu’s voor productfamilie, MOF-type, serie, drukklasse, diameter, hoek en radius, gebaseerd op de structuur uit het originele rekenprogramma.
-- De Firebase Storage-regels zijn aangepast zodat geauthenticeerde gebruikers tijdelijke WM18-bestanden onder de map temporary-files/excel kunnen uploaden zonder storage/unauthorized-fouten.
+- Het WM18-importbeheer is uitgebreid met een echte productcatalogus voor de wikkelrobot, met menu’s voor productfamilie, MOF-type, serie, drukklasse, diameter, hoek en radius, gebaseerd op de structuur uit het originele rekenprogramma.
+- De Firebase Storage- en Firestore-regels zijn aangepast zodat geauthenticeerde gebruikers de éénmalige WM18-wikkelrobot-import onder de map wm18-imports/excel en collectie future-factory/settings/wm18_robot_imports kunnen opslaan zonder storage/unauthorized-fouten.
 - De nieuwe modellaag in [src/services/wm18ProgramCatalogService.ts](src/services/wm18ProgramCatalogService.ts) zet deze keuzes om naar een gestructureerde definitie die later kan worden gebruikt voor BH18-robotprogrammering en gateway-dispatch.
-- Het beheer in [src/components/admin/TemporaryExcelManagerView.tsx](src/components/admin/TemporaryExcelManagerView.tsx) slaat deze WM18-gegevens nu mee op bij elke upload, naast de bestaande tijdelijke bestandsopslag.
+- Het beheer in [src/components/admin/TemporaryExcelManagerView.tsx](src/components/admin/TemporaryExcelManagerView.tsx) slaat deze WM18-gegevens nu mee op bij elke import, met de juiste herkenbaarheid als wikkelrobot-import.
 - Validatie: `npm test -- --run tests/wm18ProgramCatalogService.test.ts` is succesvol uitgevoerd met 2 passing tests.
+- Voortgang is opgeslagen in git met commit `ce8bf9f`.
 
 ---
 

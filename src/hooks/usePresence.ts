@@ -5,6 +5,7 @@ import { PATHS, getPathString } from '../config/dbPaths';
 
 const PING_INTERVAL_MS = 60 * 1000; // 1 minute
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const PRESENCE_WRITES_DISABLED = true;
 
 export const usePresence = () => {
   const [isActive, setIsActive] = useState(true);
@@ -13,6 +14,8 @@ export const usePresence = () => {
   const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const updatePresence = async (status: 'online' | 'idle') => {
+    if (PRESENCE_WRITES_DISABLED) return;
+
     const user = auth.currentUser;
     if (!user) return;
 

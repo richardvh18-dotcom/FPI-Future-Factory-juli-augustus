@@ -5,6 +5,7 @@ import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage
 import { db, storage, auth, logActivity } from '../../config/firebase';
 import { buildRobotProgramPreparation } from '../../services/robotProgramService';
 import { buildWm18ProgramDefinition, getWm18CatalogDefaults } from '../../services/wm18ProgramCatalogService';
+import { buildLocalWm18ImportRecord, loadLocalWm18Imports, removeLocalWm18Import, saveLocalWm18Import } from '../../services/wm18ImportStorageService';
 
 type TemporaryExcelRecord = {
   id: string;
@@ -16,6 +17,10 @@ type TemporaryExcelRecord = {
   source?: string;
   notes?: string;
   category?: string;
+  fileDataUri?: string;
+  storageUploadFailed?: boolean;
+  wm18Definition?: Record<string, unknown>;
+  robotPrep?: Record<string, unknown>;
 };
 
 const STORAGE_PREFIX = 'wm18-imports/excel';
@@ -40,17 +45,54 @@ const TemporaryExcelManagerView = () => {
   const catalogDefaults = useMemo(() => getWm18CatalogDefaults(), []);
 
   useEffect(() => {
-    const q = query(collection(db, COLLECTION_PATH), orderBy('uploadedAt', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setRecords(snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as Omit<TemporaryExcelRecord, 'id'>) })));
-      setLoading(false);
-    }, (error) => {
-      console.error('Temporary Excel load failed', error);
-      setStatus({ type: 'error', message: 'Kon WM18-imports niet laden.' });
-      setLoading(false);
-    });
+    const loadRecords = async () => {
+      try {
+        const localImports = await loadLocalWm18Imports();
+        const merged = [...localImports.map((item) => ({
+          id: item.id,
+          fileName: item.fileName,
+          storagePath: item.storagePath,
+          fileUrl: undefined,
+          uploadedAt: item.uploadedAt,
+          uploadedBy: item.uploadedBy,
+          source: item.source,
+          notes: item.notes,
+          category: item.category,
+          fileDataUri: item.fileDataUri,
+          storageUploadFailed: item.storageUploadFailed,
+          wm18Definition: item.wm18Definition,
+          robotPrep: item.robotPrep,
+        } as TemporaryExcelRecord))];
 
-    return () => unsubscribe();
+        setRecords(merged);
+      } catch (error) {
+        console.error('Temporary Excel local load failed', error);
+      }
+
+      try {
+        const q = query(collection(db, COLLECTION_PATH), orderBy('uploadedAt', 'desc'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const cloudRecords = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...(docSnap.data() as Omit<TemporaryExcelRecord, 'id'>) }));
+          setRecords((prev) => {
+            const localIds = new Set(prev.filter((item) => item.source === 'wm18-robot-import-local').map((item) => item.id));
+            const mergedRecords = [...cloudRecords.filter((item) => item.source !== 'wm18-robot-import-local'), ...prev.filter((item) => localIds.has(item.id))];
+            return mergedRecords;
+          });
+          setLoading(false);
+        }, (error) => {
+          console.error('Temporary Excel load failed', error);
+          setStatus({ type: 'error', message: 'Kon WM18-imports niet laden uit Firestore.' });
+          setLoading(false);
+        });
+
+        return unsubscribe();
+      } catch (error) {
+        console.error('Temporary Excel cloud listener setup failed', error);
+        setLoading(false);
+      }
+    };
+
+    void loadRecords();
   }, []);
 
   const filteredRecords = useMemo(() => {
@@ -58,6 +100,15 @@ const TemporaryExcelManagerView = () => {
     if (!term) return records;
     return records.filter((item) => JSON.stringify(item).toLowerCase().includes(term));
   }, [records, filter]);
+
+  const readFileAsDataUri = async (file: File) => {
+    const reader = new FileReader();
+    return await new Promise<string>((resolve, reject) => {
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('Kon bestand niet lezen'));
+      reader.readAsDataURL(file);
+    });
+  };
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -67,12 +118,13 @@ const TemporaryExcelManagerView = () => {
     setStatus(null);
 
     try {
+      await auth.authStateReady();
+      if (!auth.currentUser) {
+        throw new Error('Je bent nog niet ingelogd. Log opnieuw in en probeer het opnieuw.');
+      }
+
       const safeName = file.name.replace(/\s+/g, '_');
       const storagePath = `${STORAGE_PREFIX}/${safeName}`;
-      const storageRef = ref(storage, storagePath);
-      await uploadBytes(storageRef, file);
-      const fileUrl = await getDownloadURL(storageRef);
-
       const wm18Definition = buildWm18ProgramDefinition({
         productFamily,
         mofType,
@@ -94,9 +146,9 @@ const TemporaryExcelManagerView = () => {
       });
 
       const record: TemporaryExcelRecord = {
+        id: safeName,
         fileName: file.name,
         storagePath,
-        fileUrl,
         uploadedAt: serverTimestamp(),
         uploadedBy: auth.currentUser?.email || 'unknown',
         source: 'wm18-robot-import',
@@ -106,9 +158,34 @@ const TemporaryExcelManagerView = () => {
         ...(robotPrep as unknown as Record<string, unknown>),
       };
 
-      await setDoc(doc(db, COLLECTION_PATH, safeName), record, { merge: true });
-      await logActivity(auth.currentUser?.uid || 'unknown', 'TEMP_EXCEL_UPLOAD', `WM18-wikkelrobot import geüpload: ${file.name}`);
-      setStatus({ type: 'success', message: `WM18-import opgeslagen: ${file.name} (${wm18Definition.productFamily} / ${wm18Definition.diameterMm ?? '-'} mm / ${wm18Definition.pressureClass})` });
+      try {
+        const storageRef = ref(storage, storagePath);
+        await uploadBytes(storageRef, file);
+        const fileUrl = await getDownloadURL(storageRef);
+        record.fileUrl = fileUrl;
+        await setDoc(doc(db, COLLECTION_PATH, safeName), record, { merge: true });
+        await logActivity(auth.currentUser?.uid || 'unknown', 'TEMP_EXCEL_UPLOAD', `WM18-wikkelrobot import geüpload: ${file.name}`);
+        setStatus({ type: 'success', message: `WM18-import opgeslagen: ${file.name} (${wm18Definition.productFamily} / ${wm18Definition.diameterMm ?? '-'} mm / ${wm18Definition.pressureClass})` });
+      } catch (storageError) {
+        const storageMessage = storageError instanceof Error ? storageError.message : 'Storage upload failed';
+        if (storageMessage.includes('storage/unauthorized') || storageMessage.includes('User does not have permission')) {
+          const fileDataUri = await readFileAsDataUri(file);
+          const fallbackRecord = buildLocalWm18ImportRecord({
+            fileName: file.name,
+            storagePath,
+            notes: notes.trim() || 'Fallback-opslag in browser wegens storage-permissie',
+            category,
+            fileDataUri,
+            uploadedBy: auth.currentUser?.email || 'unknown',
+            wm18Definition,
+            robotPrep,
+          });
+          await saveLocalWm18Import(fallbackRecord);
+          setStatus({ type: 'info', message: `WM18-import is lokaal opgeslagen in de browser omdat Firebase Storage de upload weigerde. (${file.name})` });
+        } else {
+          throw storageError;
+        }
+      }
       setNotes('');
       setCategory('WM18');
       setProductFamily('elbow');
@@ -122,7 +199,36 @@ const TemporaryExcelManagerView = () => {
       event.target.value = '';
     } catch (error) {
       console.error(error);
-      setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Upload mislukt' });
+      const message = error instanceof Error
+        ? error.message
+        : 'Upload mislukt';
+      const isStorageUnauthorized = message.includes('storage/unauthorized') || message.includes('User does not have permission');
+
+      if (isStorageUnauthorized) {
+        try {
+          const fileDataUri = await readFileAsDataUri(file);
+          const safeName = file.name.replace(/\s+/g, '_');
+          const fallbackRecord: TemporaryExcelRecord = {
+            id: safeName,
+            fileName: file.name,
+            storagePath: `${STORAGE_PREFIX}/${safeName}`,
+            uploadedAt: serverTimestamp(),
+            uploadedBy: auth.currentUser?.email || 'unknown',
+            source: 'wm18-robot-import-fallback',
+            notes: notes.trim() || 'Fallback-opslag in Firestore wegens storage-permissie',
+            category,
+            fileDataUri,
+            storageUploadFailed: true,
+          };
+          await setDoc(doc(db, COLLECTION_PATH, safeName), fallbackRecord, { merge: true });
+          setStatus({ type: 'info', message: `WM18-import is opgeslagen als fallback-record in Firestore omdat Firebase Storage de upload weigerde. (${file.name})` });
+        } catch (fallbackError) {
+          console.error(fallbackError);
+          setStatus({ type: 'error', message: 'Upload mislukt en fallback-opslag in Firestore is ook gefaald.' });
+        }
+      } else {
+        setStatus({ type: 'error', message: message });
+      }
     } finally {
       setUploading(false);
     }
@@ -130,12 +236,19 @@ const TemporaryExcelManagerView = () => {
 
   const handleDelete = async (record: TemporaryExcelRecord) => {
     try {
+      if (record.source === 'wm18-robot-import-local') {
+        await removeLocalWm18Import(record.id);
+        setStatus({ type: 'success', message: `Lokaal opgeslagen import verwijderd: ${record.fileName}` });
+        return;
+      }
+
       await deleteObject(ref(storage, record.storagePath));
       await deleteDoc(doc(db, COLLECTION_PATH, record.id));
       setStatus({ type: 'success', message: `Bestand verwijderd: ${record.fileName}` });
     } catch (error) {
       console.error(error);
-      setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Verwijderen mislukt' });
+      const message = error instanceof Error ? error.message : 'Verwijderen mislukt';
+      setStatus({ type: 'error', message: message.includes('storage/unauthorized') ? 'Verwijderen geweigerd door Firebase Storage.' : message });
     }
   };
 
@@ -236,7 +349,7 @@ const TemporaryExcelManagerView = () => {
             <div className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-700">
               <Database size={16} className="text-purple-600" /> Voorbereide data-opslag
             </div>
-            <p className="text-sm text-slate-600">Deze imports worden opgeslagen in Firebase Storage en geregistreerd in Firestore, zodat de lokale Node.js-pc of gateway later de WM18-gegevens kan ophalen.</p>
+            <p className="text-sm text-slate-600">Deze imports worden eerst lokaal in de browser opgeslagen en, indien beschikbaar, ook geüpload naar Firebase Storage en geregistreerd in Firestore. Zo blijft de workflow bruikbaar zelfs bij Storage- of Firestore-problemen.</p>
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-600">
               <div className="flex items-center gap-2"><FolderOpen size={14} className="text-slate-500" /> Storage-pad: <span className="font-mono text-xs">{STORAGE_PREFIX}</span></div>
               <div className="flex items-center gap-2 mt-2"><HardDrive size={14} className="text-slate-500" /> Firestore-pad: <span className="font-mono text-xs">{COLLECTION_PATH}</span></div>
