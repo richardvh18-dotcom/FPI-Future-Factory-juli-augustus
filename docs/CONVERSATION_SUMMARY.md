@@ -15,6 +15,33 @@
 - De relevante validatie is uitgevoerd met `npx tsc --noEmit --pretty false`, die zonder TypeScript-fouten is afgerond.
 - Na de code-updates is de huidige werkstaat gepusht naar Git.
 
+### GatewayPC-voorbereiding toegevoegd aan de documentatie
+
+- De lokale Node.js GatewayPC-repo is als voorbereidende bridge opgenomen in de systeemdocumentatie en projectstructuurview.
+- De nieuwe integratie is zichtbaar gemaakt als een “ready for wiring”-laag voor later print- en robotjob-verbindingen, zonder dat de daadwerkelijke netwerkcommunicatie is geactiveerd.
+- De wijziging is opgenomen in de app-documentatie via [src/components/admin/SystemDocumentationView.tsx](src/components/admin/SystemDocumentationView.tsx) en [src/components/admin/ProjectStructureExpertView.tsx](src/components/admin/ProjectStructureExpertView.tsx).
+
+### BH18 startflow voorbereid voor robotprogrammering
+
+- De productie-startmodal prepareert nu voor BH18 een robotprogramma-object bij het starten van een order, inclusief station, lotnummer, ordernummer en gekozen robotpositie.
+- Er is een duidelijke keuze toegevoegd voor positie 1 of positie 2 van de wikkelrobot, zodat de startflow later kan worden doorgezet naar de lokale Node.js gateway of FTP-upload.
+- De voorbereiding wordt opgeslagen via de bestaande gateway-queue in Firebase, terwijl de huidige WebUSB-printflow intact blijft.
+
+### Admin Gateway Setup & Firebase-voorbereiding toegevoegd
+
+- Er is een nieuwe admin tegel “GatewayPC Setup” toegevoegd in [src/components/admin/AdminDashboard.tsx](src/components/admin/AdminDashboard.tsx) waarmee een lokale Node.js-pc kan worden voorbereid.
+- In [src/components/admin/GatewayPcAdminView.tsx](src/components/admin/GatewayPcAdminView.tsx) kan de beheerder nu een IP-adres en poort invoeren, opslaan en testen.
+- In [src/services/gatewayPcService.ts](src/services/gatewayPcService.ts) wordt de configuratie lokaal opgeslagen en ook voorbereid in Firebase onder een dedicated gateway-config- en jobs-pad voor later Node.js-communicatie.
+- De bestaande WebUSB-printflow blijft ongewijzigd; deze voorbereiding is alleen voor toekomstige gateway-routing van print- en robotjobs.
+
+### WM18-structuur omgezet naar productcatalogus
+
+- Het tijdelijke Excel-beheer is uitgebreid met een echte WM18-productcatalogus met menu’s voor productfamilie, MOF-type, serie, drukklasse, diameter, hoek en radius, gebaseerd op de structuur uit het originele rekenprogramma.
+- De Firebase Storage-regels zijn aangepast zodat geauthenticeerde gebruikers tijdelijke WM18-bestanden onder de map temporary-files/excel kunnen uploaden zonder storage/unauthorized-fouten.
+- De nieuwe modellaag in [src/services/wm18ProgramCatalogService.ts](src/services/wm18ProgramCatalogService.ts) zet deze keuzes om naar een gestructureerde definitie die later kan worden gebruikt voor BH18-robotprogrammering en gateway-dispatch.
+- Het beheer in [src/components/admin/TemporaryExcelManagerView.tsx](src/components/admin/TemporaryExcelManagerView.tsx) slaat deze WM18-gegevens nu mee op bij elke upload, naast de bestaande tijdelijke bestandsopslag.
+- Validatie: `npm test -- --run tests/wm18ProgramCatalogService.test.ts` is succesvol uitgevoerd met 2 passing tests.
+
 ---
 
 ## Dagupdate 27 juli 2026

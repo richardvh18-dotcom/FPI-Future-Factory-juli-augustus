@@ -288,6 +288,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /future-factory/settings/wm18_robot_imports/{document=**} {
+      allow read: if hasUserRecord();
+      allow create, update, delete: if isSignedIn();
+    }
+
     match /future-factory/settings/{document=**} {
       allow read: if hasUserRecord();
       allow write: if isAdmin();
