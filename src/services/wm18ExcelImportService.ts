@@ -46,7 +46,7 @@ export const parseAndImportWm18Workbook = async (
   // Optimized XLSX read: parse ONLY target sheets, skip styles & formulas for ultra speed
   const workbook = XLSX.read(fileBuffer, {
     type: 'array',
-    cellFormulas: false,
+    cellFormula: false,
     cellStyles: false,
     cellDates: false,
     sheets: ['S2_Productgegevens', 'S8_Aanpassingsformulier'],

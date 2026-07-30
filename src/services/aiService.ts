@@ -8,7 +8,7 @@
  */
 
 import { collection, collectionGroup, query, getDocs, addDoc, setDoc, getDoc, doc, limit, orderBy, where, serverTimestamp } from 'firebase/firestore';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getFunctions, httpsCallable, Functions, HttpsCallable } from 'firebase/functions';
 import app, { auth, db, logActivity } from '../config/firebase';
 import { PATHS, getPathString, getPlanningArchivePath } from '../config/dbPaths';
 import i18n from '../i18n';
@@ -73,8 +73,8 @@ const clamp = (value: string, maxChars: number): string => String(value || '').s
 
 class AIService {
   public availableModel: string;
-  public functions: unknown;
-  public aiProxyGenerate: unknown;
+  public functions: any;
+  public aiProxyGenerate: any;
 
   constructor() {
     this.availableModel = 'gemini-2.5-flash';
@@ -83,7 +83,7 @@ class AIService {
     
     // Expose debug functie globally voor troubleshooting
     if (typeof window !== 'undefined') {
-      (window as unknown).aiDebug = {
+      (window as any).aiDebug = {
         listDocuments: () => this.debugListDocuments(),
         searchDocuments: (term: string) => this.debugSearchDocuments(term),
         testContext: (query: string) => this.debugTestContext(query)
@@ -139,7 +139,8 @@ class AIService {
       const seen = new Set<string>();
 
       const pushUnique = (rows: unknown[], source: string) => {
-        rows.forEach((row) => {
+        rows.forEach((rawRow) => {
+          const row = rawRow as Record<string, any>;
           const stableId = String(
             row.orderId || row.orderNumber || row.id || row.jobId || row.productOrderId || ''
           ).trim();
@@ -265,7 +266,8 @@ class AIService {
       if (lotNumber) { /* empty */ }
       
       // Filter orders
-      const filtered = orders.filter(order => {
+      const filtered = orders.filter(rawOrder => {
+        const order = rawOrder as Record<string, any>;
         // Mogelijke ID velden - orderId is het belangrijkste!
         const orderId = (order.orderId || order.orderNumber || order.id || order.jobId || order.productOrderId || '').toUpperCase();
         const itemCode = (order.itemCode || '').toUpperCase();
@@ -303,7 +305,9 @@ class AIService {
       
       
       // Sorteer zodat exacte matches eerst komen
-      return filtered.sort((a, b) => {
+      return filtered.sort((rawA, rawB) => {
+        const a = rawA as Record<string, any>;
+        const b = rawB as Record<string, any>;
         if (orderNumber) {
           const aId = (a.orderId || '').toUpperCase();
           const bId = (b.orderId || '').toUpperCase();
@@ -451,12 +455,12 @@ class AIService {
       if (factorySnap.exists()) {
         const data = factorySnap.data();
         departments = data.departments || [];
-        departments.forEach(dept => {
+        (departments as any[]).forEach(dept => {
           const shifts = Number(dept.shifts) || 1;
           dailyCapacityHours += shifts * 8; // 8 uur per ploeg
         });
         ctx += `\n### Fabrieksstructuur:\n`;
-        departments.forEach(dept => {
+        (departments as any[]).forEach(dept => {
           const shifts = Number(dept.shifts) || 1;
           ctx += `- ${dept.name}: ${shifts} ploeg(en) = ${shifts * 8} uur/dag\n`;
         });
@@ -571,7 +575,8 @@ class AIService {
 
     if (activeOrders.length > 0) {
       ctx += `\n### Lopende orders met resterende werkuren:\n`;
-      activeOrders.forEach(o => {
+      activeOrders.forEach(rawO => {
+        const o = rawO as Record<string, any>;
         ctx += `- Order ${o.orderId}: ${o.producedQty}/${o.totalQty} stuks, `;
         ctx += `resterend: **${o.remainingHours} uur**, status: ${o.status}`;
         if (o.dueDate) ctx += `, deadline: ${o.dueDate}`;
@@ -581,7 +586,8 @@ class AIService {
 
     if (behindOrders.length > 0) {
       ctx += `\n### ⚠️ ORDERS ACHTER OP SCHEMA:\n`;
-      behindOrders.forEach(o => {
+      behindOrders.forEach(rawO => {
+        const o = rawO as Record<string, any>;
         ctx += `- Order ${o.orderId}: efficiëntie ${o.efficiency}% — ${o.remainingQty} stuks resterend (${o.remainingHours} uur)\n`;
       });
     } else {
@@ -673,7 +679,8 @@ class AIService {
 
     const parseDate = (value: unknown): Date | null => {
       if (!value) return null;
-      const maybeDate = value?.toDate ? value.toDate() : new Date(value);
+      const val = value as any;
+      const maybeDate = val?.toDate ? val.toDate() : new Date(val);
       if (!(maybeDate instanceof Date) || Number.isNaN(maybeDate.getTime())) return null;
       return maybeDate;
     };
@@ -718,8 +725,8 @@ class AIService {
       try {
         const factorySnap = await getDoc(doc(db, getPathString(PATHS.FACTORY_CONFIG)));
         if (factorySnap.exists()) {
-          const departments = (factorySnap.data()?.departments || []) as unknown[];
-          const computed = departments.reduce((sum, dept) => {
+          const departments = (factorySnap.data()?.departments || []) as any[];
+          const computed = departments.reduce((sum: number, dept: any) => {
             const shifts = Number(dept?.shifts) || 1;
             return sum + shifts * 8;
           }, 0);
@@ -745,7 +752,8 @@ class AIService {
       }
 
       const baseDailyCapacity = Math.max(1, Math.round((dailyCapacityHours - Math.min(dailyCapacityHours, occupiedToday)) * 10) / 10);
-      const scenarioExtraCapacity = scenario?.extraCapacityHours ? Number(scenario.extraCapacityHours) : 0;
+      const sc = scenario as any;
+      const scenarioExtraCapacity = sc?.extraCapacityHours ? Number(sc.extraCapacityHours) : 0;
       const effectiveDailyCapacity = Math.max(1, Math.round((baseDailyCapacity + scenarioExtraCapacity) * 10) / 10);
       const loadFactor = dailyCapacityHours > 0
         ? Math.max(0, Math.min(2, occupiedToday / dailyCapacityHours))
@@ -763,8 +771,8 @@ class AIService {
       const trackingRows = trackingSnap.docs.map(d => d.data() as Record<string, unknown>);
       const planningRowsRaw = [
         ...planningSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
-        ...(planningLegacySnap?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
-        ...(planningScopedSnap?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
+        ...((planningLegacySnap as any)?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
+        ...((planningScopedSnap as any)?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
       ];
       const planningSeen = new Set<string>();
       const planningRows = planningRowsRaw.filter((row) => {
@@ -781,15 +789,15 @@ class AIService {
         if (key) planningByOrder.set(key, row);
       });
 
-      const predictions = (efficiencyRows as unknown[])
-        .filter(row => row?.orderId)
-        .map((row) => {
+      const predictions = (efficiencyRows as any[])
+        .filter((row: any) => row?.orderId)
+        .map((row: any) => {
           const orderId = String(row.orderId);
           const related = trackingRows.filter(r => String(r.orderId || r.orderNumber || '') === orderId);
 
           let producedQty = 0;
           let actualMinutes = 0;
-          related.forEach((log) => {
+          related.forEach((log: any) => {
             const statusTag = String(log.status || log.currentStep || log.currentStation || '').toLowerCase();
             if (statusTag.includes('complete') || statusTag.includes('gereed') || statusTag.includes('finished')) producedQty += 1;
 
@@ -813,12 +821,12 @@ class AIService {
           let etaWorkDays = Math.max(0, Math.ceil(adjustedHours / effectiveDailyCapacity));
 
           // Scenario: order bewust uitstellen in werkdagen.
-          if (scenario?.delayDays && Array.isArray(scenario?.delayOrderIds) && scenario.delayOrderIds.includes(orderId)) {
-            etaWorkDays += Number(scenario.delayDays) || 0;
+          if (sc?.delayDays && Array.isArray(sc?.delayOrderIds) && sc.delayOrderIds.includes(orderId)) {
+            etaWorkDays += Number(sc.delayDays) || 0;
           }
           const etaDate = addWorkingDays(now, etaWorkDays);
 
-          const plan = planningByOrder.get(orderId) || { /* empty */ };
+          const plan: any = planningByOrder.get(orderId) || { /* empty */ };
           const dueDate = parseDate(
             plan.deliveryDate || plan.leverDatum || plan.dueDate || plan.deadline || row.deliveryDate || row.dueDate
           );
@@ -849,7 +857,7 @@ class AIService {
 
           if (!dueDate && remainingHours > 60) riskScore += 10;
 
-          if (Array.isArray(scenario?.prioritizeOrderIds) && scenario.prioritizeOrderIds.includes(orderId)) {
+          if (Array.isArray(sc?.prioritizeOrderIds) && sc.prioritizeOrderIds.includes(orderId)) {
             riskScore = Math.max(riskScore, 88);
           }
 
@@ -883,16 +891,17 @@ class AIService {
         .slice(0, 20);
 
       if (scenario) {
+        const sc = scenario as any;
         ctx += '\n### Scenario actief:\n';
-        ctx += `- Input: "${clamp(String(scenario.raw || ''), 200)}"\n`;
-        if (scenario.delayDays > 0 && scenario.delayOrderIds?.length) {
-          ctx += `- Uitstel: ${scenario.delayOrderIds.join(', ')} met ${scenario.delayDays} werkdag(en)\n`;
+        ctx += `- Input: "${clamp(String(sc.raw || ''), 200)}"\n`;
+        if (sc.delayDays > 0 && sc.delayOrderIds?.length) {
+          ctx += `- Uitstel: ${sc.delayOrderIds.join(', ')} met ${sc.delayDays} werkdag(en)\n`;
         }
-        if (scenario.extraCapacityHours > 0) {
-          ctx += `- Extra capaciteit: +${scenario.extraCapacityHours} uur/dag\n`;
+        if (sc.extraCapacityHours > 0) {
+          ctx += `- Extra capaciteit: +${sc.extraCapacityHours} uur/dag\n`;
         }
-        if (scenario.prioritizeOrderIds?.length) {
-          ctx += `- Handmatige voorrang: ${scenario.prioritizeOrderIds.join(', ')}\n`;
+        if (sc.prioritizeOrderIds?.length) {
+          ctx += `- Handmatige voorrang: ${sc.prioritizeOrderIds.join(', ')}\n`;
         }
       }
 
@@ -1005,8 +1014,8 @@ class AIService {
 
       const planningRowsRaw = [
         ...planningSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
-        ...(planningLegacySnap?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
-        ...(planningScopedSnap?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
+        ...((planningLegacySnap as any)?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
+        ...((planningScopedSnap as any)?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
       ];
       const planningSeen = new Set<string>();
       const planningRows = planningRowsRaw.filter((row) => {
@@ -1020,16 +1029,16 @@ class AIService {
       const trackingRowsRaw = [
         ...trackingSnap.docs.map((d) => ({
           id: d.id,
-          __path: String((d as unknown)?.ref?.path || ''),
+          __path: String((d as any)?.ref?.path || ''),
           ...(d.data() as Record<string, unknown>),
         })),
-        ...(trackingScopedItemsSnap?.docs || [])
+        ...((trackingScopedItemsSnap as any)?.docs || [])
           .map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({
             id: d.id,
-            __path: String(d?.ref?.path || ''),
+            __path: String((d as any)?.ref?.path || ''),
             ...(d.data() as Record<string, unknown>),
           }))
-          .filter((row: Record<string, unknown>) => row.__path.includes('/production/tracked_products/')),
+          .filter((row: any) => String(row.__path || '').includes('/production/tracked_products/')),
       ];
 
       const trackingSeen = new Set<string>();
@@ -1049,7 +1058,7 @@ class AIService {
         return v.includes('complete') || v.includes('gereed') || v.includes('finished') || v === 'done';
       };
 
-      const hasStartSignal = (row: Record<string, unknown>) => {
+      const hasStartSignal = (row: any) => {
         return !!(
           row?.timestamps?.station_start ||
           row?.timestamps?.started ||
@@ -1062,7 +1071,7 @@ class AIService {
         );
       };
 
-      const hasEndSignal = (row: Record<string, unknown>) => {
+      const hasEndSignal = (row: any) => {
         return !!(
           row?.timestamps?.completed ||
           row?.timestamps?.finished ||
@@ -1113,7 +1122,7 @@ class AIService {
         return orderId ? activeOrderIdsFromLots.has(orderId) : false;
       });
       const completedOrders = planningRows.filter(r => isCompleted(r.status) || isCompleted(r.currentStep));
-      const archivedCompletedCount = (archiveCurrentYearSnap?.docs?.length || 0) + (archivePrevYearSnap?.docs?.length || 0);
+      const archivedCompletedCount = ((archiveCurrentYearSnap as any)?.docs?.length || 0) + ((archivePrevYearSnap as any)?.docs?.length || 0);
 
       const today = new Date().toISOString().slice(0, 10);
       const activeOperatorsToday = occupancyRows.filter(r => String(r.date || '') === today).length;
@@ -1136,7 +1145,8 @@ class AIService {
 
       const parseDateSafe = (value: unknown): Date | null => {
         if (!value) return null;
-        const d = value?.toDate ? value.toDate() : new Date(value);
+        const val = value as any;
+        const d = val?.toDate ? val.toDate() : new Date(val);
         if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
         return d;
       };
@@ -1316,14 +1326,15 @@ class AIService {
       ].filter(Boolean))];
 
       return products.filter(product => {
+        const prod = product as any;
         const codeCandidates = [
-          product.sku,
-          (product as unknown).itemCode,
-          (product as unknown).articleCode,
-          (product as unknown).extraCode,
-          (product as unknown).extraCodes,
-          (product as unknown).partNumber,
-          (product as unknown).drawingNumber,
+          prod.sku,
+          prod.itemCode,
+          prod.articleCode,
+          prod.extraCode,
+          prod.extraCodes,
+          prod.partNumber,
+          prod.drawingNumber,
         ].filter(Boolean).map(v => String(v).toLowerCase());
 
         const haystack = JSON.stringify({
@@ -1440,7 +1451,8 @@ class AIService {
           contextData += `\n\n${i18n.t("ai.context.prod_orders", "📦 PRODUCTIE ORDER INFORMATIE:")}\n`;
           contextData += '='.repeat(60) + '\n';
           
-          orders.slice(0, 3).forEach((order, idx) => {
+          orders.slice(0, 3).forEach((rawOrder, idx) => {
+            const order = rawOrder as Record<string, any>;
             contextData += `\n[Order ${idx + 1}]\n`;
             contextData += `Ordernummer: ${order.orderId || order.orderNumber || order.id || 'N/A'}\n`;
             if (order.lotNumber) contextData += `Lotnummer: ${order.lotNumber}\n`;
@@ -1524,7 +1536,8 @@ class AIService {
             contextData += `\n\n📋 RECENTSTE PRODUCTIE ACTIVITEIT:\n`;
             contextData += '='.repeat(60) + '\n';
 
-            recent.slice(0, 5).forEach((item, idx) => {
+            recent.slice(0, 5).forEach((rawItem, idx) => {
+              const item = rawItem as Record<string, any>;
               contextData += `\n[Activiteit ${idx + 1}]\n`;
               const orderId = item.orderId || item.orderNumber || item.id || 'N/A';
               contextData += `Order: ${orderId}\n`;
@@ -1573,7 +1586,8 @@ class AIService {
             contextData += `\n\n⏱️ PRODUCTIE TIJDEN:\n`;
             contextData += '='.repeat(60) + '\n';
 
-            times.slice(0, 10).forEach((item, idx) => {
+            times.slice(0, 10).forEach((rawItem, idx) => {
+              const item = rawItem as Record<string, any>;
               contextData += `\n[Tijdregistratie ${idx + 1}]\n`;
               const productName = item.name || item.productName || item.itemCode || item.sku;
               if (productName) contextData += `Product: ${productName}\n`;
@@ -1740,7 +1754,7 @@ class AIService {
     let enhancedSystemPrompt = systemPrompt || '';
     
     if (includeContext && messages.length > 0) {
-      const lastUserMessage = messages[messages.length - 1];
+      const lastUserMessage = messages[messages.length - 1] as any;
       if (lastUserMessage && lastUserMessage.role === 'user') {
         const context = await this.getRelevantContext(lastUserMessage.content);
         
@@ -1756,7 +1770,7 @@ class AIService {
 
   async chatGoogle(messages: unknown[], systemPrompt: string, modelName: string, options = { /* empty */ }) {
     try {
-      const response = await this.aiProxyGenerate({
+      const response: any = await (this.aiProxyGenerate as any)({
         messages,
         systemPrompt: systemPrompt || '',
         modelName,
@@ -1770,16 +1784,17 @@ class AIService {
       return text;
     } catch (error: unknown) {
       console.error('AI proxy error:', error);
+      const err = error as any;
 
-      if (error?.code === 'resource-exhausted') {
+      if (err?.code === 'resource-exhausted') {
         throw new Error(i18n.t("gemini.rate_limit", "Te veel AI aanvragen. Probeer het over een minuut opnieuw."));
       }
 
-      if (error?.code === 'unauthenticated') {
+      if (err?.code === 'unauthenticated') {
         throw new Error(i18n.t("gemini.auth_required", "Je moet ingelogd zijn om AI te gebruiken."));
       }
 
-      throw new Error(error?.message || i18n.t("gemini.proxy_error", "AI proxy request mislukt"));
+      throw new Error(err?.message || i18n.t("gemini.proxy_error", "AI proxy request mislukt"));
     }
   }
 
@@ -1790,8 +1805,8 @@ class AIService {
   async saveMemory({ topic, content, sourceQuestion = "", sourceAnswer = "", userId = null, category = "approved_answer" }: Record<string, unknown>) {
     try {
       const keywords = [...new Set([
-        ...this.extractSearchTerms(topic),
-        ...this.extractSearchTerms(sourceQuestion),
+        ...this.extractSearchTerms(String(topic || '')),
+        ...this.extractSearchTerms(String(sourceQuestion || '')),
       ])];
       await addDoc(collection(db, getPathString(PATHS.AI_MEMORY)), {
         category,
@@ -1806,7 +1821,7 @@ class AIService {
         active: true,
       });
       await logActivity(
-        userId || 'system',
+        String(userId || 'system'),
         'AI_MEMORY_SAVE',
         `AI memory opgeslagen: ${topic || 'zonder onderwerp'}`
       );
@@ -1850,12 +1865,13 @@ class AIService {
   async saveConversation({ userId, sessionId, messages }: Record<string, unknown>) {
     if (!userId || !sessionId) return;
     try {
-      const conversationRef = doc(db, getPathString(PATHS.AI_CONVERSATIONS), sessionId);
+      const conversationRef = doc(db, getPathString(PATHS.AI_CONVERSATIONS), String(sessionId));
       
       // Bewaar maximaal 50 berichten in de historie om Firestore document size limit (1MB) en AI token kosten te besparen
-      const toSave = messages.slice(-50).map((m: Record<string, unknown>) => ({
+      const msgArray = Array.isArray(messages) ? messages : [];
+      const toSave = msgArray.slice(-50).map((m: Record<string, unknown>) => ({
         role: m.role,
-        content: (m.content || '').substring(0, 2000),
+        content: String(m.content || '').substring(0, 2000),
         timestamp: m.timestamp || new Date().toISOString(),
       }));
       
@@ -1866,7 +1882,7 @@ class AIService {
       }, { merge: true });
 
       await logActivity(
-        userId,
+        String(userId),
         'AI_CONVERSATION_SAVE',
         `AI conversatie opgeslagen (${toSave.length} berichten)`
       );

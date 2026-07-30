@@ -28,6 +28,7 @@ describe('PlanningSidebarOrderCard', () => {
         isSelected={false}
         isNew={false}
         isDelegated={false}
+        isDelegatedStatus={false}
         isCancelled={false}
         isOnHold={false}
         effectiveStatus="In behandeling"

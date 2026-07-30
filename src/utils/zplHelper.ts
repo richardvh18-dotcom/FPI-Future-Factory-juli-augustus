@@ -717,9 +717,10 @@ export const captureElementAsCanvas = async (
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Gebruik html2canvas package direct voor betrouwbare rendering.
-    if ((document as unknown)?.fonts?.ready) {
+    const docWithFonts = document as unknown as { fonts?: { ready?: Promise<void> } };
+    if (docWithFonts?.fonts?.ready) {
         try {
-            await (document as unknown).fonts.ready;
+            await docWithFonts.fonts.ready;
         } catch {
             // Font readiness is best-effort.
         }

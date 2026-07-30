@@ -31,8 +31,8 @@ export const resolveInventoryScope = (record: Record<string, unknown> = {}) => {
     record.machineId ||
     record.machine ||
     record.stationId ||
-    detectMachineFromText(record.location) ||
-    detectMachineFromText(record.id);
+    detectMachineFromText(record.location as string | undefined) ||
+    detectMachineFromText(record.id as string | undefined);
 
   const machineId = toSegment(detectedMachine, DEFAULT_MACHINE);
 

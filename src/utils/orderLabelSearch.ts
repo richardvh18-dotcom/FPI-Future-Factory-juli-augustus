@@ -130,16 +130,20 @@ export const executeOrderLabelSearch = async (
   }
 
   const foundDocs = new Map<string, AnyRecord>();
-  const addDocs = (snap: { docs: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }[]; exists?: () => boolean; id?: string; data?: () => Record<string, unknown> }) => {
+  const addDocs = (snap: any) => {
     if (snap && snap.docs) {
-      snap.docs.forEach((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => foundDocs.set(d.id, { id: d.id, ...d.data() }));
+      snap.docs.forEach((d: any) => {
+        if (d && d.id) foundDocs.set(d.id, { id: d.id, ...(d.data ? d.data() : {}) });
+      });
     }
   };
-  const addScopedPlanningDocs = (snap: { docs: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }[]; exists?: () => boolean; id?: string; data?: () => Record<string, unknown> }) => {
+  const addScopedPlanningDocs = (snap: any) => {
     if (snap && snap.docs) {
       snap.docs
-        .filter((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => String(d.ref?.path || "").startsWith(planningPrefix))
-        .forEach((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => foundDocs.set(d.id, { id: d.id, ...d.data() }));
+        .filter((d: any) => String(d.ref?.path || "").startsWith(planningPrefix))
+        .forEach((d: any) => {
+          if (d && d.id) foundDocs.set(d.id, { id: d.id, ...(d.data ? d.data() : {}) });
+        });
     }
   };
 
@@ -322,8 +326,12 @@ export const executeOrderLabelSearch = async (
   });
 
   const merged = new Map<string, AnyRecord>();
-  Array.from(foundDocs.values()).forEach((item) => merged.set(item.id, item));
-  clientMatches.forEach((item) => merged.set(item.id, item));
+  Array.from(foundDocs.values()).forEach((item: any) => {
+    if (item?.id) merged.set(String(item.id), item);
+  });
+  clientMatches.forEach((item: any) => {
+    if (item?.id) merged.set(String(item.id), item);
+  });
 
   let finalResults = Array.from(merged.values());
 

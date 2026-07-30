@@ -1629,7 +1629,7 @@ const PrintQueueAdminView = () => {
       scopedJobs = snapshot.docs
         .filter((docSnap: any) => isScopedPrintQueuePath(docSnap.ref?.path))
         .map(normalizeJob)
-        .filter((job): job is PrintJob => {
+        .filter((job: any): job is PrintJob => {
           if (!job) return false;
           const scopeType = String((job as PrintJob)._scopeType || '').trim().toLowerCase();
           return !scopeType || scopeType === 'print_queue';

@@ -1,4 +1,5 @@
 import {
+  Firestore,
   collection,
   getDocs,
   limit,
@@ -25,7 +26,7 @@ type ScopedTarget = {
 };
 
 type SubscribeTrackedProductsParams = {
-  db: unknown;
+  db: Firestore;
   onData: (items: TrackedProductDoc[]) => void;
   onError?: (error: unknown) => void;
   statusExclusions?: string[];
@@ -186,7 +187,7 @@ export const trackedLotExistsActive = async ({
   lotNumber,
   excludeDocId = null,
 }: {
-  db: unknown;
+  db: Firestore;
   lotNumber: string;
   excludeDocId?: string | null;
 }) => {
