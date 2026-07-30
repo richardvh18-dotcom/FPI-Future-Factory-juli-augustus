@@ -12,11 +12,12 @@
 ### WM18-import fallback en robuuste opslag
 
 - De WM18-wikkelrobot-import is robuuster gemaakt door de uploadstroom niet meer volledig afhankelijk te maken van Firebase Storage en Firestore writes in een onstabiele backend-context.
-- Als Storage een upload weigert, wordt de import nu lokaal in de browser opgeslagen als fallback-record, zodat de data toch zichtbaar en bruikbaar blijft.
+- Als Storage een upload weigert, wordt de import nu lokaal in de browser opgeslagen als fallback-record, en ook bij andere Storage-fouten dan alleen expliciete toegangsproblemen, zodat de data toch zichtbaar en bruikbaar blijft.
 - De admin-view voor WM18-importbeheer is aangepast zodat de gebruiker direct ziet dat de import lokaal is opgeslagen wanneer Firebase Storage niet beschikbaar is.
 - Een nieuwe fallback-service in [src/services/wm18ImportStorageService.ts](src/services/wm18ImportStorageService.ts) slaat de import lokaal op in browser-storage en ondersteunt laden, verwijderen en hergebruik van de record.
-- Een regressietest is toegevoegd in [tests/wm18ImportStorageService.test.ts](tests/wm18ImportStorageService.test.ts) om de lokale fallback-flow te verifiëren.
-- Validatie: `npx vitest run tests/wm18ImportStorageService.test.ts` is succesvol uitgevoerd met 1 passing test, en `npm run type-check` is zonder TypeScript-fouten afgerond.
+- De WM18-import gebruikt nu een interne Firestore-document-ID in plaats van de ruwe bestandsnaam, zodat de opgeslagen record niet meer zichtbaar wordt als een lange pad-achtige naam.
+- Een regressietest is toegevoegd in [tests/wm18ImportStorageService.test.ts](tests/wm18ImportStorageService.test.ts) om de lokale fallback-flow en de nieuwe document-ID te verifiëren.
+- Validatie: `npx vitest run tests/wm18ImportStorageService.test.ts` is succesvol uitgevoerd met 4 passing tests, en `npm run type-check` is zonder TypeScript-fouten afgerond.
 
 ### Gateway-voorbereiding en presence-hardening
 

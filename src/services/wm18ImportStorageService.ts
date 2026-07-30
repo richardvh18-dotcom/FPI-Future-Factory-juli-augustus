@@ -15,6 +15,26 @@ export type LocalWm18ImportRecord = {
 
 const STORAGE_KEY = 'fpi_wm18_imports_local';
 
+export const buildWm18ImportDocumentId = (fileName: string): string => {
+  const normalized = fileName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return `wm18-import-${normalized || 'upload'}-${suffix}`;
+};
+
+const getErrorCode = (error: unknown): string => {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    return String((error as { code?: unknown }).code || '');
+  }
+  return '';
+};
+
+const getErrorMessage = (error: unknown): string => {
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message?: unknown }).message || '');
+  }
+  return '';
+};
+
 const readLocalImports = (): LocalWm18ImportRecord[] => {
   if (typeof window === 'undefined') return [];
 
@@ -35,6 +55,20 @@ const writeLocalImports = (records: LocalWm18ImportRecord[]) => {
   } catch {
     // ignore storage quota issues
   }
+};
+
+export const isWm18StorageFallbackError = (error: unknown): boolean => {
+  const normalized = `${getErrorCode(error)} ${getErrorMessage(error)}`.toLowerCase();
+  if (!normalized) return false;
+
+  return (
+    normalized.includes('storage/') ||
+    normalized.includes('user does not have permission') ||
+    normalized.includes('quota') ||
+    normalized.includes('network') ||
+    normalized.includes('upload failed') ||
+    normalized.includes('failed to upload')
+  );
 };
 
 export const buildLocalWm18ImportRecord = ({
@@ -62,7 +96,7 @@ export const buildLocalWm18ImportRecord = ({
   source: 'wm18-robot-import-local',
   notes: notes?.trim() || 'Lokaal opgeslagen WM18-import',
   category,
-  fileDataUri,
+  fileDataUri: undefined,
   uploadedBy,
   uploadedAt: new Date().toISOString(),
   wm18Definition,
