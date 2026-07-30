@@ -3,7 +3,7 @@ import { FileSpreadsheet, Upload, Trash2, Loader2, CheckCircle2, AlertTriangle, 
 import { collection, deleteDoc, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db, auth, logActivity } from '../../config/firebase';
 import { buildRobotProgramPreparation } from '../../services/robotProgramService';
-import { parseWm18Workbook } from '../../services/wm18CatalogImportService';
+import { parseAndImportWm18Workbook } from '../../services/wm18ExcelImportService';
 import { buildWm18ImportDocumentId } from '../../services/wm18ImportStorageService';
 
 type TemporaryExcelRecord = {
@@ -80,29 +80,7 @@ const TemporaryExcelManagerView = () => {
       const safeName = file.name.replace(/\s+/g, '_');
       const storagePath = `${STORAGE_PREFIX}/${safeName}`;
       const workbookBuffer = await file.arrayBuffer();
-      const importedWorkbook = await parseWm18Workbook(workbookBuffer, file.name);
-      const wm18Definition = importedWorkbook.programTemplates[0]?.definition || {
-        productFamily: 'elbow',
-        mofType: 'TB',
-        series: 'EST',
-        diameterMm: null,
-        pressureClass: 'PN16',
-        angleDeg: null,
-        radiusMm: null,
-        description: 'Import via enkel upload',
-        sourceFileName: file.name,
-        sourceSheet: 'S2_Productgegevens',
-        status: 'ready-for-bh18',
-        generatedAt: new Date().toISOString(),
-      };
-
-      const robotPrep = buildRobotProgramPreparation({
-        diameterMm: wm18Definition.diameterMm,
-        pressureClass: wm18Definition.pressureClass,
-        notes: 'Import via enkel upload',
-        category: 'WM18',
-        source: 'wm18-excel',
-      });
+      const importResult = await parseAndImportWm18Workbook(workbookBuffer, file.name);
 
       const documentId = buildWm18ImportDocumentId(file.name);
       const record: TemporaryExcelRecord = {
@@ -112,21 +90,15 @@ const TemporaryExcelManagerView = () => {
         uploadedAt: serverTimestamp(),
         uploadedBy: auth.currentUser?.email || 'unknown',
         source: 'wm18-robot-import',
-        notes: 'Import via enkel upload',
+        notes: `Import: ${importResult.catalogCount} catalogusregels, ${importResult.adjustmentsCount} logboeken`,
         category: 'WM18',
-        wm18Definition,
-        robotPrep: robotPrep as unknown as Record<string, unknown>,
-        importedCatalog: importedWorkbook.catalogItems,
-        importedProgramTemplates: importedWorkbook.programTemplates,
       };
 
       await setDoc(doc(db, COLLECTION_PATH, documentId), record, { merge: true });
       await logActivity(auth.currentUser?.uid || 'unknown', 'TEMP_EXCEL_UPLOAD', `WM18-wikkelrobot import geüpload en vertaald naar FF-catalogus: ${file.name}`);
-      const catalogCount = importedWorkbook.catalogItems.length;
-      const templateCount = importedWorkbook.programTemplates.length;
       setStatus({
         type: 'success',
-        message: `Import voltooid: ${file.name} is vertaald naar FF-catalogus (${catalogCount} artikelregels, ${templateCount} programma-templates) en gekoppeld aan robotpreparatie.`,
+        message: `Import voltooid: ${file.name} is gesynchroniseerd met Firestore (${importResult.catalogCount} catalogusartikelen, ${importResult.adjustmentsCount} logboeken).`,
       });
       event.target.value = '';
     } catch (error) {

@@ -21,6 +21,7 @@ import {
   X,
   Truck,
   Package,
+  Cpu,
 } from "lucide-react";
 import { collection, getDocs, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../../../config/firebase";
@@ -34,6 +35,8 @@ import { useNotifications } from '../../../contexts/NotificationContext';
 import { useTouchKeyboardPreference } from "../../../hooks/useTouchKeyboardPreference";
 import GlassCutListModal from "../modals/GlassCutListModal";
 import { formatConnectionForDisplay } from "../../../utils/connectionFormatter";
+import { getWm18CatalogItemByArticleNumber } from "../../../services/wm18ProgramCatalogService";
+import { WM18RobotProgramDetailModal } from "../modals/WM18RobotProgramDetailModal";
 
 type AnyRecord = Record<string, any>;
 
@@ -346,6 +349,24 @@ const TerminalPlanningView = ({
   const [syncProgress, setSyncProgress] = React.useState(0);
   const [missingItems, setMissingItems] = React.useState<string[]>([]);
   const [showMissingModal, setShowMissingModal] = React.useState(false);
+
+  const [hasRobotProgram, setHasRobotProgram] = React.useState<boolean | null>(null);
+  const [showRobotModal, setShowRobotModal] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!selectedOrder) {
+      setHasRobotProgram(null);
+      return;
+    }
+    const articleCode = selectedOrder.itemCode || selectedOrder.item || selectedOrder.extraCode || "";
+    if (!articleCode) {
+      setHasRobotProgram(false);
+      return;
+    }
+    getWm18CatalogItemByArticleNumber(articleCode)
+      .then((item) => setHasRobotProgram(Boolean(item)))
+      .catch(() => setHasRobotProgram(false));
+  }, [selectedOrder]);
 
   const handleSyncDrawings = async () => {
     if (isSyncing) return;
@@ -860,6 +881,11 @@ const TerminalPlanningView = ({
       >
         {selectedOrder ? (
           <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+            {/* Robot Program Status Hook */}
+            {(() => {
+              // Internal hook simulation inside render loop if needed, or effect below
+              return null;
+            })()}
             {/* Header Card */}
             <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
               <div className="absolute top-0 right-0 p-8 opacity-10">
@@ -1089,7 +1115,7 @@ const TerminalPlanningView = ({
                   </button>
                 )}
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <button
                     onClick={() => {
                       if (onViewDrawing) {
@@ -1106,6 +1132,20 @@ const TerminalPlanningView = ({
                     {selectedOrder.drawing && selectedOrder.drawing !== "-" && selectedOrder.drawing !== "" && (
                       <span className="ml-1 w-2 h-2 bg-blue-500 rounded-full" />
                     )}
+                  </button>
+
+                  {/* WIKKELROBOTPROGRAMMA KNOP (GROEN BIJ PROGRAMMA, ROOD BIJ GEEN PROGRAMMA) */}
+                  <button
+                    type="button"
+                    onClick={() => setShowRobotModal(true)}
+                    className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border shadow-sm ${
+                      hasRobotProgram
+                        ? "bg-emerald-600 border-emerald-700 hover:bg-emerald-700 text-white shadow-emerald-200"
+                        : "bg-rose-600 border-rose-700 hover:bg-rose-700 text-white shadow-rose-200"
+                    }`}
+                  >
+                    <Cpu size={16} /> {t("digitalplanning.terminal.robot_program", "Wikkelrobotprogramma")}
+                    <span className={`w-2 h-2 rounded-full ${hasRobotProgram ? "bg-emerald-200 animate-pulse" : "bg-rose-200"}`} />
                   </button>
 
                   {isSelectedOrderTee && (
@@ -1288,6 +1328,14 @@ const TerminalPlanningView = ({
           initialPressureBar={selectedOrder?.pn || selectedOrder?.pressure || parsedOrderSpecs.pn}
           initialInnerDiameterMm={selectedOrder?.diameter || selectedOrder?.dn || parsedOrderSpecs.id}
           initialBranchDiameterMm={selectedOrder?.branchDiameter || selectedOrder?.id1 || parsedOrderSpecs.id1}
+        />
+      )}
+      {selectedOrder && (
+        <WM18RobotProgramDetailModal
+          isOpen={showRobotModal}
+          onClose={() => setShowRobotModal(false)}
+          articleCode={selectedOrder.itemCode || selectedOrder.item || selectedOrder.extraCode || ""}
+          orderNumber={selectedOrder.orderId}
         />
       )}
     </>

@@ -1,84 +1,80 @@
-export type Wm18ProgramDefinition = {
-  productFamily: 'elbow' | 'coupler' | 'tee' | 'other';
-  mofType: 'TB' | 'CB' | string;
-  series: string;
-  diameterMm: number | null;
-  pressureClass: string;
-  angleDeg: number | null;
-  radiusMm: number | null;
-  description?: string;
-  sourceFileName?: string;
-  sourceSheet?: string;
-  status: 'draft' | 'ready-for-bh18' | 'ready-for-gateway';
-  generatedAt: string;
-};
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { Wm18CatalogItem } from '../types/wm18Types';
+import { lookupProductByManufacturedId } from '../utils/conversionLogic';
 
-export type Wm18CatalogDefaults = {
-  productFamilies: string[];
-  mofTypes: string[];
-  series: string[];
-  pressureClasses: string[];
-  angles: number[];
-  diameters: number[];
-  radiusOptions: number[];
-};
+const CATALOG_COLLECTION = 'future-factory/data/wm18_catalog';
 
-export const getWm18CatalogDefaults = (): Wm18CatalogDefaults => ({
-  productFamilies: ['elbow', 'coupler', 'tee', 'other'],
-  mofTypes: ['TB', 'CB'],
-  series: ['EST', 'FIBERMAR', 'OTHER'],
-  pressureClasses: ['PN08', 'PN10', 'PN12.5', 'PN16', 'PN20', 'PN25', 'PN32', 'PN40', 'PN50'],
-  angles: [3, 6, 9, 11.25, 15, 22.5, 30, 45, 60, 90],
-  diameters: [25, 40, 50, 65, 80, 100, 125, 150, 200, 250, 300, 350, 400, 450, 500, 600],
-  radiusOptions: [1, 1.5, 2],
-});
+/**
+ * Super-fast 4-tier lookup for WM18 Robot Catalog Items:
+ * 1. Direct hit on Firestore Document ID (articleNumber or spec ID)
+ * 2. Conversie Matrix lookup (maps new ERP article code <-> old article code)
+ * 3. Firestore query by articleNumber field
+ * 4. Browser LocalStorage fallback
+ */
+export const getWm18CatalogItemByArticleNumber = async (
+  inputArticleCode: string
+): Promise<Wm18CatalogItem | null> => {
+  if (!inputArticleCode) return null;
+  const rawCode = inputArticleCode.trim();
 
-export const buildWm18ProgramDefinition = ({
-  productFamily,
-  mofType,
-  series,
-  diameterMm,
-  pressureClass,
-  angleDeg,
-  radiusMm,
-  description,
-  sourceFileName,
-  sourceSheet = 'S8_Aanpassingsformulier',
-  generatedAt = new Date().toISOString(),
-}: {
-  productFamily?: string | null;
-  mofType?: string | null;
-  series?: string | null;
-  diameterMm?: string | number | null;
-  pressureClass?: string | null;
-  angleDeg?: string | number | null;
-  radiusMm?: string | number | null;
-  description?: string | null;
-  sourceFileName?: string | null;
-  sourceSheet?: string;
-  generatedAt?: string;
-}): Wm18ProgramDefinition => {
-  const normalizedFamily = String(productFamily || 'elbow').trim().toLowerCase();
-  const normalizedMofType = String(mofType || 'TB').trim().toUpperCase();
-  const normalizedSeries = String(series || 'EST').trim().toUpperCase();
-  const normalizedPressureClass = String(pressureClass || 'PN16').trim().toUpperCase();
+  // Tier 1: Direct Document ID hit in WM18 Catalog
+  try {
+    const directSnap = await getDoc(doc(db, CATALOG_COLLECTION, rawCode));
+    if (directSnap.exists()) {
+      return directSnap.data() as Wm18CatalogItem;
+    }
+  } catch (e) {
+    console.warn('WM18 direct doc lookup error:', e);
+  }
 
-  const diameter = Number(diameterMm);
-  const angle = Number(angleDeg);
-  const radius = Number(radiusMm);
+  // Tier 2: Check Conversie Matrix (maps new <-> old article number)
+  try {
+    const conversion = await lookupProductByManufacturedId(null, rawCode);
+    if (conversion) {
+      const candidates = [
+        conversion.manufacturedId,
+        conversion.targetProductId,
+        conversion.id,
+      ].filter((c): c is string => typeof c === 'string' && Boolean(c) && c !== rawCode);
 
-  return {
-    productFamily: ['elbow', 'coupler', 'tee', 'other'].includes(normalizedFamily) ? normalizedFamily as Wm18ProgramDefinition['productFamily'] : 'other',
-    mofType: normalizedMofType || 'TB',
-    series: normalizedSeries || 'EST',
-    diameterMm: Number.isFinite(diameter) ? diameter : null,
-    pressureClass: normalizedPressureClass || 'PN16',
-    angleDeg: Number.isFinite(angle) ? angle : null,
-    radiusMm: Number.isFinite(radius) ? radius : null,
-    description: description?.trim() || 'Nieuw uit WM18 rekenprogramma',
-    sourceFileName: sourceFileName?.trim() || 'WM18_Rekenprogramma_versie_12.xlsm',
-    sourceSheet,
-    status: 'ready-for-bh18',
-    generatedAt,
-  };
+      for (const candidateCode of candidates) {
+        const candidateSnap = await getDoc(doc(db, CATALOG_COLLECTION, candidateCode));
+        if (candidateSnap.exists()) {
+          return candidateSnap.data() as Wm18CatalogItem;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('WM18 conversion matrix lookup error:', e);
+  }
+
+  // Tier 3: Query by articleNumber field
+  try {
+    const qField = query(collection(db, CATALOG_COLLECTION), where('articleNumber', '==', rawCode));
+    const querySnap = await getDocs(qField);
+    if (!querySnap.empty) {
+      return querySnap.docs[0].data() as Wm18CatalogItem;
+    }
+  } catch (e) {
+    console.warn('WM18 query lookup error:', e);
+  }
+
+  // Tier 4: Check local storage fallback
+  if (typeof window !== 'undefined') {
+    try {
+      const rawLocal = window.localStorage.getItem('fpi_wm18_catalog_local');
+      if (rawLocal) {
+        const items = JSON.parse(rawLocal) as Wm18CatalogItem[];
+        const match = items.find(
+          (i) => i.id === rawCode || i.articleNumber === rawCode
+        );
+        if (match) return match;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
 };

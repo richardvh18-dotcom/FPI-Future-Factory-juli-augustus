@@ -19,6 +19,26 @@
 - Een regressietest is toegevoegd in [tests/wm18ImportStorageService.test.ts](tests/wm18ImportStorageService.test.ts) om de lokale fallback-flow en de nieuwe document-ID te verifiëren.
 - Validatie: `npx vitest run tests/wm18ImportStorageService.test.ts` is succesvol uitgevoerd met 4 passing tests, en `npm run type-check` is zonder TypeScript-fouten afgerond.
 
+### WM18-wikkelrobot Excel rekenprogramma analyse (v12)
+
+- Uitvoerig technisch onderzoek uitgevoerd naar `Tijdelijke Bestanden/Excel/WM18_Rekenprogramma_versie_12.xlsm` betreffende de WM18 wikkelrobot.
+- Het bestand bevat 8 werkbladen: `S1_Startscherm`, `S2_Productgegevens` (387k cellen catalogus en 6D robotcoördinaten), `S3_Programma` (ABB RAPID `ProcesdataSTN1` & `ProcesdataSTN2` generator), `S4_Instructies`, `S5_Bedieninginstruties_Robot` (FlexPendant & storingsafhandeling), `S6_BD-maten_Moflengtes`, `S7_Wijzigingsformulier`, en `S8_Aanpassingsformulier`.
+- VBA-macro's (`ModProgrammaVersturen`, `ModRekenprogramma`, `ModVariabelenPublic`) geanalyseerd, inclusief historische FTP-verzendingsstromen naar ABB robotcontrollers (`ftp://192.168.125.1/FPI/HOME/ProcesdataSTN1.MOD`).
+### WM18 Wikkelrobot Instelcentrum & Parametrische RAPID Engine
+
+- Een nieuw type-safe gegevensmodel gedefinieerd in [src/types/wm18Types.ts](src/types/wm18Types.ts) voor WM18 catalogusartikelen, 6D robotcoördinaten, wikkelsnelheden, spoed en operator logboeken (`S8`).
+- Een parametrische reken- en RAPID code-generator engine gebouwd in [src/services/wm18CalculationEngine.ts](src/services/wm18CalculationEngine.ts) die alle wiskundige 6D ruimtelijke coördinaten en snelheden berekent volgens de originele Excel `S2`-formules en geldige ABB RAPID modules (`ProcesdataSTN1.MOD` en `ProcesdataSTN2.MOD`) genereert.
+- Een Excel importservice ontwikkeld in [src/services/wm18ExcelImportService.ts](src/services/wm18ExcelImportService.ts) die `WM18_Rekenprogramma_versie_12.xlsm` uitleest en via batch-writes publiceert naar `future-factory/data/wm18_catalog` en `future-factory/data/wm18_adjustments` in Firestore.
+- Het nieuwe **WM18 Wikkelrobot Instelcentrum** gerealiseerd in [src/components/admin/WM18RobotManagerView.tsx](src/components/admin/WM18RobotManagerView.tsx) met 4 tabbladen: *Producten & Programma Catalogus*, *Nieuw Product Generator*, *Excel Import* en *Operator Log (S8)*.
+- Het dashboard in [src/components/admin/AdminDashboard.tsx](src/components/admin/AdminDashboard.tsx) en [src/components/admin/TemporaryExcelManagerView.tsx](src/components/admin/TemporaryExcelManagerView.tsx) bijgewerkt en gekoppeld aan de nieuwe import- en gateway-services. Directe route `/wm18-robot` toegevoegd in [src/App.tsx](src/App.tsx).
+- De geëxporteerde functie `sendRobotProgramToGateway` toegevoegd aan [src/services/gatewayPcService.ts](src/services/gatewayPcService.ts) om de frontend module-importfout op te lossen.
+- Firestore beveiligingsregels in [firestore.rules](firestore.rules) bijgewerkt voor `match /future-factory/data/{document=**}` (lees- en schrijfrechten). Lokale browser-fallback geïmplementeerd in [src/services/wm18ExcelImportService.ts](src/services/wm18ExcelImportService.ts) en [src/components/admin/WM18RobotManagerView.tsx](src/components/admin/WM18RobotManagerView.tsx) zodat de import direct werkt, ongeacht of Firestore cloud-regels al zijn gedeplyod.
+- Versie verhoogd naar **`0.1.124`** in [package.json](package.json), [package-lock.json](package-lock.json) en [public/version.json](public/version.json).
+- **BH18 Terminal Koppeling**: Knop `Wikkelrobotprogramma` toegevoegd aan het rechter detailpaneel in [src/components/digitalplanning/terminal/TerminalPlanningView.tsx](src/components/digitalplanning/terminal/TerminalPlanningView.tsx) (naast *Bekijk tekening/productkaart* en *Kwaliteitseisen*). De knop kleurt **Groen** als er een programma bestaat voor het product, en **Rood** als er geen programma is.
+- **WM18 Robot Program Modal**: [src/components/digitalplanning/modals/WM18RobotProgramDetailModal.tsx](src/components/digitalplanning/modals/WM18RobotProgramDetailModal.tsx) ontwikkeld. Bij het klikken op de knop opent een pop-up met alle robotparameters, 6D coördinaten voor Station 1 & 2, en een RAPID-code preview voor `ProcesdataSTN1.MOD` en `ProcesdataSTN2.MOD` met een knop om door te sturen naar de Gateway PC.
+- **BH18 Positie Selectie in ProductionStartModal**: In [src/components/digitalplanning/modals/ProductionStartModal.tsx](src/components/digitalplanning/modals/ProductionStartModal.tsx) een **Wikkelrobot Positie (BH18)** selector toegevoegd voor *Positie 1 (Station 1)* of *Positie 2 (Station 2)*, specifiek voor BH18-werkplekorders.
+- Succesvol gedeplyod naar Firebase Hosting (`firebase deploy --only hosting`). Live op `https://future-factory-377ef.web.app`.
+
 ### Gateway-voorbereiding en presence-hardening
 
 - De algemene presence-write-loop is tijdelijk uitgeschakeld in [src/hooks/usePresence.ts](src/hooks/usePresence.ts) om Firestore write-pressure te beperken die de WM18-import anders blokkeerde.

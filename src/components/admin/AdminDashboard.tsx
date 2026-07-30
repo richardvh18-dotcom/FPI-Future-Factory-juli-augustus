@@ -39,6 +39,7 @@ import {
   Mail,
   ClipboardCheck,
   PlayCircle,
+  Cpu,
 } from "lucide-react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 
@@ -112,6 +113,7 @@ const QcSampleView = React.lazy(() => import("./QcSampleView"));
 const ReferenceOpsImportModal = React.lazy(() => import("../digitalplanning/modals/ReferenceOpsImportModal"));
 
 const CompanyPresentation = React.lazy(() => import("./CompanyPresentation"));
+const WM18RobotManagerView = React.lazy(() => import("./WM18RobotManagerView"));
 
 const AdminRefOpsImportScreen = ({ onNavigate }: { onNavigate?: (screen: string | null) => void }) => (
   <ReferenceOpsImportModal
@@ -430,6 +432,15 @@ const AdminDashboard = () => {
           color: "bg-violet-50 border-violet-100",
           roles: ["admin", "engineer", "supervisor"],
           component: AdminRefOpsImportScreen,
+        },
+        {
+          id: "wm18_robot",
+          title: "WM18 Wikkelrobot",
+          desc: "Instelcentrum, 6D robotcoördinaten & ABB RAPID code generator.",
+          icon: <Cpu size={24} className="text-cyan-600" />,
+          color: "bg-cyan-50 border-cyan-100",
+          roles: ["admin", "engineer", "teamleader", "supervisor"],
+          component: WM18RobotManagerView,
         },
       ]
     },

@@ -497,6 +497,11 @@ service cloud.firestore {
       allow write: if isSignedIn();
     }
 
+    match /future-factory/data/{document=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
     match /artifacts/{appId}/{document=**} {
       allow read, write: if hasUserRecord() || isSignedIn();
     }

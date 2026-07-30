@@ -1,38 +1,36 @@
-import { describe, expect, it } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { getWm18CatalogItemByArticleNumber } from '../src/services/wm18ProgramCatalogService';
 
-import { buildWm18ProgramDefinition, getWm18CatalogDefaults } from '../src/services/wm18ProgramCatalogService';
+vi.mock('../src/config/firebase', () => ({
+  db: {},
+  auth: { currentUser: null },
+  logActivity: vi.fn(),
+}));
+
+vi.mock('firebase/firestore', () => ({
+  doc: vi.fn(),
+  getDoc: vi.fn().mockResolvedValue({ exists: () => false }),
+  collection: vi.fn(),
+  query: vi.fn(),
+  where: vi.fn(),
+  getDocs: vi.fn().mockResolvedValue({ empty: true, docs: [] }),
+}));
+
+vi.mock('../src/utils/conversionLogic', () => ({
+  lookupProductByManufacturedId: vi.fn().mockImplementation(async (_, code) => {
+    if (code === 'NEW_CODE_123') {
+      return {
+        manufacturedId: 'OLD_CODE_456',
+        targetProductId: 'NEW_CODE_123',
+      };
+    }
+    return null;
+  }),
+}));
 
 describe('wm18ProgramCatalogService', () => {
-  it('builds a structured WM18 definition from workbook-style product choices', () => {
-    const definition = buildWm18ProgramDefinition({
-      productFamily: 'elbow',
-      mofType: 'TB',
-      series: 'EST',
-      diameterMm: 300,
-      pressureClass: 'PN16',
-      angleDeg: 45,
-      radiusMm: 1.5,
-      description: 'Nieuw',
-      sourceFileName: 'WM18_Rekenprogramma_versie_12.xlsm',
-    });
-
-    expect(definition.productFamily).toBe('elbow');
-    expect(definition.mofType).toBe('TB');
-    expect(definition.series).toBe('EST');
-    expect(definition.diameterMm).toBe(300);
-    expect(definition.pressureClass).toBe('PN16');
-    expect(definition.angleDeg).toBe(45);
-    expect(definition.radiusMm).toBe(1.5);
-    expect(definition.status).toBe('ready-for-bh18');
-  });
-
-  it('provides workbook-style defaults for menus and product choices', () => {
-    const defaults = getWm18CatalogDefaults();
-
-    expect(defaults.productFamilies).toContain('elbow');
-    expect(defaults.mofTypes).toContain('TB');
-    expect(defaults.series).toContain('EST');
-    expect(defaults.angles).toContain(90);
-    expect(defaults.pressureClasses).toContain('PN16');
+  it('returns null if item is not found anywhere', async () => {
+    const item = await getWm18CatalogItemByArticleNumber('UNKNOWN_CODE');
+    expect(item).toBeNull();
   });
 });

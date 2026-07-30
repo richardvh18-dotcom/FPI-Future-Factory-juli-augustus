@@ -14,7 +14,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Loader2,
-  Database
+  Database,
+  Cpu
 } from "lucide-react";
 import { collection, collectionGroup, getDocs, query, where, onSnapshot, doc, getDoc, setDoc, deleteDoc, serverTimestamp, runTransaction, limit, orderBy } from "firebase/firestore";
 
@@ -378,6 +379,7 @@ const ProductionStartModal = ({
   const [manualOrderInput, setManualOrderInput] = useState("");
   const [assignedOperators, setAssignedOperators] = useState<Array<{ number: string; name: string }>>([]);
   const [operatorInput, setOperatorInput] = useState("");
+  const [robotPosition, setRobotPosition] = useState<'STN1' | 'STN2'>('STN1');
   const [previewLotIndex, setPreviewLotIndex] = useState(0);
 
   useEffect(() => {
@@ -2188,6 +2190,47 @@ const ProductionStartModal = ({
                 />
               )}
             </div>
+
+            {/* BH18 Wikkelrobot Positie Selectie (Station 1 / Station 2) */}
+            {isBh18Station(stationId) && (
+              <div className="p-3 bg-cyan-950/10 border-2 border-cyan-500/30 rounded-2xl space-y-1.5 text-left shadow-sm">
+                <div className="flex items-center gap-2">
+                  <div className="p-1 bg-cyan-600 text-white rounded-md">
+                    <Cpu size={12} />
+                  </div>
+                  <span className="text-[9px] font-black text-cyan-700 uppercase tracking-widest">
+                    {t("productionStartModal.robotPositionTitle", "Wikkelrobot Positie (BH18)")}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setRobotPosition("STN1")}
+                    className={`py-2 px-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 border ${
+                      robotPosition === "STN1"
+                        ? "bg-cyan-600 text-white border-cyan-500 shadow-sm"
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${robotPosition === "STN1" ? "bg-white" : "bg-slate-300"}`} />
+                    {t("productionStartModal.pos1", "Positie 1 (STN1)")}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRobotPosition("STN2")}
+                    className={`py-2 px-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 border ${
+                      robotPosition === "STN2"
+                        ? "bg-purple-600 text-white border-purple-500 shadow-sm"
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${robotPosition === "STN2" ? "bg-white" : "bg-slate-300"}`} />
+                    {t("productionStartModal.pos2", "Positie 2 (STN2)")}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Mode switcher */}
             <div className="flex bg-slate-200 p-1 rounded-xl">

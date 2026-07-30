@@ -225,3 +225,16 @@ export const dispatchGatewayPcJob = async (
     message: typeof data?.message === 'string' ? data.message : 'Gateway job accepted',
   };
 };
+
+export type RobotProgramPayload = {
+  programId: string;
+  fileName: string;
+  content: string;
+  station: 'STN1' | 'STN2';
+};
+
+export const sendRobotProgramToGateway = async (
+  payload: RobotProgramPayload
+): Promise<GatewayPcDispatchResult> => {
+  return dispatchGatewayPcJob('WM18_ROBOT_PROGRAM', payload);
+};

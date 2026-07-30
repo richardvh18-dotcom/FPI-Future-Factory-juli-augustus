@@ -70,6 +70,7 @@ const AiAssistantView = safeLazy(() => import("./components/ai/AiAssistantView")
 const AdminLogView = safeLazy(() => import("./components/admin/AdminLogView"));
 const QCHub = safeLazy(() => import("./components/qc/QCHub"));
 const PrintQueueAdminView = safeLazy(() => import("./components/printer/PrintQueueAdminView"));
+const WM18RobotManagerView = safeLazy(() => import("./components/admin/WM18RobotManagerView"));
 const ProductDossierModal = lazy(() => import("./components/digitalplanning/modals/ProductDossierModal"));
 const TeamleaderOrderDetailModal = lazy(() => import("./components/digitalplanning/modals/TeamleaderOrderDetailModal"));
 const MTPresentation = lazy(() =>
@@ -538,6 +539,7 @@ const App = () => {
                   element={canAccessPrinters ? <PrintQueueAdminView /> : <Navigate to="/" replace />}
                 />
                 <Route path="/admin/*" element={<AdminDashboard />} />
+                <Route path="/wm18-robot" element={<WM18RobotManagerView />} />
                 <Route path="/logs" element={<AdminLogView />} />
                 <Route path="/login" element={<LoginView onLogin={handleLogin} externalError={loginError} logoUrl={logoUrl} appName={appName} />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
