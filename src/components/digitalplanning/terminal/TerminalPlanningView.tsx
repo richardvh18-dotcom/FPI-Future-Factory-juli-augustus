@@ -23,7 +23,7 @@ import {
   Package,
   Cpu,
 } from "lucide-react";
-import { collection, getDocs, query, where, onSnapshot } from "firebase/firestore";
+import { collection, getDocs, query, where, onSnapshot, orderBy, limit } from "firebase/firestore";
 import { db } from "../../../config/firebase";
 import { getArchiveItemsPath, getPathString, PATHS } from "../../../config/dbPaths";
 import { manualSyncDrawings } from "../../../utils/manualSyncDrawings";
@@ -98,6 +98,9 @@ const TerminalPlanningView = ({
 
   const [showGlassCutListModal, setShowGlassCutListModal] = useState(false);
   const [toolingMolds, setToolingMolds] = React.useState<any[]>([]);
+  const [robotProgramState, setRobotProgramState] = useState<'loading' | 'ready' | 'missing'>('loading');
+  const [robotProgramDetails, setRobotProgramDetails] = useState<AnyRecord | null>(null);
+  const [showRobotProgramDetails, setShowRobotProgramDetails] = useState(false);
 
   const parsedOrderSpecs = useMemo(() => {
     if (!selectedOrder) return { id: undefined, id1: undefined, pn: undefined, connectionType: "cbcbcb" };
@@ -145,6 +148,38 @@ const TerminalPlanningView = ({
     return false;
   }, [selectedOrder]);
 
+  const isSelectedOrderElbow = useMemo(() => {
+    if (!selectedOrder) return false;
+    const fields = [
+      selectedOrder.item,
+      selectedOrder.itemCode,
+      selectedOrder.productId,
+      selectedOrder.productCode,
+      selectedOrder.description,
+      selectedOrder.itemDescription,
+      selectedOrder.productType,
+      selectedOrder.orderId,
+    ];
+
+    return fields.some((field) => /\b(?:ELBOW|ELL|ELBOWS|BEND|BOOG)\b/i.test(String(field || "")));
+  }, [selectedOrder]);
+
+  const isBh18Context = useMemo(() => {
+    if (!selectedOrder) return false;
+    const stationText = [
+      selectedOrder.stationId,
+      selectedOrder.station,
+      selectedOrder.workstation,
+      selectedOrder.machineId,
+      selectedOrder.machine,
+      selectedOrder.location,
+      selectedOrder.workCenter,
+    ].join(" ");
+    return /BH18/i.test(stationText);
+  }, [selectedOrder]);
+
+  const shouldShowRobotProgramButton = isSelectedOrderElbow && (isBh18Context || selectedOrder?.stationId || selectedOrder?.station);
+
   React.useEffect(() => {
     const unsub = onSnapshot(
       collection(db, getPathString(PATHS.TOOLING_MOLDS as string[])),
@@ -155,6 +190,41 @@ const TerminalPlanningView = ({
     );
     return () => unsub();
   }, []);
+
+  React.useEffect(() => {
+    if (!selectedOrder?.orderId || !shouldShowRobotProgramButton) {
+      setRobotProgramState('loading');
+      setRobotProgramDetails(null);
+      setShowRobotProgramDetails(false);
+      return;
+    }
+
+    const jobsRef = collection(db, 'future-factory/settings/gateway_pc/jobs');
+    const q = query(
+      jobsRef,
+      where('type', '==', 'robot_program_prepared'),
+      where('orderId', '==', String(selectedOrder.orderId)),
+      orderBy('createdAt', 'desc'),
+      limit(1)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const latestDoc = snapshot.docs[0];
+      if (latestDoc) {
+        setRobotProgramDetails({ id: latestDoc.id, ...latestDoc.data() });
+        setRobotProgramState('ready');
+      } else {
+        setRobotProgramDetails(null);
+        setRobotProgramState('missing');
+      }
+    }, (err) => {
+      console.error('Robotprogramma status ophalen mislukt:', err);
+      setRobotProgramState('missing');
+      setRobotProgramDetails(null);
+    });
+
+    return () => unsub();
+  }, [selectedOrder?.orderId, shouldShowRobotProgramButton]);
 
   const matchedMold = React.useMemo(() => {
     if (!selectedOrder || toolingMolds.length === 0) return null;
@@ -1156,6 +1226,34 @@ const TerminalPlanningView = ({
                     >
                       <FileText size={16} className="text-amber-600" /> 📐 Glas- & Snijtekening
                     </button>
+                  )}
+
+                  {shouldShowRobotProgramButton && (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowRobotProgramDetails((value) => !value)}
+                        className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border ${robotProgramState === 'ready' ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700' : 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700'}`}
+                      >
+                        <FileText size={16} /> Robotprogramma BH18
+                      </button>
+                      {showRobotProgramDetails && robotProgramDetails ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left text-[11px] text-slate-700 shadow-sm">
+                          <div className="font-black uppercase tracking-widest text-slate-500 mb-2">Robotinstellingen</div>
+                          <div className="space-y-1">
+                            <div><span className="font-black text-slate-600">Positie:</span> {robotProgramDetails?.preparation?.robotPosition ?? 1}</div>
+                            <div><span className="font-black text-slate-600">Station:</span> {robotProgramDetails?.stationId || 'BH18'}</div>
+                            <div><span className="font-black text-slate-600">Diameter:</span> {robotProgramDetails?.preparation?.diameterMm ? `${robotProgramDetails.preparation.diameterMm} mm` : '-'}</div>
+                            <div><span className="font-black text-slate-600">Drukklasse:</span> {robotProgramDetails?.preparation?.pressureClass || '-'}</div>
+                            {robotProgramDetails?.preparation?.notes ? <div><span className="font-black text-slate-600">Notitie:</span> {robotProgramDetails.preparation.notes}</div> : null}
+                          </div>
+                        </div>
+                      ) : showRobotProgramDetails && robotProgramState === 'missing' ? (
+                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-left text-[11px] text-rose-700 shadow-sm">
+                          Geen robotprogramma voorbereid voor deze order.
+                        </div>
+                      ) : null}
+                    </div>
                   )}
 
                   <button className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2">

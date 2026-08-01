@@ -22,6 +22,7 @@ export type PrinterRoutingRule = {
 
 let cachedConfig: any = null;
 let listenersActive = false;
+let stopFirestoreListeners: (() => void) | null = null;
 
 // We use a simple pub/sub to notify components of changes
 const listeners = new Set<() => void>();
@@ -30,6 +31,7 @@ const notifyListeners = () => listeners.forEach((fn) => fn());
 const startListeners = () => {
   if (listenersActive) return;
   listenersActive = true;
+  const unsubs: Array<() => void> = [];
 
   cachedConfig = {
     productTypes: [],
@@ -51,19 +53,27 @@ const startListeners = () => {
   collections.forEach(({ key, path }) => {
     if (!path) return;
     const q = query(collection(db, getPathString(path)), orderBy("order", "asc"));
-    onSnapshot(q, (snap) => {
+    const unsub = onSnapshot(q, (snap) => {
       cachedConfig[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as ConfigItem[];
       notifyListeners();
     });
+    unsubs.push(unsub);
   });
 
   const printerRulesPath = getPathString(PATHS.PRINTER_ROUTING_RULES);
   if (printerRulesPath) {
-    onSnapshot(collection(db, printerRulesPath), (snap) => {
+    const unsub = onSnapshot(collection(db, printerRulesPath), (snap) => {
       cachedConfig.printerRules = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as PrinterRoutingRule[];
       notifyListeners();
     });
+    unsubs.push(unsub);
   }
+
+  stopFirestoreListeners = () => {
+    unsubs.forEach((unsub) => unsub());
+    listenersActive = false;
+    stopFirestoreListeners = null;
+  };
 };
 
 export const useFactoryConfig = () => {
@@ -81,6 +91,9 @@ export const useFactoryConfig = () => {
     listeners.add(update);
     return () => {
       listeners.delete(update);
+      if (listeners.size === 0 && stopFirestoreListeners) {
+        stopFirestoreListeners();
+      }
     };
   }, []);
 

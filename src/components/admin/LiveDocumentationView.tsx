@@ -77,11 +77,11 @@ export const LiveDocumentationView = ({ t }: { t: any }) => {
     }
   }, [fileTree, selectedDoc]);
 
-  const toggleFolder = (folderName: string) => {
+  const toggleFolder = (folderName: string): void => {
     setExpandedFolders(prev => ({ ...prev, [folderName]: !prev[folderName] }));
   };
 
-  const renderTree = (node: DirNode | DocNode, level: number = 0) => {
+  const renderTree = (node: DirNode | DocNode, level: number = 0): React.ReactNode => {
     if (!node.isDirectory) {
       // It's a file
       if (searchTerm && !node.name.toLowerCase().includes(searchTerm.toLowerCase())) return null;

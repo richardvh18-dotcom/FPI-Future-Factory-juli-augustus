@@ -5,6 +5,11 @@ import { PATHS, getPathString, getArchiveItemsPath } from "../config/dbPaths";
 import { getISOWeek } from "date-fns";
 import { fetchScopedEfficiencyHours } from "../utils/efficiencyScopedReader";
 
+const PLANNING_CONTEXT_MAX_READ_LIMIT = 600;
+const PLANNING_CONTEXT_SCOPED_LIMIT = 500;
+const PLANNING_CONTEXT_TODAY_TRACKING_LIMIT = 400;
+const PLANNING_CONTEXT_TODAY_ARCHIVE_LIMIT = 300;
+
 type PlanningDoc = QueryDocumentSnapshot<DocumentData>;
 
 type PlanningRow = {
@@ -115,18 +120,19 @@ const resolveMachine = (data: Record<string, unknown>, fallbackId = ""): string 
  */
 export const getRawPlanningData = async (limitCount = 1000): Promise<PlanningRow[]> => {
   try {
+    const safeLimit = Math.max(50, Math.min(limitCount, PLANNING_CONTEXT_MAX_READ_LIMIT));
     const paths = [
       PATHS.PLANNING,
       ["future-factory", "production", "data", "digital_planning", "orders"],
     ];
 
     const rootQueries = paths.map((p) =>
-      getDocs(query(collection(db, getPathString(p as string[])), limit(limitCount)))
+      getDocs(query(collection(db, getPathString(p as string[])), limit(safeLimit)))
         .catch((err) => { console.warn("Root planning query mislukt:", err); return { docs: [] }; })
     );
 
     // Haal OOK de scoped orders op via collectionGroup!
-    const scopedQuery = getDocs(query(collectionGroup(db, "orders"), limit(limitCount)))
+    const scopedQuery = getDocs(query(collectionGroup(db, "orders"), limit(Math.min(safeLimit, PLANNING_CONTEXT_SCOPED_LIMIT))))
       .then((snapshot) => {
          const planningPrefix = `${getPathString(PATHS.PLANNING)}/`;
          return {
@@ -141,12 +147,12 @@ export const getRawPlanningData = async (limitCount = 1000): Promise<PlanningRow
     const snapshots = await Promise.all([...rootQueries, scopedQuery]);
 
     const seenIds = new Set<string>();
-    const allDocs: any[] = [];
+    const allDocs: PlanningDoc[] = [];
     snapshots.forEach((snap) => {
-      snap.docs.forEach((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => {
+      snap.docs.forEach((d) => {
         if (!seenIds.has(d.id)) {
           seenIds.add(d.id);
-          allDocs.push(d);
+          allDocs.push(d as PlanningDoc);
         }
       });
     });
@@ -161,7 +167,7 @@ export const getRawPlanningData = async (limitCount = 1000): Promise<PlanningRow
       return wA - wB;
     });
 
-    return activeDocs.slice(0, limitCount).map((doc) => {
+    return activeDocs.slice(0, safeLimit).map((doc) => {
       const data = doc.data();
       const deliveryDate = toDateSafe(data.deliveryDate || data.plannedDeliveryDate);
       const weekNum = data.weekNumber || data.week ||
@@ -205,7 +211,7 @@ export const getTodayProductionContext = async () => {
     const trackSnap = await getDocs(
       query(
         collection(db, getPathString(trackingPath as string[])),
-        limit(800)
+        limit(PLANNING_CONTEXT_TODAY_TRACKING_LIMIT)
       )
     ).catch(() => ({ docs: [] }));
 
@@ -262,7 +268,7 @@ export const getTodayProductionContext = async () => {
     const year = new Date().getFullYear();
     const archivePath = getArchiveItemsPath(year);
     const archSnap = await getDocs(
-      query(collection(db, getPathString(archivePath as string[])), limit(500))
+      query(collection(db, getPathString(archivePath as string[])), limit(PLANNING_CONTEXT_TODAY_ARCHIVE_LIMIT))
     ).catch(() => ({ docs: [] }));
 
     archSnap.docs.forEach((d: PlanningDoc) => {
@@ -371,9 +377,9 @@ export const getLivePlanningContext = async () => {
         let urenTeGaan = 0;
         if (normMinutes > 0) {
            urenTeGaan = (nogTeMaken * normMinutes) / 60;
-        } else if (Number((o as any).LNUren) > 0 && Number((o as any).Gepland) > 0) {
+        } else if ((o as Record<string, unknown>).LNUren && (o as Record<string, unknown>).Gepland && o.Gepland > 0) {
            // Bereken resterende uren op basis van percentage nog te maken
-           urenTeGaan = (Number((o as any).LNUren) / Number((o as any).Gepland)) * nogTeMaken;
+           urenTeGaan = (((o as Record<string, unknown>).LNUren as number) / o.Gepland) * nogTeMaken;
         }
         
         summary.stukken += nogTeMaken;

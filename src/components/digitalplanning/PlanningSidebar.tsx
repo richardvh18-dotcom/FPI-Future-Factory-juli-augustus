@@ -20,6 +20,8 @@ import { getArchiveItemsPath } from "../../config/dbPaths";
 import { endOfISOWeek, format, getISOWeek, isSameDay, isWithinInterval, startOfISOWeek, isValid } from "date-fns";
 import { getEffectivePlanQty, getOrderFinishedUnits, getOrderIdentity, getTrackedRecordOrderId } from "../../utils/planningProgress";
 
+type TranslateFn = any;
+
 type SidebarRecord = {
   id: string;
   orderId?: string;
@@ -114,6 +116,8 @@ const PlanningSidebar = ({
   enableRejectionScopes = false,
 }: PlanningSidebarProps) => {
   const { t } = useTranslation();
+  const translate: TranslateFn = (key: any, defaultValue?: string, options?: Record<string, unknown>) =>
+    t(key as string | string[], defaultValue ?? "", options as Record<string, unknown> | undefined);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedMachine, setSelectedMachine] = useState("ALL");
   const [sortMode, setSortMode] = useState("week_backlog");
@@ -1771,7 +1775,7 @@ const PlanningSidebar = ({
     const finishedAmount = getFinishedUnitsForOrder(order);
     const activeTrackedCount = getNumeric(activeTrackedByOrder.get(normalizeOrderKey(getOrderIdentity(order))));
     const shouldForceCompletedStatus = plannedAmount > 0 && finishedAmount >= plannedAmount && activeTrackedCount === 0;
-    const effectiveStatus = shouldForceCompletedStatus ? "Gereed" : order.status;
+    const effectiveStatus = shouldForceCompletedStatus ? "Gereed" : String(order.status || "");
     const isDelegatedStatus = !shouldForceCompletedStatus && (order.status === 'delegated' || order.status === 'DELEGATED');
     const isCancelled = order.status === 'cancelled';
     const isOnHold = order.status === 'on_hold';
@@ -1823,7 +1827,7 @@ const PlanningSidebar = ({
     return (
       <PlanningSidebarOrderCard
         order={order}
-        onSelect={onSelect}
+        onSelect={(selectedOrder) => onSelect(selectedOrder as SidebarRecord)}
         isSelected={isSelected}
         isNew={isNew}
         isDelegated={isDelegated}
@@ -1839,10 +1843,10 @@ const PlanningSidebar = ({
         predictionLabel={predictionLabel}
         predictionClass={predictionClass}
         orderWithPrediction={orderWithPrediction}
-        getOrderDisplayName={getOrderDisplayName}
-        formatDeliveryDate={formatDeliveryDate}
+        getOrderDisplayName={(selectedOrder) => getOrderDisplayName(selectedOrder as SidebarRecord)}
+        formatDeliveryDate={(selectedOrder) => formatDeliveryDate(selectedOrder as SidebarRecord)}
         formatDateWithWeek={formatDateWithWeek}
-        t={t}
+        t={translate}
       />
     );
   };

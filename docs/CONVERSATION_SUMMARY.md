@@ -7,6 +7,122 @@
 
 ---
 
+## Dagupdate 1 augustus 2026
+
+### Firestore kostenoptimalisatie (snelle wins)
+
+- Gerichte kostenreductie doorgevoerd op Firestore reads/writes in rapportage- en printqueue-paden.
+- In [src/components/admin/AdminReportsView.tsx](src/components/admin/AdminReportsView.tsx) zijn centrale read-limieten toegevoegd en hoge query-limieten verlaagd:
+    - tracking reads verlaagd via `REPORT_TRACKING_READ_LIMIT = 1200` (voorheen meerdere paden op 3000-4000)
+    - occupancy reads verlaagd via `REPORT_OCCUPANCY_READ_LIMIT = 1200`
+    - archief reads begrensd via `REPORT_ARCHIVE_READ_LIMIT = 1500`
+- In [src/components/printer/PrintQueueAdminView.tsx](src/components/printer/PrintQueueAdminView.tsx) zijn brede fallback-scans teruggebracht:
+    - machine orders: `MACHINE_ORDERS_READ_LIMIT = 400` (voorheen 600)
+    - scoped fallback via `collectionGroup('orders')`: `SCOPED_ORDERS_FALLBACK_LIMIT = 600` (voorheen 2000)
+    - scoped zoek-fallback: `SCOPED_ORDERS_SEARCH_FALLBACK_LIMIT = 120` (voorheen 250)
+- In [src/components/printer/PrintQueueAutoProcessor.tsx](src/components/printer/PrintQueueAutoProcessor.tsx) is heartbeat-write-pressure verlaagd:
+    - heartbeat-throttle toegevoegd met `HEARTBEAT_MIN_INTERVAL_MS = 60_000`
+    - poll-interval verhoogd naar `USB_POLL_INTERVAL_MS = 30_000` (voorheen 15s)
+    - heartbeat schrijft nu alleen bij statuswijziging of na minimale interval
+
+### Verwachte impact
+
+- Minder Firestore reads op admin-rapportages en printqueue fallback-paden.
+- Minder Firestore writes vanuit printer heartbeat/presence updates.
+- Lagere piekbelasting en direct lagere variabele Firestore-kosten bij gelijk gebruiksvolume.
+
+### Firestore kostenoptimalisatie (tweede batch)
+
+- In [src/components/digitalplanning/WorkstationHub.tsx](src/components/digitalplanning/WorkstationHub.tsx) is de brede scoped orders-listener begrensd met `WORKSTATION_SCOPED_ORDERS_LIMIT = 800` zodat `collectionGroup('orders')` niet meer onbegrensd live data inleest.
+- In [functions/src/services/drawingSyncService.ts](functions/src/services/drawingSyncService.ts) is de scoped planning-scan begrensd met `DRAWING_SYNC_SCOPED_ORDERS_LIMIT = 1500` om full-scan read-pieken te dempen tijdens scheduled sync.
+- In [functions/src/triggers/databaseTriggers.js](functions/src/triggers/databaseTriggers.js) is een early-return toegevoegd op efficiency-herberekening:
+    - nieuwe signature-vergelijking `buildEfficiencyRecalcSignature`/`shouldSkipEfficiencyRecalc`
+    - trigger slaat recalculatie over als alleen irrelevante velden zijn gewijzigd
+
+### Verwachte extra impact
+
+- Minder realtime read-volume op workstation-tablets in niet-wikkelstations.
+- Minder server-side reads/CPU in periodieke drawing-sync jobs.
+- Minder onnodige Cloud Function invocations voor efficiency-bijwerking.
+
+### Drawing Sync delta-checkpoint optimalisatie
+
+- In [functions/src/services/drawingSyncService.ts](functions/src/services/drawingSyncService.ts) is de scheduled drawing-sync omgezet naar checkpoint-gedreven delta verwerking.
+- De service leest nu `drawingSyncCheckpointAt` uit `future-factory/settings/general_configs/main` en gebruikt daarna alleen records met `updatedAt >= checkpoint` (root + scoped).
+- Eerste run draait in bootstrap-modus met begrensde scan (`DRAWING_SYNC_ROOT_LIMIT` en `DRAWING_SYNC_SCOPED_ORDERS_LIMIT`), vervolgruns draaien in delta-modus.
+- Na elke run wordt de checkpoint en run-metadata opgeslagen (`drawingSyncCheckpointAt`, `drawingSyncLastRunAt`, `drawingSyncLastRunMatched`, `drawingSyncLastRunMode`).
+- Daarnaast is de ontbrekende `DB_BASE` import in deze service hersteld zodat logging naar `future-factory/settings/drawing_sync_logs` consistent werkt.
+
+### Listener-deduplicatie en cleanup (kostenreductie)
+
+- In [src/hooks/useOccupancyListener.ts](src/hooks/useOccupancyListener.ts) is een gedeelde occupancy-listener toegevoegd met globale cache + subscriber model, zodat meerdere schermen dezelfde Firestore-stream delen in plaats van elk een eigen `onSnapshot`.
+- In [src/components/digitalplanning/MazakView.tsx](src/components/digitalplanning/MazakView.tsx) en [src/components/digitalplanning/LossenView.tsx](src/components/digitalplanning/LossenView.tsx) zijn lokale occupancy-listeners verwijderd en vervangen door de gedeelde hook.
+- In [src/components/digitalplanning/useTeamleaderFirestore.ts](src/components/digitalplanning/useTeamleaderFirestore.ts) is de directe `OCCUPANCY` listener verwijderd; de hook gebruikt nu dezelfde gedeelde occupancy-stroom.
+- In [src/hooks/useFactoryConfig.ts](src/hooks/useFactoryConfig.ts) worden Firestore unsubscribe callbacks nu centraal bijgehouden en opgeruimd zodra geen component meer geabonneerd is (voorkomt persistent listeners zonder actieve consumer).
+- In [src/components/digitalplanning/WorkstationHub.tsx](src/components/digitalplanning/WorkstationHub.tsx) is de nested occupancy-fallback-listener nu expliciet getrackt en opgeruimd in cleanup, zodat er geen stille listener-leak achterblijft na fouten.
+
+### Verwachte extra impact
+
+- Minder parallelle listeners op `PATHS.OCCUPANCY` over meerdere digitalplanning-schermen.
+- Lagere continue read-druk tijdens gelijktijdig gebruik van Teamleader/Mazak/Lossen views.
+- Minder risico op oplopende read-kosten door vergeten fallback-subscriptions.
+
+### Service query-limieten verlaagd (stap 2 uitgevoerd)
+
+- In [src/services/aiService.ts](src/services/aiService.ts) zijn centrale read-caps toegevoegd en toegepast op de zwaarste contextqueries:
+    - `AI_TRACKING_READ_LIMIT = 600`
+    - `AI_OCCUPANCY_READ_LIMIT = 300`
+    - `AI_PLANNING_READ_LIMIT = 400`
+    - `AI_SCOPED_ORDERS_READ_LIMIT = 600`
+    - `AI_SCOPED_ITEMS_READ_LIMIT = 1200`
+    - `AI_ARCHIVE_READ_LIMIT = 800`
+- Hiermee zijn eerdere hoge waarden (o.a. 1200/1800/3000/2500) vervangen door lagere caps in `getCapacityContext`, `getPredictivePlanningContext` en `getOperationalSnapshotContext`.
+
+- In [src/services/planningContext.ts](src/services/planningContext.ts) zijn query-limieten gecapt met centrale constants:
+    - `PLANNING_CONTEXT_MAX_READ_LIMIT = 600`
+    - `PLANNING_CONTEXT_SCOPED_LIMIT = 500`
+    - `PLANNING_CONTEXT_TODAY_TRACKING_LIMIT = 400`
+    - `PLANNING_CONTEXT_TODAY_ARCHIVE_LIMIT = 300`
+- `getRawPlanningData` gebruikt nu `safeLimit` zodat callers geen onbedoeld hoge reads meer forceren.
+
+- In [functions/src/services/aiInvisibleWorkerService.ts](functions/src/services/aiInvisibleWorkerService.ts) zijn backend-limieten verlaagd met centrale caps:
+    - planning root/scoped: `1200` / `2000` (was `2500` / `5000`)
+    - occupancy root/scoped: `1500` / `2500` (was `4000` / `6000`)
+
+### Resultaat
+
+- Geen nieuwe diagnostics op de aangepaste bestanden.
+- Overgebleven grote readpieken in deze services zijn verwijderd of begrensd met expliciete constants.
+
+### Planning Transition Service query-optimalisatie
+
+- In [functions/src/services/planningTransitionService.ts](functions/src/services/planningTransitionService.ts) zijn de resterende hoge query-limieten vervangen door centrale constants:
+    - `CONTROL_EVENTS_READ_LIMIT = 600`
+    - `TRACKING_ORDER_MACHINE_READ_LIMIT = 600`
+    - `ACTIVE_TRACKING_ROOT_LIMIT = 400`
+    - `ACTIVE_TRACKING_SCOPED_LIMIT = 800`
+    - `SCOPED_PRINT_QUEUE_PENDING_LIMIT = 600`
+- Toegepast op control event-reconciliatie, tracking tellers, actieve lots-checks en scoped print-queue pending scans.
+- Alle eerdere ruwe limieten van 1000/1200/600 in deze hotspots zijn hiermee vervangen door gecentraliseerde en lagere caps.
+
+### Verwachte impact
+
+- Minder read-spikes tijdens order-reconciliatie en start/restore workflows.
+- Lagere Firestore-load bij print-queue pending scans in piekmomenten.
+- Betere onderhoudbaarheid door centraal beheer van read-limieten.
+
+### Laatste sweep: utils query-limieten
+
+- In [src/utils/orderLabelSearch.ts](src/utils/orderLabelSearch.ts) is de brede fallback-scan op `collectionGroup('orders')` verlaagd van `2000` naar `600` via `ORDER_LABEL_BROAD_SCOPED_FALLBACK_LIMIT`.
+- In [functions/src/utils/helpers.js](functions/src/utils/helpers.js) is de occupancy afsluit-query verlaagd van `500` naar `200` via `OCCUPANCY_CLOSE_ACTIVE_LIMIT`.
+
+### Resultaat laatste sweep
+
+- Geen nieuwe diagnostics in de aangepaste utils-bestanden.
+- Resterende hoge limieten in de eerder geïdentificeerde utils-hotspots zijn nu teruggebracht.
+
+---
+
 ## Dagupdate 30 juli 2026
 
 ### Fase 1: Type-Safety & Code Hygiene Refactoring

@@ -195,7 +195,7 @@ describe("automationEngine", () => {
       const result = await evaluateInspectionOverdue({ daysOverdue: 7, station: "QC" });
       expect(result.triggered).toBe(true);
       expect(result.data!.overdueCount).toBe(1);
-      expect((result.data!.products as any[])[0].lotNumber).toBe("L-1");
+      expect(((result.data!.products as Array<{ lotNumber?: string }>)[0]?.lotNumber || "")).toBe("L-1");
     });
   });
 

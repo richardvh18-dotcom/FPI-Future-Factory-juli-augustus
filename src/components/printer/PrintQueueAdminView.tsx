@@ -135,6 +135,9 @@ const USB_PRINTER_PRODUCT_KEY = 'usb_printer_product';
 const USB_PRINTER_ID_KEY = 'usb_printer_id';
 const PRINT_STATION_SELECTED_KEY = 'print_station_selected_station';
 const PRINT_STATION_BINDINGS_KEY = 'print_station_printer_bindings_v1';
+const MACHINE_ORDERS_READ_LIMIT = 400;
+const SCOPED_ORDERS_FALLBACK_LIMIT = 600;
+const SCOPED_ORDERS_SEARCH_FALLBACK_LIMIT = 120;
 
 const isInvalidPrintQueueTransitionError = (error: unknown): boolean => {
   const message = String(
@@ -748,7 +751,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       const fetches = fetchTargets.map(async ({ productType, machine }) => {
         const machinePath = `${getPathString(PATHS.PLANNING)}/${productType}/machines/${machine}/orders`;
         try {
-          const snap = await getDocs(query(collection(db, machinePath), limit(600)));
+          const snap = await getDocs(query(collection(db, machinePath), limit(MACHINE_ORDERS_READ_LIMIT)));
           return snap.docs.map((docSnap) => ({
             id: docSnap.id,
             ...(docSnap.data() as AnyRecord),
@@ -766,7 +769,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       if (rows.length === 0) {
         const machineMarkers = Array.from(new Set(fetchTargets.map((target) => `/machines/${target.machine}/orders/`)));
         try {
-          const scopedSnap = await getDocs(query(collectionGroup(db, 'orders'), limit(2000)));
+          const scopedSnap = await getDocs(query(collectionGroup(db, 'orders'), limit(SCOPED_ORDERS_FALLBACK_LIMIT)));
           rows = scopedSnap.docs
             .filter((docSnap) => {
               const refPath = String(docSnap.ref?.path || '');
@@ -868,7 +871,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                 orderBy(documentId()),
                 where(documentId(), ">=", searchText),
                 where(documentId(), "<=", `${searchText}\uf8ff`),
-                limit(250)
+                limit(SCOPED_ORDERS_SEARCH_FALLBACK_LIMIT)
               )
             );
 
@@ -1629,7 +1632,7 @@ const PrintQueueAdminView = () => {
       scopedJobs = snapshot.docs
         .filter((docSnap: any) => isScopedPrintQueuePath(docSnap.ref?.path))
         .map(normalizeJob)
-        .filter((job: any): job is PrintJob => {
+        .filter((job: PrintJob | null): job is PrintJob => {
           if (!job) return false;
           const scopeType = String((job as PrintJob)._scopeType || '').trim().toLowerCase();
           return !scopeType || scopeType === 'print_queue';

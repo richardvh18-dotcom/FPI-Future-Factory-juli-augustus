@@ -156,6 +156,11 @@ const fileDetails: Record<string, FileDetail> = {
     desc: "Het centrale hoofdscherm voor systeembeheerders. Deze module fungeert als de toegangspoort tot alle kritieke beheermodules zoals gebruikersbeheer, database monitoring, en applicatie-instellingen. Het biedt een high-level overzicht van de systeemgezondheid en actieve processen binnen de Future Factory infrastructuur.",
     tags: ["Admin", "UI", "Control Center"]
   },
+  "src/services/gatewayPcService.ts": {
+    title: "GatewayPC Preparatie Bridge",
+    desc: "Bevat een voorbereidende integratie-definitie voor de lokale Node.js gateway-pc uit de GatewayPC-repo. De bridge is bedoeld voor later wiring met print- en robotjobs, maar is op dit moment nog niet actief in de runtime.",
+    tags: ["Gateway", "Node.js", "Preparatie", "Integration"]
+  },
   "src/components/admin/AdminProductManager.tsx": {
     title: "Product Manager (PIM)",
     desc: "Uitgebreide beheermodule voor de productcatalogus. Hier kunnen proces engineers productdimensies, materialen, en specificaties (zoals wanddiktes en diameters) toevoegen of aanpassen. Wijzigingen hier werken direct door naar de productievloer en de meet-modals.",

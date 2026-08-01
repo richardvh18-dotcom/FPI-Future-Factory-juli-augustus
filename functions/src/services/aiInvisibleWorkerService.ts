@@ -18,6 +18,10 @@ const IMPORT_EXTENSIONS = ['.xlsx', '.xlsm', '.xls'];
 const AI_RUNTIME = { memory: '2GB', timeoutSeconds: 540, minInstances: 0 };
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || 'europe-west1';
 const VERTEX_MODEL = process.env.INVISIBLE_WORKER_MODEL || 'gemini-2.5-flash';
+const INVISIBLE_WORKER_PLANNING_ROOT_LIMIT = 1200;
+const INVISIBLE_WORKER_PLANNING_SCOPED_LIMIT = 2000;
+const INVISIBLE_WORKER_OCCUPANCY_ROOT_LIMIT = 1500;
+const INVISIBLE_WORKER_OCCUPANCY_SCOPED_LIMIT = 2500;
 
 const clean = (value) => String(value || '').trim();
 
@@ -446,14 +450,14 @@ const loadPlanningOrders = async () => {
   };
 
   try {
-    const rootSnap = await db.collection(`${BASE}/production/digital_planning`).limit(2500).get();
+    const rootSnap = await db.collection(`${BASE}/production/digital_planning`).limit(INVISIBLE_WORKER_PLANNING_ROOT_LIMIT).get();
     rootSnap.docs.forEach(addOrder);
   } catch (error) {
     console.warn('[invisible_worker] load root planning failed:', error?.message || String(error));
   }
 
   try {
-    const scopedSnap = await db.collectionGroup('orders').limit(5000).get();
+    const scopedSnap = await db.collectionGroup('orders').limit(INVISIBLE_WORKER_PLANNING_SCOPED_LIMIT).get();
     scopedSnap.docs
       .filter((docSnap) => docSnap.ref.path.includes('/digital_planning/'))
       .forEach(addOrder);
@@ -475,14 +479,14 @@ const loadCapacityAssignments = async () => {
   };
 
   try {
-    const rootSnap = await db.collection(`${BASE}/production/machine_occupancy`).limit(4000).get();
+    const rootSnap = await db.collection(`${BASE}/production/machine_occupancy`).limit(INVISIBLE_WORKER_OCCUPANCY_ROOT_LIMIT).get();
     rootSnap.docs.forEach(addAssignment);
   } catch (error) {
     console.warn('[invisible_worker] load root occupancy failed:', error?.message || String(error));
   }
 
   try {
-    const scopedSnap = await db.collectionGroup('assignments').limit(6000).get();
+    const scopedSnap = await db.collectionGroup('assignments').limit(INVISIBLE_WORKER_OCCUPANCY_SCOPED_LIMIT).get();
     scopedSnap.docs
       .filter((docSnap) => docSnap.ref.path.includes('/machine_occupancy/'))
       .forEach(addAssignment);

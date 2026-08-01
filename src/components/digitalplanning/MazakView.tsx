@@ -55,6 +55,7 @@ import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
 import { resolveLinkedTemplateChain } from "../../utils/orderLabelTemplateUtils";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { resolvePrinterForRouting } from '../../utils/printRouting';
+import { useOccupancyListener } from "../../hooks/useOccupancyListener";
 
 const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
 const DEFAULT_MAZAK_DPI = 300;
@@ -429,7 +430,7 @@ const getItemNominalDiameter = (item: Record<string, unknown>): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-type TranslateFn = (key: string, fallback?: string) => string;
+type TranslateFn = any;
 
 type MazakTabNavigationProps = {
   activeTab: MazakTab;
@@ -1495,7 +1496,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const { user } = useAdminAuth() as { user: AdminUser | null };
   const { notify } = useNotifications();
   const [items, setItems] = useState<ProductItem[]>([]);
-  const [occupancy, setOccupancy] = useState<OccupancyEntry[]>([]);
+  const occupancy = useOccupancyListener() as OccupancyEntry[];
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null);
   const [showActionModal, setShowActionModal] = useState(false);
@@ -1585,14 +1586,6 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       setShowRequestNewOrderModal(false);
     }
   }, [activeTab]);
-
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, getPathString(PATHS.OCCUPANCY)), (snap) => {
-      const data: OccupancyEntry[] = snap.docs.map((docSnap) => docSnap.data() as OccupancyEntry);
-      setOccupancy(data);
-    });
-    return () => unsub();
-  }, []);
 
   const isShiftActive = useCallback((shiftLabel: unknown) => {
     const now = new Date();
@@ -2149,7 +2142,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
   const displayRows = useMemo(() => {
     const rendered = new Set<string>();
-    const rows: Array<ProductItem | { id: string; isSeriesHeader: boolean; seriesGroupId: string; orderId: string; seriesCount: number; seriesUnits: ProductItem[] }> = [];
+    const rows: DisplayRow[] = [];
 
     inboxItems.forEach((item: ProductItem) => {
       const groupId = item?.seriesGroupId;

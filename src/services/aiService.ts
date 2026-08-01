@@ -8,7 +8,7 @@
  */
 
 import { collection, collectionGroup, query, getDocs, addDoc, setDoc, getDoc, doc, limit, orderBy, where, serverTimestamp } from 'firebase/firestore';
-import { getFunctions, httpsCallable, Functions, HttpsCallable } from 'firebase/functions';
+import { getFunctions, httpsCallable, type Functions } from 'firebase/functions';
 import app, { auth, db, logActivity } from '../config/firebase';
 import { PATHS, getPathString, getPlanningArchivePath } from '../config/dbPaths';
 import i18n from '../i18n';
@@ -69,12 +69,35 @@ const getErrorMessage = (error: unknown): string => {
 
 const SYSTEM_PROMPT_BUDGET = 11500;
 
+const AI_TRACKING_READ_LIMIT = 600;
+const AI_OCCUPANCY_READ_LIMIT = 300;
+const AI_PLANNING_READ_LIMIT = 400;
+const AI_SCOPED_ORDERS_READ_LIMIT = 600;
+const AI_SCOPED_ITEMS_READ_LIMIT = 1200;
+const AI_ARCHIVE_READ_LIMIT = 800;
+
+type RecordLike = Record<string, unknown>;
+type FirestoreDocLike = {
+  id: string;
+  data: () => RecordLike;
+  ref?: { path: string };
+};
+type FirestoreSnapshotLike = {
+  docs: FirestoreDocLike[];
+};
+
 const clamp = (value: string, maxChars: number): string => String(value || '').slice(0, maxChars);
+const asRecord = (value: unknown): RecordLike | null => {
+  if (typeof value === 'object' && value !== null) {
+    return value as RecordLike;
+  }
+  return null;
+};
 
 class AIService {
   public availableModel: string;
-  public functions: any;
-  public aiProxyGenerate: any;
+  public functions: Functions;
+  public aiProxyGenerate: unknown;
 
   constructor() {
     this.availableModel = 'gemini-2.5-flash';
@@ -83,7 +106,8 @@ class AIService {
     
     // Expose debug functie globally voor troubleshooting
     if (typeof window !== 'undefined') {
-      (window as any).aiDebug = {
+      const debugWindow = window as Window & { aiDebug?: unknown };
+      debugWindow.aiDebug = {
         listDocuments: () => this.debugListDocuments(),
         searchDocuments: (term: string) => this.debugSearchDocuments(term),
         testContext: (query: string) => this.debugTestContext(query)
@@ -135,12 +159,11 @@ class AIService {
    */
   async getProductionOrders(limitCount = 50) {
     try {
-      let allOrders: unknown[] = [];
+      let allOrders: RecordLike[] = [];
       const seen = new Set<string>();
 
-      const pushUnique = (rows: unknown[], source: string) => {
-        rows.forEach((rawRow) => {
-          const row = rawRow as Record<string, any>;
+      const pushUnique = (rows: RecordLike[], source: string) => {
+        rows.forEach((row) => {
           const stableId = String(
             row.orderId || row.orderNumber || row.id || row.jobId || row.productOrderId || ''
           ).trim();
@@ -160,7 +183,7 @@ class AIService {
         
         const planningOrders = snapshot.docs.map(doc => ({
           id: doc.id,
-          ...(doc.data() as Record<string, unknown>)
+          ...(doc.data() as RecordLike)
         }));
         
         pushUnique(planningOrders, 'PLANNING');
@@ -174,7 +197,7 @@ class AIService {
 
         const legacyOrders = legacySnap.docs.map(doc => ({
           id: doc.id,
-          ...(doc.data() as Record<string, unknown>)
+          ...(doc.data() as RecordLike)
         }));
 
         pushUnique(legacyOrders, 'PLANNING_LEGACY');
@@ -186,7 +209,7 @@ class AIService {
 
         const scopedOrders = scopedSnap.docs.map(doc => ({
           id: doc.id,
-          ...(doc.data() as Record<string, unknown>)
+          ...(doc.data() as RecordLike)
         }));
 
         pushUnique(scopedOrders, 'PLANNING_SCOPED');
@@ -200,7 +223,7 @@ class AIService {
         
         const trackedOrders = snapshot.docs.map(doc => ({
           id: doc.id,
-          ...(doc.data() as Record<string, unknown>)
+          ...(doc.data() as RecordLike)
         }));
         
         pushUnique(trackedOrders, 'TRACKING');
@@ -227,7 +250,7 @@ class AIService {
     try {
       const orders = await this.getProductionOrders(1000);
       const normalize = (value: unknown) => (value ?? '').toString();
-      const collectLotNumbers = (order: Record<string, unknown>) => {
+      const collectLotNumbers = (order: RecordLike) => {
         const lots: string[] = [];
         const pushLot = (value: unknown) => {
           const val = normalize(value);
@@ -266,14 +289,13 @@ class AIService {
       if (lotNumber) { /* empty */ }
       
       // Filter orders
-      const filtered = orders.filter(rawOrder => {
-        const order = rawOrder as Record<string, any>;
+      const filtered = orders.filter((order: RecordLike) => {
         // Mogelijke ID velden - orderId is het belangrijkste!
-        const orderId = (order.orderId || order.orderNumber || order.id || order.jobId || order.productOrderId || '').toUpperCase();
-        const itemCode = (order.itemCode || '').toUpperCase();
-        const name = (order.name || order.title || order.productName || '').toLowerCase();
-        const desc = (order.description || order.details || '').toLowerCase();
-        const sku = (order.sku || order.articleCode || order.partNumber || '').toUpperCase();
+        const orderId = String(order.orderId || order.orderNumber || order.id || order.jobId || order.productOrderId || '').toUpperCase();
+        const itemCode = String(order.itemCode || '').toUpperCase();
+        const name = String(order.name || order.title || order.productName || '').toLowerCase();
+        const desc = String(order.description || order.details || '').toLowerCase();
+        const sku = String(order.sku || order.articleCode || order.partNumber || '').toUpperCase();
         const lotNumbers = collectLotNumbers(order).map((n) => n.toUpperCase());
         
         // Als we een ordernummer gevonden hebben, check daar eerst
@@ -305,12 +327,10 @@ class AIService {
       
       
       // Sorteer zodat exacte matches eerst komen
-      return filtered.sort((rawA, rawB) => {
-        const a = rawA as Record<string, any>;
-        const b = rawB as Record<string, any>;
+      return filtered.sort((a: RecordLike, b: RecordLike) => {
         if (orderNumber) {
-          const aId = (a.orderId || '').toUpperCase();
-          const bId = (b.orderId || '').toUpperCase();
+          const aId = String(a.orderId || '').toUpperCase();
+          const bId = String(b.orderId || '').toUpperCase();
           if (aId === orderNumber && bId !== orderNumber) return -1;
           if (bId === orderNumber && aId !== orderNumber) return 1;
         }
@@ -449,20 +469,20 @@ class AIService {
 
     // --- 1. Fabrieksstructuur (ploegen per afdeling) ---
     let dailyCapacityHours = 0; // totale norm-uren per werkdag op basis van ploegen
-    let departments: unknown[] = [];
+    let departments: RecordLike[] = [];
     try {
       const factorySnap = await getDoc(doc(db, getPathString(PATHS.FACTORY_CONFIG)));
       if (factorySnap.exists()) {
         const data = factorySnap.data();
-        departments = data.departments || [];
-        (departments as any[]).forEach(dept => {
+        departments = (data.departments || []) as RecordLike[];
+        departments.forEach((dept: RecordLike) => {
           const shifts = Number(dept.shifts) || 1;
           dailyCapacityHours += shifts * 8; // 8 uur per ploeg
         });
         ctx += `\n### Fabrieksstructuur:\n`;
-        (departments as any[]).forEach(dept => {
+        departments.forEach((dept: RecordLike) => {
           const shifts = Number(dept.shifts) || 1;
-          ctx += `- ${dept.name}: ${shifts} ploeg(en) = ${shifts * 8} uur/dag\n`;
+          ctx += `- ${String(dept.name || '')}: ${shifts} ploeg(en) = ${shifts * 8} uur/dag\n`;
         });
         ctx += `**Totale dagcapaciteit: ${dailyCapacityHours} uur/dag (alle afdelingen)**\n`;
       }
@@ -502,30 +522,31 @@ class AIService {
 
     // --- 4. Geschatte resterende werkuren per lopende order (EFFICIENCY_HOURS) ---
     let totalCommittedHours = 0;
-    const behindOrders: unknown[] = [];
-    const activeOrders: unknown[] = [];
+    const behindOrders: RecordLike[] = [];
+    const activeOrders: RecordLike[] = [];
     try {
       const efficiencyRows = await fetchScopedEfficiencyHours({ db, mode: 'active', maxDocs: 100 });
-      const trackingSnap = await getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(500)));
-      const trackingData = trackingSnap.docs.map(d => d.data());
+      const trackingSnap = await getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(AI_TRACKING_READ_LIMIT)));
+      const trackingData = trackingSnap.docs.map(d => d.data() as RecordLike);
 
-      efficiencyRows.forEach(std => {
+      efficiencyRows.forEach((std: RecordLike) => {
         if (!std.orderId) return;
 
-        const relatedLogs = trackingData.filter(t =>
+        const relatedLogs = trackingData.filter((t: RecordLike) =>
           String(t.orderId || t.orderNumber) === String(std.orderId)
         );
 
         let actualMinutes = 0;
         let producedQty = 0;
-        relatedLogs.forEach(log => {
-          if (log.timestamps?.station_start) {
-            const start = log.timestamps.station_start.toDate
-              ? log.timestamps.station_start.toDate() : new Date(log.timestamps.station_start);
-            const end = log.timestamps.completed?.toDate
-              ? log.timestamps.completed.toDate()
-              : (log.timestamps.finished?.toDate ? log.timestamps.finished.toDate() : new Date());
-            if (end.getTime() - start.getTime() > 0) actualMinutes += (end.getTime() - start.getTime()) / 60000;
+        relatedLogs.forEach((log: RecordLike) => {
+          const timestamps = asRecord(log.timestamps) ?? {};
+          if (timestamps.station_start) {
+            const start = (timestamps.station_start as { toDate?: () => Date }).toDate
+              ? (timestamps.station_start as { toDate?: () => Date }).toDate!() : new Date(timestamps.station_start as string | number | Date);
+            const endValue = (timestamps.completed as { toDate?: () => Date } | undefined)?.toDate
+              ? (timestamps.completed as { toDate?: () => Date }).toDate!()
+              : ((timestamps.finished as { toDate?: () => Date } | undefined)?.toDate ? (timestamps.finished as { toDate?: () => Date }).toDate!() : new Date());
+            if (endValue.getTime() - start.getTime() > 0) actualMinutes += (endValue.getTime() - start.getTime()) / 60000;
           }
           if (['completed', 'Finished', 'GEREED'].includes(String(log.status || log.currentStep || log.currentStation))) {
             producedQty++;
@@ -548,7 +569,7 @@ class AIService {
           ? (efficiency >= 100 ? 'VOOR op schema' : efficiency >= 85 ? 'OP schema' : 'ACHTER op schema')
           : (producedQty > 0 ? 'Start gemaakt' : 'Nog niet gestart');
 
-        const orderInfo = {
+        const orderInfo: RecordLike = {
           orderId: std.orderId,
           totalQty,
           producedQty,
@@ -575,8 +596,7 @@ class AIService {
 
     if (activeOrders.length > 0) {
       ctx += `\n### Lopende orders met resterende werkuren:\n`;
-      activeOrders.forEach(rawO => {
-        const o = rawO as Record<string, any>;
+      activeOrders.forEach(o => {
         ctx += `- Order ${o.orderId}: ${o.producedQty}/${o.totalQty} stuks, `;
         ctx += `resterend: **${o.remainingHours} uur**, status: ${o.status}`;
         if (o.dueDate) ctx += `, deadline: ${o.dueDate}`;
@@ -586,8 +606,7 @@ class AIService {
 
     if (behindOrders.length > 0) {
       ctx += `\n### ⚠️ ORDERS ACHTER OP SCHEMA:\n`;
-      behindOrders.forEach(rawO => {
-        const o = rawO as Record<string, any>;
+      behindOrders.forEach(o => {
         ctx += `- Order ${o.orderId}: efficiëntie ${o.efficiency}% — ${o.remainingQty} stuks resterend (${o.remainingHours} uur)\n`;
       });
     } else {
@@ -679,8 +698,8 @@ class AIService {
 
     const parseDate = (value: unknown): Date | null => {
       if (!value) return null;
-      const val = value as any;
-      const maybeDate = val?.toDate ? val.toDate() : new Date(val);
+      const maybeValue = value as { toDate?: () => Date } | null;
+      const maybeDate = maybeValue?.toDate ? maybeValue.toDate() : new Date(value as string | number | Date);
       if (!(maybeDate instanceof Date) || Number.isNaN(maybeDate.getTime())) return null;
       return maybeDate;
     };
@@ -725,9 +744,10 @@ class AIService {
       try {
         const factorySnap = await getDoc(doc(db, getPathString(PATHS.FACTORY_CONFIG)));
         if (factorySnap.exists()) {
-          const departments = (factorySnap.data()?.departments || []) as any[];
-          const computed = departments.reduce((sum: number, dept: any) => {
-            const shifts = Number(dept?.shifts) || 1;
+          const departments = (factorySnap.data()?.departments || []) as unknown[];
+          const computed = departments.reduce<number>((sum, dept) => {
+            const deptRecord = asRecord(dept) ?? {};
+            const shifts = Number(deptRecord.shifts) || 1;
             return sum + shifts * 8;
           }, 0);
           if (computed > 0) dailyCapacityHours = computed;
@@ -739,7 +759,7 @@ class AIService {
       // 2) Real-time bezetting vandaag -> effectieve restcapaciteit
       let occupiedToday = 0;
       try {
-        const occSnap = await getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(500)));
+        const occSnap = await getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(AI_OCCUPANCY_READ_LIMIT)));
         const todayIso = new Date().toISOString().slice(0, 10);
         occSnap.docs.forEach((docSnap) => {
           const row = docSnap.data() as Record<string, unknown>;
@@ -752,8 +772,8 @@ class AIService {
       }
 
       const baseDailyCapacity = Math.max(1, Math.round((dailyCapacityHours - Math.min(dailyCapacityHours, occupiedToday)) * 10) / 10);
-      const sc = scenario as any;
-      const scenarioExtraCapacity = sc?.extraCapacityHours ? Number(sc.extraCapacityHours) : 0;
+      const scenarioRecord = asRecord(scenario) ?? {};
+      const scenarioExtraCapacity = scenarioRecord.extraCapacityHours ? Number(scenarioRecord.extraCapacityHours) : 0;
       const effectiveDailyCapacity = Math.max(1, Math.round((baseDailyCapacity + scenarioExtraCapacity) * 10) / 10);
       const loadFactor = dailyCapacityHours > 0
         ? Math.max(0, Math.min(2, occupiedToday / dailyCapacityHours))
@@ -762,17 +782,17 @@ class AIService {
       // 3) Werk met efficiency + tracking + planningdata
       const [efficiencyRows, trackingSnap, planningSnap, planningLegacySnap, planningScopedSnap] = await Promise.all([
         fetchScopedEfficiencyHours({ db, mode: 'active', maxDocs: 200 }),
-        getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(1200))),
-        getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(600))),
-        getDocs(query(collection(db, 'future-factory/production/data/digital_planning/orders'), limit(600))).catch(() => ({ docs: [] } as unknown)),
-        getDocs(query(collectionGroup(db, 'orders'), limit(1800))).catch(() => ({ docs: [] } as unknown)),
+        getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(AI_TRACKING_READ_LIMIT))),
+        getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(AI_PLANNING_READ_LIMIT))),
+        getDocs(query(collection(db, 'future-factory/production/data/digital_planning/orders'), limit(AI_PLANNING_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
+        getDocs(query(collectionGroup(db, 'orders'), limit(AI_SCOPED_ORDERS_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
       ]);
 
       const trackingRows = trackingSnap.docs.map(d => d.data() as Record<string, unknown>);
-      const planningRowsRaw = [
+      const planningRowsRaw: Array<Record<string, unknown> & { id: string }> = [
         ...planningSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
-        ...((planningLegacySnap as any)?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
-        ...((planningScopedSnap as any)?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
+        ...(planningLegacySnap?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
+        ...(planningScopedSnap?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
       ];
       const planningSeen = new Set<string>();
       const planningRows = planningRowsRaw.filter((row) => {
@@ -785,35 +805,39 @@ class AIService {
 
       const planningByOrder = new Map<string, Record<string, unknown>>();
       planningRows.forEach((row) => {
-        const key = String(row.orderId || row.orderNumber || row.id || '').trim();
+        const rowRecord = asRecord(row) ?? {};
+        const key = String(rowRecord.orderId || rowRecord.orderNumber || row.id || '').trim();
         if (key) planningByOrder.set(key, row);
       });
 
-      const predictions = (efficiencyRows as any[])
-        .filter((row: any) => row?.orderId)
-        .map((row: any) => {
-          const orderId = String(row.orderId);
+      const predictions = (efficiencyRows as unknown[])
+        .filter((row): row is RecordLike => !!row && typeof row === 'object')
+        .map((row) => {
+          const rowRecord = asRecord(row) ?? {};
+          const orderId = String(rowRecord.orderId || '');
           const related = trackingRows.filter(r => String(r.orderId || r.orderNumber || '') === orderId);
 
           let producedQty = 0;
           let actualMinutes = 0;
-          related.forEach((log: any) => {
-            const statusTag = String(log.status || log.currentStep || log.currentStation || '').toLowerCase();
+          related.forEach((log) => {
+            const logRecord = asRecord(log) ?? {};
+            const logTimestamps = asRecord(logRecord.timestamps) ?? {};
+            const statusTag = String(logRecord.status || logRecord.currentStep || logRecord.currentStation || '').toLowerCase();
             if (statusTag.includes('complete') || statusTag.includes('gereed') || statusTag.includes('finished')) producedQty += 1;
 
-            const start = parseDate(log?.timestamps?.station_start || log?.station_start || log?.startedAt);
-            const end = parseDate(log?.timestamps?.completed || log?.timestamps?.finished || log?.completedAt || log?.finishedAt) || new Date();
+            const start = parseDate(logTimestamps.station_start || logRecord.station_start || logRecord.startedAt);
+            const end = parseDate(logTimestamps.completed || logTimestamps.finished || logRecord.completedAt || logRecord.finishedAt) || new Date();
             if (start && end.getTime() > start.getTime()) {
               actualMinutes += (end.getTime() - start.getTime()) / 60000;
             }
           });
 
-          const normPerUnit = safeNum(row.minutesPerUnit);
-          const totalQty = Math.max(0, safeNum(row.quantity));
+          const normPerUnit = safeNum(rowRecord.minutesPerUnit);
+          const totalQty = Math.max(0, safeNum(rowRecord.quantity));
           const remainingQty = Math.max(0, totalQty - producedQty);
           const remainingHours = normPerUnit > 0
             ? (remainingQty * normPerUnit) / 60
-            : Math.max(0, safeNum(row.standardTimeTotal) / 60);
+            : Math.max(0, safeNum(rowRecord.standardTimeTotal) / 60);
 
           const earnedMinutes = producedQty * normPerUnit;
           const efficiency = actualMinutes > 0 ? Math.max(30, (earnedMinutes / actualMinutes) * 100) : 100;
@@ -821,14 +845,15 @@ class AIService {
           let etaWorkDays = Math.max(0, Math.ceil(adjustedHours / effectiveDailyCapacity));
 
           // Scenario: order bewust uitstellen in werkdagen.
-          if (sc?.delayDays && Array.isArray(sc?.delayOrderIds) && sc.delayOrderIds.includes(orderId)) {
-            etaWorkDays += Number(sc.delayDays) || 0;
+          if (scenarioRecord.delayDays && Array.isArray(scenarioRecord.delayOrderIds) && scenarioRecord.delayOrderIds.includes(orderId)) {
+            etaWorkDays += Number(scenarioRecord.delayDays) || 0;
           }
           const etaDate = addWorkingDays(now, etaWorkDays);
 
-          const plan: any = planningByOrder.get(orderId) || { /* empty */ };
+          const plan = planningByOrder.get(orderId) || { /* empty */ };
+          const planRecord = asRecord(plan) ?? {};
           const dueDate = parseDate(
-            plan.deliveryDate || plan.leverDatum || plan.dueDate || plan.deadline || row.deliveryDate || row.dueDate
+            planRecord.deliveryDate || planRecord.leverDatum || planRecord.dueDate || planRecord.deadline || rowRecord.deliveryDate || rowRecord.dueDate
           );
           const daysToDeadline = dueDate ? diffWorkingDays(now, dueDate) : null;
           const slackDays = daysToDeadline === null ? null : (daysToDeadline - etaWorkDays);
@@ -857,7 +882,7 @@ class AIService {
 
           if (!dueDate && remainingHours > 60) riskScore += 10;
 
-          if (Array.isArray(sc?.prioritizeOrderIds) && sc.prioritizeOrderIds.includes(orderId)) {
+          if (Array.isArray(scenarioRecord.prioritizeOrderIds) && scenarioRecord.prioritizeOrderIds.includes(orderId)) {
             riskScore = Math.max(riskScore, 88);
           }
 
@@ -890,18 +915,17 @@ class AIService {
         .sort((a, b) => b.riskScore - a.riskScore)
         .slice(0, 20);
 
-      if (scenario) {
-        const sc = scenario as any;
+      if (scenarioRecord && Object.keys(scenarioRecord).length) {
         ctx += '\n### Scenario actief:\n';
-        ctx += `- Input: "${clamp(String(sc.raw || ''), 200)}"\n`;
-        if (sc.delayDays > 0 && sc.delayOrderIds?.length) {
-          ctx += `- Uitstel: ${sc.delayOrderIds.join(', ')} met ${sc.delayDays} werkdag(en)\n`;
+        ctx += `- Input: "${clamp(String(scenarioRecord.raw || ''), 200)}"\n`;
+        if (Number(scenarioRecord.delayDays) > 0 && Array.isArray(scenarioRecord.delayOrderIds) && scenarioRecord.delayOrderIds.length) {
+          ctx += `- Uitstel: ${scenarioRecord.delayOrderIds.join(', ')} met ${scenarioRecord.delayDays} werkdag(en)\n`;
         }
-        if (sc.extraCapacityHours > 0) {
-          ctx += `- Extra capaciteit: +${sc.extraCapacityHours} uur/dag\n`;
+        if (Number(scenarioRecord.extraCapacityHours) > 0) {
+          ctx += `- Extra capaciteit: +${scenarioRecord.extraCapacityHours} uur/dag\n`;
         }
-        if (sc.prioritizeOrderIds?.length) {
-          ctx += `- Handmatige voorrang: ${sc.prioritizeOrderIds.join(', ')}\n`;
+        if (Array.isArray(scenarioRecord.prioritizeOrderIds) && scenarioRecord.prioritizeOrderIds.length) {
+          ctx += `- Handmatige voorrang: ${scenarioRecord.prioritizeOrderIds.join(', ')}\n`;
         }
       }
 
@@ -1002,20 +1026,20 @@ class AIService {
       const thisYear = new Date().getFullYear();
       const [planningSnap, planningLegacySnap, planningScopedSnap, trackingSnap, trackingScopedItemsSnap, occupancySnap, inventorySnap, archiveCurrentYearSnap, archivePrevYearSnap] = await Promise.all([
         getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(250))),
-        getDocs(query(collection(db, 'future-factory/production/data/digital_planning/orders'), limit(250))).catch(() => ({ docs: [] } as unknown)),
-        getDocs(query(collectionGroup(db, 'orders'), limit(800))).catch(() => ({ docs: [] } as unknown)),
-        getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(1200))),
-        getDocs(query(collectionGroup(db, 'items'), limit(3000))).catch(() => ({ docs: [] } as unknown)),
+        getDocs(query(collection(db, 'future-factory/production/data/digital_planning/orders'), limit(250))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
+        getDocs(query(collectionGroup(db, 'orders'), limit(AI_SCOPED_ORDERS_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
+        getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(AI_TRACKING_READ_LIMIT))),
+        getDocs(query(collectionGroup(db, 'items'), limit(AI_SCOPED_ITEMS_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
         getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(200))),
         getDocs(query(collection(db, getPathString(PATHS.INVENTORY)), limit(200))),
-        getDocs(query(collection(db, getPathString(getPlanningArchivePath(thisYear))), limit(2500))).catch(() => ({ docs: [] } as unknown)),
-        getDocs(query(collection(db, getPathString(getPlanningArchivePath(thisYear - 1))), limit(2500))).catch(() => ({ docs: [] } as unknown)),
+        getDocs(query(collection(db, getPathString(getPlanningArchivePath(thisYear))), limit(AI_ARCHIVE_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
+        getDocs(query(collection(db, getPathString(getPlanningArchivePath(thisYear - 1))), limit(AI_ARCHIVE_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
       ]);
 
-      const planningRowsRaw = [
-        ...planningSnap.docs.map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
-        ...((planningLegacySnap as any)?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
-        ...((planningScopedSnap as any)?.docs || []).map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })),
+      const planningRowsRaw: RecordLike[] = [
+        ...planningSnap.docs.map(d => ({ id: d.id, ...(d.data() as RecordLike) })),
+        ...(planningLegacySnap?.docs || []).map((d: FirestoreDocLike) => ({ id: d.id, ...(d.data() as RecordLike) })),
+        ...(planningScopedSnap?.docs || []).map((d: FirestoreDocLike) => ({ id: d.id, ...(d.data() as RecordLike) })),
       ];
       const planningSeen = new Set<string>();
       const planningRows = planningRowsRaw.filter((row) => {
@@ -1026,19 +1050,19 @@ class AIService {
         return true;
       });
 
-      const trackingRowsRaw = [
+      const trackingRowsRaw: RecordLike[] = [
         ...trackingSnap.docs.map((d) => ({
           id: d.id,
-          __path: String((d as any)?.ref?.path || ''),
-          ...(d.data() as Record<string, unknown>),
+          __path: String((d as FirestoreDocLike)?.ref?.path || ''),
+          ...(d.data() as RecordLike),
         })),
-        ...((trackingScopedItemsSnap as any)?.docs || [])
-          .map((d: { id: string; data: () => Record<string, unknown>; ref?: { path: string } }) => ({
+        ...(trackingScopedItemsSnap?.docs || [])
+          .map((d: FirestoreDocLike) => ({
             id: d.id,
-            __path: String((d as any)?.ref?.path || ''),
-            ...(d.data() as Record<string, unknown>),
+            __path: String(d?.ref?.path || ''),
+            ...(d.data() as RecordLike),
           }))
-          .filter((row: any) => String(row.__path || '').includes('/production/tracked_products/')),
+          .filter((row: RecordLike) => String(row.__path || '').includes('/production/tracked_products/')),
       ];
 
       const trackingSeen = new Set<string>();
@@ -1050,47 +1074,49 @@ class AIService {
         trackingSeen.add(dedupeKey);
         return true;
       });
-      const occupancyRows = occupancySnap.docs.map(d => d.data() as Record<string, unknown>);
-      const inventoryRows = inventorySnap.docs.map(d => d.data() as Record<string, unknown>);
+      const occupancyRows = occupancySnap.docs.map(d => d.data() as RecordLike);
+      const inventoryRows = inventorySnap.docs.map(d => d.data() as RecordLike);
 
       const isCompleted = (value: unknown) => {
         const v = String(value || '').toLowerCase();
         return v.includes('complete') || v.includes('gereed') || v.includes('finished') || v === 'done';
       };
 
-      const hasStartSignal = (row: any) => {
+      const hasStartSignal = (row: RecordLike) => {
+        const timestamps = asRecord(row.timestamps) ?? {};
         return !!(
-          row?.timestamps?.station_start ||
-          row?.timestamps?.started ||
-          row?.station_start ||
-          row?.startedAt ||
-          row?.startTime ||
-          row?.timestamp ||
-          row?.createdAt ||
-          row?.updatedAt
+          timestamps.station_start ||
+          timestamps.started ||
+          row.station_start ||
+          row.startedAt ||
+          row.startTime ||
+          row.timestamp ||
+          row.createdAt ||
+          row.updatedAt
         );
       };
 
-      const hasEndSignal = (row: any) => {
+      const hasEndSignal = (row: RecordLike) => {
+        const timestamps = asRecord(row.timestamps) ?? {};
         return !!(
-          row?.timestamps?.completed ||
-          row?.timestamps?.finished ||
-          row?.completedAt ||
-          row?.finishedAt ||
-          row?.endTime
+          timestamps.completed ||
+          timestamps.finished ||
+          row.completedAt ||
+          row.finishedAt ||
+          row.endTime
         );
       };
 
-      const getLotNumber = (row: Record<string, unknown>) => String(
-        row?.lotNumber || row?.lot || row?.batchNumber || row?.batch || row?.lotId || ''
+      const getLotNumber = (row: RecordLike) => String(
+        row.lotNumber || row.lot || row.batchNumber || row.batch || row.lotId || ''
       ).trim();
 
       const normalize = (value: unknown) => String(value || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
 
-      const isActiveTrackedStatus = (row: Record<string, unknown>) => {
-        const status = normalize(row?.status);
-        const step = normalize(row?.currentStep);
-        const station = normalize(row?.currentStation || row?.machine || row?.originMachine);
+      const isActiveTrackedStatus = (row: RecordLike) => {
+        const status = normalize(row.status);
+        const step = normalize(row.currentStep);
+        const station = normalize(row.currentStation || row.machine || row.originMachine);
 
         const activeTokens = [
           'new', 'todo', 'to_do', 'te_doen', 'in_behandeling', 'processing',
@@ -1122,7 +1148,7 @@ class AIService {
         return orderId ? activeOrderIdsFromLots.has(orderId) : false;
       });
       const completedOrders = planningRows.filter(r => isCompleted(r.status) || isCompleted(r.currentStep));
-      const archivedCompletedCount = ((archiveCurrentYearSnap as any)?.docs?.length || 0) + ((archivePrevYearSnap as any)?.docs?.length || 0);
+      const archivedCompletedCount = (archiveCurrentYearSnap?.docs?.length || 0) + (archivePrevYearSnap?.docs?.length || 0);
 
       const today = new Date().toISOString().slice(0, 10);
       const activeOperatorsToday = occupancyRows.filter(r => String(r.date || '') === today).length;
@@ -1145,8 +1171,8 @@ class AIService {
 
       const parseDateSafe = (value: unknown): Date | null => {
         if (!value) return null;
-        const val = value as any;
-        const d = val?.toDate ? val.toDate() : new Date(val);
+        const maybeValue = value as { toDate?: () => Date } | null;
+        const d = maybeValue?.toDate ? maybeValue.toDate() : new Date(value as string | number | Date);
         if (!(d instanceof Date) || Number.isNaN(d.getTime())) return null;
         return d;
       };
@@ -1171,7 +1197,7 @@ class AIService {
         });
       };
 
-      const planningByOrder = new Map<string, Record<string, unknown>>();
+      const planningByOrder = new Map<string, RecordLike>();
       planningRows.forEach((row) => {
         const key = String(row.orderId || row.orderNumber || row.id || '').trim();
         if (key && !planningByOrder.has(key)) planningByOrder.set(key, row);
@@ -1197,29 +1223,32 @@ class AIService {
       if (hotOrders.length > 0) {
         ctx += '\nTop lopende orders o.b.v. actieve lotnummers:\n';
         hotOrders.forEach(([orderId, count]) => {
-          const plan = planningByOrder.get(orderId) || { /* empty */ };
+          const plan = planningByOrder.get(orderId) || { id: '' };
           const relatedLots = activeTrackingRows.filter((r) => String(r.orderId || r.orderNumber || '').trim() === orderId);
           const lotNumbers = [...new Set(relatedLots.map((r) => getLotNumber(r)).filter(Boolean))];
 
           const product = String(
-            plan.item || plan.itemDescription || plan.productName || plan.product || plan.itemCode ||
-            relatedLots[0]?.item || relatedLots[0]?.itemDescription || relatedLots[0]?.productName || relatedLots[0]?.itemCode ||
+            (plan as RecordLike).item || (plan as RecordLike).itemDescription || (plan as RecordLike).productName || (plan as RecordLike).product || (plan as RecordLike).itemCode ||
+            (relatedLots[0] as RecordLike | undefined)?.item || (relatedLots[0] as RecordLike | undefined)?.itemDescription || (relatedLots[0] as RecordLike | undefined)?.productName || (relatedLots[0] as RecordLike | undefined)?.itemCode ||
             'onbekend'
           ).trim();
 
           const startCandidates = relatedLots
-            .map((r) => parseDateSafe(r?.timestamps?.station_start || r?.timestamps?.started || r?.startedAt || r?.startTime || r?.createdAt || r?.updatedAt))
+            .map((r) => {
+              const timestamps = asRecord((r as RecordLike).timestamps) ?? {};
+              return parseDateSafe(timestamps.station_start || timestamps.started || (r as RecordLike).startedAt || (r as RecordLike).startTime || (r as RecordLike).createdAt || (r as RecordLike).updatedAt);
+            })
             .filter((d): d is Date => !!d)
             .sort((a, b) => a.getTime() - b.getTime());
           const startedAt = startCandidates[0] || null;
 
           const dueDate = parseDateSafe(
-            plan.deliveryDate || plan.leverDatum || plan.dueDate || plan.deadline || plan.plannedDeliveryDate
+            (plan as RecordLike).deliveryDate || (plan as RecordLike).leverDatum || (plan as RecordLike).dueDate || (plan as RecordLike).deadline || (plan as RecordLike).plannedDeliveryDate
           );
 
           const etaDate = parseDateSafe(
-            plan.estimatedDeliveryDate || plan.expectedDeliveryDate || plan.predictedDeliveryDate || plan.eta ||
-            plan.estimatedEnd || plan.estimatedCompletionDate
+            (plan as RecordLike).estimatedDeliveryDate || (plan as RecordLike).expectedDeliveryDate || (plan as RecordLike).predictedDeliveryDate || (plan as RecordLike).eta ||
+            (plan as RecordLike).estimatedEnd || (plan as RecordLike).estimatedCompletionDate
           );
 
           const lotsPreview = lotNumbers.slice(0, 6).join(', ');
@@ -1326,15 +1355,15 @@ class AIService {
       ].filter(Boolean))];
 
       return products.filter(product => {
-        const prod = product as any;
+        const productRecord = asRecord(product) ?? {};
         const codeCandidates = [
-          prod.sku,
-          prod.itemCode,
-          prod.articleCode,
-          prod.extraCode,
-          prod.extraCodes,
-          prod.partNumber,
-          prod.drawingNumber,
+          product.sku,
+          productRecord.itemCode,
+          productRecord.articleCode,
+          productRecord.extraCode,
+          productRecord.extraCodes,
+          productRecord.partNumber,
+          productRecord.drawingNumber,
         ].filter(Boolean).map(v => String(v).toLowerCase());
 
         const haystack = JSON.stringify({
@@ -1451,63 +1480,56 @@ class AIService {
           contextData += `\n\n${i18n.t("ai.context.prod_orders", "📦 PRODUCTIE ORDER INFORMATIE:")}\n`;
           contextData += '='.repeat(60) + '\n';
           
-          orders.slice(0, 3).forEach((rawOrder, idx) => {
-            const order = rawOrder as Record<string, any>;
+          orders.slice(0, 3).forEach((orderLike, idx) => {
+            const order = orderLike as Record<string, unknown>;
             contextData += `\n[Order ${idx + 1}]\n`;
-            contextData += `Ordernummer: ${order.orderId || order.orderNumber || order.id || 'N/A'}\n`;
-            if (order.lotNumber) contextData += `Lotnummer: ${order.lotNumber}\n`;
-            
-            if (order.name) contextData += `Product Naam: ${order.name}\n`;
-            if (order.sku) contextData += `SKU: ${order.sku}\n`;
-            if (order.description) contextData += `Beschrijving: ${order.description}\n`;
-            
-            // Status informatie
-            if (order.status) contextData += `Status: ${order.status}\n`;
-            if (order.workstation) contextData += `Werkstation: ${order.workstation}\n`;
-            if (order.operator) contextData += `Operator: ${order.operator}\n`;
-            
-            // Hoeveelheid informatie - KRITIEK
+            contextData += `Ordernummer: ${String(order.orderId || order.orderNumber || order.id || 'N/A')}\n`;
+            if (order.lotNumber) contextData += `Lotnummer: ${String(order.lotNumber)}\n`;
+
+            if (order.name) contextData += `Product Naam: ${String(order.name)}\n`;
+            if (order.sku) contextData += `SKU: ${String(order.sku)}\n`;
+            if (order.description) contextData += `Beschrijving: ${String(order.description)}\n`;
+
+            if (order.status) contextData += `Status: ${String(order.status)}\n`;
+            if (order.workstation) contextData += `Werkstation: ${String(order.workstation)}\n`;
+            if (order.operator) contextData += `Operator: ${String(order.operator)}\n`;
+
             if (order.quantity !== undefined) {
-              contextData += `Total Hoeveelheid: ${order.quantity} stuks\n`;
+              contextData += `Total Hoeveelheid: ${String(order.quantity)} stuks\n`;
             }
             if (order.completed !== undefined) {
-              contextData += `Afgerond: ${order.completed} stuks\n`;
+              contextData += `Afgerond: ${String(order.completed)} stuks\n`;
             }
             if (order.remaining !== undefined) {
-              contextData += `Nog te doen: ${order.remaining} stuks\n`;
+              contextData += `Nog te doen: ${String(order.remaining)} stuks\n`;
             } else if (order.quantity && order.completed) {
               const remaining = Number(order.quantity) - Number(order.completed);
               contextData += `Nog te doen: ${remaining} stuks\n`;
             }
-            
-            // Progress percentage
+
             if (order.progress !== undefined) {
-              contextData += `Progress: ${order.progress}%\n`;
+              contextData += `Progress: ${String(order.progress)}%\n`;
             } else if (order.quantity && order.completed) {
               const percent = Math.round((Number(order.completed) / Number(order.quantity)) * 100);
               contextData += `Progress: ${percent}%\n`;
             }
-            
-            // Datum informatie
-            if (order.startDate) contextData += `Startdatum: ${order.startDate}\n`;
-            if (order.dueDate) contextData += `Vervaldatum: ${order.dueDate}\n`;
-            if (order.completedDate) contextData += `Voltooid op: ${order.completedDate}\n`;
-            
-            // Technische specs
+
+            if (order.startDate) contextData += `Startdatum: ${String(order.startDate)}\n`;
+            if (order.dueDate) contextData += `Vervaldatum: ${String(order.dueDate)}\n`;
+            if (order.completedDate) contextData += `Voltooid op: ${String(order.completedDate)}\n`;
+
             if (order.specifications) contextData += `Specificaties: ${JSON.stringify(order.specifications)}\n`;
             if (order.tolerances) contextData += `Toleranties: ${JSON.stringify(order.tolerances)}\n`;
-            
-            // Kwaliteit/QC info
-            if (order.qualityStatus) contextData += `Kwaliteit Status: ${order.qualityStatus}\n`;
-            if (order.defects) contextData += `Geconstateerde afwijkingen: ${order.defects}\n`;
-            if (order.notes) contextData += `Opmerkingen: ${order.notes}\n`;
-            
-            // Alle overige velden als fallback
-            Object.keys(order).forEach(key => {
-                if (!['id', 'orderId', 'orderNumber', 'lotNumber', 'name', 'sku', 'description', 'status', 'workstation', 
-                    'operator', 'quantity', 'completed', 'remaining', 'progress', 'startDate',
-                    'dueDate', 'completedDate', 'specifications', 'tolerances', 'qualityStatus',
-                    'defects', 'notes'].includes(key)) {
+
+            if (order.qualityStatus) contextData += `Kwaliteit Status: ${String(order.qualityStatus)}\n`;
+            if (order.defects) contextData += `Geconstateerde afwijkingen: ${String(order.defects)}\n`;
+            if (order.notes) contextData += `Opmerkingen: ${String(order.notes)}\n`;
+
+            Object.keys(order).forEach((key) => {
+              if (!['id', 'orderId', 'orderNumber', 'lotNumber', 'name', 'sku', 'description', 'status', 'workstation',
+                'operator', 'quantity', 'completed', 'remaining', 'progress', 'startDate',
+                'dueDate', 'completedDate', 'specifications', 'tolerances', 'qualityStatus',
+                'defects', 'notes'].includes(key)) {
                 const value = order[key];
                 if (value !== null && value !== undefined && value !== '') {
                   contextData += `${key}: ${JSON.stringify(value)}\n`;
@@ -1536,28 +1558,30 @@ class AIService {
             contextData += `\n\n📋 RECENTSTE PRODUCTIE ACTIVITEIT:\n`;
             contextData += '='.repeat(60) + '\n';
 
-            recent.slice(0, 5).forEach((rawItem, idx) => {
-              const item = rawItem as Record<string, any>;
+            recent.slice(0, 5).forEach((itemLike, idx) => {
+              const item = itemLike as Record<string, unknown>;
               contextData += `\n[Activiteit ${idx + 1}]\n`;
-              const orderId = item.orderId || item.orderNumber || item.id || 'N/A';
+              const orderId = String(item.orderId || item.orderNumber || item.id || 'N/A');
               contextData += `Order: ${orderId}\n`;
 
               const lotNr = item.lotNumber || item.lot || item.batchNumber || item.batch || item.lotId;
-              if (lotNr) contextData += `Lotnummer: ${lotNr}\n`;
+              if (lotNr) contextData += `Lotnummer: ${String(lotNr)}\n`;
 
               const productName = item.name || item.productName || item.title || item.itemCode;
-              if (productName) contextData += `Product: ${productName}\n`;
-              if (item.sku) contextData += `SKU: ${item.sku}\n`;
+              if (productName) contextData += `Product: ${String(productName)}\n`;
+              if (item.sku) contextData += `SKU: ${String(item.sku)}\n`;
 
               const ts = item.timestamp || item.createdAt || item.updatedAt || item.completedAt;
               if (ts) {
-                const date = ts?.toDate ? ts.toDate().toLocaleString('nl-NL') : new Date(ts).toLocaleString('nl-NL');
+                const date = ts && typeof ts === 'object' && 'toDate' in ts && typeof (ts as { toDate?: unknown }).toDate === 'function'
+                  ? (ts as { toDate: () => Date }).toDate().toLocaleString('nl-NL')
+                  : new Date(String(ts)).toLocaleString('nl-NL');
                 contextData += `Tijdstip: ${date}\n`;
               }
 
-              if (item.status) contextData += `Status: ${item.status}\n`;
-              if (item.operator) contextData += `Operator: ${item.operator}\n`;
-              if (item.workstation || item.workcenter) contextData += `Werkstation: ${item.workstation || item.workcenter}\n`;
+              if (item.status) contextData += `Status: ${String(item.status)}\n`;
+              if (item.operator) contextData += `Operator: ${String(item.operator)}\n`;
+              if (item.workstation || item.workcenter) contextData += `Werkstation: ${String(item.workstation || item.workcenter)}\n`;
             });
 
             contextData += '\n' + '='.repeat(60) + '\n';
@@ -1586,29 +1610,31 @@ class AIService {
             contextData += `\n\n⏱️ PRODUCTIE TIJDEN:\n`;
             contextData += '='.repeat(60) + '\n';
 
-            times.slice(0, 10).forEach((rawItem, idx) => {
-              const item = rawItem as Record<string, any>;
+            times.slice(0, 10).forEach((itemLike, idx) => {
+              const item = itemLike as Record<string, unknown>;
               contextData += `\n[Tijdregistratie ${idx + 1}]\n`;
               const productName = item.name || item.productName || item.itemCode || item.sku;
-              if (productName) contextData += `Product: ${productName}\n`;
-              const orderId = item.orderId || item.orderNumber || item.id || 'N/A';
+              if (productName) contextData += `Product: ${String(productName)}\n`;
+              const orderId = String(item.orderId || item.orderNumber || item.id || 'N/A');
               contextData += `Order: ${orderId}\n`;
-              if (item.workstation || item.workcenter) contextData += `Werkstation: ${item.workstation || item.workcenter}\n`;
-              if (item.operator) contextData += `Operator: ${item.operator}\n`;
-              if (item.duration !== undefined) contextData += `Duur: ${item.duration} min\n`;
-              if (item.setupTime !== undefined) contextData += `Instelttijd: ${item.setupTime} min\n`;
-              if (item.cycleTime !== undefined) contextData += `Cyclustijd: ${item.cycleTime} sec\n`;
-              if (item.totalTime !== undefined) contextData += `Totale tijd: ${item.totalTime} min\n`;
-              if (item.startTime) contextData += `Starttijd: ${item.startTime}\n`;
-              if (item.endTime) contextData += `Eindtijd: ${item.endTime}\n`;
-              if (item.quantity !== undefined) contextData += `Aantal: ${item.quantity}\n`;
-              if (item.efficiency !== undefined) contextData += `Efficiëntie: ${item.efficiency}%\n`;
+              if (item.workstation || item.workcenter) contextData += `Werkstation: ${String(item.workstation || item.workcenter)}\n`;
+              if (item.operator) contextData += `Operator: ${String(item.operator)}\n`;
+              if (item.duration !== undefined) contextData += `Duur: ${String(item.duration)} min\n`;
+              if (item.setupTime !== undefined) contextData += `Instelttijd: ${String(item.setupTime)} min\n`;
+              if (item.cycleTime !== undefined) contextData += `Cyclustijd: ${String(item.cycleTime)} sec\n`;
+              if (item.totalTime !== undefined) contextData += `Totale tijd: ${String(item.totalTime)} min\n`;
+              if (item.startTime) contextData += `Starttijd: ${String(item.startTime)}\n`;
+              if (item.endTime) contextData += `Eindtijd: ${String(item.endTime)}\n`;
+              if (item.quantity !== undefined) contextData += `Aantal: ${String(item.quantity)}\n`;
+              if (item.efficiency !== undefined) contextData += `Efficiëntie: ${String(item.efficiency)}%\n`;
               const ts = item.timestamp || item.createdAt;
               if (ts) {
-                const date = ts?.toDate ? ts.toDate().toLocaleString('nl-NL') : new Date(ts).toLocaleString('nl-NL');
+                const date = ts && typeof ts === 'object' && 'toDate' in ts && typeof (ts as { toDate?: unknown }).toDate === 'function'
+                  ? (ts as { toDate: () => Date }).toDate().toLocaleString('nl-NL')
+                  : new Date(String(ts)).toLocaleString('nl-NL');
                 contextData += `Datum: ${date}\n`;
               }
-              Object.keys(item).forEach(key => {
+              Object.keys(item).forEach((key) => {
                 if (!['id', 'orderId', 'orderNumber', 'name', 'productName', 'itemCode', 'sku',
                        'workstation', 'workcenter', 'operator', 'duration', 'setupTime', 'cycleTime',
                        'totalTime', 'startTime', 'endTime', 'quantity', 'efficiency', 'timestamp',
@@ -1750,18 +1776,23 @@ class AIService {
       throw new Error('AI functionaliteit is uitgeschakeld');
     }
 
-    // Als includeContext true is, voeg relevante data toe aan de system prompt
     let enhancedSystemPrompt = systemPrompt || '';
-    
+
     if (includeContext && messages.length > 0) {
-      const lastUserMessage = messages[messages.length - 1] as any;
-      if (lastUserMessage && lastUserMessage.role === 'user') {
-        const context = await this.getRelevantContext(lastUserMessage.content);
-        
-        
+      const lastUserMessage = messages[messages.length - 1];
+      if (
+        lastUserMessage &&
+        typeof lastUserMessage === 'object' &&
+        'role' in lastUserMessage &&
+        'content' in lastUserMessage &&
+        (lastUserMessage as { role?: unknown }).role === 'user'
+      ) {
+        const content = (lastUserMessage as { content?: unknown }).content;
+        const context = await this.getRelevantContext(typeof content === 'string' ? content : '');
+
         if (context && context.trim().length > 0) {
           enhancedSystemPrompt = this.composeSystemPrompt(enhancedSystemPrompt, context);
-        } else { /* empty */ }
+        }
       }
     }
 
@@ -1770,13 +1801,14 @@ class AIService {
 
   async chatGoogle(messages: unknown[], systemPrompt: string, modelName: string, options = { /* empty */ }) {
     try {
-      const response: any = await (this.aiProxyGenerate as any)({
+      const response = await (this.aiProxyGenerate as (payload: Record<string, unknown>) => Promise<unknown>)({
         messages,
         systemPrompt: systemPrompt || '',
         modelName,
       });
 
-      const text = response?.data?.text;
+      const payload = response as { data?: { text?: string } } | undefined;
+      const text = payload?.data?.text;
       if (!text) {
         throw new Error(i18n.t("gemini.no_answer", "Geen antwoord ontvangen van AI"));
       }
@@ -1784,8 +1816,8 @@ class AIService {
       return text;
     } catch (error: unknown) {
       console.error('AI proxy error:', error);
-      const err = error as any;
 
+      const err = error as { code?: string; message?: string } | undefined;
       if (err?.code === 'resource-exhausted') {
         throw new Error(i18n.t("gemini.rate_limit", "Te veel AI aanvragen. Probeer het over een minuut opnieuw."));
       }
@@ -1804,26 +1836,30 @@ class AIService {
    */
   async saveMemory({ topic, content, sourceQuestion = "", sourceAnswer = "", userId = null, category = "approved_answer" }: Record<string, unknown>) {
     try {
+      const safeTopic = typeof topic === 'string' ? topic : '';
+      const safeContent = typeof content === 'string' ? content : '';
+      const safeSourceQuestion = typeof sourceQuestion === 'string' ? sourceQuestion : '';
+      const safeUserId = typeof userId === 'string' ? userId : null;
       const keywords = [...new Set([
-        ...this.extractSearchTerms(String(topic || '')),
-        ...this.extractSearchTerms(String(sourceQuestion || '')),
+        ...this.extractSearchTerms(safeTopic),
+        ...this.extractSearchTerms(safeSourceQuestion),
       ])];
       await addDoc(collection(db, getPathString(PATHS.AI_MEMORY)), {
         category,
-        topic,
-        content,
-        sourceQuestion,
+        topic: safeTopic,
+        content: safeContent,
+        sourceQuestion: safeSourceQuestion,
         sourceAnswer,
-        userId,
+        userId: safeUserId,
         keywords,
         learnedAt: serverTimestamp(),
         useCount: 0,
         active: true,
       });
       await logActivity(
-        String(userId || 'system'),
+        safeUserId || 'system',
         'AI_MEMORY_SAVE',
-        `AI memory opgeslagen: ${topic || 'zonder onderwerp'}`
+        `AI memory opgeslagen: ${safeTopic || 'zonder onderwerp'}`
       );
     } catch (error) {
       console.error('Error saving AI memory:', error);
@@ -1865,24 +1901,31 @@ class AIService {
   async saveConversation({ userId, sessionId, messages }: Record<string, unknown>) {
     if (!userId || !sessionId) return;
     try {
-      const conversationRef = doc(db, getPathString(PATHS.AI_CONVERSATIONS), String(sessionId));
-      
-      // Bewaar maximaal 50 berichten in de historie om Firestore document size limit (1MB) en AI token kosten te besparen
-      const msgArray = Array.isArray(messages) ? messages : [];
-      const toSave = msgArray.slice(-50).map((m: Record<string, unknown>) => ({
-        role: m.role,
-        content: String(m.content || '').substring(0, 2000),
-        timestamp: m.timestamp || new Date().toISOString(),
-      }));
-      
+      const safeUserId = typeof userId === 'string' ? userId : '';
+      const safeSessionId = typeof sessionId === 'string' ? sessionId : '';
+      if (!safeUserId || !safeSessionId) return;
+      const conversationRef = doc(db, getPathString(PATHS.AI_CONVERSATIONS), safeSessionId);
+
+      const safeMessages = Array.isArray(messages) ? messages : [];
+      const toSave = safeMessages.slice(-50).map((m) => {
+        const message = m as Record<string, unknown>;
+        const role = typeof message.role === 'string' ? message.role : 'user';
+        const content = typeof message.content === 'string' ? message.content : '';
+        return {
+          role,
+          content: content.substring(0, 2000),
+          timestamp: (message.timestamp as string | undefined) || new Date().toISOString(),
+        };
+      });
+
       await setDoc(conversationRef, {
-        userId,
+        userId: safeUserId,
         messages: toSave,
         updatedAt: serverTimestamp(),
       }, { merge: true });
 
       await logActivity(
-        String(userId),
+        safeUserId,
         'AI_CONVERSATION_SAVE',
         `AI conversatie opgeslagen (${toSave.length} berichten)`
       );

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   BookOpen, 
   Server, 
@@ -14,10 +14,31 @@ import {
   HardDrive,
   Bot,
   Cloud,
-  Rocket
+  Rocket,
+  Network
 } from "lucide-react";
+import { checkGatewayPcHealth, getGatewayPcIntegrationStatus } from '../../services/gatewayPcService';
 
 export const SystemDocumentationView = ({ t }: { t: any }) => {
+  const [gatewayPcStatus, setGatewayPcStatus] = useState(getGatewayPcIntegrationStatus());
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadStatus = async () => {
+      const status = await checkGatewayPcHealth();
+      if (isMounted) {
+        setGatewayPcStatus(status);
+      }
+    };
+
+    void loadStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <div className="p-8 lg:p-12 max-w-6xl mx-auto space-y-16 overflow-y-auto h-full scrollbar-thin scrollbar-thumb-gray-200 bg-white">
       
@@ -234,10 +255,48 @@ export const SystemDocumentationView = ({ t }: { t: any }) => {
         </div>
       </section>
 
-      {/* 7. AI & AUTOMATISERING */}
+      {/* 7. GATEWAYPC VOORBEREIDING */}
       <section className="space-y-6">
         <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4">
-          <Bot className="text-amber-500" /> 7. AI & Automatisering (Gemini)
+          <Network className="text-teal-600" /> 7. GatewayPC-voorbereiding (Node.js)
+        </h2>
+        <div className="bg-teal-50 border border-teal-200 p-6 rounded-2xl space-y-4">
+          <p className="text-sm text-teal-900">
+            De lokale Node.js gateway uit <strong>{gatewayPcStatus.repository}</strong> wordt hier als <strong>voorbereide bridge</strong> opgenomen. De koppeling is zichtbaar in de architectuur, maar de daadwerkelijke netwerkcommunicatie wordt nog niet geactiveerd.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="border border-teal-200 bg-white rounded-xl p-4">
+              <h4 className="font-bold text-slate-900 mb-2">Status</h4>
+              <p className="text-sm text-slate-700">
+                {gatewayPcStatus.mode === 'connected' ? 'Verbonden met lokale gateway' : gatewayPcStatus.mode === 'offline' ? 'Gateway niet bereikbaar' : 'Voorbereid voor wiring'}
+              </p>
+              <p className="text-xs text-slate-500 mt-2">Endpoint: {gatewayPcStatus.endpoint}</p>
+              {gatewayPcStatus.lastCheckedAt ? (
+                <p className="text-xs text-slate-400 mt-1">Laatste check: {new Date(gatewayPcStatus.lastCheckedAt).toLocaleString('nl-NL')}</p>
+              ) : null}
+              {gatewayPcStatus.lastError ? (
+                <p className="text-xs text-amber-600 mt-2">Fout: {gatewayPcStatus.lastError}</p>
+              ) : null}
+            </div>
+            <div className="border border-teal-200 bg-white rounded-xl p-4">
+              <h4 className="font-bold text-slate-900 mb-2">Voorbereide capabilities</h4>
+              <ul className="text-sm text-slate-700 list-disc list-inside space-y-1">
+                {gatewayPcStatus.capabilities.map((capability) => (
+                  <li key={capability}>{capability}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <p className="text-xs text-slate-600">
+            Dit is een voorbereidende integratie die nu ook live wordt getest: de app kan de lokale gateway healthchecken en de eerste job-dispatch plannen.
+          </p>
+        </div>
+      </section>
+
+      {/* 8. AI & AUTOMATISERING */}
+      <section className="space-y-6">
+        <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4">
+          <Bot className="text-amber-500" /> 8. AI & Automatisering (Gemini)
         </h2>
         <div className="bg-amber-50 border border-amber-200 p-6 rounded-2xl">
           <p className="text-sm text-amber-900 mb-4">
@@ -256,10 +315,10 @@ export const SystemDocumentationView = ({ t }: { t: any }) => {
         </div>
       </section>
 
-      {/* 8. BEVEILIGING & AUTORISATIE */}
+      {/* 9. BEVEILIGING & AUTORISATIE */}
       <section className="space-y-6">
         <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 border-b border-slate-100 pb-4">
-          <ShieldCheck className="text-slate-700" /> 8. Beveiliging & Autorisatie
+          <ShieldCheck className="text-slate-700" /> 9. Beveiliging & Autorisatie
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="border border-slate-200 rounded-xl p-5 shadow-sm">

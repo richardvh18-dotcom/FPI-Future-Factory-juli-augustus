@@ -40,6 +40,8 @@ import LabelVisualPreview from "../../printer/LabelVisualPreview";
 import { useLabelPreview } from "../../../hooks/useLabelPreview";
 import InternalQrImage from "../../../utils/InternalQrImage";
 import { extractLotSequence } from "./lotSequenceHelpers";
+import { buildBh18RobotProgramPreparation } from "../../../services/robotProgramService";
+import { enqueueGatewayPcJob } from "../../../services/gatewayPcService";
 
 /**
  * DPI-aware PIXELS_PER_MM for print preview parity
@@ -422,6 +424,7 @@ const ProductionStartModal = ({
   const [isAutoLotRefreshing, setIsAutoLotRefreshing] = useState(false);
   const [lotError, setLotError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
+  const [robotPosition, setRobotPosition] = useState<number | null>(1);
   const [manualMinimumSeq, setManualMinimumSeq] = useState<number | null>(null);
   const [manualPoolHint, setManualPoolHint] = useState("");
   const isManualMode = mode === "manual";
@@ -1864,6 +1867,33 @@ const ProductionStartModal = ({
       updateOperation(startOpId, "Klaar ✓");
       setTimeout(() => removeOperation(startOpId), 3500);
 
+      if (isBh18Station(normalizedRunStationId)) {
+        const bh18Preparation = buildBh18RobotProgramPreparation({
+          orderId: String(order?.orderId || ""),
+          lotNumber: effectiveLotNumber,
+          stationId: normalizedRunStationId,
+          robotPosition,
+          diameterMm: order?.diameter || order?.dn || order?.innerDiameterMm || order?.size || null,
+          pressureClass: order?.pressureClass || order?.pn || order?.pressure || "PN16",
+          notes: `Start vanuit productie-start voor ${order?.orderId || "order"}`,
+          category: "BH18",
+        });
+
+        try {
+          await enqueueGatewayPcJob("robot_program_prepared", {
+            orderId: String(order?.orderId || ""),
+            lotNumber: effectiveLotNumber,
+            stationId: normalizedRunStationId,
+            robotPosition: robotPosition ?? 1,
+            preparation: bh18Preparation,
+          });
+          showSuccess(`BH18-robotprogramma voorbereid voor positie ${robotPosition ?? 1}`);
+        } catch (jobError) {
+          console.error(jobError);
+          notify("BH18-robotvoorbereiding kon niet worden opgeslagen in de gateway-queue.");
+        }
+      }
+
       await updateCounterOnStart(effectiveLotNumber, batchCount);
       void logActivity(auth.currentUser?.uid || "system", "ORDER_RELEASE", `Order started: ${order.orderId}, Lot: ${effectiveLotNumber}`);
 
@@ -2284,6 +2314,29 @@ const ProductionStartModal = ({
                   </div>
                   {lotError && <p className="text-red-400 text-xs mt-2 font-bold">{lotError}</p>}
                 </div>
+                {isBh18Station(normalizedStationNoPrefix) && (
+                  <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-3 text-left">
+                    <label className="text-[9px] font-black text-cyan-700 uppercase tracking-widest ml-1 block">
+                      Robotpositie BH18
+                    </label>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRobotPosition(1)}
+                        className={`flex-1 rounded-2xl border px-3 py-2 text-sm font-black ${robotPosition === 1 ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-cyan-200 bg-white text-cyan-700'}`}
+                      >
+                        Positie 1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRobotPosition(2)}
+                        className={`flex-1 rounded-2xl border px-3 py-2 text-sm font-black ${robotPosition === 2 ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-cyan-200 bg-white text-cyan-700'}`}
+                      >
+                        Positie 2
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {mode !== "qc_steekproef" && (
                   <div className={`${isCompactAutoLayout ? "space-y-0.5" : "space-y-1"} text-left`}>
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2 block">

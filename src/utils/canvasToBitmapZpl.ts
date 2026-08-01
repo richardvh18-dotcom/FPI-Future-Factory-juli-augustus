@@ -348,7 +348,7 @@ export const htmlToCanvas = async (
     
     // Dit is een simpele implementatie; voor complexe HTML zou je
     // een library als html2canvas moeten gebruiken
-    ctx.drawImage(element as unknown as CanvasImageSource, 0, 0);
+    ctx.drawImage(element as CanvasImageSource, 0, 0);
     
     return canvas;
 };

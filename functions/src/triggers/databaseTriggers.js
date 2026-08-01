@@ -245,11 +245,33 @@ const recalculateOrderEfficiency = async (orderId) => {
   }
 };
 
+const buildEfficiencyRecalcSignature = (doc) => {
+  if (!doc) return null;
+  return JSON.stringify({
+    orderId: doc.orderId || null,
+    status: doc.status || null,
+    currentStep: doc.currentStep || null,
+    timestamps: doc.timestamps || null,
+    startTime: doc.startTime || null,
+    endTime: doc.endTime || null,
+    startedAt: doc.startedAt || null,
+    completedAt: doc.completedAt || null,
+    createdAt: doc.createdAt || null,
+    updatedAt: doc.updatedAt || null,
+  });
+};
+
+const shouldSkipEfficiencyRecalc = (before, after) => {
+  if (!before || !after) return false;
+  return buildEfficiencyRecalcSignature(before) === buildEfficiencyRecalcSignature(after);
+};
+
 exports.recalculateEfficiencyOnTrackedWrite = functions.region('europe-west1').firestore
   .document('future-factory/production/tracked_products/{productId}')
   .onWrite(async (change) => {
     const after = change.after.exists ? change.after.data() : null;
     const before = change.before.exists ? change.before.data() : null;
+    if (shouldSkipEfficiencyRecalc(before, after)) return null;
     const orderId = clean(after?.orderId || before?.orderId);
     return recalculateOrderEfficiency(orderId);
   });
@@ -259,6 +281,7 @@ exports.recalculateEfficiencyOnTrackedScopedWrite = functions.region('europe-wes
   .onWrite(async (change) => {
     const after = change.after.exists ? change.after.data() : null;
     const before = change.before.exists ? change.before.data() : null;
+    if (shouldSkipEfficiencyRecalc(before, after)) return null;
     const orderId = clean(after?.orderId || before?.orderId);
     return recalculateOrderEfficiency(orderId);
   });

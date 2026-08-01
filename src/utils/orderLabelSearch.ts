@@ -2,6 +2,8 @@ import { db } from "../config/firebase";
 import { collection, query, where, getDocs, limit, orderBy, documentId, collectionGroup, getDoc, doc } from "firebase/firestore";
 import { PATHS, getPathString } from "../config/dbPaths";
 
+const ORDER_LABEL_BROAD_SCOPED_FALLBACK_LIMIT = 600;
+
 export type AnyRecord = Record<string, unknown>;
 
 export const normalizeText = (value: unknown): string => String(value || "").toLowerCase().trim();
@@ -130,20 +132,18 @@ export const executeOrderLabelSearch = async (
   }
 
   const foundDocs = new Map<string, AnyRecord>();
-  const addDocs = (snap: any) => {
-    if (snap && snap.docs) {
-      snap.docs.forEach((d: any) => {
-        if (d && d.id) foundDocs.set(d.id, { id: d.id, ...(d.data ? d.data() : {}) });
-      });
+  const addDocs = (snap: unknown) => {
+    const docs = (snap as { docs?: Array<{ id: string; data: () => Record<string, unknown>; ref?: { path?: string } }> })?.docs;
+    if (docs) {
+      docs.forEach((d) => foundDocs.set(d.id, { id: d.id, ...d.data() }));
     }
   };
-  const addScopedPlanningDocs = (snap: any) => {
-    if (snap && snap.docs) {
-      snap.docs
-        .filter((d: any) => String(d.ref?.path || "").startsWith(planningPrefix))
-        .forEach((d: any) => {
-          if (d && d.id) foundDocs.set(d.id, { id: d.id, ...(d.data ? d.data() : {}) });
-        });
+  const addScopedPlanningDocs = (snap: unknown) => {
+    const docs = (snap as { docs?: Array<{ id: string; data: () => Record<string, unknown>; ref?: { path?: string } }> })?.docs;
+    if (docs) {
+      docs
+        .filter((d) => String(d.ref?.path || "").startsWith(planningPrefix))
+        .forEach((d) => foundDocs.set(d.id, { id: d.id, ...d.data() }));
     }
   };
 
@@ -226,7 +226,9 @@ export const executeOrderLabelSearch = async (
   scopedExactSnaps.forEach(addScopedPlanningDocs);
 
   if (foundDocs.size === 0 && searchStr.length >= 3) {
-    const broadScopedSnap = await getDocs(query(collectionGroup(db, "orders"), limit(2000))).catch(() => null);
+    const broadScopedSnap = await getDocs(
+      query(collectionGroup(db, "orders"), limit(ORDER_LABEL_BROAD_SCOPED_FALLBACK_LIMIT))
+    ).catch(() => null);
     if (broadScopedSnap && broadScopedSnap.docs) {
       const normalizedSearch = normalizeText(searchStr);
       broadScopedSnap.docs
@@ -319,18 +321,21 @@ export const executeOrderLabelSearch = async (
 
   const queryText = normalizeText(searchStr);
   const clientMatches = initialList.filter((item) => {
-    const orderText = normalizeText(item.orderId || item.orderNumber || item.Order || item.Productieorder || item.order || "");
-    const productText = normalizeText(item.item || item.itemCode || item.Item || item.Artikel || item.description || item.Description || item.Omschrijving);
-    const idText = normalizeText(item.id || "");
+    const record = item as Record<string, unknown>;
+    const orderText = normalizeText(record.orderId || record.orderNumber || record.Order || record.Productieorder || record.order || "");
+    const productText = normalizeText(record.item || record.itemCode || record.Item || record.Artikel || record.description || record.Description || record.Omschrijving);
+    const idText = normalizeText(record.id || "");
     return orderText.includes(queryText) || productText.includes(queryText) || idText.startsWith(queryText);
   });
 
   const merged = new Map<string, AnyRecord>();
-  Array.from(foundDocs.values()).forEach((item: any) => {
-    if (item?.id) merged.set(String(item.id), item);
+  Array.from(foundDocs.values()).forEach((item) => {
+    const record = item as AnyRecord;
+    merged.set(String(record.id ?? ""), record);
   });
-  clientMatches.forEach((item: any) => {
-    if (item?.id) merged.set(String(item.id), item);
+  clientMatches.forEach((item) => {
+    const record = item as AnyRecord;
+    merged.set(String(record.id ?? ""), record);
   });
 
   let finalResults = Array.from(merged.values());

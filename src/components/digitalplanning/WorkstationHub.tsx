@@ -48,6 +48,8 @@ import MazakView from "./MazakView";
 import GereedView from "./GereedView";
 import BM01Hub from "./BM01Hub";
 
+const WORKSTATION_SCOPED_ORDERS_LIMIT = 800;
+
 declare global {
   interface Window {
     __app_id?: string;
@@ -511,7 +513,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
   const [searchFilterOrder] = useState<string | null>(searchOrder || null);
   const [archivedStats, setArchivedStats] = useState<{ done: number; items: TrackedProductDoc[] }>({ done: 0, items: [] });
   const backgroundTrackingUnsubRef = useRef<null | (() => void)>(null);
-  const backgroundTrackingTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const backgroundTrackingTimerRef = useRef<number | null>(null);
   const visibleRawProducts = useDeferredValue(rawProducts);
   
   // Huidige datum/tijd voor display
@@ -778,7 +780,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       let scopedOrders: PlanningOrder[] = [];
 
       const mapOrderDoc = (docSnap: DocSnapLike): PlanningOrder | null => {
-        const data = docSnap.data();
+        const data = docSnap.data() as Record<string, unknown>;
         const explicitScopeType = String(data?._scopeType || "").trim();
         const resolvedOrderId = String(data?.orderId || data?.orderNumber || "").trim();
 
@@ -786,7 +788,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         if (explicitScopeType && explicitScopeType !== "planning_order") return null;
         if (!resolvedOrderId) return null;
 
-        let dateObj = data.plannedDate?.toDate ? data.plannedDate.toDate() : new Date();
+        const plannedDateValue = data.plannedDate as { toDate?: () => Date } | undefined;
+        let dateObj = plannedDateValue?.toDate ? plannedDateValue.toDate() : new Date();
         let { week, year } = getISOWeekInfo(dateObj);
         const sourceDataId = String(data?.id || "").trim();
         return {
@@ -798,11 +801,11 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
           __docPath: docSnap.ref.path,
           sourcePath: data?.sourcePath || docSnap.ref.path,
           orderId: resolvedOrderId,
-          item: data.item || data.productCode || t("digitalplanning.workstation.unknown_item"),
-          plan: data.plan || data.quantity || 0,
+          item: String(data.item || data.productCode || t("digitalplanning.workstation.unknown_item")),
+          plan: Number(data.plan || data.quantity || 0),
           dateObj,
-          weekNumber: parseInt(data.week || data.weekNumber || week),
-          weekYear: parseInt(data.year || year),
+          weekNumber: parseInt(String(data.week || data.weekNumber || week), 10),
+          weekYear: parseInt(String(data.year || year), 10),
         };
       };
 
@@ -905,7 +908,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         };
       } else {
         unsubScopedOrders = onSnapshot(
-          collectionGroup(db, "orders"),
+          query(collectionGroup(db, "orders"), limit(WORKSTATION_SCOPED_ORDERS_LIMIT)),
           (snap) => {
             const planningPrefix = `${getPathString(PATHS.PLANNING)}/`;
             scopedOrders = snap.docs
@@ -996,6 +999,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         }
       });
       
+      let fallbackOccupancyUnsub: (() => void) | null = null;
+
       // LISTENER 3: Occupancy (lazy load after main data is ready)
       const unsubOccupancy = onSnapshot(
         query(collection(db, getPathString(PATHS.OCCUPANCY)), where("date", "==", getTodayString()), limit(100)),
@@ -1005,12 +1010,24 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         (error) => {
           console.warn("Occupancy Sync Error (filtered), fallback to limit:", error);
           // Fallback if index missing or date format mismatch
-          onSnapshot(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(50)), (snap) => {
-             if (isMounted) setOccupancy(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OccupancyEntry, "id">) })));
-          });
+          if (fallbackOccupancyUnsub) return;
+          fallbackOccupancyUnsub = onSnapshot(
+            query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(50)),
+            (snap) => {
+              if (isMounted) setOccupancy(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<OccupancyEntry, "id">) })));
+            },
+            (fallbackError) => {
+              console.warn("Occupancy Sync Error (fallback):", fallbackError);
+            }
+          );
         }
       );
       unsubs.push(unsubOccupancy);
+      unsubs.push(() => {
+        if (!fallbackOccupancyUnsub) return;
+        fallbackOccupancyUnsub();
+        fallbackOccupancyUnsub = null;
+      });
       
       // LISTENER 4: Personnel (lazy load after main data is ready)
       const unsubPersonnel = onSnapshot(
@@ -2204,7 +2221,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
        
        if (isFinishedForMachine || p.status === "completed") {
            const eventDate = p.timestamps?.lossen_start || p.timestamps?.wikkelen_end || p.updatedAt || p.createdAt;
-           const d = toDateSafe(eventDate);
+           const d = toDateSafe(eventDate as Parameters<typeof toDateSafe>[0]);
            if (d && d >= startOfWeekDate) {
                doneThisWeek++;
            }
@@ -2217,7 +2234,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
        if (p.status === "rejected" || p.currentStep === "REJECTED") return;
        
        const eventDate = p.timestamps?.lossen_start || p.timestamps?.wikkelen_end || p.timestamps?.finished || p.archivedAt;
-      const d = toDateSafe(eventDate);
+      const d = toDateSafe(eventDate as Parameters<typeof toDateSafe>[0]);
        if (d && d >= startOfWeekDate) {
            doneThisWeek++;
        }
@@ -2373,7 +2390,8 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       overflowItems = Array.isArray(startResult?.overflowLots) ? startResult.overflowLots : [];
       const autoAssignedOverflow = startResult?.autoAssignedOverflow || null;
 
-      if (autoAssignedOverflow?.linkedCount > 0 && autoAssignedOverflow?.targetOrderId) {
+      const linkedCount = autoAssignedOverflow?.linkedCount ?? 0;
+      if (linkedCount > 0 && autoAssignedOverflow?.targetOrderId) {
         showSuccess(
           `${autoAssignedOverflow.linkedCount} extra stuk(s) automatisch gekoppeld aan order ${autoAssignedOverflow.targetOrderId}${autoAssignedOverflow.routeStation ? ` en doorgestuurd naar ${autoAssignedOverflow.routeStation}` : ""}.`
         );

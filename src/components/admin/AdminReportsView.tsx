@@ -98,6 +98,10 @@ const getDocRef = (dbRef: FirestoreDbLike, pathLike: unknown): ReturnType<typeof
   return doc(dbRef, ...path);
 };
 
+const REPORT_TRACKING_READ_LIMIT = 1200;
+const REPORT_OCCUPANCY_READ_LIMIT = 1200;
+const REPORT_ARCHIVE_READ_LIMIT = 1500;
+
 type DataSourceBadgeProps = {
   t: (key: string, fallback?: string) => string;
   usePilotReadData: boolean;
@@ -856,7 +860,7 @@ const AdminReportsView = () => {
     const trackingRef = getCollectionRef(readDb, readPaths.TRACKING);
     if (!trackingRef) return [];
 
-    const trackingQuery = query(trackingRef, limit(3000));
+    const trackingQuery = query(trackingRef, limit(REPORT_TRACKING_READ_LIMIT));
     const trackingSnap = await getDocs(trackingQuery);
     const products: AnyRecord[] = toRows(trackingSnap)
       .filter((p) => {
@@ -1153,7 +1157,7 @@ const AdminReportsView = () => {
         };
       }
 
-      const trackingQuery = query(trackingRef, limit(3000));
+      const trackingQuery = query(trackingRef, limit(REPORT_TRACKING_READ_LIMIT));
       const trackingSnap = await getDocs(trackingQuery);
       const products: AnyRecord[] = toRows(trackingSnap)
         .filter((p) => {
@@ -1222,7 +1226,7 @@ const AdminReportsView = () => {
       // Fetch occupancy data
       const occupancyRef = getCollectionRef(readDb, readPaths.OCCUPANCY);
       if (!occupancyRef) throw new Error("OCCUPANCY path ontbreekt");
-      const occupancyQuery = query(occupancyRef, limit(500));
+      const occupancyQuery = query(occupancyRef, limit(REPORT_OCCUPANCY_READ_LIMIT));
       const occupancySnap = await getDocs(occupancyQuery);
       const occupancy: AnyRecord[] = toRows(occupancySnap);
 
@@ -1325,7 +1329,7 @@ const AdminReportsView = () => {
       const occupancyRef = getCollectionRef(readDb, readPaths.OCCUPANCY);
       const [hoursRecords, occSnap] = await Promise.all([
         fetchScopedEfficiencyHours({ db: readDb, mode: "active", maxDocs: 3000 }),
-        occupancyRef ? getDocs(query(occupancyRef, limit(3000))) : Promise.resolve({ docs: [] } as FirestoreSnapshotLike),
+        occupancyRef ? getDocs(query(occupancyRef, limit(REPORT_OCCUPANCY_READ_LIMIT))) : Promise.resolve({ docs: [] } as FirestoreSnapshotLike),
       ]);
 
       const normalizeHours = (value: unknown) => {
@@ -1391,7 +1395,7 @@ const AdminReportsView = () => {
     try {
       const trackingRef = getCollectionRef(readDb, readPaths.TRACKING);
       if (!trackingRef) throw new Error("TRACKING path ontbreekt");
-      const trackingSnap = await getDocs(query(trackingRef, limit(4000)));
+      const trackingSnap = await getDocs(query(trackingRef, limit(REPORT_TRACKING_READ_LIMIT)));
       const products: AnyRecord[] = toRows(trackingSnap)
         .filter((p) => {
           const itemDate = getItemDate(p);
@@ -1463,13 +1467,13 @@ const AdminReportsView = () => {
         (() => {
           const trackingRef = getCollectionRef(readDb, readPaths.TRACKING);
           if (!trackingRef) return Promise.resolve({ docs: [] } as FirestoreSnapshotLike);
-          return getDocs(query(trackingRef, limit(4000)));
+          return getDocs(query(trackingRef, limit(REPORT_TRACKING_READ_LIMIT)));
         })(),
         ...years.map((year) =>
           getDocs(
             query(
               collection(readDb, ...asPath(getArchiveItemsPathForSource(year))),
-              limit(4000)
+              limit(REPORT_ARCHIVE_READ_LIMIT)
             )
           )
         ),
@@ -1551,13 +1555,13 @@ const AdminReportsView = () => {
         (() => {
           const trackingRef = getCollectionRef(readDb, readPaths.TRACKING);
           if (!trackingRef) return Promise.resolve({ docs: [] } as FirestoreSnapshotLike);
-          return getDocs(query(trackingRef, limit(4000)));
+          return getDocs(query(trackingRef, limit(REPORT_TRACKING_READ_LIMIT)));
         })(),
         ...years.map((year) =>
           getDocs(
             query(
               collection(readDb, ...asPath(getArchiveItemsPathForSource(year))),
-              limit(4000)
+              limit(REPORT_ARCHIVE_READ_LIMIT)
             )
           )
         ),

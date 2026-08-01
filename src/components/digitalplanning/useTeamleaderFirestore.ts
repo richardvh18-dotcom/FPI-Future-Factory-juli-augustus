@@ -6,6 +6,7 @@ import { subDays, startOfISOWeek } from "date-fns";
 import { PATHS, getArchiveItemsPath, getArchiveRejectedItemsPath, getPathString } from "../../config/dbPaths";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 import { FITTING_MACHINES, PIPE_MACHINES, normalizeMachine } from "../../utils/hubHelpers";
+import { useOccupancyListener } from "../../hooks/useOccupancyListener";
 
 type TeamleaderUser = {
   role?: string;
@@ -82,6 +83,11 @@ export const useTeamleaderFirestore = ({
   const [factoryConfig, setFactoryConfig] = useState<FactoryConfig>(null);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
+  const sharedOccupancy = useOccupancyListener(Boolean(user));
+
+  useEffect(() => {
+    setBezetting(sharedOccupancy as Record<string, unknown>[]);
+  }, [sharedOccupancy]);
 
   useEffect(() => {
     if (!user) return;
@@ -245,20 +251,7 @@ export const useTeamleaderFirestore = ({
       unsubs.push(unsubProds);
       markStreamReady();
 
-      // LISTENER 3: Occupancy
-      const unsubOcc = onSnapshot(
-        collection(db, getPathString(PATHS.OCCUPANCY)),
-        (snap) => {
-          isMounted && setBezetting(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-        },
-        (err: { code?: string }) => {
-          if (err.code === "permission-denied") return;
-          console.warn("Occupancy Sync Error:", err.code);
-        }
-      );
-      unsubs.push(unsubOcc);
-
-      // LISTENER 4: Factory Config
+      // LISTENER 3: Factory Config
       const unsubConfig = onSnapshot(
         doc(db, getPathString(PATHS.FACTORY_CONFIG)),
         (snap) => {
@@ -271,7 +264,7 @@ export const useTeamleaderFirestore = ({
       );
       unsubs.push(unsubConfig);
 
-      // LISTENER 5: Downtime (only when a view needs it)
+      // LISTENER 4: Downtime (only when a view needs it)
       if (loadActiveDowntimes) {
         const unsubDowntime = onSnapshot(
           query(

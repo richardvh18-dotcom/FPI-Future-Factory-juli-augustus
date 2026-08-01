@@ -17,6 +17,11 @@ const PRINT_QUEUE_COLLECTION = `${BASE}/production/print_queue`;
 const SERVER_TIMESTAMP_TOKEN = '__SERVER_TIMESTAMP__';
 const DEFAULT_SCOPED_DEPARTMENT = 'Fittings';
 const DEFAULT_SCOPED_MACHINE = 'UNASSIGNED';
+const CONTROL_EVENTS_READ_LIMIT = 600;
+const TRACKING_ORDER_MACHINE_READ_LIMIT = 600;
+const ACTIVE_TRACKING_ROOT_LIMIT = 400;
+const ACTIVE_TRACKING_SCOPED_LIMIT = 800;
+const SCOPED_PRINT_QUEUE_PENDING_LIMIT = 600;
 const LN_UPDATABLE_FIELDS_SERVER = [
   'quantity', 'toDoQty', 'plan', 'notes', 'deliveryDate', 'plannedDeliveryDate',
   'weekNumber', 'orderStatus', 'totalPlannedHours', 'totalActualHours',
@@ -269,7 +274,7 @@ const reconcileOrderControlState = async ({ ctx, orderId, machine }) => {
     .collection(`${ctx.eventsPath}/${dep}/machines/${mc}/items`)
     .where('orderId', '==', safeOrderId)
     .where('eventType', '==', 'LOT_ISSUED')
-    .limit(1000)
+    .limit(CONTROL_EVENTS_READ_LIMIT)
     .get();
 
   const eventLots = eventsSnap.docs
@@ -282,7 +287,7 @@ const reconcileOrderControlState = async ({ ctx, orderId, machine }) => {
     .collection(ctx.trackingPath)
     .where('orderId', '==', safeOrderId)
     .where('originMachine', '==', safeMachine)
-    .limit(1000)
+    .limit(TRACKING_ORDER_MACHINE_READ_LIMIT)
     .get();
 
   const trackedLots = trackingSnap.docs
@@ -749,7 +754,7 @@ const countActiveTrackedProductsForOrder = async ({ ctx, orderId }) => {
 
   const rootSnap = await db.collection(ctx.trackingPath)
     .where('orderId', '==', safeOrderId)
-    .limit(600)
+    .limit(ACTIVE_TRACKING_ROOT_LIMIT)
     .get();
 
   let activeCount = rootSnap.docs.reduce((sum, docSnap) => {
@@ -763,7 +768,7 @@ const countActiveTrackedProductsForOrder = async ({ ctx, orderId }) => {
     const trackingPath = String(ctx?.trackingPath || '').replace(/\/+$/, '');
     const scopedSnap = await db.collectionGroup('items')
       .where('orderId', '==', safeOrderId)
-      .limit(1200)
+      .limit(ACTIVE_TRACKING_SCOPED_LIMIT)
       .get();
 
     const scopedActive = scopedSnap.docs.reduce((sum, docSnap) => {
@@ -3283,7 +3288,7 @@ const startWorkstationProductionRunService = async ({
     .collection(ctx.trackingPath)
     .where('orderId', '==', orderId)
     .where('originMachine', '==', safeStationId)
-    .limit(600)
+    .limit(ACTIVE_TRACKING_ROOT_LIMIT)
     .get();
 
   const activeStartedCount = activeStartedSnap.docs.filter((snap) => {
@@ -4992,7 +4997,7 @@ const getPendingPrintQueueDocs = async () => {
     const scopedSnap = await db
       .collectionGroup('items')
       .where('_scopeType', '==', 'print_queue')
-      .limit(1000)
+      .limit(SCOPED_PRINT_QUEUE_PENDING_LIMIT)
       .get();
 
     scopedDocs = scopedSnap.docs;

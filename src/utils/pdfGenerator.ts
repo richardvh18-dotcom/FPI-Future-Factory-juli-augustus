@@ -70,7 +70,7 @@ export const generateProductPDF = async (product: ProductRecord, role = "operato
 
   const doc = new jsPDF();
   const isQC = role === "qc" || role === "admin";
-  const headerColor = isQC ? [51, 65, 85] : [16, 185, 129];
+  const headerColor: [number, number, number] = isQC ? [51, 65, 85] : [16, 185, 129];
 
   // --- 1. TITEL OPBOUW ---
   const typePart =

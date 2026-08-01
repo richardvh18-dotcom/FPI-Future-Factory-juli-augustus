@@ -1,6 +1,6 @@
 // @ts-nocheck
 const { db, admin } = require('../config/firebase');
-const { DB_PATHS } = require('../config/dbPaths');
+const { DB_BASE, DB_PATHS } = require('../config/dbPaths');
 
 /**
  * Drawing Sync Service - Backend Implementation
@@ -9,6 +9,9 @@ const { DB_PATHS } = require('../config/dbPaths');
 
 const normalizeCode = (value) => String(value || "").trim().toUpperCase();
 const compactCode = (value) => normalizeCode(value).replace(/[^A-Z0-9]/g, "");
+const DRAWING_SYNC_ROOT_LIMIT = 1500;
+const DRAWING_SYNC_SCOPED_ORDERS_LIMIT = 1500;
+const DRAWING_SYNC_SETTINGS_DOC = `${DB_BASE}/settings/general_configs/main`;
 
 const isLikelyCodeValue = (value) => {
   const raw = String(value || "").trim();
@@ -60,17 +63,39 @@ const buildLookupKeys = (value) => {
 };
 
 async function executeDrawingSync() {
-  
+  const startedAt = new Date();
+
   // 1. Get Planning Path
   const planningBase = DB_PATHS.PRODUCTION_PLANNING;
+  const settingsRef = db.doc(DRAWING_SYNC_SETTINGS_DOC);
+  const settingsSnap = await settingsRef.get();
+  const lastCheckpointRaw = settingsSnap.exists ? settingsSnap.data()?.drawingSyncCheckpointAt : null;
+  const lastCheckpointDate =
+    lastCheckpointRaw && typeof lastCheckpointRaw.toDate === 'function'
+      ? lastCheckpointRaw.toDate()
+      : null;
+
   const planningRef = db.collection(planningBase);
-  const planningSnap = await planningRef.get();
-  
-  // Scoped orders
-  const scopedSnap = await db.collectionGroup('orders').get();
+  const planningQuery = lastCheckpointDate
+    ? planningRef.where('updatedAt', '>=', lastCheckpointDate)
+        .orderBy('updatedAt', 'asc')
+        .limit(DRAWING_SYNC_ROOT_LIMIT)
+    : planningRef.limit(DRAWING_SYNC_ROOT_LIMIT);
+  const planningSnap = await planningQuery.get();
+
+  // Scoped orders (delta op updatedAt als checkpoint beschikbaar)
+  const scopedQuery = lastCheckpointDate
+    ? db.collectionGroup('orders')
+        .where('updatedAt', '>=', lastCheckpointDate)
+        .orderBy('updatedAt', 'asc')
+        .limit(DRAWING_SYNC_SCOPED_ORDERS_LIMIT)
+    : db.collectionGroup('orders').limit(DRAWING_SYNC_SCOPED_ORDERS_LIMIT);
+  const scopedSnap = await scopedQuery.get();
   const scopedDocs = scopedSnap.docs.filter(d => d.ref.path.startsWith(planningBase));
-  
-  const allPlanningDocs = [...planningSnap.docs, ...scopedDocs];
+
+  const allPlanningDocs = Array.from(
+    new Map([...planningSnap.docs, ...scopedDocs].map((doc) => [doc.ref.path, doc])).values()
+  );
 
   const uniqueItems = new Set();
   const planningDocsByCode = new Map();
@@ -152,6 +177,16 @@ async function executeDrawingSync() {
       }
     }
   }
+
+  await settingsRef.set(
+    {
+      drawingSyncCheckpointAt: admin.firestore.Timestamp.fromDate(startedAt),
+      drawingSyncLastRunAt: admin.firestore.FieldValue.serverTimestamp(),
+      drawingSyncLastRunMatched: matchCount,
+      drawingSyncLastRunMode: lastCheckpointDate ? 'delta' : 'bootstrap',
+    },
+    { merge: true }
+  );
 
   return { matchCount };
 }

@@ -61,7 +61,7 @@ export const renderLabelToBitmapZpl = async ({
     await new Promise<void>((resolve) => {
       root!.render(
         <LabelVisualPreview
-          label={template as unknown as React.ComponentProps<typeof LabelVisualPreview>['label']}
+          label={template as any}
           data={data}
           zoom={renderZoom}
           printerDpi={printerDpi}

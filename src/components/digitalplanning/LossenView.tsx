@@ -21,6 +21,7 @@ import { getNextFlowState } from "../../utils/workstationLogic";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 import { useTouchKeyboardPreference } from "../../hooks/useTouchKeyboardPreference";
+import { useOccupancyListener } from "../../hooks/useOccupancyListener";
 
 type TimestampLike = { toDate?: () => Date; seconds?: number };
 
@@ -214,7 +215,7 @@ const LossenView = ({ stationId, appId, products = [] }: LossenViewProps) => {
   const { user } = useAdminAuth() as { user: AdminUser | null };
   const { notify } = useNotifications();
   const [items, setItems] = useState<ProductItem[]>([]);
-  const [occupancy, setOccupancy] = useState<OccupancyEntry[]>([]);
+  const occupancy = useOccupancyListener() as OccupancyEntry[];
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null);
   const [bulkSeriesProducts, setBulkSeriesProducts] = useState<ProductItem[]>([]);
@@ -324,15 +325,6 @@ const LossenView = ({ stationId, appId, products = [] }: LossenViewProps) => {
       }, 50);
     }
   };
-
-  // Haal occupancy data op voor operator tracking
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, getPathString(PATHS.OCCUPANCY)), (snap) => {
-      const data: OccupancyEntry[] = snap.docs.map((d) => d.data() as OccupancyEntry);
-      setOccupancy(data);
-    });
-    return () => unsub();
-  }, []);
 
   // Helper om te checken of een shift momenteel actief is
   const isShiftActive = useCallback((shiftLabel: unknown) => {

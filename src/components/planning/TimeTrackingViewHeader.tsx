@@ -2,8 +2,10 @@
 import React from 'react';
 import { Calendar, Clock, Building2 } from 'lucide-react';
 
+type TranslateFn = any;
+
 type TimeTrackingViewHeaderProps = {
-  t: (key: string, fallback?: string) => string;
+  t: TranslateFn;
   periodMode: string;
   setPeriodMode: (value: string) => void;
   dayInputValue: string;

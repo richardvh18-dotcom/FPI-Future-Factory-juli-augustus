@@ -187,7 +187,7 @@ const ActiveProductionView = ({
   }, [activeUnits, groupedSeries, collapsedGroups, resolveSeriesGroupKey]);
 
   const formatTimeLabel = (value: unknown) => {
-    const date = toDateSafe(value);
+    const date = toDateSafe(value as Parameters<typeof toDateSafe>[0]);
     if (!date) return "";
 
     return date.toLocaleTimeString([], {
@@ -216,8 +216,9 @@ const ActiveProductionView = ({
             <div className="space-y-2">
               {displayUnits.map((unit: DisplayUnit) => {
                 if (unit.isSeriesHeader) {
-                  const groupUnits = unit.seriesUnits || [];
-                  const isCollapsed = !!collapsedGroups[unit.seriesGroupId];
+                  const groupUnits = Array.isArray(unit.seriesUnits) ? (unit.seriesUnits as ActiveUnit[]) : [];
+                  const groupKey = unit.seriesGroupId || "";
+                  const isCollapsed = !!collapsedGroups[groupKey];
                   const processableUnits = groupUnits.filter(
                     (groupUnit: ActiveUnit) => !["Finished", "REJECTED"].includes(String(groupUnit?.currentStep || ""))
                   );
@@ -243,12 +244,13 @@ const ActiveProductionView = ({
                           )}
                         </div>
                         <button
-                          onClick={() =>
+                          onClick={() => {
+                            const nextGroupId = unit.seriesGroupId || "";
                             setCollapsedGroups((prev) => ({
                               ...prev,
-                              [unit.seriesGroupId]: !prev[unit.seriesGroupId],
-                            }))
-                          }
+                              [nextGroupId]: !prev[nextGroupId],
+                            }));
+                          }}
                           className="inline-flex items-center gap-1 rounded-lg border border-indigo-300 bg-white px-2 py-1 text-[10px] font-black uppercase tracking-wide text-indigo-700"
                         >
                           {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
@@ -345,7 +347,7 @@ const ActiveProductionView = ({
                         )}
                         <p className="text-gray-400 mt-1 text-[9px]">
                           {formatDateTimeSafe(
-                            unit.inspection.timestamp,
+                            unit.inspection.timestamp as Parameters<typeof formatDateTimeSafe>[0],
                             "nl-NL",
                             undefined,
                             ""

@@ -253,7 +253,7 @@ const AdminDrillingView = () => {
               value={formData.dn}
               onChange={(e) => setFormData({ ...formData, dn: e.target.value })}
             >
-              {factoryConfig.diameters.map((d) => (
+              {factoryConfig.diameters.map((d: { value: string }) => (
                 <option key={d.value} value={d.value}>
                   {d.value}
                 </option>
@@ -270,7 +270,7 @@ const AdminDrillingView = () => {
               value={formData.pn}
               onChange={(e) => setFormData({ ...formData, pn: e.target.value })}
             >
-              {factoryConfig.pressures.map((p) => (
+              {factoryConfig.pressures.map((p: { value: string }) => (
                 <option key={p.value} value={p.value}>
                   {p.value}
                 </option>

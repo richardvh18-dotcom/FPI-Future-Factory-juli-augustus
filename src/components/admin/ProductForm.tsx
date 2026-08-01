@@ -196,13 +196,13 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }: ProductFormProps
 
   const factoryConfig = useFactoryConfig();
 
-  const productTypes: string[] = factoryConfig.productTypes?.length ? factoryConfig.productTypes.map(pt => String(pt.value)) : Array.isArray(generalConfig?.product_names) ? (generalConfig.product_names as string[]) : [];
-  const connectionTypes: string[] = factoryConfig.connectionTypes?.length ? factoryConfig.connectionTypes.map(ct => String(ct.value)) : Array.isArray(generalConfig?.connections) ? (generalConfig.connections as string[]) : [];
-  const productLabels: string[] = factoryConfig.productLabels?.length ? factoryConfig.productLabels.map(pl => String(pl.value)) : Array.isArray(generalConfig?.productLabels) ? (generalConfig.productLabels as string[]) : [];
+  const productTypes: string[] = factoryConfig.productTypes?.length ? factoryConfig.productTypes.map((pt: { value?: unknown }) => String(pt.value)) : Array.isArray(generalConfig?.product_names) ? (generalConfig.product_names as string[]) : [];
+  const connectionTypes: string[] = factoryConfig.connectionTypes?.length ? factoryConfig.connectionTypes.map((ct: { value?: unknown }) => String(ct.value)) : Array.isArray(generalConfig?.connections) ? (generalConfig.connections as string[]) : [];
+  const productLabels: string[] = factoryConfig.productLabels?.length ? factoryConfig.productLabels.map((pl: { value?: unknown }) => String(pl.value)) : Array.isArray(generalConfig?.productLabels) ? (generalConfig.productLabels as string[]) : [];
   const configCodes: string[] = Array.isArray(generalConfig?.codes) ? (generalConfig.codes as string[]) : [];
   const configAngles: string[] = Array.isArray(generalConfig?.angles) ? (generalConfig.angles as string[]) : ["11.25", "22.5", "30", "45", "60", "90"];
-  const configPns: number[] = factoryConfig.pressures?.length ? factoryConfig.pressures.map(p => Number(p.value)) : Array.isArray(generalConfig?.pns) ? (generalConfig.pns as number[]) : [];
-  const configDiameters: number[] = factoryConfig.diameters?.length ? factoryConfig.diameters.map(d => Number(d.value)) : Array.isArray(generalConfig?.diameters) ? (generalConfig.diameters as number[]) : [];
+  const configPns: number[] = factoryConfig.pressures?.length ? factoryConfig.pressures.map((p: { value?: unknown }) => Number(p.value)) : Array.isArray(generalConfig?.pns) ? (generalConfig.pns as number[]) : [];
+  const configDiameters: number[] = factoryConfig.diameters?.length ? factoryConfig.diameters.map((d: { value?: unknown }) => Number(d.value)) : Array.isArray(generalConfig?.diameters) ? (generalConfig.diameters as number[]) : [];
 
   // State voor het formulier
   const [formData, setFormData, clearPersistedProductForm] = useFormPersistence<ProductFormState>("admin_product_form", {

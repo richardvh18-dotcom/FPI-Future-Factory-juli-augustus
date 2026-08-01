@@ -1221,7 +1221,7 @@ const TimeTrackingView = ({ initialDepartment = "ALLES" }) => {
   return (
     <div className="p-6 bg-slate-50 min-h-screen">
       <TimeTrackingViewHeader
-        t={t}
+        t={(key: any, defaultValue?: string, options?: Record<string, unknown>) => t(key as string | string[], defaultValue ?? "", options as Record<string, unknown> | undefined)}
         periodMode={periodMode}
         setPeriodMode={setPeriodMode}
         dayInputValue={dayInputValue}

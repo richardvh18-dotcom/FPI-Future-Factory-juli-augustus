@@ -40,6 +40,8 @@ import {
   ClipboardCheck,
   PlayCircle,
   Cpu,
+  Network,
+  FileSpreadsheet,
 } from "lucide-react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 
@@ -93,6 +95,8 @@ const AiCenterView = React.lazy(() => import("../ai/AiCenterView"));
 const AdminLabelManager = React.lazy(() => import("./AdminLabelManager"));
 const AdminToolingMoldsView = React.lazy(() => import("./AdminToolingMoldsView"));
 const PilotMigrationTool = React.lazy(() => import("./PilotMigrationTool"));
+const GatewayPcAdminView = React.lazy(() => import("./GatewayPcAdminView"));
+const TemporaryExcelManagerView = React.lazy(() => import("./TemporaryExcelManagerView"));
 // NIEUW: Referentie Tabel toevoegen
 const AdminReferenceTable = React.lazy(() => import("./AdminReferenceTable"));
 const ConfigManagerView = React.lazy(() => import("./ConfigManagerView"));
@@ -539,6 +543,24 @@ const AdminDashboard = () => {
           color: "bg-rose-50 border-rose-100",
           roles: ["admin", "supervisor"],
           component: AdminMessagesManagement,
+        },
+        {
+          id: "gateway_pc",
+          title: "GatewayPC Setup",
+          desc: "Stel het IP-adres van de lokale Node.js-pc in en prepareer de Firebase-uitbox voor later gateway-jobs.",
+          icon: <Network size={24} className="text-teal-600" />,
+          color: "bg-teal-50 border-teal-100",
+          roles: ["admin"],
+          component: GatewayPcAdminView,
+        },
+        {
+          id: "temporary_excel",
+          title: "Wikkelrobot instelprogramma",
+          desc: "Upload en beheer tijdelijke Excel- of CSV-bestanden voor later import-, print- of gateway-workflows.",
+          icon: <FileSpreadsheet size={24} className="text-amber-600" />,
+          color: "bg-amber-50 border-amber-100",
+          roles: ["admin"],
+          component: TemporaryExcelManagerView,
         },
         {
           id: "logs",

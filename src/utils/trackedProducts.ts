@@ -6,6 +6,7 @@ import {
   onSnapshot,
   query,
   where,
+  type Firestore,
 } from "firebase/firestore";
 import { PATHS, getPathString } from "../config/dbPaths";
 import { FITTING_MACHINES, PIPE_MACHINES, normalizeMachine } from "./hubHelpers";
@@ -143,7 +144,7 @@ export const subscribeTrackedProducts = ({
   };
 
   const rootUnsub = onSnapshot(
-    collection(db, getPathString(PATHS.TRACKING)),
+    collection(db, String(getPathString(PATHS.TRACKING))),
     (snap) => {
       rootDocs = snap.docs.map((docSnap) => ({
         ...(docSnap.data() as Record<string, unknown>),
@@ -194,7 +195,7 @@ export const trackedLotExistsActive = async ({
   const normalizedLot = String(lotNumber || "").trim().toUpperCase();
   if (!normalizedLot) return false;
 
-  const rootSnap = await getDocs(query(collection(db, getPathString(PATHS.TRACKING)), where("lotNumber", "==", normalizedLot), limit(5)));
+  const rootSnap = await getDocs(query(collection(db, String(getPathString(PATHS.TRACKING))), where("lotNumber", "==", normalizedLot), limit(5)));
   const hasRootConflict = rootSnap.docs.some((docSnap) => docSnap.id !== excludeDocId);
   if (hasRootConflict) return true;
 
@@ -203,7 +204,7 @@ export const trackedLotExistsActive = async ({
     scopedTargets.map(({ department, machine }) =>
       getDocs(
         query(
-          collection(db, getPathString([...PATHS.TRACKING, department, "machines", machine, "items"])),
+          collection(db, String(getPathString([...PATHS.TRACKING, department, "machines", machine, "items"]))),
           where("lotNumber", "==", normalizedLot),
           limit(1)
         )

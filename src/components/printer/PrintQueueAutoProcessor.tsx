@@ -38,6 +38,8 @@ const USB_PRINTER_PRODUCT_KEY = 'usb_printer_product';
 const USB_PRINTER_ID_KEY = 'usb_printer_id';
 const PRINT_STATION_SELECTED_KEY = 'print_station_selected_station';
 const PRINT_STATION_BINDINGS_KEY = 'print_station_printer_bindings_v1';
+const HEARTBEAT_MIN_INTERVAL_MS = 60_000;
+const USB_POLL_INTERVAL_MS = 30_000;
 
 const isInvalidPrintQueueTransitionError = (error: unknown): boolean => {
   const message = String(
@@ -488,11 +490,27 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       }).catch(() => {});
     };
 
-    updateHeartbeat(!!usbDevice);
+    let lastHeartbeatOnline: boolean | null = null;
+    let lastHeartbeatAt = 0;
+
+    const maybeUpdateHeartbeat = (isOnline: boolean, force = false) => {
+      const now = Date.now();
+      const shouldWrite =
+        force ||
+        lastHeartbeatOnline !== isOnline ||
+        now - lastHeartbeatAt >= HEARTBEAT_MIN_INTERVAL_MS;
+
+      if (!shouldWrite) return;
+      lastHeartbeatOnline = isOnline;
+      lastHeartbeatAt = now;
+      updateHeartbeat(isOnline);
+    };
+
+    maybeUpdateHeartbeat(!!usbDevice, true);
 
     const pollInterval = setInterval(async () => {
       if (usbDevice) {
-        updateHeartbeat(true);
+        maybeUpdateHeartbeat(true);
       } else {
         try {
           const devices = await navigator.usb.getDevices();
@@ -522,11 +540,11 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
           // ignore
         }
       }
-    }, 15000);
+    }, USB_POLL_INTERVAL_MS);
 
     return () => {
       clearInterval(pollInterval);
-      updateHeartbeat(false);
+      maybeUpdateHeartbeat(false, true);
     };
   }, [enabled, currentPrinterId, usbDevice, printers]);
 

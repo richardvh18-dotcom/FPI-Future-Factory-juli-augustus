@@ -188,13 +188,15 @@ const computeElapsedHours = (entry = {}, checkoutAtDate = new Date()) => {
   return Number((previous + elapsed).toFixed(2));
 };
 
+const OCCUPANCY_CLOSE_ACTIVE_LIMIT = 200;
+
 const closeActiveOccupancyForEmployee = async ({ employeeNumber, checkoutAt, reason = 'atps_logout' }) => {
   const normalized = normalizeEmployeeNumber(employeeNumber);
   if (!normalized) return { closedCount: 0, machineIds: [] };
 
   const snap = await db.collection('future-factory/production/machine_occupancy')
     .where('operatorNumber', '==', normalized)
-    .limit(500)
+    .limit(OCCUPANCY_CLOSE_ACTIVE_LIMIT)
     .get();
 
   const checkoutDate = parseTimestampInput(checkoutAt);

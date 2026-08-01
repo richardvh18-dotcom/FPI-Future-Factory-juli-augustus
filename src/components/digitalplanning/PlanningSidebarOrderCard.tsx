@@ -2,9 +2,11 @@ import React from 'react';
 import { Calendar, ChevronRight, Factory } from 'lucide-react';
 import StatusBadge from './common/StatusBadge';
 
+type TranslateFn = any;
+
 type PlanningSidebarOrderCardProps = {
-  order: Record<string, any>;
-  onSelect: (order: Record<string, any>) => void;
+  order: Record<string, unknown>;
+  onSelect: (order: Record<string, unknown>) => void;
   isSelected: boolean;
   isNew: boolean;
   isDelegated: boolean;
@@ -19,11 +21,11 @@ type PlanningSidebarOrderCardProps = {
   orderTypeBadge: { label: string; className: string } | null;
   predictionLabel: string;
   predictionClass: string;
-  orderWithPrediction: Record<string, any>;
-  getOrderDisplayName: (order: Record<string, any>) => string;
-  formatDeliveryDate: (order: Record<string, any>) => string;
+  orderWithPrediction: Record<string, unknown>;
+  getOrderDisplayName: (order: Record<string, unknown>) => string;
+  formatDeliveryDate: (order: Record<string, unknown>) => string;
   formatDateWithWeek: (value: unknown) => string;
-  t: (key: string, fallback?: string) => string;
+  t: TranslateFn;
 };
 
 const PlanningSidebarOrderCard = ({
@@ -79,10 +81,10 @@ const PlanningSidebarOrderCard = ({
           <div className="flex flex-col overflow-hidden min-w-0 flex-1">
             <div className="flex items-center gap-1.5 mb-0.5">
               <span className={`font-black text-sm tracking-tighter truncate ${isSelected ? 'text-emerald-800' : 'text-slate-900'}`}>
-                {order.orderId || t('digitalplanning.sidebar.no_id')}
+                {String((order as Record<string, unknown>).orderId || '') || t('digitalplanning.sidebar.no_id')}
               </span>
               <span className="text-[9px] font-bold text-slate-400 truncate">
-                {order.itemCode || order.productId || '-'}
+                {String((order as Record<string, unknown>).itemCode || (order as Record<string, unknown>).productId || '-')}
               </span>
             </div>
 
@@ -90,10 +92,10 @@ const PlanningSidebarOrderCard = ({
               {getOrderDisplayName(order)}
             </span>
 
-            {((order.extraCode && order.extraCode !== '-') || orderTypeBadge || order.project || priorityBadge || isDelegated) && (
+            {((String((order as Record<string, unknown>).extraCode || '').trim() && String((order as Record<string, unknown>).extraCode || '').trim() !== '-') || orderTypeBadge || String((order as Record<string, unknown>).project || '').trim() || priorityBadge || isDelegated) && (
               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                 {isDelegated && (
-                  <span title={`Gedelegeerd aan ${order.delegatedTo}`}>
+                  <span title={`Gedelegeerd aan ${String((order as Record<string, unknown>).delegatedTo || '')}`}>
                     <Factory size={10} className="text-purple-500" />
                   </span>
                 )}
@@ -102,21 +104,27 @@ const PlanningSidebarOrderCard = ({
                     {priorityBadge.label}
                   </span>
                 )}
-                {order.extraCode && order.extraCode !== '-' && (
-                  <span className="px-1.5 py-0.5 bg-amber-400 text-amber-900 border border-amber-500 rounded text-[8px] font-black uppercase tracking-wide">
-                    {order.extraCode}
-                  </span>
-                )}
+                {(() => {
+                  const extraCode = String((order as Record<string, unknown>).extraCode || '').trim();
+                  return extraCode && extraCode !== '-' ? (
+                    <span className="px-1.5 py-0.5 bg-amber-400 text-amber-900 border border-amber-500 rounded text-[8px] font-black uppercase tracking-wide">
+                      {extraCode}
+                    </span>
+                  ) : null;
+                })()}
                 {orderTypeBadge && (
                   <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wide ${orderTypeBadge.className}`}>
                     {orderTypeBadge.label}
                   </span>
                 )}
-                {order.project && (
-                  <span className="text-[8px] font-bold uppercase tracking-tighter text-slate-400 truncate max-w-[120px]">
-                    {order.project}
-                  </span>
-                )}
+                {(() => {
+                  const project = String((order as Record<string, unknown>).project || '').trim();
+                  return project ? (
+                    <span className="text-[8px] font-bold uppercase tracking-tighter text-slate-400 truncate max-w-[120px]">
+                      {project}
+                    </span>
+                  ) : null;
+                })()}
               </div>
             )}
           </div>
