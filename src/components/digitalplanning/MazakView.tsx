@@ -30,6 +30,7 @@ import {
   Save,
   Trash2,
   X,
+  Hash,
 } from "lucide-react";
 import { db, logActivity } from "../../config/firebase";
 import { getPathString, PATHS } from "../../config/dbPaths";
@@ -56,6 +57,8 @@ import { resolveLinkedTemplateChain } from "../../utils/orderLabelTemplateUtils"
 import { useNotifications } from '../../contexts/NotificationContext';
 import { resolvePrinterForRouting } from '../../utils/printRouting';
 import { useOccupancyListener } from "../../hooks/useOccupancyListener";
+import { FreeLabelPrintModal } from "./modals/FreeLabelPrintModal";
+import { LargeSequencePrintModal } from "./modals/LargeSequencePrintModal";
 
 const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
 const DEFAULT_MAZAK_DPI = 300;
@@ -470,7 +473,7 @@ const MazakTabNavigation = ({ activeTab, onSelectTab, t }: MazakTabNavigationPro
           onClick={() => onSelectTab("free")}
           className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "free" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
         >
-          {t("mazak.tab_free_label", "Vrij label")}
+          {t("mazak.tab_labels", "Labels")}
         </button>
       </div>
     </div>
@@ -869,7 +872,7 @@ const MazakEmptySelectionPlaceholder = ({ activeTab, t }: MazakEmptySelectionPla
           : activeTab === "adjust"
             ? t("mazak.adjust_pick_product", "Selecteer lot voor aanpassen")
             : activeTab === "free"
-              ? t("mazak.free_label_ready", "Vrij label gereed om te printen")
+              ? t("mazak.labels_ready", "Kies een label type om te printen")
               : t("mazak.select_to_process", "Selecteer order om te verwerken")}
     </h4>
   </div>
@@ -881,9 +884,9 @@ type MazakFreeLabelHeroProps = {
 
 const MazakFreeLabelHero = ({ t }: MazakFreeLabelHeroProps) => (
   <div className="bg-slate-900 rounded-[35px] p-6 text-white border-4 border-blue-500/20 relative overflow-hidden shadow-xl text-left">
-    <span className="text-[8px] font-black text-blue-400 uppercase block mb-1 text-left">{t("mazak.free_label_header", "Vrij label")}</span>
+    <span className="text-[8px] font-black text-blue-400 uppercase block mb-1 text-left">{t("mazak.labels_header", "Labels")}</span>
     <h2 className="text-3xl font-black italic leading-none text-left">100 x 25 mm</h2>
-    <p className="text-xs font-bold text-white/70 mt-2">{t("mazak.free_label_subtitle", "Print losse labels met vrije tekst")}</p>
+    <p className="text-xs font-bold text-white/70 mt-2">{t("mazak.labels_subtitle", "Kies uit de verschillende label opties")}</p>
   </div>
 );
 
@@ -1534,6 +1537,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const [adjustRequestNote, setAdjustRequestNote] = useState("");
   const [showAdjustOrderModal, setShowAdjustOrderModal] = useState(false);
   const [showRequestNewOrderModal, setShowRequestNewOrderModal] = useState(false);
+  const [showLargeSequenceModal, setShowLargeSequenceModal] = useState(false);
+  const [showFreeLabelModal, setShowFreeLabelModal] = useState(false);
   const [adjustSubmitting, setAdjustSubmitting] = useState(false);
   const activeScanInput = activeTab === "process"
     ? scanInputProcess
@@ -2622,10 +2627,107 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     }
   };
 
-  const handlePrintFreeLabels = async () => {
-    const normalizedFreeText = freeLabelText.trim();
-    const quantity = Math.max(1, Math.min(50, Number(freeLabelQuantity) || 1));
-    const normalizedFontSize = clampFreeLabelFontSize(freeLabelFontSize);
+  const handlePrintEmptyLabel = async () => {
+    setPrinting(true);
+    try {
+      const queuePrinter = await resolveQueuePrinterForPrint();
+      const queuePrinterId = String(queuePrinter?.id || "").trim();
+      const queueStationId = normalizeMachine(stationId || "MAZAK") || "MAZAK";
+      if (!queuePrinterId) {
+        throw new Error("Geen geldige Mazak-printer geconfigureerd voor de queue.");
+      }
+
+      await queuePrintJob(
+        queuePrinterId,
+        "~JK\\n^XA\\n^XZ",
+        {
+          description: "Leeg Label",
+          machineId: queueStationId,
+          stationId: queueStationId,
+          targetStation: queueStationId,
+          targetPrinterName: queuePrinter?.name || queueStationId,
+          queuedAsBatch: true
+        }
+      );
+      notify(t("mazak.empty_label_printed", "Leeg label wordt geprint."));
+    } catch (err: any) {
+      console.error(err);
+      notify(err.message || t("mazak.print_failed", "Printen mislukt."));
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const handlePrintLargeSequence = async (station: string, week: string, startLot: string, quantity: number, incremental: boolean) => {
+    setPrinting(true);
+    try {
+      const queuePrinter = await resolveQueuePrinterForPrint();
+      const queuePrinterId = String(queuePrinter?.id || "").trim();
+      const queueStationId = normalizeMachine(stationId || "MAZAK") || "MAZAK";
+      if (!queuePrinterId) {
+        throw new Error("Geen geldige Mazak-printer geconfigureerd voor de queue.");
+      }
+
+      const template: LabelTemplate = {
+        id: "LARGE-SEQUENCE-100x25",
+        name: "Grote Volgnummers 100x25",
+        width: 100,
+        height: 25,
+        elements: [
+          { type: "qr", x: 2, y: 3, size: 15, content: "{lotNumber}" },
+          { type: "text", x: 19, y: 7, width: 80, height: 18, fontSize: 40, isBold: true, content: "{lotNumber}", maxLines: 1 }
+        ]
+      };
+
+      const zplChunks: string[] = [];
+      let currentSequence = BigInt(startLot);
+      for (let i = 0; i < quantity; i++) {
+        const lotNumberToPrint = incremental ? (currentSequence + BigInt(i)).toString().padStart(15, "0") : startLot;
+        const zplCode = await renderLabelToBitmapZpl({
+          template,
+          data: { lotNumber: lotNumberToPrint },
+          printerDpi: mazakPrinterDpi,
+          darkness: 15,
+          printSpeed: 3,
+          widthMm: 100,
+          heightMm: 25
+        });
+        const isLastInBatch = i === quantity - 1;
+        zplChunks.push(applyBatchCutMode(zplCode, isLastInBatch, 1));
+      }
+
+      const batchPayload = zplChunks.join("\\n");
+      await queuePrintJob(
+        queuePrinterId,
+        batchPayload,
+        {
+          description: `Grote volgnummers (${quantity}x)`,
+          templateId: template.id,
+          templateName: template.name,
+          machineId: queueStationId,
+          stationId: queueStationId,
+          targetStation: queueStationId,
+          targetPrinterName: queuePrinter?.name || queueStationId,
+          labelCount: quantity,
+          quantity: 1,
+          queuedAsBatch: true
+        }
+      );
+
+      notify(t("mazak.large_sequence_printed", "Grote volgnummers succesvol in de wachtrij geplaatst."));
+      setShowLargeSequenceModal(false);
+    } catch (err: any) {
+      console.error(err);
+      notify(err.message || t("mazak.print_failed", "Printen mislukt."));
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const handlePrintFreeLabels = async (templateName: string, text: string, align: "left"|"center"|"right", fontSize: number, quantity: number) => {
+    const normalizedFreeText = text.trim();
+    const qty = Math.max(1, Math.min(50, Number(quantity) || 1));
+    const normalizedFontSize = clampFreeLabelFontSize(fontSize);
 
     if (!normalizedFreeText) {
       notify(t("mazak.free_label_text_required", "Vul eerst vrije tekst in."));
@@ -2641,9 +2743,23 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
         throw new Error("Geen geldige Mazak-printer geconfigureerd voor de queue.");
       }
 
+      const labelTemplateOverride = {
+        ...FREE_TEXT_LABEL_TEMPLATE,
+        elements: FREE_TEXT_LABEL_TEMPLATE.elements?.map((el: any) => {
+          if (el.type === 'text') {
+            return {
+              ...el,
+              fontSize: normalizedFontSize,
+              align: align,
+            };
+          }
+          return el;
+        })
+      };
+
       const zplCode = await renderLabelToBitmapZpl({
-        template: freeLabelTemplate,
-        data: { freeText: normalizedFreeText },
+        template: labelTemplateOverride,
+        data: { text: normalizedFreeText },
         printerDpi: mazakPrinterDpi,
         darkness: 15,
         printSpeed: 3,
@@ -2651,40 +2767,24 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
         heightMm: 25,
       });
 
-      await Promise.all(
-        Array.from({ length: quantity }, () =>
-          queuePrintJob(queuePrinterId, zplCode, {
-            description: `Mazak Vrij Label (${String(queueStationId)})`,
-            templateId: FREE_TEXT_LABEL_TEMPLATE.id,
-            templateName: FREE_TEXT_LABEL_TEMPLATE.name || "Vrij label 100x25",
-            machineId: queueStationId,
-            stationId: queueStationId,
-            targetStation: queueStationId,
-            targetPrinterName: queuePrinter?.name || queueStationId,
-            isReprint: false,
-            isFreeLabel: true,
-            freeLabelText: normalizedFreeText,
-            freeLabelAlign,
-            freeLabelFontSize: normalizedFontSize,
-            freeLabelTemplateId: selectedFreeTemplateId || undefined,
-            freeLabelTemplateName: freeLabelTemplateName.trim() || undefined,
-          })
-        )
+      await queuePrintJob(
+        queuePrinterId,
+        applyBatchCutMode(zplCode, true, qty),
+        {
+          description: `Vrij label (${qty}x)`,
+          templateId: FREE_TEXT_LABEL_TEMPLATE.id,
+          templateName: FREE_TEXT_LABEL_TEMPLATE.name,
+          machineId: queueStationId,
+          stationId: queueStationId,
+          targetStation: queueStationId,
+          targetPrinterName: queuePrinter?.name || queueStationId,
+          labelCount: qty,
+          quantity: 1,
+          queuedAsBatch: true
+        }
       );
-
-      await logActivity(
-        user?.uid || "system",
-        "PRINT_FREE_LABELS",
-        `Mazak: ${quantity} vrije label(s) 100x25 naar queue gestuurd (align: ${freeLabelAlign}, font: ${normalizedFontSize})`
-      );
-
-      notify(
-        t(
-          "mazak.free_labels_queued_success",
-          "{{count}} vrije label(s) (90x35) naar de print wachtrij verstuurd!",
-          { count: quantity }
-        )
-      );
+      notify(t("mazak.free_labels_queued", "{{count}} vrije labels in wachtrij geplaatst.", { count: qty }));
+      setShowFreeLabelModal(false);
     } catch (err) {
       console.error("Fout bij printen vrije labels:", err);
       const message = err instanceof Error ? err.message : String(err || "Onbekende fout");
@@ -2694,76 +2794,30 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     }
   };
 
-  const handleApplyFreeLabelTemplate = (template: SavedFreeLabelTemplate) => {
-    setSelectedFreeTemplateId(template.id);
-    setFreeLabelTemplateName(template.name);
-    setFreeLabelText(template.text || "");
-    setFreeLabelAlign(template.align || "left");
-    setFreeLabelFontSize(clampFreeLabelFontSize(template.fontSize));
-    setFreeLabelQuantity(Math.max(1, Math.min(50, Number(template.quantity) || 1)));
-  };
-
-  const handleSaveFreeLabelTemplate = async () => {
-    const name = freeLabelTemplateName.trim();
-    const text = freeLabelText.trim();
-    if (!name) {
-      notify(t("mazak.free_label_template_name_required", "Geef de template een naam."));
-      return;
-    }
-    if (!text) {
-      notify(t("mazak.free_label_text_required", "Vul eerst vrije tekst in."));
-      return;
-    }
-
-    const now = Date.now();
-    const selected = savedFreeLabelTemplates.find((tpl) => tpl.id === selectedFreeTemplateId);
-    const shouldUpdateExisting = Boolean(selected && selected.name.toLowerCase() === name.toLowerCase());
-    const nextTemplate: SavedFreeLabelTemplate = {
-      id: shouldUpdateExisting ? String(selected?.id) : `mazak-free-${now}`,
-      name,
-      text,
-      align: freeLabelAlign,
-      fontSize: clampFreeLabelFontSize(freeLabelFontSize),
-      quantity: Math.max(1, Math.min(50, Number(freeLabelQuantity) || 1)),
-      updatedAt: now,
-    };
-
-    const nextList = shouldUpdateExisting
-      ? savedFreeLabelTemplates.map((tpl) => (tpl.id === nextTemplate.id ? nextTemplate : tpl))
-      : [nextTemplate, ...savedFreeLabelTemplates.filter((tpl) => tpl.name.toLowerCase() !== name.toLowerCase())];
-
+  const handleSaveFreeLabelTemplate = async (templateName: string, text: string, align: "left"|"center"|"right", fontSize: number, quantity: number) => {
+    const normalizedName = templateName.trim();
+    if (!normalizedName) return;
+    
     setSavingFreeTemplate(true);
     try {
-      await setDoc(
-        doc(db, getPathString(PATHS.GENERAL_SETTINGS)),
-        { mazakFreeLabelTemplates: nextList },
-        { merge: true }
-      );
-      setSelectedFreeTemplateId(nextTemplate.id);
-      notify(t("mazak.free_label_template_saved", "Vrij-label template opgeslagen."));
+      const docRef = doc(collection(db, "freeLabelTemplates"));
+      await setDoc(docRef, {
+        id: docRef.id,
+        name: normalizedName,
+        text,
+        align,
+        fontSize,
+        quantity,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        stationId: stationId || "MAZAK",
+      });
+      notify(t("mazak.free_label_template_saved", "Template opgeslagen!"));
     } catch (err) {
-      console.error("Fout bij opslaan vrije-label template:", err);
-      notify(t("mazak.free_label_template_save_error", "Opslaan van template is mislukt."));
+      console.error(err);
+      notify(t("mazak.free_label_template_save_failed", "Opslaan mislukt."));
     } finally {
       setSavingFreeTemplate(false);
-    }
-  };
-
-  const handleDeleteFreeLabelTemplate = async (templateId: string) => {
-    const nextList = savedFreeLabelTemplates.filter((tpl) => tpl.id !== templateId);
-    try {
-      await setDoc(
-        doc(db, getPathString(PATHS.GENERAL_SETTINGS)),
-        { mazakFreeLabelTemplates: nextList },
-        { merge: true }
-      );
-      if (selectedFreeTemplateId === templateId) {
-        setSelectedFreeTemplateId("");
-      }
-      notify(t("mazak.free_label_template_deleted", "Vrij-label template verwijderd."));
-    } catch (err) {
-      console.error("Fout bij verwijderen vrije-label template:", err);
-      notify(t("mazak.free_label_template_delete_error", "Verwijderen van template is mislukt."));
     }
   };
 
@@ -3578,43 +3632,12 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
               </>
             ) : activeTab === "free" ? (
               <div className="space-y-3">
-                {savedFreeLabelTemplates.length === 0 ? (
-                  <div className="p-6 bg-slate-50 rounded-[24px] border border-slate-200 text-center">
-                    <Tag size={28} className="mx-auto mb-3 text-blue-500" />
-                    <p className="text-xs font-black uppercase tracking-widest text-slate-500">
-                      {t("mazak.free_label_template_empty", "Nog geen vrije-label templates opgeslagen")}
-                    </p>
-                  </div>
-                ) : (
-                  savedFreeLabelTemplates.map((template) => (
-                    <div
-                      key={template.id}
-                      onClick={() => handleApplyFreeLabelTemplate(template)}
-                      className={`bg-white border-2 rounded-[20px] p-4 shadow-sm transition-all cursor-pointer ${selectedFreeTemplateId === template.id ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-100 hover:border-blue-200"}`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-xs font-black text-slate-800 uppercase tracking-wider truncate">{template.name}</p>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase mt-1">
-                            {template.align} • {template.fontSize} pt • {template.quantity}x
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteFreeLabelTemplate(template.id);
-                          }}
-                          className="p-2 rounded-lg border border-slate-200 text-slate-400 hover:text-red-600 hover:border-red-200 transition-all"
-                          title={t("common.delete", "Verwijderen")}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                      <p className="text-xs text-slate-600 mt-3 line-clamp-3 whitespace-pre-wrap">{template.text}</p>
-                    </div>
-                  ))
-                )}
+                <div className="p-6 bg-slate-50 rounded-[24px] border border-slate-200 text-center">
+                  <Tag size={28} className="mx-auto mb-3 text-blue-500" />
+                  <p className="text-xs font-black uppercase tracking-widest text-slate-500">
+                    {t("mazak.labels_sidebar", "Kies hiernaast een type")}
+                  </p>
+                </div>
               </div>
             ) : (
               processItems.map((item) => (
@@ -3637,35 +3660,41 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
           <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-500 text-left w-full">
             <MazakFreeLabelHero t={t} />
 
-            <MazakFreeLabelFormPanel
-              freeLabelTemplateName={freeLabelTemplateName}
-              freeLabelText={freeLabelText}
-              freeLabelAlign={freeLabelAlign}
-              freeLabelFontSize={freeLabelFontSize}
-              freeLabelQuantity={freeLabelQuantity}
-              printing={printing}
-              savingFreeTemplate={savingFreeTemplate}
-              onChangeTemplateName={setFreeLabelTemplateName}
-              onChangeFreeText={setFreeLabelText}
-              onSelectAlign={setFreeLabelAlign}
-              onChangeFontSize={(value) => {
-                setFreeLabelFontSize(clampFreeLabelFontSize(value));
-              }}
-              onChangeQuantity={(value) => {
-                const parsed = Number.parseInt(String(value || "1"), 10);
-                setFreeLabelQuantity(Number.isFinite(parsed) ? Math.max(1, Math.min(50, parsed)) : 1);
-              }}
-              onPrint={handlePrintFreeLabels}
-              onSaveTemplate={handleSaveFreeLabelTemplate}
-              t={t}
-            />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <button
+                onClick={() => setShowFreeLabelModal(true)}
+                className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all text-left group flex flex-col items-center justify-center h-48"
+              >
+                <div className="bg-blue-50 p-4 rounded-2xl text-blue-500 mb-4 group-hover:scale-110 transition-transform">
+                  <Tag size={32} />
+                </div>
+                <h3 className="font-black text-slate-800 uppercase tracking-wide">Vrij Label</h3>
+                <p className="text-xs text-slate-500 text-center mt-2">Print een label met vrije tekst (100x25mm)</p>
+              </button>
+              
+              <button
+                onClick={handlePrintEmptyLabel}
+                disabled={printing}
+                className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 hover:border-slate-400 hover:shadow-md transition-all text-left group flex flex-col items-center justify-center h-48"
+              >
+                <div className="bg-slate-50 p-4 rounded-2xl text-slate-500 mb-4 group-hover:scale-110 transition-transform">
+                  <Printer size={32} />
+                </div>
+                <h3 className="font-black text-slate-800 uppercase tracking-wide">Leeg Label</h3>
+                <p className="text-xs text-slate-500 text-center mt-2">Print direct een blanco label (100x25mm)</p>
+              </button>
 
-            <MazakFreeLabelPreviewPanel
-              template={freeLabelTemplate}
-              freeText={freeLabelText}
-              printerDpi={mazakPrinterDpi}
-              t={t}
-            />
+              <button
+                onClick={() => setShowLargeSequenceModal(true)}
+                className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 hover:border-purple-400 hover:shadow-md transition-all text-left group flex flex-col items-center justify-center h-48"
+              >
+                <div className="bg-purple-50 p-4 rounded-2xl text-purple-500 mb-4 group-hover:scale-110 transition-transform">
+                  <Hash size={32} />
+                </div>
+                <h3 className="font-black text-slate-800 uppercase tracking-wide">Grote Volgnummers</h3>
+                <p className="text-xs text-slate-500 text-center mt-2">Print labels met grote lotnummers en QR (15x15mm)</p>
+              </button>
+            </div>
           </div>
         ) : activeTab === "adjust" ? (
           <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-500 w-full">
@@ -3870,6 +3899,23 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
         </div>
       )}
       </div>
+      {showFreeLabelModal && (
+        <FreeLabelPrintModal
+          onClose={() => setShowFreeLabelModal(false)}
+          onPrint={handlePrintFreeLabels}
+          onSaveTemplate={handleSaveFreeLabelTemplate}
+          printing={printing}
+          savingFreeTemplate={savingFreeTemplate}
+        />
+      )}
+
+      {showLargeSequenceModal && (
+        <LargeSequencePrintModal
+          onClose={() => setShowLargeSequenceModal(false)}
+          onPrint={handlePrintLargeSequence}
+          printing={printing}
+        />
+      )}
     </div>
   );
 };
