@@ -56,6 +56,8 @@ import { resolveLinkedTemplateChain } from "../../utils/orderLabelTemplateUtils"
 import { useNotifications } from '../../contexts/NotificationContext';
 import { resolvePrinterForRouting } from '../../utils/printRouting';
 import { useOccupancyListener } from "../../hooks/useOccupancyListener";
+import { FreeLabelPrintModal } from "./modals/FreeLabelPrintModal";
+import { LargeSequencePrintModal } from "./modals/LargeSequencePrintModal";
 
 const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
 const DEFAULT_MAZAK_DPI = 300;
@@ -1534,6 +1536,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const [adjustRequestNote, setAdjustRequestNote] = useState("");
   const [showAdjustOrderModal, setShowAdjustOrderModal] = useState(false);
   const [showRequestNewOrderModal, setShowRequestNewOrderModal] = useState(false);
+  const [showLargeSequenceModal, setShowLargeSequenceModal] = useState(false);
+  const [showFreeLabelModal, setShowFreeLabelModal] = useState(false);
   const [adjustSubmitting, setAdjustSubmitting] = useState(false);
   const activeScanInput = activeTab === "process"
     ? scanInputProcess
@@ -3349,7 +3353,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                 : activeTab === "planning"
                   ? t("mazak.no_flange_orders_planning", "Geen flens-orders in de planning")
                   : activeTab === "free"
-                    ? t("mazak.no_items_free_label", "Gebruik de vrije-label tab rechts om direct te printen")
+                    ? t("mazak.no_items_free_label", "Selecteer hiernaast het type label dat u wilt printen")
                     : t("mazak.no_items_to_complete", "Geen items om te gereedmelden")}
             </p>
           </div>
@@ -3363,7 +3367,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                   : activeTab === "adjust"
                     ? t("mazak.adjust_products", "Aanpassen: actieve lots")
                   : activeTab === "free"
-                    ? t("mazak.free_label_tab_title", "Vrije labels")
+                    ? t("mazak.labels_tab_title", "Labels")
                   : activeTab === "inbox"
                     ? t("mazak.inbox", "Inbox")
                     : t("mazak.to_process", "Te verwerken")} ({currentList.length})
@@ -3635,37 +3639,59 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       <div className={`flex-1 bg-slate-50 p-6 md:p-8 overflow-y-auto custom-scrollbar ${(!selectedProduct && !selectedPlanningOrder && !selectedAdjustProduct && activeTab !== "free" && activeTab !== "adjust") ? "hidden lg:flex" : "flex"} flex-col`}>
         {activeTab === "free" ? (
           <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-500 text-left w-full">
-            <MazakFreeLabelHero t={t} />
+            <div className="bg-slate-900 rounded-[35px] p-6 text-white border-4 border-blue-500/20 relative overflow-hidden shadow-xl text-left">
+              <span className="text-[8px] font-black text-blue-400 uppercase block mb-1 text-left">{t("mazak.labels", "Labels")}</span>
+              <h2 className="text-3xl font-black italic leading-none text-left">Print Opties</h2>
+              <p className="text-xs font-bold text-white/70 mt-2">Kies het type label dat je wilt printen.</p>
+            </div>
 
-            <MazakFreeLabelFormPanel
-              freeLabelTemplateName={freeLabelTemplateName}
-              freeLabelText={freeLabelText}
-              freeLabelAlign={freeLabelAlign}
-              freeLabelFontSize={freeLabelFontSize}
-              freeLabelQuantity={freeLabelQuantity}
-              printing={printing}
-              savingFreeTemplate={savingFreeTemplate}
-              onChangeTemplateName={setFreeLabelTemplateName}
-              onChangeFreeText={setFreeLabelText}
-              onSelectAlign={setFreeLabelAlign}
-              onChangeFontSize={(value) => {
-                setFreeLabelFontSize(clampFreeLabelFontSize(value));
-              }}
-              onChangeQuantity={(value) => {
-                const parsed = Number.parseInt(String(value || "1"), 10);
-                setFreeLabelQuantity(Number.isFinite(parsed) ? Math.max(1, Math.min(50, parsed)) : 1);
-              }}
-              onPrint={handlePrintFreeLabels}
-              onSaveTemplate={handleSaveFreeLabelTemplate}
-              t={t}
-            />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <button
+                onClick={() => setShowFreeLabelModal(true)}
+                className="p-8 bg-white rounded-[2.5rem] border-2 border-slate-100 hover:border-blue-400 hover:shadow-xl transition-all flex flex-col items-center justify-center gap-4 group"
+              >
+                <div className="p-4 bg-blue-50 text-blue-600 rounded-3xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                  <Tag size={40} />
+                </div>
+                <span className="text-lg font-black uppercase tracking-widest text-slate-800 group-hover:text-blue-700 text-center">
+                  Vrij Label
+                </span>
+                <span className="text-xs font-bold text-slate-500 text-center">
+                  Vrije tekst op een 100x25 label
+                </span>
+              </button>
 
-            <MazakFreeLabelPreviewPanel
-              template={freeLabelTemplate}
-              freeText={freeLabelText}
-              printerDpi={mazakPrinterDpi}
-              t={t}
-            />
+              <button
+                onClick={handlePrintEmptyLabel}
+                disabled={printing}
+                className="p-8 bg-white rounded-[2.5rem] border-2 border-slate-100 hover:border-slate-400 hover:shadow-xl transition-all flex flex-col items-center justify-center gap-4 group disabled:opacity-50"
+              >
+                <div className="p-4 bg-slate-100 text-slate-500 rounded-3xl group-hover:bg-slate-500 group-hover:text-white transition-colors">
+                  <ClipboardCheck size={40} />
+                </div>
+                <span className="text-lg font-black uppercase tracking-widest text-slate-800 group-hover:text-slate-700 text-center">
+                  Leeg Label
+                </span>
+                <span className="text-xs font-bold text-slate-500 text-center">
+                  Voer 1 leeg 100x25 label door
+                </span>
+              </button>
+
+              <button
+                onClick={() => setShowLargeSequenceModal(true)}
+                className="p-8 bg-white rounded-[2.5rem] border-2 border-slate-100 hover:border-indigo-400 hover:shadow-xl transition-all flex flex-col items-center justify-center gap-4 group"
+              >
+                <div className="p-4 bg-indigo-50 text-indigo-600 rounded-3xl group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                  <Hash size={40} />
+                </div>
+                <span className="text-lg font-black uppercase tracking-widest text-slate-800 group-hover:text-indigo-700 text-center">
+                  Grote Volgnummers
+                </span>
+                <span className="text-xs font-bold text-slate-500 text-center">
+                  15x15 QR code + Lotnummer tekst
+                </span>
+              </button>
+            </div>
           </div>
         ) : activeTab === "adjust" ? (
           <div className="max-w-4xl mx-auto space-y-6 animate-in slide-in-from-right-4 duration-500 w-full">
