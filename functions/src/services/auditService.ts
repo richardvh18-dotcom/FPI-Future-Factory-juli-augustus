@@ -28,6 +28,7 @@
 
 const admin = require('firebase-admin');
 const { DB_PATHS } = require('../config/dbPaths');
+const logger = require('firebase-functions/logger');
 
 /**
  * Writes an audit log entry to DB_PATHS.AUDIT_LOGS.
@@ -68,7 +69,11 @@ async function logAction(userId, action, details = {}, options = {}) {
   };
 
   // Structured logging for Google Cloud Logging (Option 3)
-  console.info(JSON.stringify(payload));
+  logger.write({
+    severity: severity === 'CRITICAL' ? 'ERROR' : severity, // Map CRITICAL to ERROR for GCP
+    message: `AUDIT: ${action}`,
+    ...payload,
+  });
 }
 
 /**
