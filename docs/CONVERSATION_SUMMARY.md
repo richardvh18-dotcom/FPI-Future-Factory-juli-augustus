@@ -7,6 +7,18 @@
 
 ---
 
+#### Dagupdate 2 augustus 2026
+
+### Optie 3: Migratie van ISO Audit Logs naar Google Cloud Logging
+
+- Firestore kostenoptimalisatie voor Audit Logging en Data Access:
+  - In `functions/src/services/auditService.ts` zijn `admin.firestore().collection(...).add()` calls vervangen door `console.info(JSON.stringify(payload))`, zodat logs als gestructureerde JSON direct in Google Cloud Logging belanden en niet meer als afzonderlijke Firestore writes meetellen.
+  - De UI in `src/components/admin/AdminLogView.tsx` is volledig herbouwd naar een statisch enterprise dashboard dat doorverwijst naar Google Cloud Logging via een directe url met het juiste query-filter voor security en systeemlogs. De zware log-ophalende query op Firestore is hiermee uit de app verwijderd.
+  - Een deploy-cyclus over functions en hosting heeft de wijzigingen doorgevoerd naar productie (Option 3 is actief).
+- Reminder geplaatst voor de gebruiker: vergeet niet in de GCP-console "Data Access Audit logs" weer uit of efficiënter in te stellen als dit niet langer nodig is via IAM > Audit Logs.
+
+---
+
 ## Dagupdate 1 augustus 2026
 
 ### Firestore kostenoptimalisatie (snelle wins)
@@ -13115,3 +13127,5 @@ Alle views hebben nu een werkende tekening-knop met 3-stap lookup:
 
 - Lighthouse print calibratie doorgezet
 - Operatorhandleiding voor pilotflow uitgewerkt
+U p d a t e   C O N V E R S A T I O N _ S U M M A R Y . m d  
+ 
