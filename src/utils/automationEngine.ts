@@ -3,6 +3,7 @@ import {
   getDocs, 
   query, 
   where, 
+  limit,
 } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS, getPathString } from "../config/dbPaths";
