@@ -7,6 +7,19 @@
 
 ---
 
+####### Dagupdate 2 augustus 2026 — sessie 2 (Monitoring & Audit Logging)
+
+- **Firebase-kosten diagnose**:
+  - Hoge read/write-aantallen (14k reads / 2.6k writes per uur) in de Firebase Console geanalyseerd en verklaard: de eerder gefixte oneindige loop (via `printersRef`) is inderdaad verholpen. De resterende hoge waarden zijn toe te schrijven aan (1) het 60-minuten-rollend-gemiddel dat de oude loop-piek nog meerekent, (2) het openen van 6 tabbladen tegelijkertijd (initiële bulk-reads), en (3) de 6 heartbeats per minuut van actieve tabbladen. Dit is normaal gedrag.
+  - 6 printjobs staan terecht in `pending`-status omdat de printer op het werk uitstaat. De applicatie probeert niet opnieuw te printen en genereert geen onnodige writes. Dit is correct gedrag.
+  - Data Access logs in GCP zijn al standaard uitgeschakeld (geen `auditConfigs` in IAM-policy), dus hier is geen actie nodig.
+- **Audit Logging verbeterd (firebase-functions/logger)**:
+  - `functions/src/services/auditService.ts` aangepast: `console.info(JSON.stringify(payload))` vervangen door `logger.write(...)` van de officiële `firebase-functions/logger` module.
+  - Hierdoor komen alle audit-events (QUALITY, PRODUCTION, PLANNING, ADMIN, SECURITY, SYSTEM) voortaan als native `jsonPayload` in Google Cloud Logging, volledig filterbaar op individuele velden (`userId`, `action`, `severity`, etc.).
+  - CRITICAL-severity-events worden correct gemapped naar GCP ERROR-niveau.
+  - Build geslaagd (geen TypeScript fouten), alle 90+ Cloud Functions succesvol gedeployed.
+- **Git push**: Commit `6af41fe` gepushed naar `main` branch.
+
 ####### Dagupdate 2 augustus 2026 (UI & Bugfixes)
 
 - **Vrije Labels UI & UX optimalisatie**:
