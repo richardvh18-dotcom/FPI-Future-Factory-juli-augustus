@@ -2724,7 +2724,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     }
   };
 
-  const handlePrintFreeLabels = async (templateName: string, text: string, align: "left"|"center"|"right", fontSize: number, quantity: number) => {
+  const handlePrintFreeLabels = async (templateName: string, text: string, align: "left"|"center"|"right", vAlign: "top"|"center"|"bottom", fontSize: string, quantity: number) => {
     const normalizedFreeText = text.trim();
     const qty = Math.max(1, Math.min(50, Number(quantity) || 1));
     const normalizedFontSize = clampFreeLabelFontSize(fontSize);
@@ -2751,6 +2751,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
               ...el,
               fontSize: normalizedFontSize,
               align: align,
+              vAlign: vAlign,
             };
           }
           return el;
@@ -2794,30 +2795,50 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     }
   };
 
-  const handleSaveFreeLabelTemplate = async (templateName: string, text: string, align: "left"|"center"|"right", fontSize: number, quantity: number) => {
+  const handleSaveFreeLabelTemplate = async (templateName: string, text: string, align: "left"|"center"|"right", vAlign: "top"|"center"|"bottom", fontSize: string, quantity: number) => {
     const normalizedName = templateName.trim();
     if (!normalizedName) return;
     
     setSavingFreeTemplate(true);
     try {
-      const docRef = doc(collection(db, "freeLabelTemplates"));
-      await setDoc(docRef, {
-        id: docRef.id,
+      const docRef = doc(db, getPathString(PATHS.GENERAL_SETTINGS));
+      const newTemplate = {
+        id: crypto.randomUUID(),
         name: normalizedName,
         text,
         align,
-        fontSize,
+        vAlign,
+        fontSize: String(fontSize),
         quantity,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        stationId: stationId || "MAZAK",
+        updatedAt: Date.now()
+      };
+      
+      // Update or add
+      const existing = savedFreeLabelTemplates.filter(t => t.name !== normalizedName);
+      const updatedList = [newTemplate, ...existing].slice(0, 50);
+      
+      await updateDoc(docRef, {
+        mazakFreeLabelTemplates: updatedList
       });
-      notify(t("mazak.free_label_template_saved", "Template opgeslagen!"));
-    } catch (err) {
-      console.error(err);
-      notify(t("mazak.free_label_template_save_failed", "Opslaan mislukt."));
+    } catch (err: any) {
+      console.error("Fout bij opslaan van template:", err);
+      throw err;
     } finally {
       setSavingFreeTemplate(false);
+    }
+  };
+
+  const handleDeleteFreeLabelTemplate = async (templateId: string) => {
+    try {
+      const docRef = doc(db, getPathString(PATHS.GENERAL_SETTINGS));
+      const updatedList = savedFreeLabelTemplates.filter(t => t.id !== templateId);
+      await updateDoc(docRef, {
+        mazakFreeLabelTemplates: updatedList
+      });
+      notify(t("mazak.template_deleted_success", "Template verwijderd."));
+    } catch (err: any) {
+      console.error(err);
+      notify(t("mazak.template_deleted_error", "Fout bij verwijderen van template."));
     }
   };
 
@@ -3343,7 +3364,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
       <div className="flex flex-1 overflow-hidden">
         <div 
-          className={`w-full lg:w-7/12 p-4 pb-32 space-y-3 border-r border-slate-100 overflow-y-auto custom-scrollbar ${(selectedProduct || selectedPlanningOrder) ? "hidden lg:block" : "block"}`}
+          className={`w-full lg:w-7/12 p-4 pb-32 space-y-3 border-r border-slate-100 overflow-y-auto custom-scrollbar ${activeTab === "free" ? "hidden" : (selectedProduct || selectedPlanningOrder) ? "hidden lg:block" : "block"}`}
           style={{ paddingBottom: "max(8rem, env(safe-area-inset-bottom))" }}
         >
         {activeTab !== "planning" && activeTab !== "free" && (
@@ -3906,6 +3927,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
           onSaveTemplate={handleSaveFreeLabelTemplate}
           printing={printing}
           savingFreeTemplate={savingFreeTemplate}
+          savedTemplates={savedFreeLabelTemplates}
+          onDeleteTemplate={handleDeleteFreeLabelTemplate}
         />
       )}
 

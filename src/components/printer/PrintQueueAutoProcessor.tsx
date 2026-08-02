@@ -262,6 +262,9 @@ const getCurrentPrinterId = (printers: PrinterConfig[], usbDevice: USBDevice | n
 const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
   const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
+  const printersRef = useRef<PrinterConfig[]>([]);
+  printersRef.current = printers;
+
   const [printJobs, setPrintJobs] = useState<PrintJob[]>([]);
   const isProcessingRef = useRef(false);
 
@@ -523,7 +526,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             const pp = parseUsbId(savedProduct);
             if (pv !== undefined && pp !== undefined && d.vendorId === pv && d.productId === pp) return true;
             if (savedPrinterId) {
-              const sp = printers.find((p) => p.id === savedPrinterId);
+              const sp = printersRef.current.find((p) => p.id === savedPrinterId);
               const spv = parseUsbId(sp?.vendorId);
               const spp = parseUsbId(sp?.productId);
               if (spv !== undefined && spp !== undefined && d.vendorId === spv && d.productId === spp) return true;
@@ -546,7 +549,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       clearInterval(pollInterval);
       maybeUpdateHeartbeat(false, true);
     };
-  }, [enabled, currentPrinterId, usbDevice, printers]);
+  }, [enabled, currentPrinterId, usbDevice]);
 
   useEffect(() => {
     if (!enabled || isProcessingRef.current) {

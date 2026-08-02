@@ -213,6 +213,9 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
                   ? PRINTER_PREVIEW_FONT_STACK
                   : el.fontFamily,
                 textAlign: el.align || "left",
+                display: (el as any).vAlign ? "flex" : "block",
+                flexDirection: (el as any).vAlign ? "column" : undefined,
+                justifyContent: (el as any).vAlign === "center" ? "center" : (el as any).vAlign === "bottom" ? "flex-end" : "flex-start",
                 whiteSpace: "pre-wrap",
                 overflowWrap: "anywhere",
                 wordBreak: "normal",

@@ -7,7 +7,20 @@
 
 ---
 
-#### Dagupdate 2 augustus 2026
+####### Dagupdate 2 augustus 2026 (UI & Bugfixes)
+
+- **Vrije Labels UI & UX optimalisatie**:
+  - `MazakView.tsx` is aangepast zodat de "Labels" tab (Vrije labels) nu geen linkermenu meer toont; de drie hoofdknoppen (Vrij Label, Leeg Label, Grote Reeks) worden gecentreerd over de volledige breedte weergegeven.
+  - In `FreeLabelPrintModal.tsx` is een **Live Preview** (`AutoScaledLabelPreview`) toegevoegd bovenaan het formulier, zodat gebruikers direct het resulterende etiket zien.
+  - Horizontale én verticale uitlijning (Boven, Midden, Onder) is nu volledig functioneel.
+  - De velden voor lettergrootte en aantal labels werken weer als normale tekstvelden (vrij typen, backspace) i.p.v. dat ze direct de input blokkeren.
+  - Bij het opslaan van een Vrij Label template wordt er geen schermbrede toast meer getoond, maar geeft de opslaan-knop tijdelijk een groene status "Opgeslagen!" binnen de modal (`saveStatus`).
+  - Snel printen vanuit een template links in het menu triggert direct de vraag om het aantal (via window.prompt) en drukt direct af.
+- **Grote Reeks / Lotnummers UI optimalisatie**:
+  - In `LargeSequencePrintModal.tsx` worden afdelingen (`departmentGroups`) nu dynamisch opgehaald uit de Factory Settings om de station dropdown correct te bevolken.
+  - Lotnummers worden automatisch gegenereerd met de juiste prefix-code van de machine via `getStationMachineCode`.
+- **Kritieke Bugfix (PrintQueueAutoProcessor Firestore loop)**:
+  - Een infinite read/write loop verholpen in `PrintQueueAutoProcessor.tsx`. De functie die de heartbeat (online status) van USB-printers elke minuut naar Firebase wegschrijft, gebruikte de printer-array als dependency. Hierdoor werd de functie bij elke Firebase `onSnapshot`-notificatie opnieuw geactiveerd, wat leidde tot duizenden onnodige reads/writes per uur. Dit is opgelost door `printersRef` in plaats van state te gebruiken voor de intervalloop.
 
 ### Optie 3: Migratie van ISO Audit Logs naar Google Cloud Logging
 
