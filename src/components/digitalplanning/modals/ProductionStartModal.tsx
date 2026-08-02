@@ -363,14 +363,14 @@ const ProductionStartModal = ({
   const [mode, setMode] = useState(() => {
     const normalized = String(stationId || "").toUpperCase().trim();
     const noPrefix = normalized.startsWith("40") ? normalized.slice(2) : normalized;
-    return noPrefix === "BH18" ? "auto" : "manual";
+    return (noPrefix === "BH18" || noPrefix === "BH12") ? "auto" : "manual";
   });
 
   useEffect(() => {
     if (isOpen) {
       const normalized = String(stationId || "").toUpperCase().trim();
       const noPrefix = normalized.startsWith("40") ? normalized.slice(2) : normalized;
-      setMode(noPrefix === "BH18" ? "auto" : "manual");
+      setMode((noPrefix === "BH18" || noPrefix === "BH12") ? "auto" : "manual");
     }
   }, [isOpen, stationId]);
   const [lotNumber, setLotNumber] = useState("");

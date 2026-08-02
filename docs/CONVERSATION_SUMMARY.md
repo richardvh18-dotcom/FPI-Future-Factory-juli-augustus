@@ -13155,3 +13155,11 @@ Alle views hebben nu een werkende tekening-knop met 3-stap lookup:
 - Operatorhandleiding voor pilotflow uitgewerkt
 U p d a t e   C O N V E R S A T I O N _ S U M M A R Y . m d  
  
+- **[2026-08-02] Firebase Optimalisaties:**
+  - orderLabelSearch.ts aangepast zodat er eerst lokaal gezocht wordt (client-side cache in memory) voordat een reeks intensieve Firestore database queries wordt afgevuurd. Dit verhelpt de extreme query fan-out.
+  - WorkstationHub.tsx ontdaan van een overbodige real-time onSnapshot listener voor personeelsdata (personnel), en vervangen door een efficiënte eenmalige getDocs ophaalactie.
+
+- **[2026-08-02] UI Tweaks & Fixes:**
+  - In `TerminalPlanningView.tsx` is de knop voor het Wikkelrobot Programma nu strikt beperkt tot BH18 (niet meer per abuis zichtbaar in BH12).
+  - In `ProductionStartModal.tsx` wordt BH12 nu ook, net als BH18, standaard opengestart in de uto (auto-start) modus.
+  - Vergeten tweede Wikkelrobot-knop in de actie-sectie van \TerminalPlanningView.tsx\ nu ook succesvol verborgen voor niet-BH18 machines.

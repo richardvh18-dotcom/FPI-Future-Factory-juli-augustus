@@ -1029,15 +1029,13 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         fallbackOccupancyUnsub = null;
       });
       
-      // LISTENER 4: Personnel (lazy load after main data is ready)
-      const unsubPersonnel = onSnapshot(
-        query(collection(db, getPathString(PATHS.PERSONNEL)), limit(300)),
-        (snap) => {
+      // LISTENER 4: Personnel (gewijzigd naar getDocs want lijst verandert zelden tijdens shift)
+      getDocs(query(collection(db, getPathString(PATHS.PERSONNEL)), limit(300)))
+        .then((snap) => {
           if (isMounted) setPersonnel(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PersonnelEntry, "id">) })));
-        },
-        (error) => console.warn("Personnel Sync Error:", error)
-      );
-      unsubs.push(unsubPersonnel);
+        })
+        .catch((error) => console.warn("Personnel Sync Error:", error));
+
     };
     initData();
     return () => {

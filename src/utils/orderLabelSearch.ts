@@ -63,6 +63,26 @@ export const executeOrderLabelSearch = async (
     searchStr = searchStr.split('/').filter(Boolean).pop() || searchStr;
   }
 
+  // 1. FAST PATH: Check local memory (initialList) first before hitting the database
+  const queryText = normalizeText(searchStr);
+  if (initialList && initialList.length > 0) {
+    const clientMatches = initialList.filter((item) => {
+      const record = item as Record<string, unknown>;
+      const orderText = normalizeText(record.orderId || record.orderNumber || record.Order || record.Productieorder || record.order || "");
+      const productText = normalizeText(record.item || record.itemCode || record.Item || record.Artikel || record.description || record.Description || record.Omschrijving || "");
+      const idText = normalizeText(record.id || "");
+      return orderText.includes(queryText) || productText.includes(queryText) || idText.startsWith(queryText);
+    });
+
+    if (clientMatches.length > 0) {
+      addDebug(`⚡ [Search] Gevonden in lokale cache (snel zoeken): ${clientMatches.length} resultaten`);
+      return { results: clientMatches, diagnostics };
+    }
+  }
+
+  addDebug(`☁️ [Search] Niet lokaal gevonden, fallback naar database queries voor: ${searchStr}`);
+
+
   const searchOptions: string[] = [searchStr];
   const digitsMatch = searchStr.match(/\d+/);
   if (digitsMatch) {
@@ -319,21 +339,8 @@ export const executeOrderLabelSearch = async (
     deepPathRangeSnaps.forEach(addDocs);
   }
 
-  const queryText = normalizeText(searchStr);
-  const clientMatches = initialList.filter((item) => {
-    const record = item as Record<string, unknown>;
-    const orderText = normalizeText(record.orderId || record.orderNumber || record.Order || record.Productieorder || record.order || "");
-    const productText = normalizeText(record.item || record.itemCode || record.Item || record.Artikel || record.description || record.Description || record.Omschrijving);
-    const idText = normalizeText(record.id || "");
-    return orderText.includes(queryText) || productText.includes(queryText) || idText.startsWith(queryText);
-  });
-
   const merged = new Map<string, AnyRecord>();
   Array.from(foundDocs.values()).forEach((item) => {
-    const record = item as AnyRecord;
-    merged.set(String(record.id ?? ""), record);
-  });
-  clientMatches.forEach((item) => {
     const record = item as AnyRecord;
     merged.set(String(record.id ?? ""), record);
   });

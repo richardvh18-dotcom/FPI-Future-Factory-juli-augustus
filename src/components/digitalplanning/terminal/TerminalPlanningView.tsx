@@ -178,7 +178,7 @@ const TerminalPlanningView = ({
     return /BH18/i.test(stationText);
   }, [selectedOrder]);
 
-  const shouldShowRobotProgramButton = isSelectedOrderElbow && (isBh18Context || selectedOrder?.stationId || selectedOrder?.station);
+  const shouldShowRobotProgramButton = isSelectedOrderElbow && isBh18Context;
 
   React.useEffect(() => {
     const unsub = onSnapshot(
@@ -1205,18 +1205,20 @@ const TerminalPlanningView = ({
                   </button>
 
                   {/* WIKKELROBOTPROGRAMMA KNOP (GROEN BIJ PROGRAMMA, ROOD BIJ GEEN PROGRAMMA) */}
-                  <button
-                    type="button"
-                    onClick={() => setShowRobotModal(true)}
-                    className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border shadow-sm ${
-                      hasRobotProgram
-                        ? "bg-emerald-600 border-emerald-700 hover:bg-emerald-700 text-white shadow-emerald-200"
-                        : "bg-rose-600 border-rose-700 hover:bg-rose-700 text-white shadow-rose-200"
-                    }`}
-                  >
-                    <Cpu size={16} /> {t("digitalplanning.terminal.robot_program", "Wikkelrobotprogramma")}
-                    <span className={`w-2 h-2 rounded-full ${hasRobotProgram ? "bg-emerald-200 animate-pulse" : "bg-rose-200"}`} />
-                  </button>
+                  {isBh18Context && (
+                    <button
+                      type="button"
+                      onClick={() => setShowRobotModal(true)}
+                      className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border shadow-sm ${
+                        hasRobotProgram
+                          ? "bg-emerald-600 border-emerald-700 hover:bg-emerald-700 text-white shadow-emerald-200"
+                          : "bg-rose-600 border-rose-700 hover:bg-rose-700 text-white shadow-rose-200"
+                      }`}
+                    >
+                      <Cpu size={16} /> {t("digitalplanning.terminal.robot_program", "Wikkelrobotprogramma")}
+                      <span className={`w-2 h-2 rounded-full ${hasRobotProgram ? "bg-emerald-200 animate-pulse" : "bg-rose-200"}`} />
+                    </button>
+                  )}
 
                   {isSelectedOrderTee && (
                     <button
