@@ -54,20 +54,21 @@ async function logAction(userId, action, details = {}, options = {}) {
   const month = now.getUTCMonth() + 1;
   const yearMonth = `${year}-${String(month).padStart(2, '0')}`;
 
-  await admin.firestore()
-    .collection(DB_PATHS.AUDIT_LOGS)
-    .add({
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      userId: userId || 'system',
-      userEmail: userEmail || null,
-      action,
-      category,
-      severity,
-      details,
-      year,
-      month,
-      yearMonth,
-    });
+  const payload = {
+    timestamp: now.toISOString(),
+    userId: userId || 'system',
+    userEmail: userEmail || null,
+    action,
+    category,
+    severity,
+    details,
+    year,
+    month,
+    yearMonth,
+  };
+
+  // Structured logging for Google Cloud Logging (Option 3)
+  console.info(JSON.stringify(payload));
 }
 
 /**
