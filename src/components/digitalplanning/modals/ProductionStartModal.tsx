@@ -381,7 +381,7 @@ const ProductionStartModal = ({
   const [manualOrderInput, setManualOrderInput] = useState("");
   const [assignedOperators, setAssignedOperators] = useState<Array<{ number: string; name: string }>>([]);
   const [operatorInput, setOperatorInput] = useState("");
-  const [robotPosition, setRobotPosition] = useState<'STN1' | 'STN2'>('STN1');
+
   const [previewLotIndex, setPreviewLotIndex] = useState(0);
 
   useEffect(() => {
@@ -2235,27 +2235,27 @@ const ProductionStartModal = ({
                 <div className="grid grid-cols-2 gap-2 pt-0.5">
                   <button
                     type="button"
-                    onClick={() => setRobotPosition("STN1")}
+                    onClick={() => setRobotPosition(1)}
                     className={`py-2 px-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 border ${
-                      robotPosition === "STN1"
+                      robotPosition === 1
                         ? "bg-cyan-600 text-white border-cyan-500 shadow-sm"
                         : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                     }`}
                   >
-                    <span className={`w-2 h-2 rounded-full ${robotPosition === "STN1" ? "bg-white" : "bg-slate-300"}`} />
+                    <span className={`w-2 h-2 rounded-full ${robotPosition === 1 ? "bg-white" : "bg-slate-300"}`} />
                     {t("productionStartModal.pos1", "Positie 1 (STN1)")}
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setRobotPosition("STN2")}
+                    onClick={() => setRobotPosition(2)}
                     className={`py-2 px-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 border ${
-                      robotPosition === "STN2"
+                      robotPosition === 2
                         ? "bg-purple-600 text-white border-purple-500 shadow-sm"
                         : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                     }`}
                   >
-                    <span className={`w-2 h-2 rounded-full ${robotPosition === "STN2" ? "bg-white" : "bg-slate-300"}`} />
+                    <span className={`w-2 h-2 rounded-full ${robotPosition === 2 ? "bg-white" : "bg-slate-300"}`} />
                     {t("productionStartModal.pos2", "Positie 2 (STN2)")}
                   </button>
                 </div>

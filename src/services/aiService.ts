@@ -509,7 +509,7 @@ class AIService {
     // --- 3. Al bezette uren ophalen uit OCCUPANCY ---
     const occupancyByDay: Record<string, number> = { /* empty */ };
     try {
-      const occSnap = await getDocs(collection(db, getPathString(PATHS.OCCUPANCY)));
+      const occSnap = await getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(1000)));
       occSnap.docs.forEach(d => {
         const data = d.data();
         if (data.date && workdays.includes(data.date)) {

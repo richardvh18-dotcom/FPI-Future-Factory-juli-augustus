@@ -1,5 +1,4 @@
 import {
-  Firestore,
   collection,
   getDocs,
   limit,
@@ -144,7 +143,7 @@ export const subscribeTrackedProducts = ({
   };
 
   const rootUnsub = onSnapshot(
-    collection(db, String(getPathString(PATHS.TRACKING))),
+    query(collection(db, String(getPathString(PATHS.TRACKING))), limit(400)),
     (snap) => {
       rootDocs = snap.docs.map((docSnap) => ({
         ...(docSnap.data() as Record<string, unknown>),
@@ -160,7 +159,7 @@ export const subscribeTrackedProducts = ({
   const scopedTargets = buildScopedTrackingTargets({ departments, machines });
   const scopedUnsubs = scopedTargets.map(({ department, machine, key }) =>
     onSnapshot(
-      collection(db, getPathString([...PATHS.TRACKING, department, "machines", machine, "items"])),
+      query(collection(db, getPathString([...PATHS.TRACKING, department, "machines", machine, "items"])), limit(400)),
       (snap) => {
         scopedBuckets.set(
           key,

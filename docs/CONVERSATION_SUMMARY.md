@@ -39,6 +39,17 @@
     - nieuwe signature-vergelijking `buildEfficiencyRecalcSignature`/`shouldSkipEfficiencyRecalc`
     - trigger slaat recalculatie over als alleen irrelevante velden zijn gewijzigd
 
+### Firestore kostenoptimalisatie (derde batch)
+
+- In [src/utils/trackedProducts.ts](src/utils/trackedProducts.ts) is een enorm lek aan Firestore reads gedicht:
+    - In `subscribeTrackedProducts` werden per afdeling/machine-combinatie (tientallen combinaties) ongefilterde en onbegrensde `onSnapshot` listeners op de `items`-collectie geopend.
+    - Bij een grote historie aan items werden er per machine duizenden documenten direct binnengehaald.
+    - Opgelost door `query(..., limit(400))` toe te voegen aan zowel de root-listener als de individuele scoped machine-listeners, waardoor de initiële payload-grootte per machine gemaximeerd is tot 400 documenten.
+
+- Onbegrensde queries op `machine_occupancy` begrensd:
+    - In [src/hooks/useOccupancyListener.ts](src/hooks/useOccupancyListener.ts) was de globale realtime listener ongefilterd. Dit is gemaximeerd met `limit(800)` om tienduizenden reads bij het laden van het dashboard te voorkomen.
+    - Meerdere `getDocs` calls in [src/utils/automationEngine.ts](src/utils/automationEngine.ts) en [src/services/aiService.ts](src/services/aiService.ts) haalden eveneens de volledige `machine_occupancy` tabel binnen. Deze hebben nu allemaal een `limit(1000)`.
+
 ### Verwachte extra impact
 
 - Minder realtime read-volume op workstation-tablets in niet-wikkelstations.

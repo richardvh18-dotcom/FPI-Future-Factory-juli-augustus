@@ -102,7 +102,7 @@ export const evaluateCapacityShortage = async (conditions: TriggerConditions): P
   const threshold = Number(conditions.threshold ?? 0);
   
   // Load occupancy and planning data
-  const occupancySnap = await getDocs(collection(db, getPathString(PATHS.OCCUPANCY)));
+  const occupancySnap = await getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(1000)));
   const planningSnap = await getDocs(collection(db, getPathString(PATHS.PLANNING)));
   
   const occupancy = occupancySnap.docs.map((d) => d.data() as OccupancyRecord);
@@ -133,7 +133,7 @@ export const evaluateCapacityShortage = async (conditions: TriggerConditions): P
 export const evaluateLowEfficiency = async (conditions: TriggerConditions): Promise<TriggerResult> => {
   const threshold = Number(conditions.threshold ?? 80); // percentage
   
-  const occupancySnap = await getDocs(collection(db, getPathString(PATHS.OCCUPANCY)));
+  const occupancySnap = await getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(1000)));
   const occupancy = occupancySnap.docs.map((d) => d.data() as OccupancyRecord);
   
   const avgEfficiency = occupancy.reduce((sum, o) => {
@@ -196,7 +196,7 @@ export const evaluateOrderDelay = async (conditions: TriggerConditions): Promise
 export const evaluateMissingOperator = async (conditions: TriggerConditions): Promise<TriggerResult> => {
   const threshold = Number(conditions.threshold ?? 1);
   
-  const occupancySnap = await getDocs(collection(db, getPathString(PATHS.OCCUPANCY)));
+  const occupancySnap = await getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(1000)));
   const occupancy = occupancySnap.docs.map((d) => d.data() as OccupancyRecord);
   
   const machinesWithoutOperators = occupancy.filter(o => 

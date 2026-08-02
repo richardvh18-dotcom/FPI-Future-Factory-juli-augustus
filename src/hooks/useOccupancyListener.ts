@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, query, limit } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { PATHS, getPathString } from "../config/dbPaths";
 
@@ -18,7 +18,7 @@ const ensureGlobalListener = () => {
   if (occupancyUnsub) return;
 
   occupancyUnsub = onSnapshot(
-    collection(db, getPathString(PATHS.OCCUPANCY)),
+    query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(800)),
     (snap) => {
       occupancyCache = snap.docs.map((docSnap) => ({
         id: docSnap.id,
