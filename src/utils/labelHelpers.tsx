@@ -328,10 +328,8 @@ const parseProductType = (text: string): string => {
     ? "ELBOW"
     : upper.includes("ADAPTOR") || upper.includes("ADAPTER")
       ? "ADAPTOR"
-    : isWye
-      ? (isUnequalBySize ? "UNEQUAL-Y-TEE" : "EQUAL-Y-TEE")
-    : isYTee
-      ? (isUnequalBySize ? "UNEQUAL-Y-TEE" : "EQUAL-Y-TEE")
+    : isWye || isYTee
+      ? (isUnequalBySize ? "UNEQUAL 45° TEE" : "EQUAL 45° TEE")
     : upper.includes("UNEQUAL") || upper.includes("VERLOOP TEE") || (hasTee && isUnequalBySize)
       ? "UNEQUAL-TEE"
       : upper.includes("TEE")
@@ -572,8 +570,8 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
   if (hasWyeLikeType) {
     productType =
       idPrimaryValue !== null && idSecondaryValue !== null && idPrimaryValue !== idSecondaryValue
-        ? "UNEQUAL-Y-TEE"
-        : "EQUAL-Y-TEE";
+        ? "UNEQUAL 45° TEE"
+        : "EQUAL 45° TEE";
   }
   const idDisplay = idPrimaryValue ? `${idPrimaryValue}mm ${toInches(idPrimaryValue)}` : "";
   const id1Display = idSecondaryValue ? `${idSecondaryValue}mm ${toInches(idSecondaryValue)}` : "";

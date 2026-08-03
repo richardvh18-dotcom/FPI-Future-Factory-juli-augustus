@@ -143,19 +143,19 @@ const ReportHeaderActions = ({
   <div className="flex items-center gap-2">
     <button
       onClick={onRunAtpsDryRunPreview}
-      disabled={atpsPreviewLoading}
-      className="px-4 py-2 bg-amber-50 text-amber-700 rounded-xl text-sm font-bold hover:bg-amber-100 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-      title="Test de passieve ATPS export preview"
+      disabled={true}
+      className="px-4 py-2 bg-amber-50 text-amber-700 rounded-xl text-sm font-bold opacity-60 cursor-not-allowed transition-colors flex items-center gap-2"
+      title="ATPS export is tijdelijk uitgeschakeld"
     >
-      {atpsPreviewLoading ? <Loader2 size={16} className="animate-spin" /> : <Zap size={16} />} {t("adminReportsView.atpsDryRun", "ATPS Dry-run")}
+      <Zap size={16} /> {t("adminReportsView.atpsDryRun", "ATPS Dry-run")}
     </button>
     <button
       onClick={onRunAtpsLiveExport}
-      disabled={atpsLiveLoading}
-      className="px-4 py-2 bg-rose-50 text-rose-700 rounded-xl text-sm font-bold hover:bg-rose-100 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-      title="Start live export naar ATPS"
+      disabled={true}
+      className="px-4 py-2 bg-rose-50 text-rose-700 rounded-xl text-sm font-bold opacity-60 cursor-not-allowed transition-colors flex items-center gap-2"
+      title="ATPS export is tijdelijk uitgeschakeld"
     >
-      {atpsLiveLoading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} {t("adminReportsView.atpsLive", "ATPS Live")}
+      <Upload size={16} /> {t("adminReportsView.atpsLive", "ATPS Live")}
     </button>
     <button
       onClick={onRefreshAtpsMonitor}
@@ -231,6 +231,16 @@ const AdminReportsView = () => {
   const [atpsMonitor, setAtpsMonitor] = useState<AnyRecord | null>(null);
 
   const runAtpsDryRunPreview = async () => {
+    notify("ATPS export is tijdelijk uitgeschakeld omdat de koppeling nog niet is aangesloten.");
+    return;
+  };
+
+  const runAtpsLiveExport = async () => {
+    notify("ATPS export is tijdelijk uitgeschakeld omdat de koppeling nog niet is aangesloten.");
+    return;
+  };
+
+  const runAtpsDryRunPreviewLegacy = async () => {
     setAtpsPreviewLoading(true);
     try {
       const result = await previewAtpsOccupancyExport({
@@ -268,7 +278,7 @@ const AdminReportsView = () => {
     }
   };
 
-  const runAtpsLiveExport = async () => {
+  const runAtpsLiveExportLegacy = async () => {
     const confirmed = window.confirm("Live ATPS export starten? Alleen records met atpsExported = false worden verwerkt.");
     if (!confirmed) return;
 

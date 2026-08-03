@@ -36,19 +36,22 @@ describe('ZPL Font Calibration Tests', () => {
     expect(zpl).toMatch(/\^A0N,\d+,\d+/); // Ensure font spec is present
   });
 
-  test('Character width should be 52% of height', () => {
-    // Test the lot batch function which has explicit width calculation
+  test('Lot batch labels use a wider font width to fill the available label area', () => {
     const zpl = generateLotBatchZPL({
-      lots: ['TEST001', 'TEST002'],
+      lots: ['TEST001234567890'],
       orderNumber: 'ORD-123',
       printerDpi: 203,
-      textHeightMm: 6.5,
+      textHeightMm: 8.2,
       labelWidthMm: 90,
     });
 
-    // fontHeightDots = Math.round(6.5 * 8) ≈ 52 dots
-    // fontWidthDots = Math.round(52 * 0.52) ≈ 27 dots
-    expect(zpl).toMatch(/\^A0N,\d+,\d+/);
+    const fontMatch = zpl.match(/\^A0N,(\d+),(\d+)/);
+    expect(fontMatch).not.toBeNull();
+    const height = Number(fontMatch?.[1] ?? 0);
+    const width = Number(fontMatch?.[2] ?? 0);
+
+    expect(height).toBeGreaterThan(0);
+    expect(width).toBeGreaterThanOrEqual(Math.round(height * 1.2));
   });
 
   test('Font height should be within valid range (6-500 dots)', () => {

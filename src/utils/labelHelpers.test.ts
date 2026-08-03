@@ -48,7 +48,7 @@ describe('labelHelpers special elbow rules', () => {
       extraCode: 'TEST',
     });
 
-    expect(result.productType).toBe('UNEQUAL-Y-TEE');
+    expect(result.productType).toBe('UNEQUAL 45° TEE');
     expect(result.idLine).toBe('ID: 315x250mm (13"x10")');
     expect(result.id).toBe('315mm (13")');
     expect(result.id1).toBe('250mm (10")');
@@ -63,7 +63,7 @@ describe('labelHelpers special elbow rules', () => {
       extraCode: 'TEST',
     });
 
-    expect(result.productType).toBe('EQUAL-Y-TEE');
+    expect(result.productType).toBe('EQUAL 45° TEE');
     expect(result.id).toBe('400mm (16")');
     expect(result.id1).toBe('400mm (16")');
   });

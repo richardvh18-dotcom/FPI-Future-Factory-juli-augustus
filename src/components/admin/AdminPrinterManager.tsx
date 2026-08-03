@@ -68,6 +68,7 @@ import {
   buildOrderLabelPreviewData,
   buildOrderLabelTemplateProduct,
 } from "../../utils/orderLabelTemplateUtils";
+import { isPrinterOnline } from "../../utils/printerStatus";
 
 // Parse USB ID strings (e.g., "1234" or "0x1234") to numbers
 type PrinterConnectionType = "webusb" | "windows_host" | "network";
@@ -2247,8 +2248,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                                 </span>
                               )}
                               {(() => {
-                                const hb = timestampToMillis(printer.lastHeartbeat);
-                                const isOnline = printer.isOnline && hb && (Date.now() - hb) < 45000;
+                                const isOnline = isPrinterOnline(printer);
                                 return (
                                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1 ${isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
                                     <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></div>

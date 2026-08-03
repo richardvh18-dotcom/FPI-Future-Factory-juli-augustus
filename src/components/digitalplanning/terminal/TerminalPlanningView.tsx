@@ -36,6 +36,11 @@ import { useTouchKeyboardPreference } from "../../../hooks/useTouchKeyboardPrefe
 import GlassCutListModal from "../modals/GlassCutListModal";
 import { formatConnectionForDisplay } from "../../../utils/connectionFormatter";
 import { getWm18CatalogItemByArticleNumber } from "../../../services/wm18ProgramCatalogService";
+import {
+  getPlanningListViewRowSummary,
+  normalizePlanningViewMode,
+  shouldShowPlanningDetailPanel,
+} from "../../../utils/planningViewHelpers";
 import { WM18RobotProgramDetailModal } from "../modals/WM18RobotProgramDetailModal";
 
 type AnyRecord = Record<string, any>;
@@ -101,6 +106,7 @@ const TerminalPlanningView = ({
   const [robotProgramState, setRobotProgramState] = useState<'loading' | 'ready' | 'missing'>('loading');
   const [robotProgramDetails, setRobotProgramDetails] = useState<AnyRecord | null>(null);
   const [showRobotProgramDetails, setShowRobotProgramDetails] = useState(false);
+  const [activeListPopupOrderId, setActiveListPopupOrderId] = useState<string | null>(null);
 
   const parsedOrderSpecs = useMemo(() => {
     if (!selectedOrder) return { id: undefined, id1: undefined, pn: undefined, connectionType: "cbcbcb" };
@@ -419,7 +425,7 @@ const TerminalPlanningView = ({
   const [syncProgress, setSyncProgress] = React.useState(0);
   const [missingItems, setMissingItems] = React.useState<string[]>([]);
   const [showMissingModal, setShowMissingModal] = React.useState(false);
-
+  const [planningViewMode, setPlanningViewMode] = React.useState<"tiles" | "list">("tiles");
   const [hasRobotProgram, setHasRobotProgram] = React.useState<boolean | null>(null);
   const [showRobotModal, setShowRobotModal] = React.useState(false);
 
@@ -557,14 +563,20 @@ const TerminalPlanningView = ({
             const weekNum = String(week).padStart(2, '0');
             const isPast = d < now;
             const isCurrentWeek = week === nowWeek && year === nowYear;
+            const weekBorderClass = isCurrentWeek
+              ? 'border-blue-500'
+              : isPast
+                ? 'border-red-300'
+                : 'border-emerald-300';
+
             items.push(
               <div key={`week-${weekKey}`} className={`flex items-center gap-3 px-1 pt-2 pb-1 ${isPast && !isCurrentWeek ? 'opacity-50' : ''}`}>
-                <div className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest ${
+                <div className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border ${weekBorderClass} ${
                   isCurrentWeek
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
                     : isPast
-                      ? 'bg-slate-200 text-slate-500'
-                      : 'bg-slate-100 text-slate-500'
+                      ? 'bg-slate-50 text-slate-600'
+                      : 'bg-emerald-50 text-emerald-700'
                 }`}>
                   Week {weekNum}{isCurrentWeek && <span className="ml-1 opacity-70"> • Nu</span>}
                 </div>
@@ -575,7 +587,82 @@ const TerminalPlanningView = ({
         }
       }
 
+      const summary = getPlanningListViewRowSummary(order, formatDateWithWeek(deliveryDate), Math.max(total - produced, 0));
+
       items.push(
+        planningViewMode === "list" ? (
+          <div
+            key={order.id}
+            ref={(el) => (itemRefs.current[order.id] = el)}
+            onClick={() => {
+              if (planningViewMode === "list") {
+                setActiveListPopupOrderId(order.id);
+              }
+              onSelectOrder(order.id);
+            }}
+            className={`px-3 py-2.5 rounded-2xl border transition-all cursor-pointer grid grid-cols-[180px_minmax(0,1.25fr)_minmax(0,1.05fr)_minmax(0,0.95fr)_minmax(0,0.85fr)_120px_120px_72px] items-center gap-2 ${
+              selectedOrderId === order.id
+                ? "bg-emerald-50 border-emerald-500 shadow-sm"
+                : priorityCardClass
+            }`}
+          >
+            <div className="min-w-0 overflow-hidden">
+              <div className="truncate text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">
+                {summary.weekLabel}
+              </div>
+              <div className="mt-0.5 truncate text-[12px] font-black text-slate-800">
+                {summary.orderId || "-"}
+              </div>
+            </div>
+            <div className="min-w-0 overflow-hidden">
+              <div className="truncate font-black text-[12px] uppercase tracking-tight text-slate-900">
+                {summary.displayName}
+              </div>
+              {summary.extraCode && (
+                <div className="truncate text-[9px] font-black uppercase tracking-wide text-amber-700">
+                  {summary.extraCode}
+                </div>
+              )}
+            </div>
+            <div className="min-w-0 overflow-hidden">
+              <div className="truncate text-[11px] font-black text-slate-700">
+                {summary.manufacturedItem || "-"}
+              </div>
+            </div>
+            <div className="min-w-0 overflow-hidden">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {summary.extraCode && (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-wide text-amber-700">
+                    {summary.extraCode}
+                  </span>
+                )}
+                {getOrderTypeBadge(order) && (
+                  <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${getOrderTypeBadge(order)!.className}`}>
+                    {getOrderTypeBadge(order)!.label}
+                  </span>
+                )}
+                {getPriorityBadgeStyles(order) && (
+                  <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${getPriorityBadgeStyles(order)!.className}`}>
+                    {getPriorityBadgeStyles(order)!.label}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="min-w-0 overflow-hidden text-right">
+              <div className="break-words text-[11px] font-black text-slate-700">
+                {summary.quantity}
+              </div>
+            </div>
+            <div className="min-w-0 overflow-hidden text-right">
+              <div className="break-words text-[11px] font-black text-amber-700">
+                {summary.remainingQty}
+              </div>
+            </div>
+            <div className="flex justify-end pl-3 pr-1">
+              <StatusBadge status={order.status} />
+            </div>
+          </div>
+        ) : (
         <div
           key={order.id}
           ref={(el) => (itemRefs.current[order.id] = el)}
@@ -695,12 +782,13 @@ const TerminalPlanningView = ({
             </div>
           </div>
         </div>
+        )
       );
     });
 
     return items;
    
-  }, [sortedOrders, showAllWeeks, selectedOrderId, productionProgressMap, rejectedCountMap]);
+  }, [sortedOrders, showAllWeeks, selectedOrderId, productionProgressMap, rejectedCountMap, planningViewMode]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -752,6 +840,18 @@ const TerminalPlanningView = ({
 
   const [archivedSelectedOrderLots, setArchivedSelectedOrderLots] = React.useState<string[]>([]);
 
+  React.useEffect(() => {
+    const storedMode = window.localStorage.getItem("terminalPlanningViewMode");
+    if (storedMode) {
+      setPlanningViewMode(normalizePlanningViewMode(storedMode));
+    }
+  }, []);
+
+  const handlePlanningViewModeChange = (nextMode: "tiles" | "list") => {
+    setPlanningViewMode(nextMode);
+    window.localStorage.setItem("terminalPlanningViewMode", nextMode);
+  };
+
   useEffect(() => {
     let isMounted = true;
 
@@ -799,6 +899,16 @@ const TerminalPlanningView = ({
     const merged = new Set([...activeSelectedOrderLots, ...archivedSelectedOrderLots]);
     return Array.from(merged).sort((a, b) => a.localeCompare(b));
   }, [activeSelectedOrderLots, archivedSelectedOrderLots]);
+
+  const activeListPopupOrder = React.useMemo(() => {
+    if (!activeListPopupOrderId) return null;
+    const matchingOrder = orders.find((order) => String(order?.id || "") === String(activeListPopupOrderId));
+    if (matchingOrder) return matchingOrder;
+    if (selectedOrder && String(selectedOrder?.id || selectedOrder?.orderId || "") === String(activeListPopupOrderId)) {
+      return selectedOrder;
+    }
+    return null;
+  }, [activeListPopupOrderId, orders, selectedOrder]);
   const activeLotSet = React.useMemo(
     () => new Set(activeSelectedOrderLots.map((lot) => String(lot || "").trim())),
     [activeSelectedOrderLots]
@@ -825,8 +935,8 @@ const TerminalPlanningView = ({
     <>
       {/* Sidebar Planning */}
       <div
-        className={`w-full lg:w-7/12 p-4 md:p-6 bg-white border-r border-slate-100 flex flex-col overflow-hidden ${
-          selectedOrderId ? "hidden lg:flex" : "flex"
+        className={`w-full ${planningViewMode === "list" ? "lg:w-full" : "lg:w-7/12"} p-4 md:p-6 bg-white border-r border-slate-100 flex flex-col overflow-hidden ${
+          selectedOrderId && shouldShowPlanningDetailPanel(planningViewMode, selectedOrderId) ? "hidden lg:flex" : "flex"
         } text-left`}
       >
         {/* Header Section */}
@@ -874,7 +984,21 @@ const TerminalPlanningView = ({
             </div>
           </div>
 
-          <div className="flex gap-2 shrink-0 items-center">
+          <div className="flex gap-2 shrink-0 items-center flex-wrap justify-end">
+            <div className="flex items-center gap-1 bg-white border-2 border-slate-100 rounded-2xl shadow-sm overflow-hidden">
+              <button
+                onClick={() => handlePlanningViewModeChange("tiles")}
+                className={`px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${planningViewMode === "tiles" ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                Tegels
+              </button>
+              <button
+                onClick={() => handlePlanningViewModeChange("list")}
+                className={`px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all ${planningViewMode === "list" ? "bg-blue-600 text-white" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                Lijst
+              </button>
+            </div>
             {!isBM01 && !showAllWeeks && onDateChange && (
               <div className="flex items-center gap-1 bg-white border-2 border-slate-100 rounded-2xl shadow-sm overflow-hidden">
                 <button
@@ -943,13 +1067,13 @@ const TerminalPlanningView = ({
         </div>
       </div>
 
-      {/* Detail Panel */}
-      <div
-        className={`flex-1 p-6 md:p-8 bg-slate-50 flex flex-col overflow-y-auto custom-scrollbar ${
-          !selectedOrderId ? "hidden lg:flex" : "flex"
-        }`}
-      >
-        {selectedOrder ? (
+      {shouldShowPlanningDetailPanel(planningViewMode, selectedOrderId) && (
+        <div
+          className={`flex-1 p-6 md:p-8 bg-slate-50 flex flex-col overflow-y-auto custom-scrollbar ${
+            !selectedOrderId ? "hidden lg:flex" : "flex"
+          }`}
+        >
+          {selectedOrder ? (
           <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
             {/* Robot Program Status Hook */}
             {(() => {
@@ -1386,6 +1510,263 @@ const TerminalPlanningView = ({
           </div>
         )}
       </div>
+      )}
+
+      {planningViewMode === "list" && activeListPopupOrder && (
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/70 p-3 sm:p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setActiveListPopupOrderId(null);
+              onSelectOrder(null);
+            }
+          }}
+        >
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[2rem] border border-slate-200 bg-slate-50 p-4 sm:p-6 shadow-2xl">
+            <div className="space-y-5">
+              <div className="rounded-[2rem] bg-slate-900 p-6 sm:p-8 text-white shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-8 opacity-10">
+                  <Factory size={120} />
+                </div>
+                <div className="flex items-start justify-between gap-4 relative z-10">
+                  <div>
+                    <div className="mb-2 inline-flex items-center rounded-full bg-white/20 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white/90">
+                      Order {activeListPopupOrder.orderId || activeListPopupOrder.id}
+                    </div>
+                    <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight text-white">
+                      {getOrderDisplayName(activeListPopupOrder)}
+                    </h3>
+                    <p className="mt-1 text-sm font-semibold text-white/70">
+                      {activeListPopupOrder.itemCode || activeListPopupOrder.extraCode || "-"}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {getPriorityBadgeStyles(activeListPopupOrder) && (
+                        <span className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${getPriorityBadgeStyles(activeListPopupOrder)!.className}`}>
+                          {getPriorityBadgeStyles(activeListPopupOrder)!.label}
+                        </span>
+                      )}
+                      {getOrderTypeBadge(activeListPopupOrder) && (
+                        <span className={`rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${getOrderTypeBadge(activeListPopupOrder)!.className}`}>
+                          {getOrderTypeBadge(activeListPopupOrder)!.label}
+                        </span>
+                      )}
+                      {activeListPopupOrder.extraCode && activeListPopupOrder.extraCode !== "-" && (
+                        <span className="rounded-lg bg-amber-400 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-900">
+                          {activeListPopupOrder.extraCode}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={activeListPopupOrder.status} />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveListPopupOrderId(null);
+                        onSelectOrder(null);
+                      }}
+                      className="rounded-full border border-white/20 bg-white/10 p-2 text-white transition hover:bg-white/20"
+                      aria-label="Sluit popup"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4 md:grid-cols-5 relative z-10">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Leverdatum</p>
+                    <p className={`mt-1 text-sm font-black ${getUrgencyColor(activeListPopupOrder.plannedDeliveryDate || activeListPopupOrder.deliveryDate)}`}>
+                      {formatDateWithWeek(activeListPopupOrder.plannedDeliveryDate || activeListPopupOrder.deliveryDate, t("digitalplanning.na", "N.v.t."))}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Orderhoeveelheid</p>
+                    <p className="mt-1 text-sm font-black">{getOrderTotalPlan(activeListPopupOrder)} st</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Gemaakt</p>
+                    <p className="mt-1 text-sm font-black text-blue-300">{Math.max(Number(activeListPopupOrder.trackedFinishedCount) || 0, Number(activeListPopupOrder.produced) || 0)} st</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Afkeur</p>
+                    <p className="mt-1 text-sm font-black text-rose-300">{rejectedCountMap[String(activeListPopupOrder.orderId || "").trim()] || 0} st</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-white/40">Te doen</p>
+                    <p className="mt-1 text-sm font-black text-amber-300">{Math.max((getOrderTotalPlan(activeListPopupOrder) || 0) - Math.max(Math.max(Number(activeListPopupOrder.trackedFinishedCount) || 0, Number(activeListPopupOrder.produced) || 0) - (rejectedCountMap[String(activeListPopupOrder.orderId || "").trim()] || 0), 0), 0)} st</p>
+                  </div>
+                </div>
+              </div>
+
+              {(() => {
+                if (!activeListPopupOrder.demandOrder) return null;
+                const dType = String(activeListPopupOrder.demandOrderType || "").toLowerCase();
+                const isSalesOrder = dType === "verkooporder" || dType === "sales order";
+                const isProdOrder = dType === "productieorder" || dType === "production order";
+                if (isSalesOrder) {
+                  return (
+                    <div className="rounded-[2rem] border border-red-200 bg-red-100 px-6 py-4 shadow-sm">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-red-600">Vrachtwagen-Prioriteit</p>
+                      <p className="mt-1 text-sm font-black text-red-900">Let op: Product direct bestemd voor klantorder {activeListPopupOrder.demandOrder}</p>
+                    </div>
+                  );
+                }
+                if (isProdOrder) {
+                  return (
+                    <div className="rounded-[2rem] border border-purple-200 bg-purple-100 px-6 py-4 shadow-sm">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-purple-600">Interne Afhankelijkheid</p>
+                      <p className="mt-1 text-sm font-black text-purple-900">Let op: Spoolbouw wacht op dit onderdeel voor order {activeListPopupOrder.demandOrder}</p>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {(activeListPopupOrder.notes || activeListPopupOrder.poText) && (
+                <div className="rounded-[2rem] border border-amber-200 bg-amber-50 px-6 py-4 shadow-sm">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-amber-700">PO Text / Opmerking</p>
+                  <p className="mt-1 text-sm font-black text-amber-900">{activeListPopupOrder.notes || activeListPopupOrder.poText}</p>
+                </div>
+              )}
+
+              {onStartProduction && (
+                <div className="rounded-[2.5rem] border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex flex-col gap-4">
+                    {activeListPopupOrder.status === "on_hold" ? (
+                      <div className="w-full rounded-[1.5rem] border-2 border-orange-200 bg-orange-100 py-6 text-lg font-black uppercase text-orange-700 flex items-center justify-center gap-4">
+                        <PauseCircle size={28} /> Order on hold
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => onStartProduction()}
+                        className="flex w-full items-center justify-center gap-4 rounded-[1.5rem] bg-blue-600 py-6 text-lg font-black uppercase text-white shadow-xl shadow-blue-200 transition-all hover:bg-blue-700 hover:-translate-y-1"
+                      >
+                        <PlayCircle size={28} /> Start Productie
+                      </button>
+                    )}
+
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <button
+                        onClick={() => {
+                          if (onViewDrawing) {
+                            onViewDrawing(activeListPopupOrder.drawing);
+                          }
+                        }}
+                        className={`rounded-2xl border py-4 text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeListPopupOrder.drawing && activeListPopupOrder.drawing !== "-" && activeListPopupOrder.drawing !== "" ? "border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100" : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                      >
+                        <FileImage size={16} /> Bekijk tekening/productkaart
+                      </button>
+
+                      {isBh18Context && (
+                        <button
+                          type="button"
+                          onClick={() => setShowRobotModal(true)}
+                          className={`rounded-2xl border py-4 text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${hasRobotProgram ? "border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-700" : "border-rose-700 bg-rose-600 text-white hover:bg-rose-700"}`}
+                        >
+                          <Cpu size={16} /> Wikkelrobotprogramma
+                        </button>
+                      )}
+
+                      {isSelectedOrderTee && (
+                        <button
+                          type="button"
+                          onClick={() => setShowGlassCutListModal(true)}
+                          className="rounded-2xl border border-slate-200 bg-slate-100 py-4 text-[10px] font-black uppercase tracking-widest text-slate-700 transition-all flex items-center justify-center gap-2"
+                        >
+                          <FileText size={16} className="text-amber-600" /> 📐 Glas- & Snijtekening
+                        </button>
+                      )}
+
+                      {shouldShowRobotProgramButton && (
+                        <button
+                          type="button"
+                          onClick={() => setShowRobotProgramDetails((value) => !value)}
+                          className={`rounded-2xl border py-4 text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${robotProgramState === "ready" ? "border-blue-600 bg-blue-600 text-white hover:bg-blue-700" : "border-rose-600 bg-rose-600 text-white hover:bg-rose-700"}`}
+                        >
+                          <FileText size={16} /> Robotprogramma BH18
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-[2.5rem] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="grid gap-8 md:grid-cols-2">
+                  <section className="rounded-3xl border border-slate-100 bg-slate-50 p-6">
+                    <h4 className="mb-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Project Details</h4>
+                    <p className="text-base font-black uppercase text-slate-700">{activeListPopupOrder.projectDesc || t("digitalplanning.terminal.no_project_name", "Geen projectnaam")}</p>
+                    <p className="mt-1 text-xs font-bold text-slate-400">Klant: {activeListPopupOrder.customer || t("common.unknown", "Onbekend")}</p>
+                  </section>
+
+                  {matchedMold && (
+                    <section className="rounded-3xl border border-indigo-100 bg-indigo-50 p-6">
+                      <h4 className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-500">
+                        <Layers size={14} className="text-indigo-500" /> Mal Configuratie
+                      </h4>
+                      <div className="flex items-center gap-3">
+                        <span className="rounded-xl bg-indigo-200 px-3 py-1.5 text-lg font-black uppercase text-indigo-800">{matchedMold.cavityCount}x</span>
+                        <span className="text-base font-bold leading-tight text-indigo-900">{matchedMold.matcher || matchedMold.itemCode || t("common.unknown", "Onbekend")}</span>
+                      </div>
+                    </section>
+                  )}
+                </div>
+
+                <div className="mt-8 grid gap-8 border-t border-slate-100 pt-8 md:grid-cols-1">
+                  <section className="rounded-3xl border border-slate-100 bg-slate-50 p-6">
+                    <h4 className="mb-3 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                      <History size={14} /> Administratie
+                    </h4>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                        <span className="text-[11px] font-bold uppercase text-slate-500">Aanmaakdatum Order:</span>
+                        <span className="flex items-center gap-2 text-sm font-black text-blue-600">
+                          <Calendar size={14} /> {activeListPopupOrder.orderCreationDate || t("digitalplanning.terminal.not_available", "Niet beschikbaar")}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold uppercase text-slate-500">Tekening:</span>
+                        <span className="text-sm font-black text-slate-700">{activeListPopupOrder.drawing || "-"}</span>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </div>
+
+              <div className="rounded-[2.5rem] border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <Layers size={14} /> Lotnummers ({selectedOrderLots.length})
+                  </h4>
+                  <span className="text-[10px] font-bold uppercase text-slate-500">actief {activeSelectedOrderLots.length} | archief {archivedSelectedOrderLots.length}</span>
+                </div>
+                {selectedOrderLots.length === 0 ? (
+                  <p className="text-xs italic text-slate-400">Geen lotnummers gevonden voor deze order.</p>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {selectedOrderLots.map((lot) => {
+                      const lotKey = String(lot || "").trim();
+                      const isArchivedLot = archivedLotSet.has(lotKey);
+                      const isActiveLot = activeLotSet.has(lotKey);
+                      const lotClass = isArchivedLot
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                        : isActiveLot
+                          ? "border-blue-200 bg-blue-50 text-blue-900"
+                          : "border-slate-200 bg-white text-slate-700";
+                      return (
+                        <div key={lot} className={`rounded-xl border px-3 py-2 text-xs font-black tracking-wide ${lotClass}`}>
+                          {lot}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showMissingModal && (
         <div className="fixed inset-0 z-[120] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">

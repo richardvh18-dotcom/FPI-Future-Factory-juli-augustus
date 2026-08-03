@@ -1,5 +1,11 @@
 ### Chatvoorkeuren
 
+- 3 augustus 2026: Y-tee-labels worden nu consistent weergegeven als “EQUAL 45° TEE” en “UNEQUAL 45° TEE” in plaats van de oude “EQUAL-Y-TEE”/“UNEQUAL-Y-TEE”-vorm. De wijziging is doorgevoerd in [src/utils/labelHelpers.tsx](src/utils/labelHelpers.tsx) en gedekt met regressietests in [src/utils/labelHelpers.test.ts](src/utils/labelHelpers.test.ts). De build is daarna opnieuw geverifieerd met succes.
+
+- 3 augustus 2026: de label-preview in de productie-startmodal en de label-designer is teruggebracht tot een zwaardere, helderdere typografie door de preview-font over te zetten op een standaard sans-serif stack en de overmatige condensed styling te verwijderen. De build is opnieuw geverifieerd met succes.
+
+- 3 augustus 2026: snelkoppeling voor printers toegevoegd op het Portal-scherm en Order Labels-lijsten in de printerflows aangepast naar lazy loading per machine (eerste 50 orders, verder laden bij scrollen, geen auto-load bij open scherm). De modal is daarnaast gestabiliseerd zodat de lijstzone een vaste reserve-ruimte behoudt en de popup niet meer springt tijdens het laden.
+
 - Standaard antwoorden in het Nederlands.
 - Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md) (nieuwste toevoegingen altijd bovenaan plaatsen).
 - Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.

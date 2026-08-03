@@ -4,7 +4,7 @@ import { useAdminAuth } from '../../hooks/useAdminAuth';
 import { db } from '../../config/firebase';
 import {
   collection, collectionGroup, onSnapshot, orderBy, query, doc,
-  where, getDocs, limit, getDoc, documentId
+  where, getDocs, limit, getDoc, documentId, startAfter
 } from 'firebase/firestore';
 import { PATHS, getPathString, getArchiveItemsPath } from '../../config/dbPaths';
 import { formatDistanceToNow } from 'date-fns';
@@ -43,6 +43,8 @@ import {
   resolveLinkedTemplateChain,
 } from '../../utils/orderLabelTemplateUtils';
 import { loadFactoryMachinePaths } from '../../utils/orderLabelSearch';
+import { shouldResetOrderLabelMachineState } from '../../utils/orderLabelMachineState';
+import { isPrinterOnline } from '../../utils/printerStatus';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -138,6 +140,8 @@ const PRINT_STATION_BINDINGS_KEY = 'print_station_printer_bindings_v1';
 const MACHINE_ORDERS_READ_LIMIT = 400;
 const SCOPED_ORDERS_FALLBACK_LIMIT = 600;
 const SCOPED_ORDERS_SEARCH_FALLBACK_LIMIT = 120;
+const ORDER_LABELS_PAGE_SIZE = 50;
+const ORDER_LABELS_LIST_MIN_HEIGHT = 'min-h-[280px]';
 
 const isInvalidPrintQueueTransitionError = (error: unknown): boolean => {
   const message = String(
@@ -666,11 +670,18 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
   const [selectedMachine, setSelectedMachine] = useState<string>("");
   const [machineItems, setMachineItems] = useState<AnyRecord[]>([]);
   const [loadingMachineItems, setLoadingMachineItems] = useState(false);
+  const [loadingMoreMachineItems, setLoadingMoreMachineItems] = useState(false);
   const [searchItems, setSearchItems] = useState<AnyRecord[]>([]);
   const [loadingSearchItems, setLoadingSearchItems] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<string>("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [printCount, setPrintCount] = useState<string>("1");
+  const [hasMoreMachineItems, setHasMoreMachineItems] = useState(false);
+  const machineCursorRef = useRef<Record<string, unknown>>({});
+  const machineListRef = useRef<HTMLDivElement>(null);
+  const previousMachineRef = useRef<string>("");
+  const machineItemsRef = useRef<AnyRecord[]>([]);
+  const machineRequestRef = useRef(0);
   const normalizeText = useCallback((value: unknown) => String(value || "").toLowerCase().trim(), []);
 
   const normalizeMachineKey = useCallback((value: unknown) => {
@@ -689,20 +700,30 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
   }, [departmentGroups]);
 
   useEffect(() => {
-    if (selectedMachine) return;
-
-    if (selectedStation) {
-      const stationMatch = machineOptions.find((entry) => normalizeMachineKey(entry) === normalizeMachineKey(selectedStation));
-      if (stationMatch) {
-        setSelectedMachine(stationMatch);
-        return;
-      }
+    if (!selectedMachine) {
+      setMachineItems([]);
+      setSearchItems([]);
+      setSelectedOrderId("");
+      setSelectedTemplateId("");
+      setHasMoreMachineItems(false);
+      machineCursorRef.current = {};
+      previousMachineRef.current = "";
+      machineItemsRef.current = [];
+      return;
     }
 
-    if (machineOptions.length > 0) {
-      setSelectedMachine(machineOptions[0]);
+    if (shouldResetOrderLabelMachineState(previousMachineRef.current, selectedMachine)) {
+      setMachineItems([]);
+      setSearchItems([]);
+      setSelectedOrderId("");
+      setSelectedTemplateId("");
+      setHasMoreMachineItems(false);
+      machineCursorRef.current = {};
+      machineItemsRef.current = [];
     }
-  }, [machineOptions, normalizeMachineKey, selectedMachine, selectedStation]);
+
+    previousMachineRef.current = selectedMachine;
+  }, [selectedMachine]);
 
   const buildMachineFetchTargets = useCallback(async (machineValue: string) => {
     const machinePairs = await loadFactoryMachinePaths();
@@ -741,35 +762,58 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     return fetchTargets;
   }, [normalizeMachineKey]);
 
-  const loadMachineOrders = useCallback(async (machineValue: string) => {
+  const loadMachineOrders = useCallback(async (machineValue: string, append = false, requestId?: number) => {
     if (!machineValue) {
       setMachineItems([]);
       setSearchItems([]);
+      setHasMoreMachineItems(false);
+      machineCursorRef.current = {};
+      machineItemsRef.current = [];
       return;
     }
 
-    setLoadingMachineItems(true);
+    const activeRequestId = requestId ?? ++machineRequestRef.current;
+    if (requestId !== undefined) {
+      machineRequestRef.current = activeRequestId;
+    }
+
+    if (append) {
+      setLoadingMoreMachineItems(true);
+    } else {
+      setLoadingMachineItems(true);
+      machineCursorRef.current = {};
+    }
+
     try {
       const fetchTargets = await buildMachineFetchTargets(machineValue);
-
+      const cursorByTarget = append ? machineCursorRef.current : {};
       const fetches = fetchTargets.map(async ({ productType, machine }) => {
         const machinePath = `${getPathString(PATHS.PLANNING)}/${productType}/machines/${machine}/orders`;
+        const cursorKey = `${productType}/${machine}`;
+        const lastCursor = cursorByTarget[cursorKey];
+        const baseQuery = query(collection(db, machinePath), limit(ORDER_LABELS_PAGE_SIZE));
+        const queryWithCursor = lastCursor ? query(baseQuery, startAfter(lastCursor as never)) : baseQuery;
         try {
-          const snap = await getDocs(query(collection(db, machinePath), limit(MACHINE_ORDERS_READ_LIMIT)));
-          return snap.docs.map((docSnap) => ({
-            id: docSnap.id,
-            ...(docSnap.data() as AnyRecord),
-            __machine: machine,
-            __productType: productType,
-          }));
+          const snap = await getDocs(queryWithCursor);
+          return {
+            rows: snap.docs.map((docSnap) => ({
+              id: docSnap.id,
+              ...(docSnap.data() as AnyRecord),
+              __machine: machine,
+              __productType: productType,
+            })),
+            lastDoc: snap.docs[snap.docs.length - 1] ?? null,
+            cursorKey,
+            hasMore: snap.docs.length === ORDER_LABELS_PAGE_SIZE,
+          };
         } catch {
-          return [] as AnyRecord[];
+          return { rows: [] as AnyRecord[], lastDoc: null, cursorKey, hasMore: false };
         }
       });
 
-      let rows = (await Promise.all(fetches)).flat();
+      let rows = (await Promise.all(fetches)).flatMap((entry) => entry.rows);
+      let hasMore = (await Promise.all(fetches)).some((entry) => entry.hasMore);
 
-      // Fallback: als runtime planning-root niet overeenkomt, lees scoped orders root-agnostisch.
       if (rows.length === 0) {
         const machineMarkers = Array.from(new Set(fetchTargets.map((target) => `/machines/${target.machine}/orders/`)));
         try {
@@ -788,13 +832,17 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                 __machine: machineMatch?.[1] || undefined,
               };
             });
+          hasMore = false;
         } catch {
-          // Silence fallback failures; UI shows no result state.
+          hasMore = false;
         }
       }
 
+      if (machineRequestRef.current !== activeRequestId) return;
+
       const byId = new Map<string, AnyRecord>();
-      rows.forEach((row) => {
+      const currentItems = [...machineItemsRef.current, ...rows].filter((row) => !!row);
+      currentItems.forEach((row) => {
         const rowId = String(row.id || "").trim();
         if (!rowId) return;
         byId.set(rowId, row);
@@ -802,12 +850,13 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
 
       const sorted = Array.from(byId.values())
         .filter((item) => !isOrderLabelFlangeProduct(item))
-        .sort((a, b) =>
-        String(getOrderLabelOrder(a)).localeCompare(String(getOrderLabelOrder(b)), undefined, { numeric: true })
-      );
+        .sort((a, b) => String(getOrderLabelOrder(a)).localeCompare(String(getOrderLabelOrder(b)), undefined, { numeric: true }));
 
+      machineItemsRef.current = sorted;
       setMachineItems(sorted);
-      setSearchItems([]);
+      setHasMoreMachineItems(hasMore);
+      const nextCursors = Object.fromEntries((await Promise.all(fetches)).map((entry) => [entry.cursorKey, entry.lastDoc])) as Record<string, unknown>;
+      machineCursorRef.current = nextCursors;
       setSelectedOrderId((prev) => {
         if (prev && sorted.some((row) => String(row.id) === prev)) return prev;
         return String(sorted[0]?.id || "");
@@ -818,12 +867,17 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
       setSearchItems([]);
       setSelectedOrderId("");
     } finally {
-      setLoadingMachineItems(false);
+      if (machineRequestRef.current === activeRequestId) {
+        setLoadingMachineItems(false);
+        setLoadingMoreMachineItems(false);
+      }
     }
   }, [buildMachineFetchTargets]);
 
   useEffect(() => {
-    void loadMachineOrders(selectedMachine);
+    if (!selectedMachine) return;
+    const requestId = ++machineRequestRef.current;
+    void loadMachineOrders(selectedMachine, false, requestId);
   }, [loadMachineOrders, selectedMachine]);
 
   useEffect(() => {
@@ -932,6 +986,18 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     };
   }, [buildMachineFetchTargets, orderStr, selectedMachine]);
 
+  const handleMachineListScroll = useCallback(() => {
+    const container = machineListRef.current;
+    if (!container || !selectedMachine || loadingMachineItems || loadingMoreMachineItems || !hasMoreMachineItems) return;
+
+    const distanceToBottom = container.scrollHeight - (container.scrollTop + container.clientHeight);
+    const reachedBottom = distanceToBottom <= 48;
+
+    if (reachedBottom) {
+      void loadMachineOrders(selectedMachine, true);
+    }
+  }, [hasMoreMachineItems, loadMachineOrders, loadingMachineItems, loadingMoreMachineItems, selectedMachine]);
+
   const filteredMachineItems = useMemo(() => {
     const queryText = normalizeText(orderStr);
     if (!queryText) return machineItems;
@@ -948,6 +1014,11 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     if (!hasSearch) return filteredMachineItems;
     return searchItems.length > 0 ? searchItems : filteredMachineItems;
   }, [filteredMachineItems, orderStr, searchItems]);
+
+  const searchQuery = String(orderStr || "").trim();
+  const searchActive = searchQuery.length >= 3;
+  const showInitialMachineLoader = loadingMachineItems && machineItems.length === 0 && !searchActive;
+  const showSearchBusyState = searchActive && loadingSearchItems && displayItems.length === 0;
 
   const selectedOrder = useMemo(() => {
     if (!selectedOrderId) return null;
@@ -1025,6 +1096,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                     onChange={(e) => setSelectedMachine(e.target.value)}
                     disabled={machineOptions.length === 0}
                   >
+                    <option value="">{t('common.selectMachine', 'Kies machine')}</option>
                     {machineOptions.length === 0 && <option value="">{t('common.noStationsFound', 'Geen stations gevonden')}</option>}
                     {machineOptions.map((machine) => (
                       <option key={machine} value={machine}>{machine}</option>
@@ -1044,17 +1116,29 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                 </div>
               </div>
 
-              <div className="mt-4 flex-1 min-h-0 overflow-y-auto bg-white border border-slate-200 rounded-xl">
-                {loadingMachineItems || loadingSearchItems ? (
-                  <div className="h-full flex items-center justify-center text-slate-400 gap-2">
+              <div
+                ref={machineListRef}
+                className={`mt-4 flex-1 min-h-0 overflow-y-auto bg-white border border-slate-200 rounded-xl ${ORDER_LABELS_LIST_MIN_HEIGHT}`}
+                onScroll={handleMachineListScroll}
+              >
+                {showInitialMachineLoader ? (
+                  <div className={`h-full ${ORDER_LABELS_LIST_MIN_HEIGHT} flex items-center justify-center text-slate-400 gap-2`}>
                     <Loader2 className="animate-spin" size={18} /> {t('common.loadingList', 'Lijst laden...')}
                   </div>
+                ) : !selectedMachine ? (
+                  <div className={`h-full ${ORDER_LABELS_LIST_MIN_HEIGHT} flex items-center justify-center text-center text-slate-400 p-6`}>
+                    {t('printStationView.selectMachineFirst', 'Kies eerst een machine om orders te laden.')}
+                  </div>
+                ) : showSearchBusyState ? (
+                  <div className={`h-full ${ORDER_LABELS_LIST_MIN_HEIGHT} flex items-center justify-center text-center text-slate-400 p-6`}>
+                    {t('printer.searchingOrders', 'Zoeken in orders...')}
+                  </div>
                 ) : displayItems.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-center text-slate-400 p-6">
+                  <div className={`h-full ${ORDER_LABELS_LIST_MIN_HEIGHT} flex items-center justify-center text-center text-slate-400 p-6`}>
                     {t('printStationView.noLabelsFound', 'Geen labels gevonden')}
                   </div>
                 ) : (
-                  <div className="divide-y divide-slate-100">
+                  <div className={`divide-y divide-slate-100 ${ORDER_LABELS_LIST_MIN_HEIGHT}`}>
                     {displayItems.map((item) => {
                       const itemId = String(item.id || '');
                       const selected = itemId === selectedOrderId;
@@ -1070,6 +1154,11 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                         </button>
                       );
                     })}
+                    {hasMoreMachineItems && (
+                      <div className="px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        {loadingMoreMachineItems ? 'Meer laden...' : 'Scroll voor meer orders'}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1874,6 +1963,10 @@ const PrintQueueAdminView = () => {
     });
   }, [printers, usbDevice, stationContext]);
 
+  const queuePrinterOnline = useMemo(() => {
+    return Boolean(usbDevice) || isPrinterOnline(activeQueuePrinter);
+  }, [usbDevice, activeQueuePrinter]);
+
   const stationGroups = useMemo(() => {
     if (!activeQueuePrinter) return [];
     const stations = Array.isArray(activeQueuePrinter.queueStations)
@@ -2453,6 +2546,13 @@ const PrintQueueAdminView = () => {
                 <Zap size={16} fill={autoPrint ? "currentColor" : "none"} />
                 {autoPrint ? "Auto-Print AAN" : "Auto-Print UIT"}
               </button>
+          )}
+
+          {isUsbDirectSupported() && (
+            <div className={`flex items-center gap-2 rounded-xl border-2 px-3 py-2 text-xs font-bold uppercase tracking-wider ${queuePrinterOnline ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+              <span className={`h-2.5 w-2.5 rounded-full ${queuePrinterOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+              {queuePrinterOnline ? 'Printer online' : 'Printer offline'}
+            </div>
           )}
 
           {isUsbDirectSupported() && (

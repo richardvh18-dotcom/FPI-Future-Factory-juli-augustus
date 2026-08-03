@@ -14,7 +14,7 @@ import { getWavistrongLayoutNudge } from '../../utils/labelLayoutAdjustments';
  */
 const SCREEN_DPI = 96;
 const CSS_PIXELS_PER_POINT = 96 / 72;
-const PRINTER_PREVIEW_FONT_STACK = '"Arial Narrow", "Helvetica Condensed", Arial, sans-serif';
+const PRINTER_PREVIEW_FONT_STACK = 'Arial, "Helvetica Neue", Helvetica, sans-serif';
 const PREVIEW_GLYPH_WIDTH_RATIO = 0.52;
 
 type LabelElement = {
@@ -206,9 +206,8 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
                     : "auto"),
                 fontSize: `${textStyle.fontSize}px`,
                 lineHeight: textStyle.lineHeight,
-                fontWeight: el.isBold ? "900" : "bold",
-                fontStretch: "condensed",
-                letterSpacing: "0.5px",
+                fontWeight: el.isBold ? "800" : "700",
+                letterSpacing: "0.25px",
                 fontFamily: !el.fontFamily || el.fontFamily === "Arial" || String(el.fontFamily) === "0"
                   ? PRINTER_PREVIEW_FONT_STACK
                   : el.fontFamily,

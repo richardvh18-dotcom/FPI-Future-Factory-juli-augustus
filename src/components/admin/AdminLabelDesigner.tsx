@@ -72,7 +72,7 @@ import { isUsbDirectSupported, requestUsbDevice, printRawUsbToDevice } from "../
 const CSS_PIXELS_PER_POINT = 96 / 72;
 const SNAP_THRESHOLD_MM = 1.5;
 const DEFAULT_PRINTER_DPI = 203;
-const PRINTER_PREVIEW_FONT_STACK = '"Arial Narrow", "Helvetica Condensed", Arial, sans-serif';
+const PRINTER_PREVIEW_FONT_STACK = 'Arial, "Helvetica Neue", Helvetica, sans-serif';
 
 /**
  * Berekent PIXELS_PER_MM voor gegeven printer-DPI
@@ -1392,9 +1392,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                           className="leading-tight"
                           style={{
                             ...previewTextStyle,
-                            fontWeight: el.isBold ? "900" : "bold",
-                            fontStretch: "condensed",
-                            letterSpacing: "0.5px",
+                            fontWeight: el.isBold ? "800" : "700",
+                            letterSpacing: "0.25px",
                             fontFamily: !el.fontFamily || el.fontFamily === "Arial" || String(el.fontFamily) === "0"
                               ? PRINTER_PREVIEW_FONT_STACK
                               : el.fontFamily,

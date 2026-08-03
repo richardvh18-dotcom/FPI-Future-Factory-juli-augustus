@@ -225,6 +225,44 @@ const enqueueRetryItems = async (records = [], options = {}) => {
 
 const runAtpsOccupancyPreview = async (input = {}) => {
     const cfg = resolveAtpsConfig();
+    const temporarilyDisabled = true;
+    if (temporarilyDisabled) {
+        return {
+            mode: 'passive',
+            dryRun: true,
+            executeLive: false,
+            liveEligible: false,
+            noopReason: 'ATPS export is tijdelijk uitgeschakeld omdat de koppeling nog niet is aangesloten.',
+            config: {
+                enabled: false,
+                dryRunDefault: true,
+                hasUrl: false,
+                hasToken: false,
+                defaultLimit: cfg.defaultLimit,
+            },
+            filter: {
+                dateFrom: null,
+                dateTo: null,
+                limit: parsePositiveInt(input?.limit, cfg.defaultLimit || DEFAULT_ATPS_PREVIEW_LIMIT, 1, 1000),
+            },
+            totals: {
+                count: 0,
+                adjustedCount: 0,
+                hoursWorked: 0,
+                hoursWorkedGross: 0,
+            },
+            delivery: {
+                attempted: false,
+                success: false,
+                status: null,
+                responseSnippet: '',
+                markedExported: 0,
+                queuedForRetry: 0,
+                error: '',
+            },
+            records: [],
+        };
+    }
     const requestedLimit = parsePositiveInt(input?.limit, cfg.defaultLimit || DEFAULT_ATPS_PREVIEW_LIMIT, 1, 1000);
     const dateFrom = toDate(input?.dateFrom);
     const dateTo = toDate(input?.dateTo);

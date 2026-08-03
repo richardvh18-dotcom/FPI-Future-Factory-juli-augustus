@@ -2,14 +2,13 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { History, ExternalLink, ShieldCheck, Server } from "lucide-react";
 import { appId } from "../../config/firebase";
+import { buildAuditLogCloudLoggingUrl } from "../../utils/cloudLoggingUrl";
 
 const AdminLogView = () => {
   const { t } = useTranslation();
 
   const handleOpenCloudLogging = () => {
-    const projectId = appId || "future-factory-377ef";
-    const query = encodeURIComponent('resource.type="cloud_function"\njsonPayload.category="SECURITY" OR jsonPayload.category="SYSTEM" OR jsonPayload.category="PRODUCTION" OR jsonPayload.category="QUALITY" OR jsonPayload.category="PLANNING" OR jsonPayload.category="ADMIN"');
-    const url = `https://console.cloud.google.com/logs/query?project=${projectId}&query=${query}`;
+    const url = buildAuditLogCloudLoggingUrl(appId);
     window.open(url, "_blank");
   };
 
