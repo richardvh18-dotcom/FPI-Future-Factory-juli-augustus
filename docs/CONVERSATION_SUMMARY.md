@@ -6,6 +6,29 @@
 - Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
 
 ---
+####### Dagupdate 3 augustus 2026 - sessie 1 (BH18 modal cleanup)
+
+- In [src/components/digitalplanning/modals/ProductionStartModal.tsx](src/components/digitalplanning/modals/ProductionStartModal.tsx) is de dubbele keuzelijst voor "Wikkelrobot Positie (BH18)" verwijderd.
+- Resultaat: er blijft nu exact één robotpositie-menu over in de modal, zodat operators niet twee keer dezelfde keuze hoeven te maken.
+
+####### Dagupdate 3 augustus 2026 - sessie 2 (printerbinding BH18/40BH18)
+
+- Terugkerende WebUSB-popup bij omschakelen naar Sidebar Printers → Order Labels aangepakt door station-binding keys te harmoniseren.
+- In [src/components/digitalplanning/modals/ProductionStartModal.tsx](src/components/digitalplanning/modals/ProductionStartModal.tsx), [src/components/printer/PrintQueueAdminView.tsx](src/components/printer/PrintQueueAdminView.tsx), [src/components/printer/PrintStationView.tsx](src/components/printer/PrintStationView.tsx) en [src/components/printer/PrintQueueAutoProcessor.tsx](src/components/printer/PrintQueueAutoProcessor.tsx) normaliseert `normalizeStationBindingKey` nu ook een `40`-prefix weg voor stationcodes (zoals `40BH18` → `BH18`).
+- Resultaat: eerder opgeslagen printerbindingen worden betrouwbaarder herkend tussen modal en sidebar-flow, waardoor onnodige nieuwe device-select popups sterk verminderen.
+
+####### Dagupdate 3 augustus 2026 - sessie 3 (Order Labels leesbaarheid)
+
+- In [src/components/printer/PrintQueueAdminView.tsx](src/components/printer/PrintQueueAdminView.tsx) en [src/components/printer/PrintStationView.tsx](src/components/printer/PrintStationView.tsx) is in de productlijst van **Order Labels** de productnaam vergroot van `text-xs` naar `text-sm`.
+- Resultaat: productnaam staat nu op dezelfde lettergrootte als het ordernummer, zoals gevraagd.
+- Nafinetune: productnaamregel gebruikt nu ook exact dezelfde typografie als ordernummer (`text-sm font-black text-slate-800`) zodat er visueel geen verschil meer is.
+
+####### Dagupdate 3 augustus 2026 - sessie 4 (Teamleader on-hold hervatten BH18)
+
+- Bugfix voor orders die in Teamleader zichtbaar "on hold" stonden maar niet betrouwbaar hervat konden worden.
+- In [src/components/digitalplanning/OrderDetail.tsx](src/components/digitalplanning/OrderDetail.tsx) en [functions/src/services/planningTransitionService.ts](functions/src/services/planningTransitionService.ts) is status-normalisatie toegevoegd zodat varianten zoals `on hold`, `on-hold` en `on_hold` hetzelfde behandeld worden.
+- Resultaat: de knopgedrag en backend-toggle herkennen on-hold status nu consistent, waardoor hervatten/opslaan bij BH18-orders weer werkt.
+
 ####### Dagupdate 2 augustus 2026 - sessie 3 (Firebase & UI)
 
 - **Firebase Optimalisaties:**
@@ -13163,6 +13186,7 @@ Alle views hebben nu een werkende tekening-knop met 3-stap lookup:
 
 - Lighthouse print calibratie doorgezet
 - Operatorhandleiding voor pilotflow uitgewerkt
-U p d a t e   C O N V E R S A T I O N _ S U M M A R Y . m d  
+U p d a t e   C O N V E R S A T I O N _ S U M M A R Y . m d 
+ 
  
 

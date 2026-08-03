@@ -121,7 +121,11 @@ const isPermissionDeniedError = (error: any) => {
 };
 
 const normalizeStationBindingKey = (value: unknown): string =>
-  String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+  String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/^40(?=BH|BM|BA)/, "");
 
 const getBoundPrinterIdForStation = (station: string): string => {
   if (typeof window === "undefined") return "";
@@ -2314,29 +2318,6 @@ const ProductionStartModal = ({
                   </div>
                   {lotError && <p className="text-red-400 text-xs mt-2 font-bold">{lotError}</p>}
                 </div>
-                {isBh18Station(normalizedStationNoPrefix) && (
-                  <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-3 text-left">
-                    <label className="text-[9px] font-black text-cyan-700 uppercase tracking-widest ml-1 block">
-                      Robotpositie BH18
-                    </label>
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setRobotPosition(1)}
-                        className={`flex-1 rounded-2xl border px-3 py-2 text-sm font-black ${robotPosition === 1 ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-cyan-200 bg-white text-cyan-700'}`}
-                      >
-                        Positie 1
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRobotPosition(2)}
-                        className={`flex-1 rounded-2xl border px-3 py-2 text-sm font-black ${robotPosition === 2 ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-cyan-200 bg-white text-cyan-700'}`}
-                      >
-                        Positie 2
-                      </button>
-                    </div>
-                  </div>
-                )}
                 {mode !== "qc_steekproef" && (
                   <div className={`${isCompactAutoLayout ? "space-y-0.5" : "space-y-1"} text-left`}>
                   <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-2 block">

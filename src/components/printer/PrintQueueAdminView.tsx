@@ -220,7 +220,11 @@ const getDepartmentKeys = (department: AnyRecord): string[] => {
 };
 
 const normalizeStationBindingKey = (value: unknown): string =>
-  String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+  String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/^40(?=BH|BM|BA)/, '');
 
 const readStationBindings = (): Record<string, string> => {
   try {
@@ -1062,7 +1066,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                           className={`w-full text-left px-3 py-2.5 transition-colors ${selected ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
                         >
                           <p className="text-sm font-black text-slate-800 truncate">{getOrderLabelOrder(item)}</p>
-                          <p className="text-xs font-semibold text-slate-500 truncate">{getOrderLabelDescription(item) || getOrderLabelItemCode(item)}</p>
+                          <p className="text-sm font-black text-slate-800 truncate">{getOrderLabelDescription(item) || getOrderLabelItemCode(item)}</p>
                         </button>
                       );
                     })}

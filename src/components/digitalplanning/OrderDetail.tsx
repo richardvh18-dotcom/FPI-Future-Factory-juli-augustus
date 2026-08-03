@@ -70,6 +70,16 @@ type OrderDetailProps = {
   onOpenDossier?: (dossier: any) => void;
   showAllStations?: boolean;
 };
+const normalizeOrderStatusToken = (value: unknown): string =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+const isOnHoldStatusValue = (value: unknown): boolean => {
+  const normalized = normalizeOrderStatusToken(value);
+  return normalized === "on_hold" || normalized === "hold" || normalized === "paused";
+};
 
 type ProductRecord = {
   id: string;
@@ -362,7 +372,7 @@ const OrderDetail = React.memo(({
     setHoldLoading(true);
     const orderDocId = order.__docPath || order.id;
     try {
-      const isOnHold = order.status === 'on_hold';
+      const isOnHold = isOnHoldStatusValue(order.status);
       await togglePlanningOrderHold({
         orderDocId,
         source: "OrderDetail",
@@ -1505,7 +1515,7 @@ const OrderDetail = React.memo(({
 
            {/* On Hold / Hervatten Button */}
            {['admin', 'teamleader', 'planner'].includes(normalizedRole) && (
-             order.status === 'on_hold' ? (
+              isOnHoldStatusValue(order.status) ? (
                <button
                  onClick={handleToggleHold}
                  disabled={holdLoading}

@@ -69,7 +69,12 @@ const normalizeStationKey = (value: unknown): string =>
     .toUpperCase()
     .replace(/\s+/g, '')
     .replace(/^40(?=BH|BM|BA)/, '');
-const normalizeStationBindingKey = (value: unknown): string => String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+const normalizeStationBindingKey = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/^40(?=BH|BM|BA)/, '');
 
 const readStationBindings = (): Record<string, string> => {
   try {

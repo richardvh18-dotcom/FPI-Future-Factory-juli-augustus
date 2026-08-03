@@ -75,6 +75,16 @@ const normalizeMachineForPlanningServer = (val = '') => {
   return str || '-';
 };
 
+const normalizeOrderStatusToken = (value = '') =>
+  clean(value)
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+
+const isOnHoldStatusValue = (value = '') => {
+  const normalized = normalizeOrderStatusToken(value);
+  return normalized === 'on_hold' || normalized === 'hold' || normalized === 'paused';
+};
+
 const toFirestoreSegment = (value, fallback) => {
   const sanitized = String(value || '')
     .trim()
@@ -2118,10 +2128,11 @@ const togglePlanningOrderHoldService = async ({ orderDocId, auth, actorLabel, so
   }
 
   const orderData = orderDoc.data() || {};
-  const currentStatus = clean(orderData.status).toLowerCase();
-  const isOnHold = currentStatus === 'on_hold';
+  const currentStatus = normalizeOrderStatusToken(orderData.status);
+  const isOnHold = isOnHoldStatusValue(currentStatus);
+  const previousStatus = normalizeOrderStatusToken(orderData.previousStatus);
   const nextStatus = isOnHold
-    ? clean(orderData.previousStatus).toLowerCase() || 'waiting'
+    ? (isOnHoldStatusValue(previousStatus) ? 'waiting' : (previousStatus || 'waiting'))
     : 'on_hold';
 
   const updates = {
