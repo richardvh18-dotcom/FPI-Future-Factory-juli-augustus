@@ -1,5 +1,7 @@
 ### Chatvoorkeuren
 
+- 3 augustus 2026: deploy afgerond naar Firebase Hosting. De productiebuild is succesvol uitgevoerd en geüpload; versie is verhoogd naar 0.1.134 en de app is beschikbaar via de Firebase Hosting URL.
+
 - 3 augustus 2026: Y-tee-labels worden nu consistent weergegeven als “EQUAL 45° TEE” en “UNEQUAL 45° TEE” in plaats van de oude “EQUAL-Y-TEE”/“UNEQUAL-Y-TEE”-vorm. De wijziging is doorgevoerd in [src/utils/labelHelpers.tsx](src/utils/labelHelpers.tsx) en gedekt met regressietests in [src/utils/labelHelpers.test.ts](src/utils/labelHelpers.test.ts). De build is daarna opnieuw geverifieerd met succes.
 
 - 3 augustus 2026: de label-preview in de productie-startmodal en de label-designer is teruggebracht tot een zwaardere, helderdere typografie door de preview-font over te zetten op een standaard sans-serif stack en de overmatige condensed styling te verwijderen. De build is opnieuw geverifieerd met succes.
