@@ -13243,3 +13243,6 @@ U p d a t e   C O N V E R S A T I O N _ S U M M A R Y . m d 
  
  
 
+U p d a t e d   P W A   o r i e n t a t i o n   t o   ' p o r t r a i t '   i n   v i t e . p w a . c o n f i g . t s   t o   p r e v e n t   s c r e e n   r o t a t i o n   o n   Z e b r a   s c a n n e r s .  
+ - Reverted PWA orientation in \ite.pwa.config.ts\ to \ny\ to allow tablets to rotate.
+- Added \useScreenOrientationLock\ hook in \App.tsx\ to dynamically lock small screens (<=768px, like scanners) to portrait mode.

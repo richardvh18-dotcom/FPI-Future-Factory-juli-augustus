@@ -35,6 +35,7 @@ import { useMessages } from "./hooks/useMessages";
 import { useAutoLogout } from "./hooks/useAutoLogout";
 import { usePresence } from "./hooks/usePresence";
 import { checkFeature } from "./hooks/useHasFeature";
+import { useScreenOrientationLock } from "./hooks/useScreenOrientationLock";
 import { PATHS, getPathString, getArchiveItemsPath } from "./config/dbPaths";
 
 // Safe Lazy Loader with automatic retry and reload fallback for Vite HMR
@@ -117,6 +118,9 @@ const App = () => {
 
   // Active presence tracking (ISO 27001)
   usePresence();
+
+  // Conditionele schermrotatie: lock mobiel/scanners (<=768px) op portrait, tablets vrij
+  useScreenOrientationLock();
 
   // Versie-check: forceer refresh bij nieuwe versie
   const currentVersion = import.meta.env.VITE_APP_VERSION || "dev";
