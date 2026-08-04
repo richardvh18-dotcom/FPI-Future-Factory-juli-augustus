@@ -93,4 +93,27 @@ describe('labelHelpers special elbow rules', () => {
     expect(result.idLine).toBe('ID: 150mm (6")');
     expect(result.id).toBe('150mm (6")');
   });
+
+  test('Coupler pressure token should not override the actual size', () => {
+    const result = processLabelData({
+      item: 'Coupler 25 CST32',
+      description: 'Coupler 25 CST32',
+      extraCode: 'TEST',
+    });
+
+    expect(result.idLine).toBe('ID: 25mm (1")');
+    expect(result.id).toBe('25mm (1")');
+  });
+
+  test('Elbow angle should not be treated as the ID', () => {
+    const result = processLabelData({
+      item: 'Elb 65R1.5/90 EST32',
+      description: 'Elb 65R1.5/90 EST32',
+      extraCode: 'TEST',
+    });
+
+    expect(result.productType).toBe('ELBOW 90°');
+    expect(result.idLine).toBe('ID: 65mm (2.5")');
+    expect(result.id).toBe('65mm (2.5")');
+  });
 });

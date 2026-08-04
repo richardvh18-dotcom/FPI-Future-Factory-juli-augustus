@@ -40,6 +40,7 @@ import {
   renderLabelForPrinter,
 } from '../../utils/printerProtocolService';
 import { resolvePrinterForRouting } from '../../utils/printRouting';
+import { LABELS_PRINTING_QUEUE_STATION, resolvePrintTransport } from '../../services/printRouting';
 import {
   buildOrderLabelPreviewData,
   buildOrderLabelTemplateProduct,
@@ -564,21 +565,28 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     }
 
     try {
-      let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
-      if (!deviceToUse && isUsbDirectSupported()) {
-        deviceToUse = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || await requestUsbDevice(activeQueuePrinter || {});
-        setUsbDevice(deviceToUse);
-      }
+      const transport = resolvePrintTransport({
+        activeQueuePrinterId: activeQueuePrinter?.id,
+        usbDevice,
+      });
 
-      if (deviceToUse) {
-        const usbPayload = buildProtocolAwareUsbPayload({
-          printer: activeQueuePrinter as Record<string, unknown>,
-          content: zpl,
-          quantity: printQuantity,
-        });
-        await printRawUsb(deviceToUse, usbPayload);
-        notify(t("common.printLabelDirectUsb", { order }) + ` (${Math.max(1, (templatesToPrint.length || 1) * printQuantity)}x)`);
-        return;
+      if (transport === 'usb') {
+        let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
+        if (!deviceToUse && isUsbDirectSupported()) {
+          deviceToUse = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || await requestUsbDevice(activeQueuePrinter || {});
+          setUsbDevice(deviceToUse);
+        }
+
+        if (deviceToUse) {
+          const usbPayload = buildProtocolAwareUsbPayload({
+            printer: activeQueuePrinter as Record<string, unknown>,
+            content: zpl,
+            quantity: printQuantity,
+          });
+          await printRawUsb(deviceToUse, usbPayload);
+          notify(t("common.printLabelDirectUsb", { order }) + ` (${Math.max(1, (templatesToPrint.length || 1) * printQuantity)}x)`);
+          return;
+        }
       }
 
       if (activeQueuePrinter?.id) {
@@ -606,7 +614,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                 quantity: printQuantity,
                 orderId: order,
                 lotNumber: orderData.lotNumber || order,
-                stationId: selectedStation || 'PRINT_QUEUE_ADMIN',
+                stationId: LABELS_PRINTING_QUEUE_STATION,
                 targetPrinterName: activeQueuePrinter.name,
                 width: parseInt(String(widthMm), 10),
                 height: parseInt(String(heightMm), 10),
@@ -633,7 +641,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
               quantity: printQuantity,
               orderId: order,
               lotNumber: orderData.lotNumber || order,
-              stationId: selectedStation || 'PRINT_QUEUE_ADMIN',
+              stationId: LABELS_PRINTING_QUEUE_STATION,
               targetPrinterName: activeQueuePrinter.name,
               width: parseInt(String(template?.width || 90), 10),
               height: parseInt(String(template?.height || 40), 10),
@@ -668,6 +676,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
   const [selectedOrderId, setSelectedOrderId] = useState<string>("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [printCount, setPrintCount] = useState<string>("1");
+  const [isSubmittingPrint, setIsSubmittingPrint] = useState(false);
   const [hasMoreMachineItems, setHasMoreMachineItems] = useState(false);
   const machineCursorRef = useRef<Record<string, unknown>>({});
   const machineListRef = useRef<HTMLDivElement>(null);
@@ -1052,10 +1061,16 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
   }, [labelTemplates, selectedTemplate]);
 
   const handlePrintSelected = async () => {
-    if (!selectedOrder || !selectedTemplate) return;
-    const processedData = buildOrderLabelPreviewData(selectedOrder, labelRules);
-    const qty = Math.max(1, Math.min(100, Number.parseInt(printCount, 10) || 1));
-    await handleTempLegacyPrint(selectedOrder, selectedTemplate, processedData, qty);
+    if (!selectedOrder || !selectedTemplate || isSubmittingPrint) return;
+
+    setIsSubmittingPrint(true);
+    try {
+      const processedData = buildOrderLabelPreviewData(selectedOrder, labelRules);
+      const qty = Math.max(1, Math.min(100, Number.parseInt(printCount, 10) || 1));
+      await handleTempLegacyPrint(selectedOrder, selectedTemplate, processedData, qty);
+    } finally {
+      setIsSubmittingPrint(false);
+    }
   };
 
   return (
@@ -1216,10 +1231,18 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                   <button
                     type="button"
                     onClick={handlePrintSelected}
-                    disabled={!selectedTemplate || temporaryTemplates.length === 0}
-                    className="mt-3 w-full px-4 py-3 bg-emerald-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-50"
+                    aria-busy={isSubmittingPrint}
+                    disabled={!selectedTemplate || temporaryTemplates.length === 0 || isSubmittingPrint}
+                    className={`mt-3 w-full px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all duration-200 flex items-center justify-center gap-2 ${isSubmittingPrint ? 'bg-amber-600 text-white shadow-lg ring-4 ring-amber-100' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
                   >
-                    {t('common.print', 'Print')}
+                    {isSubmittingPrint ? (
+                      <>
+                        <Loader2 className="animate-spin" size={16} />
+                        <span>{t('printer.sendingPrintJob', 'Versturen...')}</span>
+                      </>
+                    ) : (
+                      <>{t('common.print', 'Print')}</>
+                    )}
                   </button>
                 </>
               )}
@@ -2052,43 +2075,50 @@ const PrintQueueAdminView = () => {
   };
 
   const handleDirectLotPrintBatch = async (batchData: string, lotCount: number) => {
-    let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
-    if (!deviceToUse) {
-      try {
-        const requestedDevice = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || await requestUsbDevice(activeQueuePrinter || {});
-        deviceToUse = requestedDevice;
-        setUsbDevice(requestedDevice);
-        localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(requestedDevice.vendorId));
-        localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(requestedDevice.productId));
+    const transport = resolvePrintTransport({
+      activeQueuePrinterId: activeQueuePrinter?.id,
+      usbDevice,
+    });
 
-        const routingPrinter = resolvePrinterForRouting(printers, {
-          stationId: stationContext || undefined,
-          routeKey: stationContext || undefined,
-        });
-        const usbMatches = printers.filter(
-          (printer) => Number(printer.vendorId) === requestedDevice.vendorId && Number(printer.productId) === requestedDevice.productId
-        );
-        const printerIdToStore = routingPrinter?.id || (usbMatches.length === 1 ? usbMatches[0].id : '');
-        if (printerIdToStore) {
-          if (stationContext) {
-            persistStationBinding(stationContext, printerIdToStore);
-          } else {
-            localStorage.setItem(USB_PRINTER_ID_KEY, printerIdToStore);
+    if (transport === 'usb') {
+      let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
+      if (!deviceToUse) {
+        try {
+          const requestedDevice = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || await requestUsbDevice(activeQueuePrinter || {});
+          deviceToUse = requestedDevice;
+          setUsbDevice(requestedDevice);
+          localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(requestedDevice.vendorId));
+          localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(requestedDevice.productId));
+
+          const routingPrinter = resolvePrinterForRouting(printers, {
+            stationId: stationContext || undefined,
+            routeKey: stationContext || undefined,
+          });
+          const usbMatches = printers.filter(
+            (printer) => Number(printer.vendorId) === requestedDevice.vendorId && Number(printer.productId) === requestedDevice.productId
+          );
+          const printerIdToStore = routingPrinter?.id || (usbMatches.length === 1 ? usbMatches[0].id : '');
+          if (printerIdToStore) {
+            if (stationContext) {
+              persistStationBinding(stationContext, printerIdToStore);
+            } else {
+              localStorage.setItem(USB_PRINTER_ID_KEY, printerIdToStore);
+            }
+          }
+        } catch (usbErr) {
+          const hasQueuePrinter = Boolean(activeQueuePrinter?.id);
+          if (!hasQueuePrinter) {
+            throw usbErr;
           }
         }
-      } catch (usbErr) {
-        const hasQueuePrinter = Boolean(activeQueuePrinter?.id);
-        if (!hasQueuePrinter) {
-          throw usbErr;
-        }
       }
-    }
 
-    if (deviceToUse) {
-      await printRawUsb(deviceToUse, batchData);
-      setError('');
-      notify(`Lotnummers direct geprint via USB (${lotCount}).`);
-      return;
+      if (deviceToUse) {
+        await printRawUsb(deviceToUse, batchData);
+        setError('');
+        notify(`Lotnummers direct geprint via USB (${lotCount}).`);
+        return;
+      }
     }
 
     if (!activeQueuePrinter?.id) {
@@ -2101,7 +2131,7 @@ const PrintQueueAdminView = () => {
       {
         description: `Lotnummers batch (${lotCount})`,
         quantity: 1,
-        stationId: stationContext || selectedStation || 'PRINT_QUEUE_ADMIN',
+        stationId: LABELS_PRINTING_QUEUE_STATION,
         targetPrinterName: activeQueuePrinter.name,
         queuedAsBatch: true,
         source: 'lot_number_batch',

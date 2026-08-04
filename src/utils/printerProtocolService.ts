@@ -245,6 +245,13 @@ export const normalizePrinterProtocol = (printer: PrinterProfile | null | undefi
   if (raw === 'tspl' || raw === 'epl' || raw === 'escpos' || raw === 'custom') {
     return raw;
   }
+
+  const driver = getDriver(printer || null);
+  const driverProtocol = String(driver?.labelLanguage || '').trim().toLowerCase();
+  if (driverProtocol === 'tspl' || driverProtocol === 'epl' || driverProtocol === 'escpos' || driverProtocol === 'custom') {
+    return driverProtocol as PrinterProtocol;
+  }
+
   return 'zpl';
 };
 

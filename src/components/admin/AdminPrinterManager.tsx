@@ -1018,7 +1018,9 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
   const [editingId, setEditingId] = useState<string | null>(null);
   const [availableStations, setAvailableStations] = useState<string[]>([]);
   const [availableDepartments, setAvailableDepartments] = useState<string[]>([]);
+  const [departmentStations, setDepartmentStations] = useState<Record<string, string[]>>({});
   const [selectedQueuePrinterId, setSelectedQueuePrinterId] = useState("");
+  const [selectedQueueDepartment, setSelectedQueueDepartment] = useState("");
   const [queueStations, setQueueStations] = useState<string[]>([]);
   const [queueStationToAdd, setQueueStationToAdd] = useState("");
   const [isSavingQueueStations, setIsSavingQueueStations] = useState(false);
@@ -1071,16 +1073,26 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       if (!snap.exists()) {
         setAvailableStations([]);
         setAvailableDepartments([]);
+        setDepartmentStations({});
         return;
       }
 
       const data = (snap.data() || {}) as { departments?: Array<{ name?: string, stations?: Array<{ name?: string, isAvailableForPlanning?: boolean }> }> };
       const stations: string[] = [];
       const depts: string[] = [];
+      const deptStationsMap: Record<string, string[]> = {};
       
       (data.departments || []).forEach((dept) => {
         const deptName = String(dept?.name || "").trim();
-        if (deptName) depts.push(deptName);
+        if (deptName) {
+          depts.push(deptName);
+          const deptStations = (dept.stations || [])
+            .map((s) => String(s?.name || "").trim())
+            .filter(Boolean);
+          if (deptStations.length > 0) {
+            deptStationsMap[deptName] = Array.from(new Set(deptStations));
+          }
+        }
 
         (dept.stations || []).forEach((s) => {
           const name = String(s?.name || "").trim();
@@ -1090,6 +1102,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
 
       setAvailableStations(Array.from(new Set(stations)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
       setAvailableDepartments(Array.from(new Set(depts)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
+      setDepartmentStations(deptStationsMap);
     }, (e) => {
       console.error("Err stations", e);
     });
@@ -1164,6 +1177,10 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
   const handleAddQueueStation = async () => {
     const station = queueStationToAdd.trim();
     if (!station) return;
+    const selectableStations = selectedQueueDepartment
+      ? (departmentStations[selectedQueueDepartment] || [])
+      : availableStations;
+    if (!selectableStations.includes(station)) return;
     if (queueStations.includes(station)) {
       setQueueStationToAdd("");
       return;
@@ -1232,7 +1249,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
   const getQueueMetadataBase = (printer: PrinterRecord) => ({
     source: 'admin-printer-manager',
     targetPrinterName: printer?.name || 'Onbekende printer',
-    protocol: (printer?.protocol || 'zpl').toLowerCase(),
+    protocol: normalizePrinterProtocol(printer).toLowerCase(),
     stationId: 'ADMIN'
   });
 
@@ -1610,7 +1627,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
   };
 
   const buildProtocolTestPayload = (printer: PrinterRecord, { lengthMm = 50, title = 'TEST PRINT' }: { lengthMm?: number; title?: string } = {}) => {
-    const protocol = (printer?.protocol || "zpl").toLowerCase();
+    const protocol = normalizePrinterProtocol(printer).toLowerCase();
     const testDriver = getDriver(printer);
     const dpi = testDriver.nativeDpi;
     const darkness = printer?.darkness ? parseInt(printer.darkness, 10) : testDriver.defaultDarkness;
@@ -2291,9 +2308,14 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                             <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
                               {t("adminPrinterManager.routingKeys", "Routeringstags")}: {(Array.isArray(printer.routingKeys) ? printer.routingKeys : []).length > 0 ? (Array.isArray(printer.routingKeys) ? printer.routingKeys.join(", ") : "") : t("adminPrinterManager.noRoutingKeys", "Geen")}
                             </p>
+                            <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
+                              {t("adminPrinterManager.queueStationsForPrinter", "Queue stations")}: {(Array.isArray(printer.queueStations) ? printer.queueStations : (Array.isArray(printer.linkedStations) ? printer.linkedStations : [])).length > 0
+                                ? (Array.isArray(printer.queueStations) ? printer.queueStations : (Array.isArray(printer.linkedStations) ? printer.linkedStations : [])).join(", ")
+                                : t("adminPrinterManager.noQueueStationsSelected", "Geen specifieke stations")}
+                            </p>
                             <p className="text-[10px] text-slate-400 mt-1 flex flex-wrap gap-1">
-                                {printer.linkedStations && printer.linkedStations.length > 0 
-                                    ? printer.linkedStations.map(s => <span key={s} className="bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{s}</span>)
+                                {(Array.isArray(printer.queueStations) ? printer.queueStations : (Array.isArray(printer.linkedStations) ? printer.linkedStations : [])).length > 0
+                                    ? (Array.isArray(printer.queueStations) ? printer.queueStations : (Array.isArray(printer.linkedStations) ? printer.linkedStations : [])).map(s => <span key={s} className="bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{s}</span>)
                                     : <span className="italic opacity-50">{t('adminPrinterManager.noSpecificStations')}</span>}
                             </p>
                           </div>
@@ -2350,9 +2372,9 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
 
       {activeTab === "queue-stations" && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-          <h3 className="text-lg font-black text-slate-800 uppercase mb-1">{t("adminPrinterManager.queueStations", "Queue Stations")}</h3>
+          <h3 className="text-lg font-black text-slate-800 uppercase mb-1">{t("adminPrinterManager.queueStations", "Queue voor stations")}</h3>
           <p className="text-sm text-slate-500 font-semibold mb-4">
-            {t("adminPrinterManager.queueStationsHelp", "Koppel stations per printer voor Print Stations en Print Wachtrij. Stations komen uit factory config.")}
+            {t("adminPrinterManager.queueStationsHelp", "Selecteer per printer eerst een afdeling en daarna de stations die de queue ontvangt en print. De stations komen uit de factory-config.")}
           </p>
 
           <div className="mb-4">
@@ -2361,12 +2383,14 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
               value={selectedQueuePrinterId}
               onChange={(e) => {
                 setSelectedQueuePrinterId(e.target.value);
+                setSelectedQueueDepartment("");
                 setQueueStationToAdd("");
               }}
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
               disabled={printers.length === 0 || isSavingQueueStations}
             >
-              {printers.length === 0 && <option value="">{t("adminPrinterManager.noPrinters", "Geen printers")}</option>}
+              <option value="">{t("adminPrinterManager.selectPrinter", "- Kies printer -")}</option>
+              {printers.length === 0 && <option value="" disabled>{t("adminPrinterManager.noPrinters", "Geen printers")}</option>}
               {printers.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -2375,13 +2399,29 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
 
           <div className="flex flex-col md:flex-row gap-3 mb-4">
             <select
+              value={selectedQueueDepartment}
+              onChange={(e) => {
+                setSelectedQueueDepartment(e.target.value);
+                setQueueStationToAdd("");
+              }}
+              className="w-full md:w-56 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
+              disabled={availableDepartments.length === 0 || isSavingQueueStations || !selectedQueuePrinterId}
+            >
+              <option value="">{t("adminPrinterManager.selectDepartment", "Selecteer afdeling...")}</option>
+              {availableDepartments.map((department) => (
+                <option key={department} value={department}>{department}</option>
+              ))}
+            </select>
+            <select
               value={queueStationToAdd}
               onChange={(e) => setQueueStationToAdd(e.target.value)}
               className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
-              disabled={availableStations.length === 0 || isSavingQueueStations || !selectedQueuePrinterId}
+              disabled={isSavingQueueStations || !selectedQueuePrinterId || (selectedQueueDepartment ? (departmentStations[selectedQueueDepartment] || []).length === 0 : availableStations.length === 0)}
             >
-              <option value="">{t("adminPrinterManager.selectStationFromFactoryConfig", "Selecteer station uit factory config...")}</option>
-              {availableStations
+              <option value="">{selectedQueueDepartment
+                ? t("adminPrinterManager.selectStationFromDepartment", `Selecteer station uit ${selectedQueueDepartment}...`)
+                : t("adminPrinterManager.selectStationFromFactoryConfig", "Selecteer station uit factory config...")}</option>
+              {(selectedQueueDepartment ? (departmentStations[selectedQueueDepartment] || []) : availableStations)
                 .filter((s) => !queueStations.includes(s))
                 .map((s) => (
                   <option key={s} value={s}>{s}</option>

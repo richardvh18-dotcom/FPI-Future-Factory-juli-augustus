@@ -43,6 +43,12 @@ export interface OrderLabelSearchResult {
   diagnostics: string[];
 }
 
+export const shouldUseGlobalOrderLabelSearch = (selectedMachine: string, searchText: string): boolean => {
+  const normalizedMachine = String(selectedMachine || '').trim();
+  const normalizedSearch = String(searchText || '').trim();
+  return !normalizedMachine && normalizedSearch.length >= 3;
+};
+
 export const executeOrderLabelSearch = async (
   orderStr: string,
   initialList: AnyRecord[] = []

@@ -408,34 +408,52 @@ const parseDimensions = (
   // 2. Check voor standaard ID
   // Negeer eerst drukklasse-segmenten zoals EMT50/16, CMT32/10, EST16 etc.
   // Zo voorkomen we dat "50" uit "EMT50/16" wordt gekozen als product-ID.
-  const cleanedText = String(text || "").replace(
-    /\b(?:EMT|CMT|EST|CST|EWT|EDF|FIBERMAR)\s*\d+(?:\.\d+)?(?:\s*[-/]\s*\d+(?:\.\d+)?)?\b/gi,
-    " "
-  );
+  const cleanedText = String(text || "")
+    .replace(/\b(?:EMT|CMT|EST|CST|EWT|EDF|FIBERMAR)\s*\d+(?:\.\d+)?(?:\s*[-/]\s*\d+(?:\.\d+)?)?\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
-  const idMatch =
-    cleanedText.match(/\b(\d{2,4})\s*MM\b/i) ||
-    cleanedText.match(/\b(\d{2,4})\b/);
-  let val: number | null = null;
+  const explicitMmMatch = cleanedText.match(/\b(\d{2,4})\s*MM\b/i);
+  if (explicitMmMatch) {
+    const value = Number.parseInt(explicitMmMatch[1], 10);
+    if (Number.isFinite(value) && value >= 25) {
+      return `ID: ${value}mm ${toInches(value)}`;
+    }
+  }
 
-  if (idMatch) val = parseInt(idMatch[1]);
+  const radiusStyleMatch = cleanedText.match(/\b(\d{2,4})(?=\s*R(?:\d+(?:\.\d+)?)?(?:\s*(?:\/|X|$)))/i);
+  if (radiusStyleMatch) {
+    const value = Number.parseInt(radiusStyleMatch[1], 10);
+    if (Number.isFinite(value) && value >= 25) {
+      return `ID: ${value}mm ${toInches(value)}`;
+    }
+  }
+
+  const sizeCandidates = Array.from(cleanedText.matchAll(/\b(\d{2,4})\b/g))
+    .map((match) => {
+      const value = Number.parseInt(match[1], 10);
+      const index = match.index ?? 0;
+      const prevChar = cleanedText[index - 1] ?? "";
+      const nextChar = cleanedText[index + match[0].length] ?? "";
+      const isAngleLike =
+        prevChar === "/" ||
+        nextChar === "°" ||
+        /(?:^|[^A-Z0-9])(DEG|GR)(?:$|[^A-Z0-9])/i.test(cleanedText.slice(Math.max(0, index - 6), index + match[0].length + 6));
+
+      return { value, isAngleLike };
+    })
+    .filter(({ value, isAngleLike }) => Number.isFinite(value) && value >= 25 && !isAngleLike);
+
+  if (sizeCandidates.length > 0) {
+    const firstValue = sizeCandidates[0].value;
+    return `ID: ${firstValue}mm ${toInches(firstValue)}`;
+  }
 
   // Fallback naar gestructureerde data als regex faalt of per ongeluk een hoek (45,90) oppikt
-  if ((!val || val <= 25 || val === 45 || val === 90) && (data.dn || data.diameter)) {
-    val = parseInt(data.dn as string) || parseInt(data.diameter as string);
-  }
-
-  if (typeof val === "number" && val > 25 && val !== 45 && val !== 90) {
-    return `ID: ${val}mm ${toInches(val)}`;
-  }
-
-  if (text) {
-    const fallbackMatch = text.match(/(\d{2,4})/g);
-    if (fallbackMatch) {
-      const maxVal = Math.max(...fallbackMatch.map((n) => parseInt(n)));
-      if (maxVal > 25) {
-        return `ID: ${maxVal}mm ${toInches(maxVal)}`;
-      }
+  if ((data.dn || data.diameter)) {
+    const fallbackValue = Number.parseInt(String(data.dn || data.diameter || ""), 10);
+    if (Number.isFinite(fallbackValue) && fallbackValue >= 25) {
+      return `ID: ${fallbackValue}mm ${toInches(fallbackValue)}`;
     }
   }
 

@@ -1,19 +1,29 @@
 ### Chatvoorkeuren
 
-- 3 augustus 2026: deploy afgerond naar Firebase Hosting. De productiebuild is succesvol uitgevoerd en geüpload; versie is verhoogd naar 0.1.134 en de app is beschikbaar via de Firebase Hosting URL.
-
-- 3 augustus 2026: Y-tee-labels worden nu consistent weergegeven als “EQUAL 45° TEE” en “UNEQUAL 45° TEE” in plaats van de oude “EQUAL-Y-TEE”/“UNEQUAL-Y-TEE”-vorm. De wijziging is doorgevoerd in [src/utils/labelHelpers.tsx](src/utils/labelHelpers.tsx) en gedekt met regressietests in [src/utils/labelHelpers.test.ts](src/utils/labelHelpers.test.ts). De build is daarna opnieuw geverifieerd met succes.
-
-- 3 augustus 2026: de label-preview in de productie-startmodal en de label-designer is teruggebracht tot een zwaardere, helderdere typografie door de preview-font over te zetten op een standaard sans-serif stack en de overmatige condensed styling te verwijderen. De build is opnieuw geverifieerd met succes.
-
-- 3 augustus 2026: snelkoppeling voor printers toegevoegd op het Portal-scherm en Order Labels-lijsten in de printerflows aangepast naar lazy loading per machine (eerste 50 orders, verder laden bij scrollen, geen auto-load bij open scherm). De modal is daarnaast gestabiliseerd zodat de lijstzone een vaste reserve-ruimte behoudt en de popup niet meer springt tijdens het laden.
-
 - Standaard antwoorden in het Nederlands.
+
+####### Dagupdate 4 augustus 2026 - sessie 5 (label ID parsing voor couplers/elbows)
+
+- De label-parser in [src/utils/labelHelpers.tsx](src/utils/labelHelpers.tsx) is aangepast zodat maten zoals `25` bij `Coupler 25 CST32` en `65` bij `Elb 65R1.5/90 EST32` niet meer door drukklasse- of hoekcodes worden overschreven.
+- De parser kiest nu expliciet de echte maatwaarde uit de beschrijving, ook bij radius-/hoekformaten zoals `65R1.5/90`, en laat codes als `CST32`/`EST32`/`90°` buiten beschouwing voor de ID-lijn.
+- Regresstests toegevoegd in [src/utils/labelHelpers.test.ts](src/utils/labelHelpers.test.ts) voor zowel de coupler- als elbow-cases.
+
+####### Dagupdate 4 augustus 2026 - sessie 4 (print-feedback voor labels)
+
+- In [src/components/printer/PrintStationView.tsx](src/components/printer/PrintStationView.tsx) is de printknop voor Order Labels nu voorzien van directe feedback: bij klikken verschijnt direct een spinner en statusmelding "Versturen...", zodat gebruikers zien dat de printopdracht wordt aangemaakt of verstuurd.
+- De knop wordt tijdens verwerking ook uitgeschakeld om dubbele clicks te voorkomen.
 - Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md) (nieuwste toevoegingen altijd bovenaan plaatsen).
 - Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
 - Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
 
----
+####### Dagupdate 4 augustus 2026 - sessie 3 (Labels Printing queue-station)
+
+- Order Labels en Lotnummers worden nu expliciet gequeued onder het station "Labels Printing" in [src/components/printer/PrintStationView.tsx](src/components/printer/PrintStationView.tsx) en [src/components/printer/PrintQueueAdminView.tsx](src/components/printer/PrintQueueAdminView.tsx).
+- De shared routing-helper in [src/services/printRouting.ts](src/services/printRouting.ts) bevat nu een centrale constante voor deze queue-bestemming.
+- De queue-selector in [src/components/printer/printQueueProcessorHelpers.ts](src/components/printer/printQueueProcessorHelpers.ts) is nu station-aware, zodat een job met de stationmetadata "Labels Printing" automatisch de juiste printer uit de queue-configuratie kiest.
+- In [src/components/admin/AdminPrinterManager.tsx](src/components/admin/AdminPrinterManager.tsx) is de queue-station selectie uitgebreid met een afdelingstap: eerst kiest de beheerder een afdeling, waarna alleen de stations uit die afdeling beschikbaar zijn om aan de printer toe te voegen.
+- Validatie: foutcheck op de aangepaste bestanden was schoon, en de gerichte regressietest is opnieuw uitgevoerd met 3/3 passing tests.
+
 ####### Dagupdate 4 augustus 2026 - sessie 1 (parallelle Lighthouse/TSPL printerstack)
 
 - Een nieuwe centrale protocolservice toegevoegd in [src/utils/printerProtocolService.ts](src/utils/printerProtocolService.ts).
@@ -36,8 +46,19 @@
 - In [src/utils/usbPrintService.ts](src/utils/usbPrintService.ts) is `doesUsbDeviceMatchPrinter(...)` toegevoegd om te controleren of de actieve WebUSB-sessie echt bij de doelprinter hoort.
 - In [src/components/printer/PrintStationView.tsx](src/components/printer/PrintStationView.tsx) en [src/components/printer/PrintQueueAdminView.tsx](src/components/printer/PrintQueueAdminView.tsx) wordt een bestaande `usbDevice` nu alleen nog hergebruikt als vendor/product overeenkomt met de gekozen printer; anders wordt eerst een geautoriseerd passend device gezocht en pas daarna eventueel een nieuwe browserselectie gevraagd.
 - Doel: voorkomen dat een bestaande Zebra-USB-sessie blind wordt hergebruikt voor een Lighthouse-printer of omgekeerd.
+- Bij het schakelen tussen Production Start en Order Labels / Lotnummers is de printverbinding eerder al gebroken; deze fix helpt om dat opnieuw te voorkomen door de juiste USB-sessie per printer te beperken.
+- Als de verbinding tussen deze workflows nog steeds verbroken raakt, is het wellicht beter om Order Labels en Lotnummers ook via een printqueue te laten lopen in plaats van rechtstreeks te printen, zelfs als de printer fysiek aan die computer hangt.
 - Validatie: gerichte diagnostiek op de aangepaste bestanden was schoon en `npm run build:prod` is opnieuw succesvol afgerond.
 
+- 3 augustus 2026: deploy afgerond naar Firebase Hosting. De productiebuild is succesvol uitgevoerd en geüpload; versie is verhoogd naar 0.1.134 en de app is beschikbaar via de Firebase Hosting URL.
+
+- 3 augustus 2026: Y-tee-labels worden nu consistent weergegeven als “EQUAL 45° TEE” en “UNEQUAL 45° TEE” in plaats van de oude “EQUAL-Y-TEE”/“UNEQUAL-Y-TEE”-vorm. De wijziging is doorgevoerd in [src/utils/labelHelpers.tsx](src/utils/labelHelpers.tsx) en gedekt met regressietests in [src/utils/labelHelpers.test.ts](src/utils/labelHelpers.test.ts). De build is daarna opnieuw geverifieerd met succes.
+
+- 3 augustus 2026: de label-preview in de productie-startmodal en de label-designer is teruggebracht tot een zwaardere, helderdere typografie door de preview-font over te zetten op een standaard sans-serif stack en de overmatige condensed styling te verwijderen. De build is opnieuw geverifieerd met succes.
+
+- 3 augustus 2026: snelkoppeling voor printers toegevoegd op het Portal-scherm en Order Labels-lijsten in de printerflows aangepast naar lazy loading per machine (eerste 50 orders, verder laden bij scrollen, geen auto-load bij open scherm). De modal is daarnaast gestabiliseerd zodat de lijstzone een vaste reserve-ruimte behoudt en de popup niet meer springt tijdens het laden.
+
+---
 ####### Dagupdate 3 augustus 2026 - sessie 1 (BH18 modal cleanup)
 
 - In [src/components/digitalplanning/modals/ProductionStartModal.tsx](src/components/digitalplanning/modals/ProductionStartModal.tsx) is de dubbele keuzelijst voor "Wikkelrobot Positie (BH18)" verwijderd.
