@@ -14,8 +14,14 @@ import { useLabelPreview } from '../../hooks/useLabelPreview';
 import { processLabelData, applyLabelLogic, filterOrderLabelsByProduct, filterLabelsByProduct } from '../../utils/labelHelpers';
 import { executeOrderLabelSearch, loadFactoryMachinePaths, normalizeText } from "../../utils/orderLabelSearch";
 import { renderLabelToBitmapZpl } from '../../utils/unifiedLabelRenderEngine';
+import {
+  buildProtocolAwareUsbPayload,
+  renderLabelForPrinter,
+  renderLabelSequenceForPrinter,
+} from '../../utils/printerProtocolService';
 import { resolvePrinterForRouting } from '../../utils/printRouting';
 import { queuePrintJob } from '../../services/printService';
+import { doesUsbDeviceMatchPrinter, findAuthorizedUsbDevice, requestUsbDevice } from '../../utils/usbPrintService';
 import {
   buildOrderLabelPreviewData,
   buildOrderLabelTemplateProduct,
@@ -284,12 +290,13 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
       
       const darkness = Number.parseInt(String((bm01Printer as any)?.darkness || '15'), 10);
       
-      const zplPayload = await renderLabelToBitmapZpl({
+      const zplPayload = await renderLabelForPrinter({
+        printer: bm01Printer as Record<string, unknown>,
         template: bestTemplate,
         data: renderData,
         printerDpi: dpiForPrint,
         darkness: Number.isFinite(darkness) ? darkness : 15,
-        printSpeed: 3
+        printSpeed: 3,
       });
 
       if (!zplPayload) {
@@ -1647,7 +1654,8 @@ const PrintStationView = () => {
         for (const currentTemplate of templatesToPrint) {
           const widthMm = Number((currentTemplate as any)?.width) || 90;
           const heightMm = Number((currentTemplate as any)?.height) || 40;
-          const rendered = await renderLabelToBitmapZpl({
+          const rendered = await renderLabelForPrinter({
+            printer: activeQueuePrinter as Record<string, unknown>,
             template: currentTemplate as any,
             data: processedData as AnyRecord,
             printerDpi: dpi,
@@ -1671,7 +1679,8 @@ const PrintStationView = () => {
           { type: 'qr', x: 60, y: 5, width: 25, height: 25, content: '{orderNumber}' },
         ],
       };
-      zpl = await renderLabelToBitmapZpl({
+      zpl = await renderLabelForPrinter({
+        printer: activeQueuePrinter as Record<string, unknown>,
         template: fallbackTemplate as any,
         data: {
           orderNumber: order,
@@ -1687,10 +1696,10 @@ const PrintStationView = () => {
     }
 
     try {
-      let deviceToUse = usbDevice;
+      let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
       if (!deviceToUse) {
         try {
-          deviceToUse = await navigator.usb.requestDevice({ filters: [] });
+          deviceToUse = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || await requestUsbDevice(activeQueuePrinter || {});
           setUsbDevice(deviceToUse);
           localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(deviceToUse.vendorId));
           localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(deviceToUse.productId));
@@ -1714,9 +1723,11 @@ const PrintStationView = () => {
       }
 
       if (deviceToUse) {
-        const usbPayload = printQuantity > 1
-          ? Array.from({ length: printQuantity }, () => zpl).join('\n')
-          : zpl;
+        const usbPayload = buildProtocolAwareUsbPayload({
+          printer: activeQueuePrinter as Record<string, unknown>,
+          content: zpl,
+          quantity: printQuantity,
+        });
         await printRawUsb(deviceToUse, usbPayload, `Order label geprint voor order: ${order}`);
         const labelsPrinted = Math.max(1, (templatesToPrint.length || 1) * printQuantity);
         showSuccess(`${labelsPrinted} label(s) voor ${order} direct geprint via USB!`);
@@ -1768,25 +1779,18 @@ const PrintStationView = () => {
       const templateChain = resolveLinkedTemplateChain(labelTemplates as any[], (selectedLabel as any)?.id, { maxDepth: 4 }) as LabelTemplate[];
       const templatesToPrint = templateChain.length > 0 ? templateChain : [selectedLabel as LabelTemplate];
 
-      const printDataChunks: string[] = [];
-      for (const template of templatesToPrint) {
-        const widthMm = Number((template as any)?.width) || 90;
-        const heightMm = Number((template as any)?.height) || 40;
-        const printData = await renderLabelToBitmapZpl({
-          template: template as any,
-          data: (previewData as AnyRecord) || {},
-          printerDpi,
-          darkness: bitmapDarkness,
-          printSpeed: 3,
-          widthMm,
-          heightMm,
-        });
-        printDataChunks.push(printData);
-      }
+      const printDataChunks = await renderLabelSequenceForPrinter({
+        printer: activeQueuePrinter as Record<string, unknown>,
+        templates: templatesToPrint as any,
+        data: (previewData as AnyRecord) || {},
+        printerDpi,
+        darkness: bitmapDarkness,
+        printSpeed: 3,
+      });
       
-      let deviceToUse = usbDevice;
+      let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
       if (!deviceToUse) {
-        deviceToUse = await navigator.usb.requestDevice({ filters: [] });
+        deviceToUse = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || await requestUsbDevice(activeQueuePrinter || {});
         setUsbDevice(deviceToUse);
         localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(deviceToUse.vendorId));
         localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(deviceToUse.productId));
@@ -1804,7 +1808,16 @@ const PrintStationView = () => {
         }
       }
 
-  await printRawUsb(deviceToUse, printDataChunks.join('\n'), `Batch order labels geprint voor lot: ${productData.lotNumber}`);
+  await printRawUsb(
+    deviceToUse,
+    buildProtocolAwareUsbPayload({
+      printer: activeQueuePrinter as Record<string, unknown>,
+      content: printDataChunks,
+      quantity: 1,
+      isPreBatchedJob: true,
+    }),
+    `Batch order labels geprint voor lot: ${productData.lotNumber}`
+  );
   showSuccess(`${templatesToPrint.length} label(s) voor lot ${productData.lotNumber} direct geprint via USB!`);
       
       setProductData(null);
@@ -1819,9 +1832,9 @@ const PrintStationView = () => {
   };
 
   const handleDirectLotPrintBatch = async (batchData: string, lotCount: number) => {
-    let deviceToUse = usbDevice;
+    let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
     if (!deviceToUse) {
-      deviceToUse = await navigator.usb.requestDevice({ filters: [] });
+      deviceToUse = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || await requestUsbDevice(activeQueuePrinter || {});
       setUsbDevice(deviceToUse);
       localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(deviceToUse.vendorId));
       localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(deviceToUse.productId));

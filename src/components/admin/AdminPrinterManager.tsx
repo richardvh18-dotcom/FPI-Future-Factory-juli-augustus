@@ -60,6 +60,7 @@ import { useLabelCatalog } from "../../hooks/useLabelCatalog";
 import { useFormPersistence } from "../../hooks/useFormPersistence";
 import { serializeRoutingKeys } from "../../utils/printRouting";
 import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
+import { normalizePrinterProtocol, renderLabelForPrinter } from "../../utils/printerProtocolService";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
 import { isUsbDirectSupported, requestUsbDevice, printRawUsb } from "../../utils/usbPrintService";
@@ -1475,7 +1476,8 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       const heightMm = Number((selectedTemplate as any)?.height) || 40;
 
       try {
-        const bitmapZpl = await renderLabelToBitmapZpl({
+        const bitmapZpl = await renderLabelForPrinter({
+          printer,
           template: selectedTemplate as any,
           data: processedData as any,
           printerDpi: driver.nativeDpi,
@@ -1484,7 +1486,9 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
           widthMm,
           heightMm,
         });
-        zpl = applyCalibration(bitmapZpl, printer, driver);
+        zpl = normalizePrinterProtocol(printer) === 'tspl'
+          ? bitmapZpl
+          : applyCalibration(bitmapZpl, printer, driver);
       } catch (bitmapError) {
         console.error("Bitmap rendering mislukt (strict mode):", bitmapError);
         throw new Error(`Bitmap print mislukt: ${getErrMsg(bitmapError)}`);
@@ -1500,7 +1504,8 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
           { type: 'qr', x: 60, y: 5, width: 25, height: 25, content: '{orderNumber}' },
         ],
       };
-      const fallbackBitmapZpl = await renderLabelToBitmapZpl({
+      const fallbackBitmapZpl = await renderLabelForPrinter({
+        printer,
         template: fallbackTemplate as any,
         data: {
           orderNumber: order,
@@ -1513,7 +1518,9 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         widthMm: 90,
         heightMm: 40,
       });
-      zpl = applyCalibration(fallbackBitmapZpl, printer, driver);
+      zpl = normalizePrinterProtocol(printer) === 'tspl'
+        ? fallbackBitmapZpl
+        : applyCalibration(fallbackBitmapZpl, printer, driver);
     }
     if (!selectedTemplate) {
       zpl = applyCalibration(zpl, printer, driver);

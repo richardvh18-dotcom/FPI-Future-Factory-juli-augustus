@@ -4,6 +4,7 @@ import { db } from '../../config/firebase';
 import { PATHS, getPathString } from '../../config/dbPaths';
 import { transitionPrintQueueJobStatus } from '../../services/planningSecurityService';
 import { printRawUsbToDevice, isUsbDirectSupported, parseUsbId } from '../../utils/usbPrintService';
+import { buildProtocolAwareUsbPayload } from '../../utils/printerProtocolService';
 import { getPrinterForQueueJob } from './printQueueProcessorHelpers';
 
 type AnyRecord = Record<string, unknown>;
@@ -160,31 +161,6 @@ const tsToMillis = (value: unknown): number => {
   }
   const parsed = new Date(String(value));
   return Number.isFinite(parsed.getTime()) ? parsed.getTime() : 0;
-};
-
-const normalizeQueuePrintPayload = (content: unknown, quantity: unknown, isPreBatchedJob: boolean = false) => {
-  const base = String(content || '').trim();
-  if (!base) return '';
-  if (isPreBatchedJob) return base;
-
-  const qty = Number.isFinite(Number(quantity)) && Number(quantity) > 0
-    ? Math.max(1, Math.floor(Number(quantity)))
-    : 1;
-
-  const applyCutMode = (zpl: string, shouldCut: boolean): string => {
-    const cutMedia = shouldCut ? '^MMC' : '^MMT';
-    const cutPQ = shouldCut ? '^PQ1,0,1,Y' : '^PQ1,0,1,N';
-    return String(zpl || '')
-      .replace(/\^MM[CT]/g, cutMedia)
-      .replace(/\^PQ1,0,1,[YN]/g, cutPQ);
-  };
-
-  if (qty === 1) {
-    return applyCutMode(base, true);
-  }
-
-  // ALTIJD knippen tussen labels door true te passeren i.p.v. alleen op het einde
-  return Array.from({ length: qty }, () => applyCutMode(base, true)).join('\n');
 };
 
 const isLikelyPreBatchedZpl = (content: unknown): boolean => {
@@ -661,7 +637,12 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             const batchSeqTotal = Number(job?.metadata?.batchSequenceTotal);
             const hasBatchSequence = Number.isFinite(batchSeqIndex) && Number.isFinite(batchSeqTotal) && batchSeqTotal > 0;
             const shouldCutAtEnd = hasBatchSequence ? batchSeqIndex === batchSeqTotal : true;
-            const basePayload = normalizeQueuePrintPayload(content, getJobQuantity(job), isPreBatchedJob);
+            const basePayload = buildProtocolAwareUsbPayload({
+              printer: targetPrinter as Record<string, unknown>,
+              content,
+              quantity: getJobQuantity(job),
+              isPreBatchedJob,
+            });
             const payload = enforceCutModeOnBatchPayload(basePayload, shouldCutAtEnd, isPreBatchedJob);
 
             await printRawUsbToDevice({ device: usbDevice, content: payload });

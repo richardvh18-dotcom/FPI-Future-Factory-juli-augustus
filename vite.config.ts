@@ -40,8 +40,8 @@ try {
  * + SPA routing support
  * + Optimized build configuration
  */
-export default defineConfig({
-  plugins: [react(), VitePWA(pwaConfig)],
+export default defineConfig(({ command }) => ({
+  plugins: [react(), ...(command === 'serve' ? [VitePWA(pwaConfig)] : [])],
   resolve: {
     alias: {
       // Zorgt ervoor dat we @ kunnen gebruiken als kortere weg naar de src map
@@ -52,6 +52,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    minify: 'esbuild',
     reportCompressedSize: false,
     rollupOptions: {
       output: {
@@ -118,4 +119,4 @@ export default defineConfig({
     __app_id: JSON.stringify('fittings-app-v1'),
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(process.env.VITE_APP_VERSION || version),
   },
-});
+}));

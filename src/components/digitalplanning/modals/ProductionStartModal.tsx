@@ -32,7 +32,7 @@ import { lookupProductByManufacturedId } from "../../../utils/conversionLogic";
 import { useNotifications } from "../../../contexts/NotificationContext";
 import { useProgressOperationsStore } from "../../../contexts/ProgressOperationContext";
 import { generateLotBatchZPL } from "../../../utils/zplHelper";
-import { renderLabelToBitmapZpl } from "../../../utils/unifiedLabelRenderEngine";
+import { renderLabelForPrinter } from "../../../utils/printerProtocolService";
 import { getDriver } from "../../../utils/printerDrivers";
 import { queuePrintJob } from "../../../services/planningSecurityService";
 import { resolvePrinterForRouting } from "../../../utils/printRouting";
@@ -1747,7 +1747,8 @@ const ProductionStartModal = ({
             lotNumber: effectiveLotNumber,
           };
           const darkness = Number.parseInt(String((targetPrinter as any)?.darkness || '15'), 10);
-          printData = await renderLabelToBitmapZpl({
+          printData = await renderLabelForPrinter({
+            printer: targetPrinter as Record<string, unknown>,
             template: selectedLabel as any,
             data: printPreviewData as Record<string, unknown>,
             printerDpi: dpiForPrint,
@@ -1924,7 +1925,8 @@ const ProductionStartModal = ({
               try {
                 const dpiForPrint = getNormalizedPrinterDpi(targetPrinter, 203);
                 const darkness = Number.parseInt(String((targetPrinter as any)?.darkness || '15'), 10);
-                const currentPrintData = await renderLabelToBitmapZpl({
+                const currentPrintData = await renderLabelForPrinter({
+                  printer: targetPrinter as Record<string, unknown>,
                   template: templateToPrint as any,
                   data: { ...previewData, lotNumber: currentLot } as Record<string, unknown>,
                   printerDpi: dpiForPrint,

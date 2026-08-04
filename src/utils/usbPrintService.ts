@@ -12,6 +12,11 @@ type UsbPrinterRef = {
   productId?: number;
 };
 
+type UsbDeviceLike = {
+  vendorId?: number;
+  productId?: number;
+};
+
 const USB_TRANSFER_CHUNK_SIZE = 4096;
 const USB_IO_TIMEOUT_MS = 12000;
 const USB_PREPARE_TIMEOUT_MS = 15000;
@@ -93,6 +98,26 @@ export const getPrinterFilters = (printer: UsbPrinterFilterInput = {}): USBDevic
   if (vendorId && productId) return [{ vendorId, productId }];
   if (vendorId) return [{ vendorId }];
   return [];
+};
+
+export const doesUsbDeviceMatchPrinter = (
+  device: UsbDeviceLike | null | undefined,
+  printer: UsbPrinterFilterInput = {}
+): boolean => {
+  if (!device) return false;
+
+  const expectedVendorId = parseUsbId(printer.vendorId ?? printer.usbVendorId);
+  const expectedProductId = parseUsbId(printer.productId ?? printer.usbProductId);
+
+  if (expectedVendorId !== undefined && Number(device.vendorId) !== expectedVendorId) {
+    return false;
+  }
+
+  if (expectedProductId !== undefined && Number(device.productId) !== expectedProductId) {
+    return false;
+  }
+
+  return expectedVendorId !== undefined || expectedProductId !== undefined;
 };
 
 const ensureUsbSupport = (): void => {

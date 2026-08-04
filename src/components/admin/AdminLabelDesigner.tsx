@@ -60,6 +60,7 @@ import {
 import { generatePrintData, downloadZPL } from "../../utils/zplHelper";
 import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
 import { resolvePrinterDpi } from "../../utils/printerDrivers";
+import { renderLabelForPrinter } from "../../utils/printerProtocolService";
 import { getWavistrongLayoutNudge } from "../../utils/labelLayoutAdjustments";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useLabelCatalog } from '../../hooks/useLabelCatalog';
@@ -671,7 +672,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
 
     const { dpi: resolvedDpi } = await resolveDefaultPrinter();
 
-    const printData = await renderLabelToBitmapZpl({
+    const printData = await renderLabelForPrinter({
+      printer: null,
       template: labelConfig as any,
       data: data as any,
       printerDpi: resolvedDpi,
@@ -704,7 +706,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
       const widthMm = Number(labelWidth) || 90;
       const heightMm = Number(labelHeight) || 40;
 
-      const printData = await renderLabelToBitmapZpl({
+      const printData = await renderLabelForPrinter({
+        printer: printer as Record<string, unknown>,
         template: {
           width: widthMm,
           height: heightMm,

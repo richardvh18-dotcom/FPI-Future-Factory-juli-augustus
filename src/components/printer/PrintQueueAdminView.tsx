@@ -24,11 +24,21 @@ import {
   deletePrintQueueJob,
   queuePrintJob,
 } from '../../services/planningSecurityService';
-import { requestUsbDevice, printRawUsbToDevice, isUsbDirectSupported as usbDirectSupported } from '../../utils/usbPrintService';
+import {
+  doesUsbDeviceMatchPrinter,
+  findAuthorizedUsbDevice,
+  requestUsbDevice,
+  printRawUsbToDevice,
+  isUsbDirectSupported as usbDirectSupported,
+} from '../../utils/usbPrintService';
 import AutoScaledLabelPreview from './AutoScaledLabelPreview';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useLabelCatalog } from '../../hooks/useLabelCatalog';
 import { renderLabelToBitmapZpl } from '../../utils/unifiedLabelRenderEngine';
+import {
+  buildProtocolAwareUsbPayload,
+  renderLabelForPrinter,
+} from '../../utils/printerProtocolService';
 import { resolvePrinterForRouting } from '../../utils/printRouting';
 import {
   buildOrderLabelPreviewData,
@@ -359,31 +369,6 @@ const printRawUsb = async (device: USBDevice, content: string) => {
   return printRawUsbToDevice({ device, content });
 };
 
-const normalizeQueuePrintPayload = (content: unknown, quantity: unknown, isPreBatchedJob: boolean = false) => {
-  const base = String(content || "").trim();
-  if (!base) return "";
-  if (isPreBatchedJob) return base;
-
-  const qty = Number.isFinite(Number(quantity)) && Number(quantity) > 0
-    ? Math.max(1, Math.floor(Number(quantity)))
-    : 1;
-
-  const applyCutMode = (zpl: string, shouldCut: boolean): string => {
-    const cutMedia = shouldCut ? "^MMC" : "^MMT";
-    const cutPQ = shouldCut ? "^PQ1,0,1,Y" : "^PQ1,0,1,N";
-    return String(zpl || "")
-      .replace(/\^MM[CT]/g, cutMedia)
-      .replace(/\^PQ1,0,1,[YN]/g, cutPQ);
-  };
-
-  if (qty === 1) {
-    return applyCutMode(base, true);
-  }
-
-  // ALTIJD knippen tussen labels door true te passeren i.p.v. alleen op het einde
-  return Array.from({ length: qty }, () => applyCutMode(base, true)).join("\n");
-};
-
 const isLikelyPreBatchedZpl = (content: unknown): boolean => {
   const raw = String(content || '');
   if (!raw) return false;
@@ -535,7 +520,8 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
         for (const currentTemplate of templatesToPrint) {
           const widthMm = Number((currentTemplate as any)?.width || 90);
           const heightMm = Number((currentTemplate as any)?.height || 40);
-          const rendered = await renderLabelToBitmapZpl({
+          const rendered = await renderLabelForPrinter({
+            printer: activeQueuePrinter as Record<string, unknown>,
             template: currentTemplate as any,
             data: processedData as AnyRecord,
             printerDpi: dpi,
@@ -561,7 +547,8 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
           { type: 'qr', x: 60, y: 5, width: 25, height: 25, content: '{orderNumber}' },
         ],
       };
-      zpl = await renderLabelToBitmapZpl({
+      zpl = await renderLabelForPrinter({
+        printer: activeQueuePrinter as Record<string, unknown>,
         template: fallbackTemplate as any,
         data: {
           orderNumber: order,
@@ -577,14 +564,18 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     }
 
     try {
-      let deviceToUse = usbDevice;
+      let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
       if (!deviceToUse && isUsbDirectSupported()) {
-        deviceToUse = await requestUsbDevice(activeQueuePrinter || {});
+        deviceToUse = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || await requestUsbDevice(activeQueuePrinter || {});
         setUsbDevice(deviceToUse);
       }
 
       if (deviceToUse) {
-        const usbPayload = normalizeQueuePrintPayload(zpl, printQuantity);
+        const usbPayload = buildProtocolAwareUsbPayload({
+          printer: activeQueuePrinter as Record<string, unknown>,
+          content: zpl,
+          quantity: printQuantity,
+        });
         await printRawUsb(deviceToUse, usbPayload);
         notify(t("common.printLabelDirectUsb", { order }) + ` (${Math.max(1, (templatesToPrint.length || 1) * printQuantity)}x)`);
         return;
@@ -596,7 +587,8 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
             const currentTemplate = templatesToPrint[idx];
             const widthMm = Number((currentTemplate as any)?.width || 90);
             const heightMm = Number((currentTemplate as any)?.height || 40);
-            const currentZpl = await renderLabelToBitmapZpl({
+            const currentZpl = await renderLabelForPrinter({
+              printer: activeQueuePrinter as Record<string, unknown>,
               template: currentTemplate as any,
               data: processedData as AnyRecord,
               printerDpi: dpi,
@@ -2060,10 +2052,10 @@ const PrintQueueAdminView = () => {
   };
 
   const handleDirectLotPrintBatch = async (batchData: string, lotCount: number) => {
-    let deviceToUse = usbDevice;
+    let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
     if (!deviceToUse) {
       try {
-        const requestedDevice = await navigator.usb.requestDevice({ filters: [] });
+        const requestedDevice = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || await requestUsbDevice(activeQueuePrinter || {});
         deviceToUse = requestedDevice;
         setUsbDevice(requestedDevice);
         localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(requestedDevice.vendorId));
@@ -2133,7 +2125,8 @@ const PrintQueueAdminView = () => {
     const widthMm = Number((template as any)?.width) || 90;
     const heightMm = Number((template as any)?.height) || 40;
 
-    return renderLabelToBitmapZpl({
+    return renderLabelForPrinter({
+      printer: activeQueuePrinter as Record<string, unknown>,
       template: template as any,
       data: variables as AnyRecord,
       printerDpi,
@@ -2142,10 +2135,17 @@ const PrintQueueAdminView = () => {
       widthMm,
       heightMm,
     });
-  }, [labelTemplates, printerDpi, printerDarkness]);
+  }, [activeQueuePrinter, labelTemplates, printerDpi, printerDarkness]);
 
   const handlePrintJob = async (job: PrintJob) => {
-    if (!usbDevice) throw new Error("Geen USB printer verbonden.");
+    let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
+    if (!deviceToUse) {
+      deviceToUse = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || null;
+      if (deviceToUse) {
+        setUsbDevice(deviceToUse);
+      }
+    }
+    if (!deviceToUse) throw new Error("Geen juiste USB printer verbonden voor deze taak.");
 
     const routingViolation = getPrinterRoutingViolation(job, activeQueuePrinter as PrinterConfig | null);
     if (routingViolation) {
@@ -2187,10 +2187,15 @@ const PrintQueueAdminView = () => {
       const batchSeqTotal = Number(job?.metadata?.batchSequenceTotal);
       const hasBatchSequence = Number.isFinite(batchSeqIndex) && Number.isFinite(batchSeqTotal) && batchSeqTotal > 0;
       const shouldCutAtEnd = hasBatchSequence ? batchSeqIndex === batchSeqTotal : true;
-      const basePayload = normalizeQueuePrintPayload(content, quantity, isPreBatchedJob);
+      const basePayload = buildProtocolAwareUsbPayload({
+        printer: activeQueuePrinter as Record<string, unknown>,
+        content,
+        quantity,
+        isPreBatchedJob,
+      });
       const payload = enforceCutModeOnBatchPayload(basePayload, shouldCutAtEnd, isPreBatchedJob);
 
-      await printRawUsb(usbDevice, payload);
+      await printRawUsb(deviceToUse, payload);
       await transitionPrintQueueJobStatus({
         jobId: job.id,
         status: 'completed',
@@ -2473,7 +2478,11 @@ const PrintQueueAdminView = () => {
   };
 
   const handleReprintLabel = async () => {
-    if (!reprintResult || !usbDevice) {
+    const deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {})
+      ? usbDevice
+      : await findAuthorizedUsbDevice(activeQueuePrinter || {}) || null;
+
+    if (!reprintResult || !deviceToUse) {
       setError('Geen product gevonden of geen printer verbonden.');
       return;
     }
@@ -2491,9 +2500,14 @@ const PrintQueueAdminView = () => {
       }
 
       const quantity = getJobQuantity(exactReprintJob) || 1;
-      const payload = normalizeQueuePrintPayload(basePayload, quantity);
+      const payload = buildProtocolAwareUsbPayload({
+        printer: activeQueuePrinter as Record<string, unknown>,
+        content: basePayload,
+        quantity,
+      });
 
-      await printRawUsb(usbDevice, payload);
+      setUsbDevice(deviceToUse);
+      await printRawUsb(deviceToUse, payload);
       setReprintSearch('');
       setReprintResult(null);
       setExactReprintJob(null);

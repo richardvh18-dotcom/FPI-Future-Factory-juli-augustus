@@ -14,6 +14,30 @@
 - Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
 
 ---
+####### Dagupdate 4 augustus 2026 - sessie 1 (parallelle Lighthouse/TSPL printerstack)
+
+- Een nieuwe centrale protocolservice toegevoegd in [src/utils/printerProtocolService.ts](src/utils/printerProtocolService.ts).
+- Deze service bouwt nu een parallel pad naast de bestaande Zebra/ZPL-flow:
+    - `protocol = zpl` blijft via de bestaande bitmap-ZPL renderer lopen.
+    - `protocol = tspl` rendert nu apart naar TSPL-commando's op basis van dezelfde labeltemplates.
+- Aangesloten operationele flows:
+    - [src/components/printer/PrintStationView.tsx](src/components/printer/PrintStationView.tsx)
+    - [src/components/printer/PrintQueueAdminView.tsx](src/components/printer/PrintQueueAdminView.tsx)
+    - [src/components/printer/PrintQueueAutoProcessor.tsx](src/components/printer/PrintQueueAutoProcessor.tsx)
+    - [src/components/digitalplanning/modals/ProductionStartModal.tsx](src/components/digitalplanning/modals/ProductionStartModal.tsx)
+    - [src/components/admin/AdminPrinterManager.tsx](src/components/admin/AdminPrinterManager.tsx)
+    - [src/components/admin/AdminLabelDesigner.tsx](src/components/admin/AdminLabelDesigner.tsx)
+- Belangrijk ontwerpprincipe: de gedeelde WebUSB-transportlaag in [src/utils/usbPrintService.ts](src/utils/usbPrintService.ts) is ongemoeid gelaten; alleen render- en payloadselectie is protocolbewust gemaakt.
+- Validatie: foutcheck op alle gewijzigde bestanden was schoon en `npm run build:prod` is succesvol afgerond.
+
+####### Dagupdate 4 augustus 2026 - sessie 2 (multi-printer USB device-selectie)
+
+- Aanvullende fix voor situaties met meerdere aangesloten USB-printers (bijv. werkende Zebra + extra Lighthouse).
+- In [src/utils/usbPrintService.ts](src/utils/usbPrintService.ts) is `doesUsbDeviceMatchPrinter(...)` toegevoegd om te controleren of de actieve WebUSB-sessie echt bij de doelprinter hoort.
+- In [src/components/printer/PrintStationView.tsx](src/components/printer/PrintStationView.tsx) en [src/components/printer/PrintQueueAdminView.tsx](src/components/printer/PrintQueueAdminView.tsx) wordt een bestaande `usbDevice` nu alleen nog hergebruikt als vendor/product overeenkomt met de gekozen printer; anders wordt eerst een geautoriseerd passend device gezocht en pas daarna eventueel een nieuwe browserselectie gevraagd.
+- Doel: voorkomen dat een bestaande Zebra-USB-sessie blind wordt hergebruikt voor een Lighthouse-printer of omgekeerd.
+- Validatie: gerichte diagnostiek op de aangepaste bestanden was schoon en `npm run build:prod` is opnieuw succesvol afgerond.
+
 ####### Dagupdate 3 augustus 2026 - sessie 1 (BH18 modal cleanup)
 
 - In [src/components/digitalplanning/modals/ProductionStartModal.tsx](src/components/digitalplanning/modals/ProductionStartModal.tsx) is de dubbele keuzelijst voor "Wikkelrobot Positie (BH18)" verwijderd.
