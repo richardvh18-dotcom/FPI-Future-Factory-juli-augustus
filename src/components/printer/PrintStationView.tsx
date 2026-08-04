@@ -21,7 +21,7 @@ import {
 } from '../../utils/printerProtocolService';
 import { resolvePrinterForRouting } from '../../utils/printRouting';
 import { queuePrintJob } from '../../services/printService';
-import { doesUsbDeviceMatchPrinter, findAuthorizedUsbDevice, requestUsbDevice } from '../../utils/usbPrintService';
+import { doesUsbDeviceMatchPrinter, findAuthorizedUsbDevice, parseUsbId, requestUsbDevice } from '../../utils/usbPrintService';
 import {
   buildOrderLabelPreviewData,
   buildOrderLabelTemplateProduct,
@@ -1234,11 +1234,27 @@ const PrintStationView = () => {
       return false;
     };
 
+    const hasSavedUsbIdentity = (savedVendor?: string | null, savedProduct?: string | null, savedPrinterId?: string): boolean => {
+      const parsedVendor = parseUsbId(savedVendor);
+      const parsedProduct = parseUsbId(savedProduct);
+      if (parsedVendor !== undefined && parsedProduct !== undefined) return true;
+
+      if (savedPrinterId) {
+        const savedPrinter = printers.find((printer) => printer.id === savedPrinterId);
+        const printerVendor = parseUsbId(savedPrinter?.vendorId);
+        const printerProduct = parseUsbId(savedPrinter?.productId);
+        return printerVendor !== undefined && printerProduct !== undefined;
+      }
+
+      return false;
+    };
+
     const restoreUsbConnection = async () => {
       if (!('usb' in navigator)) return;
       const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
       const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
       const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
+      const hasIdentity = hasSavedUsbIdentity(savedVendor, savedProduct, savedPrinterId);
 
       try {
         const devices = await navigator.usb.getDevices();
@@ -1253,7 +1269,8 @@ const PrintStationView = () => {
           return;
         }
 
-        if (!savedVendor && !savedProduct && !savedPrinterId && devices.length === 1) {
+        // Fallback: als er geen bruikbare USB-identiteit is opgeslagen, gebruik de enige geautoriseerde USB-printer.
+        if (!hasIdentity && devices.length === 1) {
           setUsbDevice(devices[0]);
           return;
         }
@@ -1270,7 +1287,10 @@ const PrintStationView = () => {
       const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
       const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
 
-      if (matchesSavedUsbDevice(device, savedVendor, savedProduct, savedPrinterId, printers)) {
+      if (
+        matchesSavedUsbDevice(device, savedVendor, savedProduct, savedPrinterId, printers) ||
+        !hasSavedUsbIdentity(savedVendor, savedProduct, savedPrinterId)
+      ) {
         setUsbDevice(device);
       }
     };
@@ -1410,8 +1430,17 @@ const PrintStationView = () => {
 
     writeStationBindings(nextBindings);
     setStationBindings(nextBindings);
-    localStorage.setItem(USB_PRINTER_ID_KEY, printerId);
-  }, []);
+    const selectedPrinter = printers.find((printer) => printer.id === printerId);
+    const hasUsbIdentity =
+      parseUsbId(selectedPrinter?.vendorId) !== undefined &&
+      parseUsbId(selectedPrinter?.productId) !== undefined;
+
+    if (hasUsbIdentity) {
+      localStorage.setItem(USB_PRINTER_ID_KEY, printerId);
+    } else {
+      localStorage.removeItem(USB_PRINTER_ID_KEY);
+    }
+  }, [printers]);
 
   const handleSaveStationBinding = useCallback((station: string, printerId: string) => {
     persistStationBinding(station, printerId);

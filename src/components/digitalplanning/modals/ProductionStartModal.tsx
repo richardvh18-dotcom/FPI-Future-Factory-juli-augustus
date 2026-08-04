@@ -156,13 +156,16 @@ const persistPrinterBindingForAutoProcessor = (station: string, printer: any) =>
 
   try {
     localStorage.setItem(PRINT_STATION_SELECTED_KEY, safeStation);
-    localStorage.setItem(USB_PRINTER_ID_KEY, safePrinterId);
 
     const vendorId = String(printer?.vendorId || "").trim();
     const productId = String(printer?.productId || "").trim();
     if (vendorId && productId) {
+      localStorage.setItem(USB_PRINTER_ID_KEY, safePrinterId);
       localStorage.setItem(USB_PRINTER_VENDOR_KEY, vendorId);
       localStorage.setItem(USB_PRINTER_PRODUCT_KEY, productId);
+    } else {
+      // Bescherm USB-herstel: netwerk/queue printers mogen de USB-printer-id niet overschrijven.
+      localStorage.removeItem(USB_PRINTER_ID_KEY);
     }
 
     const raw = String(localStorage.getItem(PRINT_STATION_BINDINGS_KEY) || "").trim();

@@ -81,4 +81,16 @@ describe('labelHelpers special elbow rules', () => {
     expect(result.id1).toBe('83mm (3")');
     expect(result.id1Line).toBe('ID1: 83mm (3")');
   });
+
+  test('Coupler with EMT pressure token should keep product ID 150mm', () => {
+    const result = processLabelData({
+      item: 'Coupler 150 EMT50/16 CBCB',
+      description: 'Coupler 150 EMT50/16 CBCB',
+      itemCode: 'COSTEMS0E00B50BCCBB0',
+      extraCode: 'TEST',
+    });
+
+    expect(result.idLine).toBe('ID: 150mm (6")');
+    expect(result.id).toBe('150mm (6")');
+  });
 });

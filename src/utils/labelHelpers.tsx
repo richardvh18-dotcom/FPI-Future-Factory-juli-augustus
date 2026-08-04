@@ -261,13 +261,20 @@ const parseDualDimensionValues = (
   text: string | null | undefined,
   data: Record<string, unknown> = {}
 ): { primary: number | null; secondary: number | null } => {
-  const pairMatch = String(text || "").match(/(\d{2,4})\s*[xX/]\s*(\d{2,4})/);
+  const isValidDiameter = (value: number): boolean => Number.isFinite(value) && value >= 25 && value <= 3000;
+
+  const cleanedText = String(text || "").replace(
+    /\b(?:EMT|CMT|EST|CST|EWT|EDF|FIBERMAR)\s*\d+(?:\.\d+)?(?:\s*[-/]\s*\d+(?:\.\d+)?)?\b/gi,
+    " "
+  );
+
+  const pairMatch = cleanedText.match(/(\d{2,4})\s*[xX/]\s*(\d{2,4})/);
   if (pairMatch) {
     const primary = Number.parseInt(pairMatch[1], 10);
     const secondary = Number.parseInt(pairMatch[2], 10);
     return {
-      primary: Number.isFinite(primary) && primary > 0 ? primary : null,
-      secondary: Number.isFinite(secondary) && secondary > 0 ? secondary : null,
+      primary: isValidDiameter(primary) ? primary : null,
+      secondary: isValidDiameter(secondary) ? secondary : null,
     };
   }
 
@@ -275,8 +282,6 @@ const parseDualDimensionValues = (
   const secondaryRaw = data.id1 ?? data.ID1 ?? data.secondaryDiameter ?? data.branchDiameter;
   const primary = Number.parseInt(String(primaryRaw || "0"), 10);
   const secondary = Number.parseInt(String(secondaryRaw || "0"), 10);
-
-  const isValidDiameter = (value: number): boolean => Number.isFinite(value) && value >= 25 && value <= 3000;
 
   const parsePackedFromCode = (): { primary: number | null; secondary: number | null } => {
     const codeText = String(data.itemCode || data.productId || "").toUpperCase();
@@ -401,7 +406,16 @@ const parseDimensions = (
   }
 
   // 2. Check voor standaard ID
-  const idMatch = text?.match(/(\d+)(?=[RmM/])/i) || text?.match(/\b(\d+)\b/);
+  // Negeer eerst drukklasse-segmenten zoals EMT50/16, CMT32/10, EST16 etc.
+  // Zo voorkomen we dat "50" uit "EMT50/16" wordt gekozen als product-ID.
+  const cleanedText = String(text || "").replace(
+    /\b(?:EMT|CMT|EST|CST|EWT|EDF|FIBERMAR)\s*\d+(?:\.\d+)?(?:\s*[-/]\s*\d+(?:\.\d+)?)?\b/gi,
+    " "
+  );
+
+  const idMatch =
+    cleanedText.match(/\b(\d{2,4})\s*MM\b/i) ||
+    cleanedText.match(/\b(\d{2,4})\b/);
   let val: number | null = null;
 
   if (idMatch) val = parseInt(idMatch[1]);
@@ -567,13 +581,21 @@ export const processLabelData = (data: Record<string, unknown> | null | undefine
   const dualDimensions = parseDualDimensionValues(desc, rawData);
   const idPrimaryValue = dualDimensions.primary;
   const idSecondaryValue = dualDimensions.secondary;
+  const idFromLineMatch = idLine?.match(/ID:\s*(\d{2,4})/i);
+  const idFromLine = idFromLineMatch ? Number.parseInt(idFromLineMatch[1], 10) : null;
+  const resolvedPrimaryId =
+    idPrimaryValue !== null
+      ? idPrimaryValue
+      : Number.isFinite(idFromLine) && (idFromLine as number) >= 25
+        ? (idFromLine as number)
+        : null;
   if (hasWyeLikeType) {
     productType =
       idPrimaryValue !== null && idSecondaryValue !== null && idPrimaryValue !== idSecondaryValue
         ? "UNEQUAL 45° TEE"
         : "EQUAL 45° TEE";
   }
-  const idDisplay = idPrimaryValue ? `${idPrimaryValue}mm ${toInches(idPrimaryValue)}` : "";
+  const idDisplay = resolvedPrimaryId ? `${resolvedPrimaryId}mm ${toInches(resolvedPrimaryId)}` : "";
   const id1Display = idSecondaryValue ? `${idSecondaryValue}mm ${toInches(idSecondaryValue)}` : "";
   const id1Line = id1Display ? `ID1: ${id1Display}` : "";
   const diaMatch = desc.toUpperCase().match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);

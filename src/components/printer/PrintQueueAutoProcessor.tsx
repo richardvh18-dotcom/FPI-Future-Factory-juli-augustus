@@ -286,6 +286,20 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
       const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
       const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
+      const hasSavedUsbIdentity = (() => {
+        const parsedVendor = parseUsbId(savedVendor);
+        const parsedProduct = parseUsbId(savedProduct);
+        if (parsedVendor !== undefined && parsedProduct !== undefined) return true;
+
+        if (savedPrinterId) {
+          const savedPrinter = printers.find((printer) => printer.id === savedPrinterId);
+          const printerVendor = parseUsbId(savedPrinter?.vendorId);
+          const printerProduct = parseUsbId(savedPrinter?.productId);
+          return printerVendor !== undefined && printerProduct !== undefined;
+        }
+
+        return false;
+      })();
 
 
       try {
@@ -301,7 +315,8 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
           return;
         }
 
-        if (!savedVendor && !savedProduct && !savedPrinterId && devices.length === 1) {
+        // Fallback: wanneer opgeslagen context geen geldige USB-identiteit bevat.
+        if (!hasSavedUsbIdentity && devices.length === 1) {
           setUsbDevice(devices[0]);
           return;
         }
@@ -318,7 +333,16 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
       const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
 
-      if (matchesSavedUsbDevice(device, savedVendor, savedProduct, savedPrinterId)) {
+      const parsedVendor = parseUsbId(savedVendor);
+      const parsedProduct = parseUsbId(savedProduct);
+      const savedPrinter = savedPrinterId ? printers.find((printer) => printer.id === savedPrinterId) : null;
+      const savedPrinterVendor = parseUsbId(savedPrinter?.vendorId);
+      const savedPrinterProduct = parseUsbId(savedPrinter?.productId);
+      const hasSavedUsbIdentity =
+        (parsedVendor !== undefined && parsedProduct !== undefined) ||
+        (savedPrinterVendor !== undefined && savedPrinterProduct !== undefined);
+
+      if (matchesSavedUsbDevice(device, savedVendor, savedProduct, savedPrinterId) || !hasSavedUsbIdentity) {
         setUsbDevice(device);
       }
     };
