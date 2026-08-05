@@ -148,11 +148,14 @@ const USB_PRINTER_PRODUCT_KEY = 'usb_printer_product';
 const USB_PRINTER_ID_KEY = 'usb_printer_id';
 const PRINT_STATION_SELECTED_KEY = 'print_station_selected_station';
 const PRINT_STATION_BINDINGS_KEY = 'print_station_printer_bindings_v1';
+const PRINT_QUEUE_ADMIN_PROCESSOR_LOCK_KEY = 'print_queue_admin_processor_lock_v1';
+const PRINT_QUEUE_ADMIN_AUTO_PRINT_KEY = 'print_queue_admin_auto_print_v1';
 const MACHINE_ORDERS_READ_LIMIT = 400;
 const SCOPED_ORDERS_FALLBACK_LIMIT = 600;
 const SCOPED_ORDERS_SEARCH_FALLBACK_LIMIT = 120;
 const ORDER_LABELS_PAGE_SIZE = 50;
 const ORDER_LABELS_LIST_MIN_HEIGHT = 'min-h-[280px]';
+const ADMIN_PROCESSOR_LOCK_HEARTBEAT_MS = 4_000;
 
 const isInvalidPrintQueueTransitionError = (error: unknown): boolean => {
   const message = String(
@@ -358,13 +361,6 @@ const getPrinterRoutingViolation = (job: PrintJob, printer: PrinterConfig | null
 };
 
 const resolveUsbBoundPrinter = (printers: PrinterConfig[], usbDevice: USBDevice | null, stationId?: string): PrinterConfig | null => {
-  if (usbDevice) {
-    const usbMatches = printers.filter(
-      (printer) => Number(printer.vendorId) === usbDevice.vendorId && Number(printer.productId) === usbDevice.productId
-    );
-    if (usbMatches.length === 1) return usbMatches[0];
-  }
-
   const stationKey = normalizeStationBindingKey(stationId);
   if (stationKey) {
     const stationBindings = readStationBindings();
@@ -373,6 +369,13 @@ const resolveUsbBoundPrinter = (printers: PrinterConfig[], usbDevice: USBDevice 
       const boundPrinter = printers.find((printer) => printer.id === boundPrinterId) || null;
       if (boundPrinter) return boundPrinter;
     }
+  }
+
+  if (usbDevice) {
+    const usbMatches = printers.filter(
+      (printer) => Number(printer.vendorId) === usbDevice.vendorId && Number(printer.productId) === usbDevice.productId
+    );
+    if (usbMatches.length === 1) return usbMatches[0];
   }
 
   const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
@@ -1598,7 +1601,17 @@ const PrintQueueAdminView = () => {
   const [loading, setLoading] = useState(true);
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
   const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
-  const [autoPrint, setAutoPrint] = useState(false);
+  const [autoPrint, setAutoPrint] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    try {
+      const raw = String(localStorage.getItem(PRINT_QUEUE_ADMIN_AUTO_PRINT_KEY) || '').trim().toLowerCase();
+      if (raw === 'false' || raw === '0' || raw === 'off') return false;
+      if (raw === 'true' || raw === '1' || raw === 'on') return true;
+      return true;
+    } catch {
+      return true;
+    }
+  });
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
 
@@ -1620,6 +1633,49 @@ const PrintQueueAdminView = () => {
   const [factoryConfig, setFactoryConfig] = useState<AnyRecord | null>(null);
   const [bindingStation, setBindingStation] = useState<string>(() => String(localStorage.getItem(PRINT_STATION_SELECTED_KEY) || '').trim());
   const [stationBindings, setStationBindings] = useState<Record<string, string>>(() => readStationBindings());
+  const processorLockOwnerRef = useRef(`admin-${Math.random().toString(36).slice(2)}`);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return () => {};
+
+    const owner = processorLockOwnerRef.current;
+    const writeLock = () => {
+      try {
+        localStorage.setItem(
+          PRINT_QUEUE_ADMIN_PROCESSOR_LOCK_KEY,
+          JSON.stringify({ owner, ts: Date.now(), source: 'PrintQueueAdminView' })
+        );
+      } catch {
+        // no-op
+      }
+    };
+
+    writeLock();
+    const timer = window.setInterval(writeLock, ADMIN_PROCESSOR_LOCK_HEARTBEAT_MS);
+
+    return () => {
+      window.clearInterval(timer);
+      try {
+        const raw = String(localStorage.getItem(PRINT_QUEUE_ADMIN_PROCESSOR_LOCK_KEY) || '').trim();
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as { owner?: unknown };
+        if (String(parsed?.owner || '') === owner) {
+          localStorage.removeItem(PRINT_QUEUE_ADMIN_PROCESSOR_LOCK_KEY);
+        }
+      } catch {
+        // no-op
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(PRINT_QUEUE_ADMIN_AUTO_PRINT_KEY, autoPrint ? 'true' : 'false');
+    } catch {
+      // no-op
+    }
+  }, [autoPrint]);
 
   useEffect(() => {
     if (previewJob?.metadata?.width && previewJob?.metadata?.height) {
@@ -1908,6 +1964,7 @@ const PrintQueueAdminView = () => {
   }, [bindingStation]);
 
   const stationContext = selectedStation || bindingStation || null;
+  const wizardStationContext = bindingStation || null;
 
   const persistStationBinding = useCallback((station: string, printerId: string) => {
     const stationKey = normalizeStationBindingKey(station);
@@ -1936,12 +1993,12 @@ const PrintQueueAdminView = () => {
   }, [persistStationBinding, printers, notify, t]);
 
   const activeStationBindingPrinterName = useMemo(() => {
-    if (!stationContext) return '';
-    const stationKey = normalizeStationBindingKey(stationContext);
+    if (!wizardStationContext) return '';
+    const stationKey = normalizeStationBindingKey(wizardStationContext);
     const printerId = String(stationBindings?.[stationKey] || '').trim();
     if (!printerId) return '';
     return String(printers.find((printer) => printer.id === printerId)?.name || printerId);
-  }, [stationContext, stationBindings, printers]);
+  }, [wizardStationContext, stationBindings, printers]);
 
   // Auto-print logica
   useEffect(() => {
@@ -2113,17 +2170,54 @@ const PrintQueueAdminView = () => {
     return String(routingPrinter?.id || '');
   }, [printers, stationContext]);
 
-  const ensureUsbDeviceForPrint = useCallback(async (): Promise<USBDevice> => {
-    if (usbDevice) return usbDevice;
+  const ensureUsbDeviceForPrint = useCallback(async (expectedPrinter?: Partial<PrinterConfig> | null): Promise<USBDevice> => {
+    const expected = expectedPrinter || activeQueuePrinter;
+    const expectedHasUsbIdentity = hasUsbIdentity(expected);
+    console.info('[PrintQueueAdminView] ensureUsbDeviceForPrint:start', {
+      expectedPrinterId: String((expected as PrinterConfig | null)?.id || ''),
+      expectedPrinterName: String((expected as PrinterConfig | null)?.name || ''),
+      expectedVendorId: Number((expected as PrinterConfig | null)?.vendorId ?? NaN),
+      expectedProductId: Number((expected as PrinterConfig | null)?.productId ?? NaN),
+      hasExistingUsbDevice: Boolean(usbDevice),
+      existingUsbVendorId: usbDevice?.vendorId,
+      existingUsbProductId: usbDevice?.productId,
+      stationContext,
+    });
 
-    const strictFilter = hasUsbIdentity(activeQueuePrinter)
-      ? (activeQueuePrinter as Record<string, unknown>)
+    if (usbDevice) {
+      if (!expectedHasUsbIdentity || doesUsbDeviceMatchPrinter(usbDevice, expected || {})) {
+        console.info('[PrintQueueAdminView] ensureUsbDeviceForPrint:reuse-existing-device', {
+          vendorId: usbDevice.vendorId,
+          productId: usbDevice.productId,
+        });
+        return usbDevice;
+      }
+    }
+
+    const strictFilter = expectedHasUsbIdentity
+      ? (expected as Record<string, unknown>)
       : {};
 
-    const authorizedDevice = await findAuthorizedUsbDevice(strictFilter)
-      || (hasUsbIdentity(activeQueuePrinter) ? await findAuthorizedUsbDevice({}) : null);
-
+    const authorizedDevice = await findAuthorizedUsbDevice(strictFilter);
+    if (authorizedDevice) {
+      console.info('[PrintQueueAdminView] ensureUsbDeviceForPrint:authorized-device-found', {
+        vendorId: authorizedDevice.vendorId,
+        productId: authorizedDevice.productId,
+      });
+    }
     const device = authorizedDevice || await requestUsbDevice(strictFilter);
+    console.info('[PrintQueueAdminView] ensureUsbDeviceForPrint:selected-device', {
+      vendorId: device.vendorId,
+      productId: device.productId,
+      productName: String(device.productName || ''),
+      manufacturerName: String(device.manufacturerName || ''),
+    });
+
+    if (expectedHasUsbIdentity && !doesUsbDeviceMatchPrinter(device, expected || {})) {
+      const targetName = String((expected as PrinterConfig | null)?.name || (expected as PrinterConfig | null)?.id || 'doelprinter');
+      throw new Error(`Geselecteerde USB-printer komt niet overeen met ${targetName}.`);
+    }
+
     setUsbDevice(device);
     localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(device.vendorId));
     localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(device.productId));
@@ -2218,10 +2312,25 @@ const PrintQueueAdminView = () => {
     notify(`Lotnummers in wachtrij gezet (${lotCount}) naar ${String(activeQueuePrinter.name || activeQueuePrinter.id)}.`);
   };
 
-  const regenerateBitmapPayloadFromJob = useCallback(async (job: PrintJob): Promise<string | null> => {
+  const resolveTargetPrinterForJob = useCallback((job: PrintJob): PrinterConfig | null => {
+    const explicitPrinterId = String(job?.printerId || '').trim();
+    if (explicitPrinterId) {
+      const explicitPrinter = printers.find((printer) => String(printer.id || '').trim() === explicitPrinterId);
+      if (explicitPrinter) return explicitPrinter;
+    }
+
+    return activeQueuePrinter
+      || resolvePrinterForRouting(printers, {
+        stationId: stationContext || undefined,
+        routeKey: stationContext || undefined,
+      });
+  }, [printers, activeQueuePrinter, stationContext]);
+
+  const regenerateBitmapPayloadFromJob = useCallback(async (job: PrintJob, targetPrinter?: PrinterConfig | null): Promise<string | null> => {
     const templateId = String(job.metadata?.templateId || '').trim();
     const template = templateId ? labelTemplates.find((entry) => String(entry.id) === templateId) : null;
     const variables = job.metadata?.variables;
+    const effectivePrinter = targetPrinter || activeQueuePrinter;
 
     if (!template || !variables || typeof variables !== 'object' || Array.isArray(variables)) {
       return null;
@@ -2230,23 +2339,50 @@ const PrintQueueAdminView = () => {
     const widthMm = Number((template as any)?.width) || 90;
     const heightMm = Number((template as any)?.height) || 40;
 
+    const effectiveDpi = resolvePrinterDpi(effectivePrinter as Record<string, unknown>, 203);
+    const effectiveDarknessRaw = parseInt(String((effectivePrinter as PrinterConfig | null)?.darkness ?? ''), 10);
+    const effectiveDarkness = Number.isFinite(effectiveDarknessRaw) && effectiveDarknessRaw > 0
+      ? effectiveDarknessRaw
+      : 15;
+
     return renderLabelForPrinter({
-      printer: activeQueuePrinter as Record<string, unknown>,
+      printer: effectivePrinter as Record<string, unknown>,
       template: template as any,
       data: variables as AnyRecord,
-      printerDpi,
-      darkness: Math.max(15, Number(printerDarkness) || 15),
+      printerDpi: effectiveDpi,
+      darkness: Math.max(15, Number(effectiveDarkness) || 15),
       printSpeed: 3,
       widthMm,
       heightMm,
     });
-  }, [activeQueuePrinter, labelTemplates, printerDpi, printerDarkness]);
+  }, [activeQueuePrinter, labelTemplates]);
 
   const handlePrintJob = async (job: PrintJob) => {
-    const deviceToUse = await ensureUsbDeviceForPrint();
+    const targetPrinter = resolveTargetPrinterForJob(job);
+    if (!targetPrinter) throw new Error('Geen doelprinter gevonden voor deze taak.');
+
+    console.info('[PrintQueueAdminView] handlePrintJob:start', {
+      jobId: job.id,
+      jobPrinterId: String(job?.printerId || ''),
+      jobStationId: String(job?.stationId || ''),
+      targetPrinterId: String(targetPrinter.id || ''),
+      targetPrinterName: String(targetPrinter.name || ''),
+      targetVendorId: Number(targetPrinter.vendorId ?? NaN),
+      targetProductId: Number(targetPrinter.productId ?? NaN),
+    });
+
+    const deviceToUse = await ensureUsbDeviceForPrint(targetPrinter);
     if (!deviceToUse) throw new Error("Geen juiste USB printer verbonden voor deze taak.");
 
-    const routingViolation = getPrinterRoutingViolation(job, activeQueuePrinter as PrinterConfig | null);
+    console.info('[PrintQueueAdminView] handlePrintJob:resolved-device', {
+      jobId: job.id,
+      vendorId: deviceToUse.vendorId,
+      productId: deviceToUse.productId,
+      productName: String(deviceToUse.productName || ''),
+      manufacturerName: String(deviceToUse.manufacturerName || ''),
+    });
+
+    const routingViolation = getPrinterRoutingViolation(job, targetPrinter);
     if (routingViolation) {
       try {
         await transitionPrintQueueJobStatus({
@@ -2282,7 +2418,7 @@ const PrintQueueAdminView = () => {
       throw error;
     }
     try {
-      const regeneratedContent = await regenerateBitmapPayloadFromJob(job);
+      const regeneratedContent = await regenerateBitmapPayloadFromJob(job, targetPrinter);
       const content = regeneratedContent || job.printData || job.zpl;
       if (!content) throw new Error("Geen printdata gevonden in job.");
       const quantity = getJobQuantity(job) || 1;
@@ -2292,13 +2428,19 @@ const PrintQueueAdminView = () => {
       const hasBatchSequence = Number.isFinite(batchSeqIndex) && Number.isFinite(batchSeqTotal) && batchSeqTotal > 0;
       const shouldCutAtEnd = hasBatchSequence ? batchSeqIndex === batchSeqTotal : true;
       const basePayload = buildProtocolAwareUsbPayload({
-        printer: activeQueuePrinter as Record<string, unknown>,
+        printer: targetPrinter as Record<string, unknown>,
         content,
         quantity,
         isPreBatchedJob,
       });
       const payload = enforceCutModeOnBatchPayload(basePayload, shouldCutAtEnd, isPreBatchedJob);
 
+      console.info('[PrintQueueAdminView] handlePrintJob:usb-write', {
+        jobId: job.id,
+        payloadLength: payload.length,
+        isPreBatchedJob,
+        quantity,
+      });
       await printRawUsb(deviceToUse, payload);
       await transitionPrintQueueJobStatus({
         jobId: job.id,
@@ -2307,6 +2449,11 @@ const PrintQueueAdminView = () => {
       });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      console.error('[PrintQueueAdminView] handlePrintJob:error', {
+        jobId: job.id,
+        targetPrinterId: String(targetPrinter.id || ''),
+        message,
+      });
       try {
         const liveStatus = await getLivePrintQueueJobStatus(job.id);
         if (liveStatus === 'completed' || liveStatus === 'cancelled') {
@@ -2693,9 +2840,9 @@ const PrintQueueAdminView = () => {
         <p className="text-xs font-black uppercase tracking-widest text-slate-500 mb-1">
           {t('printStationView.printerWizardTitle', 'Print Station Wizard')}
         </p>
-        {stationContext ? (
+        {wizardStationContext ? (
           <p className="text-sm font-bold text-slate-700">
-            {String(stationContext)}: {activeStationBindingPrinterName || t('printStationView.noPrinterBound', 'Geen printer gekoppeld')}
+            {String(wizardStationContext)}: {activeStationBindingPrinterName || t('printStationView.noPrinterBound', 'Geen printer gekoppeld')}
           </p>
         ) : (
           <p className="text-sm text-slate-500">{t('printStationView.noStationsAvailable', 'Geen stations beschikbaar voor deze afdeling.')}</p>
@@ -3015,7 +3162,7 @@ const PrintQueueAdminView = () => {
           onClose={() => setShowStationWizard(false)}
           stations={wizardStations}
           printers={printers}
-          selectedStation={stationContext || wizardStations[0] || ''}
+          selectedStation={bindingStation || wizardStations[0] || ''}
           stationBindings={stationBindings}
           onSave={handleSaveStationBinding}
         />
