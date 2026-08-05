@@ -316,6 +316,13 @@ const getPrinterRoutingViolation = (job: PrintJob, printer: PrinterConfig | null
 };
 
 const resolveUsbBoundPrinter = (printers: PrinterConfig[], usbDevice: USBDevice | null, stationId?: string): PrinterConfig | null => {
+  if (usbDevice) {
+    const usbMatches = printers.filter(
+      (printer) => Number(printer.vendorId) === usbDevice.vendorId && Number(printer.productId) === usbDevice.productId
+    );
+    if (usbMatches.length === 1) return usbMatches[0];
+  }
+
   const stationKey = normalizeStationBindingKey(stationId);
   if (stationKey) {
     const stationBindings = readStationBindings();
@@ -1549,7 +1556,7 @@ const PrintQueueAdminView = () => {
   const [loading, setLoading] = useState(true);
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
   const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
-  const [autoPrint, setAutoPrint] = useState(true);
+  const [autoPrint, setAutoPrint] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
 
@@ -2045,6 +2052,53 @@ const PrintQueueAdminView = () => {
     return raw === 'A' ? 'A' : '0';
   }, [activeQueuePrinter]);
 
+  const hasUsbIdentity = useCallback((printer: Partial<PrinterConfig> | null | undefined) => {
+    return Number.isFinite(Number(printer?.vendorId)) && Number.isFinite(Number(printer?.productId));
+  }, []);
+
+  const resolvePrinterIdToPersistForUsb = useCallback((device: USBDevice | null | undefined): string => {
+    if (!device) return '';
+
+    const usbMatches = printers.filter(
+      (printer) => Number(printer.vendorId) === device.vendorId && Number(printer.productId) === device.productId
+    );
+    if (usbMatches.length === 1) return usbMatches[0].id;
+
+    const routingPrinter = resolvePrinterForRouting(printers, {
+      stationId: stationContext || undefined,
+      routeKey: stationContext || undefined,
+    });
+
+    return String(routingPrinter?.id || '');
+  }, [printers, stationContext]);
+
+  const ensureUsbDeviceForPrint = useCallback(async (): Promise<USBDevice> => {
+    if (usbDevice) return usbDevice;
+
+    const strictFilter = hasUsbIdentity(activeQueuePrinter)
+      ? (activeQueuePrinter as Record<string, unknown>)
+      : {};
+
+    const authorizedDevice = await findAuthorizedUsbDevice(strictFilter)
+      || (hasUsbIdentity(activeQueuePrinter) ? await findAuthorizedUsbDevice({}) : null);
+
+    const device = authorizedDevice || await requestUsbDevice(strictFilter);
+    setUsbDevice(device);
+    localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(device.vendorId));
+    localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(device.productId));
+
+    const printerIdToStore = resolvePrinterIdToPersistForUsb(device);
+    if (printerIdToStore) {
+      if (stationContext) {
+        persistStationBinding(stationContext, printerIdToStore);
+      } else {
+        localStorage.setItem(USB_PRINTER_ID_KEY, printerIdToStore);
+      }
+    }
+
+    return device;
+  }, [usbDevice, hasUsbIdentity, activeQueuePrinter, resolvePrinterIdToPersistForUsb, stationContext, persistStationBinding]);
+
   const handleConnectUsb = async () => {
     setError('');
     try {
@@ -2061,7 +2115,7 @@ const PrintQueueAdminView = () => {
       const usbMatches = printers.filter(
         (printer) => Number(printer.vendorId) === device.vendorId && Number(printer.productId) === device.productId
       );
-      const printerIdToStore = routingPrinter?.id || (usbMatches.length === 1 ? usbMatches[0].id : '');
+      const printerIdToStore = (usbMatches.length === 1 ? usbMatches[0].id : '') || routingPrinter?.id || '';
       if (printerIdToStore) {
         if (stationContext) {
           persistStationBinding(stationContext, printerIdToStore);
@@ -2081,30 +2135,10 @@ const PrintQueueAdminView = () => {
     });
 
     if (transport === 'usb') {
-      let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
+      let deviceToUse = usbDevice;
       if (!deviceToUse) {
         try {
-          const requestedDevice = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || await requestUsbDevice(activeQueuePrinter || {});
-          deviceToUse = requestedDevice;
-          setUsbDevice(requestedDevice);
-          localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(requestedDevice.vendorId));
-          localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(requestedDevice.productId));
-
-          const routingPrinter = resolvePrinterForRouting(printers, {
-            stationId: stationContext || undefined,
-            routeKey: stationContext || undefined,
-          });
-          const usbMatches = printers.filter(
-            (printer) => Number(printer.vendorId) === requestedDevice.vendorId && Number(printer.productId) === requestedDevice.productId
-          );
-          const printerIdToStore = routingPrinter?.id || (usbMatches.length === 1 ? usbMatches[0].id : '');
-          if (printerIdToStore) {
-            if (stationContext) {
-              persistStationBinding(stationContext, printerIdToStore);
-            } else {
-              localStorage.setItem(USB_PRINTER_ID_KEY, printerIdToStore);
-            }
-          }
+          deviceToUse = await ensureUsbDeviceForPrint();
         } catch (usbErr) {
           const hasQueuePrinter = Boolean(activeQueuePrinter?.id);
           if (!hasQueuePrinter) {
@@ -2168,13 +2202,7 @@ const PrintQueueAdminView = () => {
   }, [activeQueuePrinter, labelTemplates, printerDpi, printerDarkness]);
 
   const handlePrintJob = async (job: PrintJob) => {
-    let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
-    if (!deviceToUse) {
-      deviceToUse = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || null;
-      if (deviceToUse) {
-        setUsbDevice(deviceToUse);
-      }
-    }
+    const deviceToUse = await ensureUsbDeviceForPrint();
     if (!deviceToUse) throw new Error("Geen juiste USB printer verbonden voor deze taak.");
 
     const routingViolation = getPrinterRoutingViolation(job, activeQueuePrinter as PrinterConfig | null);
@@ -2508,9 +2536,7 @@ const PrintQueueAdminView = () => {
   };
 
   const handleReprintLabel = async () => {
-    const deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {})
-      ? usbDevice
-      : await findAuthorizedUsbDevice(activeQueuePrinter || {}) || null;
+    const deviceToUse = await ensureUsbDeviceForPrint();
 
     if (!reprintResult || !deviceToUse) {
       setError('Geen product gevonden of geen printer verbonden.');

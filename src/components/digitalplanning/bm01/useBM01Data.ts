@@ -159,10 +159,24 @@ export const useBM01Data = ({
   const bm01Products = useMemo(() => {
         return products.filter((p: ProductRecord) => {
         const station = (p.currentStation || "").toUpperCase().replace(/\s/g, "");
-        const step = (p.currentStep || "").toUpperCase();
-        const status = (p.status || "").toUpperCase();
+        const step = (p.currentStep || "").toUpperCase().replace(/\s/g, "");
+        const status = (p.status || "").toUpperCase().replace(/\s/g, "");
+
+        const isNaharding =
+            station.includes("NAHARD") ||
+            station.includes("OVEN") ||
+            step.includes("NAHARD") ||
+            step.includes("OVEN") ||
+            status.includes("NAHARD");
+        if (isNaharding) return false;
         
-        const isMatch = station.includes("BM01") || step.includes("INSPECTIE") || step.includes("KEUR") || status.includes("KEUR") || step === "EINDINSPECTIE" || step === "BM01";
+        const isMatch =
+            station.includes("BM01") ||
+            step.includes("INSPECTIE") ||
+            step.includes("KEUR") ||
+            (status.includes("KEUR") && (station.includes("BM01") || step.includes("BM01") || step.includes("INSPECTIE"))) ||
+            step === "EINDINSPECTIE" ||
+            step === "BM01";
         
         const isRejected = status === "REJECTED" || step === "REJECTED" || status === "AFKEUR";
         const isFinished = step === "FINISHED" || station === "GEREED";
