@@ -502,11 +502,27 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
   const bm01Products = useMemo(() => {
         return products.filter((p: ProductRecord) => {
         const station = (p.currentStation || "").toUpperCase().replace(/\s/g, "");
-        const step = (p.currentStep || "").toUpperCase();
-        const status = (p.status || "").toUpperCase();
+        const step = (p.currentStep || "").toUpperCase().replace(/\s/g, "");
+        const status = (p.status || "").toUpperCase().replace(/\s/g, "");
+
+        // Zodra een lot naar Naharding/Oven is doorgestuurd, mag het niet meer in BM01 Te Keuren staan.
+        const isNaharding =
+            station.includes("NAHARD") ||
+            station.includes("OVEN") ||
+            step.includes("NAHARD") ||
+            step.includes("OVEN") ||
+            status.includes("NAHARD");
+        if (isNaharding) return false;
         
         // Ruimere matching voor BM01/Inspectie (inclusief 'Te Keuren' / 'Keuren' statussen)
-        const isMatch = station.includes("BM01") || step.includes("INSPECTIE") || step.includes("KEUR") || status.includes("KEUR") || step === "EINDINSPECTIE" || step === "BM01";
+        const isMatch =
+            station.includes("BM01") ||
+            step.includes("INSPECTIE") ||
+            step.includes("KEUR") ||
+            // Gebruik status 'KEUR' alleen als station/step nog BM01-context aangeven.
+            (status.includes("KEUR") && (station.includes("BM01") || step.includes("BM01") || step.includes("INSPECTIE"))) ||
+            step === "EINDINSPECTIE" ||
+            step === "BM01";
         
         const isRejected = status === "REJECTED" || step === "REJECTED" || status === "AFKEUR";
         const isFinished = step === "FINISHED" || station === "GEREED";
@@ -514,9 +530,6 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
         return isMatch && !isFinished && !isRejected;
     });
   }, [products]);
-
-  console.log("BM01 Raw Products received:", products);
-  console.log("BM01 Filtered bm01Products:", bm01Products);
 
   const toMillisSafe = (value: unknown) => toMillisFromMixed(value);
 
@@ -894,8 +907,8 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
       );
             notify(`Lot ${product.lotNumber || productId} is tijdelijk afgekeurd.`);
     if (resolveProductIdentifier(selectedProductRef.current) === productId) handleCloseModal();
-        } catch (error: unknown) {
-      console.error("Fout bij afronden:", error);
+                } catch (error: unknown) {
+            console.error("Fout bij afronden:", error);
             notify(`Afronden mislukt: ${error instanceof Error ? error.message : "onbekende fout"}`);
     }
   };
@@ -1135,8 +1148,8 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                     };
 
                     frame.srcdoc = html;
-            } catch (err) {
-                    console.error("Print fout:", err);
+                    } catch (err) {
+                        console.error("Print fout:", err);
                     notify("Kon QR-overzicht niet printen. Probeer opnieuw.");
             }
     };

@@ -162,13 +162,6 @@ const writeStationBindings = (nextBindings: Record<string, string>) => {
 };
 
 const resolveUsbBoundPrinter = (printers: PrinterConfig[], usbDevice: USBDevice | null, stationId?: string): PrinterConfig | null => {
-  if (usbDevice) {
-    const usbMatches = printers.filter(
-      (printer) => Number(printer.vendorId) === usbDevice.vendorId && Number(printer.productId) === usbDevice.productId
-    );
-    if (usbMatches.length === 1) return usbMatches[0];
-  }
-
   const stationKey = normalizeStationBindingKey(stationId);
   if (stationKey) {
     const stationBindings = readStationBindings();
@@ -177,6 +170,13 @@ const resolveUsbBoundPrinter = (printers: PrinterConfig[], usbDevice: USBDevice 
       const boundPrinter = printers.find((printer) => printer.id === boundPrinterId) || null;
       if (boundPrinter) return boundPrinter;
     }
+  }
+
+  if (usbDevice) {
+    const usbMatches = printers.filter(
+      (printer) => Number(printer.vendorId) === usbDevice.vendorId && Number(printer.productId) === usbDevice.productId
+    );
+    if (usbMatches.length === 1) return usbMatches[0];
   }
 
   const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();

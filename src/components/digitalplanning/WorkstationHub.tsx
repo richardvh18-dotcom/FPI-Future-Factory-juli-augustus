@@ -119,6 +119,28 @@ const mergeTrackedProductDocs = (
   currentItems: TrackedProductDoc[],
   incomingItems: TrackedProductDoc[]
 ) => {
+  const toMillis = (value: DateValue): number => {
+    if (!value) return 0;
+    if (value instanceof Date) return value.getTime();
+    if (typeof value === "object" && value !== null) {
+      if (typeof (value as TimestampLike).toDate === "function") {
+        return (value as TimestampLike).toDate!().getTime();
+      }
+      if (typeof (value as TimestampLike).seconds === "number") {
+        return (value as TimestampLike).seconds! * 1000;
+      }
+    }
+    const parsed = new Date(String(value)).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const getFreshness = (item: TrackedProductDoc): number => {
+    const updated = toMillis(item?.updatedAt);
+    const created = toMillis(item?.createdAt);
+    const started = toMillis(item?.timestamps?.station_start || item?.timestamps?.started);
+    return Math.max(updated, created, started);
+  };
+
   const merged = new Map<string, TrackedProductDoc>();
   currentItems.forEach((item) => {
     const key = String(item.id || item.orderId || item.lotNumber || "");
@@ -127,7 +149,16 @@ const mergeTrackedProductDocs = (
   incomingItems.forEach((item) => {
     const key = String(item.id || item.orderId || item.lotNumber || "");
     if (!key) return;
-    if (!merged.has(key)) {
+
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, item);
+      return;
+    }
+
+    // Neem altijd de meest recente snapshot-versie om statusovergangen
+    // (bijv. BM01 -> Naharding) direct door te voeren in de UI.
+    if (getFreshness(item) >= getFreshness(existing)) {
       merged.set(key, item);
     }
   });

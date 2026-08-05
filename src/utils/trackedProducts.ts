@@ -79,13 +79,32 @@ const sortByNewest = (items: TrackedProductDoc[] = []): TrackedProductDoc[] =>
     return bMs - aMs;
   });
 
+const getDocFreshness = (item: TrackedProductDoc | null | undefined): number =>
+  Math.max(toMillis(item?.updatedAt), toMillis(item?.createdAt));
+
 const mergeTrackingDocs = (
   rootDocs: TrackedProductDoc[] = [],
   scopedDocs: TrackedProductDoc[] = []
 ): TrackedProductDoc[] => {
   const merged = new Map<string, TrackedProductDoc>();
-  rootDocs.forEach((item) => merged.set(item.id, item));
-  scopedDocs.forEach((item) => merged.set(item.id, item));
+  const upsertNewest = (item: TrackedProductDoc) => {
+    const existing = merged.get(item.id);
+    if (!existing) {
+      merged.set(item.id, item);
+      return;
+    }
+
+    const nextFreshness = getDocFreshness(item);
+    const existingFreshness = getDocFreshness(existing);
+
+    // Kies altijd het meest recente document om stale shadow-copies te vermijden.
+    if (nextFreshness >= existingFreshness) {
+      merged.set(item.id, item);
+    }
+  };
+
+  rootDocs.forEach(upsertNewest);
+  scopedDocs.forEach(upsertNewest);
   return Array.from(merged.values());
 };
 

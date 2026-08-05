@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, collectionGroup, onSnapshot, query, where, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, collectionGroup, onSnapshot, query, where, doc, getDoc, getDocs, limit, documentId, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { PATHS, getPathString } from '../../config/dbPaths';
 import { transitionPrintQueueJobStatus } from '../../services/planningSecurityService';
-import { printRawUsbToDevice, isUsbDirectSupported, parseUsbId } from '../../utils/usbPrintService';
+import {
+  printRawUsbToDevice,
+  isUsbDirectSupported,
+  parseUsbId,
+  doesUsbDeviceMatchPrinter,
+  findAuthorizedUsbDevice,
+} from '../../utils/usbPrintService';
 import { buildProtocolAwareUsbPayload } from '../../utils/printerProtocolService';
 import { getPrinterForQueueJob } from './printQueueProcessorHelpers';
 
@@ -39,8 +45,10 @@ const USB_PRINTER_PRODUCT_KEY = 'usb_printer_product';
 const USB_PRINTER_ID_KEY = 'usb_printer_id';
 const PRINT_STATION_SELECTED_KEY = 'print_station_selected_station';
 const PRINT_STATION_BINDINGS_KEY = 'print_station_printer_bindings_v1';
+const PRINT_QUEUE_ADMIN_PROCESSOR_LOCK_KEY = 'print_queue_admin_processor_lock_v1';
 const HEARTBEAT_MIN_INTERVAL_MS = 60_000;
 const USB_POLL_INTERVAL_MS = 30_000;
+const ADMIN_PROCESSOR_LOCK_MAX_AGE_MS = 12_000;
 
 const isInvalidPrintQueueTransitionError = (error: unknown): boolean => {
   const message = String(
@@ -50,6 +58,63 @@ const isInvalidPrintQueueTransitionError = (error: unknown): boolean => {
       || ''
   ).toLowerCase();
   return message.includes('ongeldige print queue statusovergang') || message.includes('invalid_print_queue_transition');
+};
+
+const getLivePrintQueueJobStatus = async (jobId: string): Promise<string> => {
+  const safeJobId = String(jobId || '').trim();
+  if (!safeJobId) return '';
+
+  const jobRef = doc(db, getPathString(PATHS.PRINT_QUEUE), safeJobId);
+  const jobSnap = await getDoc(jobRef);
+  if (jobSnap.exists()) {
+    return String(jobSnap.data()?.status || '').trim().toLowerCase();
+  }
+
+  const printQueuePathFragment = `${PATHS.PRINT_QUEUE.join('/')}/`.toLowerCase();
+  const isScopedPrintQueuePath = (refPath: string): boolean => {
+    const normalizedPath = String(refPath || '').replace(/^\/+/, '').toLowerCase();
+    return normalizedPath.includes(printQueuePathFragment);
+  };
+
+  try {
+    const scopedByDocIdSnap = await getDocs(
+      query(collectionGroup(db, 'items'), where(documentId(), '==', safeJobId), limit(20))
+    );
+    const scopedByDocId = scopedByDocIdSnap.docs.find((snap) => isScopedPrintQueuePath(snap.ref.path));
+    if (scopedByDocId) {
+      return String(scopedByDocId.data()?.status || '').trim().toLowerCase();
+    }
+  } catch {
+    // Best effort fallback.
+  }
+
+  try {
+    const scopedByIdFieldSnap = await getDocs(
+      query(collectionGroup(db, 'items'), where('id', '==', safeJobId), limit(20))
+    );
+    const scopedByIdField = scopedByIdFieldSnap.docs.find((snap) => isScopedPrintQueuePath(snap.ref.path));
+    if (scopedByIdField) {
+      return String(scopedByIdField.data()?.status || '').trim().toLowerCase();
+    }
+  } catch {
+    // Best effort fallback.
+  }
+
+  return '';
+};
+
+const isAdminQueueProcessorActive = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = String(localStorage.getItem(PRINT_QUEUE_ADMIN_PROCESSOR_LOCK_KEY) || '').trim();
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as { ts?: unknown };
+    const ts = Number(parsed?.ts || 0);
+    if (!Number.isFinite(ts) || ts <= 0) return false;
+    return (Date.now() - ts) <= ADMIN_PROCESSOR_LOCK_MAX_AGE_MS;
+  } catch {
+    return false;
+  }
 };
 
 const stationNameFromValue = (stationValue: unknown): string => {
@@ -248,6 +313,65 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
 
   const [printJobs, setPrintJobs] = useState<PrintJob[]>([]);
   const isProcessingRef = useRef(false);
+
+  const hasUsbIdentity = (printer: PrinterConfig | null | undefined): boolean => {
+    const vendorId = parseUsbId(printer?.vendorId);
+    const productId = parseUsbId(printer?.productId);
+    return vendorId !== undefined && productId !== undefined;
+  };
+
+  const resolveUsbDeviceForTargetPrinter = async (
+    targetPrinter: PrinterConfig | null | undefined
+  ): Promise<USBDevice | null> => {
+    if (!targetPrinter) return usbDevice;
+
+    console.info('[PrintQueueAutoProcessor] resolveUsbDeviceForTargetPrinter:start', {
+      targetPrinterId: String(targetPrinter.id || ''),
+      targetPrinterName: String(targetPrinter.name || ''),
+      targetVendorId: parseUsbId(targetPrinter.vendorId),
+      targetProductId: parseUsbId(targetPrinter.productId),
+      hasCurrentUsbDevice: Boolean(usbDevice),
+      currentUsbVendorId: usbDevice?.vendorId,
+      currentUsbProductId: usbDevice?.productId,
+    });
+
+    const requiresStrictMatch = hasUsbIdentity(targetPrinter);
+    if (usbDevice) {
+      if (!requiresStrictMatch || doesUsbDeviceMatchPrinter(usbDevice, targetPrinter as Record<string, unknown>)) {
+        console.info('[PrintQueueAutoProcessor] resolveUsbDeviceForTargetPrinter:reuse-existing-device', {
+          vendorId: usbDevice.vendorId,
+          productId: usbDevice.productId,
+        });
+        return usbDevice;
+      }
+    }
+
+    if (!requiresStrictMatch) {
+      return usbDevice;
+    }
+
+    const matchedDevice = await findAuthorizedUsbDevice(targetPrinter as Record<string, unknown>);
+    if (!matchedDevice) {
+      console.warn('[PrintQueueAutoProcessor] resolveUsbDeviceForTargetPrinter:no-authorized-match', {
+        targetPrinterId: String(targetPrinter.id || ''),
+        targetPrinterName: String(targetPrinter.name || ''),
+      });
+      return null;
+    }
+
+    console.info('[PrintQueueAutoProcessor] resolveUsbDeviceForTargetPrinter:authorized-device-found', {
+      vendorId: matchedDevice.vendorId,
+      productId: matchedDevice.productId,
+      productName: String(matchedDevice.productName || ''),
+      manufacturerName: String(matchedDevice.manufacturerName || ''),
+    });
+
+    setUsbDevice(matchedDevice);
+    localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(matchedDevice.vendorId));
+    localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(matchedDevice.productId));
+    localStorage.setItem(USB_PRINTER_ID_KEY, String(targetPrinter.id || ''));
+    return matchedDevice;
+  };
 
 
   useEffect(() => {
@@ -561,6 +685,10 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       return;
     }
 
+    if (isAdminQueueProcessorActive()) {
+      return;
+    }
+
     const pendingJobs = printJobs
       .filter((job) => job.status === 'pending')
       .sort((a, b) => tsToMillis(a.createdAt) - tsToMillis(b.createdAt));
@@ -625,14 +753,39 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       isProcessingRef.current = true;
       try {
         for (const job of pendingJobs) {
+          if (isAdminQueueProcessorActive()) {
+            break;
+          }
+
           const targetPrinter = getPrinterForQueueJob(job, currentPrinter, printers);
           if (!targetPrinter) {
+            continue;
+          }
+
+          console.info('[PrintQueueAutoProcessor] processQueue:job-start', {
+            jobId: job.id,
+            jobPrinterId: String(job?.printerId || ''),
+            jobStationId: String(job?.stationId || ''),
+            targetPrinterId: String(targetPrinter.id || ''),
+            targetPrinterName: String(targetPrinter.name || ''),
+          });
+
+          const deviceForJob = await resolveUsbDeviceForTargetPrinter(targetPrinter);
+          if (!deviceForJob) {
+            console.warn(
+              `[PrintQueueAutoProcessor] Geen passende USB-printer beschikbaar voor job ${job.id} en target printer ${String(targetPrinter.name || targetPrinter.id || '')}.`
+            );
             continue;
           }
 
           const routingViolation = getPrinterRoutingViolation(job, targetPrinter);
           if (routingViolation) {
             console.warn(`[PrintQueueAutoProcessor] ${routingViolation} jobId=${job.id}`);
+            continue;
+          }
+
+          const liveStatusBeforeStart = await getLivePrintQueueJobStatus(job.id);
+          if (liveStatusBeforeStart && !['pending', 'queued', 'processing'].includes(liveStatusBeforeStart)) {
             continue;
           }
 
@@ -669,7 +822,16 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             });
             const payload = enforceCutModeOnBatchPayload(basePayload, shouldCutAtEnd, isPreBatchedJob);
 
-            await printRawUsbToDevice({ device: usbDevice, content: payload });
+            console.info('[PrintQueueAutoProcessor] processQueue:usb-write', {
+              jobId: job.id,
+              vendorId: deviceForJob.vendorId,
+              productId: deviceForJob.productId,
+              payloadLength: payload.length,
+              quantity: getJobQuantity(job),
+              isPreBatchedJob,
+            });
+
+            await printRawUsbToDevice({ device: deviceForJob, content: payload });
 
             await transitionPrintQueueJobStatus({
               jobId: job.id,
@@ -680,6 +842,10 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             const message = error instanceof Error ? error.message : String(error);
             console.error('[PrintQueueAutoProcessor] Print failure for job:', job.id, message);
             try {
+              const liveStatus = await getLivePrintQueueJobStatus(job.id);
+              if (liveStatus === 'completed' || liveStatus === 'cancelled') {
+                continue;
+              }
               await transitionPrintQueueJobStatus({
                 jobId: job.id,
                 status: 'error',

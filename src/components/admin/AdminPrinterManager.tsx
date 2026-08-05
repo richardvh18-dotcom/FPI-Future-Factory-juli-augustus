@@ -1246,12 +1246,29 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
     }
   };
 
-  const getQueueMetadataBase = (printer: PrinterRecord) => ({
-    source: 'admin-printer-manager',
-    targetPrinterName: printer?.name || 'Onbekende printer',
-    protocol: normalizePrinterProtocol(printer).toLowerCase(),
-    stationId: 'ADMIN'
-  });
+  const getQueueMetadataBase = (printer: PrinterRecord) => {
+    const queueStations = Array.isArray(printer?.queueStations) ? printer.queueStations : [];
+    const linkedStations = Array.isArray(printer?.linkedStations) ? printer.linkedStations : [];
+    const stationCandidate = [...queueStations, ...linkedStations]
+      .map((entry) => {
+        if (typeof entry === 'string') return entry.trim();
+        if (entry && typeof entry === 'object') {
+          const maybe = entry as Record<string, unknown>;
+          return String(maybe.name || maybe.station || maybe.id || maybe.code || '').trim();
+        }
+        return '';
+      })
+      .find(Boolean);
+
+    return {
+      source: 'admin-printer-manager',
+      targetPrinterName: printer?.name || 'Onbekende printer',
+      protocol: normalizePrinterProtocol(printer).toLowerCase(),
+      // Belangrijk: gebruik een station dat binnen de printerroutering valt,
+      // anders wordt de queue-job door de auto-processor overgeslagen.
+      stationId: stationCandidate || 'LABELS PRINTING'
+    };
+  };
 
   const handleDelete = async (id: string) => {
     const confirmed = await showConfirm({
@@ -1302,7 +1319,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         description: `Calibratieprint ${rollWidthMm}x${labelHeightMm}mm`,
         width: rollWidthMm,
         height: labelHeightMm
-      }, { allowQueueFallback: false });
+      }, { allowQueueFallback: true });
       showSuccess(
         result.mode === 'queue'
           ? `Calibratieprint in wachtrij gezet voor ${printer.name}.`
@@ -1327,6 +1344,14 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
 
     if (printerType === CONNECTION_TYPES.WEBUSB) {
       if (!isUsbDirectSupported()) {
+        if (allowQueueFallback && printerData?.id) {
+          await queuePrintJob(printerData.id, printContent, {
+            ...getQueueMetadataBase(printerData),
+            ...metadata,
+            fallbackReason: 'webusb-not-supported'
+          });
+          return { mode: 'queue' };
+        }
         throw new Error('WebUSB wordt niet ondersteund in deze browser.');
       }
 
@@ -1346,15 +1371,26 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
 
         console.error("USB print error:", err);
 
-        // Praktische fallback: als WebUSB-interface bezet is (veelvoorkomend op Windows/Zadig),
-        // stuur dezelfde opdracht naar de queue zodat printen toch doorgaat.
-        if (allowQueueFallback && (isAccessIssue || isClaimIssue) && printerData?.id) {
-          await queuePrintJob(printerData.id, printContent, {
-            ...getQueueMetadataBase(printerData),
-            ...metadata,
-            fallbackReason: isClaimIssue ? 'webusb-claim-interface' : 'webusb-access'
-          });
-          return { mode: 'queue' };
+        // Robuuste fallback: alle niet-geannuleerde WebUSB-fouten mogen naar queue,
+        // zodat testlabels niet blokkeren op browser USB state.
+        if (allowQueueFallback && printerData?.id) {
+          const fallbackReason = isClaimIssue
+            ? 'webusb-claim-interface'
+            : isAccessIssue
+              ? 'webusb-access'
+              : 'webusb-error';
+
+          try {
+            await queuePrintJob(printerData.id, printContent, {
+              ...getQueueMetadataBase(printerData),
+              ...metadata,
+              fallbackReason,
+            });
+            return { mode: 'queue' };
+          } catch (queueErr: unknown) {
+            const queueMsg = getErrMsg(queueErr);
+            throw new Error(`USB print mislukt en fallback naar wachtrij faalde: ${queueMsg}`, { cause: queueErr });
+          }
         }
 
         if (!allowQueueFallback && (isAccessIssue || isClaimIssue)) {
@@ -1689,7 +1725,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
     try {
       const result = await sendPrintJob(printer, payload, {
         description: `Testprint 90x50mm (${printer?.name || 'printer'})`
-      }, { allowQueueFallback: false });
+      }, { allowQueueFallback: true });
       showSuccess(
         result.mode === 'queue'
           ? `Testprint in wachtrij gezet voor ${printer.name}.`
@@ -1711,7 +1747,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       const result = await sendPrintJob(printer, payload, {
         description: `Lengte testprint ${lengthMm}mm (${printer?.name || 'printer'})`,
         height: lengthMm
-      }, { allowQueueFallback: false });
+      }, { allowQueueFallback: true });
       showSuccess(
         result.mode === 'queue'
           ? `Testlabel van ${lengthMm}mm in wachtrij gezet voor ${printer.name}.`
