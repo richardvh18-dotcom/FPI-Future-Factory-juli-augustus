@@ -1,6 +1,15 @@
 ### Chatvoorkeuren
 
 - Standaard antwoorden in het Nederlands.
+- Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md).
+- Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een git push doen.
+- Deploy/version-wijzigingen altijd afstemmen op public/version.json en package.json.
+
+####### Dagupdate 5 augustus 2026 - sessie 1 (BM01 -> Naharding status-stabiliteit)
+
+- Bugfix doorgevoerd in [src/utils/trackedProducts.ts](src/utils/trackedProducts.ts): bij merge van root- en scoped tracked-product documenten wint nu de meest recente record (op basis van `updatedAt/createdAt`) in plaats van altijd de scoped variant.
+- Effect: wanneer een lot in BM01 wordt doorgemeld naar Naharding, kan een oudere schaduwkopie de nieuwe status niet meer overschrijven. Hierdoor blijft het lot niet meer hangen in "Te Keuren" en verdwijnt de dubbele/repeat "gereed melden"-situatie.
+- Validatie: foutcontrole op het aangepaste bestand gaf geen nieuwe errors.
 
 ####### Dagupdate 4 augustus 2026 - sessie 5 (label ID parsing voor couplers/elbows)
 
@@ -13243,6 +13252,7 @@ U p d a t e   C O N V E R S A T I O N _ S U M M A R Y . m d 
  
  
 
-U p d a t e d   P W A   o r i e n t a t i o n   t o   ' p o r t r a i t '   i n   v i t e . p w a . c o n f i g . t s   t o   p r e v e n t   s c r e e n   r o t a t i o n   o n   Z e b r a   s c a n n e r s .  
+U p d a t e d   P W A   o r i e n t a t i o n   t o   ' p o r t r a i t '   i n   v i t e . p w a . c o n f i g . t s   t o   p r e v e n t   s c r e e n   r o t a t i o n   o n   Z e b r a   s c a n n e r s . 
+ 
  - Reverted PWA orientation in \ite.pwa.config.ts\ to \ny\ to allow tablets to rotate.
 - Added \useScreenOrientationLock\ hook in \App.tsx\ to dynamically lock small screens (<=768px, like scanners) to portrait mode.
