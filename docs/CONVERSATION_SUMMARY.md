@@ -1,6 +1,15 @@
 ### Chatvoorkeuren
 
 - Standaard antwoorden in het Nederlands.
+- Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md).
+- Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
+- Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
+
+####### Dagupdate 4 augustus 2026 - sessie 6 (schermrotatie & deploy updates)
+
+- De PWA-configuratie (`vite.pwa.config.ts`) is aangepast om op tablets schermrotatie toe te staan (`orientation: 'any'`).
+- Een hook `useScreenOrientationLock` toegevoegd in `src/App.tsx` die specifieke schermrotatie afdwingt op handheld scanners (schermen <= 768px).
+- Er is een deployment (v0.1.137) gedaan naar Firebase, gevolgd door een `git push`.
 
 ####### Dagupdate 4 augustus 2026 - sessie 5 (label ID parsing voor couplers/elbows)
 
