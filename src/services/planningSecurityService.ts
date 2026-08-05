@@ -870,6 +870,7 @@ export const transitionPrintQueueJobStatus = async ({
   error = "",
   source = "",
   actorLabel = "",
+  printerName = "",
 }: Record<string, unknown>) => {
   const payload = {
     jobId: String(jobId || "").trim(),
@@ -877,6 +878,7 @@ export const transitionPrintQueueJobStatus = async ({
     error: String(error || "").trim(),
     source: String(source || "").trim(),
     actorLabel: String(actorLabel || "").trim(),
+    printerName: String(printerName || "").trim(),
   };
 
   if (!payload.jobId || !payload.status) {

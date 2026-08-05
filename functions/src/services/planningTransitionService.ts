@@ -5035,7 +5035,7 @@ const getPendingPrintQueueDocs = async () => {
   return Array.from(byPath.values());
 };
 
-const transitionPrintQueueJobStatusService = async ({ jobId, status, error, auth, source, actorLabel, dbCtx = null,
+const transitionPrintQueueJobStatusService = async ({ jobId, status, error, printerName, auth, source, actorLabel, dbCtx = null,
 }) => {
   const ctx = dbCtx || resolveDbContext(null);
   const safeJobId = clean(jobId);
@@ -5076,6 +5076,10 @@ const transitionPrintQueueJobStatusService = async ({ jobId, status, error, auth
   }
   if (nextStatus === 'pending') {
     updates.error = admin.firestore.FieldValue.delete();
+  }
+
+  if (printerName) {
+    updates.printedOnPrinterName = clean(printerName);
   }
 
   await jobRef.set(updates, { merge: true });

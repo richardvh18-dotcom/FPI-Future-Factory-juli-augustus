@@ -714,7 +714,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
           name: labelName,
           folder: labelFolder,
           tags: labelTags,
-          elements,
+          elements: elements as any,
         },
         data,
         printerDpi: dpi,

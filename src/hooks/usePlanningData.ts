@@ -2,12 +2,7 @@ import { useState, useEffect } from "react";
 import { subscribePlanningOrders } from "../repositories/planningRepository";
 import { isActivePlanningOrder } from "../utils/trackingHelpers";
 import type { QueryDocumentSnapshot } from "firebase/firestore";
-
-interface PlanningOrder {
-  id: string;
-  deliveryDate: Date;
-  [key: string]: unknown;
-}
+import { PlanningOrder } from "../types";
 
 interface UsePlanningDataResult {
   orders: PlanningOrder[];
@@ -26,21 +21,20 @@ export const usePlanningData = (): UsePlanningDataResult => {
 
   useEffect(() => {
     const unsubscribe = subscribePlanningOrders(
-      (docs: QueryDocumentSnapshot[]) => {
+      (docs: QueryDocumentSnapshot<PlanningOrder>[]) => {
         const orderList = docs
           .map((doc) => {
             const data = doc.data();
-            const hidden = Boolean(data.planningHidden);
+            const hidden = Boolean(data.smartSyncExcluded); // Use correct boolean property if applicable
             const keepVisible = !hidden || isActivePlanningOrder(data);
 
             if (!keepVisible) return null;
 
             return {
-              id: doc.id,
               ...data,
               deliveryDate: data.deliveryDate?.toDate
                 ? data.deliveryDate.toDate()
-                : new Date(data.deliveryDate),
+                : (data.deliveryDate ? new Date(data.deliveryDate) : undefined),
             } as PlanningOrder;
           })
           .filter((o): o is PlanningOrder => o !== null);

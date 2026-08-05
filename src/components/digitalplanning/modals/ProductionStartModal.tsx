@@ -25,6 +25,7 @@ import {
   filterLabelsByProduct,
   processLabelData,
   evaluatePrintRules,
+  getCompactPrintVariables,
   type PrintRuleDef
 } from "../../../utils/labelHelpers";
 import { getFlangeSeriesInfo } from "../../../utils/flangeSeriesHelper";
@@ -1959,13 +1960,7 @@ const ProductionStartModal = ({
                       width: parseInt(String(templateToPrint.width || 0), 10),
                       height: parseInt(String(templateToPrint.height || 0), 10),
                       // Keep queue metadata compact to avoid callable 400 (metadata too large).
-                      variables: {
-                        lotNumber: currentLot,
-                        orderId: truncateText(order?.orderId, 80),
-                        itemCode: truncateText(order?.itemCode || order?.productId, 80),
-                        item: truncateText(order?.item || order?.description, 160),
-                        stationId: truncateText(stationId, 40),
-                      },
+                      variables: getCompactPrintVariables(previewData as Record<string, unknown>),
                       templateId: templateToPrint.id,
                     }
                 );

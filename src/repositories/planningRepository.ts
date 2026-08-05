@@ -24,9 +24,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { PATHS, getPathString } from '../config/dbPaths';
+import { planningOrderConverter } from '../utils/firestoreConverters';
+import { PlanningOrder } from '../types';
 
-type RepoRecord = { id: string } & Record<string, unknown>;
-type RepoDoc = QueryDocumentSnapshot<DocumentData>;
+type RepoDoc = QueryDocumentSnapshot<PlanningOrder>;
 type SnapshotCallback = (docs: RepoDoc[]) => void;
 type ErrorCallback = (err: Error) => void;
 
@@ -44,7 +45,7 @@ const planningLimit = () =>
  */
 export const subscribePlanningOrders = (onData: SnapshotCallback, onError: ErrorCallback) => {
   const q = query(
-    collection(db, getPathString(PATHS.PLANNING)),
+    collection(db, getPathString(PATHS.PLANNING)).withConverter(planningOrderConverter),
     orderBy('deliveryDate', 'asc'),
     limit(planningLimit()),
   );
@@ -57,9 +58,9 @@ export const subscribePlanningOrders = (onData: SnapshotCallback, onError: Error
  * @param {string} orderId  Firestore document-ID
  * @returns {Promise<{id: string, Record<string, unknown>} | null>}
  */
-export const fetchPlanningOrder = async (orderId: string): Promise<RepoRecord | null> => {
-  const snap = await getDoc(doc(db, getPathString([...PATHS.PLANNING, orderId])));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+export const fetchPlanningOrder = async (orderId: string): Promise<PlanningOrder | null> => {
+  const snap = await getDoc(doc(db, getPathString([...PATHS.PLANNING, orderId])).withConverter(planningOrderConverter));
+  return snap.exists() ? snap.data() : null;
 };
 
 /**
@@ -74,13 +75,13 @@ export const fetchPlanningOrdersWhere = async (
   field: string,
   op: WhereFilterOp,
   value: unknown,
-): Promise<RepoRecord[]> => {
+): Promise<PlanningOrder[]> => {
   const q = query(
-    collection(db, getPathString(PATHS.PLANNING)),
+    collection(db, getPathString(PATHS.PLANNING)).withConverter(planningOrderConverter),
     where(field, op, value),
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snap.docs.map((d) => d.data());
 };
 
 /**
@@ -93,7 +94,7 @@ export const fetchPlanningOrdersWhere = async (
  */
 export const subscribeMessages = (
   recipientEmail: string,
-  onData: SnapshotCallback,
+  onData: (docs: QueryDocumentSnapshot<DocumentData>[]) => void,
   onError: ErrorCallback,
 ) => {
   const q = query(

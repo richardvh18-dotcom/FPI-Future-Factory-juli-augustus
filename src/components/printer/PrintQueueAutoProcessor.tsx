@@ -103,19 +103,6 @@ const getLivePrintQueueJobStatus = async (jobId: string): Promise<string> => {
   return '';
 };
 
-const isAdminQueueProcessorActive = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  try {
-    const raw = String(localStorage.getItem(PRINT_QUEUE_ADMIN_PROCESSOR_LOCK_KEY) || '').trim();
-    if (!raw) return false;
-    const parsed = JSON.parse(raw) as { ts?: unknown };
-    const ts = Number(parsed?.ts || 0);
-    if (!Number.isFinite(ts) || ts <= 0) return false;
-    return (Date.now() - ts) <= ADMIN_PROCESSOR_LOCK_MAX_AGE_MS;
-  } catch {
-    return false;
-  }
-};
 
 const stationNameFromValue = (stationValue: unknown): string => {
   if (!stationValue) return '';
@@ -685,9 +672,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       return;
     }
 
-    if (isAdminQueueProcessorActive()) {
-      return;
-    }
+
 
     const pendingJobs = printJobs
       .filter((job) => job.status === 'pending')
@@ -753,12 +738,14 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       isProcessingRef.current = true;
       try {
         for (const job of pendingJobs) {
-          if (isAdminQueueProcessorActive()) {
-            break;
-          }
-
           const targetPrinter = getPrinterForQueueJob(job, currentPrinter, printers);
           if (!targetPrinter) {
+            continue;
+          }
+
+          // CRITIEKE FIX: Deze processor mag alleen printen als de targetPrinter overeenkomt met de huidige ingestelde printer.
+          // Anders nemen alle auto-processors blind taken over.
+          if (currentPrinter && targetPrinter.id !== currentPrinter.id) {
             continue;
           }
 
@@ -794,6 +781,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
               jobId: job.id,
               status: 'printing',
               source: 'PrintQueueAutoProcessor',
+              printerName: targetPrinter.name || '',
             });
           } catch (error) {
             if (isInvalidPrintQueueTransitionError(error)) {
@@ -837,6 +825,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
               jobId: job.id,
               status: 'completed',
               source: 'PrintQueueAutoProcessor',
+              printerName: targetPrinter.name || '',
             });
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);

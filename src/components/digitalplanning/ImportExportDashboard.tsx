@@ -362,12 +362,18 @@ const hasWikkelSignal = (entry: EntryRecord): boolean => {
 };
 
 const toLnQrRows = (rows: LnReadyGroupedRow[], periodToken: string): LnReadyQrRow[] =>
-  rows.map((row): LnReadyQrRow => ({
-    ...row,
-    orderQr: `ORDER:${row.orderId}`,
-    refQr: `REFOPS:${row.refOpsText}`,
-    countQr: `COUNT:${row.count}|PERIOD:${periodToken}|STATION:${row.station}`,
-  }));
+  rows.map((row): LnReadyQrRow => {
+    const trueTodoCount = Math.max(0, row.todoCount - row.count);
+    const trueReadyCount = Math.max(0, row.totalOrderCount - trueTodoCount - row.count);
+    return {
+      ...row,
+      todoCount: trueTodoCount,
+      readyReportedCount: trueReadyCount,
+      orderQr: `ORDER:${row.orderId}`,
+      refQr: `REFOPS:${row.refOpsText}`,
+      countQr: `COUNT:${row.count}|PERIOD:${periodToken}|STATION:${row.station}`,
+    };
+  });
 
 const readLocalLnExportHistory = (): LnExportHistoryEntry[] => {
   if (typeof window === "undefined") return [];
@@ -672,8 +678,7 @@ const ImportExportDashboard = ({
     const combinedProducts = [...trackedProducts];
     const groupedRows = new Map<string, LnReadyGroupedRow>();
     const cutoff = new Date(Date.now() - 5 * 60 * 1000); // 5 minuten pauze
-    const exportFallbackStart = new Date();
-    exportFallbackStart.setHours(0, 0, 0, 0);
+    const exportFallbackStart = new Date(2020, 0, 1);
     const exportAnchor = lastLnResetAt || exportFallbackStart;
     const orderStats = new Map<string, { totalOrderCount: number; nahardingCount: number; wikkelCount: number }>();
 
@@ -710,7 +715,7 @@ const ImportExportDashboard = ({
       if (!startDate) return;
 
       if (startDate > cutoff) return;
-      if (startDate <= exportAnchor) return;
+      if (lnRangeMode === "export" && startDate <= exportAnchor) return;
       if (isAtNahardingOrFurther(product)) return;
 
       const inRange = lnRangeMode === "export"
@@ -1572,7 +1577,12 @@ const ImportExportDashboard = ({
 
               <div className="flex items-center justify-between gap-4 text-xs font-black uppercase tracking-widest text-slate-400">
                 <span>{t("importExportDashboard.period", "Periode")}: {lnPeriodDisplayLabel}</span>
-                <span>{lnReadyQrRows.length} {t("importExportDashboard.orderRows", "orderregels")}</span>
+                <div className="flex flex-col items-end">
+                  <span>{lnReadyQrRows.length} {t("importExportDashboard.orderRows", "orderregels")}</span>
+                  <span className="text-[10px] text-emerald-600 mt-0.5">
+                    ({lnReadyQrRows.reduce((sum, row) => sum + row.count, 0)} producten in totaal)
+                  </span>
+                </div>
               </div>
 
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs text-emerald-900">

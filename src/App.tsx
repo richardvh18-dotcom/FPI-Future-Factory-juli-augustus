@@ -1,5 +1,5 @@
 import React, { useState, Suspense, lazy, useEffect, useRef } from "react";
-import { listenToAppVersion } from "./services/versionService";
+
 import { Loader2 } from "lucide-react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
@@ -17,7 +17,7 @@ import ProfileView from "./components/ProfileView";
 import ProductSearchView from "./components/products/ProductSearchView";
 import ForcePasswordChangeView from "./components/ForcePasswordChangeView";
 import GodModeBootstrap from "./components/admin/GodModeBootstrap";
-import AutoLogoutWarning from "./components/AutoLogoutWarning";
+
 
 // Notification System
 import { NotificationProvider } from "./contexts/NotificationContext";
@@ -27,12 +27,15 @@ import ConfirmDialog from "./components/notifications/ConfirmDialog";
 import BackgroundTaskOverlay from "./components/notifications/BackgroundTaskOverlay";
 import ProgressToast from "./components/digitalplanning/ProgressToast";
 import PrintQueueAutoProcessor from "./components/printer/PrintQueueAutoProcessor";
+import NetworkObserver from "./components/NetworkObserver";
+import PrintQueuePinger from "./components/PrintQueuePinger";
+import AutoLogoutManager from "./components/AutoLogoutManager";
 
 // Hooks
 import { useAdminAuth } from "./hooks/useAdminAuth";
 import { useSettingsData } from "./hooks/useSettingsData";
 import { useMessages } from "./hooks/useMessages";
-import { useAutoLogout } from "./hooks/useAutoLogout";
+
 import { usePresence } from "./hooks/usePresence";
 import { checkFeature } from "./hooks/useHasFeature";
 import { useScreenOrientationLock } from "./hooks/useScreenOrientationLock";
@@ -109,133 +112,11 @@ const App = () => {
   const logoUrl = typeof generalConfig?.logoUrl === "string" ? generalConfig.logoUrl : undefined;
   const appName = typeof generalConfig?.appName === "string" ? generalConfig.appName : undefined;
 
-  // Auto-logout na inactiviteit (60 minuten inactiviteit, 5 minuten waarschuwing)
-  const { showWarning, remainingTime, dismissWarning } = useAutoLogout(
-    60, // Timeout in minuten
-    5,  // Waarschuwing in minuten voor timeout
-    !!user // Alleen actief als gebruiker ingelogd is
-  );
-
   // Active presence tracking (ISO 27001)
   usePresence();
 
   // Conditionele schermrotatie: lock mobiel/scanners (<=768px) op portrait, tablets vrij
   useScreenOrientationLock();
-
-  // Versie-check: forceer refresh bij nieuwe versie
-  const currentVersion = import.meta.env.VITE_APP_VERSION || "dev";
-  const versionRef = useRef(currentVersion);
-
-  // Keep-alive ping voor de Print Queue Server (voorkomt 30-60 sec cold starts)
-  useEffect(() => {
-    if (!user) return;
-    const keepAliveInterval = setInterval(() => {
-      // Importeer inline of roep dynamisch de cloud function aan (zonder frontend validatie)
-      import("firebase/functions").then(({ getFunctions, httpsCallable }) => {
-        const ping = httpsCallable(getFunctions(app, "europe-west1"), "queuePrintJob");
-        // Keepalive voor cold starts, zonder echte printjob aan te maken.
-        ping({ printerId: "PING", zplData: "PING", metadata: { source: "keepalive" } }).catch(() => {});
-      });
-    }, 9 * 60 * 1000); // Elke 9 minuten
-
-    return () => clearInterval(keepAliveInterval);
-  }, [user]);
-
-  useEffect(() => {
-    const host = typeof window !== "undefined" ? window.location.hostname : "";
-    const isLocalDevHost =
-      import.meta.env.DEV ||
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host.endsWith(".github.dev");
-
-    // In lokale/dev omgevingen geen auto-reload op remote version checks.
-    // Dit voorkomt reload-loops bij verschil tussen lokale buildversie en remote config.
-    if (isLocalDevHost) return () => {};
-
-    const clearBrowserAppCaches = async () => {
-      try {
-        if (typeof window !== "undefined" && "caches" in window) {
-          const cacheKeys = await window.caches.keys();
-          await Promise.all(cacheKeys.map((cacheKey) => window.caches.delete(cacheKey)));
-        }
-
-        if (typeof navigator !== "undefined" && "serviceWorker" in navigator) {
-          const registrations = await navigator.serviceWorker.getRegistrations();
-          await Promise.all(registrations.map((registration) => registration.unregister()));
-        }
-
-          try {
-            window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef/main");
-            window.indexedDB.deleteDatabase("firestore/[DEFAULT]/future-factory-377ef");
-          } catch (e) {
-            console.warn("Could not delete IndexedDB database on version reload:", e);
-          }
-      } catch (error) {
-        console.warn("Kon browsercaches niet volledig leegmaken:", error);
-      }
-    };
-
-    const requestVersionReload = async (remoteVersionRaw: unknown) => {
-      const remoteVersion = String(remoteVersionRaw || "").trim();
-      if (!remoteVersion || remoteVersion === versionRef.current) return;
-
-      // Guard tegen reload-loops: per tab maximaal 1 reload per remote versie.
-      const reloadKey = "ff_last_version_reload";
-      const alreadyReloadedFor = window.sessionStorage.getItem(reloadKey);
-      if (alreadyReloadedFor === remoteVersion) return;
-
-      // Controleer of de gebruiker momenteel actief ergens in aan het typen is
-      const activeEl = document.activeElement as HTMLElement | null;
-      const isUserTyping = activeEl && (
-        activeEl.tagName === "INPUT" ||
-        activeEl.tagName === "TEXTAREA" ||
-        activeEl.tagName === "SELECT" ||
-        activeEl.isContentEditable
-      );
-
-      if (isUserTyping) {
-        setTimeout(() => {
-          void requestVersionReload(remoteVersionRaw);
-        }, 30000);
-        return;
-      }
-
-      window.sessionStorage.setItem(reloadKey, remoteVersion);
-      await clearBrowserAppCaches();
-      window.location.reload();
-    };
-
-    const unsubscribe = listenToAppVersion((remoteVersion: string) => {
-      void requestVersionReload(remoteVersion);
-    });
-
-    // Fallback voor omgevingen waar de Firestore versie-write niet draait.
-    // Leest een no-cache version.json van de host en forceert reload bij verschil.
-    let cancelled = false;
-    const checkHostedVersion = async () => {
-      try {
-        const response = await fetch(`/version.json?t=${Date.now()}`, {
-          cache: "no-store",
-        });
-        if (!response.ok) return;
-        const payload = await response.json();
-        const hostedVersion = String(payload?.version || "").trim();
-        if (!cancelled) void requestVersionReload(hostedVersion);
-      } catch {
-        // Niet kritisch: app blijft werken zonder endpoint.
-      }
-    };
-
-    checkHostedVersion();
-    const timer = window.setInterval(checkHostedVersion, 60 * 1000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      unsubscribe();
-    };
-  }, []);
 
   // Check of gebruiker wachtwoord moet wijzigen
   useEffect(() => {
@@ -256,73 +137,7 @@ const App = () => {
     checkPasswordChange();
   }, [user?.uid]);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !user?.email) return undefined;
-    const userEmail = String(user.email || "").toLowerCase().trim();
-    if (!userEmail) return undefined;
 
-    let initialized = false;
-
-    const createConnectivityMessage = async (online: boolean) => {
-      const eventKey = `connectivity:${online ? "online" : "offline"}`;
-      const lastRaw = window.localStorage.getItem("ff_last_connectivity_message");
-      const now = Date.now();
-
-      if (lastRaw) {
-        try {
-          const last = JSON.parse(lastRaw);
-          if (last?.key === eventKey && now - Number(last?.timestamp || 0) < 30000) {
-            return;
-          }
-        } catch {
-          // Ignore malformed localStorage values.
-        }
-      }
-
-      await addDoc(collection(db, getPathString(PATHS.MESSAGES)), {
-        to: userEmail,
-        from: "SYSTEM",
-        senderId: "system-connectivity",
-        subject: online ? "Verbinding hersteld" : "Offline modus actief",
-        content: online
-          ? "De verbinding met het netwerk is hersteld. Live synchronisatie is weer actief."
-          : "De netwerkverbinding is weggevallen. De app draait verder op lokale cache totdat de verbinding terug is.",
-        timestamp: serverTimestamp(),
-        read: false,
-        archived: false,
-        priority: "normal",
-        type: "system",
-        targetGroup: userEmail,
-      });
-
-      window.localStorage.setItem(
-        "ff_last_connectivity_message",
-        JSON.stringify({ key: eventKey, timestamp: now })
-      );
-    };
-
-    const handleConnectivityChange = (online: boolean) => {
-      if (!initialized) {
-        initialized = true;
-        return;
-      }
-      createConnectivityMessage(online).catch((error) => {
-        console.error("Kon verbindingsmelding niet opslaan:", error);
-      });
-    };
-
-    const handleOnline = () => handleConnectivityChange(true);
-    const handleOffline = () => handleConnectivityChange(false);
-
-    initialized = true;
-    window.addEventListener("online", handleOnline);
-    window.addEventListener("offline", handleOffline);
-
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      window.removeEventListener("offline", handleOffline);
-    };
-  }, [user?.email]);
 
   const handleLogin = async (email: string, password: string) => {
     setLoginError(null);
@@ -552,12 +367,7 @@ const App = () => {
           </main>
         </div>
 
-        {showWarning && (
-          <AutoLogoutWarning 
-            remainingTime={remainingTime} 
-            onDismiss={dismissWarning} 
-          />
-        )}
+
 
         <Suspense fallback={null}>
           {globalDossierProduct && (
@@ -589,6 +399,9 @@ const App = () => {
           <ConfirmDialog />
           <BackgroundTaskOverlay />
           <ProgressToast />
+          <NetworkObserver userEmail={user?.email} />
+          <PrintQueuePinger enabled={Boolean(user)} />
+          <AutoLogoutManager isLoggedIn={!!user} />
           <PrintQueueAutoProcessor enabled={Boolean(user && role !== "guest")} />
           {content}
         </BackgroundTaskProvider>

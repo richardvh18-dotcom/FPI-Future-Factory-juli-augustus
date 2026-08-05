@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { generateLotBatchZPL } from '../../utils/zplHelper';
 import { resolvePrinterDpi } from '../../utils/printerDrivers';
-import { filterOrderLabelsByProduct } from '../../utils/labelHelpers';
+import { applyLabelLogic, processLabelData, getCompactPrintVariables } from '../../utils/labelHelpers';
 import { getISOWeekInfo, getStationMachineCode } from '../../utils/lotLogic';
 import {
   transitionPrintQueueJobStatus,
@@ -617,30 +617,6 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     }
 
     try {
-      const transport = resolvePrintTransport({
-        activeQueuePrinterId: activeQueuePrinter?.id,
-        usbDevice,
-      });
-
-      if (transport === 'usb') {
-        let deviceToUse = doesUsbDeviceMatchPrinter(usbDevice, activeQueuePrinter || {}) ? usbDevice : null;
-        if (!deviceToUse && isUsbDirectSupported()) {
-          deviceToUse = await findAuthorizedUsbDevice(activeQueuePrinter || {}) || await requestUsbDevice(activeQueuePrinter || {});
-          setUsbDevice(deviceToUse);
-        }
-
-        if (deviceToUse) {
-          const usbPayload = buildProtocolAwareUsbPayload({
-            printer: activeQueuePrinter as Record<string, unknown>,
-            content: zpl,
-            quantity: printQuantity,
-          });
-          await printRawUsb(deviceToUse, usbPayload);
-          notify(t("common.printLabelDirectUsb", { order }) + ` (${Math.max(1, (templatesToPrint.length || 1) * printQuantity)}x)`);
-          return;
-        }
-      }
-
       if (activeQueuePrinter?.id) {
         if (template && templatesToPrint.length > 0) {
           for (let idx = 0; idx < templatesToPrint.length; idx++) {
@@ -671,7 +647,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                 width: parseInt(String(widthMm), 10),
                 height: parseInt(String(heightMm), 10),
                 renderMode: 'bitmap',
-                variables: {
+                variables: template ? getCompactPrintVariables(processedData as Record<string, unknown>) : {
                   orderNumber: order,
                   productId: item,
                   description: desc,
@@ -698,7 +674,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
               width: parseInt(String(template?.width || 90), 10),
               height: parseInt(String(template?.height || 40), 10),
               renderMode: 'bitmap',
-              variables: {
+              variables: template ? getCompactPrintVariables(processedData as Record<string, unknown>) : {
                 orderNumber: order,
                 productId: item,
                 description: desc,
@@ -1601,17 +1577,7 @@ const PrintQueueAdminView = () => {
   const [loading, setLoading] = useState(true);
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
   const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
-  const [autoPrint, setAutoPrint] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true;
-    try {
-      const raw = String(localStorage.getItem(PRINT_QUEUE_ADMIN_AUTO_PRINT_KEY) || '').trim().toLowerCase();
-      if (raw === 'false' || raw === '0' || raw === 'off') return false;
-      if (raw === 'true' || raw === '1' || raw === 'on') return true;
-      return true;
-    } catch {
-      return true;
-    }
-  });
+  const [autoPrint, setAutoPrint] = useState<boolean>(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
 
@@ -1633,40 +1599,7 @@ const PrintQueueAdminView = () => {
   const [factoryConfig, setFactoryConfig] = useState<AnyRecord | null>(null);
   const [bindingStation, setBindingStation] = useState<string>(() => String(localStorage.getItem(PRINT_STATION_SELECTED_KEY) || '').trim());
   const [stationBindings, setStationBindings] = useState<Record<string, string>>(() => readStationBindings());
-  const processorLockOwnerRef = useRef(`admin-${Math.random().toString(36).slice(2)}`);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return () => {};
-
-    const owner = processorLockOwnerRef.current;
-    const writeLock = () => {
-      try {
-        localStorage.setItem(
-          PRINT_QUEUE_ADMIN_PROCESSOR_LOCK_KEY,
-          JSON.stringify({ owner, ts: Date.now(), source: 'PrintQueueAdminView' })
-        );
-      } catch {
-        // no-op
-      }
-    };
-
-    writeLock();
-    const timer = window.setInterval(writeLock, ADMIN_PROCESSOR_LOCK_HEARTBEAT_MS);
-
-    return () => {
-      window.clearInterval(timer);
-      try {
-        const raw = String(localStorage.getItem(PRINT_QUEUE_ADMIN_PROCESSOR_LOCK_KEY) || '').trim();
-        if (!raw) return;
-        const parsed = JSON.parse(raw) as { owner?: unknown };
-        if (String(parsed?.owner || '') === owner) {
-          localStorage.removeItem(PRINT_QUEUE_ADMIN_PROCESSOR_LOCK_KEY);
-        }
-      } catch {
-        // no-op
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -2264,34 +2197,8 @@ const PrintQueueAdminView = () => {
   };
 
   const handleDirectLotPrintBatch = async (batchData: string, lotCount: number) => {
-    const transport = resolvePrintTransport({
-      activeQueuePrinterId: activeQueuePrinter?.id,
-      usbDevice,
-    });
-
-    if (transport === 'usb') {
-      let deviceToUse = usbDevice;
-      if (!deviceToUse) {
-        try {
-          deviceToUse = await ensureUsbDeviceForPrint();
-        } catch (usbErr) {
-          const hasQueuePrinter = Boolean(activeQueuePrinter?.id);
-          if (!hasQueuePrinter) {
-            throw usbErr;
-          }
-        }
-      }
-
-      if (deviceToUse) {
-        await printRawUsb(deviceToUse, batchData);
-        setError('');
-        notify(`Lotnummers direct geprint via USB (${lotCount}).`);
-        return;
-      }
-    }
-
     if (!activeQueuePrinter?.id) {
-      throw new Error('Geen USB printer verbonden en geen wachtrijprinter geconfigureerd.');
+      throw new Error('Geen wachtrijprinter geconfigureerd.');
     }
 
     await queuePrintJob(

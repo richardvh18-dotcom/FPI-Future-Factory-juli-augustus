@@ -1445,6 +1445,8 @@ const transitionPrintQueueJobStatus = withAudit('TRANSITION_PRINT_QUEUE_JOB_STAT
   const source = clampText(data?.source, 80);
   const actorLabel = clampText(data?.actorLabel, 120);
 
+  const printerName = clampText(data?.printerName, 120);
+
   if (!jobId || !status) {
     throw new functions.https.HttpsError('invalid-argument', 'jobId en status zijn verplicht.');
   }
@@ -1458,6 +1460,7 @@ const transitionPrintQueueJobStatus = withAudit('TRANSITION_PRINT_QUEUE_JOB_STAT
       error: errorMessage,
       source,
       actorLabel,
+      printerName,
       auth: context.auth,
       dbCtx: resolveDbContext(extractRds(data)),
     });

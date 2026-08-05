@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { db, auth, logActivity } from '../../config/firebase';
-import { collection, query, where, getDocs, limit, doc, getDoc, documentId, onSnapshot, collectionGroup, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, doc, getDoc, documentId, onSnapshot, collectionGroup, orderBy, startAfter } from 'firebase/firestore';
 import { PATHS, getPathString, getArchiveItemsPath } from '../../config/dbPaths';
 import { Loader2, Printer, Search, RefreshCw, Send, X, Tag, Usb, Settings2 } from 'lucide-react';
 import { useNotifications } from '../../contexts/NotificationContext';
@@ -12,7 +12,7 @@ import { getISOWeekInfo, getStationMachineCode } from '../../utils/lotLogic';
 import AutoScaledLabelPreview from './AutoScaledLabelPreview';
 import { useLabelCatalog } from '../../hooks/useLabelCatalog';
 import { useLabelPreview } from '../../hooks/useLabelPreview';
-import { processLabelData, applyLabelLogic, filterOrderLabelsByProduct, filterLabelsByProduct } from '../../utils/labelHelpers';
+import { processLabelData, applyLabelLogic, filterOrderLabelsByProduct, filterLabelsByProduct, getCompactPrintVariables } from '../../utils/labelHelpers';
 import { executeOrderLabelSearch, loadFactoryMachinePaths, normalizeText, shouldUseGlobalOrderLabelSearch } from "../../utils/orderLabelSearch";
 import { renderLabelToBitmapZpl } from '../../utils/unifiedLabelRenderEngine';
 import {
@@ -36,6 +36,7 @@ import {
   pickPreferredTempTemplateId,
   resolveLinkedTemplateChain,
 } from '../../utils/orderLabelTemplateUtils';
+import { shouldResetOrderLabelMachineState } from '../../utils/orderLabelMachineState';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -684,6 +685,8 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
     }
   }, []);
 
+  const searchQuery = String(orderStr || "").trim();
+
   useEffect(() => {
     if (!selectedMachine) {
       if (searchQuery.length >= 3) {
@@ -714,7 +717,6 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
     }
   }, [hasMoreMachineItems, loadMachineOrders, loadingMachineItems, loadingMoreMachineItems, selectedMachine]);
 
-  const searchQuery = String(orderStr || "").trim();
   const useGlobalSearch = shouldUseGlobalOrderLabelSearch(selectedMachine, searchQuery);
   const filteredMachineItems = useMemo(() => {
     const queryText = normalizeText(orderStr);
@@ -1488,28 +1490,7 @@ const PrintStationView = () => {
     return String(routingPrinter?.id || '');
   }, [printers, selectedStation]);
 
-  const ensureUsbDeviceForPrint = useCallback(async (): Promise<USBDevice> => {
-    if (usbDevice) return usbDevice;
 
-    const strictFilter = hasUsbIdentity(activeQueuePrinter)
-      ? (activeQueuePrinter as Record<string, unknown>)
-      : {};
-
-    const authorizedDevice = await findAuthorizedUsbDevice(strictFilter)
-      || (hasUsbIdentity(activeQueuePrinter) ? await findAuthorizedUsbDevice({}) : null);
-
-    const device = authorizedDevice || await requestUsbDevice(strictFilter);
-    setUsbDevice(device);
-    localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(device.vendorId));
-    localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(device.productId));
-
-    const printerIdToStore = resolvePrinterIdToPersistForUsb(device);
-    if (printerIdToStore) {
-      persistStationBinding(selectedStation, printerIdToStore);
-    }
-
-    return device;
-  }, [usbDevice, hasUsbIdentity, activeQueuePrinter, resolvePrinterIdToPersistForUsb, persistStationBinding, selectedStation]);
 
   useEffect(() => {
     const unsubPrinters = onSnapshot(collection(db, getPathString(PATHS.PRINTERS)), (snap) => {
@@ -1623,6 +1604,29 @@ const PrintStationView = () => {
       routeKey: selectedStation,
     });
   }, [printers, usbDevice, selectedStation]);
+
+  const ensureUsbDeviceForPrint = useCallback(async (): Promise<USBDevice> => {
+    if (usbDevice) return usbDevice;
+
+    const strictFilter = hasUsbIdentity(activeQueuePrinter)
+      ? (activeQueuePrinter as Record<string, unknown>)
+      : {};
+
+    const authorizedDevice = await findAuthorizedUsbDevice(strictFilter)
+      || (hasUsbIdentity(activeQueuePrinter) ? await findAuthorizedUsbDevice({}) : null);
+
+    const device = authorizedDevice || await requestUsbDevice(strictFilter);
+    setUsbDevice(device);
+    localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(device.vendorId));
+    localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(device.productId));
+
+    const printerIdToStore = resolvePrinterIdToPersistForUsb(device);
+    if (printerIdToStore) {
+      persistStationBinding(selectedStation, printerIdToStore);
+    }
+
+    return device;
+  }, [usbDevice, hasUsbIdentity, activeQueuePrinter, resolvePrinterIdToPersistForUsb, persistStationBinding, selectedStation]);
 
   const stationGroups = useMemo<string[]>(() => {
     if (!activeQueuePrinter) return [];
@@ -1803,7 +1807,8 @@ const PrintStationView = () => {
 
     let zpl;
 
-    if (template) {
+    try {
+      if (template) {
         const labelData = processLabelData({
             ...orderData,
             orderId: order,
@@ -1861,37 +1866,7 @@ const PrintStationView = () => {
       });
     }
 
-    try {
-      const transport = resolvePrintTransport({
-        activeQueuePrinterId: activeQueuePrinter?.id,
-        usbDevice,
-      });
 
-      if (transport === 'usb') {
-        let deviceToUse = usbDevice;
-        if (!deviceToUse) {
-          try {
-            deviceToUse = await ensureUsbDeviceForPrint();
-          } catch (usbErr) {
-            if (!activeQueuePrinter?.id) {
-              throw usbErr;
-            }
-          }
-        }
-
-        if (deviceToUse) {
-          const usbPayload = buildProtocolAwareUsbPayload({
-            printer: activeQueuePrinter as Record<string, unknown>,
-            content: zpl,
-            quantity: printQuantity,
-          });
-          await printRawUsb(deviceToUse, usbPayload, `Order label geprint voor order: ${order}`);
-          const labelsPrinted = Math.max(1, (templatesToPrint.length || 1) * printQuantity);
-          showSuccess(`${labelsPrinted} label(s) voor ${order} direct geprint via USB!`);
-          window.setTimeout(() => setShowTempModal(false), 700);
-          return;
-        }
-      }
 
       if (!activeQueuePrinter?.id) {
         throw new Error('Geen USB-printer gekoppeld en geen wachtrijprinter geconfigureerd.');
@@ -1910,7 +1885,7 @@ const PrintStationView = () => {
           source: 'temp_order_labels',
           queuedAsBatch: templatesToPrint.length > 1,
           templateId: template?.id || null,
-          variables: {
+          variables: template ? getCompactPrintVariables(processedData as Record<string, unknown>) : {
             orderNumber: order,
             itemCode: item,
             description: desc,
@@ -1946,35 +1921,6 @@ const PrintStationView = () => {
         printSpeed: 3,
       });
 
-      const transport = resolvePrintTransport({
-        activeQueuePrinterId: activeQueuePrinter?.id,
-        usbDevice,
-      });
-
-      if (transport === 'usb') {
-        try {
-          const deviceToUse = await ensureUsbDeviceForPrint();
-          await printRawUsb(
-            deviceToUse,
-            buildProtocolAwareUsbPayload({
-              printer: activeQueuePrinter as Record<string, unknown>,
-              content: printDataChunks,
-              quantity: 1,
-              isPreBatchedJob: true,
-            }),
-            `Batch order labels geprint voor lot: ${productData.lotNumber}`
-          );
-          showSuccess(`${templatesToPrint.length} label(s) voor lot ${productData.lotNumber} direct geprint via USB!`);
-          setProductData(null);
-          setLotNumber('');
-          return;
-        } catch (usbErr) {
-          if (!activeQueuePrinter?.id) {
-            throw usbErr;
-          }
-        }
-      }
-
       if (!activeQueuePrinter?.id) {
         throw new Error('Geen USB-printer gekoppeld en geen wachtrijprinter geconfigureerd.');
       }
@@ -1992,7 +1938,7 @@ const PrintStationView = () => {
           source: 'batch_order_labels',
           queuedAsBatch: true,
           templateId: (selectedLabel as any)?.id || null,
-          variables: previewData as AnyRecord,
+          variables: getCompactPrintVariables(previewData as Record<string, unknown>),
         }
       );
 
@@ -2009,23 +1955,7 @@ const PrintStationView = () => {
   };
 
   const handleDirectLotPrintBatch = async (batchData: string, lotCount: number) => {
-    const transport = resolvePrintTransport({
-      activeQueuePrinterId: activeQueuePrinter?.id,
-      usbDevice,
-    });
 
-    if (transport === 'usb') {
-      try {
-        const deviceToUse = await ensureUsbDeviceForPrint();
-        await printRawUsb(deviceToUse, batchData, `Auto-print batch labels geprint (Aantal: ${lotCount})`);
-        showSuccess(`${lotCount} lotnummer(s) direct geprint via USB!`);
-        return;
-      } catch (usbErr) {
-        if (!activeQueuePrinter?.id) {
-          throw usbErr;
-        }
-      }
-    }
 
     if (!activeQueuePrinter?.id) {
       throw new Error('Geen USB-printer gekoppeld en geen wachtrijprinter geconfigureerd.');

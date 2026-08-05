@@ -1929,7 +1929,8 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       </div>
 
       {isAdding && (
-        <div className="bg-white p-6 rounded-2xl border-2 border-blue-100 shadow-lg mb-8 animate-in slide-in-from-top-2">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto" onClick={() => { setIsAdding(false); setEditingId(null); }}>
+          <div className="bg-white p-6 rounded-2xl border-2 border-blue-100 shadow-xl w-full max-w-4xl my-auto max-h-[90vh] overflow-y-auto animate-in zoom-in-95 fade-in duration-200" onClick={e => e.stopPropagation()}>
           <div className="flex justify-between items-center mb-4">
             <h3 className="font-black text-slate-700 uppercase">{editingId ? t('adminPrinterManager.editPrinter') : t('adminPrinterManager.addNewPrinter')}</h3>
             <button onClick={() => { setIsAdding(false); setEditingId(null); }}><X size={20} className="text-slate-400" /></button>
@@ -2225,6 +2226,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
               <Save size={16} /> {t('common.save')}
             </button>
           </div>
+        </div>
         </div>
       )}
 

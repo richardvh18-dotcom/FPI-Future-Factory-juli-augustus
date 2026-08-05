@@ -1,7 +1,31 @@
 ### Chatvoorkeuren
 
 - Standaard antwoorden in het Nederlands.
+- Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md).
+- Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
+- Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
 
+####### Dagupdate 5 augustus 2026 - sessie 2 (Printers & Cloud Functions)
+
+- **Print Queue Registratie:** Bij het succesvol afronden van een print-taak (status: 'completed') wordt nu expliciet de leesbare printernaam (`printedOnPrinterName`) weggeschreven op de root van het print-queue document. Dit verbetert de zoek- en filtermogelijkheden in de database.
+- **AdminPrinterManager:** Het formulier voor het toevoegen en bewerken van printers is losgetrokken uit de inline weergave en omgebouwd naar een overzichtelijke zwevende modal (pop-up). Dit voorkomt dat de printerlijst verspringt.
+- **Cloud Functions:** Een typescript type-fout opgelost in de nieuwe `manualSyncDrawings.ts` functie (gebruik makend van de `firebase-functions/v1` API) waardoor de deploy succesvol afgerond is.
+- **Frontend fixes:** Een dubbele import van `resolveLinkedTemplateChain` opgelost in `PrintQueueAdminView.tsx` die een Vite build-error veroorzaakte.
+- **Support & Documentatie:** Verduidelijking gegeven over de werking van PPLZ op de Lighthouse printer (gelijkwaardig aan ZPL, met automatische schaling naar 203 DPI).
+
+####### Dagupdate 5 augustus 2026 - Senior Code Audit Refactoring
+
+- **Cloud Functions:** De zware client-side functie `manualSyncDrawings` gemigreerd naar een nieuwe Callable Cloud Function (`functions/src/callable/manualSyncDrawings.ts`). Hiermee is een groot performance en memory-lek in de browser opgelost.
+- **ESLint Cleanup:** Dubbele configuraties `.eslintrc.cjs` en `.eslintrc.json` verwijderd om conflicten met de nieuwe `eslint.config.js` op te lossen.
+- **App.tsx Refactor (God Component):**
+  - Netwerk/offline logica afgesplitst naar `<NetworkObserver />`.
+  - Print-queue ping interval afgesplitst naar `<PrintQueuePinger />`.
+  - Auto-logout weergave afgesplitst naar `<AutoLogoutManager />`.
+  - Oude handmatige versie-polling verwijderd, omdat `vite-plugin-pwa` dit al afhandelt.
+- **Firestore Data Converters:**
+  - TypeScript interfaces `PlanningOrder` en `TrackedProductDoc` gestandaardiseerd en geëxporteerd in `src/types/index.ts`.
+  - `planningOrderConverter` en `trackedProductConverter` aangemaakt in `src/utils/firestoreConverters.ts`.
+  - Data converters toegepast op `planningRepository.ts`, `usePlanningData.ts` en `useTerminalActions.ts` voor 100% type-safe Firestore queries.
 ####### Dagupdate 4 augustus 2026 - sessie 5 (label ID parsing voor couplers/elbows)
 
 - De label-parser in [src/utils/labelHelpers.tsx](src/utils/labelHelpers.tsx) is aangepast zodat maten zoals `25` bij `Coupler 25 CST32` en `65` bij `Elb 65R1.5/90 EST32` niet meer door drukklasse- of hoekcodes worden overschreven.

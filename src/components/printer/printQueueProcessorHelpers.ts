@@ -67,6 +67,8 @@ const getJobStationKeys = (job: QueueJobLike | null | undefined): string[] => {
 
   return Array.from(new Set(
     candidates
+      .filter(Boolean)
+      .flatMap((value) => String(value).split(','))
       .map((value) => normalizeStationKey(stationNameFromValue(value)))
       .filter(Boolean)
   ));
@@ -106,5 +108,8 @@ export const getPrinterForQueueJob = (
     }
   }
 
-  return currentPrinter || null;
+  // Als de taak station-keys of een specifieke printer had, maar deze niet matchte met onszelf,
+  // OF als hij helemaal leeg is, claim hem NIET blindelings. 
+  // Laat hem over aan de printer waar hij daadwerkelijk voor bedoeld is.
+  return null;
 };

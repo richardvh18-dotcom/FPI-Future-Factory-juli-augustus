@@ -1367,3 +1367,14 @@ export const getBarcodeUrl = (data: unknown): string =>
   `https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(
     String(data ?? "leeg")
   )}&scale=3&height=10&incltext&guardwhitespace`;
+
+export const getCompactPrintVariables = (data: Record<string, unknown>): Record<string, unknown> => {
+  const compact: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data || {})) {
+    if (value === null || value === undefined) continue;
+    if (typeof value === 'object') continue;
+    if (typeof value === 'string' && value.length > 500) continue;
+    compact[key] = value;
+  }
+  return compact;
+};

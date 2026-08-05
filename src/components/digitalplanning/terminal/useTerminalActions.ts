@@ -5,27 +5,7 @@ import { db, logActivity } from "../../../config/firebase";
 import { PATHS, getPathString } from "../../../config/dbPaths";
 import { queuePrintJob, startProductionLots, completeTrackedProductRepair } from "../../../services/planningSecurityService";
 
-export interface TrackedProductDoc {
-  id: string;
-  lotNumber?: string;
-  orderId?: string;
-  currentStep?: string;
-  articleCode?: string;
-  status?: string;
-  machineId?: string;
-  [key: string]: unknown;
-}
-
-export interface PlanningOrder {
-  id: string;
-  orderId: string;
-  itemCode?: string;
-  productId?: string;
-  item?: string;
-  __docPath?: string;
-  sourcePath?: string;
-  [key: string]: unknown;
-}
+import { TrackedProductDoc, PlanningOrder } from "../../../types";
 
 export interface CustomAuthUser {
   uid: string;
