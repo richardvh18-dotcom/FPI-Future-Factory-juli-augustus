@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, collectionGroup, onSnapshot, query, where, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, collectionGroup, onSnapshot, query, where, doc, getDoc, getDocs, limit, documentId, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { PATHS, getPathString } from '../../config/dbPaths';
 import { transitionPrintQueueJobStatus } from '../../services/planningSecurityService';
@@ -53,10 +53,46 @@ const isInvalidPrintQueueTransitionError = (error: unknown): boolean => {
 };
 
 const getLivePrintQueueJobStatus = async (jobId: string): Promise<string> => {
-  const jobRef = doc(db, getPathString(PATHS.PRINT_QUEUE), jobId);
+  const safeJobId = String(jobId || '').trim();
+  if (!safeJobId) return '';
+
+  const jobRef = doc(db, getPathString(PATHS.PRINT_QUEUE), safeJobId);
   const jobSnap = await getDoc(jobRef);
-  if (!jobSnap.exists()) return '';
-  return String(jobSnap.data()?.status || '').trim().toLowerCase();
+  if (jobSnap.exists()) {
+    return String(jobSnap.data()?.status || '').trim().toLowerCase();
+  }
+
+  const printQueuePathFragment = `${PATHS.PRINT_QUEUE.join('/')}/`.toLowerCase();
+  const isScopedPrintQueuePath = (refPath: string): boolean => {
+    const normalizedPath = String(refPath || '').replace(/^\/+/, '').toLowerCase();
+    return normalizedPath.includes(printQueuePathFragment);
+  };
+
+  try {
+    const scopedByDocIdSnap = await getDocs(
+      query(collectionGroup(db, 'items'), where(documentId(), '==', safeJobId), limit(20))
+    );
+    const scopedByDocId = scopedByDocIdSnap.docs.find((snap) => isScopedPrintQueuePath(snap.ref.path));
+    if (scopedByDocId) {
+      return String(scopedByDocId.data()?.status || '').trim().toLowerCase();
+    }
+  } catch {
+    // Best effort fallback.
+  }
+
+  try {
+    const scopedByIdFieldSnap = await getDocs(
+      query(collectionGroup(db, 'items'), where('id', '==', safeJobId), limit(20))
+    );
+    const scopedByIdField = scopedByIdFieldSnap.docs.find((snap) => isScopedPrintQueuePath(snap.ref.path));
+    if (scopedByIdField) {
+      return String(scopedByIdField.data()?.status || '').trim().toLowerCase();
+    }
+  } catch {
+    // Best effort fallback.
+  }
+
+  return '';
 };
 
 const stationNameFromValue = (stationValue: unknown): string => {
@@ -640,6 +676,11 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
           const routingViolation = getPrinterRoutingViolation(job, targetPrinter);
           if (routingViolation) {
             console.warn(`[PrintQueueAutoProcessor] ${routingViolation} jobId=${job.id}`);
+            continue;
+          }
+
+          const liveStatusBeforeStart = await getLivePrintQueueJobStatus(job.id);
+          if (liveStatusBeforeStart && !['pending', 'queued', 'processing'].includes(liveStatusBeforeStart)) {
             continue;
           }
 
