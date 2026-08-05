@@ -322,6 +322,19 @@ const AdminUsersView = () => {
         { id: "downtime_tracking", label: "Downtime Tracking", description: "Machine downtime registratie" },
       ]
     },
+    app_management: {
+      label: "Applicatiebeheer (Admin Dashboard)",
+      description: "Gedetailleerde toegang tot specifieke beheer-onderdelen van de fabriek",
+      features: [
+        { id: "users_roles", label: "Gebruikers & Rollen", description: "Beheer van accounts en rechten" },
+        { id: "factory_structure", label: "Fabrieksstructuur", description: "Locaties, Personeelsbezetting en Indeling" },
+        { id: "products_matrix", label: "Data & Producten", description: "Product Manager, Matrix, Conversies & Encyclopedie" },
+        { id: "label_manager", label: "Label & Printbeheer", description: "Label Manager & Print instellingen" },
+        { id: "reports_qc", label: "Kwaliteit & Rapportages", description: "QC Steekproef & Rapportage Centre" },
+        { id: "automation_emails", label: "Automation & E-mails", description: "Notificaties, Automation Rules & E-mail Beheer" },
+        { id: "system_config", label: "Systeem & Configuratie", description: "Database Setup, LN Sync & Geavanceerde Systeeminstellingen" },
+      ]
+    },
   };
 
   type ModuleId = keyof typeof MODULE_FEATURES;

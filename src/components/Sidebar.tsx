@@ -96,7 +96,13 @@ const Sidebar = ({
         checkFeature(currentUser, "printer_center") ||
         checkFeature(currentUser, "digital_planning"),
     },
-    { path: "/admin", label: t('sidebar.nav.common.admin'), icon: Settings, adminOnly: true },
+    { 
+      path: "/admin", 
+      label: t('sidebar.nav.common.admin', 'Admin'), 
+      icon: Settings, 
+      canAccess: (currentUser, currentIsAdmin) => 
+        currentIsAdmin || checkFeature(currentUser, "app_management") 
+    },
   ];
 
   const visibleItems = navItems.filter((item) => {

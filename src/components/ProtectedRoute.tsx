@@ -12,6 +12,9 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const { t } = useTranslation();
   const { user, role, loading, isAdmin } = useAdminAuth();
 
+  const perms = (user as any)?.permissions as Record<string, string[]> | undefined;
+  const hasAppManagement = perms && perms["app_management"] && perms["app_management"].length > 0;
+
   if (loading) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-50 text-blue-600">
@@ -27,7 +30,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (!isAdmin && role !== "admin") {
+  if (!isAdmin && role !== "admin" && !hasAppManagement) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-red-50 text-red-600 p-8 text-center">
         <ShieldAlert size={64} className="mb-6" />

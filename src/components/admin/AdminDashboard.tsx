@@ -59,6 +59,7 @@ type DashboardItem = {
   roles: string[];
   component: React.ComponentType<any> | React.LazyExoticComponent<any>;
   requiredModule?: string;
+  requiredAppFeature?: string;
 };
 
 type DashboardCategory = {
@@ -238,6 +239,7 @@ const AdminDashboard = () => {
           roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: CapacityPlanningView,
           requiredModule: "digital_planning",
+          requiredAppFeature: "factory_structure",
         },
         {
           id: "production_standards",
@@ -248,6 +250,7 @@ const AdminDashboard = () => {
           roles: ["admin", "engineer", "supervisor"],
           component: ProductionTimeStandardsManager,
           requiredModule: "digital_planning",
+          requiredAppFeature: "factory_structure",
         },
         {
           id: "kanban",
@@ -258,6 +261,7 @@ const AdminDashboard = () => {
           roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: KanbanBoardView,
           requiredModule: "digital_planning",
+          requiredAppFeature: "factory_structure",
         },
         {
           id: "dependencies",
@@ -268,6 +272,7 @@ const AdminDashboard = () => {
           roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: OrderDependenciesView,
           requiredModule: "digital_planning",
+          requiredAppFeature: "factory_structure",
         },
         {
           id: "scenarios",
@@ -278,6 +283,7 @@ const AdminDashboard = () => {
           roles: ["admin", "engineer", "supervisor"],
           component: ScenarioPlanningView,
           requiredModule: "digital_planning",
+          requiredAppFeature: "factory_structure",
         },
       ]
     },
@@ -295,6 +301,7 @@ const AdminDashboard = () => {
           color: "bg-cyan-50 border-cyan-100",
           roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: AdminReportsView,
+          requiredAppFeature: "reports_qc",
         },
         {
           id: "floor_control_reports",
@@ -304,6 +311,7 @@ const AdminDashboard = () => {
           color: "bg-cyan-50 border-cyan-100",
           roles: ["admin", "engineer", "teamleader", "qc", "supervisor"],
           component: FloorControlReportsView,
+          requiredAppFeature: "reports_qc",
         },
       ]
     },
@@ -321,6 +329,7 @@ const AdminDashboard = () => {
           color: "bg-orange-50 border-orange-100",
           roles: ["admin", "qc", "teamleader", "supervisor"],
           component: QcSampleView,
+          requiredAppFeature: "reports_qc",
         },
       ]
     },
@@ -338,6 +347,7 @@ const AdminDashboard = () => {
           color: "bg-blue-50 border-blue-100",
           roles: ["admin", "engineer", "supervisor"],
           component: NotificationRulesView,
+          requiredAppFeature: "automation_emails",
         },
         {
           id: "automation",
@@ -347,6 +357,7 @@ const AdminDashboard = () => {
           color: "bg-yellow-50 border-yellow-100",
           roles: ["admin", "engineer", "supervisor"],
           component: AutomationRulesView,
+          requiredAppFeature: "automation_emails",
         },
         {
           id: "email_manager",
@@ -356,6 +367,7 @@ const AdminDashboard = () => {
           color: "bg-red-50 border-red-100",
           roles: ["admin", "supervisor"],
           component: AdminEmailManager,
+          requiredAppFeature: "automation_emails",
         },
         {
           id: "manual_sync_drawings",
@@ -365,6 +377,7 @@ const AdminDashboard = () => {
           color: "bg-green-50 border-green-100",
           roles: ["admin", "supervisor"],
           component: React.lazy(() => import("./ManualSyncDrawings")),
+          requiredAppFeature: "automation_emails",
         },
       ]
     },
@@ -382,6 +395,7 @@ const AdminDashboard = () => {
           color: "bg-blue-50 border-blue-100",
           roles: ["admin", "engineer", "supervisor"],
           component: AdminProductManager,
+          requiredAppFeature: "products_matrix",
         },
         {
           id: "matrix",
@@ -391,6 +405,7 @@ const AdminDashboard = () => {
           color: "bg-purple-50 border-purple-100",
           roles: ["admin", "engineer", "supervisor"],
           component: AdminMatrixManager,
+          requiredAppFeature: "products_matrix",
         },
         {
           id: "reference_table",
@@ -400,6 +415,7 @@ const AdminDashboard = () => {
           color: "bg-amber-50 border-amber-100",
           roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: AdminReferenceTable,
+          requiredAppFeature: "products_matrix",
         },
         {
           id: "conversions",
@@ -409,6 +425,7 @@ const AdminDashboard = () => {
           color: "bg-teal-50 border-teal-100",
           roles: ["admin", "engineer", "supervisor"],
           component: ConversionManager,
+          requiredAppFeature: "products_matrix",
         },
         {
           id: "label_manager",
@@ -418,6 +435,7 @@ const AdminDashboard = () => {
           color: "bg-orange-50 border-orange-100",
           roles: ["admin", "engineer", "supervisor"],
           component: AdminLabelManager,
+          requiredAppFeature: "label_manager",
         },
         {
           id: "tooling_molds",
@@ -427,6 +445,7 @@ const AdminDashboard = () => {
           color: "bg-sky-50 border-sky-100",
           roles: ["admin", "engineer", "supervisor"],
           component: AdminToolingMoldsView,
+          requiredAppFeature: "products_matrix",
         },
         {
           id: "ref_ops_import",
@@ -436,6 +455,7 @@ const AdminDashboard = () => {
           color: "bg-violet-50 border-violet-100",
           roles: ["admin", "engineer", "supervisor"],
           component: AdminRefOpsImportScreen,
+          requiredAppFeature: "products_matrix",
         },
         {
           id: "wm18_robot",
@@ -445,6 +465,7 @@ const AdminDashboard = () => {
           color: "bg-cyan-50 border-cyan-100",
           roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: WM18RobotManagerView,
+          requiredAppFeature: "products_matrix",
         },
       ]
     },
@@ -462,6 +483,7 @@ const AdminDashboard = () => {
           color: "bg-emerald-50 border-emerald-100",
           roles: ["admin", "supervisor"],
           component: FactoryStructureManager,
+          requiredAppFeature: "factory_structure",
         },
         {
           id: "personnel",
@@ -471,6 +493,7 @@ const AdminDashboard = () => {
           color: "bg-indigo-50 border-indigo-100",
           roles: ["admin", "teamleader", "engineer", "supervisor"],
           component: PersonnelManager,
+          requiredAppFeature: "factory_structure",
         },
         {
           id: "shopfloor",
@@ -481,6 +504,7 @@ const AdminDashboard = () => {
           roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: ShopFloorMobileApp,
           requiredModule: "quality_control",
+          requiredAppFeature: "factory_structure",
         },
       ]
     },
@@ -498,6 +522,7 @@ const AdminDashboard = () => {
           color: "bg-slate-50 border-slate-100",
           roles: ["admin", "supervisor"],
           component: AdminUsersView,
+          requiredAppFeature: "users_roles",
         },
         {
           id: "badge_generator",
@@ -507,6 +532,7 @@ const AdminDashboard = () => {
           color: "bg-indigo-50 border-indigo-100",
           roles: ["admin", "supervisor"],
           component: AdminBadgeGenerator,
+          requiredAppFeature: "users_roles",
         },
         {
           id: "settings",
@@ -516,6 +542,7 @@ const AdminDashboard = () => {
           color: "bg-blue-50 border-blue-100",
           roles: ["admin"],
           component: AdminSettingsView,
+          requiredAppFeature: "system_config",
         },
         {
           id: "config_manager",
@@ -525,6 +552,7 @@ const AdminDashboard = () => {
           color: "bg-emerald-50 border-emerald-100",
           roles: ["admin", "engineer"],
           component: ConfigManagerView,
+          requiredAppFeature: "system_config",
         },
         {
           id: "printers",
@@ -534,6 +562,7 @@ const AdminDashboard = () => {
           color: "bg-orange-50 border-orange-100",
           roles: ["admin", "supervisor"],
           component: AdminPrinterManager,
+          requiredAppFeature: "label_manager",
         },
         {
           id: "messages_management",
@@ -543,6 +572,7 @@ const AdminDashboard = () => {
           color: "bg-rose-50 border-rose-100",
           roles: ["admin", "supervisor"],
           component: AdminMessagesManagement,
+          requiredAppFeature: "automation_emails",
         },
         {
           id: "gateway_pc",
@@ -552,6 +582,7 @@ const AdminDashboard = () => {
           color: "bg-teal-50 border-teal-100",
           roles: ["admin"],
           component: GatewayPcAdminView,
+          requiredAppFeature: "system_config",
         },
         {
           id: "temporary_excel",
@@ -561,6 +592,7 @@ const AdminDashboard = () => {
           color: "bg-amber-50 border-amber-100",
           roles: ["admin"],
           component: TemporaryExcelManagerView,
+          requiredAppFeature: "system_config",
         },
         {
           id: "logs",
@@ -570,6 +602,7 @@ const AdminDashboard = () => {
           color: "bg-slate-50 border-slate-100",
           roles: ["admin", "supervisor"],
           component: AdminLogView,
+          requiredAppFeature: "system_config",
         },
         {
           id: "database",
@@ -579,6 +612,7 @@ const AdminDashboard = () => {
           color: "bg-red-50 border-red-100",
           roles: ["admin"],
           component: AdminDatabaseView,
+          requiredAppFeature: "system_config",
         },
       ]
     },
@@ -596,6 +630,7 @@ const AdminDashboard = () => {
           color: "bg-indigo-50 border-indigo-100",
           roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: ProjectStructureExpertView,
+          requiredAppFeature: "system_config",
         },
         {
           id: "ai_training",
@@ -606,6 +641,7 @@ const AdminDashboard = () => {
           roles: ["admin", "engineer", "supervisor"],
           component: AiCenterView,
           requiredModule: "ai_assistant",
+          requiredAppFeature: "system_config",
         },
         {
           id: "pilot_migration",
@@ -615,6 +651,7 @@ const AdminDashboard = () => {
           color: "bg-rose-50 border-rose-100",
           roles: ["admin"],
           component: PilotMigrationTool,
+          requiredAppFeature: "system_config",
         },
         {
           id: "mt_presentation",
@@ -624,6 +661,7 @@ const AdminDashboard = () => {
           color: "bg-blue-50 border-blue-100",
           roles: ["admin", "engineer", "teamleader", "supervisor"],
           component: MTPresentationLauncher,
+          requiredAppFeature: "system_config",
         },
       ]
     }
@@ -639,13 +677,21 @@ const AdminDashboard = () => {
     ...category,
     items: category.items.filter((item) => {
       const hasRole = item.roles.some((r) => r.toLowerCase() === currentRole);
-
+      const perms = ((user as DashboardUser | null)?.permissions || {}) as Record<string, string[]>;
+      
       // Admins hebben altijd volledige toegang
-      if (currentRole === 'admin') return hasRole;
+      if (currentRole === 'admin') return true;
+      
+      // Check of de gebruiker dit via Applicatiebeheer specifieke features heeft
+      if (item.requiredAppFeature) {
+        const appPerms = perms["app_management"] || [];
+        if (appPerms.includes(item.requiredAppFeature)) {
+          return true;
+        }
+      }
 
       if (item.requiredModule) {
         // Nieuw systeem: check permissions object (moduleId → [featureIds])
-        const perms = ((user as DashboardUser | null)?.permissions || {}) as Record<string, string[]>;
         const modulePerms = perms[item.requiredModule] || [];
         const hasViaPermissions = modulePerms.length > 0;
         // Fallback: oud modules-array systeem

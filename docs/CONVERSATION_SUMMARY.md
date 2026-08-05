@@ -13279,3 +13279,15 @@ U p d a t e d   P W A   o r i e n t a t i o n   t o   ' p o r t r a i t '   i n 
  - Reverted PWA orientation in \ite.pwa.config.ts\ to \ny\ to allow tablets to rotate.
 - Added \useScreenOrientationLock\ hook in \App.tsx\ to dynamically lock small screens (<=768px, like scanners) to portrait mode.
 
+
+### 5 Augustus 2026 - Sessie 3 (Applicatiebeheer Module)
+
+- **Applicatiebeheer Module (Sub-Admin):**
+  - Granulaire toegangscontrole geïmplementeerd voor het Admin Dashboard.
+  - Nieuwe module 'Applicatiebeheer' met 7 onafhankelijke sub-rechten (Gebruikers & Rollen, Fabrieksstructuur, Data & Producten, Label & Printbeheer, Kwaliteit & Rapportages, Automation & E-mails, Systeem & Configuratie) toegevoegd in \AdminUsersView.tsx\.
+  - \ProtectedRoute.tsx\ aangepast zodat gebruikers met minstens één van deze rechten toegang krijgen tot de \/admin\ route, zelfs als zij niet de 'admin' rol hebben.
+  - Sidebar-knop 'Admin' verschijnt nu automatisch voor deze gebruikers.
+  - \AdminDashboard.tsx\ vernieuwd: elke knop/categorie in het dashboard controleert nu specifiek welk \equiredAppFeature\ (bijv. 'factory_structure') nodig is. Gebruikers zien alléén de tegels waar zij de rechten voor hebben.
+- **UX & App Fixes:**
+  - Voorkomen dat Google Chrome de vertaal-pop-up toont bij elke schermwisseling op de Zebra scanner door toevoegen van \class="notranslate"\ en \meta name="google" content="notranslate"\ aan \index.html\.
+  - Landscape autorotatie voor de app op handscanners weer geblokkeerd door \orientation: 'any'\ te verwijderen uit \ite.pwa.config.ts\, zodat hardware-instellingen weer primair zijn.
