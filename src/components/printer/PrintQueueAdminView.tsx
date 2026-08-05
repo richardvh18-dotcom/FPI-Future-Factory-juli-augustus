@@ -163,6 +163,12 @@ const isInvalidPrintQueueTransitionError = (error: unknown): boolean => {
   ).toLowerCase();
   return message.includes('ongeldige print queue statusovergang') || message.includes('invalid_print_queue_transition');
 };
+const getLivePrintQueueJobStatus = async (jobId: string): Promise<string> => {
+  const jobRef = doc(db, getPathString(PATHS.PRINT_QUEUE), jobId);
+  const jobSnap = await getDoc(jobRef);
+  if (!jobSnap.exists()) return '';
+  return String(jobSnap.data()?.status || '').trim().toLowerCase();
+};
 
 const stationNameFromValue = (stationValue: unknown): string => {
   if (!stationValue) return '';
@@ -1924,7 +1930,6 @@ const PrintQueueAdminView = () => {
           try {
             await handlePrintJob(job);
           } catch (e) {
-            console.error(`Auto-print failed for ${job.id}:`, e);
             if (isInvalidPrintQueueTransitionError(e)) {
               // Deze taak is waarschijnlijk al verwerkt door een andere actieve queue-processor.
               continue;
@@ -2262,6 +2267,10 @@ const PrintQueueAdminView = () => {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       try {
+        const liveStatus = await getLivePrintQueueJobStatus(job.id);
+        if (liveStatus === 'completed' || liveStatus === 'cancelled') {
+          throw e;
+        }
         await transitionPrintQueueJobStatus({
           jobId: job.id,
           status: 'error',

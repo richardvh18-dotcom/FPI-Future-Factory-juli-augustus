@@ -531,9 +531,6 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
     });
   }, [products]);
 
-  console.log("BM01 Raw Products received:", products);
-  console.log("BM01 Filtered bm01Products:", bm01Products);
-
   const toMillisSafe = (value: unknown) => toMillisFromMixed(value);
 
     const getNahardingOfferedMillis = (item: ProductRecord) => {
@@ -910,8 +907,8 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
       );
             notify(`Lot ${product.lotNumber || productId} is tijdelijk afgekeurd.`);
     if (resolveProductIdentifier(selectedProductRef.current) === productId) handleCloseModal();
-        } catch (error: unknown) {
-      console.error("Fout bij afronden:", error);
+                } catch (error: unknown) {
+            console.error("Fout bij afronden:", error);
             notify(`Afronden mislukt: ${error instanceof Error ? error.message : "onbekende fout"}`);
     }
   };
@@ -1151,8 +1148,8 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                     };
 
                     frame.srcdoc = html;
-            } catch (err) {
-                    console.error("Print fout:", err);
+                    } catch (err) {
+                        console.error("Print fout:", err);
                     notify("Kon QR-overzicht niet printen. Probeer opnieuw.");
             }
     };

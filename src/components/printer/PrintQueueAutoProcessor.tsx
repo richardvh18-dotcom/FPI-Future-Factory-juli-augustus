@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { collection, collectionGroup, onSnapshot, query, where, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, collectionGroup, onSnapshot, query, where, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { PATHS, getPathString } from '../../config/dbPaths';
 import { transitionPrintQueueJobStatus } from '../../services/planningSecurityService';
@@ -50,6 +50,13 @@ const isInvalidPrintQueueTransitionError = (error: unknown): boolean => {
       || ''
   ).toLowerCase();
   return message.includes('ongeldige print queue statusovergang') || message.includes('invalid_print_queue_transition');
+};
+
+const getLivePrintQueueJobStatus = async (jobId: string): Promise<string> => {
+  const jobRef = doc(db, getPathString(PATHS.PRINT_QUEUE), jobId);
+  const jobSnap = await getDoc(jobRef);
+  if (!jobSnap.exists()) return '';
+  return String(jobSnap.data()?.status || '').trim().toLowerCase();
 };
 
 const stationNameFromValue = (stationValue: unknown): string => {
@@ -680,6 +687,10 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             const message = error instanceof Error ? error.message : String(error);
             console.error('[PrintQueueAutoProcessor] Print failure for job:', job.id, message);
             try {
+              const liveStatus = await getLivePrintQueueJobStatus(job.id);
+              if (liveStatus === 'completed' || liveStatus === 'cancelled') {
+                continue;
+              }
               await transitionPrintQueueJobStatus({
                 jobId: job.id,
                 status: 'error',
