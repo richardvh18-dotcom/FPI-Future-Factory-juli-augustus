@@ -89,6 +89,7 @@ type AdminMessage = {
   data?: unknown;
   errorDetails?: unknown;
   stack?: unknown;
+  isHiddenDuplicate?: boolean;
   [key: string]: unknown;
 };
 
@@ -307,11 +308,13 @@ const AdminMessagesView = ({ user: propUser }: { user?: AppUser | null }) => {
     lines.push("-".repeat(50));
     lines.push("");
     
-    const sortedMessages = [...thread.messages].sort((a, b) => {
-      const tA = toDate(a.timestamp);
-      const tB = toDate(b.timestamp);
-      return tA.getTime() - tB.getTime();
-    });
+    const sortedMessages = [...thread.messages]
+      .filter(msg => !msg.isHiddenDuplicate)
+      .sort((a, b) => {
+        const tA = toDate(a.timestamp);
+        const tB = toDate(b.timestamp);
+        return tA.getTime() - tB.getTime();
+      });
 
     sortedMessages.forEach(msg => {
       const time = toDate(msg.timestamp);
@@ -367,25 +370,31 @@ const AdminMessagesView = ({ user: propUser }: { user?: AppUser | null }) => {
       // Deduplicate identical messages (e.g. broadcasts sent to multiple admins)
       const isDuplicate = group.messages.some(
         (existingMsg) => 
+          !existingMsg.isHiddenDuplicate &&
           existingMsg.content === m.content && 
-          existingMsg.senderId === m.senderId &&
           Math.abs(existingMsg.timestamp.getTime() - m.timestamp.getTime()) < 5000
       );
 
       if (!isDuplicate) {
         group.messages.push(m);
-      }
-      
-      // Update stats
-      if (m.timestamp.getTime() > group.timestamp.getTime()) {
-        group.timestamp = m.timestamp;
-        group.lastMessage = m;
-      }
-      if (!m.read && m.senderId !== liveUser?.uid) {
-        group.hasUnread = true;
-      }
-      if (m.senderName && m.senderId !== liveUser?.uid) {
-        group.participants.add(m.senderName);
+        group.participants.add(m.senderName || m.from || t('common.system', 'Systeem'));
+        if (m.toName || m.to) group.participants.add(m.toName || m.to || '');
+        
+        // Update stats
+        if (m.timestamp.getTime() > group.timestamp.getTime()) {
+          group.timestamp = m.timestamp;
+          group.lastMessage = m;
+        }
+        if (!m.read && m.senderId !== liveUser?.uid) {
+          group.hasUnread = true;
+        }
+      } else {
+        const duplicateMsg = { ...m, isHiddenDuplicate: true };
+        group.messages.push(duplicateMsg);
+        
+        if (!duplicateMsg.read && duplicateMsg.senderId !== liveUser?.uid) {
+          group.hasUnread = true;
+        }
       }
     });
 
@@ -666,7 +675,7 @@ const AdminMessagesView = ({ user: propUser }: { user?: AppUser | null }) => {
             {/* Detail Body */}
             <div className="p-6 overflow-y-auto flex-1 text-left bg-slate-50/50">
               <div className="max-w-4xl mx-auto space-y-6">
-                {selectedThread.messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()).map((msg) => {
+                {selectedThread.messages.filter(msg => !msg.isHiddenDuplicate).sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime()).map((msg) => {
                   const isMe = msg.senderId === liveUser?.uid;
                   const technicalDetails = msg.data || msg.errorDetails || msg.stack;
                   const technicalDetailsText =

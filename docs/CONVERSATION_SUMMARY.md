@@ -1,3 +1,10 @@
+### 5 Augustus 2026 (Bugfix & Diagnose)
+
+- **Bugfix AdminMessagesView:**
+  - Opgelost: Het probleem waarbij "4 ongelezen berichten" (over "Tijdelijke Afkeur" reminders) bleven hangen.
+  - Oorzaak: \utomationService.ts\ stuurde de reminder in een loop naar elke teamleider individueel, wat resulteerde in meerdere exacte kopieën van hetzelfde bericht op hetzelfde moment. In \AdminMessagesView.tsx\ werden deze gededupliceerd waardoor alleen de eerste werd behouden en getoond. Wanneer een gebruiker de conversatie als 'gelezen' markeerde, werd alleen dat eerste bericht geüpdatet, terwijl hun eigen bericht in de database 'ongelezen' (read: false) bleef.
+  - Oplossing: Duplicaten worden nu toegevoegd met een \isHiddenDuplicate: true\ vlag. Ze worden verborgen in de UI om spam te voorkomen, maar worden wel meegenomen in de \handleMarkAsRead\ iteratie. Hierdoor worden alle onderliggende berichten voor alle accounts correct op 'gelezen' gezet.
+
 ### Chatvoorkeuren
 
 - Standaard antwoorden in het Nederlands.
@@ -13271,3 +13278,4 @@ U p d a t e d   P W A   o r i e n t a t i o n   t o   ' p o r t r a i t '   i n 
  
  - Reverted PWA orientation in \ite.pwa.config.ts\ to \ny\ to allow tablets to rotate.
 - Added \useScreenOrientationLock\ hook in \App.tsx\ to dynamically lock small screens (<=768px, like scanners) to portrait mode.
+
