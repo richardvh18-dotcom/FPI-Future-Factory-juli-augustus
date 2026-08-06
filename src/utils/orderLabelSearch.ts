@@ -126,7 +126,13 @@ export const executeOrderLabelSearch = async (
     }
     if (targetedResults.length > 0) {
       addDebug(`🎯 [Search] Early targeted BH18 match: ${targetedResults.length}`);
-      return { results: targetedResults, diagnostics };
+      const resultsArray = targetedResults;
+      console.log(`SEARCH_DEBUG: executeOrderLabelSearch returning ${resultsArray.length} results.`, resultsArray);
+
+      return {
+        results: resultsArray,
+        diagnostics
+      };
     }
   }
 
@@ -137,22 +143,65 @@ export const executeOrderLabelSearch = async (
 
   const deepPathQueries: Array<Promise<unknown>> = [];
   const machinePairs = await loadFactoryMachinePaths();
+  
+  const expandedMachinePairs: Array<{productType: string; machine: string}> = [];
+  for (const pair of machinePairs) {
+    const p1 = pair;
+    const p2 = { ...pair, productType: pair.productType.charAt(0).toUpperCase() + pair.productType.slice(1) };
+    
+    for (const p of [p1, p2]) {
+      // Avoid duplicates if capitalized is the same
+      if (p === p2 && p1.productType === p2.productType) continue;
+      
+      expandedMachinePairs.push(p);
+      const upper = String(p.machine || "").toUpperCase();
+      if (upper.startsWith("BH") && !upper.startsWith("40")) {
+        expandedMachinePairs.push({ ...p, machine: `40${p.machine}` });
+      } else if (upper.startsWith("40BH")) {
+        expandedMachinePairs.push({ ...p, machine: p.machine.substring(2) });
+      }
+    }
+  }
 
-  for (const { productType, machine } of machinePairs) {
+  // Deduplicate
+  const uniqueExpandedPairs = Array.from(new Set(expandedMachinePairs.map(p => JSON.stringify(p)))).map(p => JSON.parse(p));
+
+  const deepPathQueriesByMachine: Array<{ machinePath: string, queryBuilders: (() => Promise<any>)[] }> = [];
+
+  for (const { productType, machine } of uniqueExpandedPairs) {
     try {
       const machinePath = `${getPathString(PATHS.PLANNING)}/${productType}/machines/${machine}/orders`;
-      deepPathQueries.push(getDocs(query(collection(db, machinePath), where("orderId", "in", uniqueOptions), limit(100))).catch(() => null));
-      deepPathQueries.push(getDocs(query(collection(db, machinePath), where("orderNumber", "in", uniqueOptions), limit(100))).catch(() => null));
-      deepPathQueries.push(getDocs(query(collection(db, machinePath), where("Order", "in", uniqueOptions), limit(100))).catch(() => null));
-      deepPathQueries.push(getDocs(query(collection(db, machinePath), where("Productieorder", "in", uniqueOptions), limit(100))).catch(() => null));
-      deepPathQueries.push(getDocs(query(collection(db, machinePath), where("order", "in", uniqueOptions), limit(100))).catch(() => null));
-      deepPathQueries.push(getDocs(query(collection(db, machinePath), where("itemCode", "in", uniqueOptions), limit(100))).catch(() => null));
-      deepPathQueries.push(getDocs(query(collection(db, machinePath), where("Item", "in", uniqueOptions), limit(100))).catch(() => null));
-      deepPathQueries.push(getDocs(query(collection(db, machinePath), where("Artikel", "in", uniqueOptions), limit(100))).catch(() => null));
-      for (const opt of uniqueOptions) {
-        deepPathQueries.push(getDocs(query(collection(db, machinePath), where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(25))).catch(() => null));
+      
+      const machineSpecificOptions = [...uniqueOptions];
+      if (digitsMatch && digitsMatch[0].length >= 3) {
+        machineSpecificOptions.push(`${machine}-${digitsMatch[0]}`);
+        machineSpecificOptions.push(`${machine}${digitsMatch[0]}`);
       }
-    } catch {
+      // Ensure unique and max 30 items for 'in' query
+      const safeMachineOptions = Array.from(new Set(machineSpecificOptions)).slice(0, 30);
+      
+      const machineQueries: (() => Promise<any>)[] = [];
+      machineQueries.push(() => getDocs(query(collection(db, machinePath), where("orderId", "in", safeMachineOptions), limit(100))));
+      machineQueries.push(() => getDocs(query(collection(db, machinePath), where("orderNumber", "in", safeMachineOptions), limit(100))));
+      machineQueries.push(() => getDocs(query(collection(db, machinePath), where("Order", "in", safeMachineOptions), limit(100))));
+      machineQueries.push(() => getDocs(query(collection(db, machinePath), where("Productieorder", "in", safeMachineOptions), limit(100))));
+      machineQueries.push(() => getDocs(query(collection(db, machinePath), where("order", "in", safeMachineOptions), limit(100))));
+      machineQueries.push(() => getDocs(query(collection(db, machinePath), where("itemCode", "in", safeMachineOptions), limit(100))));
+      machineQueries.push(() => getDocs(query(collection(db, machinePath), where("Item", "in", safeMachineOptions), limit(100))));
+      machineQueries.push(() => getDocs(query(collection(db, machinePath), where("Artikel", "in", safeMachineOptions), limit(100))));
+      if (machinePath.includes("40BH11") || machinePath.includes("BH11")) {
+        console.log(`SEARCH_DEBUG: safeMachineOptions for ${machinePath}:`, safeMachineOptions);
+      }
+      for (const opt of safeMachineOptions) {
+        machineQueries.push(() => 
+          getDocs(query(collection(db, machinePath), where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(25)))
+        );
+        machineQueries.push(() => 
+          getDocs(query(collection(db, machinePath), where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(25)))
+        );
+      }
+      deepPathQueriesByMachine.push({ machinePath, queryBuilders: machineQueries });
+    } catch (err) {
       // Silent
     }
   }
@@ -227,28 +276,32 @@ export const executeOrderLabelSearch = async (
   const exactSnaps = await Promise.all(exactQueries.map(p => p.catch(() => null)));
   exactSnaps.forEach(addDocs);
 
-  const deepPathSnaps = await Promise.all(deepPathQueries);
-  deepPathSnaps.forEach(addDocs);
+  if (foundDocs.size === 0) {
+    // Run machine deep paths sequentially to avoid resource-exhausted errors
+    for (const machineGroup of deepPathQueriesByMachine) {
+      if (foundDocs.size > 0) break; // Early return if we found what we need!
+      
+      const snaps = await Promise.all(machineGroup.queryBuilders.map(builder => builder().catch(() => null)));
+      snaps.forEach(addDocs);
+    }
+  }
 
   const scopedExactQueries = [
-    getDocs(query(collectionGroup(db, "orders"), where("orderId", "in", uniqueOptions), limit(40))),
-    getDocs(query(collectionGroup(db, "orders"), where("orderNumber", "in", uniqueOptions), limit(40))),
-    getDocs(query(collectionGroup(db, "orders"), where("Order", "in", uniqueOptions), limit(40))),
-    getDocs(query(collectionGroup(db, "orders"), where("Productieorder", "in", uniqueOptions), limit(40))),
-    getDocs(query(collectionGroup(db, "orders"), where("order", "in", uniqueOptions), limit(40))),
-    getDocs(query(collectionGroup(db, "orders"), where("itemCode", "in", uniqueOptions), limit(40))),
-    getDocs(query(collectionGroup(db, "orders"), where("Item", "in", uniqueOptions), limit(40))),
-    getDocs(query(collectionGroup(db, "orders"), where("Artikel", "in", uniqueOptions), limit(40))),
-    getDocs(query(collectionGroup(db, "items"), where("orderId", "in", uniqueOptions), limit(40))),
-    getDocs(query(collectionGroup(db, "items"), where("orderNumber", "in", uniqueOptions), limit(40))),
+    getDocs(query(collectionGroup(db, "orders"), where("orderId", "in", uniqueOptions), limit(40))).catch(() => null),
+    getDocs(query(collectionGroup(db, "orders"), where("orderNumber", "in", uniqueOptions), limit(40))).catch(() => null),
+    getDocs(query(collectionGroup(db, "orders"), where("Order", "in", uniqueOptions), limit(40))).catch(() => null),
+    getDocs(query(collectionGroup(db, "orders"), where("Productieorder", "in", uniqueOptions), limit(40))).catch(() => null),
+    getDocs(query(collectionGroup(db, "orders"), where("order", "in", uniqueOptions), limit(40))).catch(() => null),
+    getDocs(query(collectionGroup(db, "orders"), where("itemCode", "in", uniqueOptions), limit(40))).catch(() => null),
+    getDocs(query(collectionGroup(db, "orders"), where("Item", "in", uniqueOptions), limit(40))).catch(() => null),
+    getDocs(query(collectionGroup(db, "orders"), where("Artikel", "in", uniqueOptions), limit(40))).catch(() => null),
+    getDocs(query(collectionGroup(db, "items"), where("orderId", "in", uniqueOptions), limit(40))).catch(() => null),
+    getDocs(query(collectionGroup(db, "items"), where("orderNumber", "in", uniqueOptions), limit(40))).catch(() => null),
   ];
   for (const opt of uniqueOptions.slice(0, 10)) {
-    scopedExactQueries.push(
-      getDocs(query(collectionGroup(db, "orders"), where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(25))),
-      getDocs(query(collectionGroup(db, "items"), where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(25)))
-    );
+    // Cannot use documentId() with collectionGroup using a raw string, skipping.
   }
-  const scopedExactSnaps = await Promise.all(scopedExactQueries.map(p => p.catch(() => null)));
+  const scopedExactSnaps = await Promise.all(scopedExactQueries);
   scopedExactSnaps.forEach(addScopedPlanningDocs);
 
   if (foundDocs.size === 0 && searchStr.length >= 3) {
@@ -314,7 +367,7 @@ export const executeOrderLabelSearch = async (
 
     const scopedStartsWithQueries: Array<Promise<unknown>> = [];
     Array.from(new Set(startOptions)).forEach((opt) => {
-      scopedStartsWithQueries.push(getDocs(query(collectionGroup(db, "orders"), where(documentId(), ">=", opt), where(documentId(), "<=", opt + "\uf8ff"), limit(25))));
+      // Cannot use documentId() with collectionGroup using a raw string, skipping.
       scopedStartsWithQueries.push(getDocs(query(collectionGroup(db, "orders"), where("orderId", ">=", opt), where("orderId", "<=", opt + "\uf8ff"), limit(25))));
       scopedStartsWithQueries.push(getDocs(query(collectionGroup(db, "orders"), where("order", ">=", opt), where("order", "<=", opt + "\uf8ff"), limit(25))));
       scopedStartsWithQueries.push(getDocs(query(collectionGroup(db, "orders"), where("Order", ">=", opt), where("Order", "<=", opt + "\uf8ff"), limit(25))));

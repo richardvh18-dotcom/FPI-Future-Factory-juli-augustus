@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, useDeferredValue } from "react";
 import i18n from "i18next";
 import {
   Calendar,
@@ -262,6 +262,7 @@ const PlanningListView = ({
     return window.matchMedia("(pointer: coarse)").matches;
   }, []);
   const [searchTerm, setSearchTerm] = useState("");
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showAllWeeks, setShowAllWeeks] = useState(false);
 
@@ -311,7 +312,7 @@ const PlanningListView = ({
       const targetStatus = activeTab === "planning" ? "pending" : "in_progress";
       if (order.status !== targetStatus) return false;
 
-      const term = searchTerm.toLowerCase();
+      const term = deferredSearchTerm.toLowerCase();
       const matchesSearch =
         (order.orderId || "").toLowerCase().includes(term) ||
         (order.itemCode || "").toLowerCase().includes(term) ||
@@ -324,13 +325,13 @@ const PlanningListView = ({
       if (orderWeek) return matchesSearch && orderWeek === selectedWeek;
 
       const d = parseDateSafe(order.plannedDate || order.deliveryDate);
-      if (!d) return matchesSearch && searchTerm.length > 0;
+      if (!d) return matchesSearch && deferredSearchTerm.length > 0;
 
       const matchesWeek =
         getISOWeek(d) === selectedWeek && getISOWeekYear(d) === selectedYear;
       return matchesSearch && matchesWeek;
     });
-  }, [orders, searchTerm, selectedWeek, selectedYear, showAllWeeks, activeTab]);
+  }, [orders, deferredSearchTerm, selectedWeek, selectedYear, showAllWeeks, activeTab]);
 
   return (
     <div className="flex h-full bg-slate-50 overflow-hidden">

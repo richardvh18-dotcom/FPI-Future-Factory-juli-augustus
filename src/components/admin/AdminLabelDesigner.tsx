@@ -403,6 +403,15 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     searchTerm?: string;
     maxRows?: number;
   }) => {
+    const normalizedStation = String(station || '').trim().toUpperCase();
+    const normalizedTerm = String(searchTerm || '').trim().toUpperCase();
+
+    // Als er geen station is geselecteerd én geen zoekterm is ingevuld, houd de lijst leeg (overzichtelijker)
+    if (!normalizedStation && !normalizedTerm) {
+      setAvailableOrders([]);
+      return;
+    }
+
     const planningPath = getPathString(PATHS.PLANNING);
     const [rootSnap, scopedSnap] = await Promise.all([
       getDocs(query(collection(db, planningPath), limit(maxRows))),
@@ -418,16 +427,22 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     });
 
     let filtered = Array.from(dedup.values());
-    const normalizedStation = String(station || '').trim().toUpperCase();
+    
     if (normalizedStation) {
+      const possibleMachines = [normalizedStation];
+      if (normalizedStation.startsWith('BH') || normalizedStation.startsWith('BA')) {
+        possibleMachines.push(`40${normalizedStation}`);
+      } else if (normalizedStation.startsWith('40BH') || normalizedStation.startsWith('40BA')) {
+        possibleMachines.push(normalizedStation.substring(2));
+      }
+
       filtered = filtered.filter((row) => {
         const machine = String(row.machine || row.station || '').toUpperCase();
         const path = String(row.sourcePath || '').toUpperCase();
-        return machine === normalizedStation || path.includes(`/MACHINES/${normalizedStation}/ORDERS/`);
+        return possibleMachines.some(m => machine === m || path.includes(`/MACHINES/${m}/ORDERS/`));
       });
     }
 
-    const normalizedTerm = String(searchTerm || '').trim().toUpperCase();
     if (normalizedTerm) {
       filtered = filtered.filter((row) => {
         const haystack = [row.orderId, row.orderNumber, row.itemCode, row.item, row.lotNumber]

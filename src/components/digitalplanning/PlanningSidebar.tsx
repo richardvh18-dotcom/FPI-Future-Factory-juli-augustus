@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useDeferredValue } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Search,
@@ -119,6 +119,7 @@ const PlanningSidebar = ({
   const translate: TranslateFn = (key: any, defaultValue?: string, options?: Record<string, unknown>) =>
     t(key as string | string[], defaultValue ?? "", options as Record<string, unknown> | undefined);
   const [searchTerm, setSearchTerm] = useState("");
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [selectedMachine, setSelectedMachine] = useState("ALL");
   const [sortMode, setSortMode] = useState("week_backlog");
 
@@ -157,7 +158,7 @@ const PlanningSidebar = ({
 
   // Auto-enable history when searching for lot numbers
   useEffect(() => {
-    const term = (searchTerm || "").toLowerCase().trim();
+    const term = (deferredSearchTerm || "").toLowerCase().trim();
     // Check if search term looks like a lot number (6+ digits or contains only numbers)
     const isLotNumberSearch = /\d{6,}/.test(term) || (/^\d+$/.test(term) && term.length > 5);
     
@@ -169,7 +170,7 @@ const PlanningSidebar = ({
       // Only switch back if it's truly a manual action (not automatic)
       // Keep it in "all" for now to avoid constant toggling
     }
-  }, [searchTerm]);
+  }, [deferredSearchTerm, dataScope]);
 
   const isHistoryScope = dataScope === "history" || dataScope === "all";
   const isRejectScope = dataScope === "temp_reject" || dataScope === "definitive_reject";
@@ -957,7 +958,7 @@ const PlanningSidebar = ({
     }
 
     // 3. Zoeken
-    const term = (searchTerm || "").toLowerCase().trim();
+    const term = (deferredSearchTerm || "").toLowerCase().trim();
     if (term) {
       const terms = term.split(/\s+/).filter(Boolean);
       result = result.filter((order: SidebarRecord) => {
@@ -1149,7 +1150,7 @@ const PlanningSidebar = ({
       // Fallback: Order ID
       return (a.orderId || "").localeCompare(b.orderId || "");
     });
-  }, [sourceData, searchTerm, selectedMachine, dataScope, currentWeek, currentYear, sortMode, rejectPeriod, isRejectScope, isCompletedScope, orderStationMap, archivedOrders, orderLotMap, trackedFinishedByOrder, activeTrackedByOrder]);
+  }, [sourceData, deferredSearchTerm, selectedMachine, dataScope, currentWeek, currentYear, sortMode, rejectPeriod, isRejectScope, isCompletedScope, orderStationMap, archivedOrders, orderLotMap, trackedFinishedByOrder, activeTrackedByOrder]);
 
   const totalProductQty = useMemo(() => {
     return filteredOrders.reduce((sum, order) => {

@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Loader2,
@@ -165,6 +165,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedTrackedId, setSelectedTrackedId] = useState<string | null>(null);
   const [planningSearch, setPlanningSearch] = useState("");
+  const deferredPlanningSearch = useDeferredValue(planningSearch);
   const [wikkelenSearch, setWikkelenSearch] = useState("");
   const [showManualInput, setShowManualInput] = useState(false);
   const [manualInputValue, setManualInputValue] = useState("");
@@ -778,7 +779,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       // FIX: BH31 (Reparatie) orders verdwijnen uit planning zodra ze in behandeling zijn
       // Tenzij er specifiek naar gezocht wordt
       const isRepairStation = normalizedStationId === "BH31" || normalizedStationId.includes("REPARATIE") || normalizedStationId.includes("SPECIAL");
-      if (isRepairStation && !planningSearch) {
+      if (isRepairStation && !deferredPlanningSearch) {
           const oid = String(o.orderId || "").trim();
           const started = productionProgressMap[oid] || 0;
           if (started > 0 || ["in_progress", "in production", "in productie"].includes(String(o.status || "").trim().toLowerCase())) return false;
@@ -787,7 +788,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       // BM01: Geen week filter, toon alles (behalve als search actief is, wat hieronder gebeurt)
       if (isBM01) return true;
 
-      if (showAllWeeks || planningSearch) return true;
+      if (showAllWeeks || deferredPlanningSearch) return true;
       
       // FORCEER ZICHTBAARHEID ALS ER ACTIVITEIT IS (ZELFS ALS WEEK NIET MATCHT)
       if (hasStationActivity || hasActiveTracked) return true;
@@ -808,7 +809,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       return false;
     });
 
-    if (!planningSearch) {
+    if (!deferredPlanningSearch) {
       return base.sort((a, b) => {
         const priorityRank = (order: EnrichedPlanningOrder) => {
           if (order?.demandOrder) return 4; // Pegging/Demand Order heeft absolute prioriteit
@@ -851,7 +852,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       });
     }
     
-    const searchValue = String(planningSearch || "").toLowerCase().trim();
+    const searchValue = String(deferredPlanningSearch || "").toLowerCase().trim();
     const tokens = searchValue.split(/\s+/).filter(Boolean);
 
     if (tokens.length === 0) return base;
@@ -892,7 +893,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
         return combinedText.includes(token);
       });
     });
-  }, [myOrders, madeCountMap, stationCounterField, targetWeekNum, targetYearNum, showAllWeeks, planningSearch, isBM01, isBH18, normalizedStationId, productionProgressMap, waitingForLossenMap, readyForReturnMap, absCurrentReal]);
+  }, [myOrders, madeCountMap, stationCounterField, targetWeekNum, targetYearNum, showAllWeeks, deferredPlanningSearch, isBM01, isBH18, normalizedStationId, productionProgressMap, waitingForLossenMap, readyForReturnMap, absCurrentReal]);
 
   // LOSSEN 12/18: gefilterde planning per machine (filter via filterbar)
   const lossenFilteredOrders = useMemo(() => {

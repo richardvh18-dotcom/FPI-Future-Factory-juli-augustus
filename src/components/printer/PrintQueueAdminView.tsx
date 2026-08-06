@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { generateLotBatchZPL } from '../../utils/zplHelper';
 import { resolvePrinterDpi } from '../../utils/printerDrivers';
-import { applyLabelLogic, processLabelData, getCompactPrintVariables } from '../../utils/labelHelpers';
+import { applyLabelLogic, processLabelData, getCompactPrintVariables, filterOrderLabelsByProduct } from '../../utils/labelHelpers';
 import { getISOWeekInfo, getStationMachineCode } from '../../utils/lotLogic';
 import {
   transitionPrintQueueJobStatus,
@@ -911,7 +911,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
 
   useEffect(() => {
     const searchText = String(orderStr || "").trim().toUpperCase();
-    if (!selectedMachine || searchText.length < 3) {
+    if (searchText.length < 3) {
       setSearchItems([]);
       setLoadingSearchItems(false);
       return;
@@ -922,61 +922,56 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     const runSearch = async () => {
       setLoadingSearchItems(true);
       try {
-        const fetchTargets = await buildMachineFetchTargets(selectedMachine);
-        const machineMarkers = Array.from(new Set(fetchTargets.map((target) => `/machines/${target.machine}/orders/`)));
-        const queries = fetchTargets.map(async ({ productType, machine }) => {
-          const machinePath = `${getPathString(PATHS.PLANNING)}/${productType}/machines/${machine}/orders`;
+        let rows: AnyRecord[] = [];
+        let machineMarkers: string[] = [];
+
+        if (selectedMachine) {
+          const fetchTargets = await buildMachineFetchTargets(selectedMachine);
+          machineMarkers = Array.from(new Set(fetchTargets.map((target) => `/machines/${target.machine}/orders/`)));
+          const queries = fetchTargets.map(async ({ productType, machine }) => {
+            const machinePath = `${getPathString(PATHS.PLANNING)}/${productType}/machines/${machine}/orders`;
+            try {
+              const snap = await getDocs(
+                query(
+                  collection(db, machinePath),
+                  orderBy(documentId()),
+                  where(documentId(), ">=", searchText),
+                  where(documentId(), "<=", `${searchText}\uf8ff`),
+                  limit(80)
+                )
+              );
+              return snap.docs.map((docSnap) => ({
+                id: docSnap.id,
+                ...(docSnap.data() as AnyRecord),
+                __machine: machine,
+                __productType: productType,
+              }));
+            } catch {
+              return [] as AnyRecord[];
+            }
+          });
+
+          rows = (await Promise.all(queries)).flat();
+        }
+
+        // Fallback: zoek direct in alle scoped 'orders' collections en filter op machinepad indien machine gekozen.
+        if (rows.length === 0 || !selectedMachine) {
           try {
-            const snap = await getDocs(
-              query(
-                collection(db, machinePath),
-                orderBy(documentId()),
-                where(documentId(), ">=", searchText),
-                where(documentId(), "<=", `${searchText}\uf8ff`),
-                limit(80)
-              )
-            );
-            return snap.docs.map((docSnap) => ({
-              id: docSnap.id,
-              ...(docSnap.data() as AnyRecord),
-              __machine: machine,
-              __productType: productType,
-            }));
-          } catch {
-            return [] as AnyRecord[];
-          }
-        });
+            const { executeOrderLabelSearch } = await import('../../utils/orderLabelSearch');
+            const { results } = await executeOrderLabelSearch(searchText, machineItemsRef.current);
 
-        let rows = (await Promise.all(queries)).flat();
-
-        // Fallback: zoek direct in alle scoped 'orders' collections en filter op machinepad.
-        if (rows.length === 0) {
-          try {
-            const scopedSearchSnap = await getDocs(
-              query(
-                collectionGroup(db, 'orders'),
-                orderBy(documentId()),
-                where(documentId(), ">=", searchText),
-                where(documentId(), "<=", `${searchText}\uf8ff`),
-                limit(SCOPED_ORDERS_SEARCH_FALLBACK_LIMIT)
-              )
-            );
-
-            rows = scopedSearchSnap.docs
-              .filter((docSnap) => {
-                const refPath = String(docSnap.ref?.path || '');
-                return machineMarkers.some((marker) => refPath.includes(marker));
-              })
-              .map((docSnap) => {
-                const refPath = String(docSnap.ref?.path || '');
-                const machineMatch = refPath.match(/\/machines\/([^/]+)\/orders\//i);
-                return {
-                  id: docSnap.id,
-                  ...(docSnap.data() as AnyRecord),
-                  __machine: machineMatch?.[1] || undefined,
-                };
+            const fallbackRows = results
+              .filter((item) => {
+                if (!selectedMachine) return true;
+                const refPath = String(item.path || item._path || item.__path || '');
+                // Try to infer from __machine if set, or just return true and let user see it anyway
+                if (item.__machine && item.__machine !== selectedMachine) return false;
+                return true; 
               });
-          } catch {
+              
+            rows = selectedMachine ? fallbackRows : fallbackRows;
+          } catch (err) {
+            console.error("SEARCH_DEBUG: FALLBACK ERROR", err);
             // Silence fallback failures; list stays empty.
           }
         }
@@ -1160,9 +1155,9 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
                   <div className={`h-full ${ORDER_LABELS_LIST_MIN_HEIGHT} flex items-center justify-center text-slate-400 gap-2`}>
                     <Loader2 className="animate-spin" size={18} /> {t('common.loadingList', 'Lijst laden...')}
                   </div>
-                ) : !selectedMachine ? (
+                ) : !selectedMachine && !searchActive ? (
                   <div className={`h-full ${ORDER_LABELS_LIST_MIN_HEIGHT} flex items-center justify-center text-center text-slate-400 p-6`}>
-                    {t('printStationView.selectMachineFirst', 'Kies eerst een machine om orders te laden.')}
+                    {t('printStationView.selectMachineFirst', 'Kies een machine of zoek direct op ordernummer.')}
                   </div>
                 ) : showSearchBusyState ? (
                   <div className={`h-full ${ORDER_LABELS_LIST_MIN_HEIGHT} flex items-center justify-center text-center text-slate-400 p-6`}>
