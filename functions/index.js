@@ -2435,6 +2435,9 @@ exports.syncUserClaimsOnWrite = syncUserClaimsOnWrite;
 const { scheduledFirestoreExport } = require('./src/admin/backupDatabase');
 exports.scheduledFirestoreExport = scheduledFirestoreExport;
 
+const { scheduledPrintQueueCleanup } = require('./src/admin/cleanupPrintQueue');
+exports.scheduledPrintQueueCleanup = scheduledPrintQueueCleanup;
+
 // Callables
 const { manualSyncDrawings } = require('./src/callable/manualSyncDrawings');
 exports.manualSyncDrawings = manualSyncDrawings;

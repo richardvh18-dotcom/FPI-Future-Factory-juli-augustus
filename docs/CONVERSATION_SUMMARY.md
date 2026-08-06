@@ -1,9 +1,26 @@
-﻿### Chatvoorkeuren
+### Chatvoorkeuren
 
 - Standaard antwoorden in het Nederlands.
 - Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md).
 - Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
 - Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
+
+### 6 Augustus 2026 (Print Queue Cleanup & Database fix)
+
+- **Print Queue Auto-Cleanup:** Een nieuwe Firebase Scheduled Cloud Function `scheduledPrintQueueCleanup` aangemaakt. Deze schoont dagelijks de print_queue documenten op op basis van hun pad (subcollecties):
+  - Documenten waarvan het pad verwijst naar BH, BA of Mazak-machines (bevat `/40BH`, `/40BA` of `MAZAK`) worden 30 dagen bewaard.
+  - Alle overige documenten worden 2 dagen bewaard.
+  - Alleen opdrachten met de status `completed` of `error` worden daadwerkelijk verwijderd, hangende ('pending') opdrachten worden genegeerd.
+- **Database correctie:** Voor order `N20025336` (Elb 150R1.5/90) is het veld `started_BH18` handmatig gecorrigeerd van `10` naar `8`. Hierdoor verschijnt de order weer correct in de planningslijst van BH18 voor de resterende 2 stuks. Dit was nodig omdat het systeem orders automatisch uit de planning verbergt zodra het geregistreerde gestarte aantal gelijk is aan het totaal te produceren aantal.
+- **Sorteerbug Terminal opgelost:** Er was een bug waarbij fallback-waarden voor ontbrekende datums de Terminal dwongen orders verkeerd te prioriteren (als een 2000-jaar oude order). Aangepast in `useTerminalData.ts` om de `weekNumber` en `weekYear` netjes te parsen.
+- **UI Update (PlanningListView):** De weergave van de PO tekst (en "Hold Reason") is nu ook direct zichtbaar in de lijstweergave van de werkstations-planning (`WorkstationHub`/`PlanningListView`), consistent met hoe dit in de tegel-weergave getoond wordt.
+- **Git Repo Opschoning:** De map `Tijdelijke Bestanden/` is met `git rm -r --cached` uit de Git index verwijderd en toegevoegd aan de `.gitignore`. Hierdoor vervuilen deze bestanden de source code (repository) niet meer, maar blijven ze lokaal wél gewoon op de computer staan zodat de AI ze kan lezen als context.
+- **ESLint Controle:** Er is gecontroleerd op dubbele ESLint configuraties (`.eslintrc.json`, `.eslintrc.cjs`). Deze bleken lokaal al succesvol verwijderd te zijn; enkel de juiste `eslint.config.js` is nog aanwezig in de root map.
+- **Script Consolidatie (Wildgroei):** Om "wildgroei" en gevaarlijke fouten te voorkomen, zijn alle losse scripts in de root-map (`.cjs`, `.mjs`, `.sh`) en de oude `/scripts/` map (met daarin ~40 oude migratie- en diagnostische scripts) veilig gearchiveerd naar `tools/archive/`.
+- **Documentatie Opschoning:** De `docs/` map is doorgelopen op verouderde en dubbele bestanden:
+  - De dubbele sectie over de Print Daemon in `01_PROJECTSTRUCTUUR...` is verwijderd (en verwijst nu netjes naar `07_INTEGRATIE...`).
+  - Het oude/obsolete WebUSB document (`PRINTER_ROUTING_SETUP.md`) en een verouderd component backlog (`COMPONENT_REFACTOR_PLAN.md`) zijn veilig verplaatst naar `docs/archief/`.
+
 
 ### 5 Augustus 2026 (Bugfix & Diagnose)
 

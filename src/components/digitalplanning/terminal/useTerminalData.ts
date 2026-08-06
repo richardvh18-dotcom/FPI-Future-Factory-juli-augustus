@@ -780,7 +780,9 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
       // FORCEER ZICHTBAARHEID ALS ER ACTIVITEIT IS (ZELFS ALS WEEK NIET MATCHT)
       if (hasStationActivity || hasActiveTracked) return true;
 
-      const absOrder = (o.parsedYear || 0) * 52 + (o.parsedWeek || 0);
+      const parsedYearVal = o.parsedYear || (o as any).weekYear || 0;
+      const parsedWeekVal = o.parsedWeek || (o as any).weekNumber || 0;
+      const absOrder = parsedYearVal * 52 + parsedWeekVal;
       const absTarget = targetYearNum * 52 + targetWeekNum;
 
       // Als we de HUIDIGE week bekijken, toon ook de backlog (alles uit verleden dat niet af is)
@@ -813,8 +815,12 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
         const prioDiff = priorityRank(b) - priorityRank(a);
         if (prioDiff !== 0) return prioDiff;
 
-        const absOrderA = (a.parsedYear || 0) * 52 + (a.parsedWeek || 0);
-        const absOrderB = (b.parsedYear || 0) * 52 + (b.parsedWeek || 0);
+        const parsedYearA = a.parsedYear || (a as any).weekYear || 0;
+        const parsedWeekA = a.parsedWeek || (a as any).weekNumber || 0;
+        const parsedYearB = b.parsedYear || (b as any).weekYear || 0;
+        const parsedWeekB = b.parsedWeek || (b as any).weekNumber || 0;
+        const absOrderA = parsedYearA * 52 + parsedWeekA;
+        const absOrderB = parsedYearB * 52 + parsedWeekB;
         
         const isBacklogA = absOrderA < absCurrentReal;
         const isBacklogB = absOrderB < absCurrentReal;

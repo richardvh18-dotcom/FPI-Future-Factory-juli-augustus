@@ -522,6 +522,24 @@ const PlanningListView = ({
                   {order.itemCode || order.productId}
                 </p>
 
+                {order.holdReason && (
+                  <div className="mb-4 rounded-lg border border-red-500 bg-red-100 px-2 py-1 shadow-md shadow-red-200 text-left w-max max-w-full">
+                    <p className="text-[9px] font-black uppercase tracking-wide text-red-800">{i18n.t("terminalPlanning.holdReason", "GEBLOKKEERD (Hold Reason)")}</p>
+                    <p className="truncate text-[10px] font-bold text-red-900 mt-0.5">
+                      {order.holdReason}
+                    </p>
+                  </div>
+                )}
+
+                {(order.poText || order.notes) && !order.holdReason && (
+                  <div className="mb-4 rounded-lg border border-amber-400 bg-amber-100 px-2 py-1 shadow-md shadow-amber-300/50 text-left w-max max-w-full">
+                    <p className="text-[9px] font-black uppercase tracking-wide text-amber-800">{i18n.t("terminalPlanning.poText", "PO Text")}</p>
+                    <p className="truncate text-[10px] font-bold text-amber-900">
+                      {order.poText || order.notes}
+                    </p>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between pt-3 border-t border-slate-50">
                   <div className="flex items-center gap-3">
                     <span

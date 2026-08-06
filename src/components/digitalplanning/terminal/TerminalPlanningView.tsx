@@ -618,11 +618,6 @@ const TerminalPlanningView = ({
               <div className="truncate font-black text-[12px] uppercase tracking-tight text-slate-900">
                 {summary.displayName}
               </div>
-              {summary.extraCode && (
-                <div className="truncate text-[9px] font-black uppercase tracking-wide text-amber-700">
-                  {summary.extraCode}
-                </div>
-              )}
             </div>
             <div className="min-w-0 overflow-hidden">
               <div className="truncate text-[11px] font-black text-slate-700">
@@ -644,6 +639,16 @@ const TerminalPlanningView = ({
                 {getPriorityBadgeStyles(order) && (
                   <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wide ${getPriorityBadgeStyles(order)!.className}`}>
                     {getPriorityBadgeStyles(order)!.label}
+                  </span>
+                )}
+                {order.holdReason && (
+                  <span className="rounded-full bg-red-100 px-2 py-0.5 border border-red-300 text-[9px] font-black text-red-900 uppercase tracking-wide truncate max-w-[300px]" title={order.holdReason}>
+                    HOLD: {order.holdReason}
+                  </span>
+                )}
+                {(order.poText || order.notes) && !order.holdReason && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 border border-amber-300 text-[9px] font-black text-amber-900 uppercase tracking-wide truncate max-w-[300px]" title={order.poText || order.notes}>
+                    PO: {order.poText || order.notes}
                   </span>
                 )}
               </div>
