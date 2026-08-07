@@ -1301,6 +1301,21 @@ const PrintStationView = () => {
 
   // --- USB State & Logic ---
   const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
+  const usbDeviceRef = useRef<USBDevice | null>(null);
+
+  useEffect(() => {
+    usbDeviceRef.current = usbDevice;
+  }, [usbDevice]);
+
+  const isSameUsbDevice = useCallback((a: USBDevice | null | undefined, b: USBDevice | null | undefined): boolean => {
+    if (!a || !b) return false;
+    const aSerial = String(a.serialNumber || '').trim();
+    const bSerial = String(b.serialNumber || '').trim();
+    if (aSerial && bSerial) {
+      return a.vendorId === b.vendorId && a.productId === b.productId && aSerial === bSerial;
+    }
+    return a.vendorId === b.vendorId && a.productId === b.productId;
+  }, []);
 
   const hasUsbIdentity = useCallback((printer: Partial<PrinterConfig> | null | undefined) => {
     return parseUsbId(printer?.vendorId) !== undefined && parseUsbId(printer?.productId) !== undefined;
@@ -1396,15 +1411,26 @@ const PrintStationView = () => {
     };
 
     const handleUsbDisconnect = (event: any) => {
-      const device = event.device;
-      if (!device || !usbDevice) return;
-      if (
-        device.vendorId === usbDevice.vendorId &&
-        device.productId === usbDevice.productId &&
-        String(device.serialNumber || '').trim() === String(usbDevice.serialNumber || '').trim()
-      ) {
-        setUsbDevice(null);
+      const disconnectedDevice = event.device;
+      const currentUsbDevice = usbDeviceRef.current;
+      if (!disconnectedDevice || !currentUsbDevice) return;
+
+      if (!isSameUsbDevice(disconnectedDevice, currentUsbDevice)) {
+        return;
       }
+
+      // Sommige browsers geven kortstondig een disconnect event af tijdens USB-reconfiguratie.
+      // Verifieer eerst of het apparaat echt verdwenen is uit de geautoriseerde lijst.
+      void navigator.usb.getDevices()
+        .then((devices) => {
+          const stillAuthorized = devices.some((device) => isSameUsbDevice(device, currentUsbDevice));
+          if (!stillAuthorized) {
+            setUsbDevice(null);
+          }
+        })
+        .catch(() => {
+          setUsbDevice(null);
+        });
     };
 
     void restoreUsbConnection();
@@ -1419,11 +1445,18 @@ const PrintStationView = () => {
         (navigator as any).usb.removeEventListener('disconnect', handleUsbDisconnect as EventListener);
       }
     };
-  }, [printers, usbDevice]);
+  }, [printers, isSameUsbDevice]);
 
   const handleConnectUsb = async () => {
     try {
-      const device = await navigator.usb.requestDevice({ filters: [] });
+      const strictFilter = hasUsbIdentity(activeQueuePrinter)
+        ? (activeQueuePrinter as Record<string, unknown>)
+        : {};
+
+      const authorizedDevice = await findAuthorizedUsbDevice(strictFilter)
+        || (hasUsbIdentity(activeQueuePrinter) ? await findAuthorizedUsbDevice({}) : null);
+
+      const device = authorizedDevice || await requestUsbDevice(strictFilter);
       setUsbDevice(device);
       localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(device.vendorId));
       localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(device.productId));

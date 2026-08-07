@@ -294,6 +294,21 @@ const getCurrentPrinterId = (printers: PrinterConfig[], usbDevice: USBDevice | n
 
 const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
   const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
+  const usbDeviceRef = useRef<USBDevice | null>(null);
+
+  useEffect(() => {
+    usbDeviceRef.current = usbDevice;
+  }, [usbDevice]);
+
+  const isSameUsbDevice = (a: USBDevice | null | undefined, b: USBDevice | null | undefined): boolean => {
+    if (!a || !b) return false;
+    const aSerial = String(a.serialNumber || '').trim();
+    const bSerial = String(b.serialNumber || '').trim();
+    if (aSerial && bSerial) {
+      return a.vendorId === b.vendorId && a.productId === b.productId && aSerial === bSerial;
+    }
+    return a.vendorId === b.vendorId && a.productId === b.productId;
+  };
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
   const printersRef = useRef<PrinterConfig[]>([]);
   printersRef.current = printers;
@@ -459,15 +474,21 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
     };
 
     const handleUsbDisconnect = (event: any) => {
-      const device = event.device || (event as any).device;
-      if (!device || !usbDevice) return;
-      if (
-        device.vendorId === usbDevice.vendorId &&
-        device.productId === usbDevice.productId &&
-        String(device.serialNumber || '').trim() === String(usbDevice.serialNumber || '').trim()
-      ) {
-        setUsbDevice(null);
-      }
+      const disconnectedDevice = event.device || (event as any).device;
+      const currentUsbDevice = usbDeviceRef.current;
+      if (!disconnectedDevice || !currentUsbDevice) return;
+      if (!isSameUsbDevice(disconnectedDevice, currentUsbDevice)) return;
+
+      void navigator.usb.getDevices()
+        .then((devices) => {
+          const stillAuthorized = devices.some((device) => isSameUsbDevice(device, currentUsbDevice));
+          if (!stillAuthorized) {
+            setUsbDevice(null);
+          }
+        })
+        .catch(() => {
+          setUsbDevice(null);
+        });
     };
 
     void restoreUsbConnection();

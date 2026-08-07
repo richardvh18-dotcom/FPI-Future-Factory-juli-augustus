@@ -1572,6 +1572,7 @@ const PrintQueueAdminView = () => {
   const [loading, setLoading] = useState(true);
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
   const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
+  const usbDeviceRef = useRef<USBDevice | null>(null);
   const [autoPrint, setAutoPrint] = useState<boolean>(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
@@ -1594,6 +1595,10 @@ const PrintQueueAdminView = () => {
   const [factoryConfig, setFactoryConfig] = useState<AnyRecord | null>(null);
   const [bindingStation, setBindingStation] = useState<string>(() => String(localStorage.getItem(PRINT_STATION_SELECTED_KEY) || '').trim());
   const [stationBindings, setStationBindings] = useState<Record<string, string>>(() => readStationBindings());
+
+  useEffect(() => {
+    usbDeviceRef.current = usbDevice;
+  }, [usbDevice]);
 
 
   useEffect(() => {
@@ -1681,15 +1686,46 @@ const PrintQueueAdminView = () => {
     };
 
     const handleUsbDisconnect = (event: any) => {
-      const device = event.device;
-      if (!device || !usbDevice) return;
-      if (
-        device.vendorId === usbDevice.vendorId &&
-        device.productId === usbDevice.productId &&
-        String(device.serialNumber || '').trim() === String(usbDevice.serialNumber || '').trim()
-      ) {
-        setUsbDevice(null);
-      }
+      const disconnectedDevice = event.device;
+      const currentUsbDevice = usbDeviceRef.current;
+      if (!disconnectedDevice || !currentUsbDevice) return;
+
+      const disconnectedSerial = String(disconnectedDevice.serialNumber || '').trim();
+      const currentSerial = String(currentUsbDevice.serialNumber || '').trim();
+      const sameDevice = disconnectedSerial && currentSerial
+        ? (
+          disconnectedDevice.vendorId === currentUsbDevice.vendorId
+          && disconnectedDevice.productId === currentUsbDevice.productId
+          && disconnectedSerial === currentSerial
+        )
+        : (
+          disconnectedDevice.vendorId === currentUsbDevice.vendorId
+          && disconnectedDevice.productId === currentUsbDevice.productId
+        );
+
+      if (!sameDevice) return;
+
+      void navigator.usb.getDevices()
+        .then((devices) => {
+          const stillAuthorized = devices.some((device) => {
+            const deviceSerial = String(device.serialNumber || '').trim();
+            if (currentSerial && deviceSerial) {
+              return (
+                device.vendorId === currentUsbDevice.vendorId
+                && device.productId === currentUsbDevice.productId
+                && deviceSerial === currentSerial
+              );
+            }
+            return device.vendorId === currentUsbDevice.vendorId && device.productId === currentUsbDevice.productId;
+          });
+
+          if (!stillAuthorized) {
+            setUsbDevice(null);
+          }
+        })
+        .catch(() => {
+          setUsbDevice(null);
+        });
     };
 
     void restoreUsbConnection();
@@ -2165,7 +2201,13 @@ const PrintQueueAdminView = () => {
   const handleConnectUsb = async () => {
     setError('');
     try {
-      const device = await navigator.usb.requestDevice({ filters: [] });
+      const strictFilter = hasUsbIdentity(activeQueuePrinter)
+        ? (activeQueuePrinter as Record<string, unknown>)
+        : {};
+      const authorizedDevice = await findAuthorizedUsbDevice(strictFilter)
+        || (hasUsbIdentity(activeQueuePrinter) ? await findAuthorizedUsbDevice({}) : null);
+
+      const device = authorizedDevice || await requestUsbDevice(strictFilter);
       setUsbDevice(device);
       // Sla de printer op voor de volgende keer
       localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(device.vendorId));

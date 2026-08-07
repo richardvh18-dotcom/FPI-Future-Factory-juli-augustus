@@ -5,6 +5,15 @@
 - Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
 - Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
 
+####### Dagupdate 7 augustus 2026 - sessie USB stabiliteit (groen -> grijs)
+
+- USB connect/disconnect state is gestabiliseerd in [src/components/printer/PrintStationView.tsx](src/components/printer/PrintStationView.tsx), [src/components/printer/PrintQueueAdminView.tsx](src/components/printer/PrintQueueAdminView.tsx) en [src/components/printer/PrintQueueAutoProcessor.tsx](src/components/printer/PrintQueueAutoProcessor.tsx).
+- Disconnect-events worden nu eerst geverifieerd tegen de actuele geautoriseerde `navigator.usb.getDevices()` lijst voordat de actieve USB state op `null` gezet wordt. Dit voorkomt valse disconnects waarbij de knop kort groen wordt en daarna onterecht terugvalt naar grijs.
+- USB event handlers gebruiken nu een actuele `usbDeviceRef` i.p.v. potentieel verouderde closure-state, waardoor race-condities bij reconnect/reconfigure sterk afnemen.
+- De handmatige koppelactie gebruikt nu de gedeelde helper-flow (`findAuthorizedUsbDevice` + `requestUsbDevice`) met strict/fallback filtering i.p.v. direct `navigator.usb.requestDevice({ filters: [] })`, zodat de eerste picker-open betrouwbaarder is en eerder geautoriseerde devices direct hergebruikt kunnen worden.
+- Productiedeploy uitgevoerd op Firebase Hosting met versie `0.1.146`.
+- Deploy uitgevoerd via handmatige route (`node tools/archive/scripts/bump-version.cjs`, `npm run build:prod`, `node tools/archive/scripts/verify-build-output.cjs`, `npx -p firebase-tools firebase deploy --only hosting`) omdat de `scripts/` map momenteel in `tools/archive/scripts/` staat.
+
 ### 6 Augustus 2026 (Print Queue Cleanup & Database fix)
 
 - **Print Queue Auto-Cleanup:** Een nieuwe Firebase Scheduled Cloud Function `scheduledPrintQueueCleanup` aangemaakt. Deze schoont dagelijks de print_queue documenten op op basis van hun pad (subcollecties):
@@ -13330,7 +13339,8 @@ U p d a t e d   P W A   o r i e n t a t i o n   t o   ' p o r t r a i t '   i n 
   - Nieuwe module 'Applicatiebeheer' met 7 onafhankelijke sub-rechten (Gebruikers & Rollen, Fabrieksstructuur, Data & Producten, Label & Printbeheer, Kwaliteit & Rapportages, Automation & E-mails, Systeem & Configuratie) toegevoegd in \AdminUsersView.tsx\.
   - \ProtectedRoute.tsx\ aangepast zodat gebruikers met minstens ÃƒÂ©ÃƒÂ©n van deze rechten toegang krijgen tot de \/admin\ route, zelfs als zij niet de 'admin' rol hebben.
   - Sidebar-knop 'Admin' verschijnt nu automatisch voor deze gebruikers.
-  - \AdminDashboard.tsx\ vernieuwd: elke knop/categorie in het dashboard controleert nu specifiek welk \equiredAppFeature\ (bijv. 'factory_structure') nodig is. Gebruikers zien allÃƒÂ©ÃƒÂ©n de tegels waar zij de rechten voor hebben.
+  - \AdminDashboard.tsx\ vernieuwd: elke knop/categorie in het dashboard controleert nu specifiek welk \
+equiredAppFeature\ (bijv. 'factory_structure') nodig is. Gebruikers zien allÃƒÂ©ÃƒÂ©n de tegels waar zij de rechten voor hebben.
 - **UX & App Fixes:**
   - Voorkomen dat Google Chrome de vertaal-pop-up toont bij elke schermwisseling op de Zebra scanner door toevoegen van \class="notranslate"\ en \meta name="google" content="notranslate"\ aan \index.html\.
   - Landscape autorotatie voor de app op handscanners weer geblokkeerd door \orientation: 'any'\ te verwijderen uit \ite.pwa.config.ts\, zodat hardware-instellingen weer primair zijn.
