@@ -414,3 +414,24 @@ export const buildProtocolAwareUsbPayload = ({
     ? applyCutMode(base)
     : Array.from({ length: qty }, () => applyCutMode(base)).join('\n');
 };
+
+export const buildProtocolAwareUsbProbePayload = (printer?: PrinterProfile | null): string => {
+  const protocol = normalizePrinterProtocol(printer || null);
+
+  if (protocol === 'tspl') {
+    return [
+      'SIZE 90 mm,40 mm',
+      'GAP 2 mm,0 mm',
+      'DENSITY 8',
+      'SPEED 4',
+      'DIRECTION 0,0',
+      'REFERENCE 0,0',
+      'CLS',
+      'TEXT 20,20,"ARIAL.TTF",0,20,20,"TEST-USB-PROBE"',
+      'PRINT 1,1',
+      '',
+    ].join('\n');
+  }
+
+  return '^XA\n^FO20,20^A0N,30,30^FDTEST-USB-PROBE^FS\n^XZ';
+};

@@ -8,10 +8,11 @@ import {
   isUsbDirectSupported,
   parseUsbId,
   doesUsbDeviceMatchPrinter,
-  findAuthorizedUsbDevice,
+  resolveUsbDeviceForPrinter,
 } from '../../utils/usbPrintService';
-import { buildProtocolAwareUsbPayload } from '../../utils/printerProtocolService';
-import { getPrinterForQueueJob } from './printQueueProcessorHelpers';
+import { buildProtocolAwareUsbPayload, buildProtocolAwareUsbProbePayload } from '../../utils/printerProtocolService';
+import { safeSetLocalStorage } from '../../utils/safeStorage';
+import { getPrinterForQueueJob, isQueueJobAllowedForPrinter } from './printQueueProcessorHelpers';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -19,6 +20,7 @@ type PrinterConfig = {
   id: string;
   vendorId?: number | string;
   productId?: number | string;
+  usbSerialNumber?: string;
   name?: string;
   queueStations?: unknown[];
   linkedStations?: unknown[];
@@ -42,6 +44,7 @@ type Props = {
 
 const USB_PRINTER_VENDOR_KEY = 'usb_printer_vendor';
 const USB_PRINTER_PRODUCT_KEY = 'usb_printer_product';
+const USB_PRINTER_SERIAL_KEY = 'usb_printer_serial';
 const USB_PRINTER_ID_KEY = 'usb_printer_id';
 const PRINT_STATION_SELECTED_KEY = 'print_station_selected_station';
 const PRINT_STATION_BINDINGS_KEY = 'print_station_printer_bindings_v1';
@@ -49,6 +52,12 @@ const PRINT_QUEUE_ADMIN_PROCESSOR_LOCK_KEY = 'print_queue_admin_processor_lock_v
 const HEARTBEAT_MIN_INTERVAL_MS = 60_000;
 const USB_POLL_INTERVAL_MS = 30_000;
 const ADMIN_PROCESSOR_LOCK_MAX_AGE_MS = 12_000;
+
+const safeStoredUsbSerial = (value: unknown): string => {
+  const serial = String(value || '').trim();
+  if (!serial) return '';
+  return serial.slice(0, 64);
+};
 
 const isInvalidPrintQueueTransitionError = (error: unknown): boolean => {
   const message = String(
@@ -116,18 +125,34 @@ const stationNameFromValue = (stationValue: unknown): string => {
   return String(stationValue).trim();
 };
 
-const normalizeStationKey = (value: unknown): string =>
-  String(value || '')
+const normalizeStationKey = (value: unknown): string => {
+  const compact = String(value || '')
     .trim()
     .toUpperCase()
-    .replace(/\s+/g, '')
+    .replace(/[^A-Z0-9]+/g, '')
     .replace(/^40(?=BH|BM|BA)/, '');
-const normalizeStationBindingKey = (value: unknown): string =>
-  String(value || '')
+
+  if (compact.includes('LABELSPRINTING')) return 'LABELSPRINTING';
+
+  const stationTokenMatch = compact.match(/(BH|BM|BA)\d{2,3}/);
+  if (stationTokenMatch?.[0]) return stationTokenMatch[0];
+
+  return compact;
+};
+const normalizeStationBindingKey = (value: unknown): string => {
+  const compact = String(value || '')
     .trim()
     .toUpperCase()
-    .replace(/\s+/g, '')
+    .replace(/[^A-Z0-9]+/g, '')
     .replace(/^40(?=BH|BM|BA)/, '');
+
+  if (compact.includes('LABELSPRINTING')) return 'LABELSPRINTING';
+
+  const stationTokenMatch = compact.match(/(BH|BM|BA)\d{2,3}/);
+  if (stationTokenMatch?.[0]) return stationTokenMatch[0];
+
+  return compact;
+};
 
 const readStationBindings = (): Record<string, string> => {
   try {
@@ -279,6 +304,12 @@ const getCurrentPrinterId = (printers: PrinterConfig[], usbDevice: USBDevice | n
 
   if (!usbDevice) return null;
 
+  const usbSerial = String(usbDevice.serialNumber || '').trim();
+  if (usbSerial) {
+    const serialMatch = printers.find((printer) => String(printer.usbSerialNumber || '').trim() === usbSerial);
+    if (serialMatch?.id) return serialMatch.id;
+  }
+
   const matches = printers.filter((printer) => {
     const pVendor = parseUsbId(printer.vendorId);
     const pProduct = parseUsbId(printer.productId);
@@ -352,7 +383,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       return usbDevice;
     }
 
-    const matchedDevice = await findAuthorizedUsbDevice(targetPrinter as Record<string, unknown>);
+    const matchedDevice = await resolveUsbDeviceForPrinter(targetPrinter as Record<string, unknown>, usbDevice);
     if (!matchedDevice) {
       console.warn('[PrintQueueAutoProcessor] resolveUsbDeviceForTargetPrinter:no-authorized-match', {
         targetPrinterId: String(targetPrinter.id || ''),
@@ -365,13 +396,22 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       vendorId: matchedDevice.vendorId,
       productId: matchedDevice.productId,
       productName: String(matchedDevice.productName || ''),
-      manufacturerName: String(matchedDevice.manufacturerName || ''),
+      manufacturerName: String((matchedDevice as USBDevice & { manufacturerName?: string }).manufacturerName || ''),
     });
 
     setUsbDevice(matchedDevice);
-    localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(matchedDevice.vendorId));
-    localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(matchedDevice.productId));
-    localStorage.setItem(USB_PRINTER_ID_KEY, String(targetPrinter.id || ''));
+    safeSetLocalStorage(USB_PRINTER_VENDOR_KEY, String(matchedDevice.vendorId), {
+      cleanupKeys: [USB_PRINTER_SERIAL_KEY, PRINT_STATION_BINDINGS_KEY],
+    });
+    safeSetLocalStorage(USB_PRINTER_PRODUCT_KEY, String(matchedDevice.productId), {
+      cleanupKeys: [USB_PRINTER_SERIAL_KEY, PRINT_STATION_BINDINGS_KEY],
+    });
+    safeSetLocalStorage(USB_PRINTER_SERIAL_KEY, safeStoredUsbSerial(matchedDevice.serialNumber), {
+      cleanupKeys: [PRINT_STATION_BINDINGS_KEY, USB_PRINTER_ID_KEY],
+    });
+    safeSetLocalStorage(USB_PRINTER_ID_KEY, String(targetPrinter.id || ''), {
+      cleanupKeys: [USB_PRINTER_SERIAL_KEY, PRINT_STATION_BINDINGS_KEY],
+    });
     return matchedDevice;
   };
 
@@ -388,8 +428,14 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
       device: USBDevice,
       savedVendor?: string | null,
       savedProduct?: string | null,
+      savedSerial?: string | null,
       savedPrinterId?: string
     ): boolean => {
+      const expectedSerial = String(savedSerial || '').trim();
+      if (expectedSerial) {
+        return String(device.serialNumber || '').trim() === expectedSerial;
+      }
+
       const parsedVendor = parseUsbId(savedVendor);
       const parsedProduct = parseUsbId(savedProduct);
       if (parsedVendor !== undefined && parsedProduct !== undefined) {
@@ -398,6 +444,10 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
 
       if (savedPrinterId) {
         const savedPrinter = printers.find((printer) => printer.id === savedPrinterId);
+        const printerSerial = String(savedPrinter?.usbSerialNumber || '').trim();
+        if (printerSerial) {
+          return String(device.serialNumber || '').trim() === printerSerial;
+        }
         const printerVendor = parseUsbId(savedPrinter?.vendorId);
         const printerProduct = parseUsbId(savedPrinter?.productId);
         if (printerVendor !== undefined && printerProduct !== undefined) {
@@ -411,14 +461,18 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
     const restoreUsbConnection = async () => {
       const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
       const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
+      const savedSerial = localStorage.getItem(USB_PRINTER_SERIAL_KEY);
       const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
       const hasSavedUsbIdentity = (() => {
+        if (String(savedSerial || '').trim()) return true;
         const parsedVendor = parseUsbId(savedVendor);
         const parsedProduct = parseUsbId(savedProduct);
         if (parsedVendor !== undefined && parsedProduct !== undefined) return true;
 
         if (savedPrinterId) {
           const savedPrinter = printers.find((printer) => printer.id === savedPrinterId);
+          const printerSerial = String(savedPrinter?.usbSerialNumber || '').trim();
+          if (printerSerial) return true;
           const printerVendor = parseUsbId(savedPrinter?.vendorId);
           const printerProduct = parseUsbId(savedPrinter?.productId);
           return printerVendor !== undefined && printerProduct !== undefined;
@@ -433,7 +487,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
         if (cancelled) return;
 
         const match = devices.find((device) =>
-          matchesSavedUsbDevice(device, savedVendor, savedProduct, savedPrinterId)
+          matchesSavedUsbDevice(device, savedVendor, savedProduct, savedSerial, savedPrinterId)
         );
 
         if (match) {
@@ -457,18 +511,22 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
 
       const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
       const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
+      const savedSerial = localStorage.getItem(USB_PRINTER_SERIAL_KEY);
       const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
 
       const parsedVendor = parseUsbId(savedVendor);
       const parsedProduct = parseUsbId(savedProduct);
       const savedPrinter = savedPrinterId ? printers.find((printer) => printer.id === savedPrinterId) : null;
+      const savedPrinterSerial = String(savedPrinter?.usbSerialNumber || '').trim();
       const savedPrinterVendor = parseUsbId(savedPrinter?.vendorId);
       const savedPrinterProduct = parseUsbId(savedPrinter?.productId);
       const hasSavedUsbIdentity =
+        Boolean(String(savedSerial || '').trim()) ||
+        Boolean(savedPrinterSerial) ||
         (parsedVendor !== undefined && parsedProduct !== undefined) ||
         (savedPrinterVendor !== undefined && savedPrinterProduct !== undefined);
 
-      if (matchesSavedUsbDevice(device, savedVendor, savedProduct, savedPrinterId) || !hasSavedUsbIdentity) {
+      if (matchesSavedUsbDevice(device, savedVendor, savedProduct, savedSerial, savedPrinterId) || !hasSavedUsbIdentity) {
         setUsbDevice(device);
       }
     };
@@ -608,7 +666,9 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
 
   useEffect(() => {
     if (!currentPrinterId) return;
-    localStorage.setItem(USB_PRINTER_ID_KEY, currentPrinterId);
+    safeSetLocalStorage(USB_PRINTER_ID_KEY, currentPrinterId, {
+      cleanupKeys: [USB_PRINTER_SERIAL_KEY, PRINT_STATION_BINDINGS_KEY],
+    });
   }, [currentPrinterId]);
 
   const currentPrinter = useMemo(
@@ -840,7 +900,8 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
               isPreBatchedJob,
             });
 
-            await printRawUsbToDevice({ device: deviceForJob, content: payload });
+            const probePayload = buildProtocolAwareUsbProbePayload(targetPrinter as Record<string, unknown>);
+            await printRawUsbToDevice({ device: deviceForJob, content: probePayload });
 
             await transitionPrintQueueJobStatus({
               jobId: job.id,
