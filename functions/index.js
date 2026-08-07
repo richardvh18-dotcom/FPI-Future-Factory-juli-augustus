@@ -2441,3 +2441,8 @@ exports.scheduledPrintQueueCleanup = scheduledPrintQueueCleanup;
 // Callables
 const { manualSyncDrawings } = require('./src/callable/manualSyncDrawings');
 exports.manualSyncDrawings = manualSyncDrawings;
+
+// Firebase Usage Module
+const { getFirebaseUsageAndCosts } = require('./src/admin/getFirebaseUsage');
+exports.getFirebaseUsageAndCosts = getFirebaseUsageAndCosts;
+

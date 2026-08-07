@@ -5,6 +5,15 @@
 - Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
 
 
+####### Dagupdate 7 augustus 2026 - sessie 4 (Firebase Usage & Costs Monitor)
+
+- **Feature toegevoegd**: Nieuwe Cloud Function `getFirebaseUsageAndCosts` gemaakt met `@google-cloud/monitoring` en `@google-cloud/billing` integratie om actueel database/hosting/functions verbruik in te zien. Geëxporteerd in `index.js`.
+- **Frontend module toegevoegd**: React component `FirebaseUsageMonitor.tsx` toegevoegd aan het `AdminDashboard.tsx` onder de categorie "Systeem & Configuratie". 
+- **Uitbreidingen**: 
+  - Tijdsperiodes toegevoegd (laatste 24 uur, 7 dagen, 30 dagen) via selectie in UI en request parameters in Cloud Function.
+  - Geschatte kosten in Euro's toegevoegd op basis van Google Cloud free-tier en standaard tarieven.
+  - Authenticatie opgelost zodat de Admin check correct naar `future-factory/Users/Accounts` kijkt.
+
 ####### Dagupdate 7 augustus 2026 - sessie 3 (Senior Code Review)
 
 - **Code Review uitgevoerd** door AI-agent in de rol van senior developer.

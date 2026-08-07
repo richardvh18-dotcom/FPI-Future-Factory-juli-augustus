@@ -42,6 +42,7 @@ import {
   Cpu,
   Network,
   FileSpreadsheet,
+  Activity,
 } from "lucide-react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 
@@ -98,6 +99,7 @@ const AdminToolingMoldsView = React.lazy(() => import("./AdminToolingMoldsView")
 const PilotMigrationTool = React.lazy(() => import("./PilotMigrationTool"));
 const GatewayPcAdminView = React.lazy(() => import("./GatewayPcAdminView"));
 const TemporaryExcelManagerView = React.lazy(() => import("./TemporaryExcelManagerView"));
+const FirebaseUsageMonitor = React.lazy(() => import("./FirebaseUsageMonitor"));
 // NIEUW: Referentie Tabel toevoegen
 const AdminReferenceTable = React.lazy(() => import("./AdminReferenceTable"));
 const ConfigManagerView = React.lazy(() => import("./ConfigManagerView"));
@@ -612,6 +614,16 @@ const AdminDashboard = () => {
           color: "bg-red-50 border-red-100",
           roles: ["admin"],
           component: AdminDatabaseView,
+          requiredAppFeature: "system_config",
+        },
+        {
+          id: "firebase_usage",
+          title: "Firebase Monitor",
+          desc: "Live inzicht in GCP Billing en gebruik.",
+          icon: <Activity size={24} className="text-indigo-600" />,
+          color: "bg-indigo-50 border-indigo-100",
+          roles: ["admin"],
+          component: FirebaseUsageMonitor,
           requiredAppFeature: "system_config",
         },
       ]
