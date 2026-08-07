@@ -1803,7 +1803,7 @@ const PrintStationView = () => {
             description: desc,
             lotNumber: orderData.lotNumber || order
         });
-        const processedData = applyLabelLogic(labelData, labelRules);
+        const processLabelData = applyLabelLogic(labelData, labelRules);
         const zplChunks: string[] = [];
 
         for (const currentTemplate of templatesToPrint) {
@@ -1812,7 +1812,7 @@ const PrintStationView = () => {
           const rendered = await renderLabelForPrinter({
             printer: activeQueuePrinter as Record<string, unknown>,
             template: currentTemplate as any,
-            data: processedData as AnyRecord,
+            data: processLabelData as AnyRecord,
             printerDpi: dpi,
             darkness: bitmapDarkness,
             printSpeed: 3,
@@ -1869,7 +1869,7 @@ const PrintStationView = () => {
           source: 'temp_order_labels',
           queuedAsBatch: templatesToPrint.length > 1,
           templateId: template?.id || null,
-          variables: template ? getCompactPrintVariables(processedData as Record<string, unknown>) : {
+          variables: template ? getCompactPrintVariables(processLabelData as Record<string, unknown>) : {
             orderNumber: order,
             itemCode: item,
             description: desc,

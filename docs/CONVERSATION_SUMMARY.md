@@ -9,8 +9,12 @@
 
 - **Code Review uitgevoerd** door AI-agent in de rol van senior developer.
 - Analyse van entry points (`main.tsx`, `App.tsx`), services (`aiService.ts`, `planningSecurityService.ts`), hooks (`useAdminAuth.ts`) en componenten (`DigitalPlanningHub.tsx`).
+- **App.tsx Refactor:** Zoeklogica verplaatst naar een herbruikbare hook (`src/hooks/useGlobalSearch.ts`) en state netjes afgeschermd.
+- **AI Service Refactor (Voorbereiding):** Nieuwe mappenstructuur opgezet (`src/services/ai/`) met `contextProviders.ts`, `promptBuilders.ts` en `cloudFunctionProxies.ts` als voorbereiding op het splitsen van de grote god-object klasse.
+- **PlanningSecurityService Refactor:** Een nieuwe fabriek-functie (`createCallableWrapper`) ingevoerd en met behulp van een speciaal script álle ~50 callable functies geüpdatet met Type-Safe parameters en gerelateerde interfaces. Bestandsgrootte en boilerplate substantieel verminderd. Volledig type-checked en geslaagd!
+- **DigitalPlanningHub UI Refactor:** Hardcoded kleuren en icoon-toewijzingen van de styling-palette zijn verplaatst naar een centraal configuratiebestand (`src/config/uiConstants.tsx`). De hub gebruikt dit nu dynamisch, wat het component veel kleiner en onderhoudsvriendelijker maakt.
 - Sterke punten: Robuuste foutafhandeling, goede context-verzameling voor AI, efficiënte auth-singleton.
-- Zwakke punten: Grote bestanden (boilersplate), losse typeringen (`any`, `Record<string, unknown>`), hardcoded styling.
+- Zwakke punten (nu deels opgelost): Grote bestanden (boilersplate), losse typeringen (`any`, `Record<string, unknown>`), hardcoded styling.
 
 
 ####### Dagupdate 7 augustus 2026 - sessie 2 (Label Designer uitbreidingen & TSPL flow)
@@ -1715,8 +1719,16 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 - Mocht de verbinding zijn weggevallen (bijvoorbeeld door een stroomdip of slaapstand), dan roept het systeem automatisch `navigator.usb.getDevices()` aan om de laatst bekende, geautoriseerde printer weer muisstil te herkoppelen, *zonder* dat de operator een knop hoeft in te drukken.
 
 2. **Database Connectiviteit (Ping/Heartbeat)**
-- Tijdens de 15-seconden loop schrijft het productiestation nu actief een 'heartbeat' weg naar het betreffende printer-document in Firestore (`isOnline: true`, `lastHeartbeat: serverTimestamp()`).
+- Tijdens de 15-seconde loop schrijft het productiestation nu actief een 'heartbeat' weg naar het betreffende printer-document in Firestore (`isOnline: true`, `lastHeartbeat: serverTimestamp()`).
 - Bij het afsluiten (of disconnect) wordt de status direct op `false` gezet.
+
+# Conversation Summary
+
+## [2026-08-07] Refactoring aiService.ts
+
+- **Actie**: `src/services/aiService.ts` opgesplitst.
+- **Details**: De ~2000 regels lange god class `AIService` is succesvol gemodulariseerd. De logica is met behulp van AST scripts veilig geëxtraheerd naar `src/services/ai/contextProviders.ts`, `src/services/ai/promptBuilders.ts` en `src/services/ai/cloudFunctionProxies.ts`. De originele `aiService.ts` fungeert nu als een proxy wrapper voor backwards-compatibiliteit, waarbij alle methoden doorverwijzen naar de modulaire functies. Dit lost het probleem met de file size en boilerplate op.
+- **Foutafhandeling**: De voorheen stille / lege `catch` blokken zijn vervangen door actieve monitoring met `logActivity` (type `system_error`) en console logs.
 
 3. **Live Indicator in Printer Beheer**
 - In `AdminPrinterManager.tsx` is een visuele status-indicator (badge) toegevoegd achter de printernaam. 

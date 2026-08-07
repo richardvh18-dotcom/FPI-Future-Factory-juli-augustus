@@ -541,7 +541,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
   const [personnel, setPersonnel] = useState<PersonnelEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [dataSourceRefreshKey, setDataSourceRefreshKey] = useState(0);
-  const [searchFilterOrder] = useState<string | null>(searchOrder || null);
+  const [searchFilterOrder] = useState<string | null>(searchOrder || undefined);
   const [archivedStats, setArchivedStats] = useState<{ done: number; items: TrackedProductDoc[] }>({ done: 0, items: [] });
   const backgroundTrackingUnsubRef = useRef<null | (() => void)>(null);
   const backgroundTrackingTimerRef = useRef<number | null>(null);
@@ -828,7 +828,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
           // id moet altijd de echte Firestore document-id blijven voor callables (save/move/cancel).
           id: docSnap.id,
           docId: docSnap.id,
-          sourceDataId: sourceDataId || null,
+          sourceDataId: sourceDataId || undefined,
           __docPath: docSnap.ref.path,
           sourcePath: data?.sourcePath || docSnap.ref.path,
           orderId: resolvedOrderId,
@@ -1431,7 +1431,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         const id = String(p.id || "").trim();
         const empNo = String(p.employeeNumber || "").trim();
         return sameBadgeValue(id) || sameBadgeValue(empNo);
-      }) || null;
+      }) || undefined;
 
       if (!person) {
         const employeeCandidates = Array.from(new Set([
@@ -1678,7 +1678,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
           data: {
             currentMachineId: selectedStation,
             lastBadgeScanAt: "__SERVER_TIMESTAMP__",
-            lastBadgeScanBy: currentUser?.uid || null,
+            lastBadgeScanBy: currentUser?.uid || undefined,
           },
           source: "WorkstationHub.operatorCheckin.personnel",
           actorLabel: currentUser?.email || "Operator",
@@ -1785,7 +1785,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
           hoursAdjusted: true,
           hoursAdjustedAt: "__SERVER_TIMESTAMP__",
           hoursAdjustedBy: currentUser?.email || currentUser?.uid || "teamleader",
-          hoursCorrectionReason: store.correctionReason.trim() || null,
+          hoursCorrectionReason: store.correctionReason.trim() || undefined,
           atpsExported: false, // markeer als nog niet geëxporteerd naar ATPS
           updatedAt: "__SERVER_TIMESTAMP__",
         },
@@ -2383,7 +2383,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         ? startOptions.lotNumbers.map((entry: unknown) => String(entry || "").trim().toUpperCase()).filter(Boolean)
         : [];
       const batchCount = explicitLotNumbers.length > 0 ? explicitLotNumbers.length : Math.max(1, parseInt(String(stringCount), 10) || 1);
-      const seriesGroupId = String(startOptions?.seriesGroupId || "").trim() || null;
+      const seriesGroupId = String(startOptions?.seriesGroupId || "").trim() || undefined;
       let overflowItems: string[] = [];
 
       const stationOperators = occupancy
@@ -2417,7 +2417,7 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       })) as StartProductionResult;
 
       overflowItems = Array.isArray(startResult?.overflowLots) ? startResult.overflowLots : [];
-      const autoAssignedOverflow = startResult?.autoAssignedOverflow || null;
+      const autoAssignedOverflow = startResult?.autoAssignedOverflow || undefined;
 
       const linkedCount = autoAssignedOverflow?.linkedCount ?? 0;
       if (linkedCount > 0 && autoAssignedOverflow?.targetOrderId) {

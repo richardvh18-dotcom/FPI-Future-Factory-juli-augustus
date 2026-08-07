@@ -109,7 +109,7 @@ export function useTerminalActions({
   };
 
   const handleOpenReleaseModal = (product: TrackedProductDoc, bulkProducts: TrackedProductDoc[] = []) => {
-    setProductToRelease(product || null);
+    setProductToRelease(product || undefined);
     if (Array.isArray(bulkProducts) && bulkProducts.length > 1) {
       setBulkProductsToRelease(bulkProducts);
     } else {
@@ -182,7 +182,7 @@ export function useTerminalActions({
         ? startOptions.lotNumbers.map((entry: unknown) => String(entry || "").trim().toUpperCase()).filter(Boolean)
         : [];
       const totalToProduce = explicitLotNumbers.length > 0 ? explicitLotNumbers.length : Math.max(1, parseInt(String(_stringCount), 10) || 1);
-      const seriesGroupId = String(startOptions?.seriesGroupId || "").trim() || null;
+      const seriesGroupId = String(startOptions?.seriesGroupId || "").trim() || undefined;
 
       setShowStartModal(false);
       if (shouldJumpToWinding) {

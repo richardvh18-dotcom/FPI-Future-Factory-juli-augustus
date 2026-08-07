@@ -363,8 +363,8 @@ const hasWikkelSignal = (entry: EntryRecord): boolean => {
 
 const toLnQrRows = (rows: LnReadyGroupedRow[], periodToken: string): LnReadyQrRow[] =>
   rows.map((row): LnReadyQrRow => {
-    const trueTodoCount = Math.max(0, row.todoCount - row.count);
-    const trueReadyCount = Math.max(0, row.totalOrderCount - trueTodoCount - row.count);
+    const trueTodoCount = Math.max(0, (row.todoCount || 0) - row.count);
+    const trueReadyCount = Math.max(0, (row.totalOrderCount || 0) - trueTodoCount - row.count);
     return {
       ...row,
       todoCount: trueTodoCount,
@@ -918,9 +918,9 @@ const ImportExportDashboard = ({
         station: row.station,
         orderId: row.orderId,
         item: row.item,
-        totalOrderCount: row.totalOrderCount,
+        totalOrderCount: (row.totalOrderCount || 0),
         readyReportedCount: row.readyReportedCount,
-        todoCount: row.todoCount,
+        todoCount: (row.todoCount || 0),
         nahardingCount: row.nahardingCount,
         wikkelCount: row.wikkelCount,
         refOpsText: row.refOpsText,
@@ -945,9 +945,9 @@ const ImportExportDashboard = ({
           station: row.station,
           orderId: row.orderId,
           item: row.item,
-          totalOrderCount: row.totalOrderCount,
+          totalOrderCount: (row.totalOrderCount || 0),
           readyReportedCount: row.readyReportedCount,
-          todoCount: row.todoCount,
+          todoCount: (row.todoCount || 0),
           nahardingCount: row.nahardingCount,
           wikkelCount: row.wikkelCount,
           refOpsText: row.refOpsText,
@@ -990,9 +990,9 @@ const ImportExportDashboard = ({
         String(row.station || "-"),
         String(row.orderId || "-"),
         String(row.item || "-"),
-        Number(row.totalOrderCount || 0),
+        Number((row.totalOrderCount || 0) || 0),
         Number(row.readyReportedCount || 0),
-        Number(row.todoCount || 0),
+        Number((row.todoCount || 0) || 0),
         Number(row.count || 0),
       ]),
     });
@@ -1069,7 +1069,7 @@ const ImportExportDashboard = ({
       doc.text(`RefOps: ${row.refOpsText}`, 12, y + 8);
       doc.text(`Aantal: ${row.count}`, 12, y + 13);
       doc.text(`Item: ${String(row.item || "-")}`, 12, y + 18);
-      doc.text(`Totaal order: ${Number(row.totalOrderCount || 0)}`, 12, y + 23);
+      doc.text(`Totaal order: ${Number((row.totalOrderCount || 0) || 0)}`, 12, y + 23);
       doc.text(`Naharding (geweest): ${Number(row.nahardingCount || 0)}`, 12, y + 28);
 
       doc.addImage(orderDataUrl, "PNG", qrOrderX, y, qrSize, qrSize);
@@ -1620,9 +1620,9 @@ const ImportExportDashboard = ({
                         <span className="font-bold whitespace-nowrap">{row.station || "-"}</span>
                         <span className="font-bold whitespace-nowrap">{row.orderId || "-"}</span>
                         <span className="truncate" title={row.item}>{row.item || "-"}</span>
-                        <span className="font-bold text-slate-700 whitespace-nowrap">{row.totalOrderCount || 0}</span>
+                        <span className="font-bold text-slate-700 whitespace-nowrap">{(row.totalOrderCount || 0) || 0}</span>
                         <span className="font-bold text-emerald-700 whitespace-nowrap">{row.readyReportedCount || 0}</span>
-                        <span className="font-bold text-orange-700 whitespace-nowrap">{row.todoCount || 0}</span>
+                        <span className="font-bold text-orange-700 whitespace-nowrap">{(row.todoCount || 0) || 0}</span>
                         <span className="font-bold text-blue-600 whitespace-nowrap">{row.count || 0}</span>
                       </div>
                     ))

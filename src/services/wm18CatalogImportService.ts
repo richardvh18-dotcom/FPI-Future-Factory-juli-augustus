@@ -1,4 +1,4 @@
-import { buildWm18ProgramDefinition } from './wm18ProgramCatalogService';
+
 
 export type Wm18CatalogItem = {
   articleNumber: string;
@@ -21,7 +21,7 @@ export type Wm18ProgramTemplate = {
   id: string;
   name: string;
   description?: string;
-  definition: ReturnType<typeof buildWm18ProgramDefinition>;
+  definition: any;
 };
 
 export type ParsedWm18Workbook = {

@@ -4,8 +4,32 @@ import { PATHS, getPathString } from "../config/dbPaths";
 
 const functions = getFunctions(app, 'europe-west1');
 
+export interface BaseResponse {
+  ok: boolean;
+  [key: string]: unknown;
+}
+
+export function createCallableWrapper<TInput, TOutput = BaseResponse>(
+  functionName: string,
+  validator?: (payload: TInput) => TInput | void
+) {
+  const callable = httpsCallable(functions, functionName);
+  return async (payload: TInput): Promise<TOutput> => {
+    let processedPayload = payload;
+    if (validator) {
+      const validated = validator(payload);
+      if (validated !== undefined) {
+        processedPayload = validated as TInput;
+      }
+    }
+    const result = await callable(processedPayload);
+    return (result?.data as TOutput) || ({ ok: false } as unknown as TOutput);
+  };
+}
+
 type CallableFn = (payload?: unknown) => Promise<{ data?: unknown }>;
 const callableWithRuntime = (callable: CallableFn) => async (payload: unknown = {}) => callable(payload);
+
 
 const rejectTrackedProductFinalCallable = callableWithRuntime(httpsCallable(functions, "rejectTrackedProductFinal"));
 const tempRejectTrackedProductCallable = callableWithRuntime(httpsCallable(functions, "tempRejectTrackedProduct"));
@@ -81,340 +105,584 @@ const previewAtpsOccupancyExportCallable = callableWithRuntime(httpsCallable(fun
 const executeAtpsOccupancyExportCallable = callableWithRuntime(httpsCallable(functions, "executeAtpsOccupancyExport"));
 const getAtpsExportMonitorCallable = callableWithRuntime(httpsCallable(functions, "getAtpsExportMonitor"));
 const saveLnQrExportHistoryCallable = callableWithRuntime(httpsCallable(functions, "saveLnQrExportHistory"));
-
-export const rejectTrackedProductFinal = async ({
-  productId,
-  reasons = [],
-  note = "",
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    reasons: Array.isArray(reasons) ? reasons : [],
-    note: String(note || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.productId) {
-    throw new Error("productId is verplicht.");
-  }
-
-  if (!payload.reasons.length) {
-    throw new Error("Minimaal 1 afkeurreden is verplicht.");
-  }
-
-  const result = await rejectTrackedProductFinalCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const tempRejectTrackedProduct = async ({
-  productId,
-  reasons = [],
-  note = "",
-  station = "",
-  actorLabel = "",
-  previousStep = "",
-  previousStatus = "",
-  source = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    reasons: Array.isArray(reasons) ? reasons : [],
-    note: String(note || "").trim(),
-    station: String(station || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-    previousStep: String(previousStep || "").trim(),
-    previousStatus: String(previousStatus || "").trim(),
-    source: String(source || "").trim(),
-  };
-
-  if (!payload.productId) {
-    throw new Error("productId is verplicht.");
-  }
-
-  if (!payload.reasons.length) {
-    throw new Error("Minimaal 1 afkeurreden is verplicht.");
-  }
-
-  const result = await tempRejectTrackedProductCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const advanceTrackedProduct = async ({
-  productId,
-  nextStation = "",
-  nextStep,
-  nextStatus,
-  lastStation = "",
-  note = "",
-  actorLabel = "",
-  previousStep = "",
-  historyAction = "",
-  historyDetails = "",
-  clearManualMove = false,
-  measurements = null,
-  source = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    nextStation: String(nextStation || "").trim(),
-    nextStep: String(nextStep || "").trim(),
-    nextStatus: String(nextStatus || "").trim(),
-    lastStation: String(lastStation || "").trim(),
-    note: String(note || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-    previousStep: String(previousStep || "").trim(),
-    historyAction: String(historyAction || "").trim(),
-    historyDetails: String(historyDetails || "").trim(),
-    clearManualMove: Boolean(clearManualMove),
-    measurements: measurements && typeof measurements === "object" ? measurements : null,
-    source: String(source || "").trim(),
-  };
-
-  if (!payload.productId || !payload.nextStep || !payload.nextStatus) {
-    throw new Error("productId, nextStep en nextStatus zijn verplicht.");
-  }
-
-  const result = await advanceTrackedProductCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const completeTrackedProductRepair = async ({
-  productId,
-  station = "",
-  actions = [],
-  note = "",
-  actorLabel = "",
-  source = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    station: String(station || "").trim(),
-    actions: Array.isArray(actions) ? actions.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
-    note: String(note || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-    source: String(source || "").trim(),
-  };
-
-  if (!payload.productId) {
-    throw new Error("productId is verplicht.");
-  }
-
-  const result = await completeTrackedProductRepairCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const routeTrackedProductsToLossen = async ({
-  productIds,
-  originStation = "",
-  centralStation = "LOSSEN",
-  centralOperators = [],
-  actorLabel = "",
-  source = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productIds: Array.isArray(productIds) ? productIds.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
-    originStation: String(originStation || "").trim(),
-    centralStation: String(centralStation || "").trim(),
-    centralOperators: Array.isArray(centralOperators) ? centralOperators.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
-    actorLabel: String(actorLabel || "").trim(),
-    source: String(source || "").trim(),
-  };
-
-  if (payload.productIds.length === 0) {
-    throw new Error("productIds is verplicht.");
-  }
-
-  const result = await routeTrackedProductsToLossenCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const startWorkstationProductionRun = async ({
-  orderDocId,
-  lotStart,
-  stringCount,
-  stationId,
-  orderDocPath = "",
-  orderSourcePath = "",
-  actorLabel = "",
-  labelZplData = "",
-  labelTemplateId = "",
-  seriesGroupId = "",
-  isFlangeSeries = false,
-  lotNumbers = [],
-  stationOperators = [],
-  source = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    orderDocId: String(orderDocId || "").trim(),
-    lotStart: String(lotStart || "").trim(),
-    stringCount: Number(stringCount),
-    stationId: String(stationId || "").trim(),
-    orderDocPath: String(orderDocPath || "").trim(),
-    orderSourcePath: String(orderSourcePath || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-    labelZplData: typeof labelZplData === "string" ? labelZplData : "",
-    labelTemplateId: String(labelTemplateId || "").trim(),
-    seriesGroupId: String(seriesGroupId || "").trim(),
-    isFlangeSeries: Boolean(isFlangeSeries),
-    lotNumbers: Array.isArray(lotNumbers) ? lotNumbers.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
-    stationOperators: Array.isArray(stationOperators)
-      ? stationOperators.map((entry) => String(entry || "").trim()).filter(Boolean)
-      : [],
-    source: String(source || "").trim(),
-  };
-
-  if (!payload.orderDocId || !payload.lotStart || !payload.stationId || !Number.isFinite(payload.stringCount) || payload.stringCount < 1) {
-    throw new Error("orderDocId, lotStart, stationId en geldige stringCount zijn verplicht.");
-  }
-
-  const result = await startWorkstationProductionRunCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const toggleTrackedProductPause = async ({
-  productId,
-  note = "",
-  actorLabel = "",
-  source = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    note: String(note || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-    source: String(source || "").trim(),
-  };
-
-  if (!payload.productId) {
-    throw new Error("productId is verplicht.");
-  }
-
-  const result = await toggleTrackedProductPauseCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const markTrackedProductReminder = async ({
-  productId,
-  reminderSent = true,
-  actorLabel = "",
-  source = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    reminderSent: reminderSent !== false,
-    actorLabel: String(actorLabel || "").trim(),
-    source: String(source || "").trim(),
-  };
-
-  if (!payload.productId) {
-    throw new Error("productId is verplicht.");
-  }
-
-  const result = await markTrackedProductReminderCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const moveTrackedProductManual = async ({
-  productOrLotId,
-  newStation,
-  isRepairMove = false,
-  repairInstruction = "",
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productOrLotId: String(productOrLotId || "").trim(),
-    newStation: String(newStation || "").trim(),
-    isRepairMove: Boolean(isRepairMove),
-    repairInstruction: String(repairInstruction || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.productOrLotId) {
-    throw new Error("productOrLotId is verplicht.");
-  }
-
-  if (!payload.newStation) {
-    throw new Error("newStation is verplicht.");
-  }
-
-  const result = await moveTrackedProductManualCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const archiveRejectedTrackedProduct = async ({
-  productId,
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.productId) {
-    throw new Error("productId is verplicht.");
-  }
-
-  const result = await archiveRejectedTrackedProductCallable(payload);
-  return result?.data || { ok: false };
-};
-
 const completeTrackedProductCallable = httpsCallable(functions, "completeTrackedProduct");
+const updateProductionStandardCallable = callableWithRuntime(httpsCallable(functions, "updateProductionStandard"));
 
-export const completeTrackedProduct = async ({
-  productId,
-  finishType,
-  fromStation = "",
-  note = "",
-  actorLabel = "",
-  source = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    finishType: String(finishType || "").trim(),
-    fromStation: String(fromStation || "").trim(),
-    note: String(note || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-    source: String(source || "").trim(),
-  };
 
-  if (!payload.productId) {
-    throw new Error("productId is verplicht.");
+export interface RejectTrackedProductFinalInput {
+  productId: any;
+  reasons?: string[];
+  note?: string;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface TempRejectTrackedProductInput {
+  productId: any;
+  reasons?: string[];
+  note?: string;
+  station?: string;
+  actorLabel?: string;
+  previousStep?: string;
+  previousStatus?: string;
+  source?: string;
+}
+
+export interface AdvanceTrackedProductInput {
+  productId: any;
+  nextStation?: string;
+  nextStep: any;
+  nextStatus: any;
+  lastStation?: string;
+  note?: string;
+  actorLabel?: string;
+  previousStep?: string;
+  historyAction?: string;
+  historyDetails?: string;
+  clearManualMove?: boolean;
+  measurements?: any;
+  source?: string;
+}
+
+export interface CompleteTrackedProductRepairInput {
+  productId: any;
+  station?: string;
+  actions?: string[];
+  note?: string;
+  actorLabel?: string;
+  source?: string;
+}
+
+export interface RouteTrackedProductsToLossenInput {
+  productIds: any;
+  originStation?: string;
+  centralStation?: any;
+  centralOperators?: string[];
+  actorLabel?: string;
+  source?: string;
+}
+
+export interface StartWorkstationProductionRunInput {
+  orderDocId: any;
+  lotStart: any;
+  stringCount: any;
+  stationId: any;
+  orderDocPath?: string;
+  orderSourcePath?: string;
+  actorLabel?: string;
+  labelZplData?: string;
+  labelTemplateId?: string;
+  seriesGroupId?: string;
+  isFlangeSeries?: boolean;
+  lotNumbers?: string[];
+  stationOperators?: string[];
+  source?: string;
+}
+
+export interface ToggleTrackedProductPauseInput {
+  productId: any;
+  note?: string;
+  actorLabel?: string;
+  source?: string;
+}
+
+export interface MarkTrackedProductReminderInput {
+  productId: any;
+  reminderSent?: boolean;
+  actorLabel?: string;
+  source?: string;
+}
+
+export interface MoveTrackedProductManualInput {
+  productOrLotId: any;
+  newStation: any;
+  isRepairMove?: boolean;
+  repairInstruction?: string;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface ArchiveRejectedTrackedProductInput {
+  productId: any;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface CompleteTrackedProductInput {
+  productId: any;
+  finishType: any;
+  fromStation?: string;
+  note?: string;
+  actorLabel?: string;
+  source?: string;
+}
+
+export interface CancelTrackedProductionInput {
+  productId: any;
+  selectedStation?: string;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface MovePlanningOrderInput {
+  orderDocId: any;
+  targetType: any;
+  targetId: any;
+  currentDepartment?: string;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface RetrievePlanningOrderInput {
+  orderDocId: any;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface TogglePlanningOrderHoldInput {
+  orderDocId: any;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface ArchivePlanningOrderInput {
+  orderDocId: any;
+  reason?: any;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface AssignOverproductionInput {
+  targetOrderDocId: any;
+  targetOrderId: any;
+  productIds: any;
+  routeStation: any;
+  sourceOrderId?: string;
+  originMachine?: string;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface CancelPlanningOrderInput {
+  orderDocId: any;
+  reason?: string;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface AssignPersonnelToStationInput {
+  stationId: any;
+  operatorId: any;
+  operatorNumber?: string;
+  operatorName?: string;
+  date: any;
+  departmentId?: string;
+  hoursWorked?: number;
+  shiftType?: any;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface RemovePersonnelAssignmentInput {
+  assignmentId: any;
+  stationId?: string;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface LoanPersonnelToDepartmentInput {
+  operatorNumber: any;
+  operatorName?: string;
+  targetDepartment: any;
+  targetStation: any;
+  date: any;
+  shiftLabel?: string;
+  shiftStart?: string;
+  shiftEnd?: string;
+  hoursWorked?: number;
+  isPloeg?: boolean;
+  loanFromDepartment?: string;
+  loanFromStation?: string;
+  originalShift?: string;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface CreateProductionMessagesInput {
+  messages: any;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface TransitionPrintQueueJobStatusInput {
+  jobId: any;
+  status: any;
+  error?: string;
+  source?: string;
+  actorLabel?: string;
+  printerName?: string;
+}
+
+export interface RequeuePrintQueueJobInput {
+  jobId: any;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface DeletePrintQueueJobInput {
+  jobId: any;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface StartProductionLotsInput {
+  orderDocId: any;
+  orderDocPath?: string;
+  orderSourcePath?: string;
+  orderId: any;
+  itemCode: any;
+  item?: string;
+  lotStart: any;
+  totalToProduce: any;
+  stationId: any;
+  stationLabel?: string;
+  actorLabel?: string;
+  labelZplData?: string;
+  labelTemplateId?: string;
+  seriesGroupId?: string;
+  isFlangeSeries?: boolean;
+  lotNumbers?: string[];
+  isVirtualLot?: boolean;
+  virtualReason?: string;
+}
+
+export interface EditTrackedProductLotNumberInput {
+  productId: any;
+  newLotNumber: any;
+  reason: any;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface ReassignTrackedProductOrderInput {
+  productId: any;
+  newOrderId: any;
+  targetOrderDocId?: string;
+  targetOrderPath?: string;
+  reason: any;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface LinkPlanningOrderProductInput {
+  orderDocId: any;
+  productId: any;
+  productImage?: string;
+}
+
+export interface CreatePlanningOrderManualInput {
+  orderId: any;
+  item: any;
+  machine: any;
+  plan: any;
+}
+
+export interface MarkMazakLabelsPrintedInput {
+  productIds: any;
+  stationId?: string;
+  isReprint?: boolean;
+  source?: string;
+  actorLabel?: string;
+}
+
+export interface AddOrderDependencyInput {
+  orderId: any;
+  dependencyId: any;
+}
+
+export interface RemoveOrderDependencyInput {
+  orderId: any;
+  dependencyId: any;
+}
+
+export interface UpdateOrderKanbanStatusInput {
+  orderId: any;
+  status: any;
+}
+
+export interface SaveProductRecordInput {
+  productId?: string;
+  productData?: any;
+  clearVerification?: boolean;
+}
+
+export interface VerifyProductRecordInput {
+  productId?: string;
+  actorName?: string;
+}
+
+export interface UpsertConversionRecordInput {
+  recordId?: string;
+  recordData?: any;
+}
+
+export interface UpsertConversionBatchInput {
+  items?: string[];
+  mode?: any;
+}
+
+export const rejectTrackedProductFinal = createCallableWrapper<RejectTrackedProductFinalInput>(
+  "rejectTrackedProductFinal",
+  (payload) => {
+    const { productId, reasons, note, source, actorLabel } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        reasons: Array.isArray(reasons) ? reasons : [],
+        note: String(note || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.productId) {
+        throw new Error("productId is verplicht.");
+      }
+    
+      if (!processed.reasons.length) {
+        throw new Error("Minimaal 1 afkeurreden is verplicht.");
+      }
+    return processed;
   }
+);
 
-  if (!["archive", "forward", "post_inspection"].includes(payload.finishType)) {
-    throw new Error('finishType moet "archive", "forward" of "post_inspection" zijn.');
+export const tempRejectTrackedProduct = createCallableWrapper<TempRejectTrackedProductInput>(
+  "tempRejectTrackedProduct",
+  (payload) => {
+    const { productId, reasons, note, station, actorLabel, previousStep, previousStatus, source } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        reasons: Array.isArray(reasons) ? reasons : [],
+        note: String(note || "").trim(),
+        station: String(station || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+        previousStep: String(previousStep || "").trim(),
+        previousStatus: String(previousStatus || "").trim(),
+        source: String(source || "").trim(),
+      };
+    if (!processed.productId) {
+        throw new Error("productId is verplicht.");
+      }
+    
+      if (!processed.reasons.length) {
+        throw new Error("Minimaal 1 afkeurreden is verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await completeTrackedProductCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const cancelTrackedProduction = async ({
-  productId,
-  selectedStation = "",
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    selectedStation: String(selectedStation || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.productId) {
-    throw new Error("productId is verplicht.");
+export const advanceTrackedProduct = createCallableWrapper<AdvanceTrackedProductInput>(
+  "advanceTrackedProduct",
+  (payload) => {
+    const { productId, nextStation, nextStep, nextStatus, lastStation, note, actorLabel, previousStep, historyAction, historyDetails, clearManualMove, measurements, source } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        nextStation: String(nextStation || "").trim(),
+        nextStep: String(nextStep || "").trim(),
+        nextStatus: String(nextStatus || "").trim(),
+        lastStation: String(lastStation || "").trim(),
+        note: String(note || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+        previousStep: String(previousStep || "").trim(),
+        historyAction: String(historyAction || "").trim(),
+        historyDetails: String(historyDetails || "").trim(),
+        clearManualMove: Boolean(clearManualMove),
+        measurements: measurements && typeof measurements === "object" ? measurements : null,
+        source: String(source || "").trim(),
+      };
+    if (!processed.productId || !processed.nextStep || !processed.nextStatus) {
+        throw new Error("productId, nextStep en nextStatus zijn verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await cancelTrackedProductionCallable(payload);
-  return result?.data || { ok: false };
-};
+export const completeTrackedProductRepair = createCallableWrapper<CompleteTrackedProductRepairInput>(
+  "completeTrackedProductRepair",
+  (payload) => {
+    const { productId, station, actions, note, actorLabel, source } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        station: String(station || "").trim(),
+        actions: Array.isArray(actions) ? actions.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
+        note: String(note || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+        source: String(source || "").trim(),
+      };
+    if (!processed.productId) {
+        throw new Error("productId is verplicht.");
+      }
+    return processed;
+  }
+);
+
+export const routeTrackedProductsToLossen = createCallableWrapper<RouteTrackedProductsToLossenInput>(
+  "routeTrackedProductsToLossen",
+  (payload) => {
+    const { productIds, originStation, centralStation, centralOperators, actorLabel, source } = payload;
+    const processed = {
+        productIds: Array.isArray(productIds) ? productIds.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
+        originStation: String(originStation || "").trim(),
+        centralStation: String(centralStation || "").trim(),
+        centralOperators: Array.isArray(centralOperators) ? centralOperators.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
+        actorLabel: String(actorLabel || "").trim(),
+        source: String(source || "").trim(),
+      };
+    if (processed.productIds.length === 0) {
+        throw new Error("productIds is verplicht.");
+      }
+    return processed;
+  }
+);
+
+export const startWorkstationProductionRun = createCallableWrapper<StartWorkstationProductionRunInput>(
+  "startWorkstationProductionRun",
+  (payload) => {
+    const { orderDocId, lotStart, stringCount, stationId, orderDocPath, orderSourcePath, actorLabel, labelZplData, labelTemplateId, seriesGroupId, isFlangeSeries, lotNumbers, stationOperators, source } = payload;
+    const processed = {
+        orderDocId: String(orderDocId || "").trim(),
+        lotStart: String(lotStart || "").trim(),
+        stringCount: Number(stringCount),
+        stationId: String(stationId || "").trim(),
+        orderDocPath: String(orderDocPath || "").trim(),
+        orderSourcePath: String(orderSourcePath || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+        labelZplData: typeof labelZplData === "string" ? labelZplData : "",
+        labelTemplateId: String(labelTemplateId || "").trim(),
+        seriesGroupId: String(seriesGroupId || "").trim(),
+        isFlangeSeries: Boolean(isFlangeSeries),
+        lotNumbers: Array.isArray(lotNumbers) ? lotNumbers.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
+        stationOperators: Array.isArray(stationOperators)
+          ? stationOperators.map((entry) => String(entry || "").trim()).filter(Boolean)
+          : [],
+        source: String(source || "").trim(),
+      };
+    if (!processed.orderDocId || !processed.lotStart || !processed.stationId || !Number.isFinite(processed.stringCount) || processed.stringCount < 1) {
+        throw new Error("orderDocId, lotStart, stationId en geldige stringCount zijn verplicht.");
+      }
+    return processed;
+  }
+);
+
+export const toggleTrackedProductPause = createCallableWrapper<ToggleTrackedProductPauseInput>(
+  "toggleTrackedProductPause",
+  (payload) => {
+    const { productId, note, actorLabel, source } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        note: String(note || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+        source: String(source || "").trim(),
+      };
+    if (!processed.productId) {
+        throw new Error("productId is verplicht.");
+      }
+    return processed;
+  }
+);
+
+export const markTrackedProductReminder = createCallableWrapper<MarkTrackedProductReminderInput>(
+  "markTrackedProductReminder",
+  (payload) => {
+    const { productId, reminderSent, actorLabel, source } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        reminderSent: reminderSent !== false,
+        actorLabel: String(actorLabel || "").trim(),
+        source: String(source || "").trim(),
+      };
+    if (!processed.productId) {
+        throw new Error("productId is verplicht.");
+      }
+    return processed;
+  }
+);
+
+export const moveTrackedProductManual = createCallableWrapper<MoveTrackedProductManualInput>(
+  "moveTrackedProductManual",
+  (payload) => {
+    const { productOrLotId, newStation, isRepairMove, repairInstruction, source, actorLabel } = payload;
+    const processed = {
+        productOrLotId: String(productOrLotId || "").trim(),
+        newStation: String(newStation || "").trim(),
+        isRepairMove: Boolean(isRepairMove),
+        repairInstruction: String(repairInstruction || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.productOrLotId) {
+        throw new Error("productOrLotId is verplicht.");
+      }
+    
+      if (!processed.newStation) {
+        throw new Error("newStation is verplicht.");
+      }
+    return processed;
+  }
+);
+
+export const archiveRejectedTrackedProduct = createCallableWrapper<ArchiveRejectedTrackedProductInput>(
+  "archiveRejectedTrackedProduct",
+  (payload) => {
+    const { productId, source, actorLabel } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.productId) {
+        throw new Error("productId is verplicht.");
+      }
+    return processed;
+  }
+);
+
+export const completeTrackedProduct = createCallableWrapper<CompleteTrackedProductInput>(
+  "completeTrackedProduct",
+  (payload) => {
+    const { productId, finishType, fromStation, note, actorLabel, source } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        finishType: String(finishType || "").trim(),
+        fromStation: String(fromStation || "").trim(),
+        note: String(note || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+        source: String(source || "").trim(),
+      };
+    if (!processed.productId) {
+        throw new Error("productId is verplicht.");
+      }
+    
+      if (!["archive", "forward", "post_inspection"].includes(processed.finishType)) {
+        throw new Error('finishType moet "archive", "forward" of "post_inspection" zijn.');
+      }
+    return processed;
+  }
+);
+
+export const cancelTrackedProduction = createCallableWrapper<CancelTrackedProductionInput>(
+  "cancelTrackedProduction",
+  (payload) => {
+    const { productId, selectedStation, source, actorLabel } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        selectedStation: String(selectedStation || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.productId) {
+        throw new Error("productId is verplicht.");
+      }
+    return processed;
+  }
+);
 
 export const updatePlanningOrderPriority = async ({
   orderDocId,
@@ -444,68 +712,58 @@ export const updatePlanningOrderPriority = async ({
   return result?.data || { ok: false };
 };
 
-export const movePlanningOrder = async ({
-  orderDocId,
-  targetType,
-  targetId,
-  currentDepartment = "",
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    orderDocId: String(orderDocId || "").trim(),
-    targetType: String(targetType || "").trim().toLowerCase(),
-    targetId: String(targetId || "").trim(),
-    currentDepartment: String(currentDepartment || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
 
-  if (!payload.orderDocId || !payload.targetId || !["department", "station"].includes(payload.targetType)) {
-    throw new Error("orderDocId, targetType en targetId zijn verplicht.");
+
+export const movePlanningOrder = createCallableWrapper<MovePlanningOrderInput>(
+  "movePlanningOrder",
+  (payload) => {
+    const { orderDocId, targetType, targetId, currentDepartment, source, actorLabel } = payload;
+    const processed = {
+        orderDocId: String(orderDocId || "").trim(),
+        targetType: String(targetType || "").trim().toLowerCase(),
+        targetId: String(targetId || "").trim(),
+        currentDepartment: String(currentDepartment || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.orderDocId || !processed.targetId || !["department", "station"].includes(processed.targetType)) {
+        throw new Error("orderDocId, targetType en targetId zijn verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await movePlanningOrderCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const retrievePlanningOrder = async ({
-  orderDocId,
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    orderDocId: String(orderDocId || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.orderDocId) {
-    throw new Error("orderDocId is verplicht.");
+export const retrievePlanningOrder = createCallableWrapper<RetrievePlanningOrderInput>(
+  "retrievePlanningOrder",
+  (payload) => {
+    const { orderDocId, source, actorLabel } = payload;
+    const processed = {
+        orderDocId: String(orderDocId || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.orderDocId) {
+        throw new Error("orderDocId is verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await retrievePlanningOrderCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const togglePlanningOrderHold = async ({
-  orderDocId,
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    orderDocId: String(orderDocId || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.orderDocId) {
-    throw new Error("orderDocId is verplicht.");
+export const togglePlanningOrderHold = createCallableWrapper<TogglePlanningOrderHoldInput>(
+  "togglePlanningOrderHold",
+  (payload) => {
+    const { orderDocId, source, actorLabel } = payload;
+    const processed = {
+        orderDocId: String(orderDocId || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.orderDocId) {
+        throw new Error("orderDocId is verplicht.");
+      }
+    return processed;
   }
-
-  const result = await togglePlanningOrderHoldCallable(payload);
-  return result?.data || { ok: false };
-};
+);
 
 export const updatePlanningOrderDetails = async ({
   orderDocId,
@@ -549,6 +807,8 @@ export const updatePlanningOrderDetails = async ({
   return result?.data || { ok: false };
 };
 
+
+
 export const patchPlanningOrderMetadata = async ({
   orderDocId,
   patch,
@@ -574,177 +834,134 @@ export const patchPlanningOrderMetadata = async ({
   return result?.data || { ok: false };
 };
 
-export const archivePlanningOrder = async ({
-  orderDocId,
-  reason = "completed",
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    orderDocId: String(orderDocId || "").trim(),
-    reason: String(reason || "").trim().toLowerCase(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
 
-  if (!payload.orderDocId) {
-    throw new Error("orderDocId is verplicht.");
+
+export const archivePlanningOrder = createCallableWrapper<ArchivePlanningOrderInput>(
+  "archivePlanningOrder",
+  (payload) => {
+    const { orderDocId, reason, source, actorLabel } = payload;
+    const processed = {
+        orderDocId: String(orderDocId || "").trim(),
+        reason: String(reason || "").trim().toLowerCase(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.orderDocId) {
+        throw new Error("orderDocId is verplicht.");
+      }
+    
+      if (!["completed", "manual", "rejected"].includes(processed.reason)) {
+        throw new Error('reason moet "completed", "manual" of "rejected" zijn.');
+      }
+    return processed;
   }
+);
 
-  if (!["completed", "manual", "rejected"].includes(payload.reason)) {
-    throw new Error('reason moet "completed", "manual" of "rejected" zijn.');
+export const assignOverproduction = createCallableWrapper<AssignOverproductionInput>(
+  "assignOverproduction",
+  (payload) => {
+    const { targetOrderDocId, targetOrderId, productIds, routeStation, sourceOrderId, originMachine, source, actorLabel } = payload;
+    const processed = {
+        targetOrderDocId: String(targetOrderDocId || "").trim(),
+        targetOrderId: String(targetOrderId || "").trim(),
+        productIds: Array.isArray(productIds) ? productIds.map((id) => String(id || "").trim()).filter(Boolean) : [],
+        routeStation: String(routeStation || "").trim(),
+        sourceOrderId: String(sourceOrderId || "").trim(),
+        originMachine: String(originMachine || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.targetOrderDocId || !processed.targetOrderId || !processed.routeStation || processed.productIds.length === 0) {
+        throw new Error("targetOrderDocId, targetOrderId, routeStation en productIds zijn verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await archivePlanningOrderCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const assignOverproduction = async ({
-  targetOrderDocId,
-  targetOrderId,
-  productIds,
-  routeStation,
-  sourceOrderId = "",
-  originMachine = "",
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    targetOrderDocId: String(targetOrderDocId || "").trim(),
-    targetOrderId: String(targetOrderId || "").trim(),
-    productIds: Array.isArray(productIds) ? productIds.map((id) => String(id || "").trim()).filter(Boolean) : [],
-    routeStation: String(routeStation || "").trim(),
-    sourceOrderId: String(sourceOrderId || "").trim(),
-    originMachine: String(originMachine || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.targetOrderDocId || !payload.targetOrderId || !payload.routeStation || payload.productIds.length === 0) {
-    throw new Error("targetOrderDocId, targetOrderId, routeStation en productIds zijn verplicht.");
+export const cancelPlanningOrder = createCallableWrapper<CancelPlanningOrderInput>(
+  "cancelPlanningOrder",
+  (payload) => {
+    const { orderDocId, reason, source, actorLabel } = payload;
+    const processed = {
+        orderDocId: String(orderDocId || "").trim(),
+        reason: String(reason || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.orderDocId) {
+        throw new Error("orderDocId is verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await assignOverproductionCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const cancelPlanningOrder = async ({
-  orderDocId,
-  reason = "",
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    orderDocId: String(orderDocId || "").trim(),
-    reason: String(reason || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.orderDocId) {
-    throw new Error("orderDocId is verplicht.");
+export const assignPersonnelToStation = createCallableWrapper<AssignPersonnelToStationInput>(
+  "assignPersonnelToStation",
+  (payload) => {
+    const { stationId, operatorId, operatorNumber, operatorName, date, departmentId, hoursWorked, shiftType, source, actorLabel } = payload;
+    const processed = {
+        stationId: String(stationId || "").trim(),
+        operatorId: String(operatorId || "").trim(),
+        operatorNumber: String(operatorNumber || "").trim(),
+        operatorName: String(operatorName || "").trim(),
+        date: String(date || "").trim(),
+        departmentId: String(departmentId || "").trim(),
+        hoursWorked: Number(hoursWorked),
+        shiftType: String(shiftType || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.stationId || !processed.operatorId || !processed.date) {
+        throw new Error("stationId, operatorId en date zijn verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await cancelPlanningOrderCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const assignPersonnelToStation = async ({
-  stationId,
-  operatorId,
-  operatorNumber = "",
-  operatorName = "",
-  date,
-  departmentId = "",
-  hoursWorked = 8,
-  shiftType = "DAG",
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    stationId: String(stationId || "").trim(),
-    operatorId: String(operatorId || "").trim(),
-    operatorNumber: String(operatorNumber || "").trim(),
-    operatorName: String(operatorName || "").trim(),
-    date: String(date || "").trim(),
-    departmentId: String(departmentId || "").trim(),
-    hoursWorked: Number(hoursWorked),
-    shiftType: String(shiftType || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.stationId || !payload.operatorId || !payload.date) {
-    throw new Error("stationId, operatorId en date zijn verplicht.");
+export const removePersonnelAssignment = createCallableWrapper<RemovePersonnelAssignmentInput>(
+  "removePersonnelAssignment",
+  (payload) => {
+    const { assignmentId, stationId, source, actorLabel } = payload;
+    const processed = {
+        assignmentId: String(assignmentId || "").trim(),
+        stationId: String(stationId || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.assignmentId) {
+        throw new Error("assignmentId is verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await assignPersonnelToStationCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const removePersonnelAssignment = async ({
-  assignmentId,
-  stationId = "",
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    assignmentId: String(assignmentId || "").trim(),
-    stationId: String(stationId || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.assignmentId) {
-    throw new Error("assignmentId is verplicht.");
+export const loanPersonnelToDepartment = createCallableWrapper<LoanPersonnelToDepartmentInput>(
+  "loanPersonnelToDepartment",
+  (payload) => {
+    const { operatorNumber, operatorName, targetDepartment, targetStation, date, shiftLabel, shiftStart, shiftEnd, hoursWorked, isPloeg, loanFromDepartment, loanFromStation, originalShift, source, actorLabel } = payload;
+    const processed = {
+        operatorNumber: String(operatorNumber || "").trim(),
+        operatorName: String(operatorName || "").trim(),
+        targetDepartment: String(targetDepartment || "").trim(),
+        targetStation: String(targetStation || "").trim(),
+        date: String(date || "").trim(),
+        shiftLabel: String(shiftLabel || "").trim(),
+        shiftStart: String(shiftStart || "").trim(),
+        shiftEnd: String(shiftEnd || "").trim(),
+        hoursWorked: Number(hoursWorked),
+        isPloeg: Boolean(isPloeg),
+        loanFromDepartment: String(loanFromDepartment || "").trim(),
+        loanFromStation: String(loanFromStation || "").trim(),
+        originalShift: String(originalShift || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.operatorNumber || !processed.targetDepartment || !processed.targetStation || !processed.date) {
+        throw new Error("operatorNumber, targetDepartment, targetStation en date zijn verplicht.");
+      }
+    return processed;
   }
-
-  const result = await removePersonnelAssignmentCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const loanPersonnelToDepartment = async ({
-  operatorNumber,
-  operatorName = "",
-  targetDepartment,
-  targetStation,
-  date,
-  shiftLabel = "",
-  shiftStart = "",
-  shiftEnd = "",
-  hoursWorked = 8,
-  isPloeg = false,
-  loanFromDepartment = "",
-  loanFromStation = "",
-  originalShift = "",
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    operatorNumber: String(operatorNumber || "").trim(),
-    operatorName: String(operatorName || "").trim(),
-    targetDepartment: String(targetDepartment || "").trim(),
-    targetStation: String(targetStation || "").trim(),
-    date: String(date || "").trim(),
-    shiftLabel: String(shiftLabel || "").trim(),
-    shiftStart: String(shiftStart || "").trim(),
-    shiftEnd: String(shiftEnd || "").trim(),
-    hoursWorked: Number(hoursWorked),
-    isPloeg: Boolean(isPloeg),
-    loanFromDepartment: String(loanFromDepartment || "").trim(),
-    loanFromStation: String(loanFromStation || "").trim(),
-    originalShift: String(originalShift || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.operatorNumber || !payload.targetDepartment || !payload.targetStation || !payload.date) {
-    throw new Error("operatorNumber, targetDepartment, targetStation en date zijn verplicht.");
-  }
-
-  const result = await loanPersonnelToDepartmentCallable(payload);
-  return result?.data || { ok: false };
-};
+);
 
 export const saveOccupancyAssignments = async ({
   records,
@@ -768,6 +985,8 @@ export const saveOccupancyAssignments = async ({
   return result?.data || { ok: false };
 };
 
+
+
 export const saveOccupancyAssignment = async ({
   assignmentId,
   data,
@@ -785,6 +1004,8 @@ export const saveOccupancyAssignment = async ({
     actorLabel,
   });
 };
+
+
 
 export const deleteOccupancyAssignments = async ({
   assignmentIds,
@@ -808,6 +1029,8 @@ export const deleteOccupancyAssignments = async ({
   return result?.data || { ok: false };
 };
 
+
+
 export const deleteOccupancyAssignment = async ({
   assignmentId,
   source = "",
@@ -824,6 +1047,8 @@ export const deleteOccupancyAssignment = async ({
     actorLabel,
   });
 };
+
+
 
 export const savePersonnelRecord = async ({
   personId = "",
@@ -845,249 +1070,194 @@ export const savePersonnelRecord = async ({
   return result?.data || { ok: false };
 };
 
-export const createProductionMessages = async ({
-  messages,
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    messages: Array.isArray(messages) ? messages : [],
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
 
-  if (!payload.messages.length) {
-    throw new Error("Minimaal 1 bericht is verplicht.");
+
+export const createProductionMessages = createCallableWrapper<CreateProductionMessagesInput>(
+  "createProductionMessages",
+  (payload) => {
+    const { messages, source, actorLabel } = payload;
+    const processed = {
+        messages: Array.isArray(messages) ? messages : [],
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.messages.length) {
+        throw new Error("Minimaal 1 bericht is verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await createProductionMessagesCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const transitionPrintQueueJobStatus = async ({
-  jobId,
-  status,
-  error = "",
-  source = "",
-  actorLabel = "",
-  printerName = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    jobId: String(jobId || "").trim(),
-    status: String(status || "").trim(),
-    error: String(error || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-    printerName: String(printerName || "").trim(),
-  };
-
-  if (!payload.jobId || !payload.status) {
-    throw new Error("jobId en status zijn verplicht.");
+export const transitionPrintQueueJobStatus = createCallableWrapper<TransitionPrintQueueJobStatusInput>(
+  "transitionPrintQueueJobStatus",
+  (payload) => {
+    const { jobId, status, error, source, actorLabel, printerName } = payload;
+    const processed = {
+        jobId: String(jobId || "").trim(),
+        status: String(status || "").trim(),
+        error: String(error || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+        printerName: String(printerName || "").trim(),
+      };
+    if (!processed.jobId || !processed.status) {
+        throw new Error("jobId en status zijn verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await transitionPrintQueueJobStatusCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const requeuePrintQueueJob = async ({
-  jobId,
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    jobId: String(jobId || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.jobId) {
-    throw new Error("jobId is verplicht.");
+export const requeuePrintQueueJob = createCallableWrapper<RequeuePrintQueueJobInput>(
+  "requeuePrintQueueJob",
+  (payload) => {
+    const { jobId, source, actorLabel } = payload;
+    const processed = {
+        jobId: String(jobId || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.jobId) {
+        throw new Error("jobId is verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await requeuePrintQueueJobCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const deletePrintQueueJob = async ({
-  jobId,
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    jobId: String(jobId || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.jobId) {
-    throw new Error("jobId is verplicht.");
+export const deletePrintQueueJob = createCallableWrapper<DeletePrintQueueJobInput>(
+  "deletePrintQueueJob",
+  (payload) => {
+    const { jobId, source, actorLabel } = payload;
+    const processed = {
+        jobId: String(jobId || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.jobId) {
+        throw new Error("jobId is verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await deletePrintQueueJobCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const startProductionLots = async ({
-  orderDocId,
-  orderDocPath = "",
-  orderSourcePath = "",
-  orderId,
-  itemCode,
-  item = "",
-  lotStart,
-  totalToProduce,
-  stationId,
-  stationLabel = "",
-  actorLabel = "",
-  labelZplData = "",
-  labelTemplateId = "",
-  seriesGroupId = "",
-  isFlangeSeries = false,
-  lotNumbers = [],
-  isVirtualLot = false,
-  virtualReason = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    orderDocId: String(orderDocId || "").trim(),
-    orderDocPath: String(orderDocPath || "").trim(),
-    orderSourcePath: String(orderSourcePath || "").trim(),
-    orderId: String(orderId || "").trim(),
-    itemCode: String(itemCode || "").trim(),
-    item: String(item || "").trim(),
-    lotStart: String(lotStart || "").trim(),
-    totalToProduce: Number(totalToProduce),
-    stationId: String(stationId || "").trim(),
-    stationLabel: String(stationLabel || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-    labelZplData: typeof labelZplData === "string" ? labelZplData : "",
-    labelTemplateId: String(labelTemplateId || "").trim(),
-    seriesGroupId: String(seriesGroupId || "").trim(),
-    isFlangeSeries: Boolean(isFlangeSeries),
-    lotNumbers: Array.isArray(lotNumbers) ? lotNumbers.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
-    isVirtualLot: Boolean(isVirtualLot),
-    virtualReason: String(virtualReason || "").trim(),
-  };
-
-  if (!payload.orderDocId || !payload.orderId || !payload.itemCode || !payload.lotStart || !payload.stationId) {
-    throw new Error("orderDocId, orderId, itemCode, lotStart en stationId zijn verplicht.");
+export const startProductionLots = createCallableWrapper<StartProductionLotsInput>(
+  "startProductionLots",
+  (payload) => {
+    const { orderDocId, orderDocPath, orderSourcePath, orderId, itemCode, item, lotStart, totalToProduce, stationId, stationLabel, actorLabel, labelZplData, labelTemplateId, seriesGroupId, isFlangeSeries, lotNumbers, isVirtualLot, virtualReason } = payload;
+    const processed = {
+        orderDocId: String(orderDocId || "").trim(),
+        orderDocPath: String(orderDocPath || "").trim(),
+        orderSourcePath: String(orderSourcePath || "").trim(),
+        orderId: String(orderId || "").trim(),
+        itemCode: String(itemCode || "").trim(),
+        item: String(item || "").trim(),
+        lotStart: String(lotStart || "").trim(),
+        totalToProduce: Number(totalToProduce),
+        stationId: String(stationId || "").trim(),
+        stationLabel: String(stationLabel || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+        labelZplData: typeof labelZplData === "string" ? labelZplData : "",
+        labelTemplateId: String(labelTemplateId || "").trim(),
+        seriesGroupId: String(seriesGroupId || "").trim(),
+        isFlangeSeries: Boolean(isFlangeSeries),
+        lotNumbers: Array.isArray(lotNumbers) ? lotNumbers.map((entry) => String(entry || "").trim()).filter(Boolean) : [],
+        isVirtualLot: Boolean(isVirtualLot),
+        virtualReason: String(virtualReason || "").trim(),
+      };
+    if (!processed.orderDocId || !processed.orderId || !processed.itemCode || !processed.lotStart || !processed.stationId) {
+        throw new Error("orderDocId, orderId, itemCode, lotStart en stationId zijn verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await startProductionLotsCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const editTrackedProductLotNumber = async ({
-  productId,
-  newLotNumber,
-  reason,
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    newLotNumber: String(newLotNumber || "").trim(),
-    reason: String(reason || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.productId || !payload.newLotNumber || !payload.reason) {
-    throw new Error("productId, newLotNumber en reason zijn verplicht.");
+export const editTrackedProductLotNumber = createCallableWrapper<EditTrackedProductLotNumberInput>(
+  "editTrackedProductLotNumber",
+  (payload) => {
+    const { productId, newLotNumber, reason, source, actorLabel } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        newLotNumber: String(newLotNumber || "").trim(),
+        reason: String(reason || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.productId || !processed.newLotNumber || !processed.reason) {
+        throw new Error("productId, newLotNumber en reason zijn verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await editTrackedProductLotNumberCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const reassignTrackedProductOrder = async ({
-  productId,
-  newOrderId,
-  targetOrderDocId = "",
-  targetOrderPath = "",
-  reason,
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    newOrderId: String(newOrderId || "").trim(),
-    targetOrderDocId: String(targetOrderDocId || "").trim(),
-    targetOrderPath: String(targetOrderPath || "").trim(),
-    reason: String(reason || "").trim(),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (!payload.productId || !payload.newOrderId || !payload.reason) {
-    throw new Error("productId, newOrderId en reason zijn verplicht.");
+export const reassignTrackedProductOrder = createCallableWrapper<ReassignTrackedProductOrderInput>(
+  "reassignTrackedProductOrder",
+  (payload) => {
+    const { productId, newOrderId, targetOrderDocId, targetOrderPath, reason, source, actorLabel } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        newOrderId: String(newOrderId || "").trim(),
+        targetOrderDocId: String(targetOrderDocId || "").trim(),
+        targetOrderPath: String(targetOrderPath || "").trim(),
+        reason: String(reason || "").trim(),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (!processed.productId || !processed.newOrderId || !processed.reason) {
+        throw new Error("productId, newOrderId en reason zijn verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await reassignTrackedProductOrderCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const linkPlanningOrderProduct = async ({
-  orderDocId,
-  productId,
-  productImage = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    orderDocId: String(orderDocId || "").trim(),
-    productId: String(productId || "").trim(),
-    productImage: String(productImage || "").trim(),
-  };
-
-  if (!payload.orderDocId || !payload.productId) {
-    throw new Error("orderDocId en productId zijn verplicht.");
+export const linkPlanningOrderProduct = createCallableWrapper<LinkPlanningOrderProductInput>(
+  "linkPlanningOrderProduct",
+  (payload) => {
+    const { orderDocId, productId, productImage } = payload;
+    const processed = {
+        orderDocId: String(orderDocId || "").trim(),
+        productId: String(productId || "").trim(),
+        productImage: String(productImage || "").trim(),
+      };
+    if (!processed.orderDocId || !processed.productId) {
+        throw new Error("orderDocId en productId zijn verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await linkPlanningOrderProductCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const createPlanningOrderManual = async ({
-  orderId,
-  item,
-  machine,
-  plan,
-}: Record<string, unknown>) => {
-  const payload = {
-    orderId: String(orderId || "").trim(),
-    item: String(item || "").trim(),
-    machine: String(machine || "").trim(),
-    plan: Number(plan),
-  };
-
-  if (!payload.orderId || !payload.item || !payload.machine || !Number.isFinite(payload.plan) || payload.plan <= 0) {
-    throw new Error("orderId, item, machine en geldige plan zijn verplicht.");
+export const createPlanningOrderManual = createCallableWrapper<CreatePlanningOrderManualInput>(
+  "createPlanningOrderManual",
+  (payload) => {
+    const { orderId, item, machine, plan } = payload;
+    const processed = {
+        orderId: String(orderId || "").trim(),
+        item: String(item || "").trim(),
+        machine: String(machine || "").trim(),
+        plan: Number(plan),
+      };
+    if (!processed.orderId || !processed.item || !processed.machine || !Number.isFinite(processed.plan) || processed.plan <= 0) {
+        throw new Error("orderId, item, machine en geldige plan zijn verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await createPlanningOrderManualCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const markMazakLabelsPrinted = async ({
-  productIds,
-  stationId = "",
-  isReprint = false,
-  source = "",
-  actorLabel = "",
-}: Record<string, unknown>) => {
-  const payload = {
-    productIds: Array.isArray(productIds) ? productIds.map((id) => String(id || "").trim()).filter(Boolean) : [],
-    stationId: String(stationId || "").trim(),
-    isReprint: Boolean(isReprint),
-    source: String(source || "").trim(),
-    actorLabel: String(actorLabel || "").trim(),
-  };
-
-  if (payload.productIds.length === 0) {
-    throw new Error("productIds is verplicht.");
+export const markMazakLabelsPrinted = createCallableWrapper<MarkMazakLabelsPrintedInput>(
+  "markMazakLabelsPrinted",
+  (payload) => {
+    const { productIds, stationId, isReprint, source, actorLabel } = payload;
+    const processed = {
+        productIds: Array.isArray(productIds) ? productIds.map((id) => String(id || "").trim()).filter(Boolean) : [],
+        stationId: String(stationId || "").trim(),
+        isReprint: Boolean(isReprint),
+        source: String(source || "").trim(),
+        actorLabel: String(actorLabel || "").trim(),
+      };
+    if (processed.productIds.length === 0) {
+        throw new Error("productIds is verplicht.");
+      }
+    return processed;
   }
-
-  const result = await markMazakLabelsPrintedCallable(payload);
-  return result?.data || { ok: false };
-};
+);
 
 export const appendQcNote = async ({
   productId,
@@ -1115,6 +1285,8 @@ export const appendQcNote = async ({
   return result?.data || { ok: false };
 };
 
+
+
 export const reserveAutoLotNumberRange = async ({
   stationId,
   count = 1,
@@ -1135,29 +1307,37 @@ export const reserveAutoLotNumberRange = async ({
   return result?.data || { ok: false };
 };
 
-export const addOrderDependency = async ({ orderId, dependencyId }: Record<string, unknown>) => {
-  const payload = {
-    orderId: String(orderId || "").trim(),
-    dependencyId: String(dependencyId || "").trim(),
-  };
-  if (!payload.orderId || !payload.dependencyId) {
-    throw new Error("orderId en dependencyId zijn verplicht.");
-  }
-  const result = await addOrderDependencyCallable(payload);
-  return result?.data || { ok: false };
-};
 
-export const removeOrderDependency = async ({ orderId, dependencyId }: Record<string, unknown>) => {
-  const payload = {
-    orderId: String(orderId || "").trim(),
-    dependencyId: String(dependencyId || "").trim(),
-  };
-  if (!payload.orderId || !payload.dependencyId) {
-    throw new Error("orderId en dependencyId zijn verplicht.");
+
+export const addOrderDependency = createCallableWrapper<AddOrderDependencyInput>(
+  "addOrderDependency",
+  (payload) => {
+    const { orderId, dependencyId } = payload;
+    const processed = {
+        orderId: String(orderId || "").trim(),
+        dependencyId: String(dependencyId || "").trim(),
+      };
+    if (!processed.orderId || !processed.dependencyId) {
+        throw new Error("orderId en dependencyId zijn verplicht.");
+      }
+    return processed;
   }
-  const result = await removeOrderDependencyCallable(payload);
-  return result?.data || { ok: false };
-};
+);
+
+export const removeOrderDependency = createCallableWrapper<RemoveOrderDependencyInput>(
+  "removeOrderDependency",
+  (payload) => {
+    const { orderId, dependencyId } = payload;
+    const processed = {
+        orderId: String(orderId || "").trim(),
+        dependencyId: String(dependencyId || "").trim(),
+      };
+    if (!processed.orderId || !processed.dependencyId) {
+        throw new Error("orderId en dependencyId zijn verplicht.");
+      }
+    return processed;
+  }
+);
 
 export const updateOrderPlannedDate = async ({ orderId, plannedDate }: Record<string, unknown>) => {
   const safeOrderId = String(orderId || "").trim();
@@ -1169,17 +1349,22 @@ export const updateOrderPlannedDate = async ({ orderId, plannedDate }: Record<st
   return result?.data || { ok: false };
 };
 
-export const updateOrderKanbanStatus = async ({ orderId, status }: Record<string, unknown>) => {
-  const payload = {
-    orderId: String(orderId || "").trim(),
-    status: String(status || "").trim(),
-  };
-  if (!payload.orderId || !payload.status) {
-    throw new Error("orderId en status zijn verplicht.");
+
+
+export const updateOrderKanbanStatus = createCallableWrapper<UpdateOrderKanbanStatusInput>(
+  "updateOrderKanbanStatus",
+  (payload) => {
+    const { orderId, status } = payload;
+    const processed = {
+        orderId: String(orderId || "").trim(),
+        status: String(status || "").trim(),
+      };
+    if (!processed.orderId || !processed.status) {
+        throw new Error("orderId en status zijn verplicht.");
+      }
+    return processed;
   }
-  const result = await updateOrderKanbanStatusCallable(payload);
-  return result?.data || { ok: false };
-};
+);
 
 export const markReadyForNextStep = async ({ productId }: Record<string, unknown>) => {
   const safeProductId = String(productId || "").trim();
@@ -1189,6 +1374,8 @@ export const markReadyForNextStep = async ({ productId }: Record<string, unknown
   const result = await markReadyForNextStepCallable({ productId: safeProductId });
   return result?.data || { ok: false };
 };
+
+
 
 export const startTrackedProductRepair = async ({ productId, repairReason = "" }: Record<string, unknown>) => {
   const safeProductId = String(productId || "").trim();
@@ -1201,6 +1388,8 @@ export const startTrackedProductRepair = async ({ productId, repairReason = "" }
   });
   return result?.data || { ok: false };
 };
+
+
 
 export const restoreArchivedTrackedProduct = async ({
   productId,
@@ -1230,6 +1419,8 @@ export const restoreArchivedTrackedProduct = async ({
   return result?.data || { ok: false };
 };
 
+
+
 export const reportShopFloorIssue = async ({
   type,
   machine = "",
@@ -1253,6 +1444,8 @@ export const reportShopFloorIssue = async ({
   return result?.data || { ok: false };
 };
 
+
+
 export const resolveShopFloorIssue = async ({ type, issueId }: Record<string, unknown>) => {
   const safeType = String(type || "").trim();
   const safeIssueId = String(issueId || "").trim();
@@ -1262,6 +1455,8 @@ export const resolveShopFloorIssue = async ({ type, issueId }: Record<string, un
   const result = await resolveShopFloorIssueCallable({ type: safeType, issueId: safeIssueId });
   return result?.data || { ok: false };
 };
+
+
 
 export const importPlanningOrders = async ({ orders, importMode = "new_only", hoursOnlyMode = false }: Record<string, unknown>) => {
   const safeMode = String(importMode || "new_only").trim().toLowerCase();
@@ -1287,6 +1482,8 @@ export const importPlanningOrders = async ({ orders, importMode = "new_only", ho
   return result?.data || { ok: false };
 };
 
+
+
 export const queuePrintJob = async (printerId: unknown, zplData: unknown, metadata: Record<string, unknown> = {}) => {
   const payload = {
     printerId: String(printerId || "").trim(),
@@ -1307,6 +1504,8 @@ export const queuePrintJob = async (printerId: unknown, zplData: unknown, metada
   const result = await queuePrintJobCallable(payload);
   return result?.data || null; // Returns document ID
 };
+
+
 
 export const updateUserProfile = async (profileData: Record<string, unknown>) => {
   if (!profileData?.name || !profileData?.language) {
@@ -1331,10 +1530,14 @@ export const updateUserProfile = async (profileData: Record<string, unknown>) =>
   return result?.data || { ok: false };
 };
 
+
+
 export const clearPasswordChangeFlag = async () => {
   const result = await clearPasswordChangeFlagCallable({});
   return result?.data || { ok: false };
 };
+
+
 
 export const submitAccountRequest = async (requestData: Record<string, unknown>) => {
   if (!requestData?.name || !requestData?.email) {
@@ -1354,6 +1557,8 @@ export const submitAccountRequest = async (requestData: Record<string, unknown>)
   return result?.data || { ok: false };
 };
 
+
+
 export const updateUserLanguage = async (language: unknown) => {
   if (!language) {
     throw new Error("Taalcode is verplicht.");
@@ -1367,6 +1572,8 @@ export const updateUserLanguage = async (language: unknown) => {
   return result?.data || { ok: false };
 };
 
+
+
 export const executeAutomationRule = async (rule: unknown) => {
   if (!rule || typeof rule !== "object") {
     throw new Error("rule is verplicht.");
@@ -1376,7 +1583,8 @@ export const executeAutomationRule = async (rule: unknown) => {
   return result?.data || { triggered: false, error: "Lege automation response" };
 };
 
-const updateProductionStandardCallable = callableWithRuntime(httpsCallable(functions, "updateProductionStandard"));
+
+
 
 export const updateProductionStandard = async ({ standardId, standardMinutes, autoLearning = null }: Record<string, unknown>) => {
   const result = await updateProductionStandardCallable({
@@ -1387,16 +1595,21 @@ export const updateProductionStandard = async ({ standardId, standardMinutes, au
   return result?.data || { ok: false };
 };
 
-export const saveProductRecord = async ({ productId = "", productData = {}, clearVerification = false }: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    productData: (typeof productData === "object" && productData) || {},
-    clearVerification: Boolean(clearVerification),
-  };
 
-  const result = await saveProductRecordCallable(payload);
-  return result?.data || { ok: false };
-};
+
+export const saveProductRecord = createCallableWrapper<SaveProductRecordInput>(
+  "saveProductRecord",
+  (payload) => {
+    const { productId, productData, clearVerification } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        productData: (typeof productData === "object" && productData) || {},
+        clearVerification: Boolean(clearVerification),
+      };
+    
+    return processed;
+  }
+);
 
 export const deleteProductRecord = async (productId: unknown) => {
   const payload = { productId: String(productId || "").trim() };
@@ -1408,28 +1621,35 @@ export const deleteProductRecord = async (productId: unknown) => {
   return result?.data || { ok: false };
 };
 
-export const verifyProductRecord = async ({ productId = "", actorName = "" }: Record<string, unknown>) => {
-  const payload = {
-    productId: String(productId || "").trim(),
-    actorName: String(actorName || "").trim(),
-  };
-  if (!payload.productId) {
-    throw new Error("productId is verplicht.");
+
+
+export const verifyProductRecord = createCallableWrapper<VerifyProductRecordInput>(
+  "verifyProductRecord",
+  (payload) => {
+    const { productId, actorName } = payload;
+    const processed = {
+        productId: String(productId || "").trim(),
+        actorName: String(actorName || "").trim(),
+      };
+    if (!processed.productId) {
+        throw new Error("productId is verplicht.");
+      }
+    return processed;
   }
+);
 
-  const result = await verifyProductRecordCallable(payload);
-  return result?.data || { ok: false };
-};
-
-export const upsertConversionRecord = async ({ recordId = "", recordData = {} }: Record<string, unknown>) => {
-  const payload = {
-    recordId: String(recordId || "").trim(),
-    recordData: (typeof recordData === "object" && recordData) || {},
-  };
-
-  const result = await upsertConversionRecordCallable(payload);
-  return result?.data || { ok: false };
-};
+export const upsertConversionRecord = createCallableWrapper<UpsertConversionRecordInput>(
+  "upsertConversionRecord",
+  (payload) => {
+    const { recordId, recordData } = payload;
+    const processed = {
+        recordId: String(recordId || "").trim(),
+        recordData: (typeof recordData === "object" && recordData) || {},
+      };
+    
+    return processed;
+  }
+);
 
 export const deleteConversionRecord = async (recordId: unknown) => {
   const payload = { recordId: String(recordId || "").trim() };
@@ -1441,24 +1661,29 @@ export const deleteConversionRecord = async (recordId: unknown) => {
   return result?.data || { ok: false };
 };
 
+
+
 export const deleteAllConversionRecords = async () => {
   const result = await deleteAllConversionRecordsCallable({});
   return result?.data || { ok: false, deleted: 0 };
 };
 
-export const upsertConversionBatch = async ({ items = [], mode = "merge" }: Record<string, unknown>) => {
-  const payload = {
-    items: Array.isArray(items) ? items : [],
-    mode: String(mode || "merge").trim().toLowerCase(),
-  };
 
-  if (!payload.items.length) {
-    throw new Error("items mag niet leeg zijn.");
+
+export const upsertConversionBatch = createCallableWrapper<UpsertConversionBatchInput>(
+  "upsertConversionBatch",
+  (payload) => {
+    const { items, mode } = payload;
+    const processed = {
+        items: Array.isArray(items) ? items : [],
+        mode: String(mode || "merge").trim().toLowerCase(),
+      };
+    if (!processed.items.length) {
+        throw new Error("items mag niet leeg zijn.");
+      }
+    return processed;
   }
-
-  const result = await upsertConversionBatchCallable(payload);
-  return result?.data || { ok: false };
-};
+);
 
 export const processInforUpdate = async (csvData: unknown[] = []) => {
   if (!Array.isArray(csvData) || !csvData.length) {
@@ -1475,6 +1700,8 @@ export const processInforUpdate = async (csvData: unknown[] = []) => {
   };
 };
 
+
+
 export const saveAiContextConfig = async (systemPrompt: unknown) => {
   if (!systemPrompt) {
     throw new Error("systemPrompt is verplicht.");
@@ -1483,20 +1710,28 @@ export const saveAiContextConfig = async (systemPrompt: unknown) => {
   return result?.data || { ok: false };
 };
 
+
+
 export const createAiDocumentRecord = async (payload = {}) => {
   const result = await createAiDocumentRecordCallable({ payload });
   return result?.data || { ok: false };
 };
+
+
 
 export const updateAiDocumentRecord = async ({ docId = "", patch = {} }: Record<string, unknown>) => {
   const result = await updateAiDocumentRecordCallable({ docId: String(docId || ""), patch });
   return result?.data || { ok: false };
 };
 
+
+
 export const deleteAiDocumentRecord = async (docId: unknown) => {
   const result = await deleteAiDocumentRecordCallable({ docId: String(docId || "") });
   return result?.data || { ok: false };
 };
+
+
 
 export const verifyAiKnowledgeEntry = async ({ entryId = "", correctedAnswer = null }: Record<string, unknown>) => {
   const result = await verifyAiKnowledgeEntryCallable({
@@ -1506,10 +1741,14 @@ export const verifyAiKnowledgeEntry = async ({ entryId = "", correctedAnswer = n
   return result?.data || { ok: false };
 };
 
+
+
 export const deleteAiKnowledgeEntry = async (entryId: unknown) => {
   const result = await deleteAiKnowledgeEntryCallable({ entryId: String(entryId || "") });
   return result?.data || { ok: false };
 };
+
+
 
 export const migrateAiKnowledgeFields = async () => {
   const result = await migrateAiKnowledgeFieldsCallable({});
@@ -1535,10 +1774,14 @@ export const migrateAiKnowledgeFields = async () => {
  * Output (apply):
  *  - { mode: 'apply', results: Array<{ status: 'FIXED'|'SKIPPED'|'ERROR', reason?: string }>, totalFixed: number }
  */
+
+
 export const runMigrationTool = async ({ mode, orderId, mismatches }: Record<string, unknown>) => {
   const result = await runMigrationToolCallable({ mode, orderId: orderId || null, mismatches: mismatches || null });
   return result?.data;
 };
+
+
 
 export const previewAtpsOccupancyExport = async ({
   limit = 200,
@@ -1557,6 +1800,8 @@ export const previewAtpsOccupancyExport = async ({
   return result?.data || {};
 };
 
+
+
 export const executeAtpsOccupancyExport = async ({
   limit = 200,
 }: Record<string, unknown> = {}) => {
@@ -1565,6 +1810,8 @@ export const executeAtpsOccupancyExport = async ({
   });
   return result?.data || {};
 };
+
+
 
 export const getAtpsExportMonitor = async ({
   runsLimit = 20,
@@ -1576,6 +1823,8 @@ export const getAtpsExportMonitor = async ({
   });
   return result?.data || { runs: [], previewRuns: [], retryQueue: {} };
 };
+
+
 
 export const saveLnQrExportHistory = async ({
   exportKind = "qr",
@@ -1595,3 +1844,4 @@ export const saveLnQrExportHistory = async ({
   });
   return result?.data || { ok: false };
 };
+

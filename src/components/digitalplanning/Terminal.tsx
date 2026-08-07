@@ -914,7 +914,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
     // Fallback voor gevallen waarin selectie nog bestaat maar tijdelijk niet in de zichtbare lijst zit.
     return myOrders.find(
       (o) => o.id === selectedOrderId || o.orderId === selectedOrderId
-    ) || null;
+    ) || undefined;
   }, [isLossen1218Station, lossenFilteredOrders, filteredOrders, myOrders, selectedOrderId]);
 
   const selectedWikkeling = useMemo(() => activeWikkelingen.find(p => p.id === selectedTrackedId), [activeWikkelingen, selectedTrackedId]);
@@ -1018,7 +1018,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
   };
 
   const handleOpenReleaseModal = (product: TrackedProductDoc, bulkProducts: TrackedProductDoc[] = []) => {
-    setProductToRelease(product || null);
+    setProductToRelease(product || undefined);
     if (Array.isArray(bulkProducts) && bulkProducts.length > 1) {
       setBulkProductsToRelease(bulkProducts);
     } else {
@@ -1091,7 +1091,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
         ? startOptions.lotNumbers.map((entry: unknown) => String(entry || "").trim().toUpperCase()).filter(Boolean)
         : [];
       const totalToProduce = explicitLotNumbers.length > 0 ? explicitLotNumbers.length : Math.max(1, parseInt(String(_stringCount), 10) || 1);
-      const seriesGroupId = String(startOptions?.seriesGroupId || "").trim() || null;
+      const seriesGroupId = String(startOptions?.seriesGroupId || "").trim() || undefined;
 
       setShowStartModal(false);
       if (shouldJumpToWinding) {
@@ -1329,7 +1329,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
                 <TerminalPlanningView
                     orders={lossenFilteredOrders as any}
                     selectedOrderId={selectedOrderId}
-                    onSelectOrder={(id: string | null | undefined) => setSelectedOrderId(id || null)}
+                    onSelectOrder={(id: string | null | undefined) => setSelectedOrderId(id || undefined)}
                     searchTerm={planningSearch}
                     onSearchChange={setPlanningSearch}
                     referenceDate={referenceDate}
@@ -1354,7 +1354,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
                       <MalOptimizationPanel
                         currentOrder={selectedOrder as any}
                         allOrders={myOrders as any[]}
-                        onSelectOrder={(id: string | undefined) => setSelectedOrderId(id || null)}
+                        onSelectOrder={(id: string | undefined) => setSelectedOrderId(id || undefined)}
                       />
                     }
                   />
@@ -1364,7 +1364,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
             <TerminalPlanningView
                 orders={filteredOrders as any}
                 selectedOrderId={selectedOrderId}
-                onSelectOrder={(id: string | null | undefined) => setSelectedOrderId(id || null)}
+                onSelectOrder={(id: string | null | undefined) => setSelectedOrderId(id || undefined)}
                 searchTerm={planningSearch}
                 onSearchChange={setPlanningSearch}
                 referenceDate={referenceDate}
@@ -1390,7 +1390,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
                   <MalOptimizationPanel 
                     currentOrder={selectedOrder as any}
                     allOrders={myOrders as any[]}
-                    onSelectOrder={(id: string | undefined) => setSelectedOrderId(id || null)}
+                    onSelectOrder={(id: string | undefined) => setSelectedOrderId(id || undefined)}
                   />
                 }
               />
@@ -1400,7 +1400,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
                 activeWikkelingen={activeWikkelingen as any}
                 lotConflictMeta={lotConflictMeta}
                 selectedTrackedId={selectedTrackedId}
-                onSelectTracked={(id: string | null | undefined) => setSelectedTrackedId(id || null)}
+                onSelectTracked={(id: string | null | undefined) => setSelectedTrackedId(id || undefined)}
                 selectedWikkeling={selectedWikkeling}
                 onReleaseProduct={handleOpenReleaseModal}
                 scanInput={scanInput}

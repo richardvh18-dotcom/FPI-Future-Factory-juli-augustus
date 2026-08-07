@@ -144,7 +144,7 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
   // State management
   const { notify } = useNotifications();
   const [activeTab, setActiveTab] = useState("planning");
-  const [lossenPlanningFilter, setLossenPlanningFilter] = useState<string | null>(initialLossenPlanningFilter || null);
+  const [lossenPlanningFilter, setLossenPlanningFilter] = useState<string | null>(initialLossenPlanningFilter || undefined);
   const [allOrders, setAllOrders] = useState<PlanningOrder[]>([]);
   const [allTracked, setAllTracked] = useState<TrackedProductDoc[]>([]);
   const [archiveTrackedItems, setArchiveTrackedItems] = useState<TrackedProductDoc[]>([]);
@@ -907,7 +907,7 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
     // Fallback voor gevallen waarin selectie nog bestaat maar tijdelijk niet in de zichtbare lijst zit.
     return myOrders.find(
       (o) => o.id === selectedOrderId || o.orderId === selectedOrderId
-    ) || null;
+    ) || undefined;
   }, [isLossen1218Station, lossenFilteredOrders, filteredOrders, myOrders, selectedOrderId]);
 
   const selectedWikkeling = useMemo(() => activeWikkelingen.find(p => p.id === selectedTrackedId), [activeWikkelingen, selectedTrackedId]);
@@ -1011,7 +1011,7 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
   };
 
   const handleOpenReleaseModal = (product: TrackedProductDoc, bulkProducts: TrackedProductDoc[] = []) => {
-    setProductToRelease(product || null);
+    setProductToRelease(product || undefined);
     if (Array.isArray(bulkProducts) && bulkProducts.length > 1) {
       setBulkProductsToRelease(bulkProducts);
     } else {
@@ -1084,7 +1084,7 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
         ? startOptions.lotNumbers.map((entry: unknown) => String(entry || "").trim().toUpperCase()).filter(Boolean)
         : [];
       const totalToProduce = explicitLotNumbers.length > 0 ? explicitLotNumbers.length : Math.max(1, parseInt(String(_stringCount), 10) || 1);
-      const seriesGroupId = String(startOptions?.seriesGroupId || "").trim() || null;
+      const seriesGroupId = String(startOptions?.seriesGroupId || "").trim() || undefined;
 
       setShowStartModal(false);
       if (shouldJumpToWinding) {
