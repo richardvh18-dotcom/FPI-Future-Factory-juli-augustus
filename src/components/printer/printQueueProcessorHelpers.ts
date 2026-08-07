@@ -83,6 +83,70 @@ const printerMatchesAnyStation = (
   return printerStationKeys.some((printerKey) => stationKeys.includes(printerKey));
 };
 
+const normalizeQueueJobStationContext = (job: QueueJobLike | null | undefined): string[] => {
+  const stationKeys = getJobStationKeys(job);
+  if (stationKeys.length > 0) return stationKeys;
+
+  const metadata = (job?.metadata || {}) as Record<string, unknown>;
+  const explicitStation = String(metadata?.stationId || metadata?.station || '').trim();
+  if (explicitStation) {
+    return [normalizeStationKey(explicitStation)];
+  }
+
+  return [];
+};
+
+export const isQueueJobAllowedForPrinter = (
+  job: QueueJobLike | null | undefined,
+  printer: QueuePrinterConfig | null | undefined
+): boolean => {
+  if (!printer) return false;
+
+  const jobPrinterId = String(job?.printerId || '').trim();
+  if (jobPrinterId) {
+    const printerId = String(printer.id || '').trim();
+    if (printerId && printerId === jobPrinterId) {
+      return true;
+    }
+  }
+
+  const jobStationKeys = normalizeQueueJobStationContext(job);
+  if (jobStationKeys.length === 0) {
+    return false;
+  }
+
+  const printerStationKeys = getPrinterStationKeys(printer);
+  return printerStationKeys.some((printerKey) => jobStationKeys.includes(printerKey));
+};
+
+export const getPreferredQueuePrinterForContext = (
+  printers: QueuePrinterConfig[] = [],
+  context: { stationId?: unknown; preferLabelsQueue?: boolean } = {}
+): QueuePrinterConfig | null => {
+  if (!Array.isArray(printers) || printers.length === 0) return null;
+
+  const stationKey = normalizeStationKey(String(context.stationId || ''));
+  const preferLabelsQueue = Boolean(context.preferLabelsQueue);
+
+  const labelsQueuePrinter = printers.find((printer) => {
+    const printerStationKeys = getPrinterStationKeys(printer);
+    return printerStationKeys.includes('LABELSPRINTING');
+  });
+
+  if (preferLabelsQueue && labelsQueuePrinter) {
+    return labelsQueuePrinter;
+  }
+
+  if (stationKey && labelsQueuePrinter) {
+    const stationMatchesLabelsQueue = stationKey === 'LABELSPRINTING';
+    if (stationMatchesLabelsQueue) {
+      return labelsQueuePrinter;
+    }
+  }
+
+  return null;
+};
+
 export const getPrinterForQueueJob = (
   job: QueueJobLike | null | undefined,
   currentPrinter: QueuePrinterConfig | null | undefined,
@@ -94,6 +158,17 @@ export const getPrinterForQueueJob = (
       (printer) => String(printer?.id || '').trim() === jobPrinterId
     );
     if (explicitMatch) return explicitMatch;
+  }
+
+  const preferredLabelsPrinter = getPreferredQueuePrinterForContext(printers, {
+    stationId: job?.metadata?.stationId || job?.stationId || job?.currentStation || job?.machineId,
+    preferLabelsQueue: true,
+  });
+  if (preferredLabelsPrinter) {
+    const jobStationKeys = getJobStationKeys(job);
+    if (jobStationKeys.length === 0 || jobStationKeys.includes('LABELSPRINTING')) {
+      return preferredLabelsPrinter;
+    }
   }
 
   const jobStationKeys = getJobStationKeys(job);
@@ -108,8 +183,6 @@ export const getPrinterForQueueJob = (
     }
   }
 
-  // Als de taak station-keys of een specifieke printer had, maar deze niet matchte met onszelf,
-  // OF als hij helemaal leeg is, claim hem NIET blindelings. 
-  // Laat hem over aan de printer waar hij daadwerkelijk voor bedoeld is.
-  return null;
+  // Als er geen expliciete printer of station-metadata aanwezig is, blijf veilig bij de huidige printer.
+  return currentPrinter || null;
 };

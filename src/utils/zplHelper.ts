@@ -585,7 +585,6 @@ export const generateLotBatchZPL = ({
         zplBatch += `^MD${darkness}`;
         zplBatch += `^FO${leftQrX},${qrY}^BQN,2,${effectiveQrCellWidth},Q^FDQA,${row.qrValue}^FS`;
         zplBatch += `^FO${textX},${textY}^A0N,${safeFontHeight},${fontWidthDots}^FD${row.text}^FS`;
-        zplBatch += `^FO${toDots(separatorXmm)},${toDots(separatorYmm)}^GB${toDots(separatorWidthMm)},1,1^FS`;
         if (isLast) {
             zplBatch += "^PQ1,0,1,Y";
         } else {

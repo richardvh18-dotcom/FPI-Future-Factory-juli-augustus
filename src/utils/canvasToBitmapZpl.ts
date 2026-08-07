@@ -94,7 +94,7 @@ export const pixelsToGfaBitmap = (
     };
 };
 
-const buildBoostedMaskFromImageData = (
+export const buildBoostedMaskFromImageData = (
     imageData: Uint8ClampedArray,
     widthDots: number,
     heightDots: number,

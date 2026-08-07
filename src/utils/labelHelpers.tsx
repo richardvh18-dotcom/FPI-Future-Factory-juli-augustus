@@ -3,7 +3,7 @@
  * Helpers voor het verwerken van label templates en placeholders.
  */
 
-import { format } from "date-fns";
+import { format, getISOWeek } from "date-fns";
 import QRCode from "qrcode";
 import i18n from "../i18n";
 
@@ -923,6 +923,16 @@ export const resolveLabelContent = (
       const key = match.slice(1, -1);
       const value = key === "date"
         ? format(new Date(), "dd-MM-yyyy")
+        : key === "printDate"
+        ? format(new Date(), "dd-MM-yyyy")
+        : key === "printTime"
+        ? format(new Date(), "HH:mm")
+        : key === "printDateTime"
+        ? format(new Date(), "dd-MM-yyyy HH:mm")
+        : key === "year"
+        ? format(new Date(), "yyyy")
+        : key === "weekNumber"
+        ? String(getISOWeek(new Date()))
         : resolvePlaceholderValue(data, key);
 
       // Vervang ALLE voorkomens van de placeholder (niet alleen de eerste)
@@ -1363,10 +1373,18 @@ export const evaluatePrintRules = (
   return finalOutput;
 };
 
-export const getBarcodeUrl = (data: unknown): string =>
-  `https://bwipjs-api.metafloor.com/?bcid=code128&text=${encodeURIComponent(
+export const getBarcodeUrl = (data: unknown, barcodeType?: string): string => {
+  const bcid = barcodeType === 'datamatrix' ? 'datamatrix'
+    : barcodeType === 'pdf417' ? 'pdf417'
+    : barcodeType === 'aztec' ? 'azteccode'
+    : barcodeType === 'ean13' ? 'ean13'
+    : barcodeType === 'ean8' ? 'ean8'
+    : barcodeType === 'code39' ? 'code39'
+    : 'code128';
+  return `https://bwipjs-api.metafloor.com/?bcid=${bcid}&text=${encodeURIComponent(
     String(data ?? "leeg")
   )}&scale=3&height=10&incltext&guardwhitespace`;
+};
 
 export const getCompactPrintVariables = (data: Record<string, unknown>): Record<string, unknown> => {
   const compact: Record<string, unknown> = {};

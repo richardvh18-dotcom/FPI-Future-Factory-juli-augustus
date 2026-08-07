@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LABELS_PRINTING_QUEUE_STATION } from '../../services/printRouting';
-import { getPrinterForQueueJob } from './printQueueProcessorHelpers';
+import { getPreferredQueuePrinterForContext, getPrinterForQueueJob, isQueueJobAllowedForPrinter } from './printQueueProcessorHelpers';
 
 describe('getPrinterForQueueJob', () => {
   it('prefers the printer explicitly attached to the queue job', () => {
@@ -39,6 +39,32 @@ describe('getPrinterForQueueJob', () => {
       currentPrinter,
       [currentPrinter, labelsPrinter]
     );
+
+    expect(result?.id).toBe('printer-b');
+  });
+
+  it('allows an explicitly targeted printer even when the station keys do not match', () => {
+    const targetPrinter = { id: 'printer-b', name: 'Lighthouse Lossen', queueStations: ['BH31', 'BM01', 'LOSSEN'] };
+    const job = {
+      printerId: 'printer-b',
+      metadata: { stationId: 'LABELSPRINTING' },
+    };
+
+    expect(isQueueJobAllowedForPrinter(job, targetPrinter)).toBe(true);
+  });
+
+  it('prefers the labels-printing queue printer for label actions even when a station binding points elsewhere', () => {
+    const bm01Printer = { id: 'printer-a', name: 'Lighthouse Lossen', queueStations: ['BM01'] };
+    const labelsPrinter = {
+      id: 'printer-b',
+      name: 'Zebra ZM400 Pilot',
+      queueStations: [LABELS_PRINTING_QUEUE_STATION],
+    };
+
+    const result = getPreferredQueuePrinterForContext([bm01Printer, labelsPrinter], {
+      stationId: 'BM01',
+      preferLabelsQueue: true,
+    });
 
     expect(result?.id).toBe('printer-b');
   });

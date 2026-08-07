@@ -63,13 +63,15 @@ import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
 import { normalizePrinterProtocol, renderLabelForPrinter } from "../../utils/printerProtocolService";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
-import { isUsbDirectSupported, requestUsbDevice, printRawUsb } from "../../utils/usbPrintService";
+import { isUsbDirectSupported, requestUsbDevice, printRawUsb, printBinaryUsbToDevice, resolveUsbDeviceForPrinter } from "../../utils/usbPrintService";
+import { buildTsplUsbPayload, renderLabelToBitmapTspl } from "../../utils/tsplPrintService";
 import { executeOrderLabelSearch, loadFactoryMachinePaths, normalizeText } from "../../utils/orderLabelSearch";
 import {
   buildOrderLabelPreviewData,
   buildOrderLabelTemplateProduct,
 } from "../../utils/orderLabelTemplateUtils";
 import { isPrinterOnline } from "../../utils/printerStatus";
+import { resolvePreferredQueueDepartment } from "../../utils/printerQueueStationUtils";
 
 // Parse USB ID strings (e.g., "1234" or "0x1234") to numbers
 type PrinterConnectionType = "webusb" | "windows_host" | "network";
@@ -94,6 +96,7 @@ type PrinterRecord = {
   type?: string;
   vendorId?: number | string | null;
   productId?: number | string | null;
+  usbSerialNumber?: string;
   deviceName?: string;
   calibrationOffsetXMm?: string;
   calibrationOffsetYMm?: string;
@@ -135,6 +138,7 @@ type PrinterFormData = {
   type: PrinterConnectionType;
   vendorId: number | null;
   productId: number | null;
+  usbSerialNumber: string;
   deviceName: string;
   calibrationOffsetXMm: string;
   calibrationOffsetYMm: string;
@@ -235,6 +239,7 @@ const DEFAULT_PRINTER_FORM: PrinterFormData = {
   type: CONNECTION_TYPES.WEBUSB,
   vendorId: null,
   productId: null,
+  usbSerialNumber: "",
   deviceName: "",
   calibrationOffsetXMm: "0",
   calibrationOffsetYMm: "0",
@@ -267,6 +272,15 @@ const resolveRollWidthMm = (printerLike: Partial<PrinterFormData | PrinterRecord
 };
 
 const mmToDots = (mm: unknown, dpi = 203) => Math.round((Number(mm) || 0) * (dpi / 25.4));
+
+const normalizeUsbSerial = (value: unknown): string => String(value || "").trim();
+
+const resolveStableUsbSerial = (existingSerial: unknown, detectedSerial: unknown): string => {
+  const existing = normalizeUsbSerial(existingSerial);
+  const detected = normalizeUsbSerial(detectedSerial);
+  if (existing) return existing;
+  return detected;
+};
 
 // applyCalibrationToRawZpl is vervangen door applyCalibration() uit printerDrivers.js.
 // buildCalibrationCrossZpl gebruikt nu getDriver() voor correcte DPI-berekening.
@@ -1028,6 +1042,9 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
   const [showTempModal, setShowTempModal] = useState(false);
   const [showTestMenu, setShowTestMenu] = useState<string | null>(null);
   const [calibrationPrinter, setCalibrationPrinter] = useState<PrinterRecord | null>(null);
+  const [tsplDiagPrinter, setTsplDiagPrinter] = useState<PrinterRecord | null>(null);
+  const [tsplDiagCommands, setTsplDiagCommands] = useState('SIZE 90 mm,40 mm\r\nGAP 2 mm,0 mm\r\nDENSITY 8\r\nSPEED 4\r\nCLS\r\nTEXT 20,20,"ARIAL.TTF",0,20,20,"TSPL TEST"\r\nPRINT 1,1');
+  const [tsplDiagStatus, setTsplDiagStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle');
   const { labelTemplates, labelRules: labelLogicRules } = useLabelCatalog();
   const [windowsHostMode, setWindowsHostMode] = useState(false);
   const [savingWindowsHostMode, setSavingWindowsHostMode] = useState(false);
@@ -1054,18 +1071,47 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
     }
   }, [printers, selectedQueuePrinterId]);
 
-  // Sync huidige queue stations op basis van geselecteerde printer
   useEffect(() => {
+    if (!selectedQueuePrinterId) {
+      setQueueStations([]);
+      return;
+    }
+
     const selectedPrinter = printers.find((p) => p.id === selectedQueuePrinterId);
     if (!selectedPrinter) {
       setQueueStations([]);
       return;
     }
+
     const stations = Array.isArray(selectedPrinter.queueStations)
       ? selectedPrinter.queueStations
       : (selectedPrinter.linkedStations || []);
     setQueueStations(Array.from(new Set(stations)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
   }, [printers, selectedQueuePrinterId]);
+
+  useEffect(() => {
+    if (!selectedQueuePrinterId) {
+      setSelectedQueueDepartment("");
+      return;
+    }
+
+    const selectedPrinter = printers.find((p) => p.id === selectedQueuePrinterId);
+    if (!selectedPrinter) {
+      setSelectedQueueDepartment("");
+      return;
+    }
+
+    const preferredDepartment = resolvePreferredQueueDepartment({
+      printer: selectedPrinter,
+      availableDepartments,
+    });
+
+    if (preferredDepartment) {
+      setSelectedQueueDepartment(preferredDepartment);
+    } else if (!selectedQueueDepartment) {
+      setSelectedQueueDepartment("");
+    }
+  }, [availableDepartments, printers, selectedQueuePrinterId]);
 
   // Fetch stations uit factory config
   useEffect(() => {
@@ -1218,6 +1264,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         routingKeys: serializeRoutingKeys(formData.routingKeysText),
         department: formData.department || "",
         locationLabel: formData.locationLabel || "",
+        usbSerialNumber: normalizeUsbSerial(formData.usbSerialNumber),
         // Legacy compat: bestaand veld blijft gevuld voor oude flows.
         width: normalizedRollWidth,
       };
@@ -1473,7 +1520,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
     batchData += `SIZE ${rollWidthMm} mm,${labelH} mm\r\nGAP ${gapH} mm,0 mm\r\nDENSITY ${darkness}\r\nSPEED ${printSpeed}\r\nDIRECTION 0,0\r\n`;
     lots.forEach((lot) => {
       batchData += `CLS\r\n`;
-      batchData += `QRCODE ${leftQrX},${qrY},M,${qrCellWidth},A,0,M2,S3,"${lot}"\r\n`;
+      batchData += `QRCODE ${leftQrX},${qrY},H,${qrCellWidth},A,0,M2,S7,"${lot}"\r\n`;
       batchData += `TEXT ${textX},${textY},"ARIAL.TTF",0,${fontWidthDots},${fontHeightDots},"${lot}"\r\n`;
       batchData += `BAR ${Math.round(2 * dotsPerMm)},${Math.round(12.4 * dotsPerMm)},${Math.round(86 * dotsPerMm)},1\r\n`;
       batchData += `PRINT 1,1\r\n`;
@@ -1603,12 +1650,23 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
 
     try {
       const device = await navigator.usb.requestDevice({ filters: [] });
-      setFormData(prev => ({
-        ...prev,
-        vendorId: device.vendorId,
-        productId: device.productId,
-        deviceName: device.productName || "USB Printer"
-      }));
+      const detectedSerial = normalizeUsbSerial(device.serialNumber);
+      let serialChanged = false;
+      setFormData(prev => {
+        const existingSerial = normalizeUsbSerial(prev.usbSerialNumber);
+        serialChanged = Boolean(existingSerial && detectedSerial && existingSerial !== detectedSerial);
+        return {
+          ...prev,
+          vendorId: device.vendorId,
+          productId: device.productId,
+          usbSerialNumber: resolveStableUsbSerial(prev.usbSerialNumber, detectedSerial),
+          deviceName: device.productName || "USB Printer"
+        };
+      });
+
+      if (serialChanged) {
+        showInfo('Gedetecteerd USB-serial wijkt af na reconnect. Bestaande opgeslagen serial is behouden om configuratie stabiel te houden.');
+      }
     } catch (err: unknown) {
       console.error("Pairing error:", err);
       const e = err as { name?: string; message?: string };
@@ -1645,12 +1703,23 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       }
 
       const device = await requestUsbDevice({ vendorId, productId });
-      setFormData(prev => ({
-        ...prev,
-        vendorId: device.vendorId,
-        productId: device.productId,
-        deviceName: device.productName || 'USB Printer',
-      }));
+      const detectedSerial = normalizeUsbSerial(device.serialNumber);
+      let serialChanged = false;
+      setFormData(prev => {
+        const existingSerial = normalizeUsbSerial(prev.usbSerialNumber);
+        serialChanged = Boolean(existingSerial && detectedSerial && existingSerial !== detectedSerial);
+        return {
+          ...prev,
+          vendorId: device.vendorId,
+          productId: device.productId,
+          usbSerialNumber: resolveStableUsbSerial(prev.usbSerialNumber, detectedSerial),
+          deviceName: device.productName || 'USB Printer',
+        };
+      });
+
+      if (serialChanged) {
+        showInfo('USB serial lijkt te wisselen na power-cycle. Bestaande opgeslagen serial is niet overschreven.');
+      }
 
       showSuccess(`USB opnieuw gekoppeld: ${device.productName || 'Onbekende printer'}`);
     } catch (err: unknown) {
@@ -1758,6 +1827,20 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
     }
   };
 
+  const handleTsplDiagSend = async () => {
+    if (!tsplDiagPrinter) return;
+    setTsplDiagStatus('sending');
+    try {
+      const device = await resolveUsbDeviceForPrinter(tsplDiagPrinter as Record<string, unknown>);
+      const payload = buildTsplUsbPayload({ content: tsplDiagCommands, quantity: 1 });
+      await printBinaryUsbToDevice({ device, payload: new TextEncoder().encode(payload), logMessage: `TSPL diagnostiek: ${tsplDiagPrinter.name}` });
+      setTsplDiagStatus('ok');
+    } catch (err: unknown) {
+      setTsplDiagStatus('error');
+      showError("TSPL Diagnostiek fout: " + getErrMsg(err));
+    }
+  };
+
   const handlePrintA4QrPdf = async () => {
     const qrContent = 'FPI-ACTION-APPROVE-OK';
     const popup = window.open('', '_blank', 'noopener,noreferrer');
@@ -1820,6 +1903,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       type: normalizePrinterType(printer.type),
       vendorId: parseUsbId(printer.vendorId) ?? null,
       productId: parseUsbId(printer.productId) ?? null,
+      usbSerialNumber: normalizeUsbSerial(printer.usbSerialNumber),
       deviceName: printer.deviceName || "",
       calibrationOffsetXMm: String(parseMm(printer.calibrationOffsetXMm, 0)),
       calibrationOffsetYMm: String(parseMm(printer.calibrationOffsetYMm, 0)),
@@ -2045,6 +2129,30 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                       </button>
                     </div>
                     </div>
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 not-italic">USB Vendor/Product</label>
+                        <input
+                          type="text"
+                          className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold not-italic"
+                          value={formData.vendorId && formData.productId ? `${formData.vendorId}:${formData.productId}` : ''}
+                          readOnly
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 not-italic">USB Unieke ID / Serial</label>
+                        <input
+                          type="text"
+                          placeholder="Bijv. CN23A17K9"
+                          className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold not-italic"
+                          value={formData.usbSerialNumber}
+                          onChange={e => setFormData({ ...formData, usbSerialNumber: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <p className="mt-2 text-[10px] text-slate-500 not-italic font-semibold">
+                      Gebruik dit veld voor 2 identieke printers met dezelfde naam/VID/PID. Tijdens koppelen wordt dit serienummer automatisch ingevuld als de browser het ondersteunt.
+                    </p>
                   </div>
               )}
 
@@ -2257,6 +2365,41 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         />
       )}
 
+      {tsplDiagPrinter && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100">
+              <div>
+                <h3 className="font-black text-slate-800">TSPL Diagnostiek</h3>
+                <p className="text-xs text-indigo-600 font-semibold mt-0.5">{tsplDiagPrinter.name}</p>
+              </div>
+              <button onClick={() => setTsplDiagPrinter(null)} className="p-2 hover:bg-slate-100 rounded-lg">✕</button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-slate-500">Voer ruwe TSPL-commando's in. Ze worden direct via WebUSB naar de printer gestuurd.</p>
+              <textarea
+                className="w-full h-48 font-mono text-xs border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-y"
+                value={tsplDiagCommands}
+                onChange={(e) => { setTsplDiagCommands(e.target.value); setTsplDiagStatus('idle'); }}
+                spellCheck={false}
+              />
+              {tsplDiagStatus === 'ok' && <p className="text-xs text-emerald-600 font-semibold">✓ Verzonden naar printer.</p>}
+              {tsplDiagStatus === 'error' && <p className="text-xs text-rose-600 font-semibold">✗ Verzenden mislukt — zie foutmelding hierboven.</p>}
+            </div>
+            <div className="flex gap-2 justify-end p-5 border-t border-slate-100">
+              <button onClick={() => setTsplDiagPrinter(null)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Sluiten</button>
+              <button
+                onClick={handleTsplDiagSend}
+                disabled={tsplDiagStatus === 'sending' || !tsplDiagCommands.trim()}
+                className="px-4 py-2 text-sm bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {tsplDiagStatus === 'sending' ? 'Versturen...' : 'Versturen naar printer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-4">
         {printers.length === 0 && !loading && (
           <div className="text-center py-12 text-slate-400 italic">{t('adminPrinterManager.noPrintersConfigured')}</div>
@@ -2310,7 +2453,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                                 </span>
                               )}
                               {(() => {
-                                const isOnline = isPrinterOnline(printer);
+                                const isOnline = isPrinterOnline(printer as import('../../utils/printerStatus').PrinterStatusLike);
                                 return (
                                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1 ${isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'}`}>
                                     <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></div>
@@ -2325,6 +2468,11 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                               {printerType === CONNECTION_TYPES.NETWORK && (printer.ip ? `IP: ${printer.ip}:${printer.port || '9100'}` : t("adminPrinterManager.networkPrinterIpEmpty", "Netwerk printer (IP nog leeg)"))}
                               {printer.dpi && <span className="ml-2 opacity-60 text-[10px]">({printer.dpi} DPI)</span>}
                             </p>
+                            {printerType === CONNECTION_TYPES.WEBUSB && (
+                              <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
+                                USB Serial: {String(printer.usbSerialNumber || '').trim() || 'Niet ingesteld'}
+                              </p>
+                            )}
                             <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">
                               {t('adminPrinterManager.protocol')}: {((printer.protocol || 'zpl')).toUpperCase()} | {getConnectionLabel(printer.type)}
                             </p>
@@ -2378,6 +2526,13 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                                 <div className="h-px bg-slate-100 my-1"></div>
                                 <button onClick={() => handleTestPrint(printer)} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">{t("adminPrinterManager.standardTestLabel", "Standaard Testlabel")}</button>
                                 <button onClick={() => { setShowTestMenu(null); setCalibrationPrinter(printer); }} className="block w-full text-left px-3 py-2 text-xs hover:bg-slate-50">{t("adminPrinterManager.calibrationPrintOffsets", "Calibratie print + offsets")}</button>
+                                {String(printer.protocol || '').toLowerCase() === 'tspl' && (
+                                  <>
+                                    <div className="h-px bg-slate-100 my-1"></div>
+                                    <div className="px-3 py-1 text-[10px] font-bold text-indigo-400 uppercase">TSPL / Lighthouse</div>
+                                    <button onClick={() => { setShowTestMenu(null); setTsplDiagStatus('idle'); setTsplDiagPrinter(printer); }} className="block w-full text-left px-3 py-2 text-xs hover:bg-indigo-50 text-indigo-700">Ruwe TSPL commando's sturen</button>
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>
@@ -2450,6 +2605,11 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
                 <option key={department} value={department}>{department}</option>
               ))}
             </select>
+            {selectedQueueDepartment && (
+              <p className="text-[11px] font-semibold text-slate-500 self-center">
+                {t("adminPrinterManager.autoDepartmentHint", "Afdeling is automatisch gekoppeld aan deze printer.")}
+              </p>
+            )}
             <select
               value={queueStationToAdd}
               onChange={(e) => setQueueStationToAdd(e.target.value)}

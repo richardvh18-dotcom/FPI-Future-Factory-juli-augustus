@@ -23,7 +23,8 @@ import {
 import { resolvePrinterForRouting } from '../../utils/printRouting';
 import { queuePrintJob } from '../../services/printService';
 import { LABELS_PRINTING_QUEUE_STATION } from '../../services/printRouting';
-import { findAuthorizedUsbDevice, parseUsbId, requestUsbDevice } from '../../utils/usbPrintService';
+import { getPreferredQueuePrinterForContext } from './printQueueProcessorHelpers';
+import { parseUsbId, resolveUsbDeviceForPrinter } from '../../utils/usbPrintService';
 import {
   buildOrderLabelPreviewData,
   buildOrderLabelTemplateProduct,
@@ -37,6 +38,7 @@ import {
   resolveLinkedTemplateChain,
 } from '../../utils/orderLabelTemplateUtils';
 import { shouldResetOrderLabelMachineState } from '../../utils/orderLabelMachineState';
+import { safeSetLocalStorage as safeSetLocalStorageShared } from '../../utils/safeStorage';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -99,22 +101,25 @@ type LotPrintModalProps = {
   printer: PrinterConfig | null;
 };
 
-type PrintStationWizardModalProps = {
-  onClose: () => void;
-  stations: string[];
-  printers: PrinterConfig[];
-  selectedStation: string;
-  stationBindings: Record<string, string>;
-  onSave: (station: string, printerId: string) => void;
-};
-
 const USB_PRINTER_VENDOR_KEY = 'usb_printer_vendor';
 const USB_PRINTER_PRODUCT_KEY = 'usb_printer_product';
+const USB_PRINTER_SERIAL_KEY = 'usb_printer_serial';
 const USB_PRINTER_ID_KEY = 'usb_printer_id';
 const PRINT_STATION_SELECTED_KEY = 'print_station_selected_station';
 const PRINT_STATION_BINDINGS_KEY = 'print_station_printer_bindings_v1';
 const ORDER_LABELS_PAGE_SIZE = 50;
 const ORDER_LABELS_LIST_MIN_HEIGHT = 'min-h-[280px]';
+
+const safeSetLocalStorage = (key: string, value: string) =>
+  safeSetLocalStorageShared(key, value, {
+    cleanupKeys: [USB_PRINTER_SERIAL_KEY, PRINT_STATION_BINDINGS_KEY],
+  });
+
+const safeStoredUsbSerial = (value: unknown): string => {
+  const serial = String(value || '').trim();
+  if (!serial) return '';
+  return serial.slice(0, 64);
+};
 
 const stationNameFromValue = (stationValue: unknown): string => {
   if (!stationValue) return '';
@@ -174,6 +179,12 @@ const resolveUsbBoundPrinter = (printers: PrinterConfig[], usbDevice: USBDevice 
   }
 
   if (usbDevice) {
+    const usbSerial = String(usbDevice.serialNumber || '').trim();
+    if (usbSerial) {
+      const serialMatch = printers.find((printer) => String((printer as any).usbSerialNumber || '').trim() === usbSerial) || null;
+      if (serialMatch) return serialMatch;
+    }
+
     const usbMatches = printers.filter(
       (printer) => Number(printer.vendorId) === usbDevice.vendorId && Number(printer.productId) === usbDevice.productId
     );
@@ -1044,7 +1055,10 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: Lot
       });
 
       await onPrintBatch(zplBatch, lots.length);
-      notify(t("common.lotsPrintedDirectUsb", { count: parsedCount }));
+      notify(t("common.lotsPrintedQueued", {
+        count: parsedCount,
+        printer: printer?.name || printer?.id || station,
+      }));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       notify(t("common.generationError", { message }));
@@ -1165,96 +1179,6 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: Lot
   );
 };
 
-const PrintStationWizardModal = ({
-  onClose,
-  stations,
-  printers,
-  selectedStation,
-  stationBindings,
-  onSave,
-}: PrintStationWizardModalProps) => {
-  const { t } = useTranslation();
-  const [station, setStation] = useState<string>(selectedStation || stations[0] || '');
-  const [printerId, setPrinterId] = useState<string>('');
-  const previousStationRef = useRef<string>('');
-
-  useEffect(() => {
-    if (!station) return;
-    const stationChanged = previousStationRef.current !== station;
-    previousStationRef.current = station;
-
-    const stationKey = normalizeStationBindingKey(station);
-    const boundPrinterId = String(stationBindings[stationKey] || '').trim();
-    const fallbackPrinterId = boundPrinterId || printers[0]?.id || '';
-    const currentPrinterStillExists = printers.some((printer) => printer.id === printerId);
-
-    // Keep a manual in-progress selection stable while the wizard is open.
-    if (!stationChanged && currentPrinterStillExists) {
-      return;
-    }
-
-    setPrinterId(fallbackPrinterId);
-  }, [station, stationBindings, printers, printerId]);
-
-  const handleSave = () => {
-    if (!station || !printerId) return;
-    onSave(station, printerId);
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-[220] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
-      <div className="bg-white w-full max-w-xl rounded-[30px] shadow-2xl p-8">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-black text-slate-800 uppercase italic flex items-center gap-2">
-            <Settings2 size={20} className="text-blue-600" /> {t('printStationView.printerWizardTitle', 'Print Station Wizard')}
-          </h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full"><X size={20} /></button>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">{t('common.stationMachine', 'Station / Machine')}</label>
-            <select
-              value={station}
-              onChange={(e) => setStation(e.target.value)}
-              className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50"
-            >
-              {stations.map((entry) => (
-                <option key={entry} value={entry}>{entry}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">{t('adminPrinterManager.printer', 'Printer')}</label>
-            <select
-              value={printerId}
-              onChange={(e) => setPrinterId(e.target.value)}
-              className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50"
-            >
-              {printers.map((printer) => (
-                <option key={printer.id} value={printer.id}>{String(printer.name || printer.id)}</option>
-              ))}
-            </select>
-          </div>
-
-          <p className="text-xs text-slate-500 leading-relaxed">
-            {t('printStationView.printerWizardHelp', 'Deze koppeling geldt voor alle gebruikers op deze pc/browser. Operator of admin maakt hierbij niet uit.')}
-          </p>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button onClick={onClose} className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">{t('common.cancel', 'Annuleren')}</button>
-            <button onClick={handleSave} disabled={!station || !printerId} className="px-5 py-2 bg-blue-600 text-white font-black rounded-lg hover:bg-blue-700 disabled:opacity-60">
-              {t('common.save', 'Opslaan')}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const PrintStationView = () => {
   const { t } = useTranslation();
   const [lotNumber, setLotNumber] = useState('');
@@ -1266,7 +1190,6 @@ const PrintStationView = () => {
   const [selectedLabelId, setSelectedLabelId] = useState('');
   const [showTempModal, setShowTempModal] = useState(false);
   const [showLotModal, setShowLotModal] = useState(false);
-  const [showStationWizard, setShowStationWizard] = useState(false);
   const { labelTemplates, labelRules } = useLabelCatalog();
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
   const [factoryConfig, setFactoryConfig] = useState<AnyRecord | null>(null);
@@ -1326,9 +1249,15 @@ const PrintStationView = () => {
       device: USBDevice,
       savedVendor?: string | null,
       savedProduct?: string | null,
+      savedSerial?: string | null,
       savedPrinterId?: string,
       printers?: PrinterConfig[]
     ): boolean => {
+      const expectedSerial = String(savedSerial || '').trim();
+      if (expectedSerial) {
+        return String(device.serialNumber || '').trim() === expectedSerial;
+      }
+
       if (savedVendor && savedProduct) {
         return (
           device.vendorId === parseInt(savedVendor, 10) &&
@@ -1349,7 +1278,8 @@ const PrintStationView = () => {
       return false;
     };
 
-    const hasSavedUsbIdentity = (savedVendor?: string | null, savedProduct?: string | null, savedPrinterId?: string): boolean => {
+    const hasSavedUsbIdentity = (savedVendor?: string | null, savedProduct?: string | null, savedPrinterId?: string, savedSerial?: string | null): boolean => {
+      if (String(savedSerial || '').trim()) return true;
       const parsedVendor = parseUsbId(savedVendor);
       const parsedProduct = parseUsbId(savedProduct);
       if (parsedVendor !== undefined && parsedProduct !== undefined) return true;
@@ -1368,15 +1298,16 @@ const PrintStationView = () => {
       if (!('usb' in navigator)) return;
       const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
       const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
+      const savedSerial = localStorage.getItem(USB_PRINTER_SERIAL_KEY);
       const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
-      const hasIdentity = hasSavedUsbIdentity(savedVendor, savedProduct, savedPrinterId);
+      const hasIdentity = hasSavedUsbIdentity(savedVendor, savedProduct, savedPrinterId, savedSerial);
 
       try {
         const devices = await navigator.usb.getDevices();
         if (devices.length === 0) return;
 
         const match = devices.find((device) =>
-          matchesSavedUsbDevice(device, savedVendor, savedProduct, savedPrinterId, printers)
+          matchesSavedUsbDevice(device, savedVendor, savedProduct, savedSerial, savedPrinterId, printers)
         );
 
         if (match) {
@@ -1400,11 +1331,12 @@ const PrintStationView = () => {
 
       const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
       const savedProduct = localStorage.getItem(USB_PRINTER_PRODUCT_KEY);
+      const savedSerial = localStorage.getItem(USB_PRINTER_SERIAL_KEY);
       const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
 
       if (
-        matchesSavedUsbDevice(device, savedVendor, savedProduct, savedPrinterId, printers) ||
-        !hasSavedUsbIdentity(savedVendor, savedProduct, savedPrinterId)
+        matchesSavedUsbDevice(device, savedVendor, savedProduct, savedSerial, savedPrinterId, printers) ||
+        !hasSavedUsbIdentity(savedVendor, savedProduct, savedPrinterId, savedSerial)
       ) {
         setUsbDevice(device);
       }
@@ -1453,13 +1385,14 @@ const PrintStationView = () => {
         ? (activeQueuePrinter as Record<string, unknown>)
         : {};
 
-      const authorizedDevice = await findAuthorizedUsbDevice(strictFilter)
-        || (hasUsbIdentity(activeQueuePrinter) ? await findAuthorizedUsbDevice({}) : null);
-
-      const device = authorizedDevice || await requestUsbDevice(strictFilter);
+      const device = await resolveUsbDeviceForPrinter(strictFilter, usbDevice);
+      if (!device) {
+        throw new Error('Geen USB-printer beschikbaar voor deze printopdracht.');
+      }
       setUsbDevice(device);
-      localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(device.vendorId));
-      localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(device.productId));
+      safeSetLocalStorage(USB_PRINTER_VENDOR_KEY, String(device.vendorId));
+      safeSetLocalStorage(USB_PRINTER_PRODUCT_KEY, String(device.productId));
+      safeSetLocalStorage(USB_PRINTER_SERIAL_KEY, safeStoredUsbSerial(device.serialNumber));
 
       const routingPrinter = resolvePrinterForRouting(printers, {
         stationId: selectedStation,
@@ -1509,6 +1442,12 @@ const PrintStationView = () => {
 
   const resolvePrinterIdToPersistForUsb = useCallback((device: USBDevice | null | undefined): string => {
     if (!device) return '';
+
+    const deviceSerial = String(device.serialNumber || '').trim();
+    if (deviceSerial) {
+      const serialMatch = printers.find((printer) => String((printer as AnyRecord).usbSerialNumber || '').trim() === deviceSerial);
+      if (serialMatch?.id) return serialMatch.id;
+    }
 
     const usbMatches = printers.filter(
       (printer) => Number(printer.vendorId) === device.vendorId && Number(printer.productId) === device.productId
@@ -1628,7 +1567,7 @@ const PrintStationView = () => {
       .sort((a, b) => a.station.localeCompare(b.station, undefined, { numeric: true }));
   }, [allFactoryStations, stationBindings, printers, selectedStation]);
 
-  const activeQueuePrinter = useMemo<PrinterConfig | null>(() => {
+  const stationContextPrinter = useMemo<PrinterConfig | null>(() => {
     const boundPrinter = resolveUsbBoundPrinter(printers, usbDevice, selectedStation);
     if (boundPrinter) return boundPrinter;
 
@@ -1638,6 +1577,16 @@ const PrintStationView = () => {
     });
   }, [printers, usbDevice, selectedStation]);
 
+  const activeQueuePrinter = useMemo<PrinterConfig | null>(() => {
+    const labelsQueuePrinter = getPreferredQueuePrinterForContext(printers, {
+      stationId: selectedStation || undefined,
+      preferLabelsQueue: true,
+    });
+    if (labelsQueuePrinter) return labelsQueuePrinter;
+
+    return stationContextPrinter;
+  }, [printers, selectedStation, stationContextPrinter]);
+
   const ensureUsbDeviceForPrint = useCallback(async (): Promise<USBDevice> => {
     if (usbDevice) return usbDevice;
 
@@ -1645,13 +1594,14 @@ const PrintStationView = () => {
       ? (activeQueuePrinter as Record<string, unknown>)
       : {};
 
-    const authorizedDevice = await findAuthorizedUsbDevice(strictFilter)
-      || (hasUsbIdentity(activeQueuePrinter) ? await findAuthorizedUsbDevice({}) : null);
-
-    const device = authorizedDevice || await requestUsbDevice(strictFilter);
+    const device = await resolveUsbDeviceForPrinter(strictFilter, usbDevice);
+    if (!device) {
+      throw new Error('Geen USB-printer beschikbaar voor deze printopdracht.');
+    }
     setUsbDevice(device);
-    localStorage.setItem(USB_PRINTER_VENDOR_KEY, String(device.vendorId));
-    localStorage.setItem(USB_PRINTER_PRODUCT_KEY, String(device.productId));
+    safeSetLocalStorage(USB_PRINTER_VENDOR_KEY, String(device.vendorId));
+    safeSetLocalStorage(USB_PRINTER_PRODUCT_KEY, String(device.productId));
+    safeSetLocalStorage(USB_PRINTER_SERIAL_KEY, safeStoredUsbSerial(device.serialNumber));
 
     const printerIdToStore = resolvePrinterIdToPersistForUsb(device);
     if (printerIdToStore) {
@@ -1662,13 +1612,14 @@ const PrintStationView = () => {
   }, [usbDevice, hasUsbIdentity, activeQueuePrinter, resolvePrinterIdToPersistForUsb, persistStationBinding, selectedStation]);
 
   const stationGroups = useMemo<string[]>(() => {
-    if (!activeQueuePrinter) return [];
-    const stations = Array.isArray(activeQueuePrinter.queueStations)
-      ? activeQueuePrinter.queueStations
-      : (activeQueuePrinter.linkedStations || []);
+    const sourcePrinter = stationContextPrinter || activeQueuePrinter;
+    if (!sourcePrinter) return [];
+    const stations = Array.isArray(sourcePrinter.queueStations)
+      ? sourcePrinter.queueStations
+      : (sourcePrinter.linkedStations || []);
     return Array.from(new Set(stations.map(stationNameFromValue).filter(Boolean)))
       .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
-  }, [activeQueuePrinter]);
+  }, [stationContextPrinter, activeQueuePrinter]);
 
   const departmentGroups = useMemo<DepartmentGroup[]>(() => {
     const departments = Array.isArray(factoryConfig?.departments) ? (factoryConfig?.departments as AnyRecord[]) : [];
@@ -2020,12 +1971,6 @@ const PrintStationView = () => {
             <h1 className="text-3xl font-bold text-slate-800">{t('printStationView.centralPrintStation', 'Centraal Printstation')}</h1>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowStationWizard(true)}
-              className="bg-white text-slate-700 px-4 py-2 rounded-xl font-bold uppercase text-xs tracking-wider flex items-center gap-2 border-2 border-slate-200 hover:border-blue-300 transition-all shadow-sm w-fit"
-            >
-              <Settings2 size={16} /> {t('printStationView.printerWizardTitle', 'Print Station Wizard')}
-            </button>
             {('usb' in navigator) && (
               <button 
                 onClick={handleConnectUsb}
@@ -2156,16 +2101,6 @@ const PrintStationView = () => {
         )}
         {showLotModal && (
           <LotPrintModal onClose={() => setShowLotModal(false)} departmentGroups={departmentGroups} onPrintBatch={handleDirectLotPrintBatch} printer={activeQueuePrinter} />
-        )}
-        {showStationWizard && (
-          <PrintStationWizardModal
-            onClose={() => setShowStationWizard(false)}
-            stations={allFactoryStations}
-            printers={printers}
-            selectedStation={selectedStation}
-            stationBindings={stationBindings}
-            onSave={handleSaveStationBinding}
-          />
         )}
       </div>
     </div>

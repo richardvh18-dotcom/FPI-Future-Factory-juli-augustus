@@ -40,7 +40,7 @@ export const nl = {
         printLabelQueued: 'Label voor {{order}} naar de wachtrij gestuurd: {{printer}}',
         printErrorMessage: 'Print fout: {{message}}',
         noStationAvailable: 'Geen station beschikbaar in factory config.',
-        lotsPrintedDirectUsb: '{{count}} lotnummer(s) direct geprint via USB!',
+        lotsPrintedQueued: '{{count}} lotnummer(s) naar de wachtrij gestuurd voor {{printer}}',
         generationError: 'Fout bij genereren: {{message}}',
         printLotNumbers: 'Lotnummers printen',
         department: 'Afdeling',

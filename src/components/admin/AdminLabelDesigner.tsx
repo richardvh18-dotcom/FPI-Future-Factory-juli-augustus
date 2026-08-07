@@ -15,11 +15,20 @@ import {
   RotateCcw,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
+  AlignStartHorizontal,
+  AlignEndHorizontal,
+  AlignStartVertical,
+  AlignEndVertical,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  StretchHorizontal,
+  StretchVertical,
   Database,
   X,
   Loader2,
   Minus,
   Square,
+  Circle,
   Copy,
   AlignLeft,
   AlignCenter,
@@ -33,6 +42,15 @@ import {
   Undo,
   Plus,
   Printer,
+  ArrowUp,
+  ArrowDown,
+  Eye,
+  EyeOff,
+  Italic,
+  Bold,
+  Layers,
+  CalendarDays,
+  Hash,
 } from "lucide-react";
 import {
   doc,
@@ -105,8 +123,15 @@ type LabelElement = {
   align?: "left" | "center" | "right";
   fontFamily?: string;
   isBold?: boolean;
+  isItalic?: boolean;
   isInverse?: boolean;
+  color?: string;
+  backgroundColor?: string;
+  opacity?: number;
   rotation?: number;
+  zIndex?: number;
+  conditionalVariable?: string;
+  barcodeType?: string;
 };
 
 type SavedLabel = {
@@ -882,13 +907,14 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
           ? t('adminLabelDesigner.manualTextContent')
           : type === "barcode"
           ? "123456"
-          : type === "image" ? "" : "QR_DATA",
+          : type === "image" ? "" : type === "ellipse" ? "" : "QR_DATA",
       fontSize: 10,
       align: "left",
       fontFamily: PRINTER_PREVIEW_FONT_STACK,
       isBold: false,
       rotation: 0,
       variable: "",
+      zIndex: elements.length,
     };
     setElements([...elements, newElement]);
     setSelectedElementIds([newElement.id]);
@@ -946,6 +972,68 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
         }
         return el;
     }));
+  };
+
+  const alignEdge = (edge: 'top' | 'bottom' | 'left' | 'right') => {
+    if (selectedElementIds.length === 0) return;
+    addToHistory();
+    const sel = elements.filter(el => selectedElementIds.includes(el.id));
+    const ref = edge === 'top' ? Math.min(...sel.map(e => Number(e.y) || 0))
+      : edge === 'left' ? Math.min(...sel.map(e => Number(e.x) || 0))
+      : edge === 'bottom' ? Math.max(...sel.map(e => (Number(e.y) || 0) + (Number(e.height) || 0)))
+      : Math.max(...sel.map(e => (Number(e.x) || 0) + (Number(e.width) || 0)));
+    setElements(elements.map(el => {
+      if (!selectedElementIds.includes(el.id)) return el;
+      if (edge === 'top') return { ...el, y: ref };
+      if (edge === 'left') return { ...el, x: ref };
+      if (edge === 'bottom') return { ...el, y: ref - (Number(el.height) || 0) };
+      return { ...el, x: ref - (Number(el.width) || 0) };
+    }));
+  };
+
+  const distributeElements = (axis: 'x' | 'y') => {
+    if (selectedElementIds.length < 3) return;
+    addToHistory();
+    const sel = elements.filter(el => selectedElementIds.includes(el.id));
+    if (axis === 'x') {
+      const sorted = [...sel].sort((a, b) => (Number(a.x) || 0) - (Number(b.x) || 0));
+      const first = Number(sorted[0].x) || 0;
+      const last = (Number(sorted[sorted.length - 1].x) || 0) + (Number(sorted[sorted.length - 1].width) || 0);
+      const totalWidth = sorted.reduce((sum, e) => sum + (Number(e.width) || 0), 0);
+      const gap = (last - first - totalWidth) / (sorted.length - 1);
+      let cursor = first;
+      const newPositions = new Map<string, number>();
+      sorted.forEach(el => { newPositions.set(el.id, cursor); cursor += (Number(el.width) || 0) + gap; });
+      setElements(elements.map(el => selectedElementIds.includes(el.id) ? { ...el, x: newPositions.get(el.id) ?? el.x } : el));
+    } else {
+      const sorted = [...sel].sort((a, b) => (Number(a.y) || 0) - (Number(b.y) || 0));
+      const first = Number(sorted[0].y) || 0;
+      const last = (Number(sorted[sorted.length - 1].y) || 0) + (Number(sorted[sorted.length - 1].height) || 0);
+      const totalHeight = sorted.reduce((sum, e) => sum + (Number(e.height) || 0), 0);
+      const gap = (last - first - totalHeight) / (sorted.length - 1);
+      let cursor = first;
+      const newPositions = new Map<string, number>();
+      sorted.forEach(el => { newPositions.set(el.id, cursor); cursor += (Number(el.height) || 0) + gap; });
+      setElements(elements.map(el => selectedElementIds.includes(el.id) ? { ...el, y: newPositions.get(el.id) ?? el.y } : el));
+    }
+  };
+
+  const moveLayerOrder = (direction: 'up' | 'down') => {
+    if (selectedElementIds.length === 0) return;
+    addToHistory();
+    setElements(prev => {
+      const updated = [...prev];
+      selectedElementIds.forEach(id => {
+        const idx = updated.findIndex(el => el.id === id);
+        if (idx === -1) return;
+        if (direction === 'up' && idx < updated.length - 1) {
+          [updated[idx], updated[idx + 1]] = [updated[idx + 1], updated[idx]];
+        } else if (direction === 'down' && idx > 0) {
+          [updated[idx], updated[idx - 1]] = [updated[idx - 1], updated[idx]];
+        }
+      });
+      return updated;
+    });
   };
 
   // 4. Drag Engine met Snapping
@@ -1268,6 +1356,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                 { type: "text", label: t('manualText'), icon: Type },
                 { type: "line", label: t('line'), icon: Minus },
                 { type: "box", label: t('box'), icon: Square },
+                { type: "ellipse", label: "Ellipse", icon: Circle },
                 { type: "barcode", label: t('barcode'), icon: ScanBarcode },
                 { type: "qr", label: t('qrCode'), icon: QrCode },
                 { type: "image", label: t('image'), icon: ImageIcon },
@@ -1724,21 +1813,25 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
 
                 <div className="space-y-4 pt-6 border-t border-slate-50">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left block ml-1">
-                    {t('layoutAlignment')}
+                    Uitlijnen
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      onClick={() => alignCenter("x")}
-                      className="flex items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-blue-50 rounded-xl text-[10px] font-black uppercase transition-all"
-                    >
-                      <AlignHorizontalJustifyCenter size={14} /> {t('centerX')}
-                    </button>
-                    <button
-                      onClick={() => alignCenter("y")}
-                      className="flex items-center justify-center gap-2 p-3 bg-slate-50 hover:bg-blue-50 rounded-xl text-[10px] font-black uppercase transition-all"
-                    >
-                      <AlignVerticalJustifyCenter size={14} /> {t('centerY')}
-                    </button>
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button onClick={() => alignEdge('left')} title="Links uitlijnen" className="flex items-center justify-center gap-1 p-2 bg-slate-50 hover:bg-blue-50 rounded-lg text-[9px] font-black uppercase transition-all"><AlignStartVertical size={13} /></button>
+                      <button onClick={() => alignCenter("x")} title="Horizontaal centreren" className="flex items-center justify-center gap-1 p-2 bg-slate-50 hover:bg-blue-50 rounded-lg text-[9px] font-black uppercase transition-all"><AlignCenterVertical size={13} /></button>
+                      <button onClick={() => alignEdge('right')} title="Rechts uitlijnen" className="flex items-center justify-center gap-1 p-2 bg-slate-50 hover:bg-blue-50 rounded-lg text-[9px] font-black uppercase transition-all"><AlignEndVertical size={13} /></button>
+                      <button onClick={() => alignEdge('top')} title="Boven uitlijnen" className="flex items-center justify-center gap-1 p-2 bg-slate-50 hover:bg-blue-50 rounded-lg text-[9px] font-black uppercase transition-all"><AlignStartHorizontal size={13} /></button>
+                      <button onClick={() => alignCenter("y")} title="Verticaal centreren" className="flex items-center justify-center gap-1 p-2 bg-slate-50 hover:bg-blue-50 rounded-lg text-[9px] font-black uppercase transition-all"><AlignCenterHorizontal size={13} /></button>
+                      <button onClick={() => alignEdge('bottom')} title="Onder uitlijnen" className="flex items-center justify-center gap-1 p-2 bg-slate-50 hover:bg-blue-50 rounded-lg text-[9px] font-black uppercase transition-all"><AlignEndHorizontal size={13} /></button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button onClick={() => distributeElements('x')} disabled={selectedElementIds.length < 3} title="Horizontaal verdelen (min 3)" className="flex items-center justify-center gap-1 p-2 bg-slate-50 hover:bg-blue-50 disabled:opacity-40 rounded-lg text-[9px] font-black uppercase transition-all"><StretchHorizontal size={13} /> H-Verdeel</button>
+                      <button onClick={() => distributeElements('y')} disabled={selectedElementIds.length < 3} title="Verticaal verdelen (min 3)" className="flex items-center justify-center gap-1 p-2 bg-slate-50 hover:bg-blue-50 disabled:opacity-40 rounded-lg text-[9px] font-black uppercase transition-all"><StretchVertical size={13} /> V-Verdeel</button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button onClick={() => moveLayerOrder('up')} title="Laag omhoog" className="flex items-center justify-center gap-1 p-2 bg-slate-50 hover:bg-blue-50 rounded-lg text-[9px] font-black uppercase transition-all"><ArrowUp size={13} /> Laag ↑</button>
+                      <button onClick={() => moveLayerOrder('down')} title="Laag omlaag" className="flex items-center justify-center gap-1 p-2 bg-slate-50 hover:bg-blue-50 rounded-lg text-[9px] font-black uppercase transition-all"><ArrowDown size={13} /> Laag ↓</button>
+                    </div>
                   </div>
                 </div>
 
@@ -1810,15 +1903,63 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                         <label className="flex items-center gap-2 cursor-pointer select-none">
                             <input 
                                 type="checkbox" 
+                                checked={selectedElement.isItalic || false} 
+                                onChange={(e) => updateElement(selectedElement.id, { isItalic: e.target.checked })}
+                                className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-slate-300"
+                            />
+                            <span className="text-xs font-bold text-slate-600 italic">Cursief (Italic)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input 
+                                type="checkbox" 
                                 checked={selectedElement.isInverse || false} 
                                 onChange={(e) => updateElement(selectedElement.id, { isInverse: e.target.checked })}
                                 className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 border-slate-300"
                             />
                             <span className="text-xs font-bold text-slate-600">{t('inverse', 'Inverse (Wit op Zwart)')}</span>
                         </label>
+                        <div className="grid grid-cols-2 gap-2 pt-2">
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Tekstkleur</label>
+                            <div className="flex items-center gap-2">
+                              <input type="color" value={selectedElement.color || '#000000'} onChange={(e) => updateElement(selectedElement.id, { color: e.target.value })} className="w-8 h-8 rounded cursor-pointer border border-slate-200" />
+                              <span className="text-xs text-slate-500 font-mono">{selectedElement.color || '#000000'}</span>
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Achtergrond</label>
+                            <div className="flex items-center gap-2">
+                              <input type="color" value={selectedElement.backgroundColor || '#ffffff'} onChange={(e) => updateElement(selectedElement.id, { backgroundColor: e.target.value })} className="w-8 h-8 rounded cursor-pointer border border-slate-200" />
+                              <button onClick={() => updateElement(selectedElement.id, { backgroundColor: undefined })} className="text-[9px] text-rose-400 hover:text-rose-600">✕ wis</button>
+                            </div>
+                          </div>
+                        </div>
                     </div>
                   )}
-                </div>
+
+                  {/* Kleur voor niet-tekst elementen */}
+                  {selectedElement.type !== 'text' && (
+                    <div className="space-y-2 pt-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Randkleur</label>
+                          <div className="flex items-center gap-2">
+                            <input type="color" value={selectedElement.color || '#000000'} onChange={(e) => updateElement(selectedElement.id, { color: e.target.value })} className="w-8 h-8 rounded cursor-pointer border border-slate-200" />
+                          </div>
+                        </div>
+                        {(selectedElement.type === 'box' || selectedElement.type === 'ellipse') && (
+                          <div className="space-y-1">
+                            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Vulkleur</label>
+                            <div className="flex items-center gap-2">
+                              <input type="color" value={selectedElement.backgroundColor || '#ffffff'} onChange={(e) => updateElement(selectedElement.id, { backgroundColor: e.target.value })} className="w-8 h-8 rounded cursor-pointer border border-slate-200" />
+                              <button onClick={() => updateElement(selectedElement.id, { backgroundColor: undefined })} className="text-[9px] text-rose-400 hover:text-rose-600">✕ wis</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>{/* sluit space-y-4 styling sectie */}
 
                 <div className="grid grid-cols-2 gap-4 pt-6 border-t border-slate-50">
                   <div className="space-y-1.5 text-left">
@@ -1853,7 +1994,52 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
                   </div>
                 </div>
 
-                <div className="flex gap-3 mt-8">
+                {/* Barcode type selector */}
+                {selectedElement.type === 'barcode' && (
+                  <div className="space-y-1.5 pt-4 border-t border-slate-50">
+                    <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Barcode type</label>
+                    <select value={selectedElement.barcodeType || 'code128'} onChange={(e) => updateElement(selectedElement.id, { barcodeType: e.target.value })} className="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold outline-none focus:border-blue-500">
+                      <option value="code128">Code 128</option>
+                      <option value="code39">Code 39</option>
+                      <option value="ean13">EAN-13</option>
+                      <option value="ean8">EAN-8</option>
+                      <option value="datamatrix">Data Matrix (2D)</option>
+                      <option value="pdf417">PDF417</option>
+                      <option value="aztec">Aztec</option>
+                    </select>
+                  </div>
+                )}
+
+                {/* Datum/tijd en counter variabelen shortcut */}
+                {selectedElement.type === 'text' && (
+                  <div className="pt-4 border-t border-slate-50 space-y-1.5">
+                    <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Snel invoegen</label>
+                    <div className="flex flex-wrap gap-1">
+                      {['{printDate}', '{printTime}', '{printDateTime}', '{year}', '{weekNumber}'].map(v => (
+                        <button key={v} onClick={() => updateElement(selectedElement.id, { content: (selectedElement.content || '') + v })} className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-100 rounded px-2 py-1 font-mono hover:bg-indigo-100">{v}</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Opacity */}
+                <div className="pt-4 border-t border-slate-50 space-y-1.5">
+                  <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Doorzichtigheid — {selectedElement.opacity ?? 100}%</label>
+                  <input type="range" min={10} max={100} step={5} value={selectedElement.opacity ?? 100} onChange={(e) => updateElement(selectedElement.id, { opacity: Number(e.target.value) })} className="w-full accent-blue-600" />
+                </div>
+
+                {/* Conditionele zichtbaarheid */}
+                <div className="pt-4 border-t border-slate-50 space-y-1.5">
+                  <label className="text-[8px] font-black text-slate-400 uppercase ml-1 flex items-center gap-1"><EyeOff size={10} /> Verberg als variabele leeg is</label>
+                  <select value={selectedElement.conditionalVariable || ''} onChange={(e) => updateElement(selectedElement.id, { conditionalVariable: e.target.value || undefined })} className="w-full p-2 bg-slate-50 border border-slate-100 rounded-lg text-xs font-bold outline-none focus:border-blue-500">
+                    <option value="">— Altijd zichtbaar —</option>
+                    {['orderId', 'lotNumber', 'productId', 'extraCode', 'jointCode', 'description', 'pressureClass', 'connectionLine', 'radiusText'].map(v => (
+                      <option key={v} value={v}>{v}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex gap-2 pt-4">
                   <button
                     onClick={duplicateSelected}
                     className="flex-1 py-4 bg-blue-50 text-blue-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-100 transition-all flex items-center justify-center gap-2 border border-blue-100 active:scale-95"

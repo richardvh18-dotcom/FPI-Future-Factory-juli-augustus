@@ -10,6 +10,7 @@ const {
   getPlanningOrderDocById,
 } = require('../repositories/planningRepository');
 const { clean, clampText } = require('../utils/text');
+const { isPendingLikePrintQueueStatus, isValidPrintQueueTransition } = require('./printQueueTransitionRules');
 
 const EFFICIENCY_COLLECTION = `${BASE}/production/efficiency_hours`;
 const PERSONNEL_COLLECTION = `${BASE}/Users/Personnel`;
@@ -5048,13 +5049,30 @@ const transitionPrintQueueJobStatusService = async ({ jobId, status, error, prin
   }
 
   const currentStatus = clean(jobSnap.data()?.status).toLowerCase();
-  const validTransition = (
-    (currentStatus === 'pending' && ['printing', 'cancelled', 'error'].includes(nextStatus))
-    || (currentStatus === 'printing' && ['completed', 'error'].includes(nextStatus))
-    || (currentStatus === 'error' && ['pending', 'cancelled'].includes(nextStatus))
-  );
+  const terminalStatuses = new Set(['completed', 'cancelled', 'error']);
+  const isAlreadyInTargetState = currentStatus === nextStatus;
+  const isAlreadyTerminal = terminalStatuses.has(currentStatus);
+
+  const validTransition = isValidPrintQueueTransition({ currentStatus, nextStatus });
+
+  if (isAlreadyInTargetState) {
+    return { ok: true, jobId: safeJobId, status: nextStatus, alreadyApplied: true };
+  }
+
+  if (isAlreadyTerminal && terminalStatuses.has(nextStatus)) {
+    return { ok: true, jobId: safeJobId, status: currentStatus, alreadyApplied: true };
+  }
 
   if (!validTransition) {
+    if (nextStatus === 'printing' && isPendingLikePrintQueueStatus(currentStatus)) {
+      return { ok: true, jobId: safeJobId, status: currentStatus, alreadyApplied: true };
+    }
+    if (nextStatus === 'completed' && ['printing', 'queued', 'processing'].includes(currentStatus)) {
+      return { ok: true, jobId: safeJobId, status: currentStatus, alreadyApplied: true };
+    }
+    if (nextStatus === 'error' && ['pending', 'queued', 'processing', 'printing'].includes(currentStatus)) {
+      return { ok: true, jobId: safeJobId, status: currentStatus, alreadyApplied: true };
+    }
     throw new Error('INVALID_PRINT_QUEUE_TRANSITION');
   }
 

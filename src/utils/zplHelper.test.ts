@@ -54,6 +54,16 @@ describe('ZPL Font Calibration Tests', () => {
     expect(width).toBeGreaterThanOrEqual(Math.round(height * 1.2));
   });
 
+  test('Lot batch labels do not include the separator line', () => {
+    const zpl = generateLotBatchZPL({
+      lots: ['TEST001234567890'],
+      orderNumber: 'ORD-123',
+      printerDpi: 203,
+    });
+
+    expect(zpl).not.toContain('^GB');
+  });
+
   test('Font height should be within valid range (6-500 dots)', () => {
     // Test very small font
     const template1 = {

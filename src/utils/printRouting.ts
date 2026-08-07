@@ -148,12 +148,35 @@ export const getPrinterRoutingTokens = (printer: PrinterRoutingTarget | null | u
   return Array.from(tokens).filter(Boolean);
 };
 
+const getPersistedStationBinding = (context: PrinterRoutingContext = {}): string => {
+  const stationKey = normalizeRouteToken(context.stationId || context.routeKey || context.labelRoute || context.labelType);
+  if (!stationKey) return '';
+
+  try {
+    const raw = String(globalThis.localStorage?.getItem?.('print_station_printer_bindings_v1') || '').trim();
+    if (!raw) return '';
+
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const matchedKey = Object.keys(parsed || {}).find((key) => normalizeRouteToken(key) === stationKey);
+    if (!matchedKey) return '';
+    return String(parsed[matchedKey] || '').trim();
+  } catch {
+    return '';
+  }
+};
+
 export const resolvePrinterForRouting = <T extends PrinterRoutingTarget>(
   printers: T[],
   context: PrinterRoutingContext = {},
   dynamicRules: PrinterRoutingRule[] = []
 ): T | null => {
   if (!Array.isArray(printers) || printers.length === 0) return null;
+
+  const persistedBindingId = getPersistedStationBinding(context);
+  if (persistedBindingId) {
+    const persistedPrinter = printers.find((printer) => String(printer.id || '').trim() === persistedBindingId) || null;
+    if (persistedPrinter) return persistedPrinter;
+  }
 
   const candidates = getPrinterRoutingCandidates(context, dynamicRules);
   if (candidates.length === 0) return null;

@@ -10,7 +10,7 @@ import {
   doesUsbDeviceMatchPrinter,
   resolveUsbDeviceForPrinter,
 } from '../../utils/usbPrintService';
-import { buildProtocolAwareUsbPayload, buildProtocolAwareUsbProbePayload } from '../../utils/printerProtocolService';
+import { buildProtocolAwareUsbPayload } from '../../utils/printerProtocolService';
 import { safeSetLocalStorage } from '../../utils/safeStorage';
 import { getPrinterForQueueJob, isQueueJobAllowedForPrinter } from './printQueueProcessorHelpers';
 
@@ -900,8 +900,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
               isPreBatchedJob,
             });
 
-            const probePayload = buildProtocolAwareUsbProbePayload(targetPrinter as Record<string, unknown>);
-            await printRawUsbToDevice({ device: deviceForJob, content: probePayload });
+            await printRawUsbToDevice({ device: deviceForJob, content: payload });
 
             await transitionPrintQueueJobStatus({
               jobId: job.id,

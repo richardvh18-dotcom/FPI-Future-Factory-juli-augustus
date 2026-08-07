@@ -43,6 +43,7 @@ import InternalQrImage from "../../../utils/InternalQrImage";
 import { extractLotSequence } from "./lotSequenceHelpers";
 import { buildBh18RobotProgramPreparation } from "../../../services/robotProgramService";
 import { enqueueGatewayPcJob } from "../../../services/gatewayPcService";
+import { safeSetLocalStorage as safeSetLocalStorageShared } from "../../../utils/safeStorage";
 
 /**
  * DPI-aware PIXELS_PER_MM for print preview parity
@@ -56,6 +57,7 @@ const DEFAULT_PRINTER_DPI = 203;
 const LOT_ARCHIVE_LOOKBACK_YEARS = 6;
 const USB_PRINTER_VENDOR_KEY = "usb_printer_vendor";
 const USB_PRINTER_PRODUCT_KEY = "usb_printer_product";
+const USB_PRINTER_SERIAL_KEY = "usb_printer_serial";
 const USB_PRINTER_ID_KEY = "usb_printer_id";
 const PRINT_STATION_SELECTED_KEY = "print_station_selected_station";
 const PRINT_STATION_BINDINGS_KEY = "print_station_printer_bindings_v1";
@@ -94,6 +96,13 @@ const tryParseObject = (raw: string): Record<string, unknown> => {
 };
 
 const RECYCLED_SEQUENCE_SCAN_LIMIT = 20;
+
+const safeSetLocalStorage = (key: string, value: string) =>
+  safeSetLocalStorageShared(key, value, {
+    cleanupKeys: [USB_PRINTER_SERIAL_KEY, PRINT_STATION_BINDINGS_KEY],
+  });
+
+const safeStoredUsbSerial = (value: unknown): string => String(value || "").trim().slice(0, 128);
 
 type LabelOption = {
   id: string;
@@ -156,17 +165,20 @@ const persistPrinterBindingForAutoProcessor = (station: string, printer: any) =>
   if (!safeStation || !safePrinterId) return;
 
   try {
-    localStorage.setItem(PRINT_STATION_SELECTED_KEY, safeStation);
+    safeSetLocalStorage(PRINT_STATION_SELECTED_KEY, safeStation);
 
     const vendorId = String(printer?.vendorId || "").trim();
     const productId = String(printer?.productId || "").trim();
+    const serial = safeStoredUsbSerial(printer?.usbSerialNumber);
     if (vendorId && productId) {
-      localStorage.setItem(USB_PRINTER_ID_KEY, safePrinterId);
-      localStorage.setItem(USB_PRINTER_VENDOR_KEY, vendorId);
-      localStorage.setItem(USB_PRINTER_PRODUCT_KEY, productId);
+      safeSetLocalStorage(USB_PRINTER_ID_KEY, safePrinterId);
+      safeSetLocalStorage(USB_PRINTER_VENDOR_KEY, vendorId);
+      safeSetLocalStorage(USB_PRINTER_PRODUCT_KEY, productId);
+      if (serial) {
+        safeSetLocalStorage(USB_PRINTER_SERIAL_KEY, serial);
+      }
     } else {
-      // Bescherm USB-herstel: netwerk/queue printers mogen de USB-printer-id niet overschrijven.
-      localStorage.removeItem(USB_PRINTER_ID_KEY);
+      // Bescherm USB-herstel: niet-USB printers mogen de bestaande USB-context NIET wissen.
     }
 
     const raw = String(localStorage.getItem(PRINT_STATION_BINDINGS_KEY) || "").trim();
@@ -175,7 +187,7 @@ const persistPrinterBindingForAutoProcessor = (station: string, printer: any) =>
       ...parsed,
       [safeStation]: safePrinterId,
     };
-    localStorage.setItem(PRINT_STATION_BINDINGS_KEY, JSON.stringify(updated));
+    safeSetLocalStorage(PRINT_STATION_BINDINGS_KEY, JSON.stringify(updated));
   } catch {
     // Local storage is best-effort; print queueing must continue.
   }

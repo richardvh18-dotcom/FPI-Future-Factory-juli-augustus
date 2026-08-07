@@ -2,6 +2,13 @@ export type PrintTransport = 'queue' | 'usb';
 
 export const LABELS_PRINTING_QUEUE_STATION = 'Labels Printing';
 
+const normalizeQueueStationKey = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/^40(?=BH|BM|BA)/, '');
+
 export const resolvePrintTransport = ({
   activeQueuePrinterId,
   usbDevice,
@@ -14,4 +21,11 @@ export const resolvePrintTransport = ({
   }
 
   return usbDevice ? 'usb' : 'usb';
+};
+
+export { normalizeQueueStationKey };
+
+export const isLabelsPrintingStation = (value: unknown): boolean => {
+  const key = normalizeQueueStationKey(value);
+  return key === 'LABELSPRINTING' || key === 'LABELSPRINTING' || key === 'LABELSPRINTINGQUEUESTATION';
 };

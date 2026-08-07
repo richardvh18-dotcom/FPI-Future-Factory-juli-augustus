@@ -5,6 +5,9 @@ type UsbPrinterFilterInput = {
   productId?: unknown;
   usbVendorId?: unknown;
   usbProductId?: unknown;
+  serialNumber?: unknown;
+  usbSerialNumber?: unknown;
+  usbSerial?: unknown;
 };
 
 type UsbPrinterRef = {
@@ -15,6 +18,7 @@ type UsbPrinterRef = {
 type UsbDeviceLike = {
   vendorId?: number;
   productId?: number;
+  serialNumber?: string;
 };
 
 const USB_TRANSFER_CHUNK_SIZE = 4096;
@@ -100,6 +104,9 @@ export const getPrinterFilters = (printer: UsbPrinterFilterInput = {}): USBDevic
   return [];
 };
 
+const getExpectedUsbSerial = (printer: UsbPrinterFilterInput = {}): string =>
+  String(printer.serialNumber ?? printer.usbSerialNumber ?? printer.usbSerial ?? "").trim();
+
 export const doesUsbDeviceMatchPrinter = (
   device: UsbDeviceLike | null | undefined,
   printer: UsbPrinterFilterInput = {}
@@ -108,6 +115,7 @@ export const doesUsbDeviceMatchPrinter = (
 
   const expectedVendorId = parseUsbId(printer.vendorId ?? printer.usbVendorId);
   const expectedProductId = parseUsbId(printer.productId ?? printer.usbProductId);
+  const expectedSerial = getExpectedUsbSerial(printer);
 
   if (expectedVendorId !== undefined && Number(device.vendorId) !== expectedVendorId) {
     return false;
@@ -117,7 +125,17 @@ export const doesUsbDeviceMatchPrinter = (
     return false;
   }
 
-  return expectedVendorId !== undefined || expectedProductId !== undefined;
+  const hasVendorOrProductIdentity = expectedVendorId !== undefined || expectedProductId !== undefined;
+  if (hasVendorOrProductIdentity) {
+    return true;
+  }
+
+  if (!expectedSerial) {
+    return false;
+  }
+
+  const deviceSerial = String(device.serialNumber || "").trim();
+  return Boolean(deviceSerial && deviceSerial === expectedSerial);
 };
 
 const ensureUsbSupport = (): void => {
@@ -134,8 +152,12 @@ const getOutEndpoint = (
   device: USBDevice
 ): { interfaceNumber: number; alternateSetting: number; endpointNumber: number } | null => {
   const interfaces = device.configuration?.interfaces || [];
+  const priorityInterfaces = [
+    ...interfaces.filter((iface) => iface.interfaceNumber === 0),
+    ...interfaces.filter((iface) => iface.interfaceNumber !== 0),
+  ];
 
-  for (const iface of interfaces) {
+  for (const iface of priorityInterfaces) {
     for (const alternate of iface.alternates || []) {
       const endpoint = (alternate.endpoints || []).find((ep) => ep.direction === "out");
       if (endpoint) {
@@ -253,8 +275,18 @@ const prepareDevice = async (
     await device.selectConfiguration(1);
   }
 
-  const endpointInfo = getOutEndpoint(device);
+  let endpointInfo = getOutEndpoint(device);
   if (!endpointInfo) {
+    if (device.configuration?.interfaces?.[0]) {
+      endpointInfo = {
+        interfaceNumber: device.configuration.interfaces[0].interfaceNumber,
+        alternateSetting: device.configuration.interfaces[0].alternates?.[0]?.alternateSetting ?? 0,
+        endpointNumber: device.configuration.interfaces[0].alternates?.[0]?.endpoints?.find((ep) => ep.direction === "out")?.endpointNumber ?? 0,
+      };
+    }
+  }
+
+  if (!endpointInfo || endpointInfo.endpointNumber === undefined || endpointInfo.endpointNumber === 0) {
     throw new Error("Geen bruikbare USB OUT endpoint gevonden voor deze printer.");
   }
 
@@ -319,29 +351,88 @@ export const findAuthorizedUsbDevice = async (
 ): Promise<USBDevice | null> => {
   ensureUsbSupport();
   const filters = getPrinterFilters(printer);
+  const expectedSerial = getExpectedUsbSerial(printer);
   const authorizedDevices = await navigator.usb.getDevices();
 
   if (filters.length === 0) {
+    if (expectedSerial) {
+      return authorizedDevices.find((d) => String(d.serialNumber || "").trim() === expectedSerial) || null;
+    }
     return authorizedDevices[0] || null;
   }
 
-  return (
-    authorizedDevices.find((d) =>
-      filters.some((f) => d.vendorId === f.vendorId && (f.productId ? d.productId === f.productId : true))
-    ) || null
+  const matchingByVidPid = authorizedDevices.filter((d) =>
+    filters.some((f) => d.vendorId === f.vendorId && (f.productId ? d.productId === f.productId : true))
   );
+
+  if (expectedSerial) {
+    return matchingByVidPid.find((d) => String(d.serialNumber || "").trim() === expectedSerial) || null;
+  }
+
+  return matchingByVidPid[0] || null;
+};
+
+export const resolveUsbDeviceForPrinter = async (
+  printer: UsbPrinterFilterInput = {},
+  currentDevice?: USBDevice | null
+): Promise<USBDevice | null> => {
+  const strictDevice = await findAuthorizedUsbDevice(printer);
+  if (strictDevice) {
+    return strictDevice;
+  }
+
+  const hasPrinterIdentity =
+    parseUsbId(printer.vendorId ?? printer.usbVendorId) !== undefined ||
+    parseUsbId(printer.productId ?? printer.usbProductId) !== undefined;
+  const hasStrictSerial = Boolean(getExpectedUsbSerial(printer));
+
+  if (currentDevice && doesUsbDeviceMatchPrinter(currentDevice, printer)) {
+    return currentDevice;
+  }
+
+  if (hasPrinterIdentity && !hasStrictSerial) {
+    const fallbackDevice = await findAuthorizedUsbDevice({});
+    if (fallbackDevice) {
+      return fallbackDevice;
+    }
+  }
+
+  try {
+    return await requestUsbDevice(printer);
+  } catch {
+    return null;
+  }
 };
 
 export const requestUsbDevice = async (printer: UsbPrinterFilterInput = {}): Promise<USBDevice> => {
   ensureUsbSupport();
   const filters = getPrinterFilters(printer);
+  const expectedSerial = getExpectedUsbSerial(printer);
+
+  const ensureExpectedSerial = (device: USBDevice): USBDevice => {
+    if (!expectedSerial) return device;
+
+    const serial = String(device.serialNumber || "").trim();
+    if (!serial) {
+      return device;
+    }
+
+    if (serial !== expectedSerial) {
+      return device;
+    }
+
+    return device;
+  };
+
   try {
-    return await navigator.usb.requestDevice({ filters });
+    const selected = await navigator.usb.requestDevice({ filters });
+    return ensureExpectedSerial(selected);
   } catch (err: unknown) {
     const isNotFound = err instanceof Error && err.name === "NotFoundError";
     if (isNotFound && filters.length > 0) {
       try {
-        return await navigator.usb.requestDevice({ filters: [] });
+        const selectedFallback = await navigator.usb.requestDevice({ filters: [] });
+        return ensureExpectedSerial(selectedFallback);
       } catch (fallbackErr: unknown) {
         throw normalizeUsbError(fallbackErr);
       }
@@ -379,15 +470,26 @@ export const printRawUsbToDevice = async ({
     );
     const data = new TextEncoder().encode(String(content));
 
-    for (let offset = 0; offset < data.length; offset += USB_TRANSFER_CHUNK_SIZE) {
-      const chunk = data.slice(offset, offset + USB_TRANSFER_CHUNK_SIZE);
+    const transferPayload = async (payload: Uint8Array) => {
+      const transferBuffer = payload as unknown as BufferSource;
       const result = await withTimeout(
-        device.transferOut(endpointInfo.endpointNumber, chunk),
+        device.transferOut(endpointInfo.endpointNumber, transferBuffer),
         USB_IO_TIMEOUT_MS,
         "USB gegevensoverdracht duurt te lang (timeout)."
       );
       if (result.status !== "ok") {
         throw new Error(`USB print mislukt met status: ${result.status}`);
+      }
+    };
+
+    try {
+      await transferPayload(data);
+    } catch (err) {
+      const fallbackNeeded = data.length > USB_TRANSFER_CHUNK_SIZE;
+      if (!fallbackNeeded) throw err;
+      for (let offset = 0; offset < data.length; offset += USB_TRANSFER_CHUNK_SIZE) {
+        const chunk = data.slice(offset, offset + USB_TRANSFER_CHUNK_SIZE);
+        await transferPayload(chunk);
       }
     }
 
@@ -404,6 +506,62 @@ export const printRawUsbToDevice = async ({
       vendorId: device.vendorId,
       productId: device.productId,
     };
+  } catch (err: unknown) {
+    throw normalizeUsbError(err);
+  } finally {
+    await safeCloseDevice(device);
+    releaseDeviceLock();
+  }
+};
+
+/**
+ * Verzendt een binaire payload (Uint8Array) naar het USB device.
+ * Gebruik voor TSPL BITMAP of andere gemixte tekst+binaire protocollen.
+ */
+export const printBinaryUsbToDevice = async ({
+  device,
+  payload,
+  logMessage,
+}: {
+  device: USBDevice | null | undefined;
+  payload: Uint8Array;
+  logMessage?: string;
+}) => {
+  if (!device) throw new Error("Geen printer verbonden.");
+  if (!payload?.length) throw new Error("Geen printinhoud opgegeven.");
+
+  ensureUsbSupport();
+  const releaseDeviceLock = await acquireUsbDeviceLock(device);
+  try {
+    const endpointInfo = await withTimeout(
+      prepareDevice(device, { vendorId: device.vendorId, productId: device.productId }),
+      USB_PREPARE_TIMEOUT_MS,
+      "USB printer voorbereiden duurt te lang (timeout)."
+    );
+
+    const transferChunk = async (chunk: Uint8Array) => {
+      const result = await withTimeout(
+        device.transferOut(endpointInfo.endpointNumber, chunk as unknown as BufferSource),
+        USB_IO_TIMEOUT_MS,
+        "USB gegevensoverdracht duurt te lang (timeout)."
+      );
+      if (result.status !== "ok") throw new Error(`USB print mislukt: ${result.status}`);
+    };
+
+    if (payload.length <= USB_TRANSFER_CHUNK_SIZE) {
+      await transferChunk(payload);
+    } else {
+      for (let offset = 0; offset < payload.length; offset += USB_TRANSFER_CHUNK_SIZE) {
+        await transferChunk(payload.slice(offset, offset + USB_TRANSFER_CHUNK_SIZE));
+      }
+    }
+
+    if (logMessage) {
+      try { await logActivity(auth.currentUser?.uid || "system", "PRINT_LABEL", logMessage); }
+      catch (e) { console.error("Logging print mislukt:", e); }
+    }
+
+    return { productName: device.productName || "Onbekende USB printer", vendorId: device.vendorId, productId: device.productId };
   } catch (err: unknown) {
     throw normalizeUsbError(err);
   } finally {

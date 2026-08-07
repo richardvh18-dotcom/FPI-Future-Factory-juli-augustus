@@ -25,6 +25,13 @@ type LabelElement = {
   height?: number;
   fontSize?: number;
   isBold?: boolean;
+  isItalic?: boolean;
+  color?: string;
+  backgroundColor?: string;
+  opacity?: number;
+  zIndex?: number;
+  conditionalVariable?: string;
+  barcodeType?: string;
   fontFamily?: string;
   align?: 'left' | 'center' | 'right';
   thickness?: number;
@@ -161,7 +168,7 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
         height: `${label.height * pixelsPerMm * zoom}px`,
       }}
     >
-      {label.elements?.map((el, index) => {
+      {[...(label.elements || [])].sort((a, b) => (Number(a.zIndex) || 0) - (Number(b.zIndex) || 0)).map((el, index) => {
         const resolved = resolveLabelContent(el, data) as { content?: unknown };
         const displayContent = String(resolved?.content ?? '');
         const rotation = ((Number(el.rotation) || 0) % 360 + 360) % 360;
@@ -171,21 +178,29 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
         const widthMm = Number(el.width) || 0;
         const heightMm = Number(el.height) || 0;
         const layoutNudge = getWavistrongLayoutNudge(label, el, displayContent);
+
+        // Conditionele zichtbaarheid: verberg als variabele leeg is
+        if (el.conditionalVariable) {
+          const condVal = String(data?.[el.conditionalVariable] ?? '').trim();
+          if (!condVal || condVal === 'undefined' || condVal === 'null') return null;
+        }
+
+        const elementOpacity = el.opacity != null ? Number(el.opacity) / 100 : 1;
+        const elementColor = el.color || 'black';
+
         const baseStyle: React.CSSProperties = {
           position: "absolute",
           left: `${(x + layoutNudge.xMm) * pixelsPerMm * zoom}px`,
           top: `${(y + layoutNudge.yMm) * pixelsPerMm * zoom}px`,
-          width: widthMm
-            ? `${widthMm * pixelsPerMm * zoom}px`
-            : "auto",
-          height: heightMm
-            ? `${heightMm * pixelsPerMm * zoom}px`
-            : "auto",
-          color: "black",
+          width: widthMm ? `${widthMm * pixelsPerMm * zoom}px` : "auto",
+          height: heightMm ? `${heightMm * pixelsPerMm * zoom}px` : "auto",
+          color: elementColor,
           transform: `rotate(${rotation}deg)`,
           transformOrigin: "top left",
           overflow: "hidden",
           textAlign: "left",
+          opacity: elementOpacity,
+          zIndex: el.zIndex || index,
         };
 
         if (el.type === "text") {
@@ -207,11 +222,13 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
                 fontSize: `${textStyle.fontSize}px`,
                 lineHeight: textStyle.lineHeight,
                 fontWeight: el.isBold ? "800" : "700",
+                fontStyle: el.isItalic ? "italic" : "normal",
                 letterSpacing: "0.25px",
                 fontFamily: !el.fontFamily || el.fontFamily === "Arial" || String(el.fontFamily) === "0"
                   ? PRINTER_PREVIEW_FONT_STACK
                   : el.fontFamily,
                 textAlign: el.align || "left",
+                backgroundColor: el.backgroundColor || undefined,
                 display: (el as any).vAlign ? "flex" : "block",
                 flexDirection: (el as any).vAlign ? "column" : undefined,
                 justifyContent: (el as any).vAlign === "center" ? "center" : (el as any).vAlign === "bottom" ? "flex-end" : "flex-start",
@@ -234,7 +251,7 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
                 ...baseStyle,
                 width: `${widthMm * pixelsPerMm * zoom}px`,
                 height: `${heightMm * pixelsPerMm * zoom}px`,
-                backgroundColor: "black",
+                backgroundColor: elementColor,
               }}
             />
           );
@@ -247,7 +264,24 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
                 ...baseStyle,
                 width: `${widthMm * pixelsPerMm * zoom}px`,
                 height: `${heightMm * pixelsPerMm * zoom}px`,
-                border: `${(el.thickness || 1) * pixelsPerMm * zoom}px solid black`,
+                border: `${(el.thickness || 1) * pixelsPerMm * zoom}px solid ${elementColor}`,
+                backgroundColor: el.backgroundColor || undefined,
+                boxSizing: "border-box",
+              }}
+            />
+          );
+
+        if (el.type === "ellipse")
+          return (
+            <div
+              key={index}
+              style={{
+                ...baseStyle,
+                width: `${widthMm * pixelsPerMm * zoom}px`,
+                height: `${heightMm * pixelsPerMm * zoom}px`,
+                border: `${(el.thickness || 1) * pixelsPerMm * zoom}px solid ${elementColor}`,
+                backgroundColor: el.backgroundColor || undefined,
+                borderRadius: "50%",
                 boxSizing: "border-box",
               }}
             />
@@ -267,7 +301,7 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
              }}>
                 {el.type === 'barcode' ? (
                     <img 
-                        src={getBarcodeUrl(displayContent)} 
+                        src={getBarcodeUrl(displayContent, el.barcodeType)} 
                         alt="code" 
                         style={{ width: "100%", height: "100%", objectFit: "contain" }} 
                     />

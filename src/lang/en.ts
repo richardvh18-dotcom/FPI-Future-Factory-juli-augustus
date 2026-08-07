@@ -40,7 +40,7 @@ export const en = {
       printLabelQueued: 'Label for {{order}} queued to printer: {{printer}}',
       printErrorMessage: 'Print error: {{message}}',
       noStationAvailable: 'No station available in factory config.',
-      lotsPrintedDirectUsb: '{{count}} lot number(s) printed directly via USB!',
+      lotsPrintedQueued: '{{count}} lot number(s) queued to {{printer}}',
       generationError: 'Generation error: {{message}}',
       printLotNumbers: 'Print Lot Numbers',
       department: 'Department',
