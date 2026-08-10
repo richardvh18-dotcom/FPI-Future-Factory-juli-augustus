@@ -3940,6 +3940,8 @@ const startProductionLotsService = async ({
     ? explicitLots
     : Array.from({ length: qty }, (_, i) => buildLotNumber(i));
   const effectiveQty = requestedLots.length;
+
+  console.log('[startProductionLotsService] stap 1: assertLotsAreUniqueInActiveTracking', { requestedLots, stationId: safeStationId });
   await assertLotsAreUniqueInActiveTracking({ ctx, lotNumbers: requestedLots });
 
   const scopedDepartment = resolveScopedDepartment(
@@ -3948,6 +3950,7 @@ const startProductionLotsService = async ({
     DEFAULT_SCOPED_DEPARTMENT
   );
   const scopedPlanningMachine = resolveScopedMachine(planningOrderData.machine, safeStationId);
+  console.log('[startProductionLotsService] stap 2: batch voorbereiden', { scopedDepartment, scopedPlanningMachine, effectiveQty });
 
   for (let i = 0; i < effectiveQty; i += 1) {
     const currentLot = requestedLots[i];
@@ -4070,6 +4073,7 @@ const startProductionLotsService = async ({
     const counterDocId = `${String(safeStationId || 'UNKNOWN').toUpperCase().replace(/[^A-Z0-9]/g, '')}_${weekSuffix}`;
     const counterRef = db.collection(`${BASE}/production/counters`).doc(counterDocId);
 
+    console.log('[startProductionLotsService] stap 3: counter transaction', { counterPath: counterRef.path });
     await db.runTransaction(async (tx) => {
       const counterSnap = await tx.get(counterRef);
       const counterData = counterSnap.exists ? (counterSnap.data() || {}) : {};
@@ -4120,7 +4124,9 @@ const startProductionLotsService = async ({
     });
   }
 
+  console.log('[startProductionLotsService] stap 4: batch.commit', { createdLots });
   await batch.commit();
+  console.log('[startProductionLotsService] klaar', { createdLots });
 
   return {
     ok: true,

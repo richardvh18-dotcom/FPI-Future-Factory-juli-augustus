@@ -1619,16 +1619,25 @@ const startProductionLots = withAudit('START_PRODUCTION_LOTS', async (data, cont
       throw new functions.https.HttpsError('invalid-argument', 'Ongeldig order documentpad of order-id bij productie-start.');
     }
 
-    handleCallableError(error);
-
-    console.error('startProductionLots onverwachte fout:', {
+    // Log altijd vóór handleCallableError, omdat die kan gooien en dan nooit gelogd wordt.
+    console.error('startProductionLots fout:', {
       message: error?.message || String(error),
+      code: error?.code ?? null,
       stack: error?.stack || null,
       orderDocId,
+      orderDocPath,
+      orderSourcePath,
       orderId,
       stationId,
       totalToProduce,
     });
+
+    // PERMISSION_DENIED (code 7) van Firestore Admin SDK duidt op een IAM-probleem.
+    if (error?.code === 7 || rawMessage.includes('permission_denied') || rawMessage.includes('permission denied')) {
+      throw new functions.https.HttpsError('internal', 'Starten van productie is mislukt (Firestore-toegang geweigerd). Controleer de IAM-instellingen.');
+    }
+
+    handleCallableError(error);
     throw new functions.https.HttpsError('internal', 'Starten van productie is mislukt.');
   }
 });

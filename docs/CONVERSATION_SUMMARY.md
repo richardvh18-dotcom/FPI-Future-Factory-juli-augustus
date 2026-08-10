@@ -4,6 +4,28 @@
 - Bij een deploy eerst de appversie bumpen, daarna deployen en vervolgens een `git push` doen.
 - Deploy/version-wijzigingen altijd afstemmen op `public/version.json` en `package.json`.
 
+---
+
+### Update sessie 10 augustus 2026 — startProductionLots 500 diagnose + fix
+
+**Symptoom:** `startProductionLots` callable geeft 500 Internal Server Error met `FirebaseError: INTERNAL` op de client. In Firebase Functions logs staat `7 PERMISSION_DENIED: Missing or insufficient permissions.` van de Firestore Admin SDK.
+
+**Codebug gevonden en gefixt:**
+- In de `startProductionLots` catch-block werd `handleCallableError(error)` aangeroepen vóór `console.error`. Omdat `handleCallableError` unmapped errors opnieuw gooit, werd `console.error` nooit bereikt — foutdetails waren volledig onzichtbaar in de logs.
+- Fix: `console.error` verplaatst naar vóór `handleCallableError`. PERMISSION_DENIED (gRPC code 7) wordt nu expliciet afgevangen en omgezet naar `HttpsError('internal', ...)`.
+
+**Diagnoselogs toegevoegd in `startProductionLotsService`:**
+- Stap-voor-stap `console.log` vóór: assertLotsAreUniqueInActiveTracking, counter transaction, batch.commit. Hierdoor is bij een volgende fout direct zichtbaar welke Firestore-stap mislukt.
+
+**Mogelijke oorzaak PERMISSION_DENIED:**
+- Firestore Admin SDK omzeilt security rules — dit is een IAM-level probleem op GCP.
+- Te controleren: GCP Console > IAM > service account `future-factory-377ef@appspot.gserviceaccount.com` moet `roles/firebase.admin` of `roles/datastore.user` hebben.
+- Of: recent gedeployde Firestore rules die (ondanks Admin SDK bypass) interactie hebben met een edge case.
+
+**Deploy:** `functions:startProductionLots` gedeployed naar `europe-west1`.
+
+---
+
 
 ####### Dagupdate 7 augustus 2026 - sessie 4 (Firebase Usage & Costs Monitor)
 
