@@ -57,6 +57,29 @@ function sendZplToPrinter(ip, port, zplData) {
   });
 }
 
+async function claimPrintJob(docId) {
+  const jobRef = db.collection("print_queue").doc(docId);
+
+  return db.runTransaction(async (transaction) => {
+    const snap = await transaction.get(jobRef);
+    if (!snap.exists) {
+      return false;
+    }
+
+    const status = String(snap.data().status || "").trim().toLowerCase();
+    if (status !== "pending" && status !== "queued" && status !== "processing") {
+      return false;
+    }
+
+    transaction.update(jobRef, {
+      status: "printing",
+      startedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return true;
+  });
+}
+
 console.log("🚀 Netwerk Print Daemon gestart. Luisteren naar 'print_queue'...");
 
 // Luister real-time naar nieuwe 'pending' opdrachten
@@ -79,11 +102,11 @@ db.collection("print_queue")
         console.log(`🖨️ [${docId}] Printopdracht ontvangen voor route '${routingKey}' -> ${printer.ip}:${printer.port}`);
 
         try {
-          // 1. Zet status op printing
-          await db.collection("print_queue").doc(docId).update({
-            status: "printing",
-            startedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
+          const claimed = await claimPrintJob(docId);
+          if (!claimed) {
+            console.log(`↩️ [${docId}] Taak was al geclaimd of afgerond; print wordt overgeslagen.`);
+            return;
+          }
 
           // 2. Verstuur ZPL naar printer
           await sendZplToPrinter(printer.ip, printer.port, zpl);

@@ -1440,6 +1440,7 @@ const PrintQueueAdminView = () => {
   // In Electron/VS Code: geen WebUSB beschikbaar, auto-print altijd uit.
   const [autoPrint, setAutoPrint] = useState<boolean>(() => isUsbDirectSupported() ? true : false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const isProcessingRef = useRef(false);
   const [error, setError] = useState('');
 
   const [showTempModal, setShowTempModal] = useState(false);
@@ -1865,7 +1866,7 @@ const PrintQueueAdminView = () => {
     const matchedPrinter = resolveUsbBoundPrinter(printers, usbDevice, stationContext || undefined);
     const currentPrinterId = matchedPrinter?.id || null;
     console.log('[AutoPrint] check', { autoPrint, hasUsbDevice: !!usbDevice, usbVid: usbDevice?.vendorId, usbPid: usbDevice?.productId, isProcessing, currentPrinterId, matchedPrinterName: matchedPrinter?.name });
-    if (!autoPrint || !usbDevice || isProcessing || !currentPrinterId) return;
+    if (!autoPrint || !usbDevice || isProcessing || isProcessingRef.current || !currentPrinterId) return;
 
     const pendingJobs = printJobs.filter((j) => {
       // Only pick jobs that are still pending. Processing/printing jobs are already claimed.
@@ -1880,36 +1881,42 @@ const PrintQueueAdminView = () => {
 
     if (pendingJobs.length > 0) {
       const processQueue = async () => {
+        if (isProcessingRef.current) return;
+        isProcessingRef.current = true;
         setIsProcessing(true);
-        for (const job of pendingJobs) {
-          try {
-            await handlePrintJob(job);
-          } catch (e) {
-            if (isInvalidPrintQueueTransitionError(e)) {
-              // Deze taak is waarschijnlijk al verwerkt door een andere actieve queue-processor.
-              continue;
-            }
-            const message = e instanceof Error ? e.message : String(e);
-            const lowerMessage = String(message || '').toLowerCase();
-            const isUsbSessionIssue = /claim interface|claiminterface|usb|geen usb printer verbonden|access denied|toegang geweigerd|not allowed/.test(lowerMessage);
-
-            if (isUsbSessionIssue) {
-              // Houd auto-print aan, maar forceer reconnect van USB zodat de volgende run schoon start.
-              setUsbDevice(null);
-              if (isUsbDirectSupported()) {
-                setError(`Auto-print wacht op USB-herstel. Taak ${job.id} mislukt: ${message}`);
-              } else {
-                setAutoPrint(false);
-                setError('Auto-print vereist een WebUSB-verbinding. Open de print wachtrij in Chrome op de factory PC.');
+        try {
+          for (const job of pendingJobs) {
+            try {
+              await handlePrintJob(job);
+            } catch (e) {
+              if (isInvalidPrintQueueTransitionError(e)) {
+                // Deze taak is waarschijnlijk al verwerkt door een andere actieve queue-processor.
+                continue;
               }
-              break;
-            }
+              const message = e instanceof Error ? e.message : String(e);
+              const lowerMessage = String(message || '').toLowerCase();
+              const isUsbSessionIssue = /claim interface|claiminterface|usb|geen usb printer verbonden|access denied|toegang geweigerd|not allowed/.test(lowerMessage);
 
-            // Voor niet-USB taakfouten blijven we de rest van de queue verwerken.
-            setError(`Taak ${job.id} mislukt: ${message}`);
+              if (isUsbSessionIssue) {
+                // Houd auto-print aan, maar forceer reconnect van USB zodat de volgende run schoon start.
+                setUsbDevice(null);
+                if (isUsbDirectSupported()) {
+                  setError(`Auto-print wacht op USB-herstel. Taak ${job.id} mislukt: ${message}`);
+                } else {
+                  setAutoPrint(false);
+                  setError('Auto-print vereist een WebUSB-verbinding. Open de print wachtrij in Chrome op de factory PC.');
+                }
+                break;
+              }
+
+              // Voor niet-USB taakfouten blijven we de rest van de queue verwerken.
+              setError(`Taak ${job.id} mislukt: ${message}`);
+            }
           }
+        } finally {
+          setIsProcessing(false);
+          isProcessingRef.current = false;
         }
-        setIsProcessing(false);
       };
       processQueue();
     }

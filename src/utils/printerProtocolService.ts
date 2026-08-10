@@ -168,9 +168,15 @@ export const buildProtocolAwareUsbPayload = ({
     .replace(/\^MM[CT]/g, '^MMC')
     .replace(/\^PQ1,0,1,[YN]/g, '^PQ1,0,1,Y');
 
-  return qty === 1
-    ? applyCutMode(base)
-    : Array.from({ length: qty }, () => applyCutMode(base)).join('\n');
+  const zplWithCutMode = applyCutMode(base);
+  if (qty === 1) return zplWithCutMode;
+
+  const withQuantityApplied = zplWithCutMode.replace(/\^PQ\d+,0,1,[YN]/, `^PQ${qty},0,1,Y`);
+  if (withQuantityApplied !== zplWithCutMode) {
+    return withQuantityApplied;
+  }
+
+  return zplWithCutMode.replace(/\^XZ\s*$/, `^PQ${qty},0,1,Y\n^XZ`);
 };
 
 export const buildProtocolAwareUsbProbePayload = (printer?: PrinterProfile | null): string => {

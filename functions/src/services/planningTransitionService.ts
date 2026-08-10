@@ -5054,64 +5054,76 @@ const transitionPrintQueueJobStatusService = async ({ jobId, status, error, prin
     throw new Error('NOT_FOUND_PRINT_JOB');
   }
 
-  const currentStatus = clean(jobSnap.data()?.status).toLowerCase();
-  const terminalStatuses = new Set(['completed', 'cancelled', 'error']);
-  const isAlreadyInTargetState = currentStatus === nextStatus;
-  const isAlreadyTerminal = terminalStatuses.has(currentStatus);
-
-  const validTransition = isValidPrintQueueTransition({ currentStatus, nextStatus });
-
-  if (isAlreadyInTargetState) {
-    return { ok: true, jobId: safeJobId, status: nextStatus, alreadyApplied: true };
-  }
-
-  if (isAlreadyTerminal && terminalStatuses.has(nextStatus)) {
-    return { ok: true, jobId: safeJobId, status: currentStatus, alreadyApplied: true };
-  }
-
-  if (!validTransition) {
-    if (nextStatus === 'printing' && isPendingLikePrintQueueStatus(currentStatus)) {
-      return { ok: true, jobId: safeJobId, status: currentStatus, alreadyApplied: true };
+  const transactionResult = await db.runTransaction(async (transaction) => {
+    const freshSnap = await transaction.get(jobRef);
+    if (!freshSnap.exists) {
+      throw new Error('NOT_FOUND_PRINT_JOB');
     }
-    if (nextStatus === 'completed' && ['printing', 'queued', 'processing'].includes(currentStatus)) {
-      return { ok: true, jobId: safeJobId, status: currentStatus, alreadyApplied: true };
+
+    const currentStatus = clean(freshSnap.data()?.status).toLowerCase();
+    const terminalStatuses = new Set(['completed', 'cancelled', 'error']);
+    const isAlreadyInTargetState = currentStatus === nextStatus;
+    const isAlreadyTerminal = terminalStatuses.has(currentStatus);
+
+    const validTransition = isValidPrintQueueTransition({ currentStatus, nextStatus });
+
+    if (isAlreadyInTargetState) {
+      return { ok: true, jobId: safeJobId, status: nextStatus, previousStatus: currentStatus, alreadyApplied: true };
     }
-    if (nextStatus === 'error' && ['pending', 'queued', 'processing', 'printing'].includes(currentStatus)) {
-      return { ok: true, jobId: safeJobId, status: currentStatus, alreadyApplied: true };
+
+    if (isAlreadyTerminal && terminalStatuses.has(nextStatus)) {
+      return { ok: true, jobId: safeJobId, status: currentStatus, previousStatus: currentStatus, alreadyApplied: true };
     }
-    throw new Error('INVALID_PRINT_QUEUE_TRANSITION');
-  }
 
-  const updates = {
-    status: nextStatus,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  };
+    if (!validTransition) {
+      if (nextStatus === 'printing' && isPendingLikePrintQueueStatus(currentStatus)) {
+        return { ok: true, jobId: safeJobId, status: currentStatus, previousStatus: currentStatus, alreadyApplied: true };
+      }
+      if (nextStatus === 'completed' && ['printing', 'queued', 'processing'].includes(currentStatus)) {
+        return { ok: true, jobId: safeJobId, status: currentStatus, previousStatus: currentStatus, alreadyApplied: true };
+      }
+      if (nextStatus === 'error' && ['pending', 'queued', 'processing', 'printing'].includes(currentStatus)) {
+        return { ok: true, jobId: safeJobId, status: currentStatus, previousStatus: currentStatus, alreadyApplied: true };
+      }
+      throw new Error('INVALID_PRINT_QUEUE_TRANSITION');
+    }
 
-  if (nextStatus === 'printing') {
-    updates.processedAt = admin.firestore.FieldValue.serverTimestamp();
-    updates.error = admin.firestore.FieldValue.delete();
-  }
-  if (nextStatus === 'completed') {
-    updates.printedAt = admin.firestore.FieldValue.serverTimestamp();
-    updates.error = admin.firestore.FieldValue.delete();
-  }
-  if (nextStatus === 'error') {
-    updates.error = clampText(error, 1000) || 'Onbekende printfout';
-  }
-  if (nextStatus === 'pending') {
-    updates.error = admin.firestore.FieldValue.delete();
-  }
+    const updates = {
+      status: nextStatus,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
 
-  if (printerName) {
-    updates.printedOnPrinterName = clean(printerName);
-  }
+    if (nextStatus === 'printing') {
+      updates.processedAt = admin.firestore.FieldValue.serverTimestamp();
+      updates.error = admin.firestore.FieldValue.delete();
+    }
+    if (nextStatus === 'completed') {
+      updates.printedAt = admin.firestore.FieldValue.serverTimestamp();
+      updates.error = admin.firestore.FieldValue.delete();
+    }
+    if (nextStatus === 'error') {
+      updates.error = clampText(error, 1000) || 'Onbekende printfout';
+    }
+    if (nextStatus === 'pending') {
+      updates.error = admin.firestore.FieldValue.delete();
+    }
 
-  await jobRef.set(updates, { merge: true });
+    if (printerName) {
+      updates.printedOnPrinterName = clean(printerName);
+    }
+
+    transaction.set(jobRef, updates, { merge: true });
+    return { ok: true, jobId: safeJobId, status: nextStatus, previousStatus: currentStatus };
+  });
+
+  if (transactionResult?.alreadyApplied) {
+    return transactionResult;
+  }
 
   await writeActivityLog({
     auth,
     action: `PRINT_QUEUE_${nextStatus.toUpperCase()}`,
-    details: `Printjob ${safeJobId} status gewijzigd van ${currentStatus || 'unknown'} naar ${nextStatus}`,
+    details: `Printjob ${safeJobId} status gewijzigd van ${transactionResult.previousStatus || 'unknown'} naar ${nextStatus}`,
     extra: {
       source: clampText(source, 80) || null,
       actorLabel: getActorLabel(auth, actorLabel),
@@ -5119,7 +5131,7 @@ const transitionPrintQueueJobStatusService = async ({ jobId, status, error, prin
     },
   });
 
-  return { ok: true, jobId: safeJobId, status: nextStatus };
+  return transactionResult;
 };
 
 const requeuePrintQueueJobService = async ({ jobId, auth, source, actorLabel, dbCtx = null,

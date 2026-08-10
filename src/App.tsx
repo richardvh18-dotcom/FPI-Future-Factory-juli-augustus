@@ -1,7 +1,7 @@
 import React, { useState, Suspense, lazy, useEffect, useRef } from "react";
 
 import { Loader2 } from "lucide-react";
-import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import app, { auth, db, logActivity } from "./config/firebase";
 import { addDoc, collection, doc, getDoc, serverTimestamp, query, collectionGroup, where, limit, getDocs } from "firebase/firestore";
@@ -92,8 +92,7 @@ const TeamleaderPresentation = lazy(() =>
  */
 const App = () => {
   const navigate = useNavigate();
-  const pathname =
-    typeof window !== "undefined" ? window.location.pathname : "";
+  const { pathname } = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [requiresPasswordChange, setRequiresPasswordChange] = useState(false);
@@ -112,6 +111,7 @@ const App = () => {
   const { user, isAdmin, role, loading: authLoading } = useAdminAuth();
   const canAccessPrinters =
     checkFeature(user, "printer_center") || checkFeature(user, "digital_planning");
+  const enableGlobalPrintQueueAutoProcessor = !pathname.startsWith("/printer-queue");
   const firebaseUser = user as any;
   const { generalConfig } = useSettingsData(firebaseUser, { mode: "minimal" });
   useMessages(firebaseUser);
@@ -338,7 +338,7 @@ const App = () => {
           <NetworkObserver userEmail={user?.email} />
           <PrintQueuePinger enabled={Boolean(user)} />
           <AutoLogoutManager isLoggedIn={!!user} />
-          <PrintQueueAutoProcessor enabled={Boolean(user && role !== "guest")} />
+          <PrintQueueAutoProcessor enabled={Boolean(user && role !== "guest" && enableGlobalPrintQueueAutoProcessor)} />
           {content}
         </BackgroundTaskProvider>
     </NotificationProvider>

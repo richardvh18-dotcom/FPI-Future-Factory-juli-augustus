@@ -6,6 +6,131 @@
 
 ---
 
+### Update sessie 10 augustus 2026 — Dubbele print via race tussen queue-consumers afgedicht
+
+**Gemeld probleem:**
+- Bij het ZPL-pad van de Mazak Pilot bleef `1` label effectief `2` labels opleveren en `3` labels `6` labels.
+
+**Oorzaak:**
+- De printjob werd door meerdere listeners opgepakt, terwijl de statusovergang van `pending` naar `printing` niet atomisch geclaimd werd.
+- Daardoor konden twee consumers dezelfde Firestore-job tegelijk afdrukken.
+
+**Fix uitgevoerd:**
+- In `functions/src/services/planningTransitionService.ts` wordt de printstatus nu via een Firestore transaction geclaimd voordat de job verder mag gaan.
+- In `tools/integration/headless-print-daemon.js` claimt de daemon dezelfde job eerst atomisch en slaat hij duplicaten over zodra een andere consumer de taak al heeft opgepakt.
+
+**Verificatie:**
+- `node --check tools/integration/headless-print-daemon.js` geslaagd.
+- `npx tsc -p functions/tsconfig.json --noEmit` geslaagd.
+
+### Update sessie 10 augustus 2026 — ZPL quantity nu via ^PQ afgedwongen
+
+**Aanvullende observatie:**
+- De Mazak Pilot gebruikt ZPL en de queue-job bleef wel netjes op `3` staan, maar de fysieke output bleef verdubbelen.
+
+**Aanvullende fix:**
+- In `src/utils/printerProtocolService.ts` wordt ZPL-quantity niet meer afgedwongen door het volledige labelblok te herhalen.
+- In plaats daarvan wordt het bestaande `^PQ`-commando naar het gevraagde aantal gezet, zodat `3` ook echt als één job met drie copies wordt verzonden.
+
+**Verificatie:**
+- Regression test toegevoegd en geslaagd in `src/utils/printerProtocolService.test.ts`.
+
+### Update sessie 10 augustus 2026 — USB fallback resend veroorzaakte mogelijk dubbele output
+
+**Aanvullende observatie:**
+- De queue-job stond correct op `3`, maar de fysieke output bleef `6`.
+- Dat wees niet langer op queue-duplicatie, maar op het verzenden van de payload zelf.
+
+**Aanvullende fix:**
+- In `src/utils/usbPrintService.ts` verzendt `printRawUsbToDevice` grote payloads nu direct chunked.
+- De oude fallback die eerst een volledige send probeerde en daarna opnieuw chunked resendde is verwijderd, zodat een gedeeltelijk geaccepteerde eerste poging niet meer dubbel kan printen.
+
+**Verificatie:**
+- `npx eslint src/utils/usbPrintService.ts` geslaagd.
+
+### Update sessie 10 augustus 2026 — Order Labels TSPL quantity verdubbeling opgelost
+
+**Gemeld probleem:**
+- Bij Order Labels gaf `1` label request `2` labels en `2` request `4` labels.
+
+**Oorzaak:**
+- De TSPL/Lighthouse payload builder herhaalde het volledige labelblok per `quantity` en zette daarna nog een `PRINT n,1` commando in dezelfde payload.
+
+**Fix uitgevoerd:**
+- In `src/utils/tsplPrintService.ts` wordt het labelblok nu nog maar één keer opgebouwd.
+- Alleen het afsluitende `PRINT`-commando krijgt het gevraagde aantal kopieën.
+- Een regressietest toegevoegd in `src/utils/printerProtocolService.test.ts` om te bewaken dat TSPL payloads niet meer worden gedupliceerd.
+
+**Verificatie:**
+- Focused Vitest run geslaagd voor `src/utils/printerProtocolService.test.ts`.
+
+### Update sessie 10 augustus 2026 — Dubbele queue-consumer op printer-queue uitgezet
+
+**Gemeld probleem:**
+- Bij `3` labels kwamen in de praktijk `6` labels uit de printer.
+
+**Oorzaak:**
+- De app draaide twee consumers op dezelfde printqueue tegelijk: de globale `PrintQueueAutoProcessor` in `App.tsx` en de lokale auto-printlogica in `src/components/printer/PrintQueueAdminView.tsx`.
+
+**Fix uitgevoerd:**
+- In `src/App.tsx` draait de globale auto-processor niet meer op de `printer-queue` route.
+- Daardoor blijft op de printerqueue-pagina nog maar één consumer actief en worden jobs niet dubbel opgepakt.
+
+**Verificatie:**
+- `npx eslint src/App.tsx` geeft alleen bestaande warnings, geen fouten.
+
+### Update sessie 10 augustus 2026 — Lighthouse PPLZ testpad (TSPL naar ZPL)
+
+**Situatie:**
+- Queue-jobs gingen van pending naar processing naar completed, maar zonder fysiek label op Lighthouse.
+- ZM Pilot printte wel correct, dus algemene queueflow werkte.
+
+**Waarneming:**
+- Lighthouse device meldt zich als `Lighthouse CJ PPLZ`.
+- Dit wijst vaak op ZPL-emulatie in plaats van pure TSPL.
+
+**Uitgevoerde testwijziging:**
+- In Printer Beheer is voor `Lighthouse Lossen` protocol omgezet van TSPL naar ZPL en opgeslagen.
+- Voor dezelfde printer is `Bitmap print voor deze printer` uitgezet om pure ZPL-output te forceren (zonder zware bitmap-rasterpayload).
+- Daarna is een gerichte testprint vanuit de Lighthouse-printerkaart gestart (wachtrijmelding naar Lighthouse bevestigd).
+
+**Doel van deze wijziging:**
+- Valideren of PPLZ-emulatie de reden is dat TSPL-jobs wel completed tonen maar geen fysiek label geven.
+
+**Aanvullende codefix (USB transport):**
+- In `src/utils/usbPrintService.ts` is endpoint-selectie aangepast.
+- Voorheen werd vaak interface `0` gepakt als eerste OUT endpoint; dat kan op sommige printers een niet-printer endpoint zijn.
+- Nu kiest de code eerst printer-class endpoints (USB interface class `7`) met bulk OUT, met interface `0` alleen als lichte fallback.
+
+**Verwacht effect:**
+- Minder kans op "false success" (status completed) zonder fysieke labeloutput op apparaten met meerdere USB interfaces/alternates.
+
+**Aanvullende codefix (Lighthouse testpayload):**
+- In `src/components/admin/AdminPrinterManager.tsx` is voor Lighthouse/PPLZ een ultra-minimale ZPL testpayload toegevoegd.
+- Uitgebreide ZPL testcommando's (`~SD`, `^PR`, `^PW`, `^LL`, kader/graphics) worden voor dit profiel vermeden.
+- Doel: printerfout/storing voorkomen wanneer firmware wel data ontvangt maar uitgebreide commando's afkeurt.
+
+### Update sessie 10 augustus 2026 — USB Vendor/Product drift bij Lighthouse opgelost
+
+**Gemeld probleem:**
+- USB Vendor/Product van Lighthouse veranderde schijnbaar telkens na aan/uit of her-koppelen.
+- Voorbeeld in UI: onrealistische waarden zoals `140066:82978`, wat auto-match en printstabiliteit brak.
+
+**Root cause in code:**
+- In `AdminPrinterManager` werd `parseUsbId` foutief als hex-parser gebruikt voor vrijwel alle invoer (`"0x" + waarde`).
+- Gevolg: geldige decimale IDs werden bij laden/bewerken opnieuw verkeerd omgerekend, waardoor VID/PID per cyclus konden "driften".
+
+**Fix uitgevoerd:**
+- `parseUsbId` in `AdminPrinterManager` herschreven:
+    - ondersteunt nu expliciet decimal en `0x`-hex;
+    - accepteert alleen veilige integers binnen USB-bereik `1..65535`.
+- In `handleSave` worden `vendorId` en `productId` nu altijd genormaliseerd opgeslagen.
+- Bij ongeldige WebUSB IDs wordt save geblokkeerd met duidelijke foutmelding en advies om opnieuw te koppelen.
+
+**Verwacht effect:**
+- VID/PID blijven stabiel over edit/save-cycli.
+- Corrupte buiten-range waarden worden niet meer persistent opgeslagen.
+
 ### Update sessie 10 augustus 2026 — Deploy uitgevoerd (hosting)
 
 **Uitgevoerde volgorde (conform afspraak):**

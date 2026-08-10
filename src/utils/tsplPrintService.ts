@@ -370,9 +370,9 @@ export const buildTsplUsbPayload = ({
 
   if (qty === 1) return base;
 
-  // Verwijder PRINT 1,1 uit tussenliggende blokken en voeg één gecombineerde PRINT toe
+  // Hergebruik één labelblok en pas alleen het aantal afdrukken aan.
   const withoutPrint = base.replace(/\r?\nPRINT\s+\d+,\d+\s*$/, '');
-  return Array.from({ length: qty }, () => withoutPrint).join('\r\n') + `\r\nPRINT ${qty},1\r\n`;
+  return `${withoutPrint}\r\nPRINT ${qty},1\r\n`;
 };
 
 export type TsplBitmapRenderArgs = {

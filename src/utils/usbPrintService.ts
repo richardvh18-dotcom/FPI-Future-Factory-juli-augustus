@@ -152,25 +152,49 @@ const getOutEndpoint = (
   device: USBDevice
 ): { interfaceNumber: number; alternateSetting: number; endpointNumber: number } | null => {
   const interfaces = device.configuration?.interfaces || [];
-  const priorityInterfaces = [
-    ...interfaces.filter((iface) => iface.interfaceNumber === 0),
-    ...interfaces.filter((iface) => iface.interfaceNumber !== 0),
-  ];
+  const candidates: Array<{
+    interfaceNumber: number;
+    alternateSetting: number;
+    endpointNumber: number;
+    score: number;
+  }> = [];
 
-  for (const iface of priorityInterfaces) {
+  for (const iface of interfaces) {
     for (const alternate of iface.alternates || []) {
-      const endpoint = (alternate.endpoints || []).find((ep) => ep.direction === "out");
-      if (endpoint) {
-        return {
+      const outEndpoints = (alternate.endpoints || []).filter((ep) => ep.direction === "out");
+      for (const endpoint of outEndpoints) {
+        let score = 0;
+
+        // USB printer-class interfaces zijn de veiligste keuze voor raw label output.
+        if (alternate.interfaceClass === 7) score += 100;
+        if (alternate.interfaceSubclass === 1) score += 20;
+        if (alternate.interfaceProtocol === 1 || alternate.interfaceProtocol === 2) score += 10;
+
+        // Bulk is doorgaans het juiste transport voor label printers.
+        if (endpoint.type === "bulk") score += 30;
+
+        // Historische fallback: interface 0 vaak bruikbaar, maar niet als primaire voorkeur.
+        if (iface.interfaceNumber === 0) score += 5;
+
+        candidates.push({
           interfaceNumber: iface.interfaceNumber,
           alternateSetting: alternate.alternateSetting,
           endpointNumber: endpoint.endpointNumber,
-        };
+          score,
+        });
       }
     }
   }
 
-  return null;
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => b.score - a.score);
+  const best = candidates[0];
+  return {
+    interfaceNumber: best.interfaceNumber,
+    alternateSetting: best.alternateSetting,
+    endpointNumber: best.endpointNumber,
+  };
 };
 
 const safeCloseDevice = async (device: USBDevice | null | undefined): Promise<void> => {
@@ -467,11 +491,9 @@ export const printRawUsbToDevice = async ({
       }
     };
 
-    try {
+    if (data.length <= USB_TRANSFER_CHUNK_SIZE) {
       await transferPayload(data);
-    } catch (err) {
-      const fallbackNeeded = data.length > USB_TRANSFER_CHUNK_SIZE;
-      if (!fallbackNeeded) throw err;
+    } else {
       for (let offset = 0; offset < data.length; offset += USB_TRANSFER_CHUNK_SIZE) {
         const chunk = data.slice(offset, offset + USB_TRANSFER_CHUNK_SIZE);
         await transferPayload(chunk);

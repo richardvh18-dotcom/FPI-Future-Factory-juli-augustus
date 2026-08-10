@@ -187,11 +187,29 @@ const getErrMsg = (err: unknown): string => {
 const colPath = (path: string[]) => collection(db, getPathString(path));
 const docPath = (path: string[], id?: string) => (id ? doc(db, `${getPathString(path)}/${id}`) : doc(db, getPathString(path)));
 
+const MAX_USB_ID = 0xffff;
+
 const parseUsbId = (idStr: unknown): number | undefined => {
-  if (!idStr) return undefined;
-  const trimmed = String(idStr).trim();
-  const parsed = parseInt(trimmed.startsWith('0x') ? trimmed : "0x" + trimmed, 16);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  if (idStr === undefined || idStr === null || idStr === "") return undefined;
+
+  let parsed: number;
+  if (typeof idStr === "number") {
+    parsed = idStr;
+  } else {
+    const trimmed = String(idStr).trim();
+    if (!trimmed) return undefined;
+
+    if (/^0x[0-9a-f]+$/i.test(trimmed)) {
+      parsed = parseInt(trimmed, 16);
+    } else if (/^[0-9]+$/.test(trimmed)) {
+      parsed = parseInt(trimmed, 10);
+    } else {
+      return undefined;
+    }
+  }
+
+  if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > MAX_USB_ID) return undefined;
+  return parsed;
 };
 
 const PRINTER_PROTOCOLS: PrinterProtocol[] = ["zpl", "epl", "tspl", "escpos", "custom"];
@@ -1251,6 +1269,20 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       return showError('IP adres is verplicht voor netwerkprinters.');
     }
 
+    const parsedVendorId = parseUsbId(formData.vendorId);
+    const parsedProductId = parseUsbId(formData.productId);
+    const hasVendorInput = formData.vendorId !== null && formData.vendorId !== undefined && String(formData.vendorId).trim() !== '';
+    const hasProductInput = formData.productId !== null && formData.productId !== undefined && String(formData.productId).trim() !== '';
+
+    if (normalizePrinterType(formData.type) === CONNECTION_TYPES.WEBUSB) {
+      if (hasVendorInput && parsedVendorId === undefined) {
+        return showError('USB Vendor ID is ongeldig. Koppel de printer opnieuw.');
+      }
+      if (hasProductInput && parsedProductId === undefined) {
+        return showError('USB Product ID is ongeldig. Koppel de printer opnieuw.');
+      }
+    }
+
     try {
       const normalizedRollWidth = String(Math.max(20, resolveRollWidthMm(formData)));
       const parsedSpeed = parseInt(formData.speed, 10);
@@ -1264,6 +1296,8 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         routingKeys: serializeRoutingKeys(formData.routingKeysText),
         department: formData.department || "",
         locationLabel: formData.locationLabel || "",
+        vendorId: parsedVendorId ?? null,
+        productId: parsedProductId ?? null,
         usbSerialNumber: normalizeUsbSerial(formData.usbSerialNumber),
         // Legacy compat: bestaand veld blijft gevuld voor oude flows.
         width: normalizedRollWidth,
@@ -1772,7 +1806,29 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       ].join('\n') + '\n';
     }
 
-    // ZPL/default: bewust zonder QR voor maximale firmware-compatibiliteit.
+    const zplHint = [
+      String(printer?.name || ''),
+      String(printer?.deviceName || ''),
+      String(printer?.driverModel || ''),
+    ].join(' ').toUpperCase();
+    const isLighthouseLike = zplHint.includes('LIGHTHOUSE') || zplHint.includes('PPLZ') || zplHint.includes('CJ-PRO');
+
+    // Lighthouse/PPLZ: ultra-minimale ZPL om firmware-fouten op uitgebreide commando's te vermijden.
+    if (isLighthouseLike) {
+      const safeTitle = String(title || 'TEST PRINT').replace(/[\^~]/g, ' ').slice(0, 24);
+      const safePrinter = String(printer.name || 'PRINTER').replace(/[\^~]/g, ' ').slice(0, 24);
+      return [
+        '^XA',
+        '^CI28',
+        '^LH0,0',
+        `^FO24,24^A0N,34,28^FD${safeTitle}^FS`,
+        `^FO24,70^A0N,24,20^FD${safePrinter}^FS`,
+        '^XZ',
+        '',
+      ].join('\r\n');
+    }
+
+    // ZPL/default: zonder QR voor maximale firmware-compatibiliteit.
     let zpl = `^XA
 ~SD${darkness}
 ^PR${printSpeed}
