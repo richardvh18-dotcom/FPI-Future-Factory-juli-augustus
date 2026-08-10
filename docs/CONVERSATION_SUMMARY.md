@@ -6,6 +6,21 @@
 
 ---
 
+### Update sessie 10 augustus 2026 (vervolg) — gateway_pc jobs fix & queuePrintJob IAM 
+
+**Symptomen:** 
+- Frontend crashte met `FirebaseError: Invalid collection reference. Collection references must have an odd number of segments, but future-factory/settings/gateway_pc/jobs has 4.`
+- Callable `queuePrintJob` gaf een HTTP 500 error en een 7 PERMISSION_DENIED op de server, ondanks eerdere IAM-fixes.
+
+**Codebug gevonden en gefixt:**
+- In `src/services/gatewayPcService.ts` en `src/components/digitalplanning/terminal/TerminalPlanningView.tsx` verwees de code voor de gateway PC print jobs onterecht naar een even aantal segmenten via `collection(..., 'future-factory/settings/gateway_pc/jobs')`. 
+- Fix: Dit is gecorrigeerd naar `future-factory/settings/gateway_pc/main/jobs`, zodat `jobs` correct als subcollectie van het `main` instellingendocument fungeert. 
+
+**IAM Rechten:**
+- Via `gcloud` de rol `roles/datastore.user` officieel toegekend aan `future-factory-377ef@appspot.gserviceaccount.com`. De aanhoudende 500-errors op `queuePrintJob` bleken te komen door de GCP IAM-caching (propagatie duurt 1 tot 5 minuten). Na het wachten van enkele minuten was het probleem succesvol verholpen.
+
+---
+
 ### Update sessie 10 augustus 2026 — startProductionLots 500 diagnose + fix
 
 **Symptoom:** `startProductionLots` callable geeft 500 Internal Server Error met `FirebaseError: INTERNAL` op de client. In Firebase Functions logs staat `7 PERMISSION_DENIED: Missing or insufficient permissions.` van de Firestore Admin SDK.
@@ -18912,3 +18927,10 @@ equiredAppFeature\ (bijv. 'factory_structure') nodig is. Gebruikers zien allÃƒ
   - **Oplossing Resource-Exhausted & Crash:** De initiële bulk-zoekopdracht over 35 mappen veroorzaakte een Firebase quota error. Dit is opgelost door queries sequentiëel en asynchroon uit te voeren (lazy thunks) met een vroege 'break' zodra de order is gevonden. 
   - **Oplossing CollectionGroup Crash:** Een foutieve fallback zoekactie via `where(documentId(), ">=", searchStr)` op een `collectionGroup` is verwijderd. Deze combinatie met een niet-volledig pad forceerde een fatale crash in de Firebase client waardoor de gevonden resultaten niet werden getoond.
   - **Documentatie:** Ter voorbereiding op opschaling (11 machines, Spoolbouw, Shipping) is [10_SEARCH_ARCHITECTURE_ROADMAP.md](file:///d:/Antygravity/FPI-Future-Factory-juli-augustus/docs/10_SEARCH_ARCHITECTURE_ROADMAP.md) opgesteld. Hierin staat de strategie omschreven om de database-reads laag te houden via een centraal `global_search_index` of externe zoekmachine naarmate de data-volumes groeien.
+
+ -   * * B u g f i x   ( B M 0 1   N a h a r d i n g   B a t c h ) * * :   R e p l a c e d   b l o c k i n g   w i n d o w . c o n f i r m   w i t h   a   c u s t o m   R e a c t   m o d a l   t o   p r e v e n t   b r o w s e r   s i l e n c e s . 
+ -   * * P e r f o r m a n c e   ( B M 0 1   N a h a r d i n g   B a t c h ) * * :   R e f a c t o r e d   c o n f i r m N a h a r d i n g B a t c h C o m p l e t e   t o   p r o c e s s   8 0 +   i t e m s   c o n c u r r e n t l y   i n   c h u n k s   o f   1 0   ( v i a   P r o m i s e . a l l ) ,   r e d u c i n g   w a i t   t i m e   f r o m   > 1   m i n u t e   d o w n   t o   ~ 1 0   s e c o n d s .  
+ 
+ # # #   T o e k o m s t i g e   F e a t u r e   /   B a c k l o g 
+ -   * * W e b U S B   B i - d i r e c t i o n e l e   P r i n t e r   S t a t u s   ( F y s i e k e   P r i n t   C o n t r o l e ) * * :   M o m e n t e e l   m e l d t   d e   W e b U S B   P r i n t Q u e u e   o p d r a c h t e n   a f   z o d r a   z e   n a a r   d e   Z P L - b u f f e r   v a n   d e   p r i n t e r   z i j n   g e s t u u r d .   H e t   i d e e   i s   g e o p p e r d   o m   d e   U S B   \ 	 r a n s f e r I n \   A P I   t e   g e b r u i k e n   g e c o m b i n e e r d   m e t   Z e b r a ' s   \ ~ H S \   ( H o s t   S t a t u s )   c o m m a n d o .   H i e r d o o r   k a n   d e   f a b r i e k s - P C   w a c h t e n   o p   e e n   h a r d w a r e - b e v e s t i g i n g   d a t   h e t   l a b e l   f y s i e k   u i t   d e   p r i n t e r   i s   g e r o l d   ( z o n d e r   e r r o r s   z o a l s   R i b b o n   O u t   o f   P a p e r   O u t )   v o o r d a t   d e   s t a t u s   i n   F i r e s t o r e   n a a r   ' G e p r i n t '   v e r a n d e r t .   D i t   z o r g t   e r v o o r   d a t   o p e r a t o r s   v a n u i t   h u i s   z e k e r   w e t e n   d a t   d e   l a b e l s   f y s i e k   k l a a r l i g g e n   i n   d e   f a b r i e k .  
+ 

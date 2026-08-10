@@ -169,6 +169,7 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
   const [scanInput, setScanInput] = useState("");
   const [scannerMode, setScannerMode] = useState(true);
     const [isNahardingBatchProcessing, setIsNahardingBatchProcessing] = useState(false);
+    const [showBatchConfirmModal, setShowBatchConfirmModal] = useState(false);
     const scanInputRef = useRef<HTMLInputElement | null>(null);
     const selectedProductRef = useRef<ProductRecord | null>(null); // Ref voor race-condition preventie
         const { touchKeyboardPreferred, setTouchKeyboardPreferred } = useTouchKeyboardPreference();
@@ -638,41 +639,53 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
 
     const handleNahardingBatchComplete = async () => {
         if (isNahardingBatchProcessing) return;
+        
         const batchItems = nahardingBatchProducts.filter((item) => Boolean(resolveProductIdentifier(item)));
+        
         if (batchItems.length === 0) {
             notify(t("bm01.naharding_batch_empty", "Geen Naharding lots gevonden om te gereedmelden."));
             return;
         }
 
-        const confirmed = window.confirm(
-            t(
-                "bm01.naharding_batch_confirm",
-                "Weet je zeker dat je de laatst aangeboden batch ({{count}} Naharding lots) in 1x gereed wilt melden en archiveren?",
-                { count: batchItems.length }
-            )
-        );
-        if (!confirmed) return;
+        setShowBatchConfirmModal(true);
+    };
 
+    const confirmNahardingBatchComplete = async () => {
+        setShowBatchConfirmModal(false);
         setIsNahardingBatchProcessing(true);
+        
+        const batchItems = nahardingBatchProducts.filter((item) => Boolean(resolveProductIdentifier(item)));
         let successCount = 0;
         let failCount = 0;
 
-        for (const item of batchItems) {
-            const productId = resolveProductIdentifier(item);
-            try {
-                await completeTrackedProduct({
-                    productId,
-                    finishType: "archive",
-                    fromStation: "Naharding",
-                    note: "Batch Naharding gereedgemeld vanuit BM01",
-                    actorLabel: user?.email || "Operator",
-                    source: "BM01Hub:naharding-batch",
-                });
-                successCount += 1;
-            } catch (error) {
-                failCount += 1;
-                console.error("Naharding batch gereedmelden mislukt:", productId, error);
-            }
+        // Parallelliseren in chunks van 10 om Firebase niet direct te overbelasten, maar wel veel sneller te zijn
+        const chunkSize = 10;
+        for (let i = 0; i < batchItems.length; i += chunkSize) {
+            const chunk = batchItems.slice(i, i + chunkSize);
+            
+            const promises = chunk.map(async (item) => {
+                const productId = resolveProductIdentifier(item);
+                try {
+                    await completeTrackedProduct({
+                        productId,
+                        finishType: "archive",
+                        fromStation: "Naharding",
+                        note: "Batch Naharding gereedgemeld vanuit BM01",
+                        actorLabel: user?.email || "Operator",
+                        source: "BM01Hub:naharding-batch",
+                    });
+                    return { success: true, productId };
+                } catch (error) {
+                    console.error("Naharding batch gereedmelden mislukt:", productId, error);
+                    return { success: false, productId };
+                }
+            });
+
+            const results = await Promise.all(promises);
+            results.forEach((res) => {
+                if (res.success) successCount++;
+                else failCount++;
+            });
         }
 
         try {
@@ -1775,6 +1788,43 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
               onConfirm={handlePostProcessingFinish}
               currentStation="BM01"
           />
+        </div>
+      )}
+
+      {showBatchConfirmModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-3xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                <div className="p-6 bg-amber-50 border-b border-amber-100 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                        <CheckCircle2 size={24} />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-black text-slate-800">Batch Gereedmelden</h2>
+                        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-0.5">{nahardingBatchProducts.length} Lots in deze batch</p>
+                    </div>
+                </div>
+                <div className="p-6">
+                    <p className="text-sm font-bold text-slate-600">
+                        Weet je zeker dat je de laatst aangeboden batch in 1x gereed wilt melden en archiveren?
+                    </p>
+                    <div className="mt-8 flex justify-end gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setShowBatchConfirmModal(false)}
+                            className="px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-black text-slate-500 hover:bg-slate-50 transition-colors uppercase tracking-wider"
+                        >
+                            {t("common.cancel", "Annuleren")}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={confirmNahardingBatchComplete}
+                            className="px-5 py-2.5 rounded-xl bg-amber-500 text-white shadow-sm hover:bg-amber-600 text-sm font-black uppercase tracking-wider transition-colors"
+                        >
+                            {t("common.confirm", "Ja, Gereedmelden")}
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
       )}
 

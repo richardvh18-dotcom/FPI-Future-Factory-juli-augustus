@@ -195,7 +195,7 @@ export const enqueueGatewayPcJob = async (type: string, payload: GatewayPcDispat
     status: 'prepared',
   };
 
-  const docRef = await addDoc(collection(db, 'future-factory/settings/gateway_pc/jobs'), preparedPayload);
+  const docRef = await addDoc(collection(db, 'future-factory/settings/gateway_pc/main/jobs'), preparedPayload);
   return docRef.id;
 };
 

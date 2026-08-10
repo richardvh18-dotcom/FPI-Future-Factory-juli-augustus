@@ -205,7 +205,7 @@ const TerminalPlanningView = ({
       return;
     }
 
-    const jobsRef = collection(db, 'future-factory/settings/gateway_pc/jobs');
+    const jobsRef = collection(db, 'future-factory/settings/gateway_pc/main/jobs');
     const q = query(
       jobsRef,
       where('type', '==', 'robot_program_prepared'),
