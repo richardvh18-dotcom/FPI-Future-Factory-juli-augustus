@@ -330,18 +330,10 @@ const selectUsbDevice = async (printer: UsbPrinterFilterInput = {}): Promise<USB
 
   if (matchAuthorized) return matchAuthorized;
 
+  // Altijd zonder filter vragen — één popup, geen dubbele requestDevice.
   try {
-    return await navigator.usb.requestDevice({ filters });
+    return await navigator.usb.requestDevice({ filters: [] });
   } catch (err: unknown) {
-    const isNotFound = err instanceof Error && err.name === "NotFoundError";
-    // Als profiel-filters te strikt of onjuist zijn, geef een tweede kans zonder filters.
-    if (isNotFound && filters.length > 0) {
-      try {
-        return await navigator.usb.requestDevice({ filters: [] });
-      } catch (fallbackErr: unknown) {
-        throw normalizeUsbError(fallbackErr);
-      }
-    }
     throw normalizeUsbError(err);
   }
 };

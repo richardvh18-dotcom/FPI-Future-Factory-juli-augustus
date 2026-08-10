@@ -1864,11 +1864,13 @@ const PrintQueueAdminView = () => {
   useEffect(() => {
     const matchedPrinter = resolveUsbBoundPrinter(printers, usbDevice, stationContext || undefined);
     const currentPrinterId = matchedPrinter?.id || null;
+    console.log('[AutoPrint] check', { autoPrint, hasUsbDevice: !!usbDevice, usbVid: usbDevice?.vendorId, usbPid: usbDevice?.productId, isProcessing, currentPrinterId, matchedPrinterName: matchedPrinter?.name });
     if (!autoPrint || !usbDevice || isProcessing || !currentPrinterId) return;
 
     const pendingJobs = printJobs.filter((j) => {
       // Only pick jobs that are still pending. Processing/printing jobs are already claimed.
       if (normalizeQueueStatus(j.status) !== 'pending') return false;
+      console.log('[AutoPrint] job check', { jobId: j.id, jobPrinterId: j.printerId, currentPrinterId, match: j.printerId === currentPrinterId });
       if (j.printerId !== currentPrinterId) return false;
       if (!selectedStation) return true;
       const selectedKey = normalizeStationKey(selectedStation);
