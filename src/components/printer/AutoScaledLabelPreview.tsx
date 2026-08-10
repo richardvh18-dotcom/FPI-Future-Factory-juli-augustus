@@ -8,6 +8,12 @@ const getPixelsPerMm = (printerDpi = 203) => {
   return (printerDpi || 203) / 25.4;
 };
 
+const quantizeScale = (value: number) => {
+  const safe = Number.isFinite(value) ? value : 1;
+  // Houd schaal stabiel op vaste stapjes om subpixel-jitter te beperken.
+  return Math.round(safe * 64) / 64;
+};
+
 interface LabelDefinition {
   width?: number;
   height?: number;
@@ -69,8 +75,10 @@ const AutoScaledLabelPreview = ({
       }
 
       if (newScale > maxScale) newScale = maxScale;
+      newScale = quantizeScale(newScale);
 
-      setScale(newScale);
+      // Alleen updaten bij significante wijziging — voorkomt ResizeObserver feedback loop
+      setScale(prev => Math.abs(prev - newScale) < 0.005 ? prev : newScale);
     };
 
     const observer = new ResizeObserver(calculateScale);

@@ -66,6 +66,13 @@ const getPixelsPerMm = (printerDpi = 203) => {
   return (printerDpi || 203) / 25.4;
 };
 
+const snapPx = (value: number): number => {
+  if (!Number.isFinite(value)) return 0;
+  if (typeof window === 'undefined') return value;
+  const dpr = Math.max(1, Number(window.devicePixelRatio) || 1);
+  return Math.round(value * dpr) / dpr;
+};
+
 const getLongestPreviewLineLength = (value: unknown): number => {
   const lines = String(value || "").split(/\r?\n/);
   return lines.reduce((maxLen, line) => Math.max(maxLen, line.length), 0);
@@ -190,12 +197,12 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
 
         const baseStyle: React.CSSProperties = {
           position: "absolute",
-          left: `${(x + layoutNudge.xMm) * pixelsPerMm * zoom}px`,
-          top: `${(y + layoutNudge.yMm) * pixelsPerMm * zoom}px`,
-          width: widthMm ? `${widthMm * pixelsPerMm * zoom}px` : "auto",
-          height: heightMm ? `${heightMm * pixelsPerMm * zoom}px` : "auto",
+          left: `${snapPx((x + layoutNudge.xMm) * pixelsPerMm * zoom)}px`,
+          top: `${snapPx((y + layoutNudge.yMm) * pixelsPerMm * zoom)}px`,
+          width: widthMm ? `${snapPx(widthMm * pixelsPerMm * zoom)}px` : "auto",
+          height: heightMm ? `${snapPx(heightMm * pixelsPerMm * zoom)}px` : "auto",
           color: elementColor,
-          transform: `rotate(${rotation}deg)`,
+          transform: rotation ? `rotate(${rotation}deg)` : undefined,
           transformOrigin: "top left",
           overflow: "hidden",
           textAlign: "left",
@@ -212,14 +219,14 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
               style={{
                 ...baseStyle,
                 width: isVerticalRotation
-                  ? `${(heightMm || widthMm || 1) * pixelsPerMm * zoom}px`
-                  : `${widthMm * pixelsPerMm * zoom}px`,
+                  ? `${snapPx((heightMm || widthMm || 1) * pixelsPerMm * zoom)}px`
+                  : `${snapPx(widthMm * pixelsPerMm * zoom)}px`,
                 height: isVerticalRotation
-                  ? `${(widthMm || heightMm || 1) * pixelsPerMm * zoom}px`
+                  ? `${snapPx((widthMm || heightMm || 1) * pixelsPerMm * zoom)}px`
                   : (heightMm
-                    ? `${heightMm * pixelsPerMm * zoom}px`
+                    ? `${snapPx(heightMm * pixelsPerMm * zoom)}px`
                     : "auto"),
-                fontSize: `${textStyle.fontSize}px`,
+                fontSize: `${snapPx(textStyle.fontSize)}px`,
                 lineHeight: textStyle.lineHeight,
                 fontWeight: el.isBold ? "800" : "700",
                 fontStyle: el.isItalic ? "italic" : "normal",
@@ -236,6 +243,8 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
                 overflowWrap: "anywhere",
                 wordBreak: "normal",
                 boxSizing: "border-box",
+                WebkitFontSmoothing: "antialiased",
+                textRendering: "geometricPrecision",
               }}
             >
               {displayContent}
@@ -249,8 +258,8 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
               key={index}
               style={{
                 ...baseStyle,
-                width: `${widthMm * pixelsPerMm * zoom}px`,
-                height: `${heightMm * pixelsPerMm * zoom}px`,
+                width: `${snapPx(widthMm * pixelsPerMm * zoom)}px`,
+                height: `${snapPx(heightMm * pixelsPerMm * zoom)}px`,
                 backgroundColor: elementColor,
               }}
             />
@@ -262,9 +271,9 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
               key={index}
               style={{
                 ...baseStyle,
-                width: `${widthMm * pixelsPerMm * zoom}px`,
-                height: `${heightMm * pixelsPerMm * zoom}px`,
-                border: `${(el.thickness || 1) * pixelsPerMm * zoom}px solid ${elementColor}`,
+                width: `${snapPx(widthMm * pixelsPerMm * zoom)}px`,
+                height: `${snapPx(heightMm * pixelsPerMm * zoom)}px`,
+                border: `${Math.max(1, snapPx((el.thickness || 1) * pixelsPerMm * zoom))}px solid ${elementColor}`,
                 backgroundColor: el.backgroundColor || undefined,
                 boxSizing: "border-box",
               }}
@@ -277,9 +286,9 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
               key={index}
               style={{
                 ...baseStyle,
-                width: `${widthMm * pixelsPerMm * zoom}px`,
-                height: `${heightMm * pixelsPerMm * zoom}px`,
-                border: `${(el.thickness || 1) * pixelsPerMm * zoom}px solid ${elementColor}`,
+                width: `${snapPx(widthMm * pixelsPerMm * zoom)}px`,
+                height: `${snapPx(heightMm * pixelsPerMm * zoom)}px`,
+                border: `${Math.max(1, snapPx((el.thickness || 1) * pixelsPerMm * zoom))}px solid ${elementColor}`,
                 backgroundColor: el.backgroundColor || undefined,
                 borderRadius: "50%",
                 boxSizing: "border-box",
@@ -291,8 +300,8 @@ const LabelVisualPreview = ({ label, data = {}, zoom = 1, className = "", printe
           return (
              <div key={index} style={{
                  ...baseStyle, 
-                 width: `${(el.width || 30) * pixelsPerMm * zoom}px`, 
-                 height: `${(el.height || 30) * pixelsPerMm * zoom}px`,
+               width: `${snapPx((el.width || 30) * pixelsPerMm * zoom)}px`, 
+               height: `${snapPx((el.height || 30) * pixelsPerMm * zoom)}px`,
                  background: "#f8fafc",
                  border: "1px solid #cbd5e1",
                  display: "flex",

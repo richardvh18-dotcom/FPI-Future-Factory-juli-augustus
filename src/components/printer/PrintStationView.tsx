@@ -349,11 +349,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
   };
 
   const selectedTemplate = topOptions.find((t: LabelTemplate) => t.id === selectedTemplateId) || topOptions[0];
-  const selectedTemplateChain = useMemo<LabelTemplate[]>(() => {
-    if (!selectedTemplate) return [];
-    return resolveLinkedTemplateChain(labelTemplates as any[], selectedTemplate.id, { maxDepth: 4 }) as LabelTemplate[];
-  }, [labelTemplates, selectedTemplate]);
-  const previewTemplates = selectedTemplateChain.length > 0 ? selectedTemplateChain : (selectedTemplate ? [selectedTemplate] : []);
+  const previewTemplates = selectedTemplate ? [selectedTemplate] : [];
 
   const previewData = useMemo<Record<string, unknown>>(() => {
     return buildOrderLabelPreviewData(item, labelRules);
@@ -777,9 +773,8 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
 
   const previewTemplates = useMemo(() => {
     if (!selectedTemplate) return [] as LabelTemplate[];
-    const chain = resolveLinkedTemplateChain(labelTemplates as any[], selectedTemplate.id, { maxDepth: 4 }) as LabelTemplate[];
-    return chain.length > 0 ? chain : [selectedTemplate];
-  }, [labelTemplates, selectedTemplate]);
+    return [selectedTemplate];
+  }, [selectedTemplate]);
 
   const handlePrintSelected = async () => {
     if (!selectedOrder || !selectedTemplateId || isSubmittingPrint) return;
@@ -1777,10 +1772,7 @@ const PrintStationView = () => {
 
   const handleTempLegacyPrint = async (orderData: AnyRecord, templateId: string, quantity = 1) => {
     const template = labelTemplates.find((t: LabelTemplate) => t.id === templateId);
-    const templateChain = template
-      ? (resolveLinkedTemplateChain(labelTemplates as any[], template.id, { maxDepth: 4 }) as LabelTemplate[])
-      : [];
-    const templatesToPrint = templateChain.length > 0 ? templateChain : (template ? [template] : []);
+    const templatesToPrint = template ? [template] : [];
     const dpi = printerDpi;
     const bitmapDarkness = Math.max(15, Number(printerDarkness) || 15);
 
@@ -1790,6 +1782,7 @@ const PrintStationView = () => {
     const printQuantity = Math.max(1, Number(quantity) || 1);
 
     let zpl;
+    let processedData: Record<string, unknown> | null = null;
 
     try {
       if (template) {
@@ -1803,7 +1796,7 @@ const PrintStationView = () => {
             description: desc,
             lotNumber: orderData.lotNumber || order
         });
-        const processLabelData = applyLabelLogic(labelData, labelRules);
+        processedData = applyLabelLogic(labelData, labelRules);
         const zplChunks: string[] = [];
 
         for (const currentTemplate of templatesToPrint) {
@@ -1812,7 +1805,7 @@ const PrintStationView = () => {
           const rendered = await renderLabelForPrinter({
             printer: activeQueuePrinter as Record<string, unknown>,
             template: currentTemplate as any,
-            data: processLabelData as AnyRecord,
+            data: processedData as AnyRecord,
             printerDpi: dpi,
             darkness: bitmapDarkness,
             printSpeed: 3,
@@ -1867,9 +1860,9 @@ const PrintStationView = () => {
           stationId: LABELS_PRINTING_QUEUE_STATION,
           targetPrinterName: activeQueuePrinter.name,
           source: 'temp_order_labels',
-          queuedAsBatch: templatesToPrint.length > 1,
+          queuedAsBatch: false,
           templateId: template?.id || null,
-          variables: template ? getCompactPrintVariables(processLabelData as Record<string, unknown>) : {
+          variables: template ? getCompactPrintVariables(processedData || {}) : {
             orderNumber: order,
             itemCode: item,
             description: desc,
@@ -1971,7 +1964,7 @@ const PrintStationView = () => {
             <h1 className="text-3xl font-bold text-slate-800">{t('printStationView.centralPrintStation', 'Centraal Printstation')}</h1>
           </div>
           <div className="flex items-center gap-3">
-            {('usb' in navigator) && (
+            {('usb' in navigator) && !/Electron/i.test(navigator.userAgent) && (
               <button 
                 onClick={handleConnectUsb}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold uppercase text-xs tracking-wider transition-all shadow-sm border-2 ${

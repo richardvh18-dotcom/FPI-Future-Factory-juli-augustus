@@ -588,5 +588,8 @@ export const printRawUsb = async ({
 };
 
 export const isUsbDirectSupported = (): boolean => {
-  return typeof window !== "undefined" && typeof navigator !== "undefined" && !!navigator.usb && !!window.isSecureContext;
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  // Electron (bijv. VS Code ingebouwde browser) crasht bij requestDevice() — knop verbergen.
+  if (/Electron/i.test(navigator.userAgent)) return false;
+  return !!navigator.usb && !!window.isSecureContext;
 };

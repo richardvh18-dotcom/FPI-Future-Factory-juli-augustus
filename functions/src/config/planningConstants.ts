@@ -114,6 +114,7 @@ const START_PRODUCTION_ALLOWED_ROLES = new Set([
   'planner',
   'engineer',
   'management',
+  'supervisor',
 ]);
 
 const TRANSITION_ALLOWED_ROLES = new Set([

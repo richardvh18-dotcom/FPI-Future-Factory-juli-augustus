@@ -492,11 +492,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, han
   }, [topOptions, selectedTemplateId]);
 
   const selectedTemplate = topOptions.find((t) => String(t.id) === selectedTemplateId) || topOptions[0];
-  const selectedTemplateChain = useMemo<LabelTemplate[]>(() => {
-    if (!selectedTemplate) return [];
-    return resolveLinkedTemplateChain(labelTemplates as any[], selectedTemplate.id, { maxDepth: 4 }) as LabelTemplate[];
-  }, [labelTemplates, selectedTemplate]);
-  const previewTemplates = selectedTemplateChain.length > 0 ? selectedTemplateChain : (selectedTemplate ? [selectedTemplate] : []);
+  const previewTemplates = selectedTemplate ? [selectedTemplate] : [];
 
   const previewData = useMemo(() => {
     return buildOrderLabelPreviewData(item, labelRules);
@@ -575,10 +571,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
 
     let zpl;
     const printQuantity = Math.max(1, Number(quantity) || 1);
-    const templateChain = template
-      ? (resolveLinkedTemplateChain(labelTemplates as any[], template.id, { maxDepth: 4 }) as LabelTemplate[])
-      : [];
-    const templatesToPrint = templateChain.length > 0 ? templateChain : (template ? [template as LabelTemplate] : []);
+    const templatesToPrint = template ? [template as LabelTemplate] : [];
 
     if (template) {
       try {
@@ -631,72 +624,28 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
 
     try {
       if (activeQueuePrinter?.id) {
-        if (template && templatesToPrint.length > 0) {
-          for (let idx = 0; idx < templatesToPrint.length; idx++) {
-            const currentTemplate = templatesToPrint[idx];
-            const widthMm = Number((currentTemplate as any)?.width || 90);
-            const heightMm = Number((currentTemplate as any)?.height || 40);
-            const currentZpl = await renderLabelForPrinter({
-              printer: activeQueuePrinter as Record<string, unknown>,
-              template: currentTemplate as any,
-              data: processedData as AnyRecord,
-              printerDpi: dpi,
-              darkness,
-              printSpeed: 3,
-              widthMm,
-              heightMm,
-            });
-
-            await queuePrintJob(
-              activeQueuePrinter.id,
-              currentZpl,
-              {
-                description: `Order label voor ${order}`,
-                quantity: printQuantity,
-                orderId: order,
-                lotNumber: orderData.lotNumber || order,
-                stationId: LABELS_PRINTING_QUEUE_STATION,
-                targetPrinterName: activeQueuePrinter.name,
-                width: parseInt(String(widthMm), 10),
-                height: parseInt(String(heightMm), 10),
-                renderMode: 'bitmap',
-                variables: template ? getCompactPrintVariables(processedData as Record<string, unknown>) : {
-                  orderNumber: order,
-                  productId: item,
-                  description: desc,
-                },
-                templateId: currentTemplate?.id || null,
-                source: 'temp_order_labels',
-                linkedSequenceIndex: idx + 1,
-                linkedSequenceTotal: templatesToPrint.length,
-                linkedRootTemplateId: template?.id || null,
-              }
-            );
+        await queuePrintJob(
+          activeQueuePrinter.id,
+          zpl,
+          {
+            description: `Order label voor ${order}`,
+            quantity: printQuantity,
+            orderId: order,
+            lotNumber: orderData.lotNumber || order,
+            stationId: LABELS_PRINTING_QUEUE_STATION,
+            targetPrinterName: activeQueuePrinter.name,
+            width: parseInt(String(template?.width || 90), 10),
+            height: parseInt(String(template?.height || 40), 10),
+            renderMode: 'bitmap',
+            variables: template ? getCompactPrintVariables(processedData as Record<string, unknown>) : {
+              orderNumber: order,
+              productId: item,
+              description: desc,
+            },
+            templateId: template?.id || null,
+            source: 'temp_order_labels'
           }
-        } else {
-          await queuePrintJob(
-            activeQueuePrinter.id,
-            zpl,
-            {
-              description: `Order label voor ${order}`,
-              quantity: printQuantity,
-              orderId: order,
-              lotNumber: orderData.lotNumber || order,
-              stationId: LABELS_PRINTING_QUEUE_STATION,
-              targetPrinterName: activeQueuePrinter.name,
-              width: parseInt(String(template?.width || 90), 10),
-              height: parseInt(String(template?.height || 40), 10),
-              renderMode: 'bitmap',
-              variables: template ? getCompactPrintVariables(processedData as Record<string, unknown>) : {
-                orderNumber: order,
-                productId: item,
-                description: desc,
-              },
-              templateId: template?.id || null,
-              source: 'temp_order_labels'
-            }
-          );
-        }
+        );
         notify(t("common.printLabelQueued", { order, printer: activeQueuePrinter.name }));
         return;
       }
@@ -2790,7 +2739,7 @@ const PrintQueueAdminView = () => {
             {autoPrint ? "Auto-Print AAN" : "Auto-Print UIT"}
           </button>
 
-          {isUsbDirectSupported() && (
+          {isUsbDirectSupported() ? (
             <button
               onClick={handleConnectUsb}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs uppercase transition-all border-2 ${
@@ -2804,6 +2753,27 @@ const PrintQueueAdminView = () => {
                 ? `USB: ${String(connectedConfiguredPrinter?.name || usbDevice.productName || 'Printer')}`
                 : 'Koppel USB Printer'}
             </button>
+          ) : (
+            /* In Electron/VS Code: USB requestDevice crasht — selecteer printer direct via dropdown */
+            <div className="flex items-center gap-2">
+              <Printer size={16} className="text-slate-400 shrink-0" />
+              <select
+                value={String(localStorage.getItem(USB_PRINTER_ID_KEY) || '')}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (id) localStorage.setItem(USB_PRINTER_ID_KEY, id);
+                  else localStorage.removeItem(USB_PRINTER_ID_KEY);
+                  // Forceer re-render via kleine state-update
+                  setBindingStation((prev) => prev);
+                }}
+                className="px-3 py-2 rounded-xl border-2 border-slate-200 bg-white text-xs font-bold text-slate-700 focus:border-blue-400 focus:outline-none"
+              >
+                <option value="">Selecteer printer...</option>
+                {printers.map((p) => (
+                  <option key={p.id} value={p.id}>{String(p.name || p.id)}</option>
+                ))}
+              </select>
+            </div>
           )}
         </div>
       </div>
