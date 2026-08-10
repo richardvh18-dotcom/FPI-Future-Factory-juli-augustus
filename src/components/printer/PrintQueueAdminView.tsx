@@ -1437,7 +1437,8 @@ const PrintQueueAdminView = () => {
   const [printers, setPrinters] = useState<PrinterConfig[]>([]);
   const [usbDevice, setUsbDevice] = useState<USBDevice | null>(null);
   const usbDeviceRef = useRef<USBDevice | null>(null);
-  const [autoPrint, setAutoPrint] = useState<boolean>(true);
+  // In Electron/VS Code: geen WebUSB beschikbaar, auto-print altijd uit.
+  const [autoPrint, setAutoPrint] = useState<boolean>(() => isUsbDirectSupported() ? true : false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
 
@@ -1893,7 +1894,12 @@ const PrintQueueAdminView = () => {
             if (isUsbSessionIssue) {
               // Houd auto-print aan, maar forceer reconnect van USB zodat de volgende run schoon start.
               setUsbDevice(null);
-              setError(`Auto-print wacht op USB-herstel. Taak ${job.id} mislukt: ${message}`);
+              if (isUsbDirectSupported()) {
+                setError(`Auto-print wacht op USB-herstel. Taak ${job.id} mislukt: ${message}`);
+              } else {
+                setAutoPrint(false);
+                setError('Auto-print vereist een WebUSB-verbinding. Open de print wachtrij in Chrome op de factory PC.');
+              }
               break;
             }
 
@@ -2727,16 +2733,19 @@ const PrintQueueAdminView = () => {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setAutoPrint(!autoPrint)}
+            onClick={() => { if (isUsbDirectSupported()) setAutoPrint(!autoPrint); }}
+            disabled={!isUsbDirectSupported()}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs uppercase transition-all border-2 ${
-              autoPrint 
-                ? 'bg-blue-600 text-white border-blue-600 shadow-lg animate-pulse' 
-                : 'bg-white text-slate-400 border-slate-200'
+              !isUsbDirectSupported()
+                ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
+                : autoPrint 
+                  ? 'bg-blue-600 text-white border-blue-600 shadow-lg animate-pulse' 
+                  : 'bg-white text-slate-400 border-slate-200'
             }`}
-            title="Print nieuwe opdrachten automatisch zodra ze binnenkomen"
+            title={!isUsbDirectSupported() ? 'Auto-print vereist WebUSB — open printer-queue in Chrome op de factory PC' : 'Print nieuwe opdrachten automatisch zodra ze binnenkomen'}
           >
-            <Zap size={16} fill={autoPrint ? "currentColor" : "none"} />
-            {autoPrint ? "Auto-Print AAN" : "Auto-Print UIT"}
+            <Zap size={16} fill={autoPrint && isUsbDirectSupported() ? "currentColor" : "none"} />
+            {!isUsbDirectSupported() ? 'Auto-Print (Chrome vereist)' : autoPrint ? "Auto-Print AAN" : "Auto-Print UIT"}
           </button>
 
           {isUsbDirectSupported() ? (
