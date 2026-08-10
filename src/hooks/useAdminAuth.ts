@@ -98,7 +98,9 @@ const authStore = {
 
       try {
         const idTokenResult = await firebaseUser.getIdTokenResult();
-        let tokenRole = String(idTokenResult.claims.role || "").toLowerCase().trim();
+        const claimRole = String(idTokenResult.claims.role || "").toLowerCase().trim();
+        const claimRoles = String(idTokenResult.claims.roles || "").toLowerCase().trim();
+        let tokenRole = claimRole || claimRoles;
 
         const userRef = doc(db, ...(PATHS.USERS as [string, ...string[]]), currentUid);
         this.unsubscribeRole = onSnapshot(

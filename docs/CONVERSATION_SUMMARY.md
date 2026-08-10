@@ -13,6 +13,7 @@
 **Codebug gevonden en gefixt:**
 - In de `startProductionLots` catch-block werd `handleCallableError(error)` aangeroepen vóór `console.error`. Omdat `handleCallableError` unmapped errors opnieuw gooit, werd `console.error` nooit bereikt — foutdetails waren volledig onzichtbaar in de logs.
 - Fix: `console.error` verplaatst naar vóór `handleCallableError`. PERMISSION_DENIED (gRPC code 7) wordt nu expliciet afgevangen en omgezet naar `HttpsError('internal', ...)`.
+- Extra fallback toegevoegd in `resolveUserRoleForContext`: als Firestore bij rol-resolutie faalt, wordt dat nu niet meer als fatale callable-fout behandeld.
 
 **Diagnoselogs toegevoegd in `startProductionLotsService`:**
 - Stap-voor-stap `console.log` vóór: assertLotsAreUniqueInActiveTracking, counter transaction, batch.commit. Hierdoor is bij een volgende fout direct zichtbaar welke Firestore-stap mislukt.
@@ -20,7 +21,6 @@
 **Mogelijke oorzaak PERMISSION_DENIED:**
 - Firestore Admin SDK omzeilt security rules — dit is een IAM-level probleem op GCP.
 - Te controleren: GCP Console > IAM > service account `future-factory-377ef@appspot.gserviceaccount.com` moet `roles/firebase.admin` of `roles/datastore.user` hebben.
-- Of: recent gedeployde Firestore rules die (ondanks Admin SDK bypass) interactie hebben met een edge case.
 
 **Deploy:** `functions:startProductionLots` gedeployed naar `europe-west1`.
 
