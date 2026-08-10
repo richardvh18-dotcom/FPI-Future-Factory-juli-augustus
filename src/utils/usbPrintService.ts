@@ -424,19 +424,12 @@ export const requestUsbDevice = async (printer: UsbPrinterFilterInput = {}): Pro
     return device;
   };
 
+  // Gebruik altijd één popup zonder filter zodat de gebruiker elke printer kan kiezen.
+  // Dubbele requestDevice-aanroepen vermijden — dit veroorzaakte twee popups achter elkaar.
   try {
-    const selected = await navigator.usb.requestDevice({ filters });
+    const selected = await navigator.usb.requestDevice({ filters: [] });
     return ensureExpectedSerial(selected);
   } catch (err: unknown) {
-    const isNotFound = err instanceof Error && err.name === "NotFoundError";
-    if (isNotFound && filters.length > 0) {
-      try {
-        const selectedFallback = await navigator.usb.requestDevice({ filters: [] });
-        return ensureExpectedSerial(selectedFallback);
-      } catch (fallbackErr: unknown) {
-        throw normalizeUsbError(fallbackErr);
-      }
-    }
     throw normalizeUsbError(err);
   }
 };
