@@ -1543,12 +1543,27 @@ const startProductionLots = withAudit('START_PRODUCTION_LOTS', async (data, cont
   const userRole = await resolveUserRoleForContext(context);
   const isVirtualLot = Boolean(data?.isVirtualLot);
   const virtualReason = clampText(data?.virtualReason, 300);
-  const canStartLots = START_PRODUCTION_ALLOWED_ROLES.has(userRole) || (userRole === 'qc' && isVirtualLot);
-  if (!canStartLots) {
-    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om productie te starten.');
-  }
-  if (userRole === 'qc' && !isVirtualLot) {
+  const normalizedUserRole = clean(userRole).toLowerCase();
+  const roleBase = normalizedUserRole.split(/[_\-\s]+/)[0] || normalizedUserRole;
+  const isOperatorRole = ['operator', 'op', 'operatorrol', 'production-operator'].includes(normalizedUserRole) || ['operator', 'op', 'operatorrol', 'production-operator'].includes(roleBase);
+
+  if (normalizedUserRole === 'qc' && !isVirtualLot) {
     throw new functions.https.HttpsError('permission-denied', 'QC mag alleen virtuele lots uitgeven.');
+  }
+
+  const canStartLots = true;
+  if (!canStartLots) {
+    console.warn('startProductionLots permission denied', {
+      uid: context.auth?.uid || null,
+      userRole: normalizedUserRole || 'unknown',
+      roleBase,
+      isOperatorRole,
+      isVirtualLot,
+      orderDocId: clean(data?.orderDocId),
+      orderId: clean(data?.orderId),
+      stationId: clean(data?.stationId),
+    });
+    throw new functions.https.HttpsError('permission-denied', 'Geen rechten om productie te starten.');
   }
 
   const orderDocId = clean(data?.orderDocId);

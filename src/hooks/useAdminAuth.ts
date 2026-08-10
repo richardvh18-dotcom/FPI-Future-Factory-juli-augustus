@@ -98,9 +98,40 @@ const authStore = {
 
       try {
         const idTokenResult = await firebaseUser.getIdTokenResult();
-        const claimRole = String(idTokenResult.claims.role || "").toLowerCase().trim();
-        const claimRoles = String(idTokenResult.claims.roles || "").toLowerCase().trim();
-        let tokenRole = claimRole || claimRoles;
+        const normalizeRoleValue = (value: unknown): string => {
+          if (Array.isArray(value)) {
+            for (const entry of value) {
+              const normalized = normalizeRoleValue(entry);
+              if (normalized) return normalized;
+            }
+            return "";
+          }
+
+          if (value && typeof value === "object") {
+            const nestedRole = normalizeRoleValue((value as Record<string, unknown>).role);
+            if (nestedRole) return nestedRole;
+            const nestedRoles = normalizeRoleValue((value as Record<string, unknown>).roles);
+            if (nestedRoles) return nestedRoles;
+            return "";
+          }
+
+          return String(value || "").toLowerCase().trim();
+        };
+
+        const claimRoleCandidates = [
+          idTokenResult.claims.role,
+          idTokenResult.claims.roles,
+          idTokenResult.claims.customClaims?.role,
+          idTokenResult.claims.customClaims?.roles,
+        ];
+        let tokenRole = "";
+        for (const candidate of claimRoleCandidates) {
+          const normalizedRole = normalizeRoleValue(candidate);
+          if (normalizedRole) {
+            tokenRole = normalizedRole;
+            break;
+          }
+        }
 
         const userRef = doc(db, ...(PATHS.USERS as [string, ...string[]]), currentUid);
         this.unsubscribeRole = onSnapshot(
