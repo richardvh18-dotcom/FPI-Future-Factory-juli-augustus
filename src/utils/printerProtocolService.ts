@@ -171,7 +171,7 @@ export const buildProtocolAwareUsbPayload = ({
   const zplWithCutMode = applyCutMode(base);
   if (qty === 1) return zplWithCutMode;
 
-  const withQuantityApplied = zplWithCutMode.replace(/\^PQ[^\^\n]*/g, `^PQ${qty},0,1,Y`);
+  const withQuantityApplied = zplWithCutMode.replace(/\^PQ[^^\n]*/g, `^PQ${qty},0,1,Y`);
   if (withQuantityApplied !== zplWithCutMode) {
     return withQuantityApplied;
   }
