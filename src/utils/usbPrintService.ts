@@ -116,7 +116,14 @@ export const doesUsbDeviceMatchPrinter = (
   const expectedVendorId = parseUsbId(printer.vendorId ?? printer.usbVendorId);
   const expectedProductId = parseUsbId(printer.productId ?? printer.usbProductId);
   const expectedSerial = getExpectedUsbSerial(printer);
+  const deviceSerial = String(device.serialNumber || "").trim();
 
+  // Als er een serienummer verwacht wordt en deze klopt, is het altijd een match (cruciaal voor Lighthouse drift)
+  if (expectedSerial && deviceSerial === expectedSerial) {
+    return true;
+  }
+
+  // Fallback: als we het serienummer niet konden matchen of er geen serial is, test dan strikt op VID/PID.
   if (expectedVendorId !== undefined && Number(device.vendorId) !== expectedVendorId) {
     return false;
   }
@@ -130,12 +137,7 @@ export const doesUsbDeviceMatchPrinter = (
     return true;
   }
 
-  if (!expectedSerial) {
-    return false;
-  }
-
-  const deviceSerial = String(device.serialNumber || "").trim();
-  return Boolean(deviceSerial && deviceSerial === expectedSerial);
+  return false;
 };
 
 const ensureUsbSupport = (): void => {
@@ -370,20 +372,20 @@ export const findAuthorizedUsbDevice = async (
   const expectedSerial = getExpectedUsbSerial(printer);
   const authorizedDevices = await navigator.usb.getDevices();
 
+  // Als een serienummer is opgegeven, proberen we deze eerst te matchen in ALLE geautoriseerde apparaten.
+  // Dit lost het probleem op van printers (zoals Lighthouse) waarvan de VID/PID driften.
+  if (expectedSerial) {
+    const bySerial = authorizedDevices.find((d) => String(d.serialNumber || "").trim() === expectedSerial);
+    if (bySerial) return bySerial;
+  }
+
   if (filters.length === 0) {
-    if (expectedSerial) {
-      return authorizedDevices.find((d) => String(d.serialNumber || "").trim() === expectedSerial) || null;
-    }
     return authorizedDevices[0] || null;
   }
 
   const matchingByVidPid = authorizedDevices.filter((d) =>
     filters.some((f) => d.vendorId === f.vendorId && (f.productId ? d.productId === f.productId : true))
   );
-
-  if (expectedSerial) {
-    return matchingByVidPid.find((d) => String(d.serialNumber || "").trim() === expectedSerial) || null;
-  }
 
   return matchingByVidPid[0] || null;
 };

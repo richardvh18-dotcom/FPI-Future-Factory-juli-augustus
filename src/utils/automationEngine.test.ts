@@ -18,6 +18,8 @@ vi.mock("firebase/firestore", () => ({
   getDocs: vi.fn(),
   query: vi.fn(),
   where: vi.fn(),
+  limit: vi.fn(),
+  orderBy: vi.fn(),
 }));
 
 vi.mock("../config/firebase", () => ({ db: {} }));

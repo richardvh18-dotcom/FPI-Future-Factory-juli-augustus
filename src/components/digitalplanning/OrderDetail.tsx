@@ -18,6 +18,7 @@ import {
   Save,
   PauseCircle,
   PlayCircle,
+  History,
   Star,
   Zap,
   Edit3,
@@ -33,14 +34,15 @@ import ProductDetailModal from "../products/ProductDetailModal";
 import CancelOrderModal from "./modals/CancelOrderModal";
 import ConfirmationModal from "./modals/ConfirmationModal";
 import GlassCutListModal from "./modals/GlassCutListModal";
-import { FileImage } from "lucide-react";
+import OrderHistoryModal from "./modals/OrderHistoryModal";
+import { FileImage, RefreshCw } from "lucide-react";
 import { findDrawingForProduct } from "../../utils/findDrawingForProduct";
 import { format, differenceInDays } from "date-fns";
 import { collection, getDoc, getDocs, query, where, limit, doc, onSnapshot } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { trackedLotExistsActive } from "../../utils/trackedProducts";
 import { countFinishedTrackedLots, getOrderFinishedUnits } from "../../utils/planningProgress";
-import { PATHS, getArchiveItemsPath, getPathString } from "../../config/dbPaths";
+import { PATHS, getArchiveItemsPath, getArchiveRejectedItemsPath, getPathString } from "../../config/dbPaths";
 import {
   updatePlanningOrderPriority,
   cancelPlanningOrder,
@@ -57,6 +59,8 @@ import { useNotifications } from "../../contexts/NotificationContext";
 import StatusBadge from "./common/StatusBadge";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 import { getStartedCounterField } from "../../utils/hubHelpers";
+import { httpsCallable } from "firebase/functions";
+import { functions } from "../../config/firebase";
 
 type OrderDetailProps = {
   order: any;
@@ -141,8 +145,43 @@ const OrderDetail = React.memo(({
   const [startedDraft, setStartedDraft] = useState("");
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [showGlassCutListModal, setShowGlassCutListModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [holdDraft, setHoldDraft] = useState<boolean | null>(null);
+  const [priorityDraft, setPriorityDraft] = useState<string | boolean | null>(null);
   const autoArchiveAttemptedRef = useRef<Set<string>>(new Set());
   const [toolingMolds, setToolingMolds] = useState<any[]>([]);
+  const [archivedProducts, setArchivedProducts] = useState<any[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  useEffect(() => {
+    if (!order?.orderId) return;
+    const fetchArchived = async () => {
+      try {
+        const currentYear = new Date().getFullYear();
+        const itemsRef = collection(db, getArchiveItemsPath(currentYear).join("/"));
+        const rejectedRef = collection(db, getArchiveRejectedItemsPath(currentYear).join("/"));
+        const targetOrderId = String(order.orderId).trim().toUpperCase();
+        
+        const qItems = query(itemsRef, where("orderId", "==", targetOrderId));
+        const qRejected = query(rejectedRef, where("orderId", "==", targetOrderId));
+        
+        const [snapItems, snapRejected] = await Promise.all([
+          getDocs(qItems),
+          getDocs(qRejected)
+        ]);
+        
+        const combined = [
+          ...snapItems.docs.map(d => ({ id: d.id, ...d.data(), isArchived: true })),
+          ...snapRejected.docs.map(d => ({ id: d.id, ...d.data(), isArchived: true }))
+        ];
+        
+        setArchivedProducts(combined);
+      } catch (err) {
+        console.error("Fout bij ophalen gearchiveerde producten:", err);
+      }
+    };
+    fetchArchived();
+  }, [order?.orderId]);
 
   useEffect(() => {
     if (!order) return;
@@ -191,7 +230,7 @@ const OrderDetail = React.memo(({
       return match ? String(match[1] || "").trim().toUpperCase() : "";
     };
 
-    return products.filter((p: any) => {
+    const activeList = products.filter((p: any) => {
       const fieldOrderId = String(p?.orderId || "").trim().toUpperCase();
       const docOrderPrefix = readDocIdOrderPrefix(p);
 
@@ -203,7 +242,12 @@ const OrderDetail = React.memo(({
 
       return fieldOrderId === targetOrderId || docOrderPrefix === targetOrderId;
     });
-  }, [order, products]);
+
+    const activeIds = new Set(activeList.map(p => p.id));
+    const uniqueArchived = archivedProducts.filter(p => !activeIds.has(p.id));
+
+    return [...activeList, ...uniqueArchived];
+  }, [order, products, archivedProducts]);
 
   const isTeeOrder = useMemo(() => {
     if (!order) return false;
@@ -293,9 +337,24 @@ const OrderDetail = React.memo(({
       showSuccess(t("digitalplanning.order_detail.move_success", "Order succesvol verplaatst"));
       setShowOrderMoveModal(false);
       onClose();
-    } catch (err: unknown) {
-      console.error("Error moving order:", err);
-      showError(t("digitalplanning.order_detail.move_error", "Fout bij verplaatsen: ") + (err instanceof Error ? err.message : String(err)));
+    } catch (err: any) {
+      console.error(err);
+      showError(err.message || t("digitalplanning.order_detail.move_error", "Fout bij verplaatsen order"));
+    }
+  };
+
+  const handleSyncOrder = async () => {
+    if (!order?.orderId) return;
+    try {
+      setIsSyncing(true);
+      const reconcileFn = httpsCallable(functions, 'reconcileOrderControl');
+      await reconcileFn({ orderId: order.orderId, machine: '' });
+      showSuccess("Tellers succesvol gesynchroniseerd.");
+    } catch (err) {
+      console.error("Sync error", err);
+      showError("Fout bij synchroniseren order.");
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -350,46 +409,8 @@ const OrderDetail = React.memo(({
     }
   };
 
-  const handleSetPriority = async (level: string) => {
-    const orderDocId = order.__docPath || order.id;
-    if (!orderDocId) return;
-    const currentPrio = order.priority === true ? "high" : order.priority;
-    const newPriority = currentPrio === level ? false : level;
-    try {
-      await updatePlanningOrderPriority({
-        orderDocId,
-        priority: newPriority,
-        source: "OrderDetail",
-        actorLabel: actorEmail,
-      });
-    } catch (e) {
-      console.error("Fout bij wijzigen prioriteit:", e);
-      showError("Kon prioriteit niet wijzigen");
-    }
-  };
-
   const handleToggleHold = async () => {
-    setHoldLoading(true);
-    const orderDocId = order.__docPath || order.id;
-    try {
-      const isOnHold = isOnHoldStatusValue(order.status);
-      await togglePlanningOrderHold({
-        orderDocId,
-        source: "OrderDetail",
-        actorLabel: actorEmail,
-      });
-      await logActivity(
-        actorUid,
-        isOnHold ? "ORDER_RESUMED" : "ORDER_ON_HOLD",
-        `Order ${order.orderId} ${isOnHold ? 'hervat' : 'on hold gezet'}`
-      );
-      showSuccess(isOnHold ? "Order hervat" : "Order on hold gezet");
-    } catch (err) {
-      console.error("Fout bij on hold:", err);
-      showError("Kon order status niet wijzigen");
-    } finally {
-      setHoldLoading(false);
-    }
+    // Dit wordt nu afgehandeld via drafts
   };
 
   const copyToClipboard = (text: string) => {
@@ -555,7 +576,10 @@ const OrderDetail = React.memo(({
   const parsedStartedDraft = parseInt(normalizedStartedDraft, 10);
   const nextStarted = Number.isNaN(parsedStartedDraft) ? null : parsedStartedDraft;
   const hasStartedChanged = canEditOrderPlan && nextStarted !== null;
-  const hasPendingChanges = hasNoteChanged || hasPlanChanged || hasStartedChanged || hasTodoChanged;
+  const hasHoldChanged = holdDraft !== null && holdDraft !== isOnHoldStatusValue(order.status);
+  const currentActualPrio = order?.priority === true ? "high" : (order?.priority || false);
+  const hasPriorityChanged = priorityDraft !== null && priorityDraft !== currentActualPrio;
+  const hasPendingChanges = hasNoteChanged || hasPlanChanged || hasStartedChanged || hasTodoChanged || hasHoldChanged || hasPriorityChanged;
   const startedCounterField = getStartedCounterField(order?.machine || "");
   const stationStartedAmount = Number(startedCounterField ? order?.[startedCounterField] : 0) || 0;
   
@@ -660,10 +684,11 @@ const OrderDetail = React.memo(({
   const shouldShowCompletedStatus = planAmount > 0 && producedAmount >= planAmount && inProcessAmount === 0;
   const displayStatus = shouldShowCompletedStatus ? "Gereed" : order.status;
   const orderDocIdForArchive = String(order?.__docPath || order?.id || "").trim();
+  const activePriority = priorityDraft !== null ? priorityDraft : order?.priority;
   const normalizedPriority =
-    order?.priority === true
+    activePriority === true
       ? "high"
-      : String(order?.priority || "").toLowerCase().trim();
+      : String(activePriority || "").toLowerCase().trim();
   const priorityBadge =
     normalizedPriority === "immediate"
       ? { label: "1e Prio", className: "bg-rose-100 text-rose-700" }
@@ -750,15 +775,49 @@ const OrderDetail = React.memo(({
     try {
       setIsSavingNote(true);
       const orderDocId = order.__docPath || order.id;
-      await updatePlanningOrderDetails({
-        orderDocId,
-        notes: trimmedNote,
-        plan: hasPlanChanged ? nextPlan : null,
-        started: hasStartedChanged ? nextStarted : null,
-        manualTodo: hasTodoChanged ? nextTodo : null,
-        source: "OrderDetail",
-        actorLabel: actorEmail,
-      });
+
+      const promises: Promise<any>[] = [];
+
+      if (hasHoldChanged && holdDraft !== null) {
+        promises.push(
+          togglePlanningOrderHold({
+            orderDocId,
+            source: "OrderDetail",
+            actorLabel: actorEmail,
+          })
+        );
+      }
+
+      if (hasPriorityChanged && priorityDraft !== null) {
+        promises.push(
+          updatePlanningOrderPriority({
+            orderDocId,
+            priority: priorityDraft,
+            source: "OrderDetail",
+            actorLabel: actorEmail,
+          })
+        );
+      }
+
+      if (hasNoteChanged || hasPlanChanged || hasStartedChanged || hasTodoChanged) {
+        promises.push(
+          updatePlanningOrderDetails({
+            orderDocId,
+            notes: trimmedNote,
+            plan: hasPlanChanged ? nextPlan : null,
+            started: hasStartedChanged ? nextStarted : null,
+            manualTodo: hasTodoChanged ? nextTodo : null,
+            source: "OrderDetail",
+            actorLabel: actorEmail,
+          })
+        );
+      }
+
+      await Promise.all(promises);
+
+      setHoldDraft(null);
+      setPriorityDraft(null);
+
       showSuccess("Wijzigingen opgeslagen");
     } catch (err: unknown) {
       console.error("Error saving order changes:", err);
@@ -963,6 +1022,15 @@ const OrderDetail = React.memo(({
             >
               <Printer size={14} /> PDF export
             </button>
+            <button
+              type="button"
+              onClick={handleSyncOrder}
+              disabled={isSyncing}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-black uppercase tracking-widest text-emerald-600 hover:bg-emerald-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+              title="Herbereken alle tellers op basis van actieve en gearchiveerde producten"
+            >
+              <RefreshCw size={14} className={isSyncing ? "animate-spin" : ""} /> Sync
+            </button>
             {order.extraCode && order.extraCode !== "-" && (
               <span className="px-2 py-0.5 bg-amber-400 text-amber-900 border border-amber-500 rounded-lg text-[10px] font-black uppercase tracking-wide">
                 {order.extraCode}
@@ -993,6 +1061,16 @@ const OrderDetail = React.memo(({
         >
           <X size={24} />
         </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2 lg:gap-3 p-4 bg-white border-t border-slate-100 shrink-0">
+             <button
+               onClick={() => setShowHistoryModal(true)}
+               className="flex items-center gap-2 px-4 py-3 bg-slate-100 text-slate-600 hover:bg-slate-200 shadow-sm rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap active:scale-95"
+             >
+               <History size={16} />
+               Geschiedenis
+             </button>
       </div>
 
       {/* Details Grid */}
@@ -1515,23 +1593,23 @@ const OrderDetail = React.memo(({
 
            {/* On Hold / Hervatten Button */}
            {['admin', 'teamleader', 'planner'].includes(normalizedRole) && (
-              isOnHoldStatusValue(order.status) ? (
+              (holdDraft !== null ? holdDraft : isOnHoldStatusValue(order.status)) ? (
                <button
-                 onClick={handleToggleHold}
+                 onClick={() => setHoldDraft(!(holdDraft !== null ? holdDraft : isOnHoldStatusValue(order.status)))}
                  disabled={holdLoading}
-                 className="flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white hover:bg-emerald-700 shadow-md rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap active:scale-95 disabled:opacity-50"
+                 className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white hover:bg-red-700 shadow-md rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap active:scale-95 disabled:opacity-50"
                >
                  <PlayCircle size={16} />
-                 {holdLoading ? "..." : "Hervatten"}
+                 Hervatten
                </button>
              ) : (
                <button
-                 onClick={handleToggleHold}
+                 onClick={() => setHoldDraft(!(holdDraft !== null ? holdDraft : isOnHoldStatusValue(order.status)))}
                  disabled={holdLoading}
-                 className="flex items-center gap-2 px-4 py-3 bg-orange-50 text-orange-600 hover:bg-orange-100 border border-orange-100 rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap active:scale-95 disabled:opacity-50"
+                 className="flex items-center gap-2 px-4 py-3 bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200 rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap active:scale-95 disabled:opacity-50"
                >
                  <PauseCircle size={16} />
-                 {holdLoading ? "..." : "On Hold"}
+                 On Hold
                </button>
              )
            )}
@@ -1552,18 +1630,18 @@ const OrderDetail = React.memo(({
              <>
                <div className="w-px h-8 bg-slate-200 shrink-0" />
                <button
-                 onClick={() => handleSetPriority("high")}
+                 onClick={() => setPriorityDraft(priorityDraft !== null ? (priorityDraft === "high" ? false : "high") : (normalizedPriority === "high" ? false : "high"))}
                  className={`flex items-center gap-2 px-4 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap active:scale-95 border ${
-                   normalizedPriority === "high" || order.priority === true
+                   normalizedPriority === "high"
                      ? "bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/20"
                      : "bg-white text-slate-400 border-slate-200 hover:bg-slate-50"
                  }`}
                >
-                 <Star size={14} fill={normalizedPriority === "high" || order.priority === true ? "currentColor" : "none"} />
+                 <Star size={14} fill={normalizedPriority === "high" ? "currentColor" : "none"} />
                  Prio
                </button>
                <button
-                 onClick={() => handleSetPriority("urgent")}
+                 onClick={() => setPriorityDraft(priorityDraft !== null ? (priorityDraft === "urgent" ? false : "urgent") : (normalizedPriority === "urgent" ? false : "urgent"))}
                  className={`flex items-center gap-2 px-4 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap active:scale-95 border ${
                    normalizedPriority === "urgent"
                      ? "bg-orange-500 text-white border-orange-500 shadow-md shadow-orange-500/20"
@@ -1574,7 +1652,7 @@ const OrderDetail = React.memo(({
                  Spoed
                </button>
                <button
-                 onClick={() => handleSetPriority("immediate")}
+                 onClick={() => setPriorityDraft(priorityDraft !== null ? (priorityDraft === "immediate" ? false : "immediate") : (normalizedPriority === "immediate" ? false : "immediate"))}
                  className={`flex items-center gap-2 px-4 py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all whitespace-nowrap active:scale-95 border ${
                    normalizedPriority === "immediate"
                      ? "bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-500/20"
@@ -1871,7 +1949,14 @@ const OrderDetail = React.memo(({
           initialBranchDiameterMm={order?.branchDiameter || order?.id1}
         />
       )}
-
+      
+      {showHistoryModal && (
+        <OrderHistoryModal
+          isOpen={showHistoryModal}
+          onClose={() => setShowHistoryModal(false)}
+          orderId={order.orderId}
+        />
+      )}
     </div>
   );
 });

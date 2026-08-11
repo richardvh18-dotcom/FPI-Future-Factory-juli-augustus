@@ -87,6 +87,7 @@ const AdminMatrixManager = React.lazy(() =>
 const AdminBadgeGenerator = React.lazy(() => import("./AdminBadgeGenerator"));
 const AdminUsersView = React.lazy(() => import("./AdminUsersView"));
 const AdminPrinterManager = React.lazy(() => import("./AdminPrinterManager"));
+const AdminScannerConfig = React.lazy(() => import("./AdminScannerConfig"));
 const AdminMessagesManagement = React.lazy(() => import("./AdminMessagesManagement"));
 const AdminDatabaseView = React.lazy(() => import("./AdminDatabaseView"));
 const AdminLogView = React.lazy(() => import("./AdminLogView"));
@@ -565,6 +566,16 @@ const AdminDashboard = () => {
           roles: ["admin", "supervisor"],
           component: AdminPrinterManager,
           requiredAppFeature: "label_manager",
+        },
+        {
+          id: "scanner_config",
+          title: "Scanner Configuratie",
+          desc: "Granit 2105i barcodescanners instellen.",
+          icon: <QrCode size={24} className="text-emerald-600" />,
+          color: "bg-emerald-50 border-emerald-100",
+          roles: ["admin", "supervisor", "engineer"],
+          component: AdminScannerConfig,
+          requiredAppFeature: "system_config",
         },
         {
           id: "messages_management",

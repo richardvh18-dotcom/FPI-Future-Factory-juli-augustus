@@ -1845,3 +1845,6 @@ export const saveLnQrExportHistory = async ({
   return result?.data || { ok: false };
 };
 
+
+export const fetchOrderActivityLogs = createCallableWrapper<{ orderId: string }, { logs: any[] }>('getOrderActivityLogs');
+

@@ -2446,3 +2446,7 @@ exports.manualSyncDrawings = manualSyncDrawings;
 const { getFirebaseUsageAndCosts } = require('./src/admin/getFirebaseUsage');
 exports.getFirebaseUsageAndCosts = getFirebaseUsageAndCosts;
 
+
+const { getOrderActivityLogs } = require('./src/callables/activityLogs');
+exports.getOrderActivityLogs = getOrderActivityLogs;
+

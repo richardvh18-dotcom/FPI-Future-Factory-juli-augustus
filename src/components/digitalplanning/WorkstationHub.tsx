@@ -978,12 +978,12 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
       const unsubProds = subscribeTrackedProducts({
         db,
         statusExclusions: ["completed", "shipped", "deleted", "archived_rejected"],
-        maxItems: 25,
+        maxItems: 400,
         departments: trackingDepartments,
         machines: trackingMachines,
         onData: (items) => {
           if (isMounted) {
-            setRawProducts((current) => mergeTrackedProductDocs(current, items));
+            setRawProducts(items);
           }
           markStreamReady();
         },
@@ -1007,11 +1007,12 @@ const WorkstationHub = ({ initialStationId, onExit, searchOrder }: WorkstationHu
         backgroundTrackingUnsubRef.current = subscribeTrackedProducts({
           db,
           statusExclusions: ["completed", "shipped", "deleted", "archived_rejected"],
+          maxItems: 400,
           departments: trackingDepartments,
           machines: trackingMachines,
           onData: (items) => {
             if (isMounted) {
-              setRawProducts((current) => mergeTrackedProductDocs(current, items));
+              setRawProducts(items);
             }
           },
           onError: (error) => {

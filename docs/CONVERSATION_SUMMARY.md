@@ -6,6 +6,74 @@
 
 ---
 
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
+### Update sessie 11 augustus 2026 — BM01 Batch Naharding UI update fix
+
+**Gemeld probleem:**
+- Na het gereedmelden van een batch op BM01, bleven de lotnummers zichtbaar in de tab 'Batch naharding', ondanks dat ze succesvol naar 'Gereed' verplaatst waren.
+
+**Oorzaak:**
+- In \WorkstationHub.tsx\ werden nieuw binnengehaalde actieve producten samengevoegd met de oude state via \mergeTrackedProductDocs\. 
+- Omdat een gereedgemeld product naar het archief verplaatst wordt (en dus verdwijnt uit de actieve Firebase-query), ontbrak het in de nieuwe data. De merge-functie verwijderde echter geen verdwenen documenten, waardoor de oude status ('Te naharden') lokaal bleef hangen (zombie state).
+
+**Fix uitgevoerd:**
+- In \WorkstationHub.tsx\ is \maxItems\ voor de productabonnee verhoogd naar 400 (net als in de terminal) en de \mergeTrackedProductDocs\-functie omzeild. De UI overschrijft nu gewoon de lijst met de daadwerkelijk actieve producten. Verwijderde/gearchiveerde producten verdwijnen nu direct uit beeld.
+
+### Update sessie 11 augustus 2026 â€” Dubbele print bij Order Labels voor Zebra ZM opgelost
+
+**Oorzaak:**
+- De regex in `printerProtocolService.ts` die het aantal kopieÃ«n (`^PQ`) afdwong, zocht specifiek naar `^PQ1,0,1,Y` of soortgelijke exacte strings.
+- Als een Order Label in de database simpelweg `^PQ1` of `^PQ1,0,0,N` bevatte, faalde deze match.
+- Het fallback-mechanisme voegde vervolgens een tweede `^PQ` commando toe aan het einde van de ZPL-string. 
+- Hierdoor bevatte het bestand *twee* `^PQ`-commando's (bijv. `^PQ1` Ã©n `^PQ3...`), wat resulteerde in het dubbel of driedubbel afdrukken van de labels.
+
+**Fix uitgevoerd:**
+- De regex is aangepast naar `/\^PQ[^\^\n]*/g`. Hierdoor wordt nu *elk* bestaand `^PQ` commando correct herkend en overschreven met het gevraagde aantal. 
+- Er wordt nu nog maar maximaal Ã©Ã©n `^PQ` commando per ZPL-string verstuurd.
+
+### Update sessie 11 augustus 2026 â€” Scanner Configuratie Pagina toegevoegd
+
+**Nieuwe feature:**
+- Er is een nieuwe "Scanner Configuratie" pagina toegevoegd aan het Admin Dashboard (`src/components/admin/AdminScannerConfig.tsx`).
+- Deze pagina toont configuratie-barcodes (gebaseerd op `react-barcode`) om Granit Ultra 2105i scanners gemakkelijk in te stellen.
+- Bevat instellingen voor Bluetooth-koppeling (HID Keyboard), Charge Only modus voor het basisstation, toetsenbordlay-outs en geluidsvoorkeuren.
+- Op verzoek zijn ook de instellingen voor **Trilsignaal (Haptic feedback)** en **Hands-free Modus (Presentation Mode)** toegevoegd aan de configuratiepagina.
+
+**Aanpassingen:**
+- `package.json`: `react-barcode` toegevoegd.
+- `src/components/admin/AdminDashboard.tsx`: Nieuwe menu-optie `scanner_config` toegevoegd onder Apparatuur.
+
 ### Update sessie 10 augustus 2026 â€” Dubbele print via race tussen queue-consumers afgedicht
 
 **Gemeld probleem:**
@@ -181,6 +249,37 @@
 - Via `gcloud` de rol `roles/datastore.user` officieel toegekend aan `future-factory-377ef@appspot.gserviceaccount.com`. De aanhoudende 500-errors op `queuePrintJob` bleken te komen door de GCP IAM-caching (propagatie duurt 1 tot 5 minuten). Na het wachten van enkele minuten was het probleem succesvol verholpen.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 10 augustus 2026 â€” startProductionLots 500 diagnose + fix
 
@@ -6893,6 +6992,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 151 (Repository pattern, error handling, services, audit log UI, nieuwe repo)
 
 **Datum:** 7 mei 2026 | **Branch:** `FPiFF-18-12-May` | **Commit:** `e5bba0f`
@@ -6955,6 +7085,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 - ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ functions laadt foutloos
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 150 (BH18 tijdelijke filtering, versie bump en productie deploy)
 
@@ -7054,6 +7215,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ## Dagupdate 6 mei 2026
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 149 (Handmatige To Do & Sync Exclusie)
 
 **Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
@@ -7080,6 +7272,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 148 (Fixes BM01 Naharding Datum & Historie)
 
 **Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
@@ -7101,6 +7324,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 147 (Idee: Automatische Oven-koppeling Naharding)
 
 **Datum:** 6 mei 2026 | **Branch:** `FPiFF-18-12-May`
@@ -7112,6 +7366,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 - De backend vangt dit op en meldt de actieve "Naharding Batch" volautomatisch gereed, zonder tussenkomst van een operator.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 146 (Gereed voor LN Export & Vandaag-knoppen)
 
@@ -7141,6 +7426,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 - Naast de datum/week-input is een prominente `Vandaag`-knop toegevoegd. Bij het klikken hierop worden zowel de dag- als de week-selectors direct gereset naar vandaag (`new Date()`).
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 145 (Fix Order N20024607 & PDF Export voor Archief)
 
@@ -7179,6 +7495,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ## Dagupdate 5 mei 2026
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 144 (BH18 Terminal Multi-select, Veiligheid & Lotnummer Validatie)
 
 **Datum:** 5 mei 2026 | **Branch:** `FPiFF-18-12-May`
@@ -7214,6 +7561,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ## Dagupdate 4 mei 2026
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 143 (Herstel Vastgelopen Gerepareerde Orders)
 
 **Datum:** 4 mei 2026 | **Branch:** `FPiFF-18-12-May`
@@ -7238,6 +7616,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 - Hierdoor verschenen de orders weer correct in de UI en konden ze door de gebruiker succesvol worden afgemeld naar BM01.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 142 (E-mail Beheer Dashboard & Templates)
 
@@ -7266,6 +7675,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ## Dagupdate 3 mei 2026
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 141 (Globale zoekbalk, Lotnummer Export & KPI PDF Export)
 
 **Datum:** 3 mei 2026 | **Branch:** `preview-v2`
@@ -7290,6 +7730,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 140 (Lotnummers export filter op oorsprong)
 
 **Datum:** 3 mei 2026 | **Branch:** `preview-v2`
@@ -7306,6 +7777,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 - Extra kolom "Oorsprong" toegevoegd in de Lotnummer PDF en Excel exports om inzichtelijk te maken waar elk item vandaan komt.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 139 (Teamleader Export: Actuele lotnummer lijst)
 
@@ -7327,6 +7829,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 138 (Slimmere Productie Tijd Standaarden via LN Import)
 
 **Datum:** 3 mei 2026 | **Branch:** `preview-v2`
@@ -7340,6 +7873,37 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 - **Frontend Weergave:** Deze data is direct zichtbaar en beheerbaar in het bestaande *Productie Tijd Standaarden* dashboard onder *Admin / Settings*.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 137 (Capaciteitsmatrix & Efficiency Factor)
 
@@ -7372,6 +7936,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 136 (Nieuwe Machine Export Functionaliteit & Kolom/Filter Optimalisaties)
 
 **Datum:** 3 mei 2026 | **Branch:** `preview-v2`
@@ -7400,6 +7995,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ## Dagupdate 2 mei 2026
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 135 (Planning Import UX & Nieuw-ribbon in Workstation/Terminal)
 
 **Datum:** 2 mei 2026 | **Branch:** `preview-v2`
@@ -7422,6 +8048,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 134 (Tweede record voor lotnummers op order-document)
 
 **Datum:** 2 mei 2026 | **Branch:** `preview-v2`
@@ -7439,6 +8096,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 ## Dagupdate 30 april 2026
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 133 (Fix: Afdeling bij handmatig aangemaakte orders)
 
@@ -7459,6 +8147,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - **Verificatie:** Na deploy van de functions zijn nieuwe handmatige orders direct zichtbaar in *Teamleader > Planning > Orderlijst* (mits ingesteld op het juiste afdelings- en machinefilter).
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 131 (BH18 terminal bugs & wees-documenten opgeruimd)
 
@@ -7542,6 +8261,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - `scripts/cleanup-archived-orphans-40bh18-via-cli-auth.cjs` *(nieuw)*
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 132 (N20024978 zichtbaarheid & counter fix + functions deploy)
 
@@ -7656,6 +8406,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 130 (Vertical ZPL text & BH18 slimme labels)
 
 **Datum:** 30 april 2026 | **Branch:** `FPiFF-18-12-build`
@@ -7671,6 +8452,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 129 (Voorbereiding: Robuustere lotnummering en To Do telling)
 
 **Datum:** 30 april 2026 | **Branch:** `FPiFF-18-12-build`
@@ -7680,6 +8492,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - **Fail-proof To Do telling**: `To Do` berekening lostrekken van opgeslagen database-tellers en app-breed altijd dynamisch berekenen (`Plan - started_<machine>`). Als de orderhoeveelheid (`Plan`) later in LN of met de hand wijzigt, schaalt de `To Do` automatisch 100% foutloos mee.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 128 (Werkwijze vastgelegd: tracking van wijzigingen en open vragen)
 
@@ -7693,6 +8536,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 ## Dagupdate 29 april 2026
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 127 (Mobiele Nabewerking modal over header + grijze onderruimte opgelost)
 
@@ -7734,6 +8608,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Onderaan de lijst is de storende grijze lege ruimte verwijderd.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 126 (BH18 filter definitief + regressietest + productie release 0.1.2)
 
@@ -7802,6 +8707,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 125 (Terugzetten van Nabewerking naar Lossen mogelijk gemaakt)
 
 **Datum:** 29 april 2026 | **Branch:** `FPiFF-18-12-build`
@@ -7821,6 +8757,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Foutcontrole uitgevoerd op de gewijzigde bestanden: geen errors gevonden.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 124 (Archief-heropenen gefixt + ordernummerwijziging product ingebouwd)
 
@@ -7938,6 +8905,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
     - `https://future-factory.vercel.app`
 2899f1f - feat: Add delivery date change detection to Smart Sync and improve date parsing (richardvh18-dotcom)\n\n## Update session (Leverdatum Sync & Datum-parsing)\n- Nieuwe parameter 'leverdatum' toegevoegd aan Slimme Sync om wijzigingen te detecteren.\n- UI-indicatie toegevoegd voor gewijzigde leverdata (oude datum doorgestreept).\n- Datumvergelijking verbeterd voor verschillende formaten (bijv. 27-03 vs 27-3) door conversie naar YYYY-MM-DD.\n- Case-insensitive vergelijking voor PO Text toegevoegd.\n- Orders N20024731 en N20024607 tijdelijk uitgesloten van sync.
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 123 (Order search, Tooling Molds UX, BM01 mismatch inklapbaar, productie deploys)
 
 **Datum:** 28 april 2026 | **Branch:** `FPiFF-18-12-build`
@@ -8017,6 +9015,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 122 (OrderDetail Start Aantal bewerkbaar + persist bug gefixt)
 
 **Datum:** 28 april 2026 | **Branch:** `FPiFF-18-12-build`
@@ -8083,6 +9112,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ## Dagupdate 26 april 2026
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 121 (BH12 overproductie auto-koppeling + leverdatumregel, nog niet afgerond)
 
 **Datum:** 26 april 2026 | **Branch:** `FPiFF-18-12-build`
@@ -8122,6 +9182,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 120 (AI worker uitgerold in Firebase Functions)
 
 **Datum:** 26 april 2026 | **Branch:** `FPiFF-18-12-build`
@@ -8152,6 +9243,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Eventueel extra collections/dashboards toevoegen om AI worker-resultaten zichtbaar te maken in de app.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 119 (TeamleaderHub Phase 4 afgerond: hooks/components extract + validatie)
 
@@ -8236,6 +9358,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 - Kritieke overproduction-route bug is opgelost.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 118 (BH12-Mazak: Machine Occupancy scoping + Workflow refinements)
 
@@ -8326,6 +9479,37 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 ## Dagupdate 25 april 2026
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 117 (Live Station Monitor Pop-up Vernieuwd)
 
@@ -8652,6 +9836,37 @@ Stap C (structurele matching-fix):
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 106 (BH18 KPI planning gecorrigeerd voor resterend + lopend werk)
 
 **Datum:** 23 april 2026 | **Branch:** `FPiFF-18-12-build`
@@ -8684,6 +9899,37 @@ Stap C (structurele matching-fix):
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 105 (bevestigde productie-deploy Firebase + Vercel)
 
 **Datum:** 23 april 2026 | **Branch:** `FPiFF-18-12-build`
@@ -8708,6 +9954,37 @@ Stap C (structurele matching-fix):
 
 
 ## Dagupdate 21 april 2026
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 105 (Lossen 12/18 routingfix, scannerfocus Lossen/BM01, push + Vercel productie)
 
@@ -8794,6 +10071,37 @@ Stap C (structurele matching-fix):
 
 
 ## Dagupdate 20 april 2026
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 104 (BH18 startProductionLots fix + Firebase/Vercel productie-deploy)
 
@@ -9152,6 +10460,37 @@ Stap C (structurele matching-fix):
 - `2ab3f9b` Remove root tracked_products/planning writes
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 97 (Lossen 12/18 fix + Vercel/Firebase production deployment)
 
@@ -17180,6 +18519,37 @@ Warning: Donâ€™t paste code into the DevTools Console that you donâ€™t understan
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 35 (Archivering Afgekeurde Producten)
 
 
@@ -17193,6 +18563,37 @@ Warning: Donâ€™t paste code into the DevTools Console that you donâ€™t understan
 - **Validatie:** Zowel de linter als de Vite productie-build (`npm run build`) slagen foutloos na deze wijzigingen.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 34 (Mazak Printflow, Flens Labels & Lotnummer Fixes)
 
@@ -17228,6 +18629,37 @@ Warning: Donâ€™t paste code into the DevTools Console that you donâ€™t understan
 Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 32 (Serie-groepering Wikkelen/Lossen + MazakView)
 
@@ -17272,6 +18704,37 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 - Mazak printstap: placeholder aanwezig in MazakView rechterpaneel, logica nog niet geÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¯mplementeerd. Gebruiker heeft aangegeven dat er een print stap bij Mazak moet. Afstemmen wat precies geprint moet worden en of het verplicht is vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³r doorsturen naar BM01.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 31 (Import + Capaciteitsplanning + BH12 flowrouting)
 
@@ -17364,6 +18827,37 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 29 (Filter-regressie in Lossen)
 
 - **Gesprek opgeslagen met de notitie:** de "Lossen" view toont momenteel ook producten die al gereed zijn.
@@ -17379,6 +18873,37 @@ De pilotbranch bevat meerdere afgeronde verbeteringen voor planning, printing, p
 3. ZM400 kalibratie werkend ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ï¿½ lotnummer-batch en queue-label snijgedrag live bevestigd; orderlabel-flow vanuit Print Station nog live te valideren.
 4. Algemene pilot validatie op de vloer moet nog gebeuren met operators.
 5. Verticale tekst op orderlabels (onder QR-codes) is nog niet definitief goed: overlap is opgelost, maar exacte positionering/schaal in preview vs fysieke print is nog in finetune.
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 28 (Lossen meetvelden + productie deploy)
 
@@ -17636,6 +19161,37 @@ Made changes.
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 33 (BH12 ProductionStartModal verfijning)
 
 
@@ -17663,6 +19219,37 @@ Made changes.
 - `npx eslint src/components/digitalplanning/modals/ProductionStartModal.jsx` succesvol (geen output / geen fouten).
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 48 (Opslagpunt: Gantt planning verbeteringen + Firebase importpad)
 
@@ -17714,6 +19301,37 @@ Made changes.
 - Meerdere keren `npm run build` succesvol na wijzigingen.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 90-92 (Medium writes naar callables + deploy)
 
@@ -17780,6 +19398,37 @@ Made changes.
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 93 (Architectuur review vertaald naar uitvoerbaar vervolg)
 
 
@@ -17828,6 +19477,37 @@ Made changes.
 - Grootste architectuurgat (import-bypass) sluiten zonder pilot-flow te breken.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 18 mei 2026 (Admin Printer Order Labels parity + BH18 zoekpaden)
 
@@ -17913,6 +19593,37 @@ Made changes.
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 90-92 (Medium writes naar callables + deploy)
 
 
@@ -17978,6 +19689,37 @@ Made changes.
 
 ---
 
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
 ### Update sessie 93 (Architectuur review vertaald naar uitvoerbaar vervolg)
 
 
@@ -18026,6 +19768,37 @@ Made changes.
 - Grootste architectuurgat (import-bypass) sluiten zonder pilot-flow te breken.
 
 ---
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 18 mei 2026 (Admin Printer Order Labels parity + BH18 zoekpaden)
 
@@ -18318,6 +20091,37 @@ git push -u origin hotfix/voorbeeld-fix
 - **Betekenis voor vervolg:**
     - volledige pre-release check uitvoeren vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³r productie op Vercel + vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³r Git push
     - daarna pas overzetten naar Vercel preview-flow en aparte pilot-branch (4 weken vanaf 30 maart).
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
 
 ### Update sessie 25 (pre-release sitecheck uitgevoerd)
 
@@ -19097,3 +20901,47 @@ equiredAppFeature\ (bijv. 'factory_structure') nodig is. Gebruikers zien allÃƒÆ’
  -   * * W e b U S B   B i - d i r e c t i o n e l e   P r i n t e r   S t a t u s   ( F y s i e k e   P r i n t   C o n t r o l e ) * * :   M o m e n t e e l   m e l d t   d e   W e b U S B   P r i n t Q u e u e   o p d r a c h t e n   a f   z o d r a   z e   n a a r   d e   Z P L - b u f f e r   v a n   d e   p r i n t e r   z i j n   g e s t u u r d .   H e t   i d e e   i s   g e o p p e r d   o m   d e   U S B   \ 	 r a n s f e r I n \   A P I   t e   g e b r u i k e n   g e c o m b i n e e r d   m e t   Z e b r a ' s   \ ~ H S \   ( H o s t   S t a t u s )   c o m m a n d o .   H i e r d o o r   k a n   d e   f a b r i e k s - P C   w a c h t e n   o p   e e n   h a r d w a r e - b e v e s t i g i n g   d a t   h e t   l a b e l   f y s i e k   u i t   d e   p r i n t e r   i s   g e r o l d   ( z o n d e r   e r r o r s   z o a l s   R i b b o n   O u t   o f   P a p e r   O u t )   v o o r d a t   d e   s t a t u s   i n   F i r e s t o r e   n a a r   ' G e p r i n t '   v e r a n d e r t .   D i t   z o r g t   e r v o o r   d a t   o p e r a t o r s   v a n u i t   h u i s   z e k e r   w e t e n   d a t   d e   l a b e l s   f y s i e k   k l a a r l i g g e n   i n   d e   f a b r i e k . 
  
  
+
+
+**Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
+- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
+- De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
+
+
+
+**Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
+- Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+
+
+### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
+**Gevraagd:**
+- De ordergeschiedenis (UI knop) toonde niets omdat de logboek backend is overgestapt naar Google Cloud Logging. Tevens wilde de gebruiker ook de productiestappen (history van gemaakte producten) van die order zien.
+
+**Oorzaak & Aanpak:**
+- Backend logging ging naar Cloud Logging in plaats van Firestore. De frontend kan daar niet direct bij zonder Cloud Function.
+- De gemaakte producten staan in Firestore (	racked_products) onder dezelfde orderId.
+
+**Fix uitgevoerd:**
+1. **Backend:** @google-cloud/logging geïnstalleerd. Nieuwe Cloud Function getOrderActivityLogs gemaakt en geëxporteerd (incl. TS-fix).
+2. **Frontend:** Nieuwe etchOrderActivityLogs wrapper in planningSecurityService.ts.
+3. **UI:** OrderHistoryModal.tsx volledig herschreven. De module doet nu 2 asynchrone taken:
+   - Cloud Logging logs ophalen (admin acties zoals prioriteit).
+   - Firestore 	racked_products ophalen, history arrays itereren (productie acties zoals vulcaniseren).
+   - Beide lijsten mergen, aflopend sorteren op datum en met verschillende stijlen renderen in een strakke tijdlijn.
+
+
+
+### Update sessie 11 augustus 2026 - OrderDetail UI Updates
+
+**Wijzigingen:**
+- 'On Hold' en 'Prio' in de Teamleader lijst (OrderDetail) zijn nu draft states. Ze worden pas opgeslagen als je op de centrale 'Opslaan' knop klikt.
+- On Hold knop is grijs als het product niet on hold staat, en kleurt zodra geselecteerd.
+- OrderHistoryModal (Geschiedenis) toegevoegd, die activiteitslogs voor de specifieke order ophaalt (max 1000 recente logs afgezocht).
+- Order annuleren opent nog steeds de verplichte pop-up modal.
+
+- Fix in OrderHistoryModal: pad gecorrigeerd naar ACTIVITY_LOGS (future-factory/logs/activity_logs) zodat de database wel wordt gevonden.
+
+
+

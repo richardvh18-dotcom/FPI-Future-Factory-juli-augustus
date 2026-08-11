@@ -60,6 +60,10 @@ const parseRadius = (value: unknown): number | null => {
 
 const normalizeHeaderName = (value: unknown): string => String(value ?? '').replace(/[^a-z0-9]+/gi, '').toLowerCase();
 
+const buildWm18ProgramDefinition = (input: any): any => {
+  return input;
+};
+
 const getRowValue = (row: Array<unknown>, headers: Array<unknown>, candidateNames: string[]): unknown => {
   for (const candidateName of candidateNames) {
     const normalizedCandidate = normalizeHeaderName(candidateName);
