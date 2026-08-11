@@ -6,6 +6,17 @@
 
 ---
 
+### Update sessie 11 augustus 2026 — Actielijst voor morgen opgesteld
+
+**Actiepunten voor de volgende sessie:**
+- **LN:** Wikkelstap algoritme nakijken.
+- **BM01:** 'Te keuren' scrollt niet en de flow moet robuuster (QR overzicht valt terug op teller / lotnummers sneller in NH).
+- **Labels / Printen:** Dubbel printen oplossen, order labels pop-up dynamischer maken (tegen jitteren), en Lighthouse printer fixen.
+- **UI / Terminal:** Toetsenbord opvraag knop in Terminalview groter in tablet modus.
+- **Planning:** Planning import standaard instellen op "alle machines selecteren".
+
+---
+
 ### Update sessie 11 augustus 2026 — Applicatie en Cloud Functions Gedeployed
 
 **Handeling:**
