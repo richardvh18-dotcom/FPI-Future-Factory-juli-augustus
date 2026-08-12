@@ -64,7 +64,7 @@ describe('buildTsplUsbPayload', () => {
 });
 
 describe('buildProtocolAwareUsbPayload', () => {
-  it('applies ZPL quantity via a single ^PQ command instead of repeating the full label block', () => {
+  it('keeps ordinary labels cutting after each copy instead of cutting only after the full batch', () => {
     const base = [
       '^XA',
       '^CI28',
@@ -86,9 +86,11 @@ describe('buildProtocolAwareUsbPayload', () => {
       quantity: 3,
     });
 
-    expect(payload.match(/\^XA/g) || []).toHaveLength(1);
-    expect(payload.match(/\^FO20,20/g) || []).toHaveLength(1);
-    expect(payload).toContain('^PQ3,0,1,Y');
-    expect(payload).not.toContain('^PQ1,0,1,Y');
+    expect(payload.match(/\^XA/g) || []).toHaveLength(3);
+    expect(payload.match(/\^FO20,20/g) || []).toHaveLength(3);
+    expect(payload).toContain('^PQ1,0,1,Y');
+    expect(payload.match(/\^PQ1,0,1,Y/g) || []).toHaveLength(3);
+    expect(payload.match(/~JK/gi) || []).toHaveLength(2);
+    expect(payload).not.toContain('^PQ3,0,1,Y');
   });
 });

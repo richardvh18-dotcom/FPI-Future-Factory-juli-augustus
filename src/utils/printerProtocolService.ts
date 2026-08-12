@@ -169,14 +169,37 @@ export const buildProtocolAwareUsbPayload = ({
     .replace(/\^PQ1,0,1,[YN]/g, '^PQ1,0,1,Y');
 
   const zplWithCutMode = applyCutMode(base);
-  if (qty === 1) return zplWithCutMode;
 
-  const withQuantityApplied = zplWithCutMode.replace(/\^PQ[^^\n]*/g, `^PQ${qty},0,1,Y`);
-  if (withQuantityApplied !== zplWithCutMode) {
-    return withQuantityApplied;
+  const zplBlocks = Array.from(zplWithCutMode.matchAll(/\^XA[\s\S]*?\^XZ/gi)).map((match) => match[0]);
+  const isMultiLabelSequence = zplBlocks.length > 1;
+
+  if (isMultiLabelSequence) {
+    return zplBlocks
+      .map((block) => {
+        let normalized = block.replace(/\^MM[CT]/g, '^MMC');
+        normalized = normalized.replace(/\^PQ1,0,1,[YN]/g, '^PQ1,0,1,Y');
+        if (/\^PQ[^^\n]*/.test(normalized)) {
+          normalized = normalized.replace(/\^PQ[^^\n]*/g, '^PQ1,0,1,Y');
+        } else {
+          normalized = normalized.replace(/\^XZ\s*$/i, '^PQ1,0,1,Y\n^XZ');
+        }
+        return normalized;
+      })
+      .map((block, index, allBlocks) => (index < allBlocks.length - 1 ? `${block}\r\n~JK` : block))
+      .join('\r\n');
   }
 
-  return zplWithCutMode.replace(/\^XZ\s*$/, `^PQ${qty},0,1,Y\n^XZ`);
+  if (qty === 1) return zplWithCutMode;
+
+  return Array.from({ length: qty }, (_, index) => {
+    let block = String(zplWithCutMode);
+    if (/\^PQ[^^\n]*/.test(block)) {
+      block = block.replace(/\^PQ[^^\n]*/g, '^PQ1,0,1,Y');
+    } else {
+      block = block.replace(/\^XZ\s*$/i, '^PQ1,0,1,Y\n^XZ');
+    }
+    return index < qty - 1 ? `${block}\r\n~JK` : block;
+  }).join('\r\n');
 };
 
 export const buildProtocolAwareUsbProbePayload = (printer?: PrinterProfile | null): string => {
