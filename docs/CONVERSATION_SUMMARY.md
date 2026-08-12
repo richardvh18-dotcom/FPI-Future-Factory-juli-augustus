@@ -1,9 +1,32 @@
+﻿### Analyse sessie 12 augustus 2026 - Lighthouse CJ-PRO II printen (OPEN / BESLISSING UITGESTELD)
+
+**Probleemstelling:**
+- De Lighthouse CJ-PRO II printer reageert wel op WebUSB (groene lampjes knipperen = data ontvangen), maar print niet.
+- Oorzaak: De Queue processor (PrintQueueAutoProcessor.tsx) stuurt altijd ZPL via printRawUsb(), maar de Lighthouse begrijpt geen ZPL. Hij heeft een Windows GDI driver nodig.
+
+**Onderzochte opties:**
+
+| Optie | Beschrijving | Status |
+|-------|-------------|--------|
+| A | TCP/IP raw naar Lighthouse (poort 9100) | ❌ Lighthouse ondersteunt geen raw TCP |
+| B | window.print() via browser op Gateway PC | ❌ Toont altijd Windows dialoog, niet silent |
+| C | **Gateway PC als Firestore-listener service** | ✅ Aanbevolen - werkt zoals NiceLabel |
+
+**Aanbevolen oplossing (Optie C - nog NIET uitgevoerd):**
+- Gateway PC (https://github.com/richardvh18-dotcom/GatewayPC.git) uitbreiden met een **Firestore listener**
+- Bij een print job met 	ype: 'gateway': label als PDF/HTML renderen, Gateway PC pakt het op en print silent via Windows driver naar Lighthouse
+- Gateway PC draaien als Windows-service (autostart, geen venster)
+- serviceAccountKey.json activeren op Gateway PC voor Firebase-verbinding
+
+**Nog te beslissen door gebruiker:**
+- Of en wanneer de Gateway PC Firestore-integratie uitgewerkt wordt
+- Hoe labels (ZPL → PDF/HTML) worden omgezet voor de Lighthouse
 ### Update sessie 12 augustus 2026 - Dubbele Print Fix (PrintStationView)
 
 **Handeling:**
 - Het probleem waarbij **Order Labels** dubbel werden geprint via het "Print Stations"-scherm (1 werd 2, 2 werd 4 etc.) is opgelost in src/components/printer/PrintStationView.tsx.
 - Oorzaak: ZPL printers vermenigvuldigden de aantallen door onbedoelde combinaties van het ZPL ^PQ commando en de verwerking door de USB service (PrintQueueAutoProcessor).
-- Oplossing: In plaats van de aansturing van ^PQ te gebruiken (waarbij drivers soms foutief het commando herhaalden), dupliceren we nu de ZPL structuur direct in de frontend wanneer er om extra aantallen wordt gevraagd, en sturen we het af met flag queuedAsBatch: true en quantity: 1. Hierdoor krijgt de printer fysiek X aantal labels toegestuurd, in plaats van ��n label met het commando "print mij X keer".
+- Oplossing: In plaats van de aansturing van ^PQ te gebruiken (waarbij drivers soms foutief het commando herhaalden), dupliceren we nu de ZPL structuur direct in de frontend wanneer er om extra aantallen wordt gevraagd, en sturen we het af met flag queuedAsBatch: true en quantity: 1. Hierdoor krijgt de printer fysiek X aantal labels toegestuurd, in plaats van ��n label met het commando "print mij X keer".
 
 ### Chatvoorkeuren
 - Standaard antwoorden in het Nederlands.
