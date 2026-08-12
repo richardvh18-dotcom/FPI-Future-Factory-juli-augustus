@@ -584,6 +584,9 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
             <div className="relative w-full min-w-0">
               <input
                   type="number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  enterKeyHint="done"
                   value={val}
                   onChange={(e) => handleMeasurementChange(fieldKey, e.target.value)}
                   className={`w-full pl-4 pr-10 py-3 rounded-xl border-2 font-bold focus:border-blue-500 outline-none transition-colors ${statusClass}`}

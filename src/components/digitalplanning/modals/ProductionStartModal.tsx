@@ -2339,6 +2339,9 @@ const ProductionStartModal = ({
                     <Layers size={18} className="text-blue-500" />
                     <input
                       type="number"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      enterKeyHint="done"
                       min="1"
                       value={stringCount}
                       onChange={(e) => setStringCount(sanitizePositiveIntInput(e.target.value))}
@@ -2367,6 +2370,9 @@ const ProductionStartModal = ({
                       <Printer size={18} className="text-blue-500" />
                       <input
                         type="number"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        enterKeyHint="done"
                         min="1"
                         value={labelCount}
                         onChange={(e) => setLabelCount(sanitizePositiveIntInput(e.target.value))}
@@ -2392,6 +2398,9 @@ const ProductionStartModal = ({
                     <Layers size={18} className="text-blue-500" />
                     <input
                       type="number"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      enterKeyHint="done"
                       min="1"
                       value={stringCount}
                       onChange={(e) => setStringCount(sanitizePositiveIntInput(e.target.value))}
@@ -2416,6 +2425,7 @@ const ProductionStartModal = ({
                     <input
                       ref={orderInputRef}
                       type="text"
+                      enterKeyHint="done"
                       value={manualOrderInput}
                       onChange={handleManualOrderChange}
                       placeholder={order?.orderId || "N2000000"}

@@ -1345,9 +1345,9 @@ const BM01Hub = React.memo(({ onBack, orders = [], products = [], onMoveLot }: B
                 </div>
             </div>
         ) : activeTab === "inspectie" ? (
-            <div className="h-full w-full">
+            <div className="absolute inset-0 flex flex-col">
                 <div
-                    className="h-full flex flex-col p-3 w-full overflow-y-auto custom-scrollbar"
+                    className="flex-1 flex flex-col p-3 w-full overflow-y-auto custom-scrollbar"
                 >
                     {/* Scan Indicator & Input */}
                     <div className="shrink-0 space-y-2 mb-3 sticky top-0 bg-white py-2 z-10">

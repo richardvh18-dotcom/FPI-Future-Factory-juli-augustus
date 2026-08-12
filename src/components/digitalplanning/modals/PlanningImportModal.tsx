@@ -1127,13 +1127,8 @@ const PlanningImportModal = ({ isOpen, onClose, onSuccess, currentDepartment = "
   }, [effectiveValidOrders, isFittingsScoped]);
 
   const getDefaultMachineSelection = (machines: string[]) => {
-    const bh18Machines = machines.filter((machine) => {
-      const normalized = normalizeMachineCodeForFilter(machine);
-      return normalized === "BH18" || normalized === "40BH18";
-    });
-
-    if (bh18Machines.length > 0) return bh18Machines.sort();
-    return [];
+    // Gebruiker heeft gevraagd om standaard alle machines te selecteren
+    return machines;
   };
 
   useEffect(() => {

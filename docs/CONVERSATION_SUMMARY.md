@@ -1,3 +1,10 @@
+### Update sessie 12 augustus 2026 - Dubbele Print Fix (PrintStationView)
+
+**Handeling:**
+- Het probleem waarbij **Order Labels** dubbel werden geprint via het "Print Stations"-scherm (1 werd 2, 2 werd 4 etc.) is opgelost in src/components/printer/PrintStationView.tsx.
+- Oorzaak: ZPL printers vermenigvuldigden de aantallen door onbedoelde combinaties van het ZPL ^PQ commando en de verwerking door de USB service (PrintQueueAutoProcessor).
+- Oplossing: In plaats van de aansturing van ^PQ te gebruiken (waarbij drivers soms foutief het commando herhaalden), dupliceren we nu de ZPL structuur direct in de frontend wanneer er om extra aantallen wordt gevraagd, en sturen we het af met flag queuedAsBatch: true en quantity: 1. Hierdoor krijgt de printer fysiek X aantal labels toegestuurd, in plaats van ��n label met het commando "print mij X keer".
+
 ### Chatvoorkeuren
 - Standaard antwoorden in het Nederlands.
 - Alle handelingen en belangrijke wijzigingen bijhouden in [docs/CONVERSATION_SUMMARY.md](docs/CONVERSATION_SUMMARY.md).
@@ -6,6 +13,33 @@
 
 ---
 
+### Update sessie 12 augustus 2026 — UI / Terminal toetsenbord knop & Mobiel Typen
+
+**Handeling:**
+- In `src/components/digitalplanning/Terminal.tsx` de scanner/toetsenbord knop groter gemaakt (en met gelijke hoogte aan tabs) voor tablet modus. De knop is bovendien ook zichtbaar gemaakt in de Planning tab.
+- In alle 34 bestanden binnen `src/components/digitalplanning/` (inclusief alle modals en terminal views) is `enterKeyHint="done"` toegevoegd aan alle tekstvelden om op de tablet een "Gereed"-knop op het toetsenbord te forceren.
+- Aan alle `<input type="number">` velden is bovendien `inputMode="numeric" pattern="[0-9]*"` toegevoegd, zodat Android-tablets hierbij gegarandeerd direct het numerieke keypad openen zonder letter-knoppen.
+
+### Update sessie 12 augustus 2026 — Planning Import & BM01 Scrolling Fixes
+
+**Handeling:**
+- In `src/components/digitalplanning/modals/PlanningImportModal.tsx` de functie `getDefaultMachineSelection` aangepast. Deze selecteerde voorheen standaard alleen station `BH18`. Nu retourneert deze standaard álle beschikbare machines uit de dataset. Hierdoor is bij het openen van de importmodal altijd de hele lijst voorgeselecteerd.
+- In `src/components/digitalplanning/BM01Hub.tsx` het CSS scrollprobleem verholpen in het "Te Keuren" (Inspectie) tabblad. Door het toevoegen van `absolute inset-0 flex flex-col` met een geneste `flex-1 overflow-y-auto` blijft de lijst met te keuren lots nu binnen de view en kan er correct naar beneden gescrolld worden.
+
+---
+
+### Update sessie 12 augustus 2026 — Fix LN Wikkelstap Algoritme
+
+**Handeling:**
+- In `src/components/digitalplanning/ImportExportDashboard.tsx` de functie `toLnQrRows` aangepast.
+- De dubbele aftrek van de actuele wikkelstuks (`row.count`) bij "Nog te doen" en "Gereedgemeld" is verwijderd.
+- De wiskunde klopt nu exact met de regels: 
+  - `Gereedgemeld` is het historisch aantal uit Naharden.
+  - `LN Wikkelstap` is het aantal stuks dat zojuist is geproduceerd maar nog niet gereedgemeld.
+  - `Nog te doen` berekent nu zuiver: `Totaal Order - Gereedgemeld - LN Wikkelstap`. 
+  Hierdoor is gegarandeerd dat het "Nog te doen" getal klopt en we nooit boven het "Totaal order" aantal uitkomen.
+
+---
 ### Update sessie 11 augustus 2026 — Actielijst voor morgen opgesteld
 
 **Actiepunten voor de volgende sessie:**
@@ -20968,6 +21002,7 @@ equiredAppFeature\ (bijv. 'factory_structure') nodig is. Gebruikers zien allÃƒ
 - Order annuleren opent nog steeds de verplichte pop-up modal.
 
 - Fix in OrderHistoryModal: pad gecorrigeerd naar ACTIVITY_LOGS (future-factory/logs/activity_logs) zodat de database wel wordt gevonden.
+
 
 
 

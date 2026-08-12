@@ -275,6 +275,7 @@ const TerminalProductionView = ({
             <input
               ref={scanInputRef}
               type="text"
+              enterKeyHint="done"
               value={scanInput}
               onChange={(e) => setScanInput(e.target.value)}
               inputMode={shouldSuppressSoftKeyboard ? "none" : "text"}

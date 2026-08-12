@@ -680,7 +680,7 @@ const ImportExportDashboard = ({
     const cutoff = new Date(Date.now() - 5 * 60 * 1000); // 5 minuten pauze
     const exportFallbackStart = new Date(2020, 0, 1);
     const exportAnchor = lastLnResetAt || exportFallbackStart;
-    const orderStats = new Map<string, { totalOrderCount: number; nahardingCount: number; wikkelCount: number }>();
+    const orderStats = new Map<string, { totalOrderCount: number; nahardingCount: number; wikkelCount: number; readyCount: number }>();
 
     combinedProducts.forEach((product: EntryRecord) => {
       const orderId = String(product?.orderId || "").trim();
@@ -690,11 +690,25 @@ const ImportExportDashboard = ({
         totalOrderCount: 0,
         nahardingCount: 0,
         wikkelCount: 0,
+        readyCount: 0,
       };
 
+      const status = String(product?.status || "").trim().toLowerCase();
+      const step = String(product?.currentStep || "").trim().toUpperCase();
+      const currentStation = String(product?.currentStation || "").trim().toUpperCase();
+      const isCompleted = status === "completed" || step === "FINISHED" || currentStation === "GEREED";
+
+      if (status === "rejected" || step === "REJECTED" || status === "deleted" || status === "cancelled" || status === "geannuleerd") {
+          // Do not count
+      } else if (isCompleted) {
+          current.readyCount += 1;
+      } else if (hasNahardingSignal(product)) {
+          current.nahardingCount += 1;
+      } else if (hasWikkelSignal(product)) {
+          current.wikkelCount += 1;
+      }
+      
       current.totalOrderCount += 1;
-      if (hasNahardingSignal(product)) current.nahardingCount += 1;
-      if (hasWikkelSignal(product)) current.wikkelCount += 1;
       orderStats.set(orderId, current);
     });
 
@@ -716,7 +730,9 @@ const ImportExportDashboard = ({
 
       if (startDate > cutoff) return;
       if (lnRangeMode === "export" && startDate <= exportAnchor) return;
-      if (isAtNahardingOrFurther(product)) return;
+      
+      const isCompleted = status === "completed" || step === "FINISHED" || String(product?.currentStation || "").trim().toUpperCase() === "GEREED";
+      if (hasNahardingSignal(product) || isCompleted) return;
 
       const inRange = lnRangeMode === "export"
         ? true
@@ -734,33 +750,23 @@ const ImportExportDashboard = ({
       const order = planningOrdersByOrderId.get(orderId);
       const orderPlan = toSafeNumber(order?.plan);
       const orderQuantity = toSafeNumber(order?.quantity);
-      const stats = orderStats.get(orderId);
+      const stats = orderStats.get(orderId) || { totalOrderCount: 0, nahardingCount: 0, wikkelCount: 0, readyCount: 0 };
+      
       const totalOrderCount = Number.isFinite(orderPlan) && orderPlan > 0
         ? orderPlan
         : Number.isFinite(orderQuantity) && orderQuantity > 0
           ? orderQuantity
-          : stats?.totalOrderCount || 0;
+          : stats.totalOrderCount || 0;
+          
       const refOpsText = "20"; // Vast ingesteld op referentiecode 20
       const rowKey = `${originStation}__${orderId}`;
       const existingRow = groupedRows.get(rowKey);
-      const nahardingCount = stats?.nahardingCount || 0;
-      const startedField = getStartedCounterField(originStation);
-      const startedAtStation = Math.max(
-        toSafeNumber(order?.[startedField]),
-        toSafeNumber(order?.[String(startedField || "").toLowerCase()])
-      );
-      const alreadyWikkeldCount = Math.max(
-        stats?.wikkelCount || 0,
-        startedAtStation,
-        toSafeNumber(order?.produced)
-      );
-      const todoCount = resolvePlanningTodoCount(
-        order,
-        Math.max(0, totalOrderCount - nahardingCount),
-        alreadyWikkeldCount,
-        nahardingCount
-      );
-      const readyReportedCount = resolveLnReadyReportedCount(totalOrderCount, todoCount);
+      
+      const wikkelCount = stats.wikkelCount;
+      const nahardingCount = stats.nahardingCount;
+      const readyReportedCount = stats.readyCount;
+      const todoCount = Math.max(0, totalOrderCount - (wikkelCount + nahardingCount + readyReportedCount));
+
       const current: LnReadyGroupedRow = existingRow || {
         id: rowKey,
         station: originStation,
@@ -770,7 +776,7 @@ const ImportExportDashboard = ({
         readyReportedCount,
         todoCount,
         nahardingCount,
-        wikkelCount: stats?.wikkelCount || 0,
+        wikkelCount,
         refOpsText,
         count: 0,
       };

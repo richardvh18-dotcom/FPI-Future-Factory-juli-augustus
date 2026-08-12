@@ -1812,7 +1812,10 @@ const PrintStationView = () => {
             widthMm,
             heightMm,
           });
-          zplChunks.push(rendered);
+          // Dupliceer de zpl chunk direct in de array zodat het een voorgebakken batch is
+          for (let i = 0; i < printQuantity; i++) {
+            zplChunks.push(rendered);
+          }
         }
 
         zpl = zplChunks.join('\n');
@@ -1854,13 +1857,13 @@ const PrintStationView = () => {
         zpl,
         {
           description: `Order label voor ${order}`,
-          quantity: printQuantity,
+          quantity: 1, // Altijd 1, we genereren zelf de juiste hoeveelheid ZPL labels
           orderId: order,
           lotNumber: String(orderData.lotNumber || order),
           stationId: LABELS_PRINTING_QUEUE_STATION,
           targetPrinterName: activeQueuePrinter.name,
           source: 'temp_order_labels',
-          queuedAsBatch: false,
+          queuedAsBatch: true, // Batch mode voorkomt dat de ^PQ tag later overschreven wordt
           templateId: template?.id || null,
           variables: template ? getCompactPrintVariables(processedData || {}) : {
             orderNumber: order,

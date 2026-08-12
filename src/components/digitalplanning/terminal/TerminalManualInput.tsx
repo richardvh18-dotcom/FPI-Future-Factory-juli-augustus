@@ -26,6 +26,7 @@ const TerminalManualInput = ({
         <input
           autoFocus 
           type="text" 
+          enterKeyHint="done"
           value={value}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
           onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && onSearch()}
