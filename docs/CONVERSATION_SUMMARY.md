@@ -1,7 +1,8 @@
-### Update sessie 13 augustus 2026 - Knop naar GatewayPC Web UI in Future Factory
+### Update sessie 13 augustus 2026 - Knop naar GatewayPC Web UI & Laserprinter voorbereiding
 
 **Handeling:**
 - **Knop toevoegen**: In `GatewayPcAdminView.tsx` hebben we de eenvoudige tekstlink "Open Node.js web UI" vervangen door een stijlvolle, opvallende teal-kleurige knop met hover- en klik-transities.
+- **Laserprinter aanduiding**: In de `GatewayPC` Web-UI hebben we de optie `PDF` hernoemd naar `A4 Document / Tekening (PDF / Laserprinter)` en `LABEL_ZPL` naar `Label (ZPL / Zebra)` om de toekomstige integratie met kantoorlaserprinters intuïtiever te maken.
 
 ### Update sessie 13 augustus 2026 - Herontwerp GatewayPC Landingspagina & Integratie
 
