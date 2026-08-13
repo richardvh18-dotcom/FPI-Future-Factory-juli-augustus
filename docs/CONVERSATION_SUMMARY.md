@@ -2,6 +2,7 @@
 
 **Handeling:**
 - **USB Print Tabs Conflict**: `PrintQueueAutoProcessor.tsx` gebruikt nu de Web Locks API (`navigator.locks`) om er zeker van te zijn dat maar 1 tabblad tegelijk de print-loop draait en de USB interface claimt. Dit lost het conflict (en de 'Unable to claim interface' error) op als je meerdere tabbladen open hebt staan. Alleen het tabblad dat als eerste de lock krijgt, verwerkt de prints.
+- **Enterprise Audit Logging**: De link in de "Activiteit Audit" pagina naar Google Cloud Logging is opgeschoond. Printer spam (zoals `PRINT_JOB` en `PING` keepalives) wordt nu standaard uitgefilterd, zodat je direct de belangrijke menselijke/productie acties ziet.
 - **Versiebeheer**: Automatische versie-controle en auto-refresh geactiveerd op alle geopende clients.
 - `VersionObserver` component aangemaakt ([VersionObserver.tsx](file:///home/richardvh18/Antigravity%20FFP/FPI-Future-Factory-juli-augustus-main/src/components/VersionObserver.tsx)) en gemonteerd in [App.tsx](file:///home/richardvh18/Antigravity%20FFP/FPI-Future-Factory-juli-augustus-main/src/App.tsx).
 - De observer gebruikt zowel de realtime Firestore-listener (`listenToAppVersion` in [versionService.ts](file:///home/richardvh18/Antigravity%20FFP/FPI-Future-Factory-juli-augustus-main/src/services/versionService.ts)) als een periodieke fetch op `/version.json` (elke 15 min + bij tab focus/visibiliteit) om te detecteren wanneer een nieuwe versie is gedeplyed.
