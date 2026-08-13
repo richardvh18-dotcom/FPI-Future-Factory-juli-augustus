@@ -818,119 +818,135 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
     const processQueue = async () => {
       isProcessingRef.current = true;
       try {
-        for (const job of pendingJobs) {
-          const targetPrinter = getPrinterForQueueJob(job, currentPrinter, printers);
-          if (!targetPrinter) {
-            continue;
-          }
-
-          // CRITIEKE FIX: Deze processor mag alleen printen als de targetPrinter overeenkomt met de huidige ingestelde printer.
-          // Anders nemen alle auto-processors blind taken over.
-          if (currentPrinter && targetPrinter.id !== currentPrinter.id) {
-            continue;
-          }
-
-          console.info('[PrintQueueAutoProcessor] processQueue:job-start', {
-            jobId: job.id,
-            jobPrinterId: String(job?.printerId || ''),
-            jobStationId: String(job?.stationId || ''),
-            targetPrinterId: String(targetPrinter.id || ''),
-            targetPrinterName: String(targetPrinter.name || ''),
+        // Gebruik de Web Locks API om er zeker van te zijn dat maar 1 tabblad (sessie) tegelijk de queue verwerkt en verbinding maakt met de USB printer.
+        if (typeof navigator !== 'undefined' && 'locks' in navigator) {
+          await navigator.locks.request('print_queue_usb_lock', { ifAvailable: true }, async (lock) => {
+            if (!lock) {
+              console.debug('[PrintQueueAutoProcessor] Ander tabblad heeft de lock al, ik sla over.');
+              return; // Een ander tabblad doet het werk al.
+            }
+            await doProcessQueue();
           });
-
-          const deviceForJob = await resolveUsbDeviceForTargetPrinter(targetPrinter);
-          if (!deviceForJob) {
-            console.warn(
-              `[PrintQueueAutoProcessor] Geen passende USB-printer beschikbaar voor job ${job.id} en target printer ${String(targetPrinter.name || targetPrinter.id || '')}.`
-            );
-            continue;
-          }
-
-          const routingViolation = getPrinterRoutingViolation(job, targetPrinter);
-          if (routingViolation) {
-            console.warn(`[PrintQueueAutoProcessor] ${routingViolation} jobId=${job.id}`);
-            continue;
-          }
-
-          const liveStatusBeforeStart = await getLivePrintQueueJobStatus(job.id);
-          if (liveStatusBeforeStart && !['pending', 'queued', 'processing'].includes(liveStatusBeforeStart)) {
-            continue;
-          }
-
-          try {
-            await transitionPrintQueueJobStatus({
-              jobId: job.id,
-              status: 'printing',
-              source: 'PrintQueueAutoProcessor',
-              printerName: targetPrinter.name || '',
-            });
-          } catch (error) {
-            if (isInvalidPrintQueueTransitionError(error)) {
-              continue;
-            }
-            throw error;
-          }
-
-          try {
-            const content = job.printData || job.zpl;
-            if (!content) throw new Error('Geen printdata gevonden in printtaak.');
-
-            const forceQuantityCopies = Boolean(job?.metadata?.forceQuantityCopies);
-            const isPreBatchedJob = forceQuantityCopies
-              ? false
-              : (Boolean(job?.metadata?.queuedAsBatch) || isLikelyPreBatchedZpl(content));
-            const batchSeqIndex = Number(job?.metadata?.batchSequenceIndex);
-            const batchSeqTotal = Number(job?.metadata?.batchSequenceTotal);
-            const hasBatchSequence = Number.isFinite(batchSeqIndex) && Number.isFinite(batchSeqTotal) && batchSeqTotal > 0;
-            const shouldCutAtEnd = hasBatchSequence ? batchSeqIndex === batchSeqTotal : true;
-            const basePayload = buildProtocolAwareUsbPayload({
-              printer: targetPrinter as Record<string, unknown>,
-              content,
-              quantity: getJobQuantity(job),
-              isPreBatchedJob,
-            });
-            const payload = enforceCutModeOnBatchPayload(basePayload, shouldCutAtEnd, isPreBatchedJob);
-
-            console.info('[PrintQueueAutoProcessor] processQueue:usb-write', {
-              jobId: job.id,
-              vendorId: deviceForJob.vendorId,
-              productId: deviceForJob.productId,
-              payloadLength: payload.length,
-              quantity: getJobQuantity(job),
-              isPreBatchedJob,
-            });
-
-            await printRawUsbToDevice({ device: deviceForJob, content: payload });
-
-            await transitionPrintQueueJobStatus({
-              jobId: job.id,
-              status: 'completed',
-              source: 'PrintQueueAutoProcessor',
-              printerName: targetPrinter.name || '',
-            });
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            console.error('[PrintQueueAutoProcessor] Print failure for job:', job.id, message);
-            try {
-              const liveStatus = await getLivePrintQueueJobStatus(job.id);
-              if (liveStatus === 'completed' || liveStatus === 'cancelled') {
-                continue;
-              }
-              await transitionPrintQueueJobStatus({
-                jobId: job.id,
-                status: 'error',
-                error: message,
-                source: 'PrintQueueAutoProcessor',
-              });
-            } catch (transitionError) {
-              if (!isInvalidPrintQueueTransitionError(transitionError)) {
-                throw transitionError;
-              }
-            }
-          }
+        } else {
+          // Fallback voor browsers zonder navigator.locks, maar WebUSB vereist normaal Chromium (die locks ondersteunt).
+          await doProcessQueue();
         }
       } finally {
         isProcessingRef.current = false;
+      }
+    };
+
+    const doProcessQueue = async () => {
+      for (const job of pendingJobs) {
+        const targetPrinter = getPrinterForQueueJob(job, currentPrinter, printers);
+        if (!targetPrinter) {
+          continue;
+        }
+
+        // CRITIEKE FIX: Deze processor mag alleen printen als de targetPrinter overeenkomt met de huidige ingestelde printer.
+        // Anders nemen alle auto-processors blind taken over.
+        if (currentPrinter && targetPrinter.id !== currentPrinter.id) {
+          continue;
+        }
+
+        console.info('[PrintQueueAutoProcessor] processQueue:job-start', {
+          jobId: job.id,
+          jobPrinterId: String(job?.printerId || ''),
+          jobStationId: String(job?.stationId || ''),
+          targetPrinterId: String(targetPrinter.id || ''),
+          targetPrinterName: String(targetPrinter.name || ''),
+        });
+
+        const deviceForJob = await resolveUsbDeviceForTargetPrinter(targetPrinter);
+        if (!deviceForJob) {
+          console.warn(
+            `[PrintQueueAutoProcessor] Geen passende USB-printer beschikbaar voor job ${job.id} en target printer ${String(targetPrinter.name || targetPrinter.id || '')}.`
+          );
+          continue;
+        }
+
+        const routingViolation = getPrinterRoutingViolation(job, targetPrinter);
+        if (routingViolation) {
+          console.warn(`[PrintQueueAutoProcessor] ${routingViolation} jobId=${job.id}`);
+          continue;
+        }
+
+        const liveStatusBeforeStart = await getLivePrintQueueJobStatus(job.id);
+        if (liveStatusBeforeStart && !['pending', 'queued', 'processing'].includes(liveStatusBeforeStart)) {
+          continue;
+        }
+
+        try {
+          await transitionPrintQueueJobStatus({
+            jobId: job.id,
+            status: 'printing',
+            source: 'PrintQueueAutoProcessor',
+            printerName: targetPrinter.name || '',
+          });
+        } catch (error) {
+          if (isInvalidPrintQueueTransitionError(error)) {
+            continue;
+          }
+          throw error;
+        }
+
+        try {
+          const content = job.printData || job.zpl;
+          if (!content) throw new Error('Geen printdata gevonden in printtaak.');
+
+          const forceQuantityCopies = Boolean(job?.metadata?.forceQuantityCopies);
+          const isPreBatchedJob = forceQuantityCopies
+            ? false
+            : (Boolean(job?.metadata?.queuedAsBatch) || isLikelyPreBatchedZpl(content));
+          const batchSeqIndex = Number(job?.metadata?.batchSequenceIndex);
+          const batchSeqTotal = Number(job?.metadata?.batchSequenceTotal);
+          const hasBatchSequence = Number.isFinite(batchSeqIndex) && Number.isFinite(batchSeqTotal) && batchSeqTotal > 0;
+          const shouldCutAtEnd = hasBatchSequence ? batchSeqIndex === batchSeqTotal : true;
+          const basePayload = buildProtocolAwareUsbPayload({
+            printer: targetPrinter as Record<string, unknown>,
+            content,
+            quantity: getJobQuantity(job),
+            isPreBatchedJob,
+          });
+          const payload = enforceCutModeOnBatchPayload(basePayload, shouldCutAtEnd, isPreBatchedJob);
+
+          console.info('[PrintQueueAutoProcessor] processQueue:usb-write', {
+            jobId: job.id,
+            vendorId: deviceForJob.vendorId,
+            productId: deviceForJob.productId,
+            payloadLength: payload.length,
+            quantity: getJobQuantity(job),
+            isPreBatchedJob,
+          });
+
+          await printRawUsbToDevice({ device: deviceForJob, content: payload });
+
+          await transitionPrintQueueJobStatus({
+            jobId: job.id,
+            status: 'completed',
+            source: 'PrintQueueAutoProcessor',
+            printerName: targetPrinter.name || '',
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.error('[PrintQueueAutoProcessor] Print failure for job:', job.id, message);
+          try {
+            const liveStatus = await getLivePrintQueueJobStatus(job.id);
+            if (liveStatus === 'completed' || liveStatus === 'cancelled') {
+              continue;
+            }
+            await transitionPrintQueueJobStatus({
+              jobId: job.id,
+              status: 'error',
+              error: message,
+              source: 'PrintQueueAutoProcessor',
+            });
+          } catch (transitionError) {
+            if (!isInvalidPrintQueueTransitionError(transitionError)) {
+              throw transitionError;
+            }
+          }
+        }
       }
     };
 
