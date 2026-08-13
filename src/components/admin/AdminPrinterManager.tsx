@@ -422,7 +422,8 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
   printers: PrinterRecord[];
   onPrint: (config: {
     station: string;
-    weekOffset: number;
+    year: string;
+    week: string;
     startSeq: number;
     count: number;
     mode: "sequential" | "identical";
@@ -430,16 +431,19 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
   }) => void;
 }) => {
   const { t } = useTranslation();
+  const { week: curWeek, year: curYear } = getIsoWeekAndYear(new Date());
   const [config, setConfig] = useState<{
     station: string;
-    weekOffset: number;
+    year: string;
+    week: string;
     startSeq: string;
     count: string;
     mode: "sequential" | "identical";
     printerId: string;
   }>({
     station: stations[0] || "",
-    weekOffset: 0, // -1 = vorige week, 0 = huidige week, 1 = volgende week
+    year: String(curYear),
+    week: String(curWeek).padStart(2, '0'),
     startSeq: "1",
     count: "1",
     mode: 'sequential', // 'sequential' | 'identical'
@@ -449,11 +453,10 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
   const parsedStartSeq = Math.max(1, Math.min(9999, parseInt(config.startSeq, 10) || 1));
   const parsedCount = Math.max(1, Math.min(100, parseInt(config.count, 10) || 1));
 
-  const previewDate = new Date();
-  previewDate.setDate(previewDate.getDate() + (Number(config.weekOffset) * 7));
-  const iso = getIsoWeekAndYear(previewDate);
+  const yy = config.year.replace(/\D/g, '').slice(-2).padStart(2, '0');
+  const ww = config.week.replace(/\D/g, '').padStart(2, '0');
   const machineCode = getMachineCode(config.station);
-  const baseLot = `40${iso.year.slice(-2)}${iso.week}${machineCode}40`;
+  const baseLot = `40${yy}${ww}${machineCode}40`;
   const previewLots = Array.from({ length: Math.min(5, Math.max(1, parsedCount)) }, (_, i) => {
     const seqNum = config.mode === 'sequential' ? parsedStartSeq + i : parsedStartSeq;
     return `${baseLot}${String(seqNum).padStart(4, '0')}`;
@@ -481,19 +484,46 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
                 {stations.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
-            <div>
-              <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.week", "Week")}</label>
-              <select
-                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
-                value={String(config.weekOffset)}
-                onChange={e => setConfig({ ...config, weekOffset: parseInt(e.target.value, 10) || 0 })}
-              >
-                <option value="-1">{t("adminPrinterManager.previousWeek", "Vorige week")}</option>
-                <option value="0">{t("adminPrinterManager.currentWeek", "Huidige week")}</option>
-                <option value="1">{t("adminPrinterManager.nextWeek", "Volgende week")}</option>
-              </select>
-              <p className="mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t("adminPrinterManager.isoWeek", "ISO week")} {iso.week}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.year", "Jaar")}</label>
+                <input
+                  type="text"
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
+                  value={config.year}
+                  onChange={(e) => setConfig({ ...config, year: e.target.value.replace(/\D/g, '').slice(0, 4) })}
+                  onBlur={() => {
+                    if (!config.year) {
+                      const { year } = getIsoWeekAndYear(new Date());
+                      setConfig(prev => ({ ...prev, year: String(year) }));
+                    }
+                  }}
+                  maxLength={4}
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase text-slate-500 mb-1 block">{t("adminPrinterManager.week", "Week")}</label>
+                <input
+                  type="text"
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
+                  value={config.week}
+                  onChange={(e) => setConfig({ ...config, week: e.target.value.replace(/\D/g, '').slice(0, 2) })}
+                  onBlur={() => {
+                    const val = config.week.replace(/\D/g, '');
+                    if (!val) {
+                      const { week } = getIsoWeekAndYear(new Date());
+                      setConfig(prev => ({ ...prev, week: String(week).padStart(2, '0') }));
+                    } else {
+                      setConfig(prev => ({ ...prev, week: val.padStart(2, '0') }));
+                    }
+                  }}
+                  maxLength={2}
+                  required
+                />
+              </div>
             </div>
+            <p className="mt-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t("adminPrinterManager.isoWeek", "ISO week")} {ww}</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -566,9 +596,13 @@ const LotPrintModal = ({ onClose, stations, printers, onPrint }: {
 
           <button 
             onClick={() => onPrint({
-              ...config,
+              station: config.station,
+              year: config.year,
+              week: config.week,
               startSeq: parsedStartSeq,
               count: parsedCount,
+              mode: config.mode,
+              printerId: config.printerId
             })}
             className="w-full py-4 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg"
           >
@@ -1507,15 +1541,14 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
     return { mode: 'queue' };
   };
 
-  const handleBulkLotPrint = async (config: { printerId: string; station: string; weekOffset: number; count: number; startSeq: number; mode: "sequential" | "identical" }) => {
+  const handleBulkLotPrint = async (config: { printerId: string; station: string; year: string; week: string; count: number; startSeq: number; mode: "sequential" | "identical" }) => {
     const printer = printers.find((p) => p.id === config.printerId);
     if (!printer) return showError("Selecteer een printer.");
 
-    const lotDate = new Date();
-    lotDate.setDate(lotDate.getDate() + (Number(config.weekOffset) * 7));
-    const iso = getIsoWeekAndYear(lotDate);
+    const yy = config.year.replace(/\D/g, '').slice(-2).padStart(2, '0');
+    const ww = config.week.replace(/\D/g, '').padStart(2, '0');
     const machineCode = getMachineCode(config.station);
-    const baseLot = `40${iso.year.slice(-2)}${iso.week}${machineCode}40`;
+    const baseLot = `40${yy}${ww}${machineCode}40`;
 
     const driver = getDriver(printer);
     const darkness = printer.darkness ? parseInt(printer.darkness) : driver.defaultDarkness;

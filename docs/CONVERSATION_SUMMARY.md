@@ -1,3 +1,38 @@
+### Update sessie 13 augustus 2026 - Handmatige Jaar en Week invoer voor bulk-lotnummers printen
+
+**Handeling:**
+- **LotPrintModal**: In `PrintStationView.tsx`, `AdminPrinterManager.tsx` én `PrintQueueAdminView.tsx` (Centraal Printstation / Beheer printopdrachten pagina) hebben we het `weekOffset` select-dropdownveld vervangen.
+- **Jaar & Week Inputs**: In plaats van "Vorige/Huidige/Volgende week" te selecteren, zijn er nu twee invoervelden: **Jaar** (standaard gevuld met het huidige jaar, bijv. `2026`) en **Week** (standaard gevuld met het huidige weeknummer, bijv. `32`).
+- De velden accepteren uitsluitend getallen en passen automatisch een blur/padding toe (bijv. padding van de week naar 2 cijfers).
+- Hiermee kan de gebruiker elk gewenst jaar (bijv. `2026` of `26` om `26` te genereren) en elke gewenste week invoeren, wat scenario's ondersteunt waarin men in een nieuw jaar (bijv. `2027`) nog labels wil printen met het jaartal `26` en een eerdere week (bijv. `49`).
+
+### Update sessie 13 augustus 2026 - Automatische volgnummer-ophaallogica bij handmatige weekwijziging
+
+**Handeling:**
+- **Productie Start Modal**: In `ProductionStartModal.tsx` hebben we de `onBlur`-handler voor het aanpasbare week-inputveld geüpdatet.
+- **Dynamic Sequence Lookups**: Zodra een operator handmatig de week aanpast (bijv. naar een voorgaande week voor een reparatie of herdruk), berekent de modal nu direct het **eerstvolgende vrije volgnummer** voor die specifieke week. 
+- Hierbij wordt via `getHighestSequenceForBaseLot` en `checkLotNumberExists` gekeken wat de hoogste actieve volgnummers zijn en of de nieuw gegenereerde lotnummers al in gebruik zijn in Firestore/Archieven. Het lotnummer wordt hiermee direct correct klaargezet.
+
+### Update sessie 13 augustus 2026 - Analyse Lighthouse CJ-PRO II (Argox OEM)
+
+**Bevindingen:**
+- De USB Vendor/Product ID `5732:3856` (decimaal) vertaalt naar `0x1664:0x0F10` (hex).
+- De fabrikant (`0x1664`) is **Argox Information Co., Ltd.** Dit betekent dat de Lighthouse CJ-PRO II onder de motorkap een Argox-printer is.
+- Argox-printers gebruiken doorgaans de protocollen **PPLA** (Datamax), **PPLB** (Eltron EPL) of **PPLZ/PPLC** (Zebra ZPL).
+- Dat de printer wel knippert bij WebUSB maar niet print, komt omdat de printer waarschijnlijk in **PPLB** (EPL) of **PPLA** emulatie-modus staat, terwijl de webapplicatie ZPL of TSPL stuurt.
+
+**Actieplan voor morgen:**
+1. **Zelftest uitvoeren**: Printer uitzetten $\rightarrow$ FEED-knop ingedrukt houden $\rightarrow$ aanzetten $\rightarrow$ FEED loslaten zodra hij print. Dit drukt de actieve emulatie af (PPLA, PPLB of PPLZ).
+2. **Oplossing A**: Zet de printer via de *Argox Printer Utility* (op Windows) om naar **PPLZ** (Zebra emulation). De printer zal dan direct werken met onze bestaande ZPL-code.
+3. **Oplossing B**: Als de printer op **PPLB** moet blijven staan, kunnen we in de database bij de printer het protocol op `epl` zetten. Onze code ondersteunt dit protocol al in `printerProtocolService.ts`.
+
+### Update sessie 13 augustus 2026 - Twee-weg USB communicatie (Status & Foutafhandeling)
+
+**Handeling:**
+- **USB 2-weg communicatie**: We hebben een check toegevoegd voor ZPL printers (`~HS` commando) direct na elke printopdracht, waarbij het `IN`-endpoint (`transferIn`) wordt uitgelezen. Dit checkt of de printer daadwerkelijk een label heeft gedrukt of in een foutmodus (zoals Paper Out of Head Open) zit. 
+- **ZPL Only**: Deze check wordt actief overgeslagen voor TSPL/Lighthouse printers (`normalizePrinterProtocol(printer) !== 'zpl'`), zodat hun werking niet verstoord wordt.
+- De print-taak wijzigt nu direct van status naar `error` als de `printRawUsb` call via de status check detecteert dat de printer klep open staat of papier op is. 
+
 ### Update sessie 13 augustus 2026 - Web Locks API voor PrintQueue & Automatische App-Verversing
 
 **Handeling:**

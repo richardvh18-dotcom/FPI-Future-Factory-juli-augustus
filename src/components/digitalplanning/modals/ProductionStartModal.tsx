@@ -2695,13 +2695,30 @@ const ProductionStartModal = ({
                   onBlur={(e) => {
                     const val = e.target.value.replace(/\D/g, '').padStart(2, '0').slice(-2);
                     e.target.value = val;
-                    const newLot = lotNumber.slice(0, 4) + val + lotNumber.slice(6, 11) + lotNumber.slice(11);
-                    setLotNumber(newLot);
+                    const baseLot = lotNumber.slice(0, 4) + val + lotNumber.slice(6, 11);
+                    const weekSuffix = lotNumber.slice(2, 4) + val;
                     (async () => {
                       setIsCheckingLot(true);
-                      const exists = await checkLotNumberExists(newLot);
-                      setLotError(exists ? "Dit lotnummer is al in gebruik." : "");
-                      setIsCheckingLot(false);
+                      try {
+                        const highestSeq = await getHighestSequenceForBaseLot(baseLot, stationId, weekSuffix);
+                        let counter = highestSeq + 1;
+                        let candidateLot = `${baseLot}${String(counter).padStart(4, '0')}`;
+                        while (await checkLotNumberExists(candidateLot)) {
+                          counter++;
+                          candidateLot = `${baseLot}${String(counter).padStart(4, '0')}`;
+                          if (counter > 9999) break;
+                        }
+                        setLotNumber(candidateLot);
+                        setLotError("");
+                      } catch (err) {
+                        console.error("Fout bij ophalen volgnummer voor gewijzigde week:", err);
+                        const fallbackLot = baseLot + lotNumber.slice(11);
+                        setLotNumber(fallbackLot);
+                        const exists = await checkLotNumberExists(fallbackLot);
+                        setLotError(exists ? "Dit lotnummer is al in gebruik." : "");
+                      } finally {
+                        setIsCheckingLot(false);
+                      }
                     })();
                   }}
                   onKeyDown={(e) => {

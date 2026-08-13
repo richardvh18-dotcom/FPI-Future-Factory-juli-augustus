@@ -199,6 +199,20 @@ const getOutEndpoint = (
   };
 };
 
+const getInEndpoint = (
+  device: USBDevice,
+  interfaceNumber: number,
+  alternateSetting: number
+): number | null => {
+  const iface = device.configuration?.interfaces.find((i) => i.interfaceNumber === interfaceNumber);
+  if (!iface) return null;
+  const alternate = iface.alternates.find((a) => a.alternateSetting === alternateSetting);
+  if (!alternate) return null;
+  const inEndpoint = (alternate.endpoints || []).find((ep) => ep.direction === "in");
+  return inEndpoint ? inEndpoint.endpointNumber : null;
+};
+
+
 const safeCloseDevice = async (device: USBDevice | null | undefined): Promise<void> => {
   if (!device) return;
 
@@ -262,6 +276,73 @@ const normalizeUsbError = (err: unknown): Error => {
 
   return new Error(String(err || "Onbekende USB fout"));
 };
+
+const parseZebraStatus = (statusString: string): string | null => {
+  // ~HS returns 3 lines of CSV. Line 1:
+  // <STX>030,0,0,0844,000,0,0,0,000,0,0,0<ETX><CR><LF>
+  // Third value is paper out flag (1 = paper out).
+  // Sixth value is pause flag (1 = paused).
+  // Second line has head open flag, etc.
+  
+  if (!statusString || statusString.trim() === '') return null;
+  // eslint-disable-next-line no-control-regex
+  const lines = statusString.split('\n').map(l => l.trim().replace(/\u0002|\u0003/g, ''));
+  if (lines.length === 0) return null;
+
+  const errors: string[] = [];
+  const line1 = lines[0].split(',');
+  if (line1.length >= 6) {
+    if (line1[1] === '1') errors.push("Papier/Media is op (Paper Out).");
+    if (line1[2] === '1') errors.push("Pause staat aan.");
+    if (line1[5] === '1') errors.push("Buffer is vol.");
+  }
+  
+  if (lines.length > 1) {
+    const line2 = lines[1].split(',');
+    if (line2.length >= 3) {
+      if (line2[1] === '1') errors.push("Printkop staat open (Head Open).");
+      if (line2[2] === '1') errors.push("Lint is op (Ribbon Out).");
+    }
+  }
+
+  if (errors.length > 0) {
+    return errors.join(" ");
+  }
+
+  return null;
+};
+
+const readPrinterStatusUsb = async (
+  device: USBDevice,
+  outEndpointNumber: number,
+  inEndpointNumber: number | null
+): Promise<void> => {
+  if (inEndpointNumber === null || inEndpointNumber === undefined) return;
+  
+  try {
+    // Stuur ~HS commando
+    const req = new TextEncoder().encode("~HS\r\n");
+    await device.transferOut(outEndpointNumber, req as unknown as BufferSource);
+    
+    // Lees antwoord
+    const res = await (device as any).transferIn(inEndpointNumber, 1024);
+    if (res.status === 'ok' && res.data) {
+      const decoder = new TextDecoder();
+      const statusText = decoder.decode(res.data);
+      const errorMsg = parseZebraStatus(statusText);
+      if (errorMsg) {
+        throw new Error(`Printer Fout: ${errorMsg}`);
+      }
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('Printer Fout:')) {
+      throw err; // Gooi geparseerde printer error door
+    }
+    // Andere errors (timeout etc) negeren we, we willen de flow niet breken als status read faalt.
+    console.warn("Kon printer status niet uitlezen:", err);
+  }
+};
+
 
 const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> => {
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
@@ -452,14 +533,18 @@ export const requestUsbDevice = async (printer: UsbPrinterFilterInput = {}): Pro
   }
 };
 
+import { normalizePrinterProtocol } from './printerProtocolService';
+
 export const printRawUsbToDevice = async ({
   device,
   content,
   logMessage,
+  printer,
 }: {
   device: USBDevice | null | undefined;
   content: unknown;
   logMessage?: string;
+  printer?: UsbPrinterFilterInput;
 }) => {
   if (!device) {
     throw new Error("Geen printer verbonden.");
@@ -499,6 +584,17 @@ export const printRawUsbToDevice = async ({
       for (let offset = 0; offset < data.length; offset += USB_TRANSFER_CHUNK_SIZE) {
         const chunk = data.slice(offset, offset + USB_TRANSFER_CHUNK_SIZE);
         await transferPayload(chunk);
+      }
+    }
+
+    // Status check na printen voor ZPL printers
+    const isZpl = normalizePrinterProtocol(printer as any) === 'zpl';
+    if (isZpl) {
+      const inEndpoint = getInEndpoint(device, endpointInfo.interfaceNumber, endpointInfo.alternateSetting);
+      if (inEndpoint !== null) {
+        // Korte wachttijd om de printer de kans te geven de foutstatus bij te werken (bijv. als hij halverwege printen in error schiet)
+        await new Promise(r => setTimeout(r, 500));
+        await readPrinterStatusUsb(device, endpointInfo.endpointNumber, inEndpoint);
       }
     }
 
@@ -593,7 +689,7 @@ export const printRawUsb = async ({
   }
 
   const device = await selectUsbDevice(printer);
-  return printRawUsbToDevice({ device, content, logMessage });
+  return printRawUsbToDevice({ device, content, logMessage, printer });
 };
 
 export const isUsbDirectSupported = (): boolean => {

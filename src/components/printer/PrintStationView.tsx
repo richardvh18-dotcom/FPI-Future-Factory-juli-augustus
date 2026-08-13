@@ -993,7 +993,9 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: Lot
   const { notify } = useNotifications();
   const [departmentKey, setDepartmentKey] = useState(departmentGroups[0]?.key || "");
   const [station, setStation] = useState(departmentGroups[0]?.stations?.[0] || "");
-  const [weekOffset, setWeekOffset] = useState(0); // -1,0,1
+  const { week: curWeek, year: curYear } = getISOWeekInfo(new Date());
+  const [manualWeek, setManualWeek] = useState(String(curWeek).padStart(2, '0'));
+  const [manualYear, setManualYear] = useState(String(curYear));
   const [count, setCount] = useState("1");
   const [startNum, setStartNum] = useState("1");
   const [loading, setLoading] = useState(false);
@@ -1027,11 +1029,8 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: Lot
     }
     setLoading(true);
     try {
-      const now = new Date();
-      now.setDate(now.getDate() + (Number(weekOffset) * 7));
-      const { week, year } = getISOWeekInfo(now);
-      const yy = String(year).slice(-2);
-      const ww = String(week).padStart(2, '0');
+      const yy = manualYear.replace(/\D/g, '').slice(-2).padStart(2, '0');
+      const ww = manualWeek.replace(/\D/g, '').padStart(2, '0');
       const machineCode = getStationMachineCode(station);
       const baseLot = `40${yy}${ww}${machineCode}40`;
 
@@ -1062,11 +1061,8 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: Lot
     }
   };
 
-  const previewNow = new Date();
-  previewNow.setDate(previewNow.getDate() + (Number(weekOffset) * 7));
-  const { week: previewWeek, year: previewYear } = getISOWeekInfo(previewNow);
-  const previewYY = String(previewYear).slice(-2);
-  const previewWW = String(previewWeek).padStart(2, '0');
+  const previewYY = manualYear.replace(/\D/g, '').slice(-2).padStart(2, '0');
+  const previewWW = manualWeek.replace(/\D/g, '').padStart(2, '0');
   const previewMachineCode = getStationMachineCode(station);
   const previewBaseLot = `40${previewYY}${previewWW}${previewMachineCode}40`;
   const previewLots = Array.from({ length: Math.min(5, Math.max(1, parsedCount)) }, (_, i) => {
@@ -1106,14 +1102,44 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: Lot
               {availableStations.map((s: string) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">{t("common.week")}</label>
-            <select value={String(weekOffset)} onChange={(e) => setWeekOffset(parseInt(e.target.value, 10) || 0)} className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50">
-              <option value="-1">{t("common.previousWeek")}</option>
-              <option value="0">{t("common.currentWeek")}</option>
-              <option value="1">{t("common.nextWeek")}</option>
-            </select>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">{t("common.isoWeek", { week: previewWW })}</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">{t("common.year", "Jaar")}</label>
+              <input
+                type="text"
+                value={manualYear}
+                onChange={(e) => setManualYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                onBlur={() => {
+                  if (!manualYear) {
+                    const { year } = getISOWeekInfo(new Date());
+                    setManualYear(String(year));
+                  }
+                }}
+                className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50"
+                maxLength={4}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">{t("common.week", "Week")}</label>
+              <input
+                type="text"
+                value={manualWeek}
+                onChange={(e) => setManualWeek(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                onBlur={() => {
+                  const val = manualWeek.replace(/\D/g, '');
+                  if (!val) {
+                    const { week } = getISOWeekInfo(new Date());
+                    setManualWeek(String(week).padStart(2, '0'));
+                  } else {
+                    setManualWeek(val.padStart(2, '0'));
+                  }
+                }}
+                className="w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50"
+                maxLength={2}
+                required
+              />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

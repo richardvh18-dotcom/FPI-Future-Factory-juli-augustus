@@ -919,7 +919,7 @@ const PrintQueueAutoProcessor = ({ enabled = true }: Props) => {
             isPreBatchedJob,
           });
 
-          await printRawUsbToDevice({ device: deviceForJob, content: payload });
+          await printRawUsbToDevice({ device: deviceForJob, content: payload, printer: targetPrinter as Record<string, unknown> });
 
           await transitionPrintQueueJobStatus({
             jobId: job.id,
