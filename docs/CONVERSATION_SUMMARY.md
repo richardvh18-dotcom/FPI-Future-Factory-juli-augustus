@@ -1,3 +1,14 @@
+### Update sessie 13 augustus 2026 - Herontwerp GatewayPC Landingspagina & Integratie
+
+**Handeling:**
+- **Clonings & Setup**: We hebben de `GatewayPC` repository succesvol gekloond in de workspace, dependencies geïnstalleerd en de dev-server opgestart (`npm run dev`) op poort `3030`.
+- **Visueel Herontwerp**: De landingspagina in `GatewayPC/src/app.ts` is volledig omgebouwd naar een modern, premium glassmorphic dark-mode dashboard.
+- **Service Indeling**: De pagina is nu duidelijk ingedeeld in 4 services met thematische neon-accenten en statussen:
+  1. **Printers** (Gekoppeld, inclusief alle configuratie-inputs en direct print-test).
+  2. **Robot** (Gekoppeld, inclusief alle FTP/IP-inputs en robot-test).
+  3. **Wikkelmachines** (Status: Binnenkort, met PLC IP/Poort placeholder inputs).
+  4. **Ovens** (Status: Binnenkort, met temperatuur Modbus IP placeholder inputs).
+
 ### Update sessie 13 augustus 2026 - Handmatige Jaar en Week invoer voor bulk-lotnummers printen
 
 **Handeling:**

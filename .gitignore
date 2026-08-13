@@ -20,3 +20,7 @@ sa.json
 Tijdelijke Bestanden/PDF/LN Instructies/
 
 Tijdelijke Bestanden/
+
+# Local sub-repos
+GatewayPC/
+*.code-workspace
