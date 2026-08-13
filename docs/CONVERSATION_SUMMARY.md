@@ -1,3 +1,8 @@
+### Update sessie 13 augustus 2026 - Knop naar GatewayPC Web UI in Future Factory
+
+**Handeling:**
+- **Knop toevoegen**: In `GatewayPcAdminView.tsx` hebben we de eenvoudige tekstlink "Open Node.js web UI" vervangen door een stijlvolle, opvallende teal-kleurige knop met hover- en klik-transities.
+
 ### Update sessie 13 augustus 2026 - Herontwerp GatewayPC Landingspagina & Integratie
 
 **Handeling:**

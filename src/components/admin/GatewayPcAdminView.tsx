@@ -174,12 +174,14 @@ export const GatewayPcAdminView = () => {
                 href={uiUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-2 text-sm font-black uppercase tracking-wider text-blue-600"
+                className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-teal-600 hover:bg-teal-700 px-4 py-3 text-sm font-black uppercase tracking-wider text-white transition-all shadow-sm hover:-translate-y-0.5 active:translate-y-0"
               >
-                Open Node.js web UI <ExternalLink size={14} />
+                Open Node.js web UI <ExternalLink size={16} />
               </a>
             ) : (
-              <p className="text-sm text-slate-500">Vul eerst een IP-adres in om de web-UI-link te openen.</p>
+              <div className="rounded-2xl border border-slate-200 bg-slate-100/50 px-4 py-3 text-sm text-slate-500 text-center">
+                Vul eerst een IP-adres in om de web-UI te openen.
+              </div>
             )}
             <button
               onClick={handlePrepJob}
