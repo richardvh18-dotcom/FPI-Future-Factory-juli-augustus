@@ -28,6 +28,7 @@ import BackgroundTaskOverlay from "./components/notifications/BackgroundTaskOver
 import ProgressToast from "./components/digitalplanning/ProgressToast";
 import PrintQueueAutoProcessor from "./components/printer/PrintQueueAutoProcessor";
 import NetworkObserver from "./components/NetworkObserver";
+import VersionObserver from "./components/VersionObserver";
 import PrintQueuePinger from "./components/PrintQueuePinger";
 import AutoLogoutManager from "./components/AutoLogoutManager";
 
@@ -336,6 +337,7 @@ const App = () => {
           <BackgroundTaskOverlay />
           <ProgressToast />
           <NetworkObserver userEmail={user?.email} />
+          <VersionObserver />
           <PrintQueuePinger enabled={Boolean(user)} />
           <AutoLogoutManager isLoggedIn={!!user} />
           <PrintQueueAutoProcessor enabled={Boolean(user && role !== "guest" && enableGlobalPrintQueueAutoProcessor)} />

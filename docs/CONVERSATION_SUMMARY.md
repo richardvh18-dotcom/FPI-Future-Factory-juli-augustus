@@ -1,4 +1,12 @@
-﻿### Analyse sessie 12 augustus 2026 - Lighthouse CJ-PRO II printen (OPEN / BESLISSING UITGESTELD)
+### Update sessie 13 augustus 2026 - Automatische App-Verversing (VersionObserver)
+
+**Handeling:**
+- Automatische versie-controle en auto-refresh geactiveerd op alle geopende clients.
+- `VersionObserver` component aangemaakt ([VersionObserver.tsx](file:///home/richardvh18/Antigravity%20FFP/FPI-Future-Factory-juli-augustus-main/src/components/VersionObserver.tsx)) en gemonteerd in [App.tsx](file:///home/richardvh18/Antigravity%20FFP/FPI-Future-Factory-juli-augustus-main/src/App.tsx).
+- De observer gebruikt zowel de realtime Firestore-listener (`listenToAppVersion` in [versionService.ts](file:///home/richardvh18/Antigravity%20FFP/FPI-Future-Factory-juli-augustus-main/src/services/versionService.ts)) als een periodieke fetch op `/version.json` (elke 15 min + bij tab focus/visibiliteit) om te detecteren wanneer een nieuwe versie is gedeplyed.
+- Bij een gedetecteerde versiewijziging ververst de client automatisch de pagina (`window.location.reload()`), met beveiliging tegen herhaalde reload-loops via `sessionStorage`.
+
+### Analyse sessie 12 augustus 2026 - Lighthouse CJ-PRO II printen (OPEN / BESLISSING UITGESTELD)
 
 **Probleemstelling:**
 - De Lighthouse CJ-PRO II printer reageert wel op WebUSB (groene lampjes knipperen = data ontvangen), maar print niet.
