@@ -7,6 +7,10 @@
 - **Auto-Refresh Logica Verbetering**: Een logische fout opgelost in `VersionObserver.tsx` waarbij de eerste peiling van `version.json` direct de nieuwe versie als baseline instelde (zonder te verversen) als het tabblad gesuspendeerd was of Firestore leeg was. We vergelijken nu via een semver-vergelijking (`isNewerVersion`) direct met `CURRENT_VERSION` (de ingebouwde versie van de draaiende JS-code), zodat er alleen herladen wordt als er daadwerkelijk een *nieuwere* versie beschikbaar is op de server. Dit voorkomt ook oneindige herlaadlussen bij oudere Firestore-documentversies.
 - **GatewayPC Firestore Structuur**: De platte `gateway_events` collectie in Firestore is opgedeeld in gestructureerde categorieën (`printers`, `robot`, `ovens`, `wikkelmachines`, `other`) als subcollecties.
 - **GatewayPC Machine Integratie (Oven Beladen)**: Voorbereiding in de code van GatewayPC door de toevoeging van een helper-functie `advanceProductForStation` en een lokaal API-endpoint `POST /api/machine/event` (voor bijv. `BELADEN_OVEN`). Hiermee kan in de toekomst een PLC-knop automatisch het actieve product op een station (zoals BH15) afronden ("wikkelen klaar") en doorschuiven naar de volgende stap (oven).
+- **Firestore & Zustand Optimalisatie**: 
+  - De 30 losse realtime listeners in `trackedProducts.ts` zijn vervangen door **één enkele `collectionGroup` query** op de collectienaam `'items'`, met in-memory filtering. Dit vermindert het aantal Firebase-verbindingen per client met **93.5%**.
+  - Een centrale Zustand store (`useProductionDataStore`) met **reference counting** aangemaakt om deze Firestore-abonnementen eenmalig per client op te zetten en te delen, om dubbele actieve verbindingen te voorkomen.
+  - Integratie van de Zustand store doorgevoerd in de terminal hook (`useTerminalData.ts`).
 - **Deployment**: Versie gebumpt naar `0.1.160` en succesvol gebuild en gedeployd naar Firebase Hosting (`https://future-factory-377ef.web.app`).
 
 **Openstaande vragen voor machine-koppeling (BH15):**

@@ -28,7 +28,7 @@ import {
 import { useAdminAuth } from "../../../hooks/useAdminAuth";
 import { normalizeMachine, getStartedCounterField } from "../../../utils/hubHelpers";
 import { getOrderFinishedUnits } from "../../../utils/planningProgress";
-import { subscribeTrackedProducts } from "../../../utils/trackedProducts";
+import { useProductionDataStore } from "../productionDataStore";
 import { shouldHidePlanningOrder } from "../../../utils/terminalOrderFilters";
 
 import { useNotifications } from '../../../contexts/NotificationContext';
@@ -146,9 +146,13 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
   const [activeTab, setActiveTab] = useState("planning");
   const [lossenPlanningFilter, setLossenPlanningFilter] = useState<string | null>(initialLossenPlanningFilter || undefined);
   const [allOrders, setAllOrders] = useState<PlanningOrder[]>([]);
-  const [allTracked, setAllTracked] = useState<TrackedProductDoc[]>([]);
+  
+  // Zustand Store voor globale productie data
+  const allTracked = useProductionDataStore((state) => state.trackedProducts);
+  const loading = useProductionDataStore((state) => state.loading);
+  const subscribeToProducts = useProductionDataStore((state) => state.subscribeToProducts);
+
   const [archiveTrackedItems, setArchiveTrackedItems] = useState<TrackedProductDoc[]>([]);
-  const [loading, setLoading] = useState(true);
 
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedTrackedId, setSelectedTrackedId] = useState<string | null>(null);
@@ -264,7 +268,6 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
   // Real-time Data Sync - ONLY for tracked products (orders come from prop)
   useEffect(() => {
     if (!stationId) return;
-    setLoading(true);
     
     // Set orders from prop (already filtered by WorkstationHub)
     if (orders && orders.length > 0) {
@@ -274,25 +277,13 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
       setAllOrders([]);
     }
 
-    // Voor robuuste lot-telling houden we actieve tracked lots breed beschikbaar.
-    const unsubProducts = subscribeTrackedProducts({
-      db,
-      statusExclusions: ["deleted", "archived_rejected"],
-      maxItems: 200,
-      onData: (items) => {
-        setAllTracked(items);
-        setLoading(false);
-      },
-      onError: (err) => {
-        console.error("Products sync error:", err);
-        setLoading(false);
-      },
-    });
+    // Abonneer op tracked products via de gecentraliseerde Zustand store
+    const unsubProducts = subscribeToProducts(db);
 
     return () => {
       unsubProducts();
     };
-  }, [stationId, orders]);  // Added orders as dependency
+  }, [stationId, orders, subscribeToProducts]);
 
   // Sync archief-items (meerdere jaren) voor lot-gedreven gemaakte teller.
   useEffect(() => {
@@ -1204,6 +1195,8 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
     }
   };
 
+
+  const setLoading = () => {};
 
   return {
     stationId, stationName, effectiveStationId, normalizedStationId, cleanStationId,

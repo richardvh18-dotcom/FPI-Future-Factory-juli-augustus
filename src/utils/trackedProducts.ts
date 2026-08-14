@@ -1,5 +1,6 @@
 import {
   collection,
+  collectionGroup,
   getDocs,
   limit,
   onSnapshot,
@@ -144,11 +145,10 @@ export const subscribeTrackedProducts = ({
   machines = DEFAULT_TRACKING_MACHINES,
 }: SubscribeTrackedProductsParams) => {
   let rootDocs: TrackedProductDoc[] = [];
-  const scopedBuckets = new Map<string, TrackedProductDoc[]>();
+  let scopedDocs: TrackedProductDoc[] = [];
   const excluded = new Set(statusExclusions.map(normalizeStatus));
 
   const emit = () => {
-    const scopedDocs = Array.from(scopedBuckets.values()).flat() as TrackedProductDoc[];
     let next = mergeTrackingDocs(rootDocs, scopedDocs);
     if (excluded.size > 0) {
       next = next.filter((item) => !excluded.has(normalizeStatus(item?.status)));
@@ -175,29 +175,37 @@ export const subscribeTrackedProducts = ({
     (error) => onError?.(error)
   );
 
-  const scopedTargets = buildScopedTrackingTargets({ departments, machines });
-  const scopedUnsubs = scopedTargets.map(({ department, machine, key }) =>
-    onSnapshot(
-      query(collection(db, getPathString([...PATHS.TRACKING, department, "machines", machine, "items"])), limit(400)),
-      (snap) => {
-        scopedBuckets.set(
-          key,
-          snap.docs.map((docSnap) => ({
+  // Gebruik Collection Group query op alle subcollecties met de naam 'items'
+  const scopedUnsub = onSnapshot(
+    query(collectionGroup(db, "items"), limit(500)),
+    (snap) => {
+      scopedDocs = snap.docs
+        .map((docSnap) => {
+          const pathSegments = docSnap.ref.path.split('/');
+          const dept = pathSegments[2] || '';
+          const mach = pathSegments[4] || '';
+          return {
             ...(docSnap.data() as Record<string, unknown>),
             id: docSnap.id,
             __docPath: docSnap.ref.path,
             sourcePath: docSnap.ref.path,
-          })) as TrackedProductDoc[]
-        );
-        emit();
-      },
-      (error) => onError?.(error)
-    )
+            _dept: dept,
+            _mach: mach,
+          };
+        })
+        .filter((item) => {
+          const hasDept = departments.includes(item._dept);
+          const hasMachine = machines.some(m => toScopedMachineSegment(m) === item._mach);
+          return hasDept && hasMachine;
+        }) as TrackedProductDoc[];
+      emit();
+    },
+    (error) => onError?.(error)
   );
 
   return () => {
     rootUnsub();
-    scopedUnsubs.forEach((unsub) => unsub());
+    scopedUnsub();
   };
 };
 
