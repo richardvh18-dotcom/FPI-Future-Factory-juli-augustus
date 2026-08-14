@@ -85,8 +85,8 @@ export const PRINTER_DRIVERS: Record<string, PrinterDriver> = {
   'lighthouse-cjpro2': {
     id: 'lighthouse-cjpro2',
     label: 'Lighthouse CJ-PRO II',
-    nativeDpi: 300,
-    dotsPerMm: 12,
+    nativeDpi: 203,
+    dotsPerMm: 8,
     defaultDarkness: 15,
     defaultSpeed: 4,
     labelLanguage: 'zpl',    // This Argox-based unit is observed as PPLZ/ZPL-compatible.

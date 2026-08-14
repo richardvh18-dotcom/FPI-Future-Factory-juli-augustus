@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildProtocolAwareUsbPayload, buildProtocolAwareUsbProbePayload, buildTsplUsbPayload, normalizePrinterProtocol } from './printerProtocolService';
+import { getDriver } from './printerDrivers';
 
 describe('normalizePrinterProtocol', () => {
   it('infers ZPL/PPLZ for Lighthouse printers from the driver profile when no explicit protocol is stored', () => {
@@ -9,6 +10,13 @@ describe('normalizePrinterProtocol', () => {
     };
 
     expect(normalizePrinterProtocol(printer as never)).toBe('zpl');
+  });
+
+  it('uses the Lighthouse hardware width of 719 dots for a 90 mm label at 203 DPI', () => {
+    const driver = getDriver({ driverModel: 'lighthouse-cjpro2' });
+
+    expect(driver.nativeDpi).toBe(203);
+    expect(Math.round((90 / 25.4) * driver.nativeDpi)).toBe(719);
   });
 });
 

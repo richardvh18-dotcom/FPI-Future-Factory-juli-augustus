@@ -1,4 +1,11 @@
-﻿### Update sessie 14 augustus 2026 - BH18-planning bug: afgeronde orders blijven zichtbaar
+﻿### Update sessie 14 augustus 2026 - Lighthouse resolutie gecorrigeerd
+
+**Handeling:**
+- De Lighthouse CJ-PRO II zelftest bevestigde PPLZ/ZPL, 203 DPI en een printbreedte van 719 dots.
+- De Lighthouse-driver is gecorrigeerd van 300 naar 203 DPI (`8 dots/mm`), zodat 90 mm exact overeenkomt met ongeveer 719 dots.
+- Een regressietest toegevoegd; de gerichte printertests slagen met 6/6.
+
+### Update sessie 14 augustus 2026 - BH18-planning bug: afgeronde orders blijven zichtbaar
 
 **Gevonden oorzaak:**
 - De orders N20025438 en N20025437 bleven in de BH18-planning staan, ondanks dat ze als voltooid waren.
