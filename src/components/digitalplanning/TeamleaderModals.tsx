@@ -76,7 +76,7 @@ export const TeamleaderModals = () => {
               </button>
             </div>
 
-            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('common.orderId', 'Order ID')}</label>
                 <input
@@ -91,25 +91,32 @@ export const TeamleaderModals = () => {
 
               <div>
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('common.machine', 'Machine')}</label>
-                <input
-                  type="text"
+                <select
                   value={newOrderData.machine}
                   onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, machine: e.target.value }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
-                  placeholder={t("placeholders.dpMachineExample", "Bijv. 40BH18")}
                   required
-                />
+                >
+                  <option value="">{t('teamleader.select_machine', 'Selecteer machine...')}</option>
+                  {(effectiveStations || []).map((station: any) => {
+                    const stationName = station.name || station.id || "";
+                    return (
+                      <option key={station.id || stationName} value={stationName}>
+                        {stationName}
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
 
-              <div className="md:col-span-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.itemDescriptionLabel', 'Item / Omschrijving')}</label>
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.itemCode', 'Item / Artikelcode')}</label>
                 <input
                   type="text"
-                  value={newOrderData.item}
-                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, item: e.target.value }))}
+                  value={newOrderData.itemCode}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, itemCode: e.target.value }))}
                   className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
-                  placeholder={t("placeholders.dpItemDescription", "Product omschrijving")}
-                  required
+                  placeholder="Bijv. 125487"
                 />
               </div>
 
@@ -125,6 +132,115 @@ export const TeamleaderModals = () => {
                   placeholder={t("placeholders.dpPlanExample", "Bijv. 10")}
                   required
                 />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.itemDescriptionLabel', 'Item / Omschrijving')}</label>
+                <input
+                  type="text"
+                  value={newOrderData.item}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ 
+                    ...prev, 
+                    item: e.target.value,
+                    itemDescription: e.target.value 
+                  }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
+                  placeholder={t("placeholders.dpItemDescription", "Product omschrijving")}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.drawing', 'Tekening')}</label>
+                <input
+                  type="text"
+                  value={newOrderData.drawing}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, drawing: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
+                  placeholder="Bijv. T-4587"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.extraCode', 'Extra Code / Kleur')}</label>
+                <input
+                  type="text"
+                  value={newOrderData.extraCode}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, extraCode: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
+                  placeholder="Bijv. RAL9010"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.plannedHours', 'Geplande uren')}</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  value={newOrderData.totalPlannedHours}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, totalPlannedHours: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
+                  placeholder="Bijv. 2.5"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.projectName', 'Project')}</label>
+                <input
+                  type="text"
+                  value={newOrderData.project}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, project: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
+                  placeholder="Project ID"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.plannedDate', 'Planningsdatum')}</label>
+                <input
+                  type="date"
+                  value={newOrderData.plannedDate}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, plannedDate: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.deliveryDate', 'Leverdatum')}</label>
+                <input
+                  type="date"
+                  value={newOrderData.deliveryDate}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, deliveryDate: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-1.5">{t('teamleader.notes', 'Opmerkingen (PO Text)')}</label>
+                <textarea
+                  value={newOrderData.notes}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, notes: e.target.value }))}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-bold text-sm text-slate-800 outline-none focus:border-blue-500 h-20 resize-none"
+                  placeholder="Extra opmerkingen..."
+                />
+              </div>
+
+              <div className="md:col-span-2 flex items-start gap-3 mt-2 bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+                <input
+                  type="checkbox"
+                  id="onlyLabelPrint"
+                  checked={newOrderData.onlyLabelPrint}
+                  onChange={(e) => setNewOrderData((prev: any) => ({ ...prev, onlyLabelPrint: e.target.checked }))}
+                  className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 mt-0.5 cursor-pointer"
+                />
+                <div>
+                  <label htmlFor="onlyLabelPrint" className="text-xs font-black text-slate-800 cursor-pointer">
+                    {t('teamleader.onlyLabelPrintLabel', 'Alleen Order Label (geen machineplanning)')}
+                  </label>
+                  <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                    Schakel dit in om alleen een los label te kunnen printen. De to-do hoeveelheid wordt op 0 gezet zodat dit order niet in de actieve planning van de wikkelmachine verschijnt.
+                  </p>
+                </div>
               </div>
             </div>
 

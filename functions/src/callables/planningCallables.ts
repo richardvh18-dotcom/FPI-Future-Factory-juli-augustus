@@ -1815,6 +1815,17 @@ const createPlanningOrderManual = withAudit('CREATE_ORDER_MANUAL', async (data, 
   const item = clampText(data?.item, 220);
   const machine = clean(data?.machine);
   const plan = Number(data?.plan);
+  const itemCode = clean(data?.itemCode || '');
+  const itemDescription = clampText(data?.itemDescription || data?.item || '', 220);
+  const drawing = clean(data?.drawing || '');
+  const notes = clampText(data?.notes || '', 600);
+  const project = clean(data?.project || '');
+  const projectDesc = clampText(data?.projectDesc || '', 220);
+  const extraCode = clean(data?.extraCode || '');
+  const plannedDate = clean(data?.plannedDate || '');
+  const deliveryDate = clean(data?.deliveryDate || '');
+  const totalPlannedHours = Number(data?.totalPlannedHours || 0);
+  const onlyLabelPrint = Boolean(data?.onlyLabelPrint || false);
 
   if (!orderId || !item || !machine || !Number.isFinite(plan) || plan <= 0) {
     throw new functions.https.HttpsError('invalid-argument', 'orderId, item, machine en geldige plan zijn verplicht.');
@@ -1826,6 +1837,17 @@ const createPlanningOrderManual = withAudit('CREATE_ORDER_MANUAL', async (data, 
       item,
       machine,
       plan,
+      itemCode,
+      itemDescription,
+      drawing,
+      notes,
+      project,
+      projectDesc,
+      extraCode,
+      plannedDate,
+      deliveryDate,
+      totalPlannedHours,
+      onlyLabelPrint,
       dbCtx: resolveDbContext(extractRds(data)),
     });
     

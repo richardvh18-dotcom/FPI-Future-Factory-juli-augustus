@@ -11,6 +11,11 @@
   - De 30 losse realtime listeners in `trackedProducts.ts` zijn vervangen door **één enkele `collectionGroup` query** op de collectienaam `'items'`, met in-memory filtering. Dit vermindert het aantal Firebase-verbindingen per client met **93.5%**.
   - Een centrale Zustand store (`useProductionDataStore`) met **reference counting** aangemaakt om deze Firestore-abonnementen eenmalig per client op te zetten en te delen, om dubbele actieve verbindingen te voorkomen.
   - Integratie van de Zustand store doorgevoerd in de terminal hook (`useTerminalData.ts`).
+- **Uitbreiding Handmatig Orders Aanmaken ("Nieuwe order")**:
+  - Het handmatige order-invoerformulier uitgebreid met alle relevante importvelden (zoals Artikelcode, Plan aantal, Tekening, Kleur, Geplande uren, Project, Datums en Opmerkingen).
+  - De vrije tekstinvoer voor de machine vervangen door een `<select>` dropdown, dynamisch gekoppeld aan de database via `effectiveStations`. Hierdoor kan alleen uit geldige machines gekozen worden, en ziet een Fittings-teamleader alleen Fittings-machines.
+  - De checkbox "Alleen Order Label (geen machineplanning)" geïmplementeerd. Dit zorgt ervoor dat `toDoQty` direct op `0` wordt opgeslagen, waardoor het order niet in de planningslijst van de operator komt te staan, maar wel beschikbaar blijft als los label.
+  - De Cloud Function `createPlanningOrderManual` en bijbehorende backend-services in `functions/` aangepast en uitgebreid om deze parameters te verwerken en op te slaan.
 - **Deployment**: Versie gebumpt naar `0.1.160` en succesvol gebuild en gedeployd naar Firebase Hosting (`https://future-factory-377ef.web.app`).
 
 **Openstaande vragen voor machine-koppeling (BH15):**

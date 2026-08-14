@@ -923,6 +923,17 @@ export const useTeamleaderEventHandlers = ({
           item: newOrderData.item,
           machine: newOrderData.machine,
           plan: Number(newOrderData.plan),
+          itemCode: newOrderData.itemCode || '',
+          itemDescription: newOrderData.itemDescription || newOrderData.item,
+          drawing: newOrderData.drawing || '',
+          notes: newOrderData.notes || '',
+          project: newOrderData.project || '',
+          projectDesc: newOrderData.projectDesc || '',
+          extraCode: newOrderData.extraCode || '',
+          plannedDate: newOrderData.plannedDate || '',
+          deliveryDate: newOrderData.deliveryDate || '',
+          totalPlannedHours: Number(newOrderData.totalPlannedHours) || 0,
+          onlyLabelPrint: Boolean(newOrderData.onlyLabelPrint),
         });
         await logActivity(
           user?.uid || "system",
@@ -930,7 +941,23 @@ export const useTeamleaderEventHandlers = ({
           `Teamleader order aangemaakt: ${newOrderData.orderId}, machine ${newOrderData.machine}, plan ${newOrderData.plan}`
         );
         setShowAddOrderModal(false);
-        setNewOrderData({ orderId: "", item: "", machine: "", plan: "" });
+        setNewOrderData({
+          orderId: "",
+          item: "",
+          machine: "",
+          plan: "",
+          itemCode: "",
+          itemDescription: "",
+          drawing: "",
+          notes: "",
+          project: "",
+          projectDesc: "",
+          extraCode: "",
+          plannedDate: "",
+          deliveryDate: "",
+          totalPlannedHours: "",
+          onlyLabelPrint: false,
+        });
       } catch (error: unknown) {
         console.error("Error creating order:", error);
         notify("Fout bij aanmaken order: " + getErrorMessage(error));

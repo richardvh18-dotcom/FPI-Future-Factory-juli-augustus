@@ -385,6 +385,17 @@ export interface CreatePlanningOrderManualInput {
   item: any;
   machine: any;
   plan: any;
+  itemCode?: any;
+  itemDescription?: any;
+  drawing?: any;
+  notes?: any;
+  project?: any;
+  projectDesc?: any;
+  extraCode?: any;
+  plannedDate?: any;
+  deliveryDate?: any;
+  totalPlannedHours?: any;
+  onlyLabelPrint?: any;
 }
 
 export interface MarkMazakLabelsPrintedInput {

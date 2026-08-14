@@ -10,6 +10,17 @@ type NewOrderData = {
 	item: string;
 	machine: string;
 	plan: string;
+	itemCode: string;
+	itemDescription: string;
+	drawing: string;
+	notes: string;
+	project: string;
+	projectDesc: string;
+	extraCode: string;
+	plannedDate: string;
+	deliveryDate: string;
+	totalPlannedHours: string;
+	onlyLabelPrint: boolean;
 };
 
 type TeamleaderModalState = {
@@ -56,6 +67,17 @@ const initialNewOrderData: NewOrderData = {
 	item: "",
 	machine: "",
 	plan: "",
+	itemCode: "",
+	itemDescription: "",
+	drawing: "",
+	notes: "",
+	project: "",
+	projectDesc: "",
+	extraCode: "",
+	plannedDate: "",
+	deliveryDate: "",
+	totalPlannedHours: "",
+	onlyLabelPrint: false,
 };
 
 export const useTeamleaderModalStore = create<TeamleaderModalState>((set) => ({
