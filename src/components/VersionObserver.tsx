@@ -1,27 +1,38 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { listenToAppVersion } from "../services/versionService";
 
 const CURRENT_VERSION = (import.meta.env.VITE_APP_VERSION as string) || "0.1.158";
 
 export default function VersionObserver() {
-  const initialVersionRef = useRef<string | null>(null);
 
   useEffect(() => {
     let isDisposed = false;
+
+    const isNewerVersion = (newVer: string, currentVer: string): boolean => {
+      if (currentVer === "dev" || newVer === "dev") return false;
+      const parse = (v: string) => v.split(".").map(Number);
+      const [newMajor, newMinor, newPatch] = parse(newVer);
+      const [currMajor, currMinor, currPatch] = parse(currentVer);
+      
+      if (Number.isNaN(newMajor) || Number.isNaN(currMajor)) return false;
+      if (newMajor > currMajor) return true;
+      if (newMajor < currMajor) return false;
+      if (newMinor > currMinor) return true;
+      if (newMinor < currMinor) return false;
+      return newPatch > currPatch;
+    };
 
     const triggerReloadIfNew = (newVersion: string) => {
       const trimmedNew = String(newVersion || "").trim();
       if (!trimmedNew) return;
 
-      if (!initialVersionRef.current) {
-        initialVersionRef.current = trimmedNew;
+      if (window.location.hostname === "localhost") {
         return;
       }
 
-      const activeVersion = initialVersionRef.current || CURRENT_VERSION;
-      if (trimmedNew !== activeVersion) {
+      if (isNewerVersion(trimmedNew, CURRENT_VERSION)) {
         console.log(
-          `[VersionObserver] Nieuwe app-versie gedetecteerd: ${trimmedNew} (huidig: ${activeVersion}). Pagina herladen...`
+          `[VersionObserver] Nieuwe app-versie gedetecteerd: ${trimmedNew} (huidig: ${CURRENT_VERSION}). Pagina herladen...`
         );
 
         const reloadedForVersion = sessionStorage.getItem("ff_auto_reloaded_version");
