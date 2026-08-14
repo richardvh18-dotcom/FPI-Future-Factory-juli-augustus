@@ -182,8 +182,9 @@ export const subscribeTrackedProducts = ({
       scopedDocs = snap.docs
         .map((docSnap) => {
           const pathSegments = docSnap.ref.path.split('/');
-          const dept = pathSegments[2] || '';
-          const mach = pathSegments[4] || '';
+          // future-factory/production/digital_planning/fittings/machines/40bh15/items/123
+          const dept = (pathSegments[3] || '').toLowerCase();
+          const mach = (pathSegments[5] || '').toLowerCase();
           return {
             ...(docSnap.data() as Record<string, unknown>),
             id: docSnap.id,
@@ -194,8 +195,8 @@ export const subscribeTrackedProducts = ({
           };
         })
         .filter((item) => {
-          const hasDept = departments.includes(item._dept);
-          const hasMachine = machines.some(m => toScopedMachineSegment(m) === item._mach);
+          const hasDept = departments.some(d => d.toLowerCase() === item._dept);
+          const hasMachine = machines.some(m => toScopedMachineSegment(m).toLowerCase() === item._mach);
           return hasDept && hasMachine;
         }) as TrackedProductDoc[];
       emit();

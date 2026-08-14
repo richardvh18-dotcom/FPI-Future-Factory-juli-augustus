@@ -9,6 +9,7 @@
 - **GatewayPC Machine Integratie (Oven Beladen)**: Voorbereiding in de code van GatewayPC door de toevoeging van een helper-functie `advanceProductForStation` en een lokaal API-endpoint `POST /api/machine/event` (voor bijv. `BELADEN_OVEN`). Hiermee kan in de toekomst een PLC-knop automatisch het actieve product op een station (zoals BH15) afronden ("wikkelen klaar") en doorschuiven naar de volgende stap (oven).
 - **Firestore & Zustand Optimalisatie**: 
   - De 30 losse realtime listeners in `trackedProducts.ts` zijn vervangen door **één enkele `collectionGroup` query** op de collectienaam `'items'`, met in-memory filtering. Dit vermindert het aantal Firebase-verbindingen per client met **93.5%**.
+  - **Bugfix (14 aug):** Bij in-memory filtering van de `collectionGroup` werd de document-path array niet correct uitgelezen (`pathSegments[2]` in plaats van `pathSegments[3]`), waardoor alle items werden gefilterd en de "lopend/gereed" KPI's in de Teamleader Hub leeg bleven. Dit is gecorrigeerd inclusief case-insensitive afhandeling.
   - Een centrale Zustand store (`useProductionDataStore`) met **reference counting** aangemaakt om deze Firestore-abonnementen eenmalig per client op te zetten en te delen, om dubbele actieve verbindingen te voorkomen.
   - Integratie van de Zustand store doorgevoerd in de terminal hook (`useTerminalData.ts`).
 - **Uitbreiding Handmatig Orders Aanmaken ("Nieuwe order")**:
