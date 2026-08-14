@@ -55,7 +55,7 @@ const OrderHistoryModal = ({ isOpen, onClose, orderId }: OrderHistoryModalProps)
               let detailsObj = log.details;
               
               if (typeof log.details === 'string') {
-                 try { detailsObj = JSON.parse(log.details); } catch {}
+                 try { detailsObj = JSON.parse(log.details); } catch { /* ignore JSON parse error */ }
               }
               
               if (detailsObj && typeof detailsObj === 'object') {

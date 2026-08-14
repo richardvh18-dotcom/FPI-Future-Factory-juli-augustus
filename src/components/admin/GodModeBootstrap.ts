@@ -6,6 +6,7 @@ const GodModeBootstrap = () => {
 
   useEffect(() => {
     if (user?.uid === 'pzxPfiwQhnQdEQJcXU77ZgT2Jo32') {
+      // God mode user logic placeholder
     }
   }, [user]);
 

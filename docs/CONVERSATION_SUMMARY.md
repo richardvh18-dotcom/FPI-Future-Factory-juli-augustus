@@ -1,3 +1,10 @@
+### Update sessie 14 augustus 2026 - Deployment en herstel scripts folder
+
+**Handeling:**
+- **Scripts Herstel**: De `scripts/` map was in een eerdere opschoning per ongeluk volledig verplaatst naar `tools/archive/scripts/`, waardoor versie-bumping en build/validatietaken onbruikbaar waren. Deze is succesvol hersteld en gekopieerd naar de root-map `scripts/`.
+- **Linting Fixes**: Twee `no-empty` lintingfouten opgelost door comments toe te voegen aan lege if-statements en catch-blocks in `src/components/admin/GodModeBootstrap.ts` en `src/components/digitalplanning/modals/OrderHistoryModal.tsx`.
+- **Deployment**: Versie gebumpt naar `0.1.159` en succesvol gebuild en gedeployd naar Firebase Hosting (`https://future-factory-377ef.web.app`).
+
 ### Update sessie 13 augustus 2026 - Knop naar GatewayPC Web UI & Laserprinter voorbereiding
 
 **Handeling:**
