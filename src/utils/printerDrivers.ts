@@ -89,8 +89,8 @@ export const PRINTER_DRIVERS: Record<string, PrinterDriver> = {
     dotsPerMm: 12,
     defaultDarkness: 15,
     defaultSpeed: 4,
-    labelLanguage: 'tspl',   // Gebruikt Windows-driver / TSPL pad
-    cutCommand: null,         // Geen ZPL ^CN1 — cutter via Windows-driver
+    labelLanguage: 'zpl',    // This Argox-based unit is observed as PPLZ/ZPL-compatible.
+    cutCommand: null,
     suppressBackfeed: false,
     utf8Encoding: true,
     mediaMode: null,

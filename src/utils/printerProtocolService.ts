@@ -77,6 +77,15 @@ export const normalizePrinterProtocol = (printer: PrinterProfile | null | undefi
 
   const driver = getDriver(printer || null);
   const driverProtocol = String(driver?.labelLanguage || '').trim().toLowerCase();
+
+  // Lighthouse CJ-PRO II is a PPLZ/ZPL-compatible Argox device in practice,
+  // so we must not default it to the TSPL path. Keeping it on the ZPL route
+  // avoids the partial-accept / error-loop behavior observed with TSPL payloads.
+  const nameHint = String(printer?.name || printer?.deviceName || printer?.model || printer?.productName || '').toLowerCase();
+  if (nameHint.includes('lighthouse') || nameHint.includes('cj-pro') || nameHint.includes('pplz')) {
+    return 'zpl';
+  }
+
   if (driverProtocol === 'tspl' || driverProtocol === 'epl' || driverProtocol === 'escpos' || driverProtocol === 'custom') {
     return driverProtocol as PrinterProtocol;
   }

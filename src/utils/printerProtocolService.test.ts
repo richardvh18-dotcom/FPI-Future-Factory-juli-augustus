@@ -2,18 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { buildProtocolAwareUsbPayload, buildProtocolAwareUsbProbePayload, buildTsplUsbPayload, normalizePrinterProtocol } from './printerProtocolService';
 
 describe('normalizePrinterProtocol', () => {
-  it('infers TSPL for Lighthouse printers from the driver profile even when no explicit protocol is stored', () => {
+  it('infers ZPL/PPLZ for Lighthouse printers from the driver profile when no explicit protocol is stored', () => {
     const printer = {
       driverModel: 'lighthouse-cjpro2',
       name: 'Lighthouse CJ-PRO II',
     };
 
-    expect(normalizePrinterProtocol(printer as never)).toBe('tspl');
+    expect(normalizePrinterProtocol(printer as never)).toBe('zpl');
   });
 });
 
 describe('buildProtocolAwareUsbProbePayload', () => {
-  it('builds a TSPL probe payload for Lighthouse printers', () => {
+  it('builds a ZPL probe payload for Lighthouse printers', () => {
     const printer = {
       driverModel: 'lighthouse-cjpro2',
       name: 'Lighthouse CJ-PRO II',
@@ -21,9 +21,9 @@ describe('buildProtocolAwareUsbProbePayload', () => {
 
     const payload = buildProtocolAwareUsbProbePayload(printer as never);
 
-    expect(payload).toContain('TEXT 20,20');
+    expect(payload).toContain('^XA');
     expect(payload).toContain('TEST-USB-PROBE');
-    expect(payload).not.toContain('^XA');
+    expect(payload).not.toContain('TEXT 20,20');
   });
 
   it('builds a ZPL probe payload for Zebra printers', () => {

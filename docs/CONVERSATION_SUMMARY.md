@@ -1,3 +1,15 @@
+﻿### Update sessie 14 augustus 2026 - BH18-planning bug: afgeronde orders blijven zichtbaar
+
+**Gevonden oorzaak:**
+- De orders N20025438 en N20025437 bleven in de BH18-planning staan, ondanks dat ze als voltooid waren.
+- Oorzaak was niet het ordernummer zelf, maar de statuslogica in de planningfilter: de app bleef orders zichtbaar zolang de status/step niet expliciet als `completed`/`finished` werd herkend en het aantal op de machine niet expliciet gelijk was aan `plan`/`quantity`.
+- De relevante controle staat in [src/components/digitalplanning/WorkstationHub.tsx](src/components/digitalplanning/WorkstationHub.tsx#L2030-L2065) en [src/utils/terminalOrderFilters.ts](src/utils/terminalOrderFilters.ts#L1-L26).
+- In praktijk betekende dit: als de Firebase-data nog op een oude of onvolledige status/produced-waarde stond, bleef de order in de BH18-planning staan totdat die waarden expliciet zijn gecorrigeerd.
+
+**Handeling:**
+- In Firebase is de order handmatig gecorrigeerd door de status/produced/plan-velden te laten matchen met de feitelijke afgeronde productie, zodat de order uit de BH18 planning verdwijnt.
+- De juiste check is niet “welk ordernummer?” maar: `status` moet `completed` zijn of `produced/startedAtStation` moet minimaal gelijk zijn aan `plan` / `quantity`, en `currentStation`/`machine` mag niet meer op BH18 staan.
+
 ### Update sessie 14 augustus 2026 - Bugfixes Tracked Products & Export Module
 
 **Handeling:**
@@ -185,7 +197,8 @@
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -193,7 +206,8 @@
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -428,7 +442,8 @@
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -436,7 +451,8 @@
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7170,7 +7186,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7178,7 +7195,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7264,7 +7282,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7272,7 +7291,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7393,7 +7413,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7401,7 +7422,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7450,7 +7472,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7458,7 +7481,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7502,7 +7526,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7510,7 +7535,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7545,7 +7571,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7553,7 +7580,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7605,7 +7633,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7613,7 +7642,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7673,7 +7703,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7681,7 +7712,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7739,7 +7771,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7747,7 +7780,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7795,7 +7829,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7803,7 +7838,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7853,7 +7889,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7861,7 +7898,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7908,7 +7946,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7916,7 +7955,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -7956,7 +7996,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -7964,7 +8005,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8007,7 +8049,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8015,7 +8058,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8052,7 +8096,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8060,7 +8105,8 @@ npm run type-check && npm run build && npm run ts:refresh-baseline && npm run en
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8114,7 +8160,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8122,7 +8169,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8173,7 +8221,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8181,7 +8230,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8226,7 +8276,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8234,7 +8285,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8275,7 +8327,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8283,7 +8336,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8326,7 +8380,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8334,7 +8389,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8440,7 +8496,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8448,7 +8505,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8584,7 +8642,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8592,7 +8651,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8630,7 +8690,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8638,7 +8699,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8671,7 +8733,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8679,7 +8742,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8715,7 +8779,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8723,7 +8788,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8787,7 +8853,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8795,7 +8862,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8885,7 +8953,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8893,7 +8962,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -8936,7 +9006,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -8944,7 +9015,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -9083,7 +9155,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -9091,7 +9164,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -9193,7 +9267,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -9201,7 +9276,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -9290,7 +9366,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -9298,7 +9375,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -9360,7 +9438,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -9368,7 +9447,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -9422,7 +9502,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -9430,7 +9511,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -9537,7 +9619,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -9545,7 +9628,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -9658,7 +9742,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -9666,7 +9751,8 @@ Als dit in de React-app wordt geprogrammeerd, is het slim om een 'Efficiency Fac
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -10014,7 +10100,8 @@ Stap C (structurele matching-fix):
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -10022,7 +10109,8 @@ Stap C (structurele matching-fix):
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -10077,7 +10165,8 @@ Stap C (structurele matching-fix):
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -10085,7 +10174,8 @@ Stap C (structurele matching-fix):
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -10133,7 +10223,8 @@ Stap C (structurele matching-fix):
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -10141,7 +10232,8 @@ Stap C (structurele matching-fix):
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -10250,7 +10342,8 @@ Stap C (structurele matching-fix):
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -10258,7 +10351,8 @@ Stap C (structurele matching-fix):
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -10639,7 +10733,8 @@ Stap C (structurele matching-fix):
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -10647,7 +10742,8 @@ Stap C (structurele matching-fix):
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -18697,7 +18793,8 @@ Warning: Donâ€™t paste code into the DevTools Console that you donâ€™t
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -18705,7 +18802,8 @@ Warning: Donâ€™t paste code into the DevTools Console that you donâ€™t
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -18742,7 +18840,8 @@ Warning: Donâ€™t paste code into the DevTools Console that you donâ€™t
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -18750,7 +18849,8 @@ Warning: Donâ€™t paste code into the DevTools Console that you donâ€™t
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -18808,7 +18908,8 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -18816,7 +18917,8 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -18883,7 +18985,8 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -18891,7 +18994,8 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -19005,7 +19109,8 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -19013,7 +19118,8 @@ Deployen via Vercel naar de pilotomgeving en live uittesten op de werkvloer.
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -19052,7 +19158,8 @@ De pilotbranch bevat meerdere afgeronde verbeteringen voor planning, printing, p
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -19060,7 +19167,8 @@ De pilotbranch bevat meerdere afgeronde verbeteringen voor planning, printing, p
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -19339,7 +19447,8 @@ Made changes.
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -19347,7 +19456,8 @@ Made changes.
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -19398,7 +19508,8 @@ Made changes.
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -19406,7 +19517,8 @@ Made changes.
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -19480,7 +19592,8 @@ Made changes.
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -19488,7 +19601,8 @@ Made changes.
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -19576,7 +19690,8 @@ Made changes.
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -19584,7 +19699,8 @@ Made changes.
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -19656,7 +19772,8 @@ Made changes.
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -19664,7 +19781,8 @@ Made changes.
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -19771,7 +19889,8 @@ Made changes.
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -19779,7 +19898,8 @@ Made changes.
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -19867,7 +19987,8 @@ Made changes.
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -19875,7 +19996,8 @@ Made changes.
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -19947,7 +20069,8 @@ Made changes.
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -19955,7 +20078,8 @@ Made changes.
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -20270,7 +20394,8 @@ git push -u origin hotfix/voorbeeld-fix
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -20278,7 +20403,8 @@ git push -u origin hotfix/voorbeeld-fix
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
@@ -21080,7 +21206,8 @@ equiredAppFeature\ (bijv. 'factory_structure') nodig is. Gebruikers zien allÃƒ
 
 
 **Update: 11-08-2026 - Fixes voor Gecombineerde Ordergeschiedenis**
-- Google Cloud Logging vereist dat het App Engine service account expliciet de oles/logging.viewer IAM permissie krijgt, deze is toegekend.
+- Google Cloud Logging vereist dat het App Engine service account expliciet de 
+oles/logging.viewer IAM permissie krijgt, deze is toegekend.
 - Cloud Logging Protobuf Timestamps {seconds, nanos} werden niet correct naar de frontend gestuurd (werd leeg object {}). Backend stuurt ze nu als harde ISO strings (.toISOString()).
 - De actor werd soms niet getoond omdat de JSON in Cloud Logging (payload.details.actorLabel) stond in plaats van de verwachte user velden. Frontend UI toont deze nu netjes en parseert de rest van de JSON in leesbare bulletpoints. Pop-up verbreed naar max-w-4xl.
 
@@ -21088,7 +21215,8 @@ equiredAppFeature\ (bijv. 'factory_structure') nodig is. Gebruikers zien allÃƒ
 
 **Update: 11-08-2026 - Lege Productenlijst & Scheve Tellers Gefixt**
 - Pop-up OrderDetail.tsx aangepast. Haalt nu standaard naast actieve producten óók gearchiveerde (rchive/items) en afgekeurde (rchive/rejected) producten uit het archief (huidig jaar) op basis van orderId. De lijst is dus niet meer leeg als een order afgerond/geannuleerd is.
-- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
+- Nieuwe 'Sync' knop naast PDF export toegevoegd. Deze knop roept 
+econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat om scheve tellers ('to do', 'in behandeling') handmatig te corrigeren indien deze uit sync raken met de daadwerkelijke producten in de database.
 
 
 ### Update sessie 11 augustus 2026 - Gecombineerde Ordergeschiedenis
