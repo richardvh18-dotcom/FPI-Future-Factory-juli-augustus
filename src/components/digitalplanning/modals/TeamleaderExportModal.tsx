@@ -351,7 +351,7 @@ export default function TeamleaderExportModal({
     }).sort((a: any, b: any) => {
       const locCompare = a["Huidig Station"].localeCompare(b["Huidig Station"]);
       if (locCompare !== 0) return locCompare;
-      return a.Lotnummer.localeCompare(b.Lotnummer);
+      return String(a.Lotnummer).localeCompare(String(b.Lotnummer), undefined, { numeric: true, sensitivity: 'base' });
     });
   }, [activeProducts, selectedMachine]);
 
@@ -401,8 +401,14 @@ export default function TeamleaderExportModal({
     
     const sortedData = weekProducts.filter((p: any) => {
       if (selectedMachine === "Alle machines") return true;
-      const m = String(p.originMachine || p.machine || p.currentStation || "").toLowerCase();
-      return m === selectedMachine.toLowerCase();
+      
+      let prodMachine = String(p.originMachine || p.machine || p.currentStation || "").toUpperCase().replace(/\s/g, "");
+      if (prodMachine.startsWith("40")) prodMachine = prodMachine.slice(2);
+      
+      let filterMachine = String(selectedMachine).toUpperCase().replace(/\s/g, "");
+      if (filterMachine.startsWith("40")) filterMachine = filterMachine.slice(2);
+      
+      return prodMachine === filterMachine;
     }).map((p: any) => ({
       "Lotnummer": String(p.lotNumber || "Onbekend").trim(),
       "Machine": String(p.originMachine || p.machine || p.currentStation || "Onbekend").trim(),
@@ -413,10 +419,7 @@ export default function TeamleaderExportModal({
       const locCompare = a.Machine.localeCompare(b.Machine);
       if (locCompare !== 0) return locCompare;
       
-      const numA = parseInt(a.Lotnummer, 10);
-      const numB = parseInt(b.Lotnummer, 10);
-      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-      return a.Lotnummer.localeCompare(b.Lotnummer);
+      return String(a.Lotnummer).localeCompare(String(b.Lotnummer), undefined, { numeric: true, sensitivity: 'base' });
     });
 
     const result = [];

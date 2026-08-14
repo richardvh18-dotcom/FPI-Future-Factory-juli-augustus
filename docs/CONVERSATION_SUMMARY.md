@@ -1,4 +1,10 @@
-### Update sessie 14 augustus 2026 - Deployment en herstel scripts folder
+### Update sessie 14 augustus 2026 - Bugfixes Tracked Products & Export Module
+
+**Handeling:**
+- **Tracked Products KPI Fix**: De `collectionGroup` query in `src/utils/trackedProducts.ts` die per ongeluk archief-items inlaadde en de "Lopend" KPI leeg hield, is teruggedraaid naar specifieke `onSnapshot` queries per machine-pad. Hierdoor toont de Teamleader Hub weer netjes de actuele actieve items.
+- **Lotnummer Export Sortering**: De sortering van lotnummers in de "Actueel" (fysieke werkvoorraad) export is aangepast van een standaard alfabetische sortering naar een natuurlijke numerieke sortering (`numeric: true`), zodat lotnummers logisch oplopen (bijv. 99 komt vóór 100).
+- **Lotnummer Controle Filter Fix**: De dropdown-machine-filtering in de "Controle" export werkte niet omdat de prefix "40" niet consistent werd gestript. Dit is verholpen door exact dezelfde robuuste vergelijkingslogica te gebruiken als in de planning export (alles uppercased, spaties eruit en "40" eraf).
+- **Deployment**: App versie gebumpt, gebuild en gedeployd naar Firebase Hosting.
 
 **Handeling:**
 - **Scripts Herstel**: De `scripts/` map was in een eerdere opschoning per ongeluk volledig verplaatst naar `tools/archive/scripts/`, waardoor versie-bumping en build/validatietaken onbruikbaar waren. Deze is succesvol hersteld en gekopieerd naar de root-map `scripts/`.
