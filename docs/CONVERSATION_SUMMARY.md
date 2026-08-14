@@ -1,4 +1,15 @@
-﻿### Update sessie 14 augustus 2026 - Lighthouse resolutie gecorrigeerd
+﻿### Update sessie 14 augustus 2026 - LN-export BH18: dubbele aftrek gecorrigeerd
+
+**Gemeld:**
+- Order `N20025222` (Elb 125/90 EST25 CBCB) toonde in **Gereed voor LN** de reeks `10 / 1 / 8 / 1` voor totaal, gereedgemeld, nog te doen en LN-wikkelstap.
+
+**Oorzaak en handeling:**
+- De aggregatie berekende `Nog te doen` al als `totaal - gereedgemeld - wikkelstap`, maar `toLnQrRows` trok de getoonde LN-wikkelstap daarna nogmaals af en herberekende hierdoor ook `Gereedgemeld`.
+- De extra aftrek is verwijderd. De vier tellers blijven nu consistent: `Nog te doen = totaal - gereedgemeld - LN-wikkelstap`.
+- Live Firestore bevestigt voor de order één actief lot in `Naharding` en één lot op `BH18` met status `Wacht op Lossen`; dit correspondeert met `Gereedgemeld: 1` en `LN-wikkelstap: 1`.
+- Er is daarnaast een databronafwijking gevonden: `plan`/`quantity` en `toDoQty` zijn `10`, maar `started_BH18` is `11`. Er is geen productiegegevens gewijzigd.
+
+### Update sessie 14 augustus 2026 - Lighthouse resolutie gecorrigeerd
 
 **Handeling:**
 - De Lighthouse CJ-PRO II zelftest bevestigde PPLZ/ZPL, 203 DPI en een printbreedte van 719 dots.

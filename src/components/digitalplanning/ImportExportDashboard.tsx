@@ -363,12 +363,8 @@ const hasWikkelSignal = (entry: EntryRecord): boolean => {
 
 const toLnQrRows = (rows: LnReadyGroupedRow[], periodToken: string): LnReadyQrRow[] =>
   rows.map((row): LnReadyQrRow => {
-    const trueTodoCount = Math.max(0, (row.todoCount || 0) - row.count);
-    const trueReadyCount = Math.max(0, (row.totalOrderCount || 0) - trueTodoCount - row.count);
     return {
       ...row,
-      todoCount: trueTodoCount,
-      readyReportedCount: trueReadyCount,
       orderQr: `ORDER:${row.orderId}`,
       refQr: `REFOPS:${row.refOpsText}`,
       countQr: `COUNT:${row.count}|PERIOD:${periodToken}|STATION:${row.station}`,
