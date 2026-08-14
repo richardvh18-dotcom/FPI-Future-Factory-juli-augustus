@@ -3005,6 +3005,16 @@ const PrintQueueAdminView = () => {
                   {String(job.metadata?.description || job.description || '')}
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     {Boolean(job.metadata?.stationId) && <span className="text-[10px] bg-slate-100 px-2 py-0.5 rounded text-slate-500 font-bold">{String(job.metadata?.stationId)}</span>}
+                    {Boolean(job.metadata?.orderId) && (
+                      <span className="text-[10px] bg-sky-50 px-2 py-0.5 rounded text-sky-700 font-bold">
+                        {t('common.order', 'Order')}: {String(job.metadata?.orderId)}
+                      </span>
+                    )}
+                    {Boolean(job.metadata?.lotNumber) && (
+                      <span className="text-[10px] bg-amber-50 px-2 py-0.5 rounded text-amber-700 font-bold">
+                        {t('common.lotNumber', 'Lot')}: {String(job.metadata?.lotNumber)}
+                      </span>
+                    )}
                     {getJobSizeLabel(job) && <span className="text-[10px] bg-blue-50 px-2 py-0.5 rounded text-blue-700 font-bold">{getJobSizeLabel(job)}</span>}
                     {getJobQuantity(job) && <span className="text-[10px] bg-emerald-50 px-2 py-0.5 rounded text-emerald-700 font-bold">{t("common.amount", "Aantal")}: {getJobQuantity(job)}</span>}
                     {Boolean(job.metadata?.queuedAsBatch) && (
