@@ -5,7 +5,13 @@
 - **Linting Fixes**: Twee `no-empty` lintingfouten opgelost door comments toe te voegen aan lege if-statements en catch-blocks in `src/components/admin/GodModeBootstrap.ts` en `src/components/digitalplanning/modals/OrderHistoryModal.tsx`.
 - **Lot- en Ordernummer Weergave in Wachtrij**: In `PrintQueueAdminView.tsx` hebben we badges toegevoegd onder de job-beschrijving in de printtaken-tabel om zowel het ordernummer (`orderId`) als het lotnummer (`lotNumber`) expliciet te tonen voor elke printtaak in de wachtrij (bijv. voor BH 18).
 - **Auto-Refresh Logica Verbetering**: Een logische fout opgelost in `VersionObserver.tsx` waarbij de eerste peiling van `version.json` direct de nieuwe versie als baseline instelde (zonder te verversen) als het tabblad gesuspendeerd was of Firestore leeg was. We vergelijken nu via een semver-vergelijking (`isNewerVersion`) direct met `CURRENT_VERSION` (de ingebouwde versie van de draaiende JS-code), zodat er alleen herladen wordt als er daadwerkelijk een *nieuwere* versie beschikbaar is op de server. Dit voorkomt ook oneindige herlaadlussen bij oudere Firestore-documentversies.
+- **GatewayPC Firestore Structuur**: De platte `gateway_events` collectie in Firestore is opgedeeld in gestructureerde categorieën (`printers`, `robot`, `ovens`, `wikkelmachines`, `other`) als subcollecties.
+- **GatewayPC Machine Integratie (Oven Beladen)**: Voorbereiding in de code van GatewayPC door de toevoeging van een helper-functie `advanceProductForStation` en een lokaal API-endpoint `POST /api/machine/event` (voor bijv. `BELADEN_OVEN`). Hiermee kan in de toekomst een PLC-knop automatisch het actieve product op een station (zoals BH15) afronden ("wikkelen klaar") en doorschuiven naar de volgende stap (oven).
 - **Deployment**: Versie gebumpt naar `0.1.160` en succesvol gebuild en gedeployd naar Firebase Hosting (`https://future-factory-377ef.web.app`).
+
+**Openstaande vragen voor machine-koppeling (BH15):**
+1. Welk merk/type PLC zit er op de BH15 wikkelmachine? (Bijv. Siemens S7, Beckhoff, Omron, Wago, etc.)
+2. Welk protocol heeft de voorkeur voor het uitlezen van het signaal? (Modbus TCP peilen, OPC UA, of kan de PLC zelf een HTTP/TCP-pakketje sturen?)
 
 ### Update sessie 13 augustus 2026 - Knop naar GatewayPC Web UI & Laserprinter voorbereiding
 
