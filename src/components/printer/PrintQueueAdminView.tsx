@@ -34,7 +34,7 @@ import {
 import AutoScaledLabelPreview from './AutoScaledLabelPreview';
 import { useNotifications } from '../../contexts/NotificationContext';
 import { useLabelCatalog } from '../../hooks/useLabelCatalog';
-import { renderLabelToBitmapZpl } from '../../utils/unifiedLabelRenderEngine';
+import { renderLabelToBitmapZpl } from '../../utils/zebraLabelRenderEngine';
 import {
   buildProtocolAwareUsbPayload,
   renderLabelForPrinter,
@@ -1473,7 +1473,8 @@ const PrintQueueAdminView = () => {
   const [showLotModal, setShowLotModal] = useState(false);
   
   // Nieuwe state voor navigatie en reprint
-  const [viewMode, setViewMode] = useState('overview'); // 'overview' | 'station'
+  const [viewMode, setViewMode] = useState<'overview' | 'station' | 'printer'>('overview');
+  const [selectedOverviewPrinterId, setSelectedOverviewPrinterId] = useState<string | null>(null);
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
   const [reprintSearch, setReprintSearch] = useState('');
   const [reprintResult, setReprintResult] = useState<AnyRecord | null>(null);
@@ -1953,6 +1954,10 @@ const PrintQueueAdminView = () => {
     const matchedPrinter = resolveUsbBoundPrinter(printers, usbDevice, stationContext || undefined);
     const currentPrinterId = matchedPrinter?.id || null;
 
+    if (viewMode === 'printer' && selectedOverviewPrinterId) {
+      return jobs.filter((j) => j.printerId === selectedOverviewPrinterId);
+    }
+
     // In stationweergave willen we alle jobs voor dat station zien, ongeacht printer-id.
     if (currentPrinterId && !selectedStation) {
       jobs = jobs.filter((j) => j.printerId === currentPrinterId);
@@ -1972,7 +1977,7 @@ const PrintQueueAdminView = () => {
     }
     
     return jobs;
-  }, [printJobs, printers, role, selectedStation, usbDevice, stationContext]);
+  }, [printJobs, printers, role, selectedStation, usbDevice, stationContext, viewMode, selectedOverviewPrinterId]);
 
   const stationContextPrinter = useMemo(() => {
     const boundPrinter = resolveUsbBoundPrinter(printers, usbDevice, stationContext || undefined);
@@ -2026,7 +2031,7 @@ const PrintQueueAdminView = () => {
 
   const queuePrinterOnline = useMemo(() => {
     if (usbDevice) return usbMatchesActiveQueuePrinter;
-    return isPrinterOnline(activeQueuePrinter);
+    return isPrinterOnline(activeQueuePrinter as any);
   }, [usbDevice, usbMatchesActiveQueuePrinter, activeQueuePrinter]);
 
   const usbMismatchMessage = useMemo(() => {
@@ -2092,18 +2097,18 @@ const PrintQueueAdminView = () => {
   }, [allFactoryStations, stationGroups]);
 
   const printerDpi = useMemo(() => {
-    const parsed = parseInt(String(activeQueuePrinter?.dpi ?? ''), 10);
+    const parsed = parseInt(String((activeQueuePrinter as any)?.dpi ?? ''), 10);
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
     return resolvePrinterDpi(activeQueuePrinter as Record<string, unknown>, 203);
   }, [activeQueuePrinter]);
 
   const printerDarkness = useMemo(() => {
-    const parsed = parseInt(String(activeQueuePrinter?.darkness ?? ''), 10);
+    const parsed = parseInt(String((activeQueuePrinter as any)?.darkness ?? ''), 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 15;
   }, [activeQueuePrinter]);
 
   const printerZplTextFont = useMemo(() => {
-    const raw = String(activeQueuePrinter?.zplTextFont || '').trim().toUpperCase();
+    const raw = String((activeQueuePrinter as any)?.zplTextFont || '').trim().toUpperCase();
     return raw === 'A' ? 'A' : '0';
   }, [activeQueuePrinter]);
 
@@ -2752,16 +2757,22 @@ const PrintQueueAdminView = () => {
       <div className="flex justify-between items-start mb-6">
         <div>
           <div className="flex items-center gap-4">
-            {viewMode === 'station' && (
+            {(viewMode === 'station' || viewMode === 'printer') && (
               <button 
-                onClick={() => { setViewMode('overview'); setSelectedStation(null); }}
+                onClick={() => { setViewMode('overview'); setSelectedStation(null); setSelectedOverviewPrinterId(null); }}
                 className="p-2 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
               >
                 <ArrowLeft size={24} />
               </button>
             )}
             <div>
-              <h1 className="text-3xl font-bold mb-1">{selectedStation ? `${t("printer.station", "Station")}: ${selectedStation}` : t("printer.printStations", "Print Stations")}</h1>
+              <h1 className="text-3xl font-bold mb-1">
+                {viewMode === 'station' && selectedStation 
+                  ? `${t("printer.station", "Station")}: ${selectedStation}` 
+                  : viewMode === 'printer' && selectedOverviewPrinterId
+                  ? `${t("printer.printer", "Printer")}: ${printers.find(p => p.id === selectedOverviewPrinterId)?.name || selectedOverviewPrinterId}`
+                  : t("printer.printStations", "Print Stations")}
+              </h1>
               <p className="text-slate-600 text-sm">{t("printer.managePrintJobsAndReprints", "Beheer printopdrachten en herprint labels.")}</p>
             </div>
           </div>
@@ -2867,55 +2878,113 @@ const PrintQueueAdminView = () => {
 
       {viewMode === 'overview' ? (
       <div className="mb-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-          {stationGroups.map(station => {
-            const stationKey = normalizeStationKey(station);
-            const stationJobs = printJobs.filter((j) => {
-              const jobStationKeys = getJobStationKeys(j);
-              return jobStationKeys.includes(stationKey);
-            });
+        {role === 'admin' ? (
+          <div className="space-y-8">
+            {departmentGroups.map((group) => {
+              // Zoek printers die tot deze afdeling behoren
+              const groupPrinters = printers.filter(p => (p.department || 'Geen Categorie / Overig') === group.label);
+              
+              if (groupPrinters.length === 0) return null;
 
-            const pendingCount = stationJobs.filter((j) => {
-              if (!isQueuedJobStatus(j.status)) return false;
-              return true;
-            }).length;
-            const totalCount = stationJobs.length;
-            
-            return (
-              <button 
-                key={station} 
-                onClick={() => { setSelectedStation(station); setViewMode('station'); }}
-                className={`p-6 rounded-2xl border-2 transition-all text-left relative group hover:-translate-y-1 ${
-                  pendingCount > 0 
-                    ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' 
-                    : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-md'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="p-3 bg-white rounded-xl shadow-sm">
-                    <Printer className={pendingCount > 0 ? "text-blue-600" : "text-slate-400"} size={24} />
+              return (
+                <div key={group.key} className="mb-6">
+                  <h2 className="text-xl font-bold text-slate-800 mb-4">{group.label}</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    {groupPrinters.map(printer => {
+                      const printerJobs = printJobs.filter(j => j.printerId === printer.id);
+                      const pendingCount = printerJobs.filter(j => isQueuedJobStatus(j.status)).length;
+                      const totalCount = printerJobs.length;
+
+                      return (
+                        <button 
+                          key={printer.id} 
+                          onClick={() => { setSelectedOverviewPrinterId(printer.id); setViewMode('printer'); }}
+                          className={`p-6 rounded-2xl border-2 transition-all text-left relative group hover:-translate-y-1 ${
+                            pendingCount > 0 
+                              ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' 
+                              : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-md'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="p-3 bg-white rounded-xl shadow-sm">
+                              <Printer className={pendingCount > 0 ? "text-blue-600" : "text-slate-400"} size={24} />
+                            </div>
+                            {pendingCount > 0 && (
+                              <span className="bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full animate-pulse">
+                                {pendingCount}
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="font-black text-xl text-slate-800 mt-4 uppercase tracking-tight">{printer.name || printer.id}</h3>
+                          <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">{t("printer.printQueue", "Print Queue")}</p>
+                          <p className="text-[11px] text-slate-500 font-bold mt-2">
+                            {t("printer.totalJobs", "Totaal jobs")}: {totalCount}
+                          </p>
+                        </button>
+                      );
+                    })}
                   </div>
-                  {pendingCount > 0 && (
-                    <span className="bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full animate-pulse">
-                      {pendingCount}
-                    </span>
-                  )}
                 </div>
-                <h3 className="font-black text-xl text-slate-800 mt-4 uppercase tracking-tight">{station}</h3>
-                <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">{t("printer.printQueue", "Print Queue")}</p>
-                <p className="text-[11px] text-slate-500 font-bold mt-2">
-                  {t("printer.totalJobs", "Totaal jobs")}: {totalCount}
-                </p>
-              </button>
-            );
-          })}
-          
-          {stationGroups.length === 0 && (
-            <div className="col-span-full text-center py-12 text-slate-400 italic">
-              Geen Queue Stations geconfigureerd. Stel ze in via Printer Beheer - Queue Stations.
-            </div>
-          )}
-        </div>
+              );
+            })}
+            
+            {printers.length === 0 && (
+              <div className="text-center py-12 text-slate-400 italic">
+                Geen printers gevonden in het systeem.
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {stationGroups.map(station => {
+              const stationKey = normalizeStationKey(station);
+              const stationJobs = printJobs.filter((j) => {
+                const jobStationKeys = getJobStationKeys(j);
+                return jobStationKeys.includes(stationKey);
+              });
+
+              const pendingCount = stationJobs.filter((j) => {
+                if (!isQueuedJobStatus(j.status)) return false;
+                return true;
+              }).length;
+              const totalCount = stationJobs.length;
+              
+              return (
+                <button 
+                  key={station} 
+                  onClick={() => { setSelectedStation(station); setViewMode('station'); }}
+                  className={`p-6 rounded-2xl border-2 transition-all text-left relative group hover:-translate-y-1 ${
+                    pendingCount > 0 
+                      ? 'border-blue-500 bg-blue-50 shadow-lg shadow-blue-100' 
+                      : 'border-slate-200 bg-white hover:border-blue-300 hover:shadow-md'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="p-3 bg-white rounded-xl shadow-sm">
+                      <Printer className={pendingCount > 0 ? "text-blue-600" : "text-slate-400"} size={24} />
+                    </div>
+                    {pendingCount > 0 && (
+                      <span className="bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full animate-pulse">
+                        {pendingCount}
+                      </span>
+                    )}
+                  </div>
+                  <h3 className="font-black text-xl text-slate-800 mt-4 uppercase tracking-tight">{station}</h3>
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">{t("printer.printQueue", "Print Queue")}</p>
+                  <p className="text-[11px] text-slate-500 font-bold mt-2">
+                    {t("printer.totalJobs", "Totaal jobs")}: {totalCount}
+                  </p>
+                </button>
+              );
+            })}
+            
+            {stationGroups.length === 0 && (
+              <div className="col-span-full text-center py-12 text-slate-400 italic">
+                Geen Queue Stations geconfigureerd. Stel ze in via Printer Beheer - Queue Stations.
+              </div>
+            )}
+          </div>
+        )}
       </div>
       ) : (
         <div className="space-y-8 animate-in slide-in-from-right-4">

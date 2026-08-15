@@ -1,5 +1,6 @@
 import { getDriver, resolvePrinterDpi } from './printerDrivers';
-import { renderLabelToBitmapZpl } from './unifiedLabelRenderEngine';
+import { renderLabelToBitmapZpl as zebraRenderLabelToBitmap } from './zebraLabelRenderEngine';
+import { renderLabelToBitmapZpl as lighthouseRenderLabelToBitmap } from './lighthouseRenderEngine';
 import { renderLabelToTspl, buildTsplUsbPayload } from './tsplPrintService';
 export { renderLabelToTspl, buildTsplUsbPayload } from './tsplPrintService';
 
@@ -102,7 +103,10 @@ export const renderLabelForPrinter = async (args: RenderLabelForPrinterArgs): Pr
     return renderLabelToTspl(args); // delegeer naar dedicated TSPL service
   }
 
-  return renderLabelToBitmapZpl({
+  const nameHint = String(args.printer?.name || args.printer?.deviceName || args.printer?.model || args.printer?.productName || '').toLowerCase();
+  const isLighthouse = nameHint.includes('lighthouse') || nameHint.includes('cj-pro') || nameHint.includes('pplz');
+
+  const renderArgs = {
     template: args.template,
     data: args.data,
     printerDpi: Number(args.printerDpi || resolvePrinterDpi(args.printer || null, 203)),
@@ -112,7 +116,13 @@ export const renderLabelForPrinter = async (args: RenderLabelForPrinterArgs): Pr
     textScaleFactor: args.textScaleFactor,
     widthMm: args.widthMm,
     heightMm: args.heightMm,
-  });
+  };
+
+  if (isLighthouse) {
+    return lighthouseRenderLabelToBitmap(renderArgs);
+  }
+
+  return zebraRenderLabelToBitmap(renderArgs);
 };
 
 export const renderLabelSequenceForPrinter = async ({

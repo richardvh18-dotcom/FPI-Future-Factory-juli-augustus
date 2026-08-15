@@ -727,7 +727,7 @@ export const captureElementAsCanvas = async (
     }
 
     const { default: html2canvas } = await import('html2canvas');
-    // Render het element 1:1 (het is al op 4× renderZoom gerenderd via unifiedLabelRenderEngine).
+    // Render het element 1:1 (het is al op 4× renderZoom gerenderd via zebraLabelRenderEngine).
     // captureElementAsCanvas schaalt het grote canvas terug naar printerresolutie.
     const renderCanvas = await html2canvas(element, {
         backgroundColor: '#ffffff',

@@ -52,7 +52,7 @@ import AutoScaledLabelPreview from "../printer/AutoScaledLabelPreview";
 import StatusBadge from "./common/StatusBadge";
 import { getISOWeek } from "date-fns";
 import { filterLabelsByProduct, processLabelData } from "../../utils/labelHelpers";
-import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
+import { renderLabelToBitmapZpl } from "../../utils/zebraLabelRenderEngine";
 import { resolveLinkedTemplateChain } from "../../utils/orderLabelTemplateUtils";
 import { useNotifications } from '../../contexts/NotificationContext';
 import { resolvePrinterForRouting } from '../../utils/printRouting';

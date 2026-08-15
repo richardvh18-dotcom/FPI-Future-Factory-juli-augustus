@@ -1238,7 +1238,7 @@ export const filterOrderLabelsByProduct = (
   };
 
   const itemCstEstEwt = ["CST", "EST", "EWT"].filter(hasItemTag);
-  const itemHasEmt = hasItemTag("EMT");
+  const itemCmtEmt = ["CMT", "EMT"].filter(hasItemTag);
   const itemCodeTags = Array.from(new Set((normalizedItemText.match(/\bA\d[A-Z]\d\b/g) || [])));
   const itemHasAdapter = hasItemTag("ADAPTOR") || hasItemTag("ADAPTER");
 
@@ -1277,12 +1277,12 @@ export const filterOrderLabelsByProduct = (
       return itemCodeTags.some(codeTag => tags.includes(codeTag));
     }
 
-    if (itemHasEmt) {
-      return tags.includes("EMT");
+    if (itemCmtEmt.length > 0) {
+      return itemCmtEmt.some(tag => tags.includes(tag)) || tags.includes("FIBERMAR");
     }
 
     if (itemCstEstEwt.length > 0) {
-      return itemCstEstEwt.some(tag => tags.includes(tag));
+      return itemCstEstEwt.some(tag => tags.includes(tag)) || tags.includes("WAVISTRONG");
     }
 
     return true;

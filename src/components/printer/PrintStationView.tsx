@@ -14,7 +14,7 @@ import { useLabelCatalog } from '../../hooks/useLabelCatalog';
 import { useLabelPreview } from '../../hooks/useLabelPreview';
 import { processLabelData, applyLabelLogic, filterOrderLabelsByProduct, filterLabelsByProduct, getCompactPrintVariables } from '../../utils/labelHelpers';
 import { executeOrderLabelSearch, loadFactoryMachinePaths, normalizeText, shouldUseGlobalOrderLabelSearch } from "../../utils/orderLabelSearch";
-import { renderLabelToBitmapZpl } from '../../utils/unifiedLabelRenderEngine';
+import { renderLabelToBitmapZpl } from '../../utils/zebraLabelRenderEngine';
 import {
   buildProtocolAwareUsbPayload,
   renderLabelForPrinter,
@@ -85,7 +85,7 @@ type TempLabelItemProps = {
 
 type TempLabelModalProps = {
   onClose: () => void;
-  onPrint: (orderData: AnyRecord, templateId: string, quantity?: number) => Promise<void>;
+  onPrint: (orderData: AnyRecord, templateId: string, quantity?: number, specialText?: string) => Promise<void>;
   labelTemplates?: LabelTemplate[];
   labelRules?: AnyRecord[];
   printerDpi?: number;
@@ -213,6 +213,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
   const { notify, showError, showSuccess } = useNotifications();
   const itemDisplay = getOrderLabelDescription(item) || getOrderLabelItemCode(item);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [specialText, setSpecialText] = useState("");
   
   // States for "Add Lot Number" form
   const [lotFormOpen, setLotFormOpen] = useState(false);
@@ -395,8 +396,22 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
                 ) : (
                   <p className="text-xs italic text-amber-600">{t('printStationView.noMatchingTemporaryTemplateFound', 'Geen passende tijdelijke template gevonden.')}</p>
                 )}
+                
+                {selectedTemplate?.isSpecial && (
+                  <div className="mt-3">
+                    <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest block mb-1">Vrije Special Tekst</label>
+                    <input
+                      type="text"
+                      value={specialText}
+                      onChange={(e) => setSpecialText(e.target.value)}
+                      placeholder="Vul tekst in voor dit speciale label..."
+                      className="w-full p-2.5 bg-white border border-amber-300 rounded-xl text-xs font-bold focus:border-amber-500 outline-none"
+                    />
+                  </div>
+                )}
+                
                 <button
-                  onClick={() => onPrint(item, selectedTemplateId)}
+                  onClick={() => onPrint(item, selectedTemplateId, 1, specialText)}
                   disabled={!selectedTemplateId || topOptions.length === 0}
                   className="w-full mt-3 px-3 py-2 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-slate-700 disabled:opacity-50"
                 >
@@ -488,6 +503,7 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
   const [loadingSearchItems, setLoadingSearchItems] = useState(false);
   const [selectedOrderId, setSelectedOrderId] = useState<string>("");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  const [specialText, setSpecialText] = useState("");
   const [printCount, setPrintCount] = useState<string>("1");
   const [hasMoreMachineItems, setHasMoreMachineItems] = useState(false);
   const [isSubmittingPrint, setIsSubmittingPrint] = useState(false);
@@ -933,6 +949,19 @@ const TempLabelModal = ({ onClose, onPrint, labelTemplates = [], labelRules = []
                       />
                     </div>
                   </div>
+                  
+                  {temporaryTemplates.find(t => String(t.id) === selectedTemplateId)?.isSpecial && (
+                    <div className="mb-3">
+                      <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest block mb-1">Vrije Special Tekst</label>
+                      <input
+                        type="text"
+                        value={specialText}
+                        onChange={(e) => setSpecialText(e.target.value)}
+                        placeholder="Vul tekst in voor dit speciale label..."
+                        className="w-full p-3 bg-white border border-amber-300 rounded-xl text-sm font-bold focus:border-amber-500 outline-none"
+                      />
+                    </div>
+                  )}
 
                   <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-3">
                     {previewTemplates.length > 0 ? (
@@ -1796,7 +1825,7 @@ const PrintStationView = () => {
     }
   };
 
-  const handleTempLegacyPrint = async (orderData: AnyRecord, templateId: string, quantity = 1) => {
+  const handleTempLegacyPrint = async (orderData: AnyRecord, templateId: string, quantity = 1, specialText?: string) => {
     const template = labelTemplates.find((t: LabelTemplate) => t.id === templateId);
     const templatesToPrint = template ? [template] : [];
     const dpi = printerDpi;
@@ -1820,7 +1849,8 @@ const PrintStationView = () => {
             productId: item,
             item: desc,
             description: desc,
-            lotNumber: orderData.lotNumber || order
+            lotNumber: orderData.lotNumber || order,
+            SPECIAL_TEXT: specialText || ""
         });
         processedData = applyLabelLogic(labelData, labelRules);
         const zplChunks: string[] = [];

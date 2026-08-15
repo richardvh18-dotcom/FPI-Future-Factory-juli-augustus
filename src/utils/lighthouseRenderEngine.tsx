@@ -21,6 +21,7 @@ type RenderLabelToBitmapZplArgs = {
   textScaleFactor?: number;
   widthMm?: number;
   heightMm?: number;
+  printer?: Record<string, unknown> | null;
 };
 
 export const renderLabelToBitmapZpl = async ({
@@ -33,6 +34,7 @@ export const renderLabelToBitmapZpl = async ({
   textScaleFactor = 1.6,
   widthMm,
   heightMm,
+  printer,
 }: RenderLabelToBitmapZplArgs): Promise<string> => {
   let host: HTMLDivElement | null = null;
   let root: ReturnType<typeof createRoot> | null = null;
@@ -75,7 +77,14 @@ export const renderLabelToBitmapZpl = async ({
 
     const canvas = await captureElementAsCanvas(host, finalWidthMm, finalHeightMm, printerDpi);
     const zplRaw = await generateBitmapPrintData(canvas, finalWidthMm, finalHeightMm, printerDpi, darkness, printSpeed);
-    const zpl = String(zplRaw || '').replace(/^\^XA/, '^XA\n^FXBITMAP_V3_TS160^FS');
+    
+    // Voeg ^MNN (Continuous Media) toe als we weten dat het een Lighthouse/CJ-PRO is.
+    // Hiermee voorkomen we firmware-crashes (knipperende oranje lampjes) op continue rollen.
+    const nameHint = String(printer?.name || printer?.deviceName || printer?.model || printer?.productName || '').toLowerCase();
+    const isLighthouse = nameHint.includes('lighthouse') || nameHint.includes('cj-pro') || nameHint.includes('pplz');
+    const mediaCommand = isLighthouse ? '\n^MNN' : '';
+
+    const zpl = String(zplRaw || '').replace(/^\^XA/, `^XA\n^FXBITMAP_V3_TS160^FS${mediaCommand}`);
 
     if (!/\^GFA,/i.test(String(zpl || ''))) {
       throw new Error('Bitmap payload ongeldig: ^GFA ontbreekt.');

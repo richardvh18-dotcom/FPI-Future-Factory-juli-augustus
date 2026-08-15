@@ -59,7 +59,7 @@ import { logComplianceEvent } from "../../services/complianceAudit";
 import { useLabelCatalog } from "../../hooks/useLabelCatalog";
 import { useFormPersistence } from "../../hooks/useFormPersistence";
 import { serializeRoutingKeys } from "../../utils/printRouting";
-import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
+import { renderLabelToBitmapZpl } from "../../utils/zebraLabelRenderEngine";
 import { normalizePrinterProtocol, renderLabelForPrinter } from "../../utils/printerProtocolService";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS, getPathString } from "../../config/dbPaths";
@@ -1141,30 +1141,6 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
     setQueueStations(Array.from(new Set(stations)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
   }, [printers, selectedQueuePrinterId]);
 
-  useEffect(() => {
-    if (!selectedQueuePrinterId) {
-      setSelectedQueueDepartment("");
-      return;
-    }
-
-    const selectedPrinter = printers.find((p) => p.id === selectedQueuePrinterId);
-    if (!selectedPrinter) {
-      setSelectedQueueDepartment("");
-      return;
-    }
-
-    const preferredDepartment = resolvePreferredQueueDepartment({
-      printer: selectedPrinter,
-      availableDepartments,
-    });
-
-    if (preferredDepartment) {
-      setSelectedQueueDepartment(preferredDepartment);
-    } else if (!selectedQueueDepartment) {
-      setSelectedQueueDepartment("");
-    }
-  }, [availableDepartments, printers, selectedQueuePrinterId]);
-
   // Fetch stations uit factory config
   useEffect(() => {
     const unsub = onSnapshot(docPath(PATHS.FACTORY_CONFIG), (snap) => {
@@ -2144,51 +2120,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
               />
             </div>
             
-            {/* Station Koppeling */}
-            <div className="md:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2">
-                    <MapPin size={14} /> {t('adminPrinterManager.linkToWorkstationOptional')}
-                </label>
-                <div className="flex flex-wrap gap-2 mb-2">
-                    {formData.linkedStations.map(station => (
-                        <span key={station} className="bg-blue-100 text-blue-700 px-2 py-1 rounded-lg text-xs font-bold flex items-center gap-1">
-                            {station}
-                            <button onClick={() => setFormData({...formData, linkedStations: formData.linkedStations.filter(s => s !== station)})} className="hover:text-blue-900"><X size={12} /></button>
-                        </span>
-                    ))}
-                </div>
-                <select 
-                    className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none"
-                    onChange={(e) => {
-                        if (e.target.value && !formData.linkedStations.includes(e.target.value)) {
-                            setFormData({...formData, linkedStations: [...formData.linkedStations, e.target.value]});
-                        }
-                        e.target.value = "";
-                    }}
-                >
-                    <option value="">{t('adminPrinterManager.addStationPlaceholder')}</option>
-                    {availableStations.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-            </div>
 
-            <div className="md:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-2">
-                    <Tag size={14} /> {t('adminPrinterManager.routingKeys', 'Routeringstags')}
-                </label>
-                <input
-                  type="text"
-                  className="w-full p-2 bg-white border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-500"
-                  placeholder={t('adminPrinterManager.routingKeysPlaceholder', '#mazak, #lossen, station:bh12, general')}
-                  value={formData.routingKeysText}
-                  onChange={(e) => setFormData({ ...formData, routingKeysText: e.target.value })}
-                />
-                <p className="text-[10px] text-slate-400 mt-1 font-semibold uppercase tracking-widest">
-                  {t('adminPrinterManager.routingKeysHelp', 'Gebruik routecodes zoals #MAZAK, #LOSSEN, STATION:BH12 of GENERAL. # is optioneel.')} 
-                </p>
-                <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-                  {t('adminPrinterManager.routingKeysHostHelp', 'Werk je met meerdere computers: geef iedere printer zijn eigen routeringstag en koppel op iedere pc alleen de lokale USB-printer. Bijvoorbeeld MAZAK op de Mazak-pc en GENERAL of STATION:BH18 op de pc voor grote labels.')}
-                </p>
-            </div>
 
             <div className="md:col-span-2">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{t('adminPrinterManager.connection')}</label>
@@ -2659,67 +2591,62 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
             {t("adminPrinterManager.queueStationsHelp", "Selecteer per printer eerst een afdeling en daarna de stations die de queue ontvangt en print. De stations komen uit de factory-config.")}
           </p>
 
-          <div className="mb-4">
-            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">{t("adminPrinterManager.printer", "Printer")}</label>
-            <select
-              value={selectedQueuePrinterId}
-              onChange={(e) => {
-                setSelectedQueuePrinterId(e.target.value);
-                setSelectedQueueDepartment("");
-                setQueueStationToAdd("");
-              }}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
-              disabled={printers.length === 0 || isSavingQueueStations}
-            >
-              <option value="">{t("adminPrinterManager.selectPrinter", "- Kies printer -")}</option>
-              {printers.length === 0 && <option value="" disabled>{t("adminPrinterManager.noPrinters", "Geen printers")}</option>}
-              {printers.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-          </div>
-
           <div className="flex flex-col md:flex-row gap-3 mb-4">
             <select
               value={selectedQueueDepartment}
               onChange={(e) => {
                 setSelectedQueueDepartment(e.target.value);
+                setSelectedQueuePrinterId("");
                 setQueueStationToAdd("");
               }}
-              className="w-full md:w-56 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
-              disabled={availableDepartments.length === 0 || isSavingQueueStations || !selectedQueuePrinterId}
+              className="w-full md:w-1/3 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
+              disabled={availableDepartments.length === 0 || isSavingQueueStations}
             >
-              <option value="">{t("adminPrinterManager.selectDepartment", "Selecteer afdeling...")}</option>
+              <option value="">{t("adminPrinterManager.selectDepartment", "1. Selecteer afdeling...")}</option>
               {availableDepartments.map((department) => (
                 <option key={department} value={department}>{department}</option>
               ))}
             </select>
-            {selectedQueueDepartment && (
-              <p className="text-[11px] font-semibold text-slate-500 self-center">
-                {t("adminPrinterManager.autoDepartmentHint", "Afdeling is automatisch gekoppeld aan deze printer.")}
-              </p>
-            )}
+
+            <select
+              value={selectedQueuePrinterId}
+              onChange={(e) => {
+                setSelectedQueuePrinterId(e.target.value);
+                setQueueStationToAdd("");
+              }}
+              className="w-full md:w-1/3 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
+              disabled={printers.length === 0 || !selectedQueueDepartment || isSavingQueueStations}
+            >
+              <option value="">{t("adminPrinterManager.selectPrinter", "2. Kies printer uit afdeling...")}</option>
+              {printers.filter(p => (p.department || "Geen Categorie / Overig") === selectedQueueDepartment).map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+
             <select
               value={queueStationToAdd}
               onChange={(e) => setQueueStationToAdd(e.target.value)}
-              className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
+              className="w-full md:w-1/3 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
               disabled={isSavingQueueStations || !selectedQueuePrinterId || (selectedQueueDepartment ? (departmentStations[selectedQueueDepartment] || []).length === 0 : availableStations.length === 0)}
             >
               <option value="">{selectedQueueDepartment
-                ? t("adminPrinterManager.selectStationFromDepartment", `Selecteer station uit ${selectedQueueDepartment}...`)
-                : t("adminPrinterManager.selectStationFromFactoryConfig", "Selecteer station uit factory config...")}</option>
+                ? t("adminPrinterManager.selectStationFromDepartment", `3. Selecteer station uit ${selectedQueueDepartment}...`)
+                : t("adminPrinterManager.selectStationFromFactoryConfig", "3. Selecteer station...")}</option>
               {(selectedQueueDepartment ? (departmentStations[selectedQueueDepartment] || []) : availableStations)
                 .filter((s) => !queueStations.includes(s))
                 .map((s) => (
                   <option key={s} value={s}>{s}</option>
                 ))}
             </select>
+          </div>
+
+          <div className="mb-4">
             <button
               onClick={handleAddQueueStation}
               disabled={!queueStationToAdd || isSavingQueueStations || !selectedQueuePrinterId}
               className="px-4 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-xs tracking-widest hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isSavingQueueStations ? t("common.saving", "Opslaan...") : t("common.add", "Toevoegen")}
+              {isSavingQueueStations ? t("common.saving", "Opslaan...") : t("common.add", "Station Koppelen")}
             </button>
           </div>
 

@@ -76,7 +76,7 @@ import {
   resolveLabelContent,
 } from "../../utils/labelHelpers";
 import { generatePrintData, downloadZPL } from "../../utils/zplHelper";
-import { renderLabelToBitmapZpl } from "../../utils/unifiedLabelRenderEngine";
+import { renderLabelToBitmapZpl } from "../../utils/zebraLabelRenderEngine";
 import { resolvePrinterDpi } from "../../utils/printerDrivers";
 import { renderLabelForPrinter } from "../../utils/printerProtocolService";
 import { getWavistrongLayoutNudge } from "../../utils/labelLayoutAdjustments";
@@ -555,10 +555,11 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
           r.variables?.forEach((v) => { if (v.name) allVars.add(v.name); });
       });
 
-      // If a specific product code is selected to filter the list
       if (selectedLogicCode) {
           const rule = labelLogicRules.find((r) => r.productCode === selectedLogicCode);
           const ruleVars = new Set((rule?.variables?.map((v) => v.name).filter(Boolean) as string[]) || []);
+          
+          ruleVars.add("SPECIAL_TEXT");
           
           // Always add the currently selected element's variable to the list,
           // so it's visible even if it doesn't belong to the filtered rule.
@@ -567,6 +568,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
           }
           return Array.from(ruleVars).sort();
       }
+      
+      allVars.add("SPECIAL_TEXT");
       
       // If no filter is active, show all variables.
       // Also ensure the current element's variable is present, just in case it's orphaned.
@@ -1149,6 +1152,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
         return cleanEl;
       });
 
+      const isSpecial = sanitizedElements.some((el: any) => el.variable === "SPECIAL_TEXT");
       const tagsToSave = tagsOverride !== null ? tagsOverride : (labelTags || []);
 
       await setDoc(docRef, {
@@ -1161,10 +1165,11 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
         tags: tagsToSave,
         folder: labelFolder || null,
         linkedTemplateId: linkedTemplateId || null,
+        isSpecial: isSpecial,
         lastUpdated: serverTimestamp(),
         updatedBy: "Admin Designer",
       });
-      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Label template saved: ${nameToUse}`);
+      await logActivity(auth.currentUser?.uid || "system", "SETTINGS_UPDATE", `Label template saved: ${nameToUse} (Special: ${isSpecial})`);
       setHasUnsavedChanges(false);
       
       if (nameOverride) {

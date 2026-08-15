@@ -35,7 +35,7 @@ import ProductDetailModal from "../../products/ProductDetailModal";
 import AutoScaledLabelPreview from "../../printer/AutoScaledLabelPreview";
 import { useLabelPreview } from "../../../hooks/useLabelPreview";
 import { getDriver } from "../../../utils/printerDrivers";
-import { renderLabelToBitmapZpl } from "../../../utils/unifiedLabelRenderEngine";
+import { renderLabelToBitmapZpl } from "../../../utils/zebraLabelRenderEngine";
 import ConfirmationModal from "./ConfirmationModal";
 import { formatDateTimeSafe, toDateSafe } from "../../../utils/dateUtils";
 import { useNotifications } from '../../../contexts/NotificationContext';

@@ -1,6 +1,48 @@
-﻿### Update sessie 14 augustus 2026 - LN-export BH18: dubbele aftrek gecorrigeerd
+### Update sessie 15 augustus 2026 - Specials Label Feature & Product Filtering
+
+**Handeling:**
+- **Specials Label Feature:** De variabele `SPECIAL_TEXT` is toegevoegd aan de `AdminLabelDesigner.tsx`.
+- Zodra een label-template deze variabele gebruikt, krijgt het automatisch de tag `isSpecial: true`.
+- In de Order Labels interface (`PrintStationView.tsx` -> `TempLabelModal` en `TempLabelItem`) schuift nu dynamisch een oranje "Vrije Special Tekst" invulveld uit wanneer een speciale template wordt gekozen.
+- De ingevulde vrije tekst wordt via `processLabelData` meegestuurd naar de ZPL/rendering engine, waar het correct in de gereserveerde velden wordt gezet.
+- **Product Filtering (Sleeveless Couplers):** Een bug verholpen in `filterOrderLabelsByProduct` (`labelHelpers.tsx`) waardoor CMT- en EMT-producten álle labels zagen (Wavistrong en Fibermar door elkaar). De logica is aangescherpt:
+  - Producten met **CMT of EMT** tonen nu **alleen Fibermar** gerelateerde labels (en specifieke CMT/EMT labels).
+  - Producten met **CST, EST of EWT** tonen nu **alleen Wavistrong** gerelateerde labels.
+
+### Update sessie 15 augustus 2026 - Globale Printer Wachtrijen voor Admins
+
+**Handeling:**
+- De weergave in "Print beheer -> Printer wachtrij" is aangepast.
+- Voorheen toonde het overzicht (overview mode) alleen stations voor de lokaal aangesloten printer. 
+- Nu is er een splitsing gebaseerd op gebruikersrol: admins zien het complete overzicht van **alle printers** in de fabriek, gegroepeerd per **Afdeling**.
+- Vanaf deze tegels kunnen admins doorklikken naar de specifieke wachtrijlijst van die printer.
+- Operatoren behouden de originele veilige weergave en zien alleen hun lokale stations.
+
+### Update sessie 15 augustus 2026 - Wachtrijen UI Flow Omgedraaid
+
+**Handeling:**
+- De dropdown-volgorde in de tab 'Queue voor stations' van de Printer Configuratie is volledig omgedraaid op verzoek.
+- Het is nu vereist om eerst een Afdeling te kiezen. De Printer-lijst toont daarna alléén nog de printers die daadwerkelijk aan die afdeling toebehoren, in plaats van alle printers uit de hele fabriek. Daarna kan het juiste Station worden gekoppeld. Dit is een stuk veiliger en logischer.
+- De onhandige automatische "afdeling detectie" bij het selecteren van een printer is verwijderd omdat de flow nu lineair van groot (afdeling) naar klein (printer -> station) gaat.
+
+### Update sessie 15 augustus 2026 - Printer Config UI Opschoning
+
+**Handeling:**
+- De velden voor 'Koppelen aan een werkstation' (`linkedStations`) en 'Routeringstags' (`routingKeys`) zijn verwijderd uit de Beheer -> Printers configuratie UI, omdat deze functionaliteit inmiddels volledig is vervangen door het superieure Wachtrijen (Queues) systeem per station. 
+- De datastructuur op de achtergrond is behouden om backwards compatibility met oudere opgeslagen printers te garanderen.
+
+### Update sessie 15 augustus 2026 - Lighthouse vs Zebra Print Flow Splitsing
 
 **Gemeld:**
+- Fix voor Lighthouse (knipperende oranje lampjes vanwege continuous roll ZPL-conflicten) werkte, maar introduceerde het risico dat dit de Zebra ZM400-printers zou breken omdat ze beiden dezelfde rendering engine gebruikten.
+
+**Oorzaak en handeling:**
+- De originele `unifiedLabelRenderEngine.tsx` is hernoemd naar `zebraLabelRenderEngine.tsx` en in ere hersteld (alle hacks voor Lighthouse zijn verwijderd), zodat Zebra printers 100% origineel en foutloos blijven printen.
+- Er is een kloon gemaakt `lighthouseRenderEngine.tsx` specifiek voor Lighthouse-quirks. Hierin wordt het ZPL commando `^MNN` (Continuous Media) meegegeven zodat de Lighthouse niet vastloopt door het missen van gaps in het materiaal.
+- In `printerProtocolService.ts` is de routering aangepast zodat afhankelijk van de merknaam (bevat 'lighthouse', 'cj-pro' of 'pplz') automatisch de juiste engine wordt gekozen. 
+- Alle 7 componenten die voorheen afhankelijk waren van de `unifiedLabelRenderEngine` verwijzen nu naar de `zebraLabelRenderEngine`.
+
+### Update sessie 14 augustus 2026 - LN-export BH18: dubbele aftrek gecorrigeerd
 - Order `N20025222` (Elb 125/90 EST25 CBCB) toonde in **Gereed voor LN** de reeks `10 / 1 / 8 / 1` voor totaal, gereedgemeld, nog te doen en LN-wikkelstap.
 
 **Oorzaak en handeling:**
