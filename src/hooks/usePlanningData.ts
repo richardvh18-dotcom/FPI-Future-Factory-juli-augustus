@@ -32,9 +32,12 @@ export const usePlanningData = (): UsePlanningDataResult => {
 
             return {
               ...data,
-              deliveryDate: data.deliveryDate?.toDate
-                ? data.deliveryDate.toDate()
-                : (data.deliveryDate ? new Date(data.deliveryDate) : undefined),
+              deliveryDate:
+                data.deliveryDate && typeof (data.deliveryDate as any).toDate === "function"
+                  ? (data.deliveryDate as any).toDate()
+                  : data.deliveryDate
+                    ? new Date(data.deliveryDate as string | number | Date)
+                    : undefined,
             } as PlanningOrder;
           })
           .filter((o): o is PlanningOrder => o !== null);

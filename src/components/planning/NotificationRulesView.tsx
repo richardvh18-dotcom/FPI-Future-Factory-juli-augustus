@@ -105,13 +105,13 @@ const NotificationRulesView = () => {
     switch (rule.trigger) {
       case "capacity_shortage": {
         // Check if capacity < demand by threshold
-        const totalCapacity = occupancy.reduce((sum, o) => sum + (o.productionHours || 0), 0);
-        const totalDemand = planning.reduce((sum, p) => sum + (p.estimatedHours || 0), 0);
+        const totalCapacity = occupancy.reduce((sum, o) => sum + (Number(o.productionHours) || 0), 0);
+        const totalDemand = planning.reduce((sum, p) => sum + (Number(p.estimatedHours) || 0), 0);
         const shortage = totalDemand - totalCapacity;
         
-        if (shortage > rule.threshold) {
+        if (shortage > Number(rule.threshold || 0)) {
           shouldTrigger = true;
-          message = `⚠️ Capaciteitstekort gedetecteerd: ${Math.round(shortage)}h tekort (threshold: ${rule.threshold}h)`;
+          message = `⚠️ Capaciteitstekort gedetecteerd: ${Math.round(shortage)}h tekort (threshold: ${Number(rule.threshold || 0)}h)`;
           severity = "warning";
         }
         break;
@@ -120,13 +120,15 @@ const NotificationRulesView = () => {
       case "low_efficiency": {
         // Check if efficiency drops below threshold
         const avgEfficiency = occupancy.reduce((sum, o) => {
-          const eff = o.productionHours > 0 ? (o.actualHours || 0) / o.productionHours : 0;
+          const prodHours = Number(o.productionHours) || 0;
+          const actHours = Number(o.actualHours) || 0;
+          const eff = prodHours > 0 ? actHours / prodHours : 0;
           return sum + eff;
         }, 0) / (occupancy.length || 1);
 
-        if (avgEfficiency < rule.threshold / 100) {
+        if (avgEfficiency < Number(rule.threshold || 0) / 100) {
           shouldTrigger = true;
-          message = `📉 Lage efficiency gedetecteerd: ${Math.round(avgEfficiency * 100)}% (threshold: ${rule.threshold}%)`;
+          message = `📉 Lage efficiency gedetecteerd: ${Math.round(avgEfficiency * 100)}% (threshold: ${Number(rule.threshold || 0)}%)`;
           severity = "warning";
         }
         break;
@@ -137,7 +139,7 @@ const NotificationRulesView = () => {
         const now = new Date();
         const delayedOrders = planning.filter((p: AnyRecord) => {
           if (!p.plannedDate || p.status === "shipped") return false;
-          const planDate = new Date(p.plannedDate.seconds * 1000);
+          const planDate = new Date((p.plannedDate as any).seconds * 1000);
           return planDate < now;
         });
 
@@ -155,7 +157,7 @@ const NotificationRulesView = () => {
           !o.operatorName || o.operatorName === ""
         );
 
-        if (machinesWithoutOperators.length >= rule.threshold) {
+        if (machinesWithoutOperators.length >= Number(rule.threshold || 0)) {
           shouldTrigger = true;
           message = `👤 ${machinesWithoutOperators.length} machines zonder operator`;
           severity = "warning";
@@ -166,15 +168,15 @@ const NotificationRulesView = () => {
       case "dependency_blocked": {
         // Check for orders blocked by dependencies
         const blockedOrders = planning.filter((p: AnyRecord) => {
-          if (!p.dependencies || p.dependencies.length === 0) return false;
-          const allDepsComplete = p.dependencies.every((depId: string) => {
+          if (!p.dependencies || !Array.isArray(p.dependencies) || p.dependencies.length === 0) return false;
+          const allDepsComplete = p.dependencies.every((depId: any) => {
             const dep = planning.find((o: AnyRecord) => o.id === depId);
             return dep && dep.status === "shipped";
           });
           return !allDepsComplete && p.status !== "shipped";
         });
 
-        if (blockedOrders.length >= rule.threshold) {
+        if (blockedOrders.length >= Number(rule.threshold || 0)) {
           shouldTrigger = true;
           message = `🔗 ${blockedOrders.length} orders geblokkeerd door dependencies`;
           severity = "info";
@@ -188,7 +190,7 @@ const NotificationRulesView = () => {
       const recentSimilar = notifications.find((n: AnyRecord) => 
         n.ruleId === rule.id && 
         n.createdAt && 
-        (Date.now() - new Date(n.createdAt.seconds * 1000).getTime()) < 3600000 // 1 hour
+        (Date.now() - new Date((n.createdAt as any).seconds * 1000).getTime()) < 3600000 // 1 hour
       );
 
       if (!recentSimilar) {
@@ -408,7 +410,7 @@ const NotificationRulesView = () => {
               ) : (
                 rules.map(rule => (
                   <div
-                    key={rule.id}
+                    key={rule.id as string}
                     className={`p-4 rounded-xl border-2 transition-all ${
                       rule.enabled 
                         ? "border-blue-200 bg-blue-50" 
@@ -417,14 +419,14 @@ const NotificationRulesView = () => {
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div>
-                        <div className="font-bold text-sm text-slate-800">{rule.name}</div>
+                        <div className="font-bold text-sm text-slate-800">{String(rule.name || "")}</div>
                         <div className="text-xs text-slate-500 mt-1">
-                          {getTriggerLabel(rule.trigger)}
+                          {getTriggerLabel(String(rule.trigger || ""))}
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => toggleRule(rule.id, rule.enabled)}
+                          onClick={() => toggleRule(rule.id as string, rule.enabled as boolean)}
                           className={`p-1 rounded-lg transition-colors ${
                             rule.enabled 
                               ? "bg-emerald-100 hover:bg-emerald-200" 
@@ -438,7 +440,7 @@ const NotificationRulesView = () => {
                           )}
                         </button>
                         <button
-                          onClick={() => deleteRule(rule.id)}
+                          onClick={() => deleteRule(rule.id as string)}
                           className="p-1 hover:bg-red-100 rounded-lg transition-colors"
                         >
                           <Trash2 className="text-red-600" size={14} />
@@ -449,11 +451,11 @@ const NotificationRulesView = () => {
                     <div className="flex items-center gap-4 text-xs">
                       <div className="flex items-center gap-1 text-slate-600">
                         <TrendingUp size={12} />
-                        <span>Threshold: {rule.threshold}</span>
+                        <span>Threshold: {String(rule.threshold || "")}</span>
                       </div>
                       <div className="flex items-center gap-1 text-slate-600">
                         <Users size={12} />
-                        <span>{rule.recipients}</span>
+                        <span>{String(rule.recipients || "")}</span>
                       </div>
                     </div>
                   </div>
@@ -476,29 +478,29 @@ const NotificationRulesView = () => {
             ) : (
               notifications.map(notif => (
                 <div
-                  key={notif.id}
-                  className={`p-3 rounded-xl border-2 ${getSeverityColor(notif.severity)} ${
+                  key={notif.id as string}
+                  className={`p-3 rounded-xl border-2 ${getSeverityColor(String(notif.severity || ""))} ${
                     notif.read ? "opacity-50" : ""
                   }`}
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <Bell size={14} />
-                      <div className="text-xs font-bold">{notif.ruleName}</div>
+                      <div className="text-xs font-bold">{String(notif.ruleName || "")}</div>
                     </div>
                     {!notif.read && (
                       <button
-                        onClick={() => markAsRead(notif.id)}
+                        onClick={() => markAsRead(notif.id as string)}
                         className="text-xs underline hover:no-underline"
                       >
                         Markeer gelezen
                       </button>
                     )}
                   </div>
-                  <div className="text-xs">{notif.message}</div>
-                  {notif.createdAt && (
+                  <div className="text-xs">{String(notif.message || "")}</div>
+                  {Boolean(notif.createdAt) && (
                     <div className="text-xs opacity-60 mt-2">
-                      {new Date(notif.createdAt.seconds * 1000).toLocaleString('nl-NL')}
+                      {new Date((notif.createdAt as any).seconds * 1000).toLocaleString('nl-NL')}
                     </div>
                   )}
                 </div>

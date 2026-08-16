@@ -53,7 +53,7 @@ export const getProductionOrders = async (limitCount = 50) => {
       } catch (error) {
     console.error('[AI ContextProvider Error]', error);
     try {
-      logActivity({
+      logActivity('SYSTEM', 'AI_ERROR', {
         type: 'system_error',
         message: 'AI ContextProvider Error',
         metadata: { error: String(error) },
@@ -77,7 +77,7 @@ export const getProductionOrders = async (limitCount = 50) => {
       } catch (error) {
     console.error('[AI ContextProvider Error]', error);
     try {
-      logActivity({
+      logActivity('SYSTEM', 'AI_ERROR', {
         type: 'system_error',
         message: 'AI ContextProvider Error',
         metadata: { error: String(error) },
@@ -99,7 +99,7 @@ export const getProductionOrders = async (limitCount = 50) => {
       } catch (error) {
     console.error('[AI ContextProvider Error]', error);
     try {
-      logActivity({
+      logActivity('SYSTEM', 'AI_ERROR', {
         type: 'system_error',
         message: 'AI ContextProvider Error',
         metadata: { error: String(error) },
@@ -123,7 +123,7 @@ export const getProductionOrders = async (limitCount = 50) => {
       } catch (error) {
     console.error('[AI ContextProvider Error]', error);
     try {
-      logActivity({
+      logActivity('SYSTEM', 'AI_ERROR', {
         type: 'system_error',
         message: 'AI ContextProvider Error',
         metadata: { error: String(error) },

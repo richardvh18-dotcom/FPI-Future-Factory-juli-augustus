@@ -308,7 +308,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
       onClose();
     } catch (err: unknown) {
       console.error(err);
-      showError(err.message || "Fout bij opslaan van meting.");
+      showError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }

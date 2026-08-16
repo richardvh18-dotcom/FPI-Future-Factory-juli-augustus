@@ -25,7 +25,29 @@ import { executeRuleWithLogging } from "../../utils/automationEngine";
 import { useNotifications } from "../../contexts/NotificationContext";
 import AdminLabelPrintRules from "../admin/AdminLabelPrintRules";
 
-type AnyRecord = Record<string, unknown>;
+type AnyRecord = Record<string, any>;
+
+interface RuleTrigger {
+  type: string;
+  conditions?: Record<string, any>;
+}
+
+interface RuleAction {
+  type: string;
+  params?: Record<string, any>;
+}
+
+interface AutomationRule {
+  id?: string;
+  name: string;
+  trigger: RuleTrigger;
+  action: RuleAction;
+  enabled: boolean;
+  debounceMinutes: number;
+  executionCount?: number;
+  lastExecuted?: any;
+  [key: string]: any;
+}
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error || "Onbekende fout");
 
@@ -37,14 +59,14 @@ const AutomationRulesView = () => {
   const { t } = useTranslation();
   const { showConfirm , notify} = useNotifications();
   
-  const [rules, setRules] = useState<AnyRecord[]>([]);
+  const [rules, setRules] = useState<AutomationRule[]>([]);
   const [executions, setExecutions] = useState<AnyRecord[]>([]);
   const [emailTemplates, setEmailTemplates] = useState<AnyRecord[]>([]);
   const [showAddRule, setShowAddRule] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [editingRule, setEditingRule] = useState<AnyRecord | null>(null);
+  const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
   const [isImporting, setIsImporting] = useState(false);
-  const [newRule, setNewRule] = useState<AnyRecord>({
+  const [newRule, setNewRule] = useState<AutomationRule>({
     name: "",
     trigger: {
       type: "capacity_shortage",
@@ -67,7 +89,7 @@ const AutomationRulesView = () => {
           id: docSnap.id,
           ...docSnap.data()
         }));
-        setRules(rulesData);
+        setRules(rulesData as AutomationRule[]);
       }
     );
 
@@ -159,7 +181,7 @@ const AutomationRulesView = () => {
   };
 
   // Start editing rule
-  const handleEditRule = (rule: AnyRecord) => {
+  const handleEditRule = (rule: AutomationRule) => {
     setEditingRule(rule);
     setNewRule({ ...rule });
     setShowAddRule(true);
@@ -220,30 +242,26 @@ const AutomationRulesView = () => {
     }
   };
 
-  const getTriggerLabel = (trigger: AnyRecord) => {
+  const getTriggerLabel = (trigger: RuleTrigger) => {
     const labels: Record<string, string> = {
-      // Existing
       order_status_change: t("planning.automationRules.triggers.order_status_change", "Order Status Wijziging"),
       capacity_threshold: t("planning.automationRules.triggers.capacity_threshold", "Capaciteit Threshold"),
       time_based: t("planning.automationRules.triggers.time_based", "Tijd-gebaseerd"),
       dependency_complete: t("planning.automationRules.triggers.dependency_complete", "Dependency Voltooid"),
       efficiency_drop: t("planning.automationRules.triggers.efficiency_drop", "Efficiency Daling"),
-      // Migrated from NotificationRulesView
       capacity_shortage: t("planning.automationRules.triggers.capacity_shortage", "Capaciteitstekort"),
       low_efficiency: t("planning.automationRules.triggers.low_efficiency", "Lage Efficiency"),
       order_delay: t("planning.automationRules.triggers.order_delay", "Order Vertraging"),
       missing_operator: t("planning.automationRules.triggers.missing_operator", "Ontbrekende Operator"),
       dependency_blocked: t("planning.automationRules.triggers.dependency_blocked", "Geblokkeerde Dependencies"),
-      // Migrated from WorkstationHub
       inspection_overdue: t("planning.automationRules.triggers.inspection_overdue", "Inspectie Overdue"),
-      // Migrated from autoLearningService
       standard_deviation: t("planning.automationRules.triggers.standard_deviation", "Standaard Afwijking"),
       qc_sample_percentage: t("planning.automationRules.triggers.qc_sample_percentage", "QC Steekproef (Percentage)")
     };
     return labels[trigger.type] || trigger.type;
   };
 
-  const getActionLabel = (action: AnyRecord) => {
+  const getActionLabel = (action: RuleAction) => {
     const labels: Record<string, string> = {
       send_notification: t("planning.automationRules.actions.send_notification", "Stuur Notificatie"),
       send_resend_email: t("planning.automationRules.actions.send_resend_email", "Stuur E-mail (Template)"),
@@ -251,7 +269,6 @@ const AutomationRulesView = () => {
       assign_operator: t("planning.automationRules.actions.assign_operator", "Wijs Operator Toe"),
       reschedule_order: t("planning.automationRules.actions.reschedule_order", "Herplan Order"),
       create_log: t("planning.automationRules.actions.create_log", "Maak Log Entry"),
-      // New migrated actions
       auto_learning_update: t("planning.automationRules.actions.auto_learning_update", "Update Standaarden (AI)"),
       inspection_reminder: t("planning.automationRules.actions.inspection_reminder", "Stuur Inspectie Reminder"),
       create_qc_sample_task: t("planning.automationRules.actions.create_qc_sample_task", "Maak QC Steekproef Taak")
@@ -259,40 +276,41 @@ const AutomationRulesView = () => {
     return labels[action.type] || action.type;
   };
 
-  const getConditionSummary = (rule: AnyRecord) => {
-    if (!rule.trigger?.conditions) return null;
+  const getConditionSummary = (rule: AutomationRule) => {
+    const conds = rule.trigger.conditions;
+    if (!conds) return null;
 
     if (rule.trigger.type === "capacity_shortage") {
-      return t("planning.automationRules.summaries.thresholdHours", "Threshold: {{value}}h", { value: rule.trigger.conditions.threshold });
+      return t("planning.automationRules.summaries.thresholdHours", "Threshold: {{value}}h", { value: conds.threshold });
     }
     if (rule.trigger.type === "low_efficiency") {
-      return t("planning.automationRules.summaries.minPercent", "Min: {{value}}%", { value: rule.trigger.conditions.threshold });
+      return t("planning.automationRules.summaries.minPercent", "Min: {{value}}%", { value: conds.threshold });
     }
     if (rule.trigger.type === "order_delay") {
-      return t("planning.automationRules.summaries.minOrders", "Min orders: {{value}}", { value: rule.trigger.conditions.minDelayedOrders || 1 });
+      return t("planning.automationRules.summaries.minOrders", "Min orders: {{value}}", { value: conds.minDelayedOrders || 1 });
     }
     if (rule.trigger.type === "missing_operator") {
-      return t("planning.automationRules.summaries.minMachines", "Min machines: {{value}}", { value: rule.trigger.conditions.threshold || 1 });
+      return t("planning.automationRules.summaries.minMachines", "Min machines: {{value}}", { value: conds.threshold || 1 });
     }
     if (rule.trigger.type === "dependency_blocked") {
-      return t("planning.automationRules.summaries.minBlocked", "Min blocked: {{value}}", { value: rule.trigger.conditions.threshold || 1 });
+      return t("planning.automationRules.summaries.minBlocked", "Min blocked: {{value}}", { value: conds.threshold || 1 });
     }
     if (rule.trigger.type === "inspection_overdue") {
       return t("planning.automationRules.summaries.inspectionOverdue", "{{days}} dagen{{station}}", {
-        days: rule.trigger.conditions.daysOverdue || 7,
-        station: rule.trigger.conditions.station ? ` @ ${rule.trigger.conditions.station}` : "",
+        days: conds.daysOverdue || 7,
+        station: conds.station ? ` @ ${conds.station}` : "",
       });
     }
     if (rule.trigger.type === "standard_deviation") {
       return t("planning.automationRules.summaries.standardDeviation", "Min samples: {{samples}}, Dev: {{deviation}}%", {
-        samples: rule.trigger.conditions.minSamples || 5,
-        deviation: rule.trigger.conditions.minDeviation || 5,
+        samples: conds.minSamples || 5,
+        deviation: conds.minDeviation || 5,
       });
     }
 
     if (rule.trigger.type === "qc_sample_percentage") {
       return t("planning.automationRules.summaries.qcSamplePercentage", "Steekproef: {{value}}%", { 
-        value: rule.trigger.conditions.samplePercentage || 0 
+        value: conds.samplePercentage || 0 
       });
     }
 
@@ -1075,7 +1093,7 @@ const AutomationRulesView = () => {
                           <Play className={isTesting ? "text-slate-400" : "text-blue-600"} size={14} />
                         </button>
                         <button
-                          onClick={() => toggleRule(rule.id, rule.enabled)}
+                          onClick={() => toggleRule(rule.id as string, rule.enabled)}
                           className={`p-1 rounded-lg transition-colors ${
                             rule.enabled 
                               ? "bg-emerald-100 hover:bg-emerald-200" 
@@ -1089,7 +1107,7 @@ const AutomationRulesView = () => {
                           )}
                         </button>
                         <button
-                          onClick={() => deleteRule(rule.id)}
+                          onClick={() => deleteRule(rule.id as string)}
                           className="p-1 hover:bg-red-100 rounded-lg transition-colors"
                         >
                           <Trash2 className="text-red-600" size={14} />
@@ -1101,7 +1119,7 @@ const AutomationRulesView = () => {
                       <span>{t("planning.automationRules.executedCount", "Uitgevoerd: {{count}}x", { count: rule.executionCount || 0 })}</span>
                       {rule.lastExecuted && (
                         <span>
-                          {t("planning.automationRules.lastExecuted", "Laatst")}: {new Date(rule.lastExecuted.seconds * 1000).toLocaleString('nl-NL', {
+                          {t("planning.automationRules.lastExecuted", "Laatst")}: {new Date((rule.lastExecuted as any).seconds * 1000).toLocaleString('nl-NL', {
                             day: '2-digit',
                             month: '2-digit',
                             hour: '2-digit',
@@ -1130,7 +1148,7 @@ const AutomationRulesView = () => {
             ) : (
               executions.map(exec => (
                 <div
-                  key={exec.id}
+                  key={exec.id as string}
                   className={`p-3 rounded-lg border ${
                     exec.status === "success" 
                       ? "border-emerald-200 bg-emerald-50" 
@@ -1138,17 +1156,17 @@ const AutomationRulesView = () => {
                   }`}
                 >
                   <div className="flex items-start justify-between mb-1">
-                    <div className="text-xs font-bold text-slate-800">{exec.ruleName}</div>
+                    <div className="text-xs font-bold text-slate-800">{String(exec.ruleName || "")}</div>
                     {exec.status === "success" ? (
                       <CheckCircle className="text-emerald-600" size={12} />
                     ) : (
                       <XCircle className="text-red-600" size={12} />
                     )}
                   </div>
-                  <div className="text-xs text-slate-600">{exec.message || t("planning.automationRules.noMessage", "No message")}</div>
+                  <div className="text-xs text-slate-600">{String(exec.message || t("planning.automationRules.noMessage", "No message"))}</div>
                   {exec.executedAt && (
                     <div className="text-xs text-slate-400 mt-1">
-                      {new Date(exec.executedAt.seconds * 1000).toLocaleString('nl-NL', {
+                      {new Date((exec.executedAt as any).seconds * 1000).toLocaleString('nl-NL', {
                         day: '2-digit',
                         month: '2-digit',
                         hour: '2-digit',

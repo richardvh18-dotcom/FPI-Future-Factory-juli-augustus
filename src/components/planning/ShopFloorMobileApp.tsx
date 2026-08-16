@@ -40,34 +40,19 @@ import {
 } from "../../services/planningSecurityService";
 import { useNotifications } from '../../contexts/NotificationContext';
 
-type AnyRecord = Record<string, unknown>;
-type FactoryStation = { id?: string; name?: string; departmentName?: string };
-type MachineStat = {
-  machine?: string;
-  id?: string;
-  department?: string;
-  operatorName: string;
-  activeOrder?: AnyRecord;
-  ordersCount: number;
-  downtimeCount: number;
-  defectCount: number;
-  activeProductsCount: number;
-  hasIssues: boolean;
-  isActive: boolean;
-  status: string;
-  hoursPerWeek?: number;
-};
-type OrderWithProducts = AnyRecord & {
-  products: AnyRecord[];
-  activeProductsCount?: number;
-  defectCount?: number;
-};
-type ScanResult = {
-  type: 'product' | 'order' | 'personnel' | 'unknown';
-  code: string;
-  data: AnyRecord;
-  onClick?: () => void;
-};
+import {
+  AnyRecord,
+  FactoryStation,
+  MachineStat,
+  OrderWithProducts,
+  ScanResult,
+  DefectReport,
+  DowntimeReport,
+  OccupancyRecord
+} from "./ShopFloor/ShopFloorTypes";
+import { MachineStatsView } from "./ShopFloor/MachineStatsView";
+import { OrderListView } from "./ShopFloor/OrderListView";
+import { DowntimeView, QualityView } from "./ShopFloor/DowntimeAndQualityView";
 
 /**
  * Mobile Inspector - Floor manager companion app
@@ -82,11 +67,11 @@ const ShopFloorMobileApp = () => {
   const userUid = typeof user?.uid === "string" ? user.uid : "unknown";
   const userEmail = typeof user?.email === "string" ? user.email : "Mobile User";
   const userDisplayName = typeof user?.displayName === "string" ? user.displayName : "";
-  const [machines, setMachines] = useState<AnyRecord[]>([]);
-  const [allOrders, setAllOrders] = useState<AnyRecord[]>([]);
-  const [downtimeReports, setDowntimeReports] = useState<AnyRecord[]>([]);
+  const [machines, setMachines] = useState<OccupancyRecord[]>([]);
+  const [allOrders, setAllOrders] = useState<OrderWithProducts[]>([]);
+  const [downtimeReports, setDowntimeReports] = useState<DowntimeReport[]>([]);
   const [allPersonnel, setAllPersonnel] = useState<AnyRecord[]>([]);
-  const [defectReports, setDefectReports] = useState<AnyRecord[]>([]);
+  const [defectReports, setDefectReports] = useState<DefectReport[]>([]);
   const [allTracked, setAllTracked] = useState<AnyRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all"); // all | active | issues
@@ -94,7 +79,7 @@ const ShopFloorMobileApp = () => {
   const [showScanner, setShowScanner] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [factoryStations, setFactoryStations] = useState<FactoryStation[]>([]);
-  const [selectedOrder, setSelectedOrder] = useState<AnyRecord | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<OrderWithProducts | null>(null);
   const [departments, setDepartments] = useState<string[]>(["ALLES"]);
   const [selectedDepartment, setSelectedDepartment] = useState("ALLES");
   const [operatorCode, setOperatorCode] = useState("");
@@ -103,7 +88,7 @@ const ShopFloorMobileApp = () => {
   const [issueDescription, setIssueDescription] = useState("");
   const [productToMove, setProductToMove] = useState<AnyRecord | null>(null);
   const [selectedMachineFilter, setSelectedMachineFilter] = useState<string | null>(null);
-  const [selectedMachineDetail, setSelectedMachineDetail] = useState<AnyRecord | null>(null); // For Teamleader: detailed machine view
+  const [selectedMachineDetail, setSelectedMachineDetail] = useState<MachineStat | null>(null); // For Teamleader: detailed machine view
   const [selectedProduct, setSelectedProduct] = useState<AnyRecord | null>(null); // For product dossier
   const [repairMode, setRepairMode] = useState<string | null>(null); // null | productId
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
@@ -125,14 +110,14 @@ const ShopFloorMobileApp = () => {
           const data = docSnap.data();
           const stations: FactoryStation[] = [];
           const depts: string[] = ["ALLES"];
-          if (data.departments) {
+          if (Array.isArray(data.departments)) {
             data.departments.forEach((dept: AnyRecord) => {
-              if (dept.isActive !== false) depts.push(dept.name);
-              if (dept.stations) {
+              if (dept.isActive !== false && dept.name) depts.push(String(dept.name));
+              if (Array.isArray(dept.stations)) {
                 dept.stations.forEach((station: AnyRecord) => {
                   stations.push({
                     ...station,
-                    departmentName: dept.name
+                    departmentName: String(dept.name || "")
                   });
                 });
               }
@@ -160,11 +145,12 @@ const ShopFloorMobileApp = () => {
     const unsubPlanning = onSnapshot(
       collection(db, getPathString(PATHS.PLANNING)),
       (snapshot) => {
-        const orders = snapshot.docs.map((entry) => ({
-          id: entry.id,
-          ...entry.data()
-        }));
-        setAllOrders(orders);
+          const ordersData = snapshot.docs.map(docSnap => ({
+            id: docSnap.id,
+            products: [],
+            ...docSnap.data()
+          })) as OrderWithProducts[];
+          setAllOrders(ordersData);
       }
     );
 
@@ -285,8 +271,8 @@ const ShopFloorMobileApp = () => {
   const matchesOrderDepartment = (order: AnyRecord) => {
     if (selectedDepartment === "ALLES") return true;
 
-    const station = findStationForMachine(order.machine);
-    if (matchesSelectedDepartment(selectedDepartment, station?.departmentName, order.machine)) return true;
+    const station = findStationForMachine(String(order.machine || ""));
+    if (matchesSelectedDepartment(selectedDepartment, station?.departmentName, String(order.machine || ""))) return true;
     if (matchesDepartmentId(order.departmentId, selectedDepartment)) return true;
     if (matchesDepartmentId(order.department, selectedDepartment)) return true;
 
@@ -294,7 +280,7 @@ const ShopFloorMobileApp = () => {
   };
 
   const matchesSelectedDepartment = (selectedDept: string, stationDepartmentName: unknown, machineCode: unknown) => {
-    if (!selectedDept || normalizeDepartmentLabel(selectedDept) === "alles") return true;
+    if (!selectedDept || normalizeDepartmentLabel(String(selectedDept)) === "alles") return true;
 
     const filter = normalizeDepartmentLabel(selectedDept);
     const stationDept = normalizeDepartmentLabel(stationDepartmentName);
@@ -336,7 +322,8 @@ const ShopFloorMobileApp = () => {
         
         const isMatch = normMName === normName || (m.machineId && String(m.machineId).toUpperCase().replace(/\s/g, "") === normId);
         
-        const mDate = m.date?.toDate ? m.date.toDate().toISOString().split('T')[0] : m.date;
+        const mDateObj = m.date as any;
+        const mDate = (mDateObj && typeof mDateObj === 'object' && typeof mDateObj.toDate === 'function') ? mDateObj.toDate().toISOString().split('T')[0] : String(m.date || "");
         return isMatch && mDate === todayStr && m.operatorName;
       });
 
@@ -392,9 +379,9 @@ const ShopFloorMobileApp = () => {
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(m => 
-        m.machine?.toLowerCase().includes(term) ||
-        m.operatorName?.toLowerCase().includes(term) ||
-        m.activeOrder?.orderId?.toLowerCase().includes(term)
+        String(m.machine || "").toLowerCase().includes(term) ||
+        String(m.operatorName || "").toLowerCase().includes(term) ||
+        String(m.activeOrder?.orderId || "").toLowerCase().includes(term)
       );
     }
     
@@ -463,8 +450,8 @@ const ShopFloorMobileApp = () => {
       if (selectedDepartment === "ALLES") return true;
       
       const machine = p.machine || p.currentStation;
-      const station = findStationForMachine(machine);
-      return matchesSelectedDepartment(selectedDepartment, station?.departmentName, machine);
+      const station = findStationForMachine(String(machine || ""));
+      return matchesSelectedDepartment(selectedDepartment, station?.departmentName, String(machine || ""));
     }).length;
   }, [allTracked, selectedDepartment, factoryStations]);
 
@@ -479,7 +466,8 @@ const ShopFloorMobileApp = () => {
 
   const isTemporaryRejectedProduct = (product: AnyRecord) => {
     const status = String(product?.status || "").trim().toLowerCase();
-    const inspectionStatus = String(product?.inspection?.status || "").trim().toLowerCase();
+    const inspection = product?.inspection as AnyRecord | undefined;
+    const inspectionStatus = String(inspection?.status || "").trim().toLowerCase();
     return ["temp_reject", "temp_rejected", "tijdelijke afkeur", "tijdelijk_afkeur"].includes(status)
       || inspectionStatus === "tijdelijke afkeur";
   };
@@ -487,7 +475,8 @@ const ShopFloorMobileApp = () => {
   const isFinalRejectedProduct = (product: AnyRecord) => {
     const status = String(product?.status || "").trim().toLowerCase();
     const step = String(product?.currentStep || "").trim().toUpperCase();
-    const inspectionStatus = String(product?.inspection?.status || "").trim().toLowerCase();
+    const inspection = product?.inspection as AnyRecord | undefined;
+    const inspectionStatus = String(inspection?.status || "").trim().toLowerCase();
     const archiveReason = String(product?.archiveReason || product?.archivedReason || "").trim().toLowerCase();
 
     return ["rejected", "afkeur", "definitieve afkeur"].includes(status)
@@ -621,23 +610,23 @@ const ShopFloorMobileApp = () => {
     
     // Search in tracked products
     const product = allTracked.find(p => 
-      (p.lotNumber && p.lotNumber.toLowerCase() === lowerCode) || 
-      (p.orderId && p.orderId.toLowerCase() === lowerCode) ||
+      (p.lotNumber && String(p.lotNumber).toLowerCase() === lowerCode) || 
+      (p.orderId && String(p.orderId).toLowerCase() === lowerCode) ||
       p.id === scannedCode
     );
 
     // Search in orders
     const order = allOrders.find(o => 
-      (o.orderId && o.orderId.toLowerCase() === lowerCode) || 
-      (o.item && o.item.toLowerCase() === lowerCode) ||
-      (o.itemCode && o.itemCode.toLowerCase() === lowerCode) ||
-      (o.extraCode && o.extraCode.toLowerCase() === lowerCode) ||
+      (o.orderId && String(o.orderId).toLowerCase() === lowerCode) || 
+      (o.item && String(o.item).toLowerCase() === lowerCode) ||
+      (o.itemCode && String(o.itemCode).toLowerCase() === lowerCode) ||
+      (o.extraCode && String(o.extraCode).toLowerCase() === lowerCode) ||
       o.id === scannedCode
     );
 
     // Search in personnel
     const person = allPersonnel.find(p => 
-      (p.employeeNumber && p.employeeNumber.toLowerCase() === lowerCode) || 
+      (p.employeeNumber && String(p.employeeNumber).toLowerCase() === lowerCode) || 
       p.id === scannedCode
     );
 
@@ -781,20 +770,20 @@ const ShopFloorMobileApp = () => {
                        {scanResult.data.lotNumber && (
                          <div>
                            <span className="text-[10px] font-bold text-slate-400 uppercase block">{t("planning.shopFloor.lotNumber", "Lotnummer")}</span>
-                           <span className="text-lg font-bold text-slate-900">{scanResult.data.lotNumber}</span>
+                           <span className="text-lg font-bold text-slate-900">{String(scanResult.data.lotNumber)}</span>
                          </div>
                        )}
                        {(scanResult.data.orderId || scanResult.data.id) && (
                          <div>
                            <span className="text-[10px] font-bold text-slate-400 uppercase block">{t("planning.shopFloor.idOrder", "ID / Order")}</span>
-                           <span className="text-base font-bold text-slate-900">{scanResult.data.orderId || scanResult.data.id}</span>
+                           <span className="text-base font-bold text-slate-900">{String(scanResult.data.orderId || scanResult.data.id)}</span>
                          </div>
                        )}
                        {scanResult.data.status && (
                          <div>
                            <span className="text-[10px] font-bold text-slate-400 uppercase block">{t("planning.shopFloor.status", "Status")}</span>
                            <span className="inline-block px-2 py-1 bg-white rounded border border-slate-200 text-sm font-bold text-slate-700 mt-1">
-                             {scanResult.data.status}
+                             {String(scanResult.data.status)}
                            </span>
                          </div>
                        )}
@@ -948,19 +937,19 @@ const ShopFloorMobileApp = () => {
                       <div className="space-y-3">
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.lotNumber", "Lotnummer")}</div>
-                          <div className="text-lg font-bold text-slate-900">{scanResult.data.lotNumber}</div>
+                          <div className="text-lg font-bold text-slate-900">{String(scanResult.data.lotNumber || "")}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.order", "Order")}</div>
-                          <div className="text-sm font-bold text-slate-700">{scanResult.data.orderId}</div>
+                          <div className="text-sm font-bold text-slate-700">{String(scanResult.data.orderId || "")}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.machine", "Machine")}</div>
-                          <div className="text-sm font-bold text-slate-700">{scanResult.data.machine}</div>
+                          <div className="text-sm font-bold text-slate-700">{String(scanResult.data.machine || "")}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.status", "Status")}</div>
-                          <StatusBadge status={scanResult.data.status} />
+                          <StatusBadge status={String(scanResult.data.status || "")} />
                         </div>
                       </div>
                       {(role === 'teamleader' || role === 'admin') && (
@@ -981,23 +970,23 @@ const ShopFloorMobileApp = () => {
                       <div className="space-y-3">
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.orderId", "Order ID")}</div>
-                          <div className="text-lg font-bold text-slate-900">{scanResult.data.orderId}</div>
+                          <div className="text-lg font-bold text-slate-900">{String(scanResult.data.orderId || "")}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.item", "Item")}</div>
-                          <div className="text-sm font-bold text-slate-700">{scanResult.data.item}</div>
+                          <div className="text-sm font-bold text-slate-700">{String(scanResult.data.item || "")}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.machine", "Machine")}</div>
-                          <div className="text-sm font-bold text-slate-700">{scanResult.data.machine}</div>
+                          <div className="text-sm font-bold text-slate-700">{String(scanResult.data.machine || "")}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.status", "Status")}</div>
-                          <StatusBadge status={scanResult.data.status} />
+                          <StatusBadge status={String(scanResult.data.status || "")} />
                         </div>
                       </div>
                       <button
-                        onClick={() => { closeScanner(); setSelectedOrder(scanResult.data); }}
+                        onClick={() => { closeScanner(); setSelectedOrder(scanResult.data as OrderWithProducts); }}
                         className="w-full mt-4 py-3 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-xl font-bold transition-colors"
                       >
                         {t("planning.shopFloor.viewDetails", "Bekijk Details")}
@@ -1012,15 +1001,15 @@ const ShopFloorMobileApp = () => {
                       <div className="space-y-3">
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.name", "Naam")}</div>
-                          <div className="text-lg font-bold text-slate-900">{scanResult.data.name}</div>
+                          <div className="text-lg font-bold text-slate-900">{String(scanResult.data.name || "")}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.employeeNumber", "Personeelsnummer")}</div>
-                          <div className="text-sm font-bold text-slate-700">{scanResult.data.employeeNumber}</div>
+                          <div className="text-sm font-bold text-slate-700">{String(scanResult.data.employeeNumber || "")}</div>
                         </div>
                         <div>
                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.department", "Afdeling")}</div>
-                          <div className="text-sm font-bold text-slate-700">{scanResult.data.departmentId || t("planning.shopFloor.general", "Algemeen")}</div>
+                          <div className="text-sm font-bold text-slate-700">{String(scanResult.data.departmentId || t("planning.shopFloor.general", "Algemeen"))}</div>
                         </div>
                       </div>
                     </>
@@ -1082,15 +1071,15 @@ const ShopFloorMobileApp = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{t("planning.shopFloor.product", "Product")}</div>
-                  <div className="font-bold text-slate-800 text-sm">{selectedOrder.itemCode || selectedOrder.item}</div>
+                  <div className="font-bold text-slate-800 text-sm">{String(selectedOrder.itemCode || selectedOrder.item || "")}</div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{t("planning.shopFloor.quantity", "Aantal")}</div>
-                  <div className="font-bold text-slate-800 text-sm">{t("planning.shopFloor.quantityPieces", "{{count}} stuks", { count: selectedOrder.plan || 0 })}</div>
+                  <div className="font-bold text-slate-800 text-sm">{t("planning.shopFloor.quantityPieces", "{{count}} stuks", { count: Number(selectedOrder.plan || 0) })}</div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{t("planning.shopFloor.machine", "Machine")}</div>
-                  <div className="font-bold text-slate-800 text-sm">{selectedOrder.machine || t("planning.shopFloor.notAssigned", "Niet toegewezen")}</div>
+                  <div className="font-bold text-slate-800 text-sm">{String(selectedOrder.machine || t("planning.shopFloor.notAssigned", "Niet toegewezen"))}</div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
                   <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{t("planning.shopFloor.plannedDate", "Geplande Datum")}</div>
@@ -1108,21 +1097,20 @@ const ShopFloorMobileApp = () => {
                   <div className="text-[10px] font-black text-yellow-600 uppercase mb-1 flex items-center gap-2">
                     <Info size={12} /> {t("planning.shopFloor.notes", "Notities")}
                   </div>
-                  <p className="text-sm text-yellow-800 italic">"{selectedOrder.notes}"</p>
+                  <p className="text-sm text-yellow-800 italic">"{String(selectedOrder.notes)}"</p>
                 </div>
               )}
 
               {/* Products List with Move Option */}
               {selectedOrderProducts.length > 0 && (
                 <div className="mt-6 pt-6 border-t border-slate-100">
-                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Producten ({selectedOrderProducts.length})</h4>
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">{t("planning.shopFloor.productsCount", "Producten ({{count}})", { count: selectedOrderProducts.length })}</h4>
                   <div className="space-y-2">
                     {selectedOrderProducts.map(p => (
-                      <div key={p.id} className="bg-slate-50 p-3 rounded-xl flex justify-between items-center border border-slate-100">
+                      <div key={String(p.id)} className="bg-slate-50 p-3 rounded-xl flex justify-between items-center border border-slate-100">
                         <div>
-                          <div className="font-bold text-sm text-slate-800">{p.lotNumber}</div>
-                          <div className="text-xs text-slate-500">{p.currentStation} • {p.status}</div>
+                          <div className="font-bold text-sm text-slate-800">{String(p.lotNumber || "")}</div>
+                          <div className="text-xs text-slate-500">{String(p.currentStation || "")} • {String(p.status || "")}</div>
                         </div>
                         <button 
                           onClick={() => setProductToMove(p)}
@@ -1397,7 +1385,7 @@ const ShopFloorMobileApp = () => {
                     key={order.id}
                     order={order}
                     onSelectOrder={() => setSelectedOrder(order)}
-                    onScanReady={() => setReadyForNextStepMode(order.id)}
+                    onScanReady={() => setReadyForNextStepMode(order.id || "")}
                     t={t}
                   />
                 ))}
@@ -1408,292 +1396,32 @@ const ShopFloorMobileApp = () => {
 
         {activeView === "overview" && (
           <>
-            {filteredMachines.length === 0 ? (
-              <div className="text-center py-12 text-slate-400">
-                <Filter size={48} className="mx-auto mb-4 opacity-30" />
-                <div className="font-bold text-sm">{t("planning.shopFloor.noMachinesFound", "Geen machines gevonden")}</div>
-              </div>
-            ) : (
-              filteredMachines.map(machine => (
-                <div
-                  key={machine.id}
-                  onClick={() => {
-                    // Teamleaders/Planners: open detailed machine view
-                    if (['teamleader', 'planner', 'admin'].includes(roleKey)) {
-                      setSelectedMachineDetail(machine);
-                    } else {
-                      // Fallback for others
-                      setSelectedMachineFilter(String(machine.machine || ""));
-                      setActiveView("orders");
-                    }
-                  }}
-                  className={`bg-white rounded-2xl border-2 p-4 transition-all cursor-pointer ${
-                    machine.hasIssues 
-                      ? "border-red-200 shadow-lg" 
-                      : machine.isActive 
-                        ? "border-emerald-200" 
-                        : "border-slate-100 hover:border-blue-300"
-                  }`}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <MapPin size={16} className="text-indigo-600" />
-                        <div className="text-lg font-black text-slate-800">{machine.machine}</div>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-sm text-slate-600 font-bold">
-                        <UserCheck size={14} className={machine.operatorName ? "text-emerald-600" : "text-slate-300"} />
-                        <span className={machine.operatorName ? "text-slate-800" : "text-slate-400 italic"}>
-                          {machine.operatorName || t("planning.shopFloor.noOperator", "Geen operator")}
-                          {machine.operatorName || t("planning.shopFloor.noOperator", "Geen operator")}
-                        </span>
-                      </div>
-                    </div>
-                    <div className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                      machine.status === "issue" 
-                        ? "bg-red-100 text-red-700"
-                        : machine.status === "active"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-slate-100 text-slate-600"
-                    }`}>
-                      {machine.status === "issue" ? t("planning.shopFloor.issueStatus", "🔴 Issue") : machine.status === "active" ? t("planning.shopFloor.activeStatus", "🟢 Actief") : t("planning.shopFloor.idleStatus", "⚪ Idle")}
-                    </div>
-                  </div>
-
-                  {/* Active Order */}
-                  {machine.activeOrder && (
-                    <div 
-                      className="bg-blue-50 rounded-xl p-3 mb-3 cursor-pointer hover:bg-blue-100 transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation(); // Voorkom dat de kaart-klik ook afgaat
-                          if (machine.activeOrder) setSelectedOrder(machine.activeOrder);
-                      }}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <PlayCircle size={14} className="text-blue-600" />
-                        <div className="text-xs font-bold text-blue-900">{t("planning.shopFloor.inProduction", "In Productie")}</div>
-                      </div>
-                      <div className="text-sm font-black text-slate-800">
-                        {machine.activeOrder.orderId || machine.activeOrder.item}
-                      </div>
-                      {machine.activeOrder.plan && (
-                        <div className="text-xs text-slate-600 mt-1">
-                          {t("planning.shopFloor.quantityPieces", "{{count}} stuks", { count: machine.activeOrder.plan })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Issues */}
-                  {machine.hasIssues && (
-                    <div className="space-y-2">
-                      {machine.downtimeCount > 0 && (
-                        <div className="flex items-center gap-2 text-orange-700 bg-orange-50 px-3 py-2 rounded-lg">
-                          <XCircle size={16} />
-                          <span className="text-xs font-bold">{t("planning.shopFloor.downtimeReports", "{{count}} stilstand meldingen", { count: machine.downtimeCount })}</span>
-                        </div>
-                      )}
-                      {machine.defectCount > 0 && (
-                        <div className="flex items-center gap-2 text-red-700 bg-red-50 px-3 py-2 rounded-lg">
-                          <AlertTriangle size={16} />
-                          <span className="text-xs font-bold">{t("planning.shopFloor.qualityIssues", "{{count}} kwaliteit issues", { count: machine.defectCount })}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Stats */}
-                  <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100">
-                    <button 
-                      onClick={() => {
-                        setSelectedMachineFilter(String(machine.machine || ""));
-                        setActiveView("orders");
-                      }}
-                      className="flex items-center gap-1 text-slate-600 hover:text-blue-600 transition-colors"
-                    >
-                      <Package size={14} />
-                      <span className="text-xs font-bold">{t("planning.shopFloor.ordersCount", "{{count}} orders", { count: machine.ordersCount })}</span>
-                    </button>
-                    <div className="flex items-center gap-1 text-slate-600">
-                      <Activity size={14} />
-                      <span className="text-xs font-bold">{t("planning.shopFloor.activeCount", "{{count}} actief", { count: machine.activeProductsCount })}</span>
-                    </div>
-                    {machine.hoursPerWeek && (
-                      <div className="flex items-center gap-1 text-slate-600">
-                        <Clock size={14} />
-                        <span className="text-xs font-bold">{machine.hoursPerWeek}h/week</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
+            <MachineStatsView
+              filteredMachines={filteredMachines}
+              roleKey={roleKey}
+              setSelectedMachineDetail={setSelectedMachineDetail}
+              setSelectedMachineFilter={setSelectedMachineFilter}
+              setActiveView={setActiveView}
+              setSelectedOrder={setSelectedOrder}
+            />
           </>
         )}
 
         {activeView === "downtime" && (
-          <>
-            {downtimeReports.filter(d => d.status === "active").length === 0 ? (
-              <div className="text-center py-12 text-slate-400">
-                <CheckCircle size={48} className="mx-auto mb-4 text-emerald-300" />
-                <div className="font-bold text-sm">{t("planning.shopFloor.noActiveDowntimeReports", "Geen actieve stilstand meldingen")}</div>
-              </div>
-            ) : (
-              downtimeReports
-                .filter(d => d.status === "active")
-                .map(downtime => (
-                  <div key={downtime.id} className="bg-white rounded-2xl border-2 border-orange-200 p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <XCircle className="text-orange-600" size={20} />
-                          <div className="text-lg font-black text-slate-800">{downtime.machine}</div>
-                        </div>
-                        <div className="text-sm text-slate-600 font-bold">{downtime.reason}</div>
-                      </div>
-                      <div className="px-3 py-1 rounded-lg text-xs font-bold bg-orange-100 text-orange-700">
-                        {downtime.estimatedMinutes || "?"} min
-                      </div>
-                    </div>
-                    
-                    <div className="text-xs text-slate-500 mb-3">
-                      {t("planning.shopFloor.reportedBy", "Gemeld door")}: {downtime.operatorName || t("planning.shopFloor.unknown", "Onbekend")}
-                    </div>
-
-                    <button
-                      onClick={() => resolveDowntime(downtime.id)}
-                      className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold transition-colors"
-                    >
-                      ✅ {t("planning.shopFloor.resolved", "Opgelost")}
-                    </button>
-                  </div>
-                ))
-            )}
-          </>
+          <DowntimeView downtimeReports={downtimeReports} resolveDowntime={resolveDowntime} />
         )}
 
         {activeView === "quality" && (
-          <>
-            {defectReports.filter(d => d.status === "open").length === 0 ? (
-              <div className="text-center py-12 text-slate-400">
-                <CheckCircle size={48} className="mx-auto mb-4 text-emerald-300" />
-                <div className="font-bold text-sm">{t("planning.shopFloor.noOpenQcIssues", "Geen openstaande QC issues")}</div>
-              </div>
-            ) : (
-              defectReports
-                .filter(d => d.status === "open")
-                .map(defect => (
-                  <div key={defect.id} className="bg-white rounded-2xl border-2 border-red-200 p-4">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <AlertTriangle className="text-red-600" size={20} />
-                          <div className="text-lg font-black text-slate-800">{defect.machine}</div>
-                        </div>
-                        <div className="text-sm text-slate-600 font-bold">{defect.defectType}</div>
-                      </div>
-                      <div className={`px-3 py-1 rounded-lg text-xs font-bold ${
-                        defect.severity === "high" 
-                          ? "bg-red-500 text-white" 
-                          : defect.severity === "medium"
-                            ? "bg-orange-100 text-orange-700"
-                            : "bg-yellow-100 text-yellow-700"
-                      }`}>
-                        {defect.severity || t("planning.shopFloor.medium", "medium")}
-                      </div>
-                    </div>
-                    
-                    {defect.description && (
-                      <div className="bg-slate-50 rounded-lg p-3 mb-3 text-sm text-slate-700">
-                        {defect.description}
-                      </div>
-                    )}
-
-                    <div className="text-xs text-slate-500 mb-3">
-                      {t("planning.shopFloor.order", "Order")}: {defect.orderId || t("planning.shopFloor.unknown", "Onbekend")} • {t("planning.shopFloor.reportedBy", "Gemeld door")}: {defect.operatorName || t("planning.shopFloor.unknown", "Onbekend")}
-                    </div>
-
-                    <button
-                      onClick={() => resolveDefect(defect.id)}
-                      className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold transition-colors"
-                    >
-                      ✅ {t("planning.shopFloor.resolved", "Opgelost")}
-                    </button>
-                  </div>
-                ))
-            )}
-          </>
+          <QualityView defectReports={defectReports} resolveDefect={resolveDefect} />
         )}
 
         {activeView === "orders" && (
-          <>
-            {selectedMachineFilter && (
-              <div className="flex items-center justify-between bg-blue-50 p-3 rounded-xl mb-3 border border-blue-100 animate-in fade-in slide-in-from-top-2">
-                <div className="flex items-center gap-2">
-                  <Filter size={16} className="text-blue-600" />
-                  <span className="text-sm font-bold text-blue-800">
-                    Machine: {selectedMachineFilter}
-                  </span>
-                </div>
-                <button 
-                  onClick={() => setSelectedMachineFilter(null)}
-                  className="p-1 bg-white rounded-lg text-blue-600 hover:bg-blue-100 transition-colors"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            )}
-            {filteredOrders.filter(o => ["in_production", "in_progress", "planned", "delegated", "pending"].includes(o.status)).length === 0 ? (
-              <div className="text-center py-12 text-slate-400">
-                <Package size={48} className="mx-auto mb-4 opacity-30" />
-                <div className="font-bold text-sm">{t("planning.shopFloor.noActiveOrders", "Geen actieve orders")}</div>
-              </div>
-            ) : (
-              filteredOrders
-                .filter(o => ["in_production", "in_progress", "planned", "delegated", "pending"].includes(o.status))
-                .sort((a, b) => {
-                    const isActiveA = a.status === "in_production" || a.status === "in_progress";
-                    const isActiveB = b.status === "in_production" || b.status === "in_progress";
-                    if (isActiveA && !isActiveB) return -1;
-                    if (!isActiveA && isActiveB) return 1;
-                    return 0;
-                })
-                .map(order => (
-                  <div 
-                    key={order.id} 
-                    className="bg-white rounded-2xl border-2 border-slate-200 p-4 cursor-pointer hover:border-indigo-300 transition-all active:scale-95"
-                    onClick={() => setSelectedOrder(order)}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <div className="text-lg font-black text-slate-800">
-                          {order.orderId || order.item}
-                        </div>
-                        <div className="text-sm text-slate-600">{order.itemCode}</div>
-                      </div>
-                      <StatusBadge status={order.status} />
-                    </div>
-
-                    <div className="flex items-center gap-4 text-sm text-slate-600">
-                      <div className="flex items-center gap-1">
-                        <MapPin size={14} />
-                        <span className="font-bold">{order.machine}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Package size={14} />
-                        <span className="font-bold">{order.plan} stuks</span>
-                      </div>
-                      {order.estimatedHours && (
-                        <div className="flex items-center gap-1">
-                          <Clock size={14} />
-                          <span className="font-bold">{order.estimatedHours}h</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ))
-            )}
-          </>
+          <OrderListView
+            filteredOrders={filteredOrders}
+            selectedMachineFilter={selectedMachineFilter}
+            setSelectedMachineFilter={setSelectedMachineFilter}
+            setSelectedOrder={setSelectedOrder}
+          />
         )}
       </div>
       </div>
@@ -1774,7 +1502,7 @@ const ShopFloorMobileApp = () => {
       {selectedMachineDetail && ['teamleader', 'planner', 'admin'].includes(roleKey) && (
         <MachineDetailModal
           machine={selectedMachineDetail}
-          orders={getOrdersForMachine(selectedMachineDetail.machine)}
+          orders={getOrdersForMachine(selectedMachineDetail.machine || "")}
           onClose={() => setSelectedMachineDetail(null)}
           onProductSelect={setSelectedProduct}
           onProductMove={setProductToMove}
@@ -1795,7 +1523,7 @@ const ShopFloorMobileApp = () => {
             setSelectedProduct(null);
           }}
           onRepair={() => {
-            setRepairMode(selectedProduct.id);
+            setRepairMode(String(selectedProduct.id || ""));
             setSelectedProduct(null);
           }}
           t={t}
@@ -1932,12 +1660,12 @@ const MachineDetailModal = ({ machine, orders, onClose, onProductSelect, onProdu
               <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">📋 {t("planning.shopFloor.plannedOrders", "Geplande Orders")}</h3>
               <div className="space-y-2">
                   {plannedOrders.map((order: AnyRecord) => (
-                  <div key={order.id} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                  <div key={order.id as string} className="bg-slate-50 p-3 rounded-lg border border-slate-100">
                     <div className="flex justify-between items-start mb-1">
-                      <div className="font-bold text-sm text-slate-800">{order.orderId || order.item}</div>
-                      <span className="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded">{order.status}</span>
+                      <div className="font-bold text-sm text-slate-800">{String(order.orderId || order.item || "")}</div>
+                      <span className="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded">{String(order.status || "")}</span>
                     </div>
-                    <div className="text-xs text-slate-600">{order.plan} stuks • {order.itemCode}</div>
+                    <div className="text-xs text-slate-600">{String(order.plan || 0)} stuks • {String(order.itemCode || "")}</div>
                   </div>
                 ))}
               </div>
@@ -1989,11 +1717,11 @@ const OrderDetailCard = ({ order, products, onProductSelect, onProductMove, onRe
           <div className="text-sm text-slate-500 italic">{t("planning.shopFloor.noProductsTrackedForOrder", "Geen producten getrackt voor deze order")}</div>
         ) : (
           products.map((product: AnyRecord) => (
-            <div key={product.id} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-center justify-between">
+            <div key={product.id as string} className="bg-slate-50 p-3 rounded-lg border border-slate-100 flex items-center justify-between">
               <div className="flex-1">
-                <div className="font-bold text-sm text-slate-800">{product.lotNumber}</div>
+                <div className="font-bold text-sm text-slate-800">{String(product.lotNumber || "")}</div>
                 <div className="text-xs text-slate-600">
-                  {product.currentStation} • {product.status}
+                  {String(product.currentStation || "")} • {String(product.status || "")}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -2004,7 +1732,7 @@ const OrderDetailCard = ({ order, products, onProductSelect, onProductMove, onRe
                 >
                   <Eye size={16} />
                 </button>
-                {['In Production', 'in_progress'].includes(product.status) && (
+                {['In Production', 'in_progress'].includes(String(product.status)) && (
                   <>
                     <button
                       onClick={() => onProductMove(product)}
@@ -2014,7 +1742,7 @@ const OrderDetailCard = ({ order, products, onProductSelect, onProductMove, onRe
                       <ArrowRightLeft size={16} />
                     </button>
                     <button
-                      onClick={() => onRepairMode(product.id)}
+                      onClick={() => onRepairMode(product.id as string)}
                       className="p-2 bg-orange-50 text-orange-600 hover:bg-orange-100 rounded-lg transition-colors"
                       title={t("planning.shopFloor.repair", "Reparatie")}
                     >
@@ -2042,7 +1770,7 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }: any) => 
         <div className="p-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white flex justify-between items-start">
           <div>
             <h2 className="text-2xl font-black mb-1">{t("planning.shopFloor.productDossier", "Product Dossier")}</h2>
-            <p className="text-blue-100 text-sm">{product.lotNumber}</p>
+            <p className="text-blue-100 text-sm">{String(product.lotNumber || "")}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg">
             <X size={24} />
@@ -2056,19 +1784,19 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }: any) => 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.lotNumber", "Lotnummer")}</div>
-                <div className="text-lg font-black text-slate-800">{product.lotNumber}</div>
+                <div className="text-lg font-black text-slate-800">{String(product.lotNumber || "")}</div>
               </div>
               <div>
                 <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.order", "Order")}</div>
-                <div className="text-lg font-black text-slate-800">{product.orderId || "N/A"}</div>
+                <div className="text-lg font-black text-slate-800">{String(product.orderId || "N/A")}</div>
               </div>
               <div>
                 <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.status", "Status")}</div>
-                <div className="font-bold text-sm">{product.status}</div>
+                <div className="font-bold text-sm">{String(product.status || "")}</div>
               </div>
               <div>
                 <div className="text-xs font-bold text-slate-500 uppercase mb-1">{t("planning.shopFloor.currentStation", "Huidige Station")}</div>
-                <div className="font-bold text-sm">{product.currentStation || "Onbekend"}</div>
+                <div className="font-bold text-sm">{String(product.currentStation || "Onbekend")}</div>
               </div>
             </div>
           </div>
@@ -2081,9 +1809,9 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }: any) => 
                 {product.history.slice(-5).reverse().map((entry: AnyRecord, i: number) => (
                   <div key={i} className="flex gap-2 text-slate-600">
                     <div className="font-bold text-blue-600 min-w-[80px]">
-                      {entry.station || entry.step || "N/A"}
+                      {String(entry.station || entry.step || "N/A")}
                     </div>
-                    <div>{entry.timestamp ? new Date(entry.timestamp.toDate ? entry.timestamp.toDate() : entry.timestamp).toLocaleString() : "N/A"}</div>
+                    <div>{entry.timestamp ? new Date((typeof entry.timestamp === 'object' && entry.timestamp !== null && 'toDate' in entry.timestamp) ? (entry.timestamp as any).toDate() : entry.timestamp as string | number).toLocaleString() : "N/A"}</div>
                   </div>
                 ))}
               </div>
@@ -2097,7 +1825,7 @@ const ProductDossierModal = ({ product, onClose, onMove, onRepair, t }: any) => 
               <div className="space-y-2">
                 {product.defects.map((defect: AnyRecord, i: number) => (
                   <div key={i} className="text-sm text-red-800">
-                    • {defect.description || defect.type}
+                    • {String(defect.description || defect.type || "")}
                   </div>
                 ))}
               </div>
@@ -2271,17 +1999,17 @@ const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady,
         <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
           <div className="p-6 bg-emerald-600 text-white">
             <h2 className="text-2xl font-black mb-1">✅ {t("planning.shopFloor.readyForNextStep", "Gereed voor volgende stap")}</h2>
-            <p className="text-emerald-100">{selectedProduct.lotNumber}</p>
+            <p className="text-emerald-100">{String(selectedProduct.lotNumber || "")}</p>
           </div>
 
           <div className="p-6 space-y-4">
             <div>
               <div className="text-sm font-bold text-slate-700 mb-2">{t("planning.shopFloor.order", "Order")}:</div>
-              <div className="text-lg font-black text-slate-800">{order?.orderId}</div>
+              <div className="text-lg font-black text-slate-800">{String(order?.orderId || "")}</div>
             </div>
             <div>
               <div className="text-sm font-bold text-slate-700 mb-2">{t("planning.shopFloor.currentStation", "Huidige Station")}:</div>
-              <div className="text-lg font-black text-slate-800">{selectedProduct.currentStation}</div>
+              <div className="text-lg font-black text-slate-800">{String(selectedProduct.currentStation || "")}</div>
             </div>
             <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-lg">
               <p className="text-sm text-emerald-800">{t("planning.shopFloor.readyForNextStepDescription", "Status wordt ingesteld op \"Gereed voor volgende stap\" en kan verplaatst worden naar de volgende werkstation.")}</p>
@@ -2316,7 +2044,7 @@ const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady,
         <div className="p-6 bg-emerald-600 text-white flex justify-between items-start">
           <div>
             <h2 className="text-2xl font-black mb-1">{t("planning.shopFloor.selectProduct", "Selecteer Product")}</h2>
-            <p className="text-emerald-100">{order?.orderId}</p>
+            <p className="text-emerald-100">{String(order?.orderId || "")}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg">
             <X size={24} />
@@ -2332,7 +2060,7 @@ const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady,
           ) : (
             products.map((product: AnyRecord) => (
               <button
-                key={product.id}
+                key={product.id as string}
                 onClick={() => {
                   setSelectedProduct(product);
                   setMarkMode(true);
@@ -2340,11 +2068,11 @@ const ReadyForNextStepModal = ({ orderId, order, products, onClose, onMarkReady,
                 className="w-full text-left bg-slate-50 hover:bg-slate-100 p-4 rounded-xl border border-slate-200 transition-colors"
               >
                 <div className="flex items-center justify-between mb-2">
-                  <div className="font-bold text-slate-800">{product.lotNumber}</div>
-                  <span className="text-xs font-bold px-2 py-1 bg-white rounded border border-slate-200">{product.status}</span>
+                  <div className="font-bold text-slate-800">{String(product.lotNumber || "")}</div>
+                  <span className="text-xs font-bold px-2 py-1 bg-white rounded border border-slate-200">{String(product.status || "")}</span>
                 </div>
                 <div className="text-sm text-slate-600">
-                  {product.currentStation} • {product.currentStep || "Geen stap"}
+                  {String(product.currentStation || "")} • {String(product.currentStep || "Geen stap")}
                 </div>
               </button>
             ))

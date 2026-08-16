@@ -353,6 +353,7 @@ export interface StartProductionLotsInput {
   isFlangeSeries?: boolean;
   lotNumbers?: string[];
   isVirtualLot?: boolean;
+  stringCount?: number;
   virtualReason?: string;
 }
 
@@ -438,8 +439,8 @@ export interface UpsertConversionRecordInput {
 }
 
 export interface UpsertConversionBatchInput {
-  items?: string[];
-  mode?: any;
+  items?: Record<string, unknown>[];
+  mode?: "merge" | "new_only";
 }
 
 export const rejectTrackedProductFinal = createCallableWrapper<RejectTrackedProductFinalInput>(
@@ -1687,7 +1688,7 @@ export const upsertConversionBatch = createCallableWrapper<UpsertConversionBatch
     const { items, mode } = payload;
     const processed = {
         items: Array.isArray(items) ? items : [],
-        mode: String(mode || "merge").trim().toLowerCase(),
+        mode: String(mode || "merge").trim().toLowerCase() as "merge" | "new_only",
       };
     if (!processed.items.length) {
         throw new Error("items mag niet leeg zijn.");

@@ -18,21 +18,21 @@ import {
 import { useTeamleaderModalStore } from "./modals/TeamleaderModalContext";
 import * as XLSX from "xlsx";
 
-type AnyRecord = Record<string, unknown>;
+type AnyRecord = Record<string, any>;
 
 const getErrorMessage = (err: unknown): string =>
   err instanceof Error ? err.message : String(err || "Onbekende fout");
 
 export type UseTeamleaderEventHandlersArgs = {
-  user: unknown;
-  navigate: unknown;
-  t: unknown;
+  user: any;
+  navigate: any;
+  t: any;
   todayStr: string;
   setActiveTab: (val: string) => void;
   setIsMobileMenuOpen: (val: boolean) => void;
   setShowAiPrediction: (val: boolean) => void;
   setIsSyncingDrawings: (val: boolean) => void;
-  setSelectedSidebarEntry: (val: unknown) => void;
+  setSelectedSidebarEntry: (val: any) => void;
   setSelectedOrderId: (val: string | null) => void;
   setIsCopying: (val: boolean) => void;
   setIsClearing: (val: boolean) => void;
@@ -40,19 +40,19 @@ export type UseTeamleaderEventHandlersArgs = {
   showSuccess: (msg: string) => void;
   showInfo: (msg: string) => void;
   showWarning: (msg: string) => void;
-  showConfirm: (opts: unknown) => Promise<boolean>;
+  showConfirm: (opts: any) => Promise<boolean>;
   notify: (msg: string) => void;
-  dataStore: unknown[];
-  rawOrders: unknown[];
-  rawProducts: unknown[];
-  bezetting: unknown[];
-  selectedSidebarEntry: unknown;
-  legacyRejectedOrders: unknown[];
-  getOrderIdFromTrackedRecord: (record: unknown) => string;
-  getOrderProgressMeta: (order: unknown) => any;
-  getFinishedQtyForOrder: (order: unknown) => number;
-  resolveOverproductionRoute: (order: unknown, group: unknown, station: string) => any;
-  isInAllowedScope: (record: unknown) => boolean;
+  dataStore: any[];
+  rawOrders: any[];
+  rawProducts: any[];
+  bezetting: any[];
+  selectedSidebarEntry: any;
+  legacyRejectedOrders: any[];
+  getOrderIdFromTrackedRecord: (record: any) => string;
+  getOrderProgressMeta: (order: any) => any;
+  getFinishedQtyForOrder: (order: any) => number;
+  resolveOverproductionRoute: (order: any, group: any, station: string) => any;
+  isInAllowedScope: (record: any) => boolean;
   fixedScope: string;
   targetSlug: string;
   departmentFilter: string;
@@ -139,7 +139,7 @@ export const useTeamleaderEventHandlers = ({
   }, [navigate, todayStr]);
 
   // Overproduction handlers
-  const handleOpenOverproductionGroup = useCallback((group: unknown) => {
+  const handleOpenOverproductionGroup = useCallback((group: any) => {
     const store = useTeamleaderModalStore.getState();
     store.setSelectedOverproductionGroup(group);
     store.setOverproductionTargetOrderId("");
@@ -254,7 +254,7 @@ export const useTeamleaderEventHandlers = ({
 
   // Sidebar selection handler
   const handleSidebarSelect = useCallback(
-    async (entry: unknown) => {
+    async (entry: any) => {
       if (!entry) {
         setSelectedOrderId(null);
         setSelectedSidebarEntry(null);
@@ -445,7 +445,7 @@ export const useTeamleaderEventHandlers = ({
   );
 
   const handleReopenArchivedOrderWithIncrease = useCallback(
-    async ({ entry, increaseBy }: { entry?: unknown; increaseBy: string | number }) => {
+    async ({ entry, increaseBy }: { entry?: any; increaseBy: string | number }) => {
       const targetEntry = entry || selectedSidebarEntry;
       if (!targetEntry?.isArchivedOrder) {
         notify("Selecteer eerst een gearchiveerde order.");
@@ -612,7 +612,7 @@ export const useTeamleaderEventHandlers = ({
       return;
     }
 
-    const formatMachineForPlanner = (machine: unknown) => {
+    const formatMachineForPlanner = (machine: any) => {
       const raw = String(machine || "").trim().toUpperCase();
       if (!raw) return "ONBEKEND";
       if (raw.startsWith("40")) return raw;
@@ -625,11 +625,11 @@ export const useTeamleaderEventHandlers = ({
         order?.plannedDate || order?.date || order?.deliveryDate || null;
       if (!value) return null;
       if (value?.toDate) return value.toDate();
-      const parsed = new Date(value);
+      const parsed = new Date(value as string | number | Date);
       return Number.isFinite(parsed.getTime()) ? parsed : null;
     };
 
-    const byMachine = filtered.reduce<Record<string, AnyRecord[]>>((acc, order: AnyRecord) => {
+    const byMachine = (filtered as any[]).reduce<Record<string, AnyRecord[]>>((acc, order: any) => {
       const machineKey = formatMachineForPlanner(order.machine || "ONBEKEND");
       if (!acc[machineKey]) acc[machineKey] = [];
       acc[machineKey].push(order);
@@ -638,7 +638,7 @@ export const useTeamleaderEventHandlers = ({
 
     const workbook = XLSX.utils.book_new();
 
-    Object.entries(byMachine)
+    Object.entries(byMachine as Record<string, any[]>)
       .sort(([a], [b]) => a.localeCompare(b))
       .forEach(([machine, orders]) => {
         const aoa = [];
@@ -673,7 +673,7 @@ export const useTeamleaderEventHandlers = ({
           .forEach((o: AnyRecord) => {
             const date = getOrderDate(o);
             const week = o.weekNumber || 0;
-            const plan = parseInt(o.plan || o.quantity || 0, 10) || 0;
+            const plan = parseInt(String(o.plan || o.quantity || "0"), 10) || 0;
             const wrapped = getFinishedQtyForOrder(o);
             const toDo = Math.max(plan - wrapped, 0);
             const machineCode = formatMachineForPlanner(o.machine || machine);
@@ -759,7 +759,7 @@ export const useTeamleaderEventHandlers = ({
             return {
               assignmentId: newId,
               data: {
-                ...old,
+                ...(old as any),
                 date: currentDayStr,
                 updatedAt: "__SERVER_TIMESTAMP__",
               },
@@ -828,7 +828,7 @@ export const useTeamleaderEventHandlers = ({
 
   // Lot movement handler
   const handleMoveLot = useCallback(
-    async (lotNumber: string, newStation: string, options: unknown = {}) => {
+    async (lotNumber: string, newStation: string, options: any = {}) => {
       if (!lotNumber || !newStation) return;
       try {
         const isRepairMove = Boolean(options?.isRepairMove);
@@ -863,7 +863,7 @@ export const useTeamleaderEventHandlers = ({
 
   // Rejected product archival handler
   const handleArchiveRejectedProduct = useCallback(
-    async (product: unknown) => {
+    async (product: any) => {
       const productId = String(product?.id || product?.lotNumber || "").trim();
       if (!productId) return;
 
@@ -988,7 +988,8 @@ export const useTeamleaderEventHandlers = ({
     try {
       let archivedCount = 0;
 
-      for (const order of legacyRejectedOrders) {
+      for (const orderItem of legacyRejectedOrders) {
+        const order = orderItem as any;
         try {
           const ok = await archiveOrder(order, "rejected");
           if (ok) archivedCount += 1;

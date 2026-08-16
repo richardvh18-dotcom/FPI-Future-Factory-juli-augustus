@@ -22,7 +22,7 @@ export const getPlanningListViewRowSummary = (
   const quantity = Number(order?.plan || order?.quantity || order?.toDoQty || 1) || 1;
   const extraCode = String(order?.extraCode || '').trim();
   const project = String(order?.projectDesc || '').trim();
-  const remainingQty = Number.isFinite(toDoQty) ? Math.max(0, toDoQty) : Math.max(0, quantity - (Number(order?.produced) || 0));
+  const remainingQty = typeof toDoQty === 'number' && Number.isFinite(toDoQty) ? Math.max(0, toDoQty) : Math.max(0, quantity - (Number(order?.produced) || 0));
 
   const compactParts = [displayName || 'Onbekend product', `${quantity} st`];
   if (project) compactParts.push(project);

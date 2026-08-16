@@ -258,7 +258,7 @@ const ProductSearchView = ({ showFilters, setShowFilters }: { showFilters: boole
     }, [flattenedItems]);
 
     const getItemSize = (index: number) => {
-      const item = flattenedItems[index];
+      const item = flattenedItems[index] as any;
       return item.type === 'header' ? 100 : 450;
     };
 

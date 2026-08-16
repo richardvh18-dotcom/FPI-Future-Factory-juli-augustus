@@ -76,7 +76,7 @@ type TempLabelItemProps = {
   item: AnyRecord;
   labelTemplates: LabelTemplate[];
   labelRules: AnyRecord[];
-  onPrint: (orderData: AnyRecord, templateId: string, quantity?: number) => Promise<void>;
+  onPrint: (orderData: AnyRecord, templateId: string, quantity?: number, specialText?: string) => Promise<void>;
   printerDpi?: number;
   departmentGroups?: DepartmentGroup[];
   printers?: PrinterConfig[];
@@ -397,7 +397,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
                   <p className="text-xs italic text-amber-600">{t('printStationView.noMatchingTemporaryTemplateFound', 'Geen passende tijdelijke template gevonden.')}</p>
                 )}
                 
-                {selectedTemplate?.isSpecial && (
+                {Boolean(selectedTemplate?.isSpecial) && (
                   <div className="mt-3">
                     <label className="text-[10px] font-black text-amber-500 uppercase tracking-widest block mb-1">Vrije Special Tekst</label>
                     <input

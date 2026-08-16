@@ -43,7 +43,7 @@ import {
 } from "../../../utils/planningViewHelpers";
 import { WM18RobotProgramDetailModal } from "../modals/WM18RobotProgramDetailModal";
 
-type AnyRecord = Record<string, unknown>;
+type AnyRecord = Record<string, any>;
 
 type TerminalPlanningViewProps = {
   orders?: AnyRecord[];
@@ -59,7 +59,7 @@ type TerminalPlanningViewProps = {
   rejectedCountMap?: Record<string, number>;
   readyForReturnMap?: Record<string, number>;
   isBM01?: boolean;
-  onStartProduction?: (() => void) | undefined;
+  onStartProduction?: ((...args: any[]) => void | Promise<void>) | undefined;
   selectedOrder?: AnyRecord;
   trackedProducts?: AnyRecord[];
   onViewDrawing?: ((arg: any) => void) | undefined;

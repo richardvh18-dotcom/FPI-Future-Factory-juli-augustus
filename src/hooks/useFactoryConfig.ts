@@ -54,8 +54,10 @@ const startListeners = () => {
     if (!path) return;
     const q = query(collection(db, getPathString(path)), orderBy("order", "asc"));
     const unsub = onSnapshot(q, (snap) => {
-      cachedConfig[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as ConfigItem[];
-      notifyListeners();
+      if (cachedConfig) {
+        cachedConfig[key] = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as ConfigItem[];
+        notifyListeners();
+      }
     });
     unsubs.push(unsub);
   });
@@ -63,8 +65,10 @@ const startListeners = () => {
   const printerRulesPath = getPathString(PATHS.PRINTER_ROUTING_RULES);
   if (printerRulesPath) {
     const unsub = onSnapshot(collection(db, printerRulesPath), (snap) => {
-      cachedConfig.printerRules = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as PrinterRoutingRule[];
-      notifyListeners();
+      if (cachedConfig) {
+        cachedConfig.printerRules = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as PrinterRoutingRule[];
+        notifyListeners();
+      }
     });
     unsubs.push(unsub);
   }

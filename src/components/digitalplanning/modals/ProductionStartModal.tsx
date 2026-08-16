@@ -366,14 +366,14 @@ const ProductionStartModal = ({
   stationId = "",
   existingProducts = [],
 }: {
-  order: unknown;
+  order: any;
   isOpen: boolean;
   onClose: () => void;
   onStartInitiated?: () => void;
-  onStart: (...args: unknown[]) => void | Promise<void>;
-  onOpenProductInfo?: (...args: unknown[]) => void;
+  onStart: (...args: any[]) => void | Promise<void>;
+  onOpenProductInfo?: (...args: any[]) => void;
   stationId?: string;
-  existingProducts?: unknown[];
+  existingProducts?: any[];
 }) => {
   const { t } = useTranslation();
   const { showSuccess, showError , notify} = useNotifications();

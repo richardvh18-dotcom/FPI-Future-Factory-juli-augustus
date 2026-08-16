@@ -174,7 +174,7 @@ export const getPrinterForQueueJob = (
   const jobStationKeys = getJobStationKeys(job);
   if (jobStationKeys.length > 0) {
     if (printerMatchesAnyStation(currentPrinter, jobStationKeys)) {
-      return currentPrinter;
+      return currentPrinter || null;
     }
 
     const matchingPrinter = printers.find((printer) => printerMatchesAnyStation(printer, jobStationKeys));

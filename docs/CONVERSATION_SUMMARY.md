@@ -1,3 +1,7 @@
+### 2026-08-16 - Update Digital Planning en Workstation Components
+- **Actie**: Diverse updates en opschoning van `WorkstationHub`, `TerminalPlanningView`, `AutomationRulesView`, hooks (`useFactoryConfig`, `usePlanningData`), en andere digital planning gerelateerde componenten opgeslagen.
+- **Volgende stap**: Implementatieplan voor optimalisatie van Firestore-reads klaargezet voor toekomstige uitvoering.
+
 ### 2026-08-16 - TS Error Fixes (Deel 3)
 - **Actie**: Drastische vermindering van resterende TypeScript build errors, in het bijzonder rond property access errors (`TS2339`), null/undefined assignment errors (`TS2322`), en strict `unknown` incompatibiliteiten (`TS2345`).
 - **Bestanden**:

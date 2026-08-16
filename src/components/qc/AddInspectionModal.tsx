@@ -45,7 +45,7 @@ const AddInspectionModal = ({ onClose }: AddInspectionModalProps) => {
       onClose();
     } catch (err: unknown) {
       console.error(err);
-      showError(err.message || "Fout bij opslaan van inspectie.");
+      showError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
