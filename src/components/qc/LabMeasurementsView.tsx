@@ -260,7 +260,7 @@ const LabMeasurementsView = ({ measurements = sampleMeasurements, readOnly = fal
 
       showSuccess("Meting succesvol bijgewerkt.");
       cancelEditing();
-    } catch (error: any) {
+    } catch (error: unknown) {
       showError(error?.message || "Opslaan van bewerkte meting mislukt.");
       setSavingEdit(false);
     }

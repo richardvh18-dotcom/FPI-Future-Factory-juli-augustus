@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-type PlanningOrder = Record<string, any>;
+type PlanningOrder = Record<string, unknown>;
 
 export interface WorkstationState {
   activeTab: string;

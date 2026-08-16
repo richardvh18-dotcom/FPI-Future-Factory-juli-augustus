@@ -23,13 +23,13 @@ interface MachineMetric {
   running: number;
   plan: number;
   fin: number;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface DashboardViewProps {
   metrics: {
     machineMetrics: MachineMetric[];
-    [key: string]: any;
+    [key: string]: unknown;
   } | null;
   onStationSelect?: (stationId: string) => void;
 }

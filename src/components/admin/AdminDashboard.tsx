@@ -43,6 +43,7 @@ import {
   Network,
   FileSpreadsheet,
   Activity,
+  Bot,
 } from "lucide-react";
 import { useAdminAuth } from "../../hooks/useAdminAuth";
 
@@ -116,6 +117,7 @@ const ScenarioPlanningView = React.lazy(() => import("../planning/ScenarioPlanni
 // Reports & Analytics
 const AdminReportsView = React.lazy(() => import("./AdminReportsView"));
 const FloorControlReportsView = React.lazy(() => import("./FloorControlReportsView"));
+const CopilotInterface = React.lazy(() => import("../copilot/CopilotInterface").then(m => ({ default: m.CopilotInterface })));
 const QcSampleView = React.lazy(() => import("./QcSampleView"));
 // LN Stamdata import
 const ReferenceOpsImportModal = React.lazy(() => import("../digitalplanning/modals/ReferenceOpsImportModal"));

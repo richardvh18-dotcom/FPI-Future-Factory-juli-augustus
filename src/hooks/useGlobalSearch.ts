@@ -7,7 +7,7 @@ export interface GlobalSearchState {
   globalSearchLoading: boolean;
   globalDossierProduct: any | null;
   globalOrderDetail: any | null;
-  globalOrders: any[];
+  globalOrders: unknown[];
 }
 
 export function useGlobalSearch() {
@@ -27,7 +27,7 @@ export function useGlobalSearch() {
     try {
       let foundProduct: any = null;
       let foundOrder: any = null;
-      let parentOrders: any[] = [];
+      let parentOrders: unknown[] = [];
 
       const itemsQuery = query(collectionGroup(db, "items"), where("lotNumber", "==", qStr), limit(1));
       const itemsSnap = await getDocs(itemsQuery);

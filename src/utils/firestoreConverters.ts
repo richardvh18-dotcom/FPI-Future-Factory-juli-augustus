@@ -2,7 +2,7 @@ import { FirestoreDataConverter, QueryDocumentSnapshot, SnapshotOptions, Documen
 import { PlanningOrder, TrackedProductDoc } from "../types";
 
 export const planningOrderConverter: FirestoreDataConverter<PlanningOrder> = {
-  toFirestore(order: WithFieldValue<PlanningOrder>): DocumentData {
+  toFirestore(order: any): DocumentData {
     // Only used when writing to Firestore, filters out undefined values naturally
     return { ...order };
   },
@@ -23,7 +23,7 @@ export const planningOrderConverter: FirestoreDataConverter<PlanningOrder> = {
 };
 
 export const trackedProductConverter: FirestoreDataConverter<TrackedProductDoc> = {
-  toFirestore(product: WithFieldValue<TrackedProductDoc>): DocumentData {
+  toFirestore(product: any): DocumentData {
     return { ...product };
   },
   fromFirestore(

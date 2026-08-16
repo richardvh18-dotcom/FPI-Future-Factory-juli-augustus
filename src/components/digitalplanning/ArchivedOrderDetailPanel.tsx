@@ -11,7 +11,7 @@ interface LotEntry {
   lotNumbers?: string[];
   lotNumber?: string;
   lotNumbersText?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface ReopenParams {

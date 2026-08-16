@@ -233,7 +233,7 @@ const ProductSearchView = ({ showFilters, setShowFilters }: { showFilters: boole
     }, [width]);
 
     const flattenedItems = useMemo(() => {
-      const items: any[] = [];
+      const items: unknown[] = [];
       Object.entries(groupedProducts).forEach(([groupName, products]) => {
         items.push({ type: 'header', groupName, count: products.length });
         if (expandedGroups[groupName]) {

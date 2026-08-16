@@ -143,7 +143,7 @@ const getLossenRoute = (itemText: unknown, originStation = "") => {
 type ProductReleaseModalProps = {
   isOpen?: boolean;
   product: any;
-  bulkProducts?: any[];
+  bulkProducts?: unknown[];
   onClose: () => void;
   onComplete?: () => void;
   autoApproveTrigger?: number;
@@ -162,7 +162,7 @@ type ProductReleaseModalProps = {
  * UPDATE: Uitgebreide functionaliteit voor Lossen (metingen, afkeur opties).
  */
 const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onComplete, autoApproveTrigger = 0, forceLossenMode = false, appId, activeOperators, autoFocus, defaultStatus, defaultReasons }: ProductReleaseModalProps) => {
-  const maybeShowLossen1218MoldNotice = async (processedTargets: any[] = []) => {
+  const maybeShowLossen1218MoldNotice = async (processedTargets: unknown[] = []) => {
     if (!Array.isArray(processedTargets) || processedTargets.length === 0) return;
 
     const relevantTargets = processedTargets.filter((entry) => {
@@ -190,7 +190,7 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
     if (orderMap.size === 0) return;
 
     const thresholdMs = MOLD_CHANGE_THRESHOLD_DAYS * 24 * 60 * 60 * 1000;
-    const notices: any[] = [];
+    const notices: unknown[] = [];
 
     for (const meta of orderMap.values()) {
       const { orderId, itemCode, machine } = meta;
@@ -292,7 +292,7 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
   // Form state
   const [formState, setFormState, clearPersistedForm] = useFormPersistence<{
     status: string;
-    measurements: Record<string, any>;
+    measurements: Record<string, unknown>;
     selectedReasons: string[];
     comment: string;
   }>("product_release_modal_form", {
@@ -782,7 +782,7 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
             
             // Mark as completed
             updateOperation(opId, "Klaar ✓");
-          } catch (err: any) {
+          } catch (err: unknown) {
             // Mark as error
             updateOperation(opId, `Fout: ${err.message}`);
             console.error(`Error processing ${targetId}:`, err);
@@ -828,7 +828,7 @@ const ProductReleaseModal = ({ isOpen, product, bulkProducts = [], onClose, onCo
         setTimeout(() => {
           operationIds.forEach(id => removeOperation(id));
         }, 2000);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Fout:", error);
         notify(error.message);
         // Clear pending on error

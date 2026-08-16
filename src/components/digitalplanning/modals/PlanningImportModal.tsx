@@ -44,7 +44,7 @@ type PlanningImportEntry = {
   demandOrderType?: string;
   holdReason?: string;
   machineHours?: number;
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 type DebugLogEntry = {

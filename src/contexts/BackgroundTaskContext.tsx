@@ -15,7 +15,7 @@ export type BackgroundTask = {
     fileName?: string;
     error?: string;
     createdAt?: { toDate?: () => Date } | any;
-    [key: string]: any;
+    [key: string]: unknown;
 };
 
 interface BackgroundTaskStore {

@@ -11,7 +11,7 @@ const PrintQueuePinger = ({ enabled }: PrintQueuePingerProps) => {
     const keepAliveInterval = setInterval(() => {
       // Importeer inline of roep dynamisch de cloud function aan (zonder frontend validatie)
       import("firebase/functions").then(({ getFunctions, httpsCallable }) => {
-        const ping = httpsCallable(getFunctions(app, "europe-west1"), "queuePrintJob");
+        const ping = httpsCallable<unknown, unknown>(getFunctions(app, "europe-west1"), "queuePrintJob");
         // Keepalive voor cold starts, zonder echte printjob aan te maken.
         ping({ printerId: "PING", zplData: "PING", metadata: { source: "keepalive" } }).catch(() => {});
       });

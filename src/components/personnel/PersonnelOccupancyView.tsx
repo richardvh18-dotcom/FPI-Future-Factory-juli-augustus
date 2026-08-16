@@ -61,7 +61,7 @@ export interface Person {
     startWeek?: number;
     shifts?: string[];
   };
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface OccupancyRecord {
@@ -78,7 +78,7 @@ export interface OccupancyRecord {
   isLoan?: boolean;
   checkedOutAt?: any;
   isActive?: boolean;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface AddEditPersonModalProps {

@@ -1,10 +1,13 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BrainCircuit, FileText, Sparkles, Settings, BookOpen } from "lucide-react";
+import { BrainCircuit, FileText, Sparkles, Settings, BookOpen, Bot, Scale } from "lucide-react";
 import AiTrainingView from "./AiTrainingView";
 import AiDocumentUploadView from "./AiDocumentUploadView";
-import AiContextManager from "./AiContextManager";
+
 import FlashcardManager from "./FlashcardManager";
+import { CopilotInterface } from "../copilot/CopilotInterface";
+import { AdminAiRules } from "./AdminAiRules";
+import AiInsightsView from "./AiInsightsView";
 
 const AiCenterView = () => {
   const { t } = useTranslation();
@@ -54,15 +57,37 @@ const AiCenterView = () => {
           >
             <FileText size={16} /> {t('ai.center.tabs.documents', 'Documenten')}
           </button>
+
           <button
-            onClick={() => setActiveTab("context")}
+            onClick={() => setActiveTab("copilot")}
             className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${
-              activeTab === "context"
+              activeTab === "copilot"
+                ? "bg-white text-indigo-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            <Bot size={16} /> {t('ai.center.tabs.copilot', 'AI Assistent')}
+          </button>
+          <button
+            onClick={() => setActiveTab("rules")}
+            className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${
+              activeTab === "rules"
+                ? "bg-white text-amber-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            <Scale size={16} /> {t('ai.center.tabs.rules', 'Factory Regels')}
+          </button>
+          
+          <button
+            onClick={() => setActiveTab("insights")}
+            className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all ${
+              activeTab === "insights"
                 ? "bg-white text-emerald-600 shadow-sm"
                 : "text-slate-500 hover:text-slate-700"
             }`}
           >
-            <Settings size={16} /> {t('ai.center.tabs.context', 'Context')}
+            <BrainCircuit size={16} /> {t('ai.center.tabs.insights', 'Inzichten')}
           </button>
         </div>
       </div>
@@ -72,7 +97,10 @@ const AiCenterView = () => {
         {activeTab === "training" && <AiTrainingView />}
         {activeTab === "flashcards" && <FlashcardManager />}
         {activeTab === "documents" && <AiDocumentUploadView />}
-        {activeTab === "context" && <AiContextManager />}
+
+        {activeTab === "rules" && <AdminAiRules />}
+        {activeTab === "insights" && <AiInsightsView />}
+        {activeTab === "copilot" && <div className="h-full p-4"><CopilotInterface /></div>}
       </div>
     </div>
   );

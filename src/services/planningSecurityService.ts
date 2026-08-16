@@ -1859,3 +1859,24 @@ export const saveLnQrExportHistory = async ({
 
 export const fetchOrderActivityLogs = createCallableWrapper<{ orderId: string }, { logs: any[] }>('getOrderActivityLogs');
 
+
+export interface GenerateDocumentEmbeddingsInput {
+  docId: string;
+  fullText: string;
+  fileName: string;
+}
+
+export const generateDocumentEmbeddings = createCallableWrapper<GenerateDocumentEmbeddingsInput>(
+  "generateDocumentEmbeddings",
+  (payload) => {
+    const processed = {
+        docId: String(payload.docId || "").trim(),
+        fullText: String(payload.fullText || "").trim(),
+        fileName: String(payload.fileName || "").trim(),
+      };
+    if (!processed.docId || !processed.fullText) {
+        throw new Error("docId en fullText zijn verplicht.");
+      }
+    return processed;
+  }
+);

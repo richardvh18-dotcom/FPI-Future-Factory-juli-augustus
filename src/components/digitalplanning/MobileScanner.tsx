@@ -89,7 +89,7 @@ const MobileScanner: FC<MobileScannerProps> = ({ onScan, onClose }) => {
         isScanningRef.current = true;
 
         // ZXing handles the video stream and decoding loop
-        await codeReader.decodeFromStream(stream, videoRef.current, (result: any) => {
+        await codeReader.decodeFromStream(stream, videoRef.current, (result: unknown) => {
           if (result) {
             if (navigator.vibrate) navigator.vibrate(100);
             onScan(result.getText());

@@ -21,7 +21,7 @@ export type Wm18ProgramTemplate = {
   id: string;
   name: string;
   description?: string;
-  definition: any;
+  definition: unknown;
 };
 
 export type ParsedWm18Workbook = {
@@ -60,7 +60,7 @@ const parseRadius = (value: unknown): number | null => {
 
 const normalizeHeaderName = (value: unknown): string => String(value ?? '').replace(/[^a-z0-9]+/gi, '').toLowerCase();
 
-const buildWm18ProgramDefinition = (input: any): any => {
+const buildWm18ProgramDefinition = (input: unknown): unknown => {
   return input;
 };
 

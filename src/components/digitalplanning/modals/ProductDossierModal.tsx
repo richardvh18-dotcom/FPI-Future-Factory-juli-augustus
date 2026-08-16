@@ -66,7 +66,7 @@ type DateLikeInput =
   | null
   | undefined;
 
-const getMeasurementLabel = (key: string, t: any): string => {
+const getMeasurementLabel = (key: string, t: unknown): string => {
   const labels: Record<string, string> = {
     "RI_Department": t("qc.meas_department", "Afdeling"),
     "Brix_Department": t("qc.meas_department", "Afdeling"),
@@ -161,7 +161,7 @@ const MEASUREMENT_ORDER = [
   "TWtb"
 ];
 
-const formatMeasurementValue = (key: string, value: any, t: any): string => {
+const formatMeasurementValue = (key: string, value: unknown, t: unknown): string => {
   const strVal = String(value);
   if (key === "Brix_VisualCheck" || key === "RI_VisualCheck") {
     if (value === true || strVal.toLowerCase() === "true") return t("qc.visual_check_ok", "Ja (Akkoord)");
@@ -561,27 +561,27 @@ const ProductDossierModal = ({
     const stations = [...WORKSTATIONS];
     
     // Check of BH31 ontbreekt en voeg toe
-    if (!stations.find((s: any) => s.id === "BH31")) {
-      stations.push({ id: "BH31", name: "BH31" } as any);
+    if (!stations.find((s: unknown) => s.id === "BH31")) {
+      stations.push({ id: "BH31", name: "BH31" } as unknown);
     }
 
     // Filter "Station BM01" en duplicaten
-    const uniqueStations = stations.filter((s: any, index: number, self: any[]) => 
-      index === self.findIndex((t: any) => t.id === s.id) && 
+    const uniqueStations = stations.filter((s: unknown, index: number, self: unknown[]) => 
+      index === self.findIndex((t: unknown) => t.id === s.id) && 
       s.id !== "Station BM01" && s.name !== "Station BM01"
     );
 
-    return uniqueStations.sort((a: any, b: any) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    return uniqueStations.sort((a: unknown, b: unknown) => a.id.localeCompare(b.id, undefined, { numeric: true }));
   }, []);
 
   const moveStations = useMemo(() => {
     if (isArchivedProduct) {
       const allowed = new Set(["BH31", "Nabewerking", "BM01"]);
-      return sortedStations.filter((s: any) => allowed.has(s.id));
+      return sortedStations.filter((s: unknown) => allowed.has(s.id));
     }
     if (!isTijdelijkeAfkeur) return sortedStations;
     const allowed = new Set(["BH31", "Nabewerking", "LOSSEN"]);
-    return sortedStations.filter((s: any) => allowed.has(s.id));
+    return sortedStations.filter((s: unknown) => allowed.has(s.id));
   }, [isArchivedProduct, isTijdelijkeAfkeur, sortedStations]);
 
   // Effect: Verrijk historie met operator data uit occupancy als deze ontbreekt
@@ -600,7 +600,7 @@ const ProductDossierModal = ({
         if (!entry.station || (!entry.timestamp && !entry.time)) return entry;
 
         try {
-          const ts = toDateSafe((entry.timestamp || entry.time) as any);
+          const ts = toDateSafe((entry.timestamp || entry.time) as unknown);
           if (!ts || isNaN(ts.getTime())) return entry;
           
           const dateStr = ts.toISOString().split('T')[0];
@@ -634,7 +634,7 @@ const ProductDossierModal = ({
   }, [product, isOpen]);
 
   const formatDeadline = (val: unknown) => {
-    const date = toDateSafe(val as any);
+    const date = toDateSafe(val as unknown);
     if (date) return format(date, "dd-MM-yyyy");
     return String(val || "-");
   };
@@ -668,7 +668,7 @@ const ProductDossierModal = ({
       doc.setFont("helvetica", "bold");
       doc.text("Status:", 14, 50);
       doc.setFont("helvetica", "normal");
-      doc.text(String((product as any)?.status || "-"), 45, 50);
+      doc.text(String((product as unknown)?.status || "-"), 45, 50);
 
       doc.setFont("helvetica", "bold");
       doc.text("QC Samenvatting:", 14, 56);
@@ -693,7 +693,7 @@ const ProductDossierModal = ({
             return keyA.localeCompare(keyB);
         });
 
-        const measBody: any[] = [];
+        const measBody: unknown[] = [];
         let lastCategory = "";
         
         sortedMeas.forEach(([k, v]) => {
@@ -709,14 +709,14 @@ const ProductDossierModal = ({
           measBody.push([getMeasurementLabel(k, t), formatMeasurementValue(k, v, t)]);
         });
 
-        (doc as any).autoTable({
+        (doc as unknown).autoTable({
           startY: startY + 5,
           head: [['Meting', 'Waarde']],
           body: measBody,
           theme: 'grid',
           headStyles: { fillColor: [59, 130, 246] }
         });
-        startY = (doc as any).lastAutoTable.finalY + 15;
+        startY = (doc as unknown).lastAutoTable.finalY + 15;
       }
 
       if (product?.inspection?.reasons && product.inspection.reasons.length > 0) {
@@ -725,14 +725,14 @@ const ProductDossierModal = ({
         doc.text("Inspectie Bevindingen", 14, startY);
         
         const inspBody = product.inspection.reasons.map(r => [r]);
-        (doc as any).autoTable({
+        (doc as unknown).autoTable({
           startY: startY + 5,
           head: [['Reden / Afwijking']],
           body: inspBody,
           theme: 'grid',
           headStyles: { fillColor: [244, 63, 94] }
         });
-        startY = (doc as any).lastAutoTable.finalY + 15;
+        startY = (doc as unknown).lastAutoTable.finalY + 15;
       }
 
       if (historyWithOperators && historyWithOperators.length > 0) {
@@ -747,7 +747,7 @@ const ProductDossierModal = ({
            h.operatorName || h.operatorNumber || h.user || "Systeem"
          ]);
          
-         (doc as any).autoTable({
+         (doc as unknown).autoTable({
            startY: startY + 5,
            head: [['Tijdstip', 'Station', 'Actie', 'Door']],
            body: histBody,
@@ -758,7 +758,7 @@ const ProductDossierModal = ({
       }
       
       doc.save(`Productpaspoort_${product?.lotNumber || "unknown"}.pdf`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       notifyAny("Kon PDF niet genereren.");
     }
@@ -889,10 +889,10 @@ const ProductDossierModal = ({
 
       if (dossierLabel && dossierPreviewData) {
         const driver = getDriver(targetPrinter as Record<string, unknown>);
-        const widthMm = Number((dossierLabel as any)?.width) || 90;
-        const heightMm = Number((dossierLabel as any)?.height) || 40;
+        const widthMm = Number((dossierLabel as unknown)?.width) || 90;
+        const heightMm = Number((dossierLabel as unknown)?.height) || 40;
         zplToReprint = await renderLabelToBitmapZpl({
-          template: dossierLabel as any,
+          template: dossierLabel as unknown,
           data: dossierPreviewData as Record<string, unknown>,
           printerDpi: Number(driver.nativeDpi) || 203,
           darkness: Number((targetPrinter as Record<string, unknown>)?.darkness) || driver.defaultDarkness || 15,
@@ -1154,8 +1154,8 @@ const ProductDossierModal = ({
                       >
                         {dossierLabel ? (
                           <AutoScaledLabelPreview
-                            label={dossierLabel as any}
-                            data={dossierPreviewData as any}
+                            label={dossierLabel as unknown}
+                            data={dossierPreviewData as unknown}
                             className="shadow-md"
                             maxScale={1}
                           />
@@ -1461,7 +1461,7 @@ const ProductDossierModal = ({
                     className="px-4 py-4 bg-white border-2 border-slate-200 rounded-2xl font-bold text-xs text-slate-700 outline-none focus:border-blue-500"
                   >
                     <option value="">{t("common.chooseStation", "Kies station...")}</option>
-                    {moveStations.map((s: any) => (
+                    {moveStations.map((s: unknown) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>

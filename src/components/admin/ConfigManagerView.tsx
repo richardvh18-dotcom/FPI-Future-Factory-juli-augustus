@@ -31,7 +31,7 @@ const ConfigManagerView = () => {
       if (!path) return;
       await deleteDoc(doc(db, path, id));
       toast.success("Verwijderd!");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error("Fout: " + e.message);
     }
   };
@@ -53,7 +53,7 @@ const ConfigManagerView = () => {
         setRuleConditionValue("");
         setRuleTargetPrinter("");
         toast.success("Regel toegevoegd!");
-      } catch (e: any) {
+      } catch (e: unknown) {
         toast.error("Fout: " + e.message);
       }
       return;
@@ -73,7 +73,7 @@ const ConfigManagerView = () => {
       setNewItemValue("");
       setNewItemLabel("");
       toast.success("Toegevoegd!");
-    } catch (e: any) {
+    } catch (e: unknown) {
       toast.error("Fout: " + e.message);
     }
   };
@@ -204,7 +204,7 @@ const ConfigManagerView = () => {
           )}
 
           <div className="space-y-2">
-            {currentList.map((item: any) => (
+            {currentList.map(() => (
               <div key={item.id} className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:shadow-md transition-shadow">
                 {activeTab === "printerRules" ? (
                   <div className="flex items-center gap-2">

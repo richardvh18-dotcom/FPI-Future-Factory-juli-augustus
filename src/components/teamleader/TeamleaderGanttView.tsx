@@ -4,7 +4,7 @@ import { Users, Activity, CalendarDays, AlertTriangle, CheckCircle2 } from "luci
 import GanttChartView from "../planning/GanttChartView";
 
 interface MachineGridData {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface TeamleaderMetrics {
@@ -13,8 +13,8 @@ interface TeamleaderMetrics {
   finishedCount: number;
   activeCount: number;
   totalPlanned: number;
-  planningOrders?: any[];
-  trackedProducts?: any[];
+  planningOrders?: unknown[];
+  trackedProducts?: unknown[];
 }
 
 interface TeamleaderGanttViewProps {

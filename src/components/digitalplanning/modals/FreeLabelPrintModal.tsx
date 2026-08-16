@@ -18,7 +18,7 @@ type FreeLabelPrintModalProps = {
   onSaveTemplate: (templateName: string, text: string, align: "left" | "center" | "right", vAlign: "top" | "center" | "bottom", fontSize: string, quantity: number) => Promise<void>;
   printing: boolean;
   savingFreeTemplate: boolean;
-  savedTemplates?: any[];
+  savedTemplates?: unknown[];
   onSelectTemplate?: (tpl: any) => void;
   onDeleteTemplate?: (id: string) => void;
 };
@@ -66,7 +66,7 @@ export const FreeLabelPrintModal = ({
     }
   };
 
-  const applyTemplate = async (tpl: any) => {
+  const applyTemplate = async (tpl: unknown) => {
     setTemplateName(tpl.name || "");
     setText(tpl.text || "");
     setAlign(tpl.align || "center");

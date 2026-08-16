@@ -16,7 +16,7 @@ type RepairModalProps = {
   product: {
     lotNumber?: string;
     id?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   onClose: () => void;
   onConfirm: (data: { actions: string[]; notes: string }) => void | Promise<void>;

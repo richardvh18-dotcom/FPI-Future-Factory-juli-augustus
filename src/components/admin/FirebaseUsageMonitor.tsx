@@ -43,7 +43,7 @@ export default function FirebaseUsageMonitor() {
       const getUsage = httpsCallable<{ periodDays?: number }, UsageResponse>(functions, 'getFirebaseUsageAndCosts');
       const response = await getUsage({ periodDays });
       setData(response.data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error fetching usage:", err);
       if (err?.code === "functions/permission-denied") {
         setError(t('firebaseUsage.permissionDenied', 'Toegang geweigerd. Zorg ervoor dat het Firebase Service Account de juiste IAM rollen (Monitoring Viewer) heeft op GCP.'));

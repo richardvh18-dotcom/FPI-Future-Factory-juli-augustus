@@ -43,7 +43,7 @@ import {
 } from "../../../utils/planningViewHelpers";
 import { WM18RobotProgramDetailModal } from "../modals/WM18RobotProgramDetailModal";
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 
 type TerminalPlanningViewProps = {
   orders?: AnyRecord[];

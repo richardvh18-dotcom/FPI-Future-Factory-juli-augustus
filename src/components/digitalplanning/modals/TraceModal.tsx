@@ -23,7 +23,7 @@ type TraceModalProps = {
   isOpen: boolean;
   onClose: () => void;
   title: string;
-  data?: any[];
+  data?: unknown[];
   onRowClick?: (item: any) => void;
   onRowAction?: ((item: any) => void) | null;
   rowActionLabel?: string;

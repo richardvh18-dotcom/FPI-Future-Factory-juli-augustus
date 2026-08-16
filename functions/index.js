@@ -2450,3 +2450,6 @@ exports.getFirebaseUsageAndCosts = getFirebaseUsageAndCosts;
 const { getOrderActivityLogs } = require('./src/callables/activityLogs');
 exports.getOrderActivityLogs = getOrderActivityLogs;
 
+// AI Copilot
+const { askCopilot } = require('./src/callables/aiCallables');
+exports.askCopilot = askCopilot;

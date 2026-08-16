@@ -43,7 +43,7 @@ const AddInspectionModal = ({ onClose }: AddInspectionModalProps) => {
         note: "",
       });
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       showError(err.message || "Fout bij opslaan van inspectie.");
     } finally {

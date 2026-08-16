@@ -12,7 +12,7 @@ interface PlanningOrder {
   deliveryDate?: string;
   plannedDate?: string;
   machine?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface Props {

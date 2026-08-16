@@ -35,7 +35,7 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }: { isOpen: boole
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInFlightRef = useRef(false);
   const functions = getFunctions(app, 'europe-west1');
-  const importReferenceOperationsCallable = httpsCallable(functions, "importReferenceOperations");
+  const importReferenceOperationsCallable = httpsCallable<unknown, unknown>(functions, "importReferenceOperations");
 
   if (!isOpen) return null;
 
@@ -147,7 +147,7 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }: { isOpen: boole
     try {
       const records = await parseRefOpsFile(file);
       setPreview({ records });
-    } catch (err: any) {
+    } catch (err: unknown) {
       setError(err.message || "Fout bij inlezen bestand.");
     } finally {
       setLoading(false);
@@ -182,7 +182,7 @@ const ReferenceOpsImportModal = ({ isOpen, onClose, onSuccess }: { isOpen: boole
           }),
           t("referenceOpsImport.notifications.title", "Reference Operations")
         );
-      } catch (err: any) {
+      } catch (err: unknown) {
         const backendMsg = err?.message || err?.details?.message || err;
         showError(
           t("referenceOpsImport.notifications.failed", {

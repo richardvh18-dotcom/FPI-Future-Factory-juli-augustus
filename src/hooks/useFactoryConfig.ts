@@ -20,7 +20,7 @@ export type PrinterRoutingRule = {
   isActive: boolean;
 };
 
-let cachedConfig: any = null;
+let cachedConfig: Record<string, unknown> | null = null;
 let listenersActive = false;
 let stopFirestoreListeners: (() => void) | null = null;
 

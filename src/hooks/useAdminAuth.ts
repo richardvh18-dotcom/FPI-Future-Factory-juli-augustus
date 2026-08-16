@@ -121,8 +121,8 @@ const authStore = {
         const claimRoleCandidates = [
           idTokenResult.claims.role,
           idTokenResult.claims.roles,
-          idTokenResult.claims.customClaims?.role,
-          idTokenResult.claims.customClaims?.roles,
+          (idTokenResult.claims.customClaims as Record<string, unknown>)?.role,
+          (idTokenResult.claims.customClaims as Record<string, unknown>)?.roles,
         ];
         let tokenRole = "";
         for (const candidate of claimRoleCandidates) {

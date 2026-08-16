@@ -4,28 +4,28 @@ import { normalizeMachine, getStartedCounterField } from "../../utils/hubHelpers
 
 export type UseTeamleaderMetricsArgs = {
   loading: boolean;
-  dataStore: any[];
-  rawProducts: any[];
-  bezetting: any[];
-  archivedHistoryProducts: any[];
-  archivedRejectedProducts: any[];
-  activeDowntimes: any[];
+  dataStore: unknown[];
+  rawProducts: unknown[];
+  bezetting: unknown[];
+  archivedHistoryProducts: unknown[];
+  archivedRejectedProducts: unknown[];
+  activeDowntimes: unknown[];
   effectiveAllowedNorms: string[];
-  effectiveStations: any[];
+  effectiveStations: unknown[];
   safeScope: string;
   todayStr: string;
   currentWeek: number;
   currentYear: number;
-  getOrderIdFromTrackedRecord: (record: any) => string;
-  getOrderProgressMeta: (order: any) => any;
-  getOrderRemainingQueueQty: (order: any) => number;
-  getDeliveredQtyForOrder: (order: any) => number;
-  getInspectionApprovedQtyForOrder: (order: any) => number;
-  isEventInCurrentWeek: (date: any, info: any) => boolean;
-  isInAllowedScope: (record: any) => boolean;
-  isInactiveTrackedProduct: (record: any) => boolean;
-  isRejectedProduct: (record: any) => boolean;
-  isPriorityOrder: (order: any) => boolean;
+  getOrderIdFromTrackedRecord: (record: unknown) => string;
+  getOrderProgressMeta: (order: unknown) => any;
+  getOrderRemainingQueueQty: (order: unknown) => number;
+  getDeliveredQtyForOrder: (order: unknown) => number;
+  getInspectionApprovedQtyForOrder: (order: unknown) => number;
+  isEventInCurrentWeek: (date: unknown, info: unknown) => boolean;
+  isInAllowedScope: (record: unknown) => boolean;
+  isInactiveTrackedProduct: (record: unknown) => boolean;
+  isRejectedProduct: (record: unknown) => boolean;
+  isPriorityOrder: (order: unknown) => boolean;
 };
 
 export const useTeamleaderMetrics = ({
@@ -112,7 +112,7 @@ export const useTeamleaderMetrics = ({
         return (sId && sId === bId) || (sName && sName === bId) || (sName && sName === bName);
       });
 
-      const activeDowntime = activeDowntimes.find((d: any) => {
+      const activeDowntime = activeDowntimes.find((d: unknown) => {
         const dId = (d.machineId || "").toLowerCase();
         const sId = (stationId || "").toLowerCase();
         const sName = (stationName || "").toLowerCase();
@@ -170,7 +170,7 @@ export const useTeamleaderMetrics = ({
         });
         plannedHours = stationPlanHours;
 
-        const checkActive = (p: any) => {
+        const checkActive = (p: unknown) => {
           const pStation = (p.currentStation || "").toUpperCase().replace(/\s/g, "");
           const pStep = (p.currentStep || "").toUpperCase().replace(/\s/g, "");
 
@@ -197,7 +197,7 @@ export const useTeamleaderMetrics = ({
         };
         active = rawProducts.filter(checkActive).length;
 
-        const checkFinished = (p: any) => {
+        const checkFinished = (p: unknown) => {
           const pStatus = (p.status || "").toUpperCase();
           const pStep = (p.currentStep || "").toUpperCase();
           const isFinishedItem = ["COMPLETED", "FINISHED", "GEREED"].includes(pStatus) || pStep === "FINISHED";
@@ -372,7 +372,7 @@ export const useTeamleaderMetrics = ({
         return acc + getOrderRemainingQueueQty(o) + activeFlowQty;
       }, 0),
 
-      activeCount: rawProducts.filter((p: any) => {
+      activeCount: rawProducts.filter((p: unknown) => {
         const linkedToVisibleOrder = validOrderIds.has(getOrderIdFromTrackedRecord(p));
         const inAllowedScope = isInAllowedScope(p);
         if (!linkedToVisibleOrder && !inAllowedScope) return false;
@@ -382,7 +382,7 @@ export const useTeamleaderMetrics = ({
       }).length,
 
       finishedCount: (() => {
-        const getFinishedEventDate = (p: any) => {
+        const getFinishedEventDate = (p: unknown) => {
           const candidates = [
             p?.timestamps?.finished,
             p?.timestamps?.completed,

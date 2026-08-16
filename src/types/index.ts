@@ -1,3 +1,4 @@
+import { Timestamp } from 'firebase/firestore';
 /**
  * @file src/types/index.ts
  *
@@ -258,7 +259,7 @@ export interface PlanningOrder {
   machine: string;
   plan: number;
   status?: string;
-  deliveryDate?: any;
+  deliveryDate?: string | Date | Timestamp | null;
   date?: string;
   department?: string;
   priority?: number;
@@ -272,11 +273,11 @@ export interface PlanningOrder {
   smartSyncIncluded?: boolean;
   delegatedTo?: string;
   __docPath?: string;
-  createdAt?: any;
-  updatedAt?: any;
-  syncedAt?: any;
-  importedAt?: any;
-  [key: string]: any;
+  createdAt?: string | Date | Timestamp | null;
+  updatedAt?: string | Date | Timestamp | null;
+  syncedAt?: string | Date | Timestamp | null;
+  importedAt?: string | Date | Timestamp | null;
+  [key: string]: unknown;
 }
 
 export interface TrackedProductDoc {
@@ -299,9 +300,9 @@ export interface TrackedProductDoc {
   operator?: string;
   lotNumbers?: string[];
   lotNumbersText?: string;
-  timestamps?: Record<string, any>;
-  updatedAt?: any;
-  archivedAt?: any;
-  completedAt?: any;
-  [key: string]: any;
+  timestamps?: Record<string, string | Date | Timestamp | null>;
+  updatedAt?: string | Date | Timestamp | null;
+  archivedAt?: string | Date | Timestamp | null;
+  completedAt?: string | Date | Timestamp | null;
+  [key: string]: unknown;
 }

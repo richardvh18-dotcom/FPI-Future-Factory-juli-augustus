@@ -30,7 +30,7 @@ export const getWm18CatalogItemByArticleNumber = async (
 
   // Tier 2: Check Conversie Matrix (maps new <-> old article number)
   try {
-    const conversion = (await lookupProductByManufacturedId(null, rawCode)) as Record<string, any> | null;
+    const conversion = (await lookupProductByManufacturedId(null, rawCode)) as Record<string, unknown> | null;
     if (conversion) {
       const candidates = [
         conversion.manufacturedId,

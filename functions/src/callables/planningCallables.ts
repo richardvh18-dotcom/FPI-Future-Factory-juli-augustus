@@ -76,7 +76,7 @@ const {
   resolveShopFloorIssueService,
   bulkImportPlanningOrdersService,
   reconcileOrderControlState,
-} = require('../services/planningTransitionService');
+} = require('../services/planning/application');
 
 const { queuePrintJobService } = require('../services/printingService');
 const {

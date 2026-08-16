@@ -74,7 +74,9 @@ type UserRecord = {
   allowedStations?: string[];
   defaultRoute?: string;
   defaultStation?: string;
+  isGodMode?: boolean;
   canVerify?: boolean;
+  canEditAiRules?: boolean;
   receivesCrashReports?: boolean;
   signature?: string;
   [key: string]: unknown;
@@ -833,6 +835,7 @@ const AdminUsersView = () => {
         defaultRoute: selectedUser.defaultRoute || "",
         defaultStation: selectedUser.defaultStation || "",
         canVerify: selectedUser.canVerify || false,
+        canEditAiRules: selectedUser.canEditAiRules || false,
         receivesCrashReports: selectedUser.receivesCrashReports || false,
         signature: selectedUser.signature || "",
         lastAdminUpdate: serverTimestamp(),
@@ -1573,6 +1576,22 @@ const AdminUsersView = () => {
                         onChange={(e) => setSelectedUser({ ...selectedUser, canVerify: e.target.checked })}
                       />
                       <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </div>
+                  </label>
+                  
+                  <label className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:border-purple-200 transition-all mt-4">
+                    <div>
+                      <div className="font-bold text-sm text-slate-700">{t('adminUsers.authorizedAiRules', "AI Regels Beheren")}</div>
+                      <div className="text-[10px] text-slate-400 font-medium">{t('adminUsers.canEditAiRulesDesc', "Kan fabrieksregels dicteren via AI Assistent")}</div>
+                    </div>
+                    <div className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={selectedUser.canEditAiRules || false}
+                        onChange={(e) => setSelectedUser({ ...selectedUser, canEditAiRules: e.target.checked })}
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
                     </div>
                   </label>
                 </div>

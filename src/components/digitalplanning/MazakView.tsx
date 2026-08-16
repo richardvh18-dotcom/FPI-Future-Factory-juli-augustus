@@ -2650,7 +2650,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
         }
       );
       notify(t("mazak.empty_label_printed", "Leeg label wordt geprint."));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       notify(err.message || t("mazak.print_failed", "Printen mislukt."));
     } finally {
@@ -2716,7 +2716,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
       notify(t("mazak.large_sequence_printed", "Grote volgnummers succesvol in de wachtrij geplaatst."));
       setShowLargeSequenceModal(false);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       notify(err.message || t("mazak.print_failed", "Printen mislukt."));
     } finally {
@@ -2820,7 +2820,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       await updateDoc(docRef, {
         mazakFreeLabelTemplates: updatedList
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Fout bij opslaan van template:", err);
       throw err;
     } finally {
@@ -2836,7 +2836,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
         mazakFreeLabelTemplates: updatedList
       });
       notify(t("mazak.template_deleted_success", "Template verwijderd."));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       notify(t("mazak.template_deleted_error", "Fout bij verwijderen van template."));
     }

@@ -5,13 +5,13 @@ import { useTeamleaderSelection } from "./TeamleaderSelectionContext";
 
 interface TeamleaderOrderRailProps {
   canManageOverproduction?: boolean;
-  overproductionGroups?: any[];
-  onOpenOverproductionGroup?: (..._args: any[]) => void;
-  resolveOverproductionRoute?: (..._args: any[]) => any;
-  orders?: any[];
-  trackedProducts?: any[];
-  archivedProducts?: any[];
-  archivedHistoryProducts?: any[];
+  overproductionGroups?: unknown[];
+  onOpenOverproductionGroup?: (..._args: unknown[]) => void;
+  resolveOverproductionRoute?: (..._args: unknown[]) => any;
+  orders?: unknown[];
+  trackedProducts?: unknown[];
+  archivedProducts?: unknown[];
+  archivedHistoryProducts?: unknown[];
 }
 
 interface TeamleaderSelectionValue {

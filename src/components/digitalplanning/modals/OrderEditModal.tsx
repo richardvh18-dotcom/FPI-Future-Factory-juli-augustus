@@ -10,7 +10,7 @@ import { X, Settings2, Loader2, Save, Trash2 } from "lucide-react";
 interface Station {
   id: string;
   type?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface FormData {
@@ -18,7 +18,7 @@ interface FormData {
   machine?: string;
   plan?: string | number;
   activeLot?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface OrderEditModalProps {

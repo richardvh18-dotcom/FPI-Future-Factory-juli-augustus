@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { type Firestore } from "firebase/firestore";
 import { subscribeTrackedProducts } from "../../utils/trackedProducts";
 
-type TrackedProductDoc = Record<string, any> & { id: string };
+type TrackedProductDoc = Record<string, unknown> & { id: string };
 
 interface ProductionDataState {
   trackedProducts: TrackedProductDoc[];

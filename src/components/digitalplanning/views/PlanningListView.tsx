@@ -37,7 +37,7 @@ import { useTouchKeyboardPreference } from "../../../hooks/useTouchKeyboardPrefe
 import StatusBadge from "../common/StatusBadge";
 import { syncMissingDrawings } from "../../../utils/planningSyncLogic";
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 
 const parseDateSafe = (dateInput: unknown) => {
   return toDateSafe(dateInput as any);

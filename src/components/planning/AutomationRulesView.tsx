@@ -25,7 +25,7 @@ import { executeRuleWithLogging } from "../../utils/automationEngine";
 import { useNotifications } from "../../contexts/NotificationContext";
 import AdminLabelPrintRules from "../admin/AdminLabelPrintRules";
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 const getErrorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error || "Onbekende fout");
 

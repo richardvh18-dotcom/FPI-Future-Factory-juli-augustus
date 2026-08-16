@@ -14,7 +14,7 @@ import { PATHS, getPathString } from "../../config/dbPaths";
 import { useNotifications } from "../../contexts/NotificationContext";
 import { useTranslation } from "react-i18next";
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 
 /**
  * NotificationRulesView - Configure automated notifications

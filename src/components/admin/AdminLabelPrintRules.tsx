@@ -53,15 +53,15 @@ export default function AdminLabelPrintRules() {
         
       const ruleToSave = { ...editingRule };
       if (!editingRule.id) {
-        (ruleToSave as any).createdAt = serverTimestamp();
+        (ruleToSave as unknown).createdAt = serverTimestamp();
       }
-      (ruleToSave as any).updatedAt = serverTimestamp();
+      (ruleToSave as unknown).updatedAt = serverTimestamp();
       delete ruleToSave.id;
 
       await setDoc(ruleRef, ruleToSave, { merge: true });
       toast.success("Regel succesvol opgeslagen");
       setEditingRule(null);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
       toast.error("Fout bij opslaan: " + error.message);
     }
@@ -72,7 +72,7 @@ export default function AdminLabelPrintRules() {
     try {
       await deleteDoc(doc(db, RULES_PATH, id));
       toast.success("Regel verwijderd");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(error);
       toast.error("Fout bij verwijderen: " + error.message);
     }
@@ -85,7 +85,7 @@ export default function AdminLabelPrintRules() {
   };
 
   // Voorwaarden helpers
-  const updateCondition = (index: number, key: keyof PrintRuleCondition, value: any) => {
+  const updateCondition = (index: number, key: keyof PrintRuleCondition, value: unknown) => {
     if (!editingRule) return;
     const newConditions = [...editingRule.conditions];
     newConditions[index] = { ...newConditions[index], [key]: value };
@@ -191,7 +191,7 @@ export default function AdminLabelPrintRules() {
                       <option value="diameterVal">Diameter in mm (diameterVal)</option>
                       <option value="extraCode">Extra Code (bijv. A2G3)</option>
                     </select>
-                    <select value={cond.operator} onChange={(e) => updateCondition(idx, 'operator', e.target.value as any)} className="w-full sm:w-1/4 bg-white border border-slate-200 rounded-xl px-4 py-2.5 font-bold text-sm outline-none focus:border-blue-500">
+                    <select value={cond.operator} onChange={(e) => updateCondition(idx, 'operator', e.target.value as unknown)} className="w-full sm:w-1/4 bg-white border border-slate-200 rounded-xl px-4 py-2.5 font-bold text-sm outline-none focus:border-blue-500">
                       <option value="==">Is Gelijk Aan (==)</option>
                       <option value="!=">Is Niet Gelijk Aan (!=)</option>
                       <option value="contains">Bevat tekst (contains)</option>
@@ -220,7 +220,7 @@ export default function AdminLabelPrintRules() {
                         ...editingRule, 
                         output: {
                           ...editingRule.output, 
-                          labelSizeId: e.target.value as any,
+                          labelSizeId: e.target.value as unknown,
                           templateId: "",
                           templateIds: []
                         }
@@ -258,8 +258,8 @@ export default function AdminLabelPrintRules() {
                 <h3 className="font-black text-slate-800 uppercase tracking-wide flex items-center gap-3">{rule.name} {!rule.active && <span className="text-[9px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded uppercase tracking-widest">Inactief</span>}</h3>
                 <p className="text-xs text-slate-500 mt-1.5 font-medium">ALS <span className="font-black text-slate-700">{rule.conditions.length} voorwaarde(n)</span> matcht DAN <span className="font-black text-blue-600">Print {rule.output.labelCount}x {
                   String(rule.output.templateIds && rule.output.templateIds.length > 0
-                    ? rule.output.templateIds.map(id => labelTemplates?.find((t: any) => t.id === id)?.name || id).join(" + ")
-                    : labelTemplates?.find((t: any) => t.id === (rule.output.templateId || rule.output.labelSizeId))?.name || rule.output.templateId || rule.output.labelSizeId || "Dynamisch")
+                    ? rule.output.templateIds.map(id => labelTemplates?.find(() => t.id === id)?.name || id).join(" + ")
+                    : labelTemplates?.find(() => t.id === (rule.output.templateId || rule.output.labelSizeId))?.name || rule.output.templateId || rule.output.labelSizeId || "Dynamisch")
                 }</span>{rule.output.requiredTags?.length ? ` + Tags: [${rule.output.requiredTags.join(", ")}]` : ""}</p>
               </div>
             </div>

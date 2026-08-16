@@ -1,0 +1,1724 @@
+// @ts-nocheck
+
+const { admin, db } = require('../../../config/firebase');
+const { BASE, USER_ACCOUNTS_COLLECTION } = require('../../../config/planningConstants');
+const auditService = require('../../auditService');
+const {
+  resolveDbContext,
+  getPlanningOrderDocByOrderId,
+  getTrackedProductDocByIdOrLot,
+  getPlanningOrderDocById,
+} = require('../../../repositories/planningRepository');
+const { clean, clampText } = require('../../../utils/text');
+const { isPendingLikePrintQueueStatus, isValidPrintQueueTransition } = require('../../printQueueTransitionRules');
+
+const EFFICIENCY_COLLECTION = `${BASE}/production/efficiency_hours`;
+const PERSONNEL_COLLECTION = `${BASE}/Users/Personnel`;
+const PRINT_QUEUE_COLLECTION = `${BASE}/production/print_queue`;
+const SERVER_TIMESTAMP_TOKEN = '__SERVER_TIMESTAMP__';
+const DEFAULT_SCOPED_DEPARTMENT = 'Fittings';
+const DEFAULT_SCOPED_MACHINE = 'UNASSIGNED';
+const CONTROL_EVENTS_READ_LIMIT = 600;
+const TRACKING_ORDER_MACHINE_READ_LIMIT = 600;
+const ACTIVE_TRACKING_ROOT_LIMIT = 400;
+const ACTIVE_TRACKING_SCOPED_LIMIT = 800;
+const SCOPED_PRINT_QUEUE_PENDING_LIMIT = 600;
+const LN_UPDATABLE_FIELDS_SERVER = [
+  'quantity', 'toDoQty', 'plan', 'notes', 'deliveryDate', 'plannedDeliveryDate',
+  'weekNumber', 'orderStatus', 'totalPlannedHours', 'totalActualHours',
+  'itemDescription', 'item', 'itemCode', 'extraCode', 'drawing',
+  'project', 'projectDesc', 'orderCreationDate', 'machine', 'sourceType',
+  'operations', 'deliveredQty', 'lnDeliveredQty',
+];
+
+const toFiniteNumber = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const buildDeliveryInspectionSyncFields = (item = {}) => {
+  const deliveredQty =
+    toFiniteNumber(item?.lnDeliveredQty) ??
+    toFiniteNumber(item?.deliveredQty) ??
+    toFiniteNumber(item?.quantityDelivered) ??
+    null;
+
+  if (!Number.isFinite(deliveredQty)) {
+    return {};
+  }
+
+  return {
+    lnDeliveredQty: deliveredQty,
+    deliveredQty,
+    deliveryInspectionLastCheckedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+};
+
+const normalizeMachineForCounter = (stationName = '') => {
+  const normalized = String(stationName || '').trim().replace(/\s+/g, '').toUpperCase();
+  if (/^40(BH|BM|BA)\d+/.test(normalized)) {
+    return normalized.slice(2);
+  }
+  return normalized;
+};
+
+const getStartedCounterFieldServer = (stationName = '') => {
+  const normalized = normalizeMachineForCounter(stationName);
+  if (!normalized) return '';
+  const safeKey = normalized.replace(/[^a-zA-Z0-9]/g, '_');
+  return `started_${safeKey}`;
+};
+
+const normalizeMachineForPlanningServer = (val = '') => {
+  let str = clean(val).toUpperCase();
+  if (str === 'BM18') str = 'BH18';
+  if (str === '40BM18') str = '40BH18';
+  return str || '-';
+};
+
+const normalizeOrderStatusToken = (value = '') =>
+  clean(value)
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+
+const isOnHoldStatusValue = (value = '') => {
+  const normalized = normalizeOrderStatusToken(value);
+  return normalized === 'on_hold' || normalized === 'hold' || normalized === 'paused';
+};
+
+const toFirestoreSegment = (value, fallback) => {
+  const sanitized = String(value || '')
+    .trim()
+    .replace(/[/.#?$\[\]]/g, '_')
+    .replace(/\s+/g, '_');
+  return sanitized || fallback;
+};
+
+const buildReassignedTrackedDocId = ({
+  currentDocId,
+  newOrderId,
+  targetItemCode,
+  lotNumber,
+}) => {
+  const safeCurrentDocId = clean(currentDocId);
+  const safeNewOrderId = clean(newOrderId).toUpperCase();
+  const safeTargetItemCode = clean(targetItemCode).toUpperCase();
+  const safeLotNumber = clean(lotNumber);
+
+  if (!safeCurrentDocId || !safeNewOrderId) return safeCurrentDocId;
+
+  if (safeTargetItemCode && safeLotNumber) {
+    return toFirestoreSegment(`${safeNewOrderId}_${safeTargetItemCode}_${safeLotNumber}`, safeCurrentDocId);
+  }
+
+  if (safeLotNumber) {
+    return toFirestoreSegment(`${safeNewOrderId}_${safeLotNumber}`, safeCurrentDocId);
+  }
+
+  const segments = safeCurrentDocId.split('_').filter(Boolean);
+  if (segments.length <= 1) {
+    const fallback = `${safeNewOrderId}_${safeCurrentDocId}`;
+    return toFirestoreSegment(fallback, safeCurrentDocId);
+  }
+
+  const tail = segments.slice(1).join('_');
+  return toFirestoreSegment(`${safeNewOrderId}_${tail}`, safeCurrentDocId);
+};
+
+const resolveScopedDepartment = (...values) => {
+  for (const value of values) {
+    const cleaned = clean(value);
+    if (cleaned) return toFirestoreSegment(cleaned, DEFAULT_SCOPED_DEPARTMENT);
+  }
+  return DEFAULT_SCOPED_DEPARTMENT;
+};
+
+const toCanonicalScopedMachineSegment = (value = '') => {
+  const normalized = normalizeMachineForPlanningServer(value);
+  if (!normalized || normalized === '-') return '';
+
+  if (/^40(BH|BM|BA)\d+$/.test(normalized)) return normalized;
+  if (/^(BH|BM|BA)\d+$/.test(normalized)) return `40${normalized}`;
+  return normalized;
+};
+
+const resolveScopedMachine = (...values) => {
+  for (const value of values) {
+    const canonical = toCanonicalScopedMachineSegment(value);
+    if (canonical) {
+      return toFirestoreSegment(canonical, DEFAULT_SCOPED_MACHINE);
+    }
+  }
+  return DEFAULT_SCOPED_MACHINE;
+};
+
+const inferDepartmentFromMachine = (machineValue = '') => {
+  const normalizedMachine = normalizeMachineForPlanningServer(machineValue);
+  if (!normalizedMachine || normalizedMachine === '-') return DEFAULT_SCOPED_DEPARTMENT;
+
+  if (normalizedMachine.includes('SPOOL')) return 'Spools';
+  if (/^(40)?BA\d+$/.test(normalizedMachine)) return 'Pipes';
+  return 'Fittings';
+};
+
+const getScopedPlanningDocRef = ({ ctx, department, machine, docId }) => {
+  const safeDocId = clean(docId);
+  if (!safeDocId) return null;
+  const dep = resolveScopedDepartment(department);
+  const mc = resolveScopedMachine(machine);
+  return db.doc(`${ctx.planningPath}/${dep}/machines/${mc}/orders/${safeDocId}`);
+};
+
+const getScopedTrackingDocRef = ({ ctx, department, machine, docId }) => {
+  const safeDocId = clean(docId);
+  if (!safeDocId) return null;
+  const dep = resolveScopedDepartment(department);
+  const mc = resolveScopedMachine(machine);
+  return db.doc(`${ctx.trackingPath}/${dep}/machines/${mc}/items/${safeDocId}`);
+};
+
+const getScopedOccupancyDocRef = ({ ctx, department, machine, assignmentId }) => {
+  const safeAssignmentId = clean(assignmentId);
+  if (!safeAssignmentId) return null;
+  const dep = resolveScopedDepartment(department);
+  const mc = resolveScopedMachine(machine);
+  return db.doc(`${ctx.occupancyPath}/${dep}/machines/${mc}/assignments/${safeAssignmentId}`);
+};
+
+const getScopedPrintQueueDocRef = ({ ctx, department, machine, docId }) => {
+  const safeDocId = clean(docId);
+  if (!safeDocId) return null;
+  const dep = resolveScopedDepartment(department);
+  const mc = resolveScopedMachine(machine);
+  return db.doc(`${ctx.printQueuePath}/${dep}/machines/${mc}/items/${safeDocId}`);
+};
+
+const getScopedEfficiencyDocRef = ({ ctx, department, machine, docId }) => {
+  const safeDocId = clean(docId);
+  if (!safeDocId) return null;
+  const dep = resolveScopedDepartment(department);
+  const mc = resolveScopedMachine(machine);
+  return db.doc(`${ctx.efficiencyPath}/${dep}/machines/${mc}/items/${safeDocId}`);
+};
+
+// ---------------------------------------------------------------------------
+// Production Control Events — controle lijn voor tracked_products
+// ---------------------------------------------------------------------------
+// Doel: elke substantiële mutatie op een lot (uitgifte, statusovergang,
+//       afkeuring, gereedmelding) legt een onweerlegbaar stempel neer in
+//       production/events.  Die stempel kan onafhankelijk van tracked_products
+//       worden nageteld en vergeleken.  Bij discrepanties wordt een
+//       CONTROL_DISCREPANCY event aangemaakt zodat een teamleider dit kan
+//       inzien en corrigeren.
+// ---------------------------------------------------------------------------
+
+const getScopedEventsCollectionRef = ({ ctx, department, machine }) => {
+  const dep = resolveScopedDepartment(department);
+  const mc = resolveScopedMachine(machine);
+  return db.collection(`${ctx.eventsPath}/${dep}/machines/${mc}/items`);
+};
+
+/**
+ * Schrijft een controle-event naar production/events.
+ * Gooit NOOIT een fout naar de caller — een logging-fout mag nooit de
+ * productieflow blokkeren.  Fouten worden alleen geconsole-warned.
+ *
+ * @param {object} ctx   - resolveDbContext() resultaat
+ * @param {string} eventType - bijv. 'LOT_ISSUED' | 'LOT_TRANSITIONED' | 'LOT_COMPLETED' | 'LOT_REJECTED'
+ * @param {object} payload - evenement-specifieke velden
+ */
+const writeProductionControlEvent = async (ctx, eventType, payload = {}) => {
+  try {
+    const {
+      department,
+      machine,
+      orderId,
+      lotNumber,
+      operator = 'system',
+      extra = {},
+    } = payload;
+
+    if (!orderId || !machine) return;
+
+    const colRef = getScopedEventsCollectionRef({ ctx, department, machine });
+    const digits = String(lotNumber || '').replace(/\D/g, '');
+    const lotMachineCode = digits.length === 15 ? digits.slice(6, 9) : null;
+
+    await colRef.add({
+      eventType: String(eventType || 'UNKNOWN').toUpperCase(),
+      orderId: clean(orderId),
+      lotNumber: clean(lotNumber) || null,
+      lotMachineCode,
+      machine: clean(machine),
+      department: resolveScopedDepartment(department),
+      operator: clean(operator) || 'system',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      ...extra,
+    });
+  } catch (err) {
+    console.warn('[writeProductionControlEvent] schrijffout (niet-fataal):', eventType, err?.message);
+  }
+};
+
+/**
+ * Vergelijkt de control events met tracked_products en de planning-teller
+ * voor één orderId+machine combinatie.
+ *
+ * Geeft terug:
+ *   { ok, orderId, machine, eventLots, trackedLots, planningCounter, discrepancies }
+ *
+ * discrepancies is een array van { type, description } objecten.
+ * Als ok === true zijn alle tellingen consistent.
+ */
+const getISOWeekInfoServer = (date) => {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return { week, year: d.getUTCFullYear() };
+};
+
+const getStepForStationServer = (stationName = '') => {
+  const name = String(stationName || '').toUpperCase();
+
+  if (name === 'BH31' || name.includes('REPARATIE') || name.includes('REPAIR')) {
+    return { status: 'Tijdelijke afkeur', currentStep: 'Reparatie' };
+  }
+  if (name.includes('OVEN') || name.includes('NAHARD')) {
+    return { status: 'Te Naharden', currentStep: 'Naharding' };
+  }
+  if (name === 'QC') {
+    return { status: 'In Productie', currentStep: 'QC' };
+  }
+  if (name.includes('SHIPPING') || name.includes('VERZEND')) {
+    return { status: 'In Productie', currentStep: 'Shipping' };
+  }
+  if (name.includes('BM01')) return { status: 'Te Keuren', currentStep: 'Eindinspectie' };
+  if (name.includes('NABEWERK') || name.includes('MAZAK')) {
+    return { status: 'Te Nabewerken', currentStep: 'Nabewerking' };
+  }
+  if (name === 'LOSSEN') return { status: 'In Productie', currentStep: 'Lossen' };
+  if (name.startsWith('BH')) return { status: 'In Productie', currentStep: 'Wikkelen' };
+
+  return { status: 'In Productie', currentStep: 'Onbekend' };
+};
+
+const normalizeStationKey = (stationName = '') => {
+  return String(stationName || '').trim().replace(/\s+/g, '').toUpperCase();
+};
+
+const shouldClearTemporaryInspection = ({ trackedData, nextStation }) => {
+  const inspectionStatus = clean(trackedData?.inspection?.status).toLowerCase();
+  if (inspectionStatus !== 'tijdelijke afkeur') return false;
+
+  const targetStation = normalizeStationKey(nextStation);
+
+  if (!targetStation) return false;
+  return targetStation !== 'BH31';
+};
+
+const getActorLabel = (auth, actorLabel) => {
+  return actorLabel || clean(auth?.token?.name) || clean(auth?.token?.email) || auth?.uid;
+};
+
+const getPriorityLabel = (priorityValue) => {
+  if (priorityValue === 'immediate') return '1E PRIO';
+  if (priorityValue === 'urgent') return 'SPOED';
+  if (priorityValue === 'high') return 'HIGH';
+  return 'NORMAAL';
+};
+
+const getSafeStartedField = (stationName = '') => {
+  const safeKey = String(stationName || '').replace(/[^a-zA-Z0-9]/g, '_');
+  return safeKey ? `started_${safeKey}` : '';
+};
+
+const getArchiveSearchYears = () => {
+  const currentYear = new Date().getFullYear();
+  const years = [];
+  for (let y = currentYear + 1; y >= Math.max(2020, currentYear - 8); y -= 1) {
+    years.push(y);
+  }
+  return years;
+};
+
+const findArchivedPlanningOrderDoc = async ({ ctx, orderDocId, orderId }) => {
+  const years = getArchiveSearchYears();
+  const lookupDocId = clean(orderDocId);
+  const lookupOrderId = clean(orderId);
+
+  for (const year of years) {
+    const archiveCollection = db.collection(ctx.archivePlanningPath(year));
+
+    if (lookupDocId) {
+      const byDocId = await archiveCollection.doc(lookupDocId).get();
+      if (byDocId.exists) {
+        return { doc: byDocId, year };
+      }
+    }
+
+    if (lookupOrderId) {
+      const byOrderId = await archiveCollection
+        .where('orderId', '==', lookupOrderId)
+        .limit(1)
+        .get();
+      if (!byOrderId.empty) {
+        return { doc: byOrderId.docs[0], year };
+      }
+    }
+  }
+
+  return null;
+};
+
+const findArchivedTrackedProductDocByIdOrLot = async ({ ctx, productId }) => {
+  const safeProductId = clean(productId);
+  if (!safeProductId) return null;
+
+  const years = getArchiveSearchYears();
+
+  for (const year of years) {
+    const archiveCollection = db.collection(ctx.archiveItemsPath(year));
+
+    const byDocId = await archiveCollection.doc(safeProductId).get();
+    if (byDocId.exists) {
+      return { doc: byDocId, year };
+    }
+
+    const byLot = await archiveCollection
+      .where('lotNumber', '==', safeProductId)
+      .limit(1)
+      .get();
+    if (!byLot.empty) {
+      return { doc: byLot.docs[0], year };
+    }
+  }
+
+  return null;
+};
+
+const resolvePlanningOrderLocator = async ({
+  ctx,
+  orderDocId,
+  orderDocPath,
+  orderSourcePath,
+  orderId,
+}) => {
+  const lookupCandidates = Array.from(new Set([
+    clean(orderDocPath),
+    clean(orderSourcePath),
+    clean(orderDocId),
+    clean(orderId),
+  ].filter(Boolean)));
+
+  let orderDoc = null;
+  for (const candidate of lookupCandidates) {
+    orderDoc = await getPlanningOrderDocById(candidate, ctx._rds);
+    if (orderDoc) break;
+  }
+
+  const orderData = orderDoc?.data() || {};
+  const resolvedOrderDocId = clean(orderDoc?.id || orderDocId);
+  const resolvedOrderId = clean(orderId || orderData.orderId || orderData.orderNumber);
+
+  return {
+    orderDoc,
+    orderData,
+    resolvedOrderDocId,
+    resolvedOrderId,
+  };
+};
+
+const isOrderNumberAsLot = ({ lotNumber, orderId }) => {
+  const safeLot = clean(lotNumber).toUpperCase();
+  const safeOrder = clean(orderId).toUpperCase();
+  return Boolean(safeLot && safeOrder && safeLot === safeOrder);
+};
+
+const assertLotsAreUniqueInActiveTracking = async ({ ctx, lotNumbers }) => {
+  const trackingPath = String(ctx?.trackingPath || '').replace(/\/+$/, '');
+  const uniqueLots = Array.from(new Set((lotNumbers || []).map((entry) => clean(entry).toUpperCase()).filter(Boolean)));
+
+  for (const lot of uniqueLots) {
+    const rootSnap = await db
+      .collection(ctx.trackingPath)
+      .where('lotNumber', '==', lot)
+      .limit(1)
+      .get();
+
+    if (!rootSnap.empty) {
+      throw new Error('LOT_NUMBER_EXISTS');
+    }
+
+    try {
+      const scopedSnap = await db
+        .collectionGroup('items')
+        .where('lotNumber', '==', lot)
+        .limit(20)
+        .get();
+
+      const scopedExists = scopedSnap.docs.some((docSnap) => String(docSnap.ref?.path || '').startsWith(`${trackingPath}/`));
+      if (scopedExists) {
+        throw new Error('LOT_NUMBER_EXISTS');
+      }
+    } catch (scopedErr) {
+      if (scopedErr?.message === 'LOT_NUMBER_EXISTS') throw scopedErr;
+      // Index nog niet klaar of niet beschikbaar: sla scoped check over (root check hierboven was al ok).
+      console.warn('Scoped lot-check overgeslagen wegens index-fout:', scopedErr?.message || String(scopedErr));
+    }
+  }
+};
+
+const isTrackedProductActiveForOrder = (trackedData = {}) => {
+  const status = clean(trackedData?.status).toLowerCase();
+  const step = clean(trackedData?.currentStep).toLowerCase();
+  const station = clean(trackedData?.currentStation).toLowerCase();
+
+  const isClosed =
+    ['completed', 'finished', 'gereed', 'rejected', 'afkeur', 'archived_rejected'].includes(status) ||
+    ['finished', 'rejected'].includes(step) ||
+    station === 'gereed' ||
+    Boolean(trackedData?.archivedAt);
+
+  return !isClosed;
+};
+
+const countActiveTrackedProductsForOrder = async ({ ctx, orderId }) => {
+  const safeOrderId = clean(orderId);
+  if (!safeOrderId || safeOrderId === 'NOG_TE_BEPALEN') return 0;
+
+  const rootSnap = await db.collection(ctx.trackingPath)
+    .where('orderId', '==', safeOrderId)
+    .limit(ACTIVE_TRACKING_ROOT_LIMIT)
+    .get();
+
+  let activeCount = rootSnap.docs.reduce((sum, docSnap) => {
+    const data = docSnap.data() || {};
+    return sum + (isTrackedProductActiveForOrder(data) ? 1 : 0);
+  }, 0);
+
+  // Neem scoped tracking mee (collectionGroup items onder /tracked_products/*/machines/*/items)
+  // zodat archiveren ook klopt wanneer lots niet in root maar scoped staan.
+  try {
+    const trackingPath = String(ctx?.trackingPath || '').replace(/\/+$/, '');
+    const scopedSnap = await db.collectionGroup('items')
+      .where('orderId', '==', safeOrderId)
+      .limit(ACTIVE_TRACKING_SCOPED_LIMIT)
+      .get();
+
+    const scopedActive = scopedSnap.docs.reduce((sum, docSnap) => {
+      const path = String(docSnap.ref?.path || '');
+      if (!path.startsWith(`${trackingPath}/`)) return sum;
+      const data = docSnap.data() || {};
+      return sum + (isTrackedProductActiveForOrder(data) ? 1 : 0);
+    }, 0);
+
+    activeCount += scopedActive;
+  } catch (scopedErr) {
+    // Niet blokkeren als collectionGroup index tijdelijk ontbreekt.
+    console.warn('Scoped active-order check overgeslagen wegens index-fout:', scopedErr?.message || String(scopedErr));
+  }
+
+  return activeCount;
+};
+
+const getMachineCodeForLotServer = (stationName = '') => {
+  if (!stationName) return '999';
+  const normalized = String(stationName || '').toUpperCase().trim();
+  const baseStation = normalized.startsWith('40') ? normalized.substring(2) : normalized;
+  const map = {
+    BH11: '411',
+    BH12: '412',
+    BH15: '415',
+    BH16: '416',
+    BH17: '417',
+    BH18: '418',
+    BH31: '431',
+    BH05: '405',
+    BH07: '407',
+    BH08: '408',
+    BH09: '409',
+    BA05: '405',
+    BA07: '417',
+  };
+
+  if (map[baseStation]) return map[baseStation];
+
+  const digits = baseStation.replace(/\D/g, '');
+  if (!digits) return '999';
+  if (digits.length === 3) return digits;
+  if (digits.length === 1) return `40${digits}`;
+  return `4${digits.slice(-2).padStart(2, '0')}`;
+};
+
+const sanitizeMeasurements = (rawMeasurements) => {
+  if (!rawMeasurements || typeof rawMeasurements !== 'object' || Array.isArray(rawMeasurements)) {
+    return null;
+  }
+
+  const entries = Object.entries(rawMeasurements)
+    .filter(([key]) => clean(key).length > 0)
+    .slice(0, 24)
+    .map(([key, value]) => {
+      if (typeof value === 'number' && Number.isFinite(value)) return [String(key), value];
+      if (typeof value === 'boolean') return [String(key), value];
+      if (value === null) return [String(key), null];
+      return [String(key), clampText(String(value || ''), 120)];
+    });
+
+  return entries.length > 0 ? Object.fromEntries(entries) : null;
+};
+
+const toTimestampStepKey = (stepLabel = '') => {
+  const normalized = clean(stepLabel)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return normalized || 'unknown';
+};
+
+const toServerTimestampIfRequested = (value) => {
+  if (value === SERVER_TIMESTAMP_TOKEN) {
+    return admin.firestore.FieldValue.serverTimestamp();
+  }
+  return value;
+};
+
+const assignIfDefined = (target, key, value) => {
+  if (value !== undefined) {
+    target[key] = value;
+  }
+};
+
+const sanitizeOccupancyData = (rawData = {}) => {
+  const data = rawData && typeof rawData === 'object' && !Array.isArray(rawData) ? rawData : {};
+  const updates = {};
+
+  assignIfDefined(updates, 'departmentId', data.departmentId === null ? null : clampText(data.departmentId, 80));
+  assignIfDefined(updates, 'machineId', data.machineId === null ? null : clampText(data.machineId, 120));
+  assignIfDefined(updates, 'operatorNumber', data.operatorNumber === null ? null : clampText(data.operatorNumber, 80));
+  assignIfDefined(updates, 'operatorName', data.operatorName === null ? null : clampText(data.operatorName, 140));
+  assignIfDefined(updates, 'date', data.date === null ? null : clampText(data.date, 20));
+  assignIfDefined(updates, 'shift', data.shift === null ? null : clampText(data.shift, 80));
+  assignIfDefined(updates, 'shiftKey', data.shiftKey === null ? null : clampText(data.shiftKey, 40));
+  assignIfDefined(updates, 'shiftType', data.shiftType === null ? null : clampText(data.shiftType, 40));
+  assignIfDefined(updates, 'primaryStation', data.primaryStation === null ? null : clampText(data.primaryStation, 120));
+  assignIfDefined(updates, 'source', data.source === null ? null : clampText(data.source, 80));
+  assignIfDefined(updates, 'movedToMachineId', data.movedToMachineId === null ? null : clampText(data.movedToMachineId, 120));
+  assignIfDefined(updates, 'loanFromDepartment', data.loanFromDepartment === null ? null : clampText(data.loanFromDepartment, 80));
+  assignIfDefined(updates, 'loanFromStation', data.loanFromStation === null ? null : clampText(data.loanFromStation, 120));
+  assignIfDefined(updates, 'originalShift', data.originalShift === null ? null : clampText(data.originalShift, 120));
+  assignIfDefined(updates, 'shiftStart', data.shiftStart === null ? null : clampText(data.shiftStart, 12));
+  assignIfDefined(updates, 'shiftEnd', data.shiftEnd === null ? null : clampText(data.shiftEnd, 12));
+  assignIfDefined(updates, 'autoCheckoutShift', data.autoCheckoutShift === null ? null : clampText(data.autoCheckoutShift, 40));
+  assignIfDefined(updates, 'timestamp', data.timestamp === null ? null : clampText(data.timestamp, 80));
+
+  ['week', 'weekYear', 'hoursWorked', 'hoursWorkedGross', 'breakDeductedHours'].forEach((key) => {
+    if (data[key] !== undefined && data[key] !== null && data[key] !== '') {
+      const parsed = Number(data[key]);
+      if (Number.isFinite(parsed)) updates[key] = parsed;
+    } else if (data[key] === null) {
+      updates[key] = null;
+    }
+  });
+
+  ['isPloeg', 'isLoan', 'isSecondary', 'isActive', 'autoCheckout', 'manualHoursOverride'].forEach((key) => {
+    if (data[key] !== undefined) updates[key] = Boolean(data[key]);
+  });
+
+  ['checkedInAt', 'checkedOutAt', 'updatedAt', 'createdAt', 'startTime', 'manualHoursOverrideAt'].forEach((key) => {
+    if (data[key] !== undefined) {
+      const mapped = toServerTimestampIfRequested(data[key]);
+      updates[key] = mapped;
+    }
+  });
+
+  if (updates.date && (updates.week === undefined || updates.weekYear === undefined)) {
+    const parsedDate = new Date(`${updates.date}T00:00:00.000Z`);
+    if (!Number.isNaN(parsedDate.getTime())) {
+      const { week, year } = getISOWeekInfoServer(parsedDate);
+      if (updates.week === undefined) updates.week = week;
+      if (updates.weekYear === undefined) updates.weekYear = year;
+    }
+  }
+
+  return updates;
+};
+
+const sanitizePersonnelData = (rawData = {}) => {
+  const data = rawData && typeof rawData === 'object' && !Array.isArray(rawData) ? rawData : {};
+  const updates = {};
+
+  assignIfDefined(updates, 'name', data.name === null ? null : clampText(data.name, 140));
+  assignIfDefined(updates, 'employeeNumber', data.employeeNumber === null ? null : clampText(data.employeeNumber, 80));
+  assignIfDefined(updates, 'departmentId', data.departmentId === null ? null : clampText(data.departmentId, 80));
+  assignIfDefined(updates, 'linkedUserId', data.linkedUserId === null ? null : clampText(data.linkedUserId, 120));
+  assignIfDefined(updates, 'shiftId', data.shiftId === null ? null : clampText(data.shiftId, 80));
+  assignIfDefined(updates, 'role', data.role === null ? null : clampText(data.role, 80));
+  assignIfDefined(updates, 'currentMachineId', data.currentMachineId === null ? null : clampText(data.currentMachineId, 120));
+  assignIfDefined(updates, 'lastBadgeScanBy', data.lastBadgeScanBy === null ? null : clampText(data.lastBadgeScanBy, 120));
+  assignIfDefined(updates, 'signature', data.signature === null ? null : clampText(data.signature, 600));
+
+  if (data.isActive !== undefined) updates.isActive = Boolean(data.isActive);
+  if (data.temporaryShiftOverride !== undefined && data.temporaryShiftOverride && typeof data.temporaryShiftOverride === 'object' && !Array.isArray(data.temporaryShiftOverride)) {
+    updates.temporaryShiftOverride = data.temporaryShiftOverride;
+  }
+  if (data.loan !== undefined && data.loan && typeof data.loan === 'object' && !Array.isArray(data.loan)) {
+    updates.loan = data.loan;
+  }
+
+  ['updatedAt', 'createdAt', 'lastBadgeScanAt'].forEach((key) => {
+    if (data[key] !== undefined) {
+      updates[key] = toServerTimestampIfRequested(data[key]);
+    }
+  });
+
+  return updates;
+};
+
+const sanitizeNestedValue = (value, depth = 0) => {
+  if (depth > 4 || value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === 'string') return clampText(value, 2000);
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value === 'boolean') return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => sanitizeNestedValue(entry, depth + 1))
+      .filter((entry) => entry !== undefined)
+      .slice(0, 100);
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value)
+      .filter(([key]) => clean(key).length > 0)
+      .slice(0, 50)
+      .map(([key, nestedValue]) => [String(key), sanitizeNestedValue(nestedValue, depth + 1)])
+      .filter(([, nestedValue]) => nestedValue !== undefined);
+    return entries.length ? Object.fromEntries(entries) : {};
+  }
+  return undefined;
+};
+
+const uniqueLowercaseEmails = (values = []) => Array.from(new Set(
+  values
+    .map((value) => clean(value).toLowerCase())
+    .filter((value) => value.includes('@'))
+));
+
+const resolveTargetRoleEmails = async (targetRoles = []) => {
+  const roles = Array.from(new Set(
+    (Array.isArray(targetRoles) ? targetRoles : [])
+      .map((role) => clean(role).toLowerCase())
+      .filter(Boolean)
+  )).slice(0, 10);
+
+  if (!roles.length) return [];
+
+  const snapshot = await db
+    .collection(USER_ACCOUNTS_COLLECTION)
+    .where('role', 'in', roles)
+    .get();
+
+  return uniqueLowercaseEmails(
+    snapshot.docs.map((userDoc) => userDoc.data()?.email)
+  );
+};
+
+const writeActivityLog = ({ auth, action, details, source, actorLabel, actorRole, extra = {}, ...entityIds }) => {
+  const a = (action || '').toUpperCase();
+  const severity = (a.includes('CANCEL') || a.includes('DELETE') || a.includes('REJECT')) ? 'WARNING' : 'INFO';
+  let category = 'PRODUCTION';
+  if (a.startsWith('QUALITY')) category = 'QUALITY';
+  else if (a.startsWith('OCCUPANCY')) category = 'PLANNING';
+  else if (a.startsWith('PERSONNEL')) category = 'ADMIN';
+  else if (a.startsWith('PRINT')) category = 'SYSTEM';
+  const { source: xSrc, actorLabel: xLabel, actorRole: xRole, ...xIds } = extra;
+  return auditService.logAction(
+    auth?.uid || 'system',
+    action,
+    {
+      details: clampText(details, 1000),
+      source: source || xSrc || null,
+      actorLabel: actorLabel || xLabel || null,
+      actorRole: actorRole || xRole || null,
+      ...entityIds,
+      ...xIds,
+    },
+    { category, severity, userEmail: auth?.token?.email || null },
+  );
+};
+
+const classifyByWcServer = (wc = '') => {
+  const upper = String(wc || '').toUpperCase();
+  if (upper.includes('BM01') || upper.includes('BA01')) return 'qc';
+  if (upper.includes('NABEWERK') || upper.includes('NABEW')) return 'post';
+  return null;
+};
+
+const loadReferenceOperationsConfigServer = async () => {
+  try {
+    const snap = await db.collection(`${BASE}/settings/reference_operations`).get();
+    const config = {};
+    snap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const code = clean(data?.code || docSnap.id);
+      const type = clean(data?.type).toLowerCase();
+      if (!code || !type) return;
+      if (type === 'production' || type === 'post' || type === 'qc') {
+        config[code] = type;
+      }
+    });
+    return config;
+  } catch (error) {
+    console.warn('Reference operations config kon niet geladen worden, fallback actief:', error?.message || String(error));
+    return {};
+  }
+};
+
+const classifyReferenceOperationServer = (refOp, wc, refOpsConfig = null) => {
+  const normalizedRefOp = clean(refOp);
+
+  if (refOpsConfig && normalizedRefOp && refOpsConfig[normalizedRefOp]) {
+    return refOpsConfig[normalizedRefOp];
+  }
+
+  const wcBucket = classifyByWcServer(wc);
+  if (wcBucket) return wcBucket;
+
+  const knownTypes = { '1020': 'qc', '1715': 'production', '1740': 'post', '1115': 'post' };
+  if (knownTypes[normalizedRefOp]) return knownTypes[normalizedRefOp];
+
+  const digits = Number.parseInt(String(refOp || '').replace(/\D/g, ''), 10);
+  if (Number.isNaN(digits)) return 'production';
+  const opCode = digits % 100;
+  if (opCode === 60) return 'qc';
+  if (opCode === 30) return 'post';
+  return 'production';
+};
+
+const getSplitPlannedHoursServer = (operations, fallbackTotalHours, refOpsConfig = null) => {
+  const split = { productionHours: 0, postHours: 0, qcHours: 0 };
+  const entries = Object.entries(operations || {});
+
+  if (entries.length === 0) {
+    split.productionHours = Number(fallbackTotalHours) || 0;
+    return split;
+  }
+
+  entries.forEach(([refOp, values]) => {
+    const planned = Number(values?.planned || 0);
+    const bucket = classifyReferenceOperationServer(refOp, values?.wc, refOpsConfig);
+    if (bucket === 'qc') split.qcHours += planned;
+    else if (bucket === 'post') split.postHours += planned;
+    else split.productionHours += planned;
+  });
+
+  if (split.productionHours === 0 && split.postHours === 0 && split.qcHours === 0) {
+    split.productionHours = Number(fallbackTotalHours) || 0;
+  }
+
+  return split;
+};
+
+const buildReferenceOperationSummaryServer = (operations = {}, refOpsConfig = null) => {
+  const byCode = {};
+
+  Object.entries(operations || {}).forEach(([refOp, values]) => {
+    const planned = Number(values?.planned || 0);
+    const actual = Number(values?.actual || 0);
+    const wc = normalizeMachineForPlanningServer(values?.wc || '');
+    const bucket = classifyReferenceOperationServer(refOp, wc, refOpsConfig);
+
+    byCode[refOp] = {
+      plannedHours: planned,
+      actualHours: actual,
+      workCenter: wc,
+      bucket,
+    };
+  });
+
+  return byCode;
+};
+
+const isClosedPlanningStatusServer = (status) => {
+  const normalized = clean(status).toLowerCase();
+  return ['completed', 'cancelled', 'rejected', 'shipped', 'finished', 'deleted'].includes(normalized);
+};
+
+const toPlanningSortMillis = (value) => {
+  if (value && typeof value.toDate === 'function') {
+    const date = value.toDate();
+    const time = date instanceof Date ? date.getTime() : Number.NaN;
+    return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER;
+  }
+
+  const date = new Date(value);
+  const time = date.getTime();
+  return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER;
+};
+
+const toOrderDeliveryMillisServer = (orderData = {}) => {
+  const candidates = [
+    orderData?.deliveryDate,
+    orderData?.plannedDeliveryDate,
+    orderData?.plannedDate,
+    orderData?.orderCreationDate,
+  ];
+
+  for (const value of candidates) {
+    if (!value) continue;
+
+    if (typeof value.toDate === 'function') {
+      const date = value.toDate();
+      const millis = date instanceof Date ? date.getTime() : Number.NaN;
+      if (Number.isFinite(millis)) return millis;
+      continue;
+    }
+
+    const date = new Date(value);
+    const millis = date.getTime();
+    if (Number.isFinite(millis)) return millis;
+  }
+
+  return null;
+};
+
+const getPlanningOrderRemainingForStationServer = (orderData, stationId) => {
+  const stationField = getStartedCounterFieldServer(stationId);
+  const plannedAmount = Number(orderData?.plan || orderData?.quantity || 0);
+  const startedAmount = Number(orderData?.[stationField] || 0);
+
+  if (!stationField || !Number.isFinite(plannedAmount) || plannedAmount <= 0) {
+    return 0;
+  }
+
+  return Math.max(0, plannedAmount - startedAmount);
+};
+
+const resolveAutoOverproductionRouteStationServer = ({ targetOrderData, sourceItem, originMachine }) => {
+  const itemText = `${clean(targetOrderData?.item)} ${clean(sourceItem)}`.toUpperCase().replace(/\s+/g, ' ').trim();
+  const machineNorm = normalizeMachineForPlanningServer(targetOrderData?.machine || originMachine);
+
+  if (itemText.startsWith('FL')) {
+    return 'Mazak';
+  }
+
+  if (machineNorm.includes('PIPE') || itemText.includes('PIPE') || itemText.includes('BUIS')) {
+    return '';
+  }
+
+  return 'Nabewerking';
+};
+
+const findAutoAssignableOverproductionTargetOrder = async ({
+  ctx,
+  currentOrderDoc,
+  currentOrderData,
+  originStation,
+}) => {
+  const currentOrderId = clean(currentOrderData?.orderId);
+  const currentItemCode = clean(currentOrderData?.itemCode);
+  const currentMachineNorm = normalizeMachineForPlanningServer(currentOrderData?.machine || originStation);
+  if (!currentItemCode) return null;
+
+  const candidateDocs = new Map();
+  const [rootSnap, scopedSnap] = await Promise.all([
+    db.collection(ctx.planningPath).where('itemCode', '==', currentItemCode).limit(80).get(),
+    db.collectionGroup('orders').where('itemCode', '==', currentItemCode).limit(80).get(),
+  ]);
+
+  rootSnap.docs.forEach((docSnap) => {
+    candidateDocs.set(docSnap.ref.path, docSnap);
+  });
+  scopedSnap.docs.forEach((docSnap) => {
+    if (String(docSnap.ref.path || '').startsWith(`${ctx.planningPath}/`)) {
+      candidateDocs.set(docSnap.ref.path, docSnap);
+    }
+  });
+
+  const currentSortMillis = toPlanningSortMillis(
+    currentOrderData?.plannedDate || currentOrderData?.deliveryDate || currentOrderData?.orderCreationDate
+  );
+  const currentDeliveryMillis = toOrderDeliveryMillisServer(currentOrderData);
+  const currentSortOrderId = currentOrderId || String(currentOrderDoc?.id || '');
+
+  const candidates = Array.from(candidateDocs.values())
+    .filter((docSnap) => String(docSnap.ref.path || '') !== String(currentOrderDoc?.ref?.path || ''))
+    .map((docSnap) => ({ docSnap, data: docSnap.data() || {} }))
+    .filter(({ data }) => {
+      const candidateOrderId = clean(data.orderId);
+      const candidateMachineNorm = normalizeMachineForPlanningServer(data.machine || originStation);
+      const sameItemCode = clean(data.itemCode) === currentItemCode;
+
+      if (!candidateOrderId || candidateOrderId === currentOrderId) return false;
+      if (isClosedPlanningStatusServer(data.status)) return false;
+      if (candidateMachineNorm !== currentMachineNorm) return false;
+      if (!sameItemCode) return false;
+      if (getPlanningOrderRemainingForStationServer(data, originStation) <= 0) return false;
+
+      return true;
+    })
+    .sort((left, right) => {
+      const leftDelivery = toOrderDeliveryMillisServer(left.data);
+      const rightDelivery = toOrderDeliveryMillisServer(right.data);
+      const leftMillis = leftDelivery ?? Number.MAX_SAFE_INTEGER;
+      const rightMillis = rightDelivery ?? Number.MAX_SAFE_INTEGER;
+      if (leftMillis !== rightMillis) return leftMillis - rightMillis;
+      return String(left.data?.orderId || left.docSnap.id).localeCompare(String(right.data?.orderId || right.docSnap.id));
+    });
+
+  const nextCandidate = candidates.find(({ data, docSnap }) => {
+    const candidateDelivery = toOrderDeliveryMillisServer(data);
+    const candidateMillis = candidateDelivery ?? Number.MAX_SAFE_INTEGER;
+    const candidateOrderId = clean(data?.orderId) || String(docSnap.id || '');
+
+    if (currentDeliveryMillis !== null) {
+      if (candidateDelivery === null) return false;
+      if (candidateDelivery !== currentDeliveryMillis) {
+        return candidateDelivery > currentDeliveryMillis;
+      }
+      return candidateOrderId.localeCompare(currentSortOrderId) > 0;
+    }
+
+    if (candidateMillis !== currentSortMillis) {
+      return candidateMillis > currentSortMillis;
+    }
+    return candidateOrderId.localeCompare(currentSortOrderId) > 0;
+  });
+
+  if (!nextCandidate) {
+    return null;
+  }
+
+  const routeStation = resolveAutoOverproductionRouteStationServer({
+    targetOrderData: nextCandidate.data,
+    sourceItem: clean(currentOrderData?.item),
+    originMachine: originStation,
+  });
+
+  if (!routeStation) {
+    return null;
+  }
+
+  return {
+    targetOrderDoc: nextCandidate.docSnap,
+    targetOrderData: nextCandidate.data,
+    routeStation,
+  };
+};
+
+const getNextFlowStateServer = (eventType = '') => {
+  const type = String(eventType || '').toUpperCase();
+  if (type === 'START_WINDING') {
+    return { currentStep: 'Wikkelen', status: 'In Productie' };
+  }
+  if (type === 'FINISH_WINDING') {
+    return { currentStep: 'Wacht op Lossen', status: 'Te Lossen' };
+  }
+  return { currentStep: 'Wikkelen', status: 'In Productie' };
+};
+
+const getLossenRouteServer = (itemText, originStation = '') => {
+  const originNorm = String(originStation || '').toUpperCase().replace(/\s/g, '');
+  if (['BH12', 'BH15', 'BH17'].includes(originNorm)) {
+    return { mode: 'STATION', station: 'LOSSEN 12/18' };
+  }
+
+  const text = String(itemText || '').toUpperCase();
+  const isTB = text.includes('TB');
+  const isCB = text.includes('CB');
+  const isELB = text.includes('ELB');
+  const isAB = /\bAB\b/.test(text) || text.includes('ABAB');
+  const isSB = /\bSB\b/.test(text);
+  const isElbow = isELB || isCB;
+  if (isElbow && (isAB || isSB)) return { mode: 'STATION', station: 'LOSSEN' };
+
+  const numberMatches = Array.from(text.matchAll(/\d{2,4}/g)).map((match) => Number(match[0]));
+  const candidates = numberMatches.filter((value) => Number.isFinite(value) && value >= 25 && value <= 2000);
+  const diameter = candidates.length > 0 ? candidates[0] : 0;
+
+  if (isTB && diameter >= 300) return { mode: 'STATION', station: 'LOSSEN' };
+  if ((isCB || isELB) && diameter >= 350) return { mode: 'STATION', station: 'LOSSEN' };
+
+  return { mode: 'TAB', station: originNorm || '' };
+};
+
+const findPrintQueueJobDocById = async ({ jobId }) => {
+  const safeJobId = clean(jobId);
+  if (!safeJobId) return null;
+
+  const rootRef = db.collection(PRINT_QUEUE_COLLECTION).doc(safeJobId);
+  const rootSnap = await rootRef.get();
+  if (rootSnap.exists) return rootSnap;
+
+  // Fallback voor oudere scoped-only jobs.
+  const scopedById = await db
+    .collectionGroup('items')
+    .where('id', '==', safeJobId)
+    .limit(20)
+    .get();
+
+  const scopedDoc = scopedById.docs.find((snap) => String(snap.ref?.path || '').includes('/print_queue/'));
+  if (scopedDoc) return scopedDoc;
+
+  return null;
+};
+
+const getPendingPrintQueueDocs = async () => {
+  const rootSnap = await db
+    .collection(PRINT_QUEUE_COLLECTION)
+    .where('status', '==', 'pending')
+    .limit(300)
+    .get();
+
+  let scopedDocs = [];
+  try {
+    const scopedSnap = await db
+      .collectionGroup('items')
+      .where('_scopeType', '==', 'print_queue')
+      .limit(SCOPED_PRINT_QUEUE_PENDING_LIMIT)
+      .get();
+
+    scopedDocs = scopedSnap.docs;
+  } catch (error) {
+    // Print queue cleanup is best-effort; canceling production must not fail on index/query limits.
+    console.warn('getPendingPrintQueueDocs scoped query skipped:', {
+      code: error?.code || null,
+      message: error?.message || String(error),
+    });
+  }
+
+  const byPath = new Map();
+
+  rootSnap.docs.forEach((docSnap) => {
+    byPath.set(docSnap.ref.path, docSnap);
+  });
+
+  scopedDocs
+    .filter((docSnap) => String((docSnap.data() || {}).status || '').toLowerCase() === 'pending')
+    .forEach((docSnap) => {
+      byPath.set(docSnap.ref.path, docSnap);
+    });
+
+  return Array.from(byPath.values());
+};
+
+const moveTrackedProductManualService = async ({
+  productOrLotId,
+  newStation,
+  source,
+  actorLabel,
+  isRepairMove,
+  repairInstruction,
+  auth,
+  dbCtx = null,
+}) => {
+  const ctx = dbCtx || resolveDbContext(null);
+  const trackedDoc = await getTrackedProductDocByIdOrLot(productOrLotId, ctx._rds);
+  if (!trackedDoc) {
+    throw new Error('NOT_FOUND_TRACKED');
+  }
+
+  const trackedData = trackedDoc.data() || {};
+  const nextState = getStepForStationServer(newStation);
+  const userLabel = actorLabel || clean(auth?.token?.name) || clean(auth?.token?.email) || auth?.uid;
+  const note = isRepairMove
+    ? `Reparatie verplaatst naar ${newStation} door ${userLabel}${repairInstruction ? ` | Instructie: ${repairInstruction}` : ''}`
+    : `Handmatig verplaatst naar ${newStation} door ${userLabel}`;
+
+  const updatePayload = {
+    currentStation: newStation,
+    currentStep: nextState.currentStep,
+    status: nextState.status || 'In Productie',
+    isManualMove: true,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    note,
+    history: admin.firestore.FieldValue.arrayUnion({
+      action: isRepairMove ? 'Reparatie Verplaatst' : 'Handmatige Verplaatsing',
+      timestamp: new Date().toISOString(),
+      user: userLabel,
+      station: clean(trackedData.currentStation) || clean(trackedData.machine) || 'Onbekend',
+      details: isRepairMove
+        ? `Reparatie naar station: ${newStation}${repairInstruction ? ` | Instructie: ${repairInstruction}` : ''}`
+        : `Verplaatst naar station: ${newStation}`,
+      source: source || null,
+    }),
+  };
+
+  if (shouldClearTemporaryInspection({ trackedData, nextStation: newStation })) {
+    updatePayload.inspection = admin.firestore.FieldValue.delete();
+  }
+
+  if (isRepairMove) {
+    updatePayload.repairActive = true;
+    updatePayload.repairCategory = 'reparatie';
+    updatePayload.repairInstruction = repairInstruction || '';
+    updatePayload['timestamps.repair_start'] = admin.firestore.FieldValue.serverTimestamp();
+    updatePayload['timestamps.repair_end'] = null;
+  }
+
+  await trackedDoc.ref.set(updatePayload, { merge: true });
+
+  // Schrijf LOT_TRANSITIONED control event.
+  await writeProductionControlEvent(ctx, 'LOT_TRANSITIONED', {
+    department: trackedData.department || null,
+    machine: clean(trackedData.originMachine) || clean(trackedData.currentStation) || newStation,
+    orderId: clean(trackedData.orderId),
+    lotNumber: clean(trackedData.lotNumber) || trackedDoc.id,
+    operator: userLabel,
+    extra: { fromStation: clean(trackedData.currentStation) || 'Onbekend', toStation: newStation, isRepairMove: Boolean(isRepairMove) },
+  });
+
+  const orderId = clean(trackedData.orderId);
+  if (orderId && orderId !== 'NOG_TE_BEPALEN') {
+    const planningOrderDoc = await getPlanningOrderDocByOrderId(orderId, ctx._rds);
+    if (planningOrderDoc) {
+      const now = new Date();
+      const { week, year } = getISOWeekInfoServer(now);
+      await planningOrderDoc.ref.set({
+        machine: newStation,
+        normMachine: normalizeMachineForPlanningServer(newStation),
+        isMoved: true,
+        weekNumber: week,
+        weekYear: year,
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+  }
+
+  return {
+    ok: true,
+    productId: trackedDoc.id,
+    lotNumber: clean(trackedData.lotNumber) || trackedDoc.id,
+    newStation,
+    nextStep: nextState.currentStep,
+    nextStatus: nextState.status,
+    isRepairMove,
+  };
+};
+
+const movePlanningOrderService = async ({
+  orderDocId,
+  targetType,
+  targetId,
+  currentDepartment,
+  actorLabel,
+  source,
+  auth,
+  dbCtx = null,
+}) => {
+  const ctx = dbCtx || resolveDbContext(null);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
+  if (!orderDoc) {
+    throw new Error('NOT_FOUND_ORDER');
+  }
+
+  const orderData = orderDoc.data() || {};
+  const safeTargetType = clean(targetType).toLowerCase();
+  const safeTargetId = clean(targetId);
+  const safeCurrentDepartment = clean(currentDepartment).toLowerCase();
+
+  if (!['department', 'station'].includes(safeTargetType) || !safeTargetId) {
+    throw new Error('INVALID_MOVE_TARGET');
+  }
+
+  const updates = {
+    lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  let messagePayload = null;
+
+  if (safeTargetType === 'department') {
+    const targetUpper = safeTargetId.toUpperCase();
+    const targetDepartment = safeTargetId.toLowerCase();
+    updates.machine = `${targetUpper}_INBOX`;
+    updates.originalMachine = clean(orderData.machine) || null;
+    updates.originalDepartment = clean(orderData.department) || safeCurrentDepartment || 'fittings';
+    updates.returnStation = clean(orderData.machine) || 'BH11';
+    updates.delegatedTo = targetUpper;
+    updates.department = targetDepartment;
+    updates.delegationDate = admin.firestore.FieldValue.serverTimestamp();
+    updates.status = 'delegated';
+
+    messagePayload = {
+      to: `${targetUpper}_TEAM`,
+      from: 'SYSTEM',
+      senderId: 'system-auto',
+      subject: `Nieuwe Order: ${clean(orderData.orderId) || orderDoc.id}`,
+      content: `Order ${clean(orderData.orderId) || orderDoc.id} is vanuit ${clean(orderData.department) || safeCurrentDepartment || 'fittings'} aangeboden voor ${safeTargetId}.`,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      read: false,
+      archived: false,
+      priority: 'normal',
+      type: 'system',
+      targetGroup: `${targetUpper}_TEAM`,
+    };
+  } else {
+    updates.machine = safeTargetId;
+    updates.status = 'planned';
+    updates.delegatedTo = null;
+    updates.department = safeCurrentDepartment || clean(orderData.department) || 'fittings';
+  }
+
+  const batch = db.batch();
+  batch.set(orderDoc.ref, updates, { merge: true });
+  if (messagePayload) {
+    const messageRef = db.collection(`${BASE}/messages`).doc();
+    batch.set(messageRef, messagePayload);
+  }
+  await batch.commit();
+
+  return {
+    ok: true,
+    orderDocId: orderDoc.id,
+    orderId: clean(orderData.orderId) || orderDoc.id,
+    targetType: safeTargetType,
+    targetId: safeTargetId,
+    machine: updates.machine,
+    status: updates.status || clean(orderData.status),
+    actorLabel: getActorLabel(auth, actorLabel),
+    source: source || null,
+  };
+};
+
+const advanceTrackedProductService = async ({
+  productId,
+  nextStation,
+  nextStep,
+  nextStatus,
+  lastStation,
+  note,
+  actorLabel,
+  previousStep,
+  historyAction,
+  historyDetails,
+  clearManualMove,
+  measurements,
+  source,
+  auth,
+  dbCtx = null,
+}) => {
+  const ctx = dbCtx || resolveDbContext(null);
+  const trackedDoc = await getTrackedProductDocByIdOrLot(productId, ctx._rds);
+  if (!trackedDoc) {
+    throw new Error('NOT_FOUND_PRODUCT');
+  }
+
+  const trackedData = trackedDoc.data() || {};
+  const userLabel = getActorLabel(auth, actorLabel);
+  const safeNextStep = clean(nextStep);
+  const safeNextStatus = clean(nextStatus);
+  const safeNextStation = clean(nextStation);
+  const safeLastStation = clean(lastStation) || clean(trackedData.currentStation) || clean(trackedData.machine) || 'Onbekend';
+  const safePreviousStep = clean(previousStep);
+  const safeNote = clean(note);
+  const safeHistoryAction = clean(historyAction) || 'Stap Voltooid';
+  const safeHistoryDetails = clampText(historyDetails, 600) || `Doorgestuurd naar ${safeNextStep}`;
+
+  if (!safeNextStep || !safeNextStatus) {
+    throw new Error('INVALID_ADVANCE_TARGET');
+  }
+
+  const updatePayload = {
+    currentStep: safeNextStep,
+    status: safeNextStatus,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    note: safeNote,
+    history: admin.firestore.FieldValue.arrayUnion({
+      action: safeHistoryAction,
+      timestamp: new Date().toISOString(),
+      user: userLabel,
+      details: safeHistoryDetails,
+      station: safeLastStation,
+      source: source || null,
+    }),
+  };
+
+  if (safeNextStation) {
+    updatePayload.currentStation = safeNextStation;
+  }
+
+  if (shouldClearTemporaryInspection({ trackedData, nextStation: safeNextStation })) {
+    updatePayload.inspection = admin.firestore.FieldValue.delete();
+  }
+
+  if (safeLastStation) {
+    updatePayload.lastStation = safeLastStation;
+  }
+
+  if (safePreviousStep) {
+    updatePayload[`timestamps.${toTimestampStepKey(safePreviousStep)}_end`] = admin.firestore.FieldValue.serverTimestamp();
+  }
+
+  if (safeNextStep) {
+    updatePayload[`timestamps.${toTimestampStepKey(safeNextStep)}_start`] = admin.firestore.FieldValue.serverTimestamp();
+  }
+
+  if (clearManualMove) {
+    updatePayload.isManualMove = false;
+  }
+
+  const safeMeasurements = sanitizeMeasurements(measurements);
+  if (safeMeasurements) {
+    updatePayload.measurements = safeMeasurements;
+  }
+
+  await trackedDoc.ref.set(updatePayload, { merge: true });
+
+  return {
+    ok: true,
+    productId: trackedDoc.id,
+    lotNumber: clean(trackedData.lotNumber) || trackedDoc.id,
+    currentStep: safeNextStep,
+    status: safeNextStatus,
+    currentStation: safeNextStation || clean(trackedData.currentStation) || null,
+    before: trackedData,
+    after: { ...trackedData, ...updatePayload },
+  };
+};
+
+const routeTrackedProductsToLossenService = async ({
+  productIds,
+  originStation,
+  centralStation,
+  centralOperators,
+  actorLabel,
+  source,
+  auth,
+  dbCtx = null,
+}) => {
+  const ctx = dbCtx || resolveDbContext(null);
+  const safeOriginStation = clean(originStation) || 'LOSSEN';
+  const safeCentralStation = clean(centralStation) || 'LOSSEN';
+  const safeOperators = Array.isArray(centralOperators)
+    ? Array.from(new Set(centralOperators.map((entry) => clean(entry)).filter(Boolean))).slice(0, 50)
+    : [];
+  const uniqueProductIds = Array.from(new Set((Array.isArray(productIds) ? productIds : []).map((entry) => clean(entry)).filter(Boolean)));
+
+  if (uniqueProductIds.length === 0) {
+    throw new Error('NO_PRODUCTS_TO_ROUTE');
+  }
+
+  const userLabel = getActorLabel(auth, actorLabel);
+  const batch = db.batch();
+  let routedCount = 0;
+  let localRouteCount = 0;
+
+  for (const productId of uniqueProductIds) {
+    const trackedDoc = await getTrackedProductDocByIdOrLot(productId, ctx._rds);
+    if (!trackedDoc) continue;
+
+    const trackedData = trackedDoc.data() || {};
+    const itemText = `${trackedData.item || ''} ${trackedData.description || ''} ${trackedData.itemCode || ''}`;
+    const lossenRoute = getLossenRouteServer(itemText, safeOriginStation);
+    const nextStation = lossenRoute.mode === 'STATION'
+      ? clean(lossenRoute.station) || safeCentralStation
+      : safeOriginStation;
+
+    if (lossenRoute.mode !== 'STATION') {
+      localRouteCount += 1;
+    }
+
+    batch.set(trackedDoc.ref, {
+      currentStation: nextStation,
+      currentStep: 'Wacht op Lossen',
+      status: 'Te Lossen',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      'timestamps.lossen_start': admin.firestore.FieldValue.serverTimestamp(),
+      ...(safeOperators.length > 0 ? { 'personnelTracking.LOSSEN': safeOperators } : {}),
+      history: admin.firestore.FieldValue.arrayUnion({
+        action: 'Stap Voltooid',
+        timestamp: new Date().toISOString(),
+        user: userLabel,
+        details: `Doorgestuurd naar lossen via ${nextStation}`,
+        station: safeOriginStation,
+        source: source || null,
+      }),
+    }, { merge: true });
+
+    routedCount += 1;
+  }
+
+  if (routedCount === 0) {
+    throw new Error('NO_PRODUCTS_FOUND');
+  }
+
+  await batch.commit();
+
+  return {
+    ok: true,
+    routedCount,
+    localRouteCount,
+    switchedToLossenTab: localRouteCount > 0,
+  };
+};
+
+const reassignTrackedProductOrderService = async ({
+  productId,
+  newOrderId,
+  targetOrderDocId,
+  targetOrderPath,
+  reason,
+  actorLabel,
+  source,
+  auth,
+  dbCtx = null,
+}) => {
+  const ctx = dbCtx || resolveDbContext(null);
+  const safeProductId = clean(productId);
+  const rawOrderInput = clean(newOrderId).toUpperCase();
+  const safeNewOrderId = (rawOrderInput.match(/[A-Z]\d{6,}/)?.[0] || rawOrderInput).trim();
+  const safeTargetOrderDocId = clean(targetOrderDocId);
+  const safeTargetOrderPath = clean(targetOrderPath);
+  const safeReason = clampText(reason, 300);
+
+  if (!safeProductId || !safeNewOrderId || !safeReason) {
+    throw new Error('INVALID_ORDER_REASSIGN_PAYLOAD');
+  }
+
+  let targetOrderDoc = null;
+  if (safeTargetOrderPath) {
+    targetOrderDoc = await getPlanningOrderDocById(safeTargetOrderPath, ctx._rds);
+  }
+  if (!targetOrderDoc && safeTargetOrderDocId) {
+    targetOrderDoc = await getPlanningOrderDocById(safeTargetOrderDocId, ctx._rds);
+  }
+  if (!targetOrderDoc && newOrderId) {
+    const rawClean = clean(newOrderId);
+    targetOrderDoc = await getPlanningOrderDocById(rawClean, ctx._rds);
+    if (!targetOrderDoc) {
+      targetOrderDoc = await getPlanningOrderDocByOrderId(rawClean, ctx._rds);
+    }
+  }
+  if (!targetOrderDoc) {
+    targetOrderDoc = await getPlanningOrderDocByOrderId(safeNewOrderId, ctx._rds);
+  }
+  if (!targetOrderDoc) {
+    console.warn('[reassignTrackedProductOrderService] target order not found', {
+      productId: safeProductId,
+      safeNewOrderId,
+      safeTargetOrderDocId,
+      safeTargetOrderPath,
+    });
+    throw new Error('NOT_FOUND_TARGET_ORDER');
+  }
+
+  let productDoc = await getTrackedProductDocByIdOrLot(safeProductId, ctx._rds);
+  let archivedLookup = null;
+  let isArchivedProduct = false;
+
+  if (!productDoc) {
+    archivedLookup = await findArchivedTrackedProductDocByIdOrLot({ ctx, productId: safeProductId });
+    productDoc = archivedLookup?.doc || null;
+    isArchivedProduct = Boolean(productDoc?.exists);
+  }
+
+  if (!productDoc?.exists) {
+    throw new Error('NOT_FOUND_PRODUCT');
+  }
+
+  const productData = productDoc.data() || {};
+  const currentOrderId = clean(productData.orderId).toUpperCase();
+  if (!currentOrderId) {
+    throw new Error('MISSING_SOURCE_ORDER');
+  }
+  if (currentOrderId === safeNewOrderId) {
+    throw new Error('ORDER_ID_UNCHANGED');
+  }
+
+  const sourceOrderDoc = await getPlanningOrderDocByOrderId(currentOrderId, ctx._rds);
+  const targetOrderData = targetOrderDoc.data() || {};
+  const sourceOrderData = sourceOrderDoc?.data() || {};
+  const userLabel = getActorLabel(auth, actorLabel);
+  const nowIso = new Date().toISOString();
+  const lotNumber = clean(productData.lotNumber) || productDoc.id;
+  const nextItemCode =
+    clean(targetOrderData.itemCode) ||
+    clean(targetOrderData.productId) ||
+    clean(targetOrderData.extraCode) ||
+    clean(productData.itemCode) ||
+    clean(productData.productId);
+  const nextProductDocId = buildReassignedTrackedDocId({
+    currentDocId: productDoc.id,
+    newOrderId: safeNewOrderId,
+    targetItemCode: nextItemCode,
+    lotNumber,
+  });
+  const shouldMoveProductDoc = Boolean(nextProductDocId && nextProductDocId !== productDoc.id);
+  const nextProductRef = shouldMoveProductDoc
+    ? productDoc.ref.parent.doc(nextProductDocId)
+    : productDoc.ref;
+
+  if (shouldMoveProductDoc) {
+    const existingTarget = await nextProductRef.get();
+    if (existingTarget.exists) {
+      throw new Error('TARGET_PRODUCT_DOC_EXISTS');
+    }
+  }
+
+  const historyEntry = {
+    action: 'Ordernummer gewijzigd',
+    timestamp: nowIso,
+    station: clean(productData.currentStation) || clean(productData.lastStation) || 'PLANNING',
+    user: userLabel,
+    details: `${currentOrderId} -> ${safeNewOrderId} | Reden: ${safeReason}`,
+    source: source || null,
+  };
+
+  const batch = db.batch();
+
+  const productUpdates = {
+    id: nextProductRef.id,
+    orderId: safeNewOrderId,
+    item: clean(targetOrderData.item) || clean(targetOrderData.itemDescription) || clean(productData.item) || null,
+    itemCode: nextItemCode || clean(productData.itemCode) || null,
+    productId: clean(targetOrderData.productId) || nextItemCode || clean(productData.productId) || null,
+    extraCode: clean(targetOrderData.extraCode) || clean(productData.extraCode) || null,
+    description: clean(targetOrderData.description) || clean(targetOrderData.itemDescription) || clean(productData.description) || null,
+    itemDescription: clean(targetOrderData.itemDescription) || clean(targetOrderData.description) || clean(productData.itemDescription) || null,
+    articleDescription: clean(targetOrderData.articleDescription) || clean(productData.articleDescription) || null,
+    specs: targetOrderData.specs || productData.specs || null,
+    pn: targetOrderData.pn || productData.pn || null,
+    dn: targetOrderData.dn || productData.dn || null,
+    diameter: targetOrderData.diameter || productData.diameter || null,
+    project: clean(targetOrderData.project) || clean(productData.project) || null,
+    originalOrderId: clean(productData.originalOrderId) || currentOrderId,
+    reassignedFromOrderId: currentOrderId,
+    reassignedToOrderId: safeNewOrderId,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    history: admin.firestore.FieldValue.arrayUnion(historyEntry),
+  };
+
+  if (shouldMoveProductDoc) {
+    batch.set(nextProductRef, {
+      ...productData,
+      ...productUpdates,
+    }, { merge: false });
+    batch.delete(productDoc.ref);
+  } else {
+    batch.set(productDoc.ref, productUpdates, { merge: true });
+  }
+
+  if (isArchivedProduct) {
+    const sourceProduced = Math.max(0, Number(sourceOrderData.produced || 0));
+    const targetProduced = Math.max(0, Number(targetOrderData.produced || 0));
+    const sourcePlan = Math.max(0, Number(sourceOrderData.plan || sourceOrderData.quantity || 0));
+    const targetPlan = Math.max(0, Number(targetOrderData.plan || targetOrderData.quantity || 0));
+    const nextSourceProduced = Math.max(0, sourceProduced - 1);
+    const nextTargetProduced = targetProduced + 1;
+
+    if (sourceOrderDoc) {
+      const sourceUpdates = {
+        produced: nextSourceProduced,
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      if (sourcePlan > 0 && nextSourceProduced < sourcePlan && clean(sourceOrderData.status).toLowerCase() === 'completed') {
+        sourceUpdates.status = 'planned';
+      }
+      batch.set(sourceOrderDoc.ref, sourceUpdates, { merge: true });
+    }
+
+    const targetUpdates = {
+      produced: nextTargetProduced,
+      lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    if (targetPlan > 0 && nextTargetProduced >= targetPlan) {
+      targetUpdates.status = 'completed';
+    }
+    batch.set(targetOrderDoc.ref, targetUpdates, { merge: true });
+  } else {
+    const stationForCounter =
+      clean(productData.originMachine) ||
+      clean(productData.lastStation) ||
+      clean(productData.machine) ||
+      clean(productData.currentStation);
+    const stationField = getStartedCounterFieldServer(stationForCounter);
+
+    if (stationField) {
+      if (sourceOrderDoc) {
+        const currentStarted = Math.max(0, Number(sourceOrderData[stationField] || 0));
+        batch.set(sourceOrderDoc.ref, {
+          [stationField]: Math.max(0, currentStarted - 1),
+          lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+      }
+
+      const targetStarted = Math.max(0, Number(targetOrderData[stationField] || 0));
+      batch.set(targetOrderDoc.ref, {
+        [stationField]: targetStarted + 1,
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    } else {
+      batch.set(targetOrderDoc.ref, {
+        lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+  }
+
+  await batch.commit();
+
+  await writeActivityLog({
+    auth,
+    action: 'TRACKED_PRODUCT_ORDER_REASSIGN',
+    details: `Product ${lotNumber} order gewijzigd: ${currentOrderId} -> ${safeNewOrderId}${shouldMoveProductDoc ? ` | docId ${productDoc.id} -> ${nextProductRef.id}` : ''}`,
+    source: source || null,
+    actorLabel: userLabel,
+    orderId: safeNewOrderId,
+    productId: lotNumber,
+  });
+
+  return {
+    ok: true,
+    productId: nextProductRef.id,
+    lotNumber,
+    oldOrderId: currentOrderId,
+    orderId: safeNewOrderId,
+    movedDoc: shouldMoveProductDoc,
+    oldProductDocId: productDoc.id,
+    newProductDocId: nextProductRef.id,
+    isArchivedProduct,
+    restoredArchiveYear: archivedLookup?.year || null,
+    before: {
+      orderId: currentOrderId,
+    },
+    after: {
+      orderId: safeNewOrderId,
+    },
+  };
+};
+
+const linkPlanningOrderProductService = async ({
+  orderDocId,
+  productId,
+  productImage,
+  dbCtx = null,
+}) => {
+  const ctx = dbCtx || resolveDbContext(null);
+  const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
+  if (!orderDoc) {
+    throw new Error('NOT_FOUND_ORDER');
+  }
+
+  await orderDoc.ref.set({
+    linkedProductId: clean(productId),
+    linkedProductImage: clampText(productImage, 600),
+    lastUpdated: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return {
+    ok: true,
+    orderDocId: orderDoc.id,
+    linkedProductId: clean(productId),
+  };
+};
+
+
+module.exports = {
+  moveTrackedProductManualService,
+  movePlanningOrderService,
+  advanceTrackedProductService,
+  routeTrackedProductsToLossenService,
+  reassignTrackedProductOrderService,
+  linkPlanningOrderProductService,
+};

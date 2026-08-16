@@ -4,13 +4,13 @@ import { X as LucideX, ThumbsUp } from "lucide-react";
 interface Department {
   id: string;
   name: string;
-  stations?: Array<{ name: string; [key: string]: any }>;
-  [key: string]: any;
+  stations?: Array<{ name: string; [key: string]: unknown }>;
+  [key: string]: unknown;
 }
 
 interface FactoryStructure {
   departments?: Department[];
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface Message {
@@ -21,7 +21,7 @@ interface Message {
 interface AiMessageProps {
   message: Message;
   factoryStructure?: FactoryStructure | null;
-  onNavigate: (path: string, options?: { state?: Record<string, any> }) => void;
+  onNavigate: (path: string, options?: { state?: Record<string, unknown> }) => void;
   onReject: () => void;
   onLike?: () => void;
   onQuery: (query: string) => void;
@@ -51,7 +51,7 @@ const AiMessage: FC<AiMessageProps> = ({ message, factoryStructure, onNavigate, 
           const lowerText = matchText.toLowerCase();
           const foundDept = factoryStructure.departments.find((d: Department) => 
             d.name.toLowerCase() === lowerText || 
-            d.stations?.some((s: any) => s.name.toLowerCase() === lowerText)
+            d.stations?.some(() => s.name.toLowerCase() === lowerText)
           );
           if (foundDept) targetDepartment = foundDept.id;
         }

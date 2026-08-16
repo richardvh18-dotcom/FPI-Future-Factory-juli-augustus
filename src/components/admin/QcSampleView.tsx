@@ -133,7 +133,7 @@ const QcSampleView = () => {
   const reason = formState.reason;
   const scanMode = formState.scanMode;
 
-  const { rawOrders } = useTeamleaderFirestore({ user: user as any }) as { rawOrders: TeamleaderOrder[] };
+  const { rawOrders } = useTeamleaderFirestore({ user: user as unknown }) as { rawOrders: TeamleaderOrder[] };
 
   const machineOptions = useMemo(() => {
     const set = new Set<string>();
@@ -378,7 +378,7 @@ const QcSampleView = () => {
       }
 
       try {
-        const trackingRef = collection(db, getPathString(PATHS.TRACKING as any));
+        const trackingRef = collection(db, getPathString(PATHS.TRACKING as unknown));
         const itemsGroupRef = collectionGroup(db, "items");
         let found = false;
         let retries = 0;

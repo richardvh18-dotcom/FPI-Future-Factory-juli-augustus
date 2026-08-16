@@ -34,7 +34,7 @@ import { getOrderFinishedUnits } from "../../utils/planningProgress";
 import { subscribeScopedEfficiencyHours } from "../../utils/efficiencyScopedReader";
 import { normalizeMachine } from "../../utils/hubHelpers";
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 type OrderBar = {
   order: AnyRecord;
   style: AnyRecord;

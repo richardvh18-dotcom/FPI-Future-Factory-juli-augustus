@@ -35,7 +35,7 @@ interface TrackedItem {
   archivedAt?: unknown;
   updatedAt?: unknown;
   createdAt?: unknown;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface UseTerminalGereedDataParams {

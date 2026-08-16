@@ -86,7 +86,7 @@ interface Person {
     returnDate: string;
     followRotation: boolean;
   };
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface OccupancyRecord {
@@ -98,21 +98,21 @@ interface OccupancyRecord {
   date: string;
   hoursWorked: number;
   shift: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface User {
   id: string;
   name?: string;
   email?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface NfcMapping {
   id: string;
   employeeNumber: string;
   tagId?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface PersonnelManagerProps {
@@ -372,10 +372,10 @@ const PersonnelManager: React.FC<PersonnelManagerProps> = ({ initialViewDate, in
   const kpiData = useMemo(() => {
     const startWeek = startOfISOWeek(viewDate);
     const endWeek = endOfISOWeek(viewDate);
-    const stats: Record<string, any> = { global: { hours: 0, count: 0 }, byDept: {}, production: 0, support: 0, efficiency: 0 };
+    const stats: Record<string, unknown> = { global: { hours: 0, count: 0 }, byDept: {}, production: 0, support: 0, efficiency: 0 };
 
     (structure.departments || []).forEach((d: Department) => {
-      (stats.byDept as Record<string, any>)[d.id] = {
+      (stats.byDept as Record<string, unknown>)[d.id] = {
         name: d.name,
         hours: 0,
         count: 0,
@@ -397,7 +397,7 @@ const PersonnelManager: React.FC<PersonnelManagerProps> = ({ initialViewDate, in
         const netHours = parseFloat(String(occ.hoursWorked || 0));
         stats.global.hours += netHours;
         globalOperators.add(occ.operatorNumber);
-        const deptStats = (stats.byDept as Record<string, any>)[occ.departmentId];
+        const deptStats = (stats.byDept as Record<string, unknown>)[occ.departmentId];
         if (deptStats) {
           deptStats.hours += netHours;
           deptStats.operators.add(occ.operatorNumber);
@@ -417,7 +417,7 @@ const PersonnelManager: React.FC<PersonnelManagerProps> = ({ initialViewDate, in
     });
     stats.global.count = globalOperators.size;
     Object.keys(stats.byDept).forEach((id: string) => {
-      const deptStats = (stats.byDept as Record<string, any>)[id];
+      const deptStats = (stats.byDept as Record<string, unknown>)[id];
       deptStats.count = deptStats.operators.size;
     });
 

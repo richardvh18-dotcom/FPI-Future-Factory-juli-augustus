@@ -9,7 +9,7 @@ import { useFormPersistence } from "../../../hooks/useFormPersistence";
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  trackedProducts: any[];
+  trackedProducts: unknown[];
 }
 
 const InventoryCheckModal: React.FC<Props> = ({ isOpen, onClose, trackedProducts }) => {

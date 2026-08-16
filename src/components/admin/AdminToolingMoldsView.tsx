@@ -445,7 +445,7 @@ const AdminToolingMoldsView = () => {
           return;
       }
 
-      const foundOrder: any = rawOrders.find(o => 
+      const foundOrder: unknown = rawOrders.find(o => 
         (o.itemCode || "").toUpperCase().trim() === code || 
         (o.item || "").toUpperCase().trim() === code
       );
@@ -455,7 +455,7 @@ const AdminToolingMoldsView = () => {
         return;
       }
 
-      const foundInMatrix: any = conversionMatrix.find(c => (c.sourceCode || "").toUpperCase().trim() === code);
+      const foundInMatrix: unknown = conversionMatrix.find(c => (c.sourceCode || "").toUpperCase().trim() === code);
       if (foundInMatrix) {
         setNewRow(prev => ({ ...prev, matcher: foundInMatrix.description || foundInMatrix.targetDescription || "" }));
       }

@@ -35,7 +35,7 @@ type FirestoreTrackedProduct = {
 
 type FactoryConfig = Record<string, unknown> | null;
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 
 const toMillisSafe = (value: unknown): number => {
   if (!value) return 0;

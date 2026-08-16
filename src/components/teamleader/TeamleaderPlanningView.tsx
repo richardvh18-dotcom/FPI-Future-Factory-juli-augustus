@@ -7,8 +7,8 @@ const PlanningSidebarAny = PlanningSidebar as React.ComponentType<any>;
 const OrderDetailAny = OrderDetail as React.ComponentType<any>;
 
 type TeamleaderPlanningViewProps = {
-  orders: any[];
-  products: any[];
+  orders: unknown[];
+  products: unknown[];
   selectedOrderId: string | null;
   onSelectOrder: (orderId: string | null) => void;
   selectedOrder: any;

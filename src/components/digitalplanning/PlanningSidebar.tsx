@@ -55,7 +55,7 @@ type SidebarRecord = {
   isCompletedInspectionEntry?: boolean;
   weekNumber?: number;
   weekYear?: number;
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 type PlanningSidebarProps = {
@@ -87,8 +87,8 @@ const toEntryDate = (entry: SidebarRecord) => {
 
   for (const value of candidates) {
     if (!value) continue;
-    if (typeof (value as any)?.toDate === "function") {
-      const converted = (value as any).toDate();
+    if (typeof (value as unknown)?.toDate === "function") {
+      const converted = (value as unknown).toDate();
       if (Number.isFinite(converted?.getTime?.())) return converted;
     }
 
@@ -96,7 +96,7 @@ const toEntryDate = (entry: SidebarRecord) => {
       return value;
     }
 
-    const parsed = new Date(value as any);
+    const parsed = new Date(value as unknown);
     if (Number.isFinite(parsed.getTime())) return parsed;
   }
 
@@ -116,7 +116,7 @@ const PlanningSidebar = ({
   enableRejectionScopes = false,
 }: PlanningSidebarProps) => {
   const { t } = useTranslation();
-  const translate: TranslateFn = (key: any, defaultValue?: string, options?: Record<string, unknown>) =>
+  const translate: TranslateFn = (key: unknown, defaultValue?: string, options?: Record<string, unknown>) =>
     t(key as string | string[], defaultValue ?? "", options as Record<string, unknown> | undefined);
   const [searchTerm, setSearchTerm] = useState("");
   const deferredSearchTerm = useDeferredValue(searchTerm);
@@ -329,9 +329,9 @@ const PlanningSidebar = ({
 
             const lot = getLotFromRecord(item);
             const finishedAt =
-              (typeof (item?.timestamps?.finished as any)?.toMillis === "function" && (item?.timestamps?.finished as any).toMillis()) ||
-              (item?.timestamps?.finished ? new Date(item.timestamps.finished as any).getTime() : 0) ||
-              (typeof (item?.updatedAt as any)?.toMillis === "function" ? (item.updatedAt as any).toMillis() : new Date(item?.updatedAt as any || 0).getTime()) ||
+              (typeof (item?.timestamps?.finished as unknown)?.toMillis === "function" && (item?.timestamps?.finished as unknown).toMillis()) ||
+              (item?.timestamps?.finished ? new Date(item.timestamps.finished as unknown).getTime() : 0) ||
+              (typeof (item?.updatedAt as unknown)?.toMillis === "function" ? (item.updatedAt as unknown).toMillis() : new Date(item?.updatedAt as unknown || 0).getTime()) ||
               0;
 
             if (!uniqueMap.has(orderId)) {
@@ -508,9 +508,9 @@ const PlanningSidebar = ({
             p?.startTime ||
             null;
           const rejectDate =
-            typeof (rejectDateRaw as any)?.toDate === "function"
-              ? (rejectDateRaw as any).toDate()
-              : new Date((rejectDateRaw as any) || Date.now());
+            typeof (rejectDateRaw as unknown)?.toDate === "function"
+              ? (rejectDateRaw as unknown).toDate()
+              : new Date((rejectDateRaw as unknown) || Date.now());
 
           const weekNumber = Number.isFinite(getISOWeek(rejectDate)) ? getISOWeek(rejectDate) : currentWeek;
           const weekYear = Number.isFinite(rejectDate.getFullYear()) ? rejectDate.getFullYear() : currentYear;
@@ -828,15 +828,15 @@ const PlanningSidebar = ({
 
       for (const value of candidates) {
         if (!value) continue;
-        if (typeof (value as any)?.toMillis === "function") {
-          const ms = (value as any).toMillis();
+        if (typeof (value as unknown)?.toMillis === "function") {
+          const ms = (value as unknown).toMillis();
           if (Number.isFinite(ms)) return ms;
         }
         if (value instanceof Date) {
           const ms = value.getTime();
           if (Number.isFinite(ms)) return ms;
         }
-        const ms = new Date(value as any).getTime();
+        const ms = new Date(value as unknown).getTime();
         if (Number.isFinite(ms)) return ms;
       }
 
@@ -862,14 +862,14 @@ const PlanningSidebar = ({
 
       if (deliveryRaw) {
         let dateMs: number | null = null;
-        if (typeof (deliveryRaw as any)?.toMillis === "function") {
-          dateMs = (deliveryRaw as any).toMillis();
-        } else if (typeof (deliveryRaw as any)?.toDate === "function") {
-          dateMs = (deliveryRaw as any).toDate().getTime();
+        if (typeof (deliveryRaw as unknown)?.toMillis === "function") {
+          dateMs = (deliveryRaw as unknown).toMillis();
+        } else if (typeof (deliveryRaw as unknown)?.toDate === "function") {
+          dateMs = (deliveryRaw as unknown).toDate().getTime();
         } else if (deliveryRaw instanceof Date) {
           dateMs = deliveryRaw.getTime();
         } else {
-          const parsed = new Date(deliveryRaw as any).getTime();
+          const parsed = new Date(deliveryRaw as unknown).getTime();
           if (Number.isFinite(parsed)) dateMs = parsed;
         }
 
@@ -944,9 +944,9 @@ const PlanningSidebar = ({
           entry?.createdAt ||
           null;
         const entryDate =
-          typeof (entryDateRaw as any)?.toDate === "function"
-            ? (entryDateRaw as any).toDate()
-            : new Date((entryDateRaw as any) || 0);
+          typeof (entryDateRaw as unknown)?.toDate === "function"
+            ? (entryDateRaw as unknown).toDate()
+            : new Date((entryDateRaw as unknown) || 0);
         if (rejectPeriod === "this_week") return entryWeek === thisWeek && entryYear === thisYear;
         if (rejectPeriod === "previous_week") return entryWeek === previousWeek && entryYear === previousWeekYear;
         if (rejectPeriod === "this_month") {
@@ -1338,7 +1338,7 @@ const PlanningSidebar = ({
       ];
       for (const value of candidates) {
         if (!value) continue;
-        const parsed = typeof (value as any)?.toDate === "function" ? (value as any).toDate() : new Date(value as any);
+        const parsed = typeof (value as unknown)?.toDate === "function" ? (value as unknown).toDate() : new Date(value as unknown);
         if (Number.isFinite(parsed.getTime())) return parsed;
       }
       return new Date(today);
@@ -1354,7 +1354,7 @@ const PlanningSidebar = ({
       ];
       for (const value of candidates) {
         if (!value) continue;
-        const parsed = typeof (value as any)?.toDate === "function" ? (value as any).toDate() : new Date(value as any);
+        const parsed = typeof (value as unknown)?.toDate === "function" ? (value as unknown).toDate() : new Date(value as unknown);
         if (Number.isFinite(parsed.getTime())) {
           parsed.setHours(0, 0, 0, 0);
           return parsed;
@@ -1413,7 +1413,7 @@ const PlanningSidebar = ({
           let earliestStart = new Date();
           for (const val of orderStartCandidates) {
             if (!val) continue;
-            const parsed = typeof (val as any)?.toDate === "function" ? (val as any).toDate() : new Date(val as any);
+            const parsed = typeof (val as unknown)?.toDate === "function" ? (val as unknown).toDate() : new Date(val as unknown);
             if (Number.isFinite(parsed.getTime()) && parsed < earliestStart) {
               earliestStart = parsed;
             }
@@ -1488,7 +1488,7 @@ const PlanningSidebar = ({
       year: order.weekYear || order.year || "",
       rejectType: order.rejectKind === "temp_reject" ? "Tijdelijke afkeur" : order.rejectKind === "definitive_reject" ? "Definitieve afkeur" : "",
       rejectReason: order.inspection?.reasons ? order.inspection.reasons.join(" | ") : "",
-      updatedAt: typeof (order.updatedAt as any)?.toDate === "function" ? (order.updatedAt as any).toDate().toISOString() : String(order.updatedAt || ""),
+      updatedAt: typeof (order.updatedAt as unknown)?.toDate === "function" ? (order.updatedAt as unknown).toDate().toISOString() : String(order.updatedAt || ""),
       predictedReadyDate: predictionDateStr,
       };
     });
@@ -1693,8 +1693,8 @@ const PlanningSidebar = ({
       if (!value) continue;
       const date =
         typeof value?.toDate === "function"
-          ? (value as any).toDate()
-          : new Date(value as any);
+          ? (value as unknown).toDate()
+          : new Date(value as unknown);
       if (Number.isFinite(date.getTime())) {
         const dateStr = date.toLocaleDateString("nl-NL", {
           day: "2-digit",
@@ -1710,7 +1710,7 @@ const PlanningSidebar = ({
   };
 
   const formatDateWithWeek = (dateInput: unknown) => {
-    const date = typeof (dateInput as any)?.toDate === "function" ? (dateInput as any).toDate() : new Date(dateInput as any);
+    const date = typeof (dateInput as unknown)?.toDate === "function" ? (dateInput as unknown).toDate() : new Date(dateInput as unknown);
     if (!Number.isFinite(date.getTime())) return "--";
     const dateStr = date.toLocaleDateString("nl-NL", {
       day: "2-digit",

@@ -40,7 +40,7 @@ import {
 } from "../../services/planningSecurityService";
 import { useNotifications } from '../../contexts/NotificationContext';
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 type FactoryStation = { id?: string; name?: string; departmentName?: string };
 type MachineStat = {
   machine?: string;

@@ -85,7 +85,7 @@ const Sidebar = ({
     { path: "/products", label: t('sidebar.nav.common.catalog'), icon: Search },
     { path: "/messages", label: t('sidebar.nav.common.messages'), icon: Mail, badge: unreadCount },
     { path: "/inventory", label: t('sidebar.nav.common.inventory'), icon: Package, requiredModule: "inventory_management" },
-    { path: "/assistant", label: t('sidebar.nav.common.ai_training'), icon: Bot, requiredModule: "ai_assistant" },
+    { path: "/assistant", label: t('sidebar.nav.common.ai_assistant', 'AI Assistent'), icon: Bot, requiredModule: "ai_assistant" },
     { path: "/calculator", label: t('sidebar.nav.common.calculator'), icon: Calculator },
     {
       path: "/printer-queue",

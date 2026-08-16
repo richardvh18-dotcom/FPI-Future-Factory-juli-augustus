@@ -15,7 +15,7 @@ type OrderHistoryModalProps = {
 type ActivityLog = {
   id: string;
   action: string;
-  details: string | Record<string, any>;
+  details: string | Record<string, unknown>;
   actor: string;
   timestamp: Date | null;
   type: 'admin' | 'production';

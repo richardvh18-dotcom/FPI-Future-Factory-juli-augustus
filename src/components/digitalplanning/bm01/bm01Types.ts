@@ -14,7 +14,7 @@ export type OrderRecord = {
     quantityDelivered?: string | number | null;
     inspectionApprovedQty?: string | number | null;
     produced?: string | number | null;
-    [key: string]: any;
+    [key: string]: unknown;
 };
 
 export type HistoryEntry = {
@@ -23,7 +23,7 @@ export type HistoryEntry = {
     action?: string;
     timestamp?: TimestampLike | string | number | Date | null;
     time?: TimestampLike | string | number | Date | null;
-    [key: string]: any;
+    [key: string]: unknown;
 };
 
 export type ProductRecord = {
@@ -49,7 +49,7 @@ export type ProductRecord = {
     inspection?: { status?: string };
     qcNotes?: Array<{ text: string; timestamp: string; user: string }>;
     isVirtualLot?: boolean;
-    [key: string]: any;
+    [key: string]: unknown;
 };
 
 export type SidebarEntry = {
@@ -69,13 +69,13 @@ export type SidebarEntry = {
     timestamps?: Record<string, TimestampLike | string | number | Date | null | undefined>;
     updatedAt?: TimestampLike | string | number | Date | null;
     qcNotes?: Array<{ text: string; timestamp: string; user: string }>;
-    [key: string]: any;
+    [key: string]: unknown;
 };
 
 export type FinishPayload = {
     note?: string;
     reasons?: string[];
-    [key: string]: any;
+    [key: string]: unknown;
 };
 
 export type DeliveryMismatch = {

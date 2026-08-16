@@ -4,6 +4,7 @@ import RoadmapViewer from "./RoadmapViewer";
 
 import { useTranslation } from "react-i18next";
 import i18n from "i18next";
+import { useNotifications } from "../../contexts/NotificationContext";
 import { 
   BookOpen,
   Map,
@@ -462,6 +463,7 @@ const TreeNode = ({ node, path = "", level = 0, onSelect, selectedPath }: TreeNo
 
 const ProjectStructureExpertView = () => {
   const { t } = useTranslation();
+  const { showSuccess, showError } = useNotifications();
   const projectStructure = getProjectStructure(t);
   const [selectedFile, setSelectedFile] = useState("");
   const [activeMainTab, setActiveMainTab] = useState<"explorer" | "docs" | "markdown" | "roadmap">("explorer");
@@ -519,12 +521,12 @@ const ProjectStructureExpertView = () => {
     try {
       const result = await migrateHardcodedConfigToFirestore();
       if (result && !result.success) {
-        alert('Migratie mislukt: ' + result.error);
+        showError('Migratie mislukt: ' + result.error);
       } else {
-        alert('Migratie voltooid!');
+        showSuccess('Migratie voltooid!');
       }
     } catch (e) {
-      alert('Migratie mislukt: ' + getErrorMessage(e));
+      showError('Migratie mislukt: ' + getErrorMessage(e));
     }
   };
 

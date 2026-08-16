@@ -362,7 +362,7 @@ export const logActivity = async (userId: string, action: string, details: unkno
       });
     }
 
-    const logActivityCallable = httpsCallable(functions, "clientLogActivity");
+    const logActivityCallable = httpsCallable<unknown, unknown>(functions, "clientLogActivity");
     await logActivityCallable({
       action,
       details: sanitizeForFirestore(extendedDetails),

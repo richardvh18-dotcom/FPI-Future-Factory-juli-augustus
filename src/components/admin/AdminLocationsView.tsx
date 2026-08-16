@@ -475,7 +475,7 @@ const AdminLocationsView = ({ canEdit = false }: { canEdit?: boolean }) => {
                       setFormState({ ...formState, diameter: e.target.value })
                     }
                   >
-                    {factoryConfig.diameters.map((d: any) => (
+                    {factoryConfig.diameters.map(() => (
                       <option key={d.value} value={d.value}>
                         {t('idMm', { id: d.value })}
                       </option>

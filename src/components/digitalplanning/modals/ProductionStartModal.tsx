@@ -124,7 +124,7 @@ type OperatorPrintRule = {
   labelSize?: "large" | "small";
 };
 
-const isPermissionDeniedError = (error: any) => {
+const isPermissionDeniedError = (error: unknown) => {
   const code = String(error?.code || "").toLowerCase();
   const message = String(error?.message || "").toLowerCase();
   return code.includes("permission-denied") || message.includes("insufficient permissions");
@@ -158,7 +158,7 @@ const getBoundPrinterIdForStation = (station: string): string => {
   }
 };
 
-const persistPrinterBindingForAutoProcessor = (station: string, printer: any) => {
+const persistPrinterBindingForAutoProcessor = (station: string, printer: unknown) => {
   if (typeof window === "undefined") return;
   const safeStation = normalizeStationBindingKey(station);
   const safePrinterId = String(printer?.id || "").trim();
@@ -235,7 +235,7 @@ const getMachineCode = (station: string | null | undefined) => {
   return `4${digits.slice(-2).padStart(2, "0")}`;
 };
 
-const getNormalizedPrinterDpi = (printer: any, fallback = 203) => {
+const getNormalizedPrinterDpi = (printer: unknown, fallback = 203) => {
   const driverDpi = Number(getDriver(printer)?.nativeDpi);
   if (Number.isFinite(driverDpi) && driverDpi > 0) return driverDpi;
   const parsed = Number.parseInt(printer?.dpi, 10);
@@ -263,14 +263,14 @@ const getNormalizedLabelTags = (label: LabelOption): string[] =>
     .map((tag) => String(tag || "").trim().toUpperCase())
     .filter(Boolean);
 
-const getOrderCodeTags = (order: any): string[] => {
+const getOrderCodeTags = (order: unknown): string[] => {
   const orderText = [order?.item, order?.itemCode, order?.itemDescription, order?.description, order?.extraCode]
     .map((value) => String(value || "").toUpperCase())
     .join(" ");
   return Array.from(new Set(orderText.match(/\bA\d[A-Z]\d\b/g) || []));
 };
 
-const getOrderPrimaryCode = (order: any): string => {
+const getOrderPrimaryCode = (order: unknown): string => {
   const explicitCode = String(order?.extraCode || order?.code || "").trim().toUpperCase();
   if (explicitCode) return explicitCode;
 
@@ -281,14 +281,14 @@ const getOrderPrimaryCode = (order: any): string => {
 const hasSpecificOrderCodeTag = (label: LabelOption): boolean =>
   getNormalizedLabelTags(label).some((tag) => /^A\d[A-Z]\d$/.test(tag));
 
-const getOrderNominalDiameter = (order: any): number => {
+const getOrderNominalDiameter = (order: unknown): number => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
   const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
   const parsed = match ? parseInt(match[1], 10) : parseInt(String(order?.diameter || order?.dn || "0"), 10);
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const getOrderAngle = (order: any): number | null => {
+const getOrderAngle = (order: unknown): number | null => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
   const degreeMatch = itemIdentifier.match(/\b(11\.25|22\.5|30|45|60|90)\s*(?:DEG|GR|°)?\b/);
   if (!degreeMatch) return null;
@@ -296,7 +296,7 @@ const getOrderAngle = (order: any): number | null => {
   return Number.isFinite(angle) ? angle : null;
 };
 
-const isSleevelessCouplerOrder = (order: any): boolean => {
+const isSleevelessCouplerOrder = (order: unknown): boolean => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription, order?.description]
     .join(" ")
     .toUpperCase();
@@ -305,7 +305,7 @@ const isSleevelessCouplerOrder = (order: any): boolean => {
   return hasSleeveToken && hasCouplerToken;
 };
 
-const getOrderProductTypeKey = (order: any): string => {
+const getOrderProductTypeKey = (order: unknown): string => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
   const teePairMatch = itemIdentifier.match(/(\d+)\s*[xX/]\s*(\d+)/);
   const hasWyeTee = /\bWYE\b|\bY[\s-]?TEE\b/.test(itemIdentifier);
@@ -322,7 +322,7 @@ const getOrderProductTypeKey = (order: any): string => {
   return "OTHER";
 };
 
-const resolveOperatorPrintRule = (order: any, rules: OperatorPrintRule[] | null | undefined): OperatorPrintRule | null => {
+const resolveOperatorPrintRule = (order: unknown, rules: OperatorPrintRule[] | null | undefined): OperatorPrintRule | null => {
   const list = Array.isArray(rules) ? rules : [];
   if (list.length === 0) return null;
 
@@ -366,14 +366,14 @@ const ProductionStartModal = ({
   stationId = "",
   existingProducts = [],
 }: {
-  order: any;
+  order: unknown;
   isOpen: boolean;
   onClose: () => void;
   onStartInitiated?: () => void;
-  onStart: (...args: any[]) => void | Promise<void>;
-  onOpenProductInfo?: (...args: any[]) => void;
+  onStart: (...args: unknown[]) => void | Promise<void>;
+  onOpenProductInfo?: (...args: unknown[]) => void;
   stationId?: string;
-  existingProducts?: any[];
+  existingProducts?: unknown[];
 }) => {
   const { t } = useTranslation();
   const { showSuccess, showError , notify} = useNotifications();
@@ -411,7 +411,7 @@ const ProductionStartModal = ({
   // Refs voor autofocus bij barcode scanning
   const orderInputRef = useRef<HTMLInputElement>(null);
   const lotInputRef = useRef<HTMLInputElement>(null);
-  const manualLotAutoStartTimeoutRef = useRef<any>(null);
+  const manualLotAutoStartTimeoutRef = useRef<unknown>(null);
   const lotRefreshRunIdRef = useRef(0);
   const lastLotInputAtRef = useRef(0);
   const previousLotInputRef = useRef("");
@@ -425,7 +425,7 @@ const ProductionStartModal = ({
   const location = useLocation();
   
   const [savedPrinters, setSavedPrinters] = useState<any[]>([]);
-  const [generalSettings, setGeneralSettings] = useState<any>({ flangeSeriesRules: [] });
+  const [generalSettings, setGeneralSettings] = useState<unknown>({ flangeSeriesRules: [] });
   const [dynamicPrintRules, setDynamicPrintRules] = useState<PrintRuleDef[]>([]);
   const [toolingMolds, setToolingMolds] = useState<any[]>([]);
   const [relatedItemCodes, setRelatedItemCodes] = useState<string[]>([]);
@@ -488,24 +488,24 @@ const ProductionStartModal = ({
       ) || String(order?.itemCode || "").trim().toUpperCase().startsWith("FL") || String(order?.item || "").trim().toUpperCase().startsWith("FL");
   const shouldUseFlangeLabelFlow = !isSleevelessCoupler && (isFlangeOrder || hasFlangeIndicator);
 
-  const sanitizePositiveIntInput = (value: any) => {
+  const sanitizePositiveIntInput = (value: unknown) => {
     const digitsOnly = String(value ?? "").replace(/\D/g, "");
     return digitsOnly;
   };
 
-  const normalizePositiveIntInput = (value: any, fallback = 1) => {
+  const normalizePositiveIntInput = (value: unknown, fallback = 1) => {
     const parsed = parseInt(String(value || ""), 10);
     return String(Number.isFinite(parsed) && parsed > 0 ? parsed : fallback);
   };
 
-  const printerHasStation = (printer: any, station: string) => {
+  const printerHasStation = (printer: unknown, station: string) => {
     if (!printer || !station) return false;
     const linked = Array.isArray(printer.linkedStations) ? printer.linkedStations : [];
     const queue = Array.isArray(printer.queueStations) ? printer.queueStations : [];
     return [...linked, ...queue].includes(station);
   };
 
-  const resolveTargetPrinter = (printerList: any[], station: string, routeKey: string) => {
+  const resolveTargetPrinter = (printerList: unknown[], station: string, routeKey: string) => {
     return resolvePrinterForRouting(printerList, {
       stationId: station,
       routeKey,
@@ -516,12 +516,12 @@ const ProductionStartModal = ({
   const resolveTargetPrinterAsync = async () => {
     const boundPrinterId = getBoundPrinterIdForStation(stationId);
     const currentBound = boundPrinterId
-      ? savedPrinters.find((p: any) => String(p?.id || "") === boundPrinterId)
+      ? savedPrinters.find((p: unknown) => String(p?.id || "") === boundPrinterId)
       : null;
     if (currentBound) return currentBound;
 
     const currentById = printConfig.printerId
-      ? savedPrinters.find((p: any) => p.id === printConfig.printerId)
+      ? savedPrinters.find((p: unknown) => p.id === printConfig.printerId)
       : null;
     if (currentById) return currentById;
 
@@ -530,10 +530,10 @@ const ProductionStartModal = ({
 
     const prnPaths = PATHS.PRINTERS;
     const snap = await getDocs(collection(db, getPathString(prnPaths as string[])));
-    const fetchedPrinters = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    const fetchedPrinters = snap.docs.map((d: unknown) => ({ id: d.id, ...d.data() }));
 
     const fetchedBound = boundPrinterId
-      ? fetchedPrinters.find((p: any) => String(p?.id || "") === boundPrinterId)
+      ? fetchedPrinters.find((p: unknown) => String(p?.id || "") === boundPrinterId)
       : null;
     if (fetchedBound) return fetchedBound;
 
@@ -541,7 +541,7 @@ const ProductionStartModal = ({
     if (fetchedResolved) return fetchedResolved;
 
     const fetchedById = printConfig.printerId
-      ? fetchedPrinters.find((p: any) => p.id === printConfig.printerId)
+      ? fetchedPrinters.find((p: unknown) => p.id === printConfig.printerId)
       : null;
     return fetchedById || null;
   };
@@ -639,10 +639,10 @@ const ProductionStartModal = ({
     const unsub = onSnapshot(
       collection(db, getPathString(PATHS.TOOLING_MOLDS as string[])),
       (snap) => {
-        const rows = snap.docs.map((entry: any) => ({ id: entry.id, ...entry.data() }));
+        const rows = snap.docs.map((entry: unknown) => ({ id: entry.id, ...entry.data() }));
         setToolingMolds(rows);
       },
-      (err: any) => {
+      (err: unknown) => {
         console.error("Kon gereedschap/mallen niet laden:", err);
         setToolingMolds([]);
       }
@@ -909,7 +909,7 @@ const ProductionStartModal = ({
           where("date", "==", today)
         );
         const snapshot = await getDocs(q);
-        const operators = snapshot.docs.map((doc: any) => ({
+        const operators = snapshot.docs.map((doc: unknown) => ({
           number: doc.data().operatorNumber,
           name: doc.data().operatorName
         }));
@@ -919,7 +919,7 @@ const ProductionStartModal = ({
         } else {
           // Auto-fill is handled by mode-watcher useEffect below
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Kon operators niet ophalen", err);
       }
     };
@@ -941,11 +941,11 @@ const ProductionStartModal = ({
         const prnPaths = PATHS.PRINTERS;
         const printersRef = collection(db, getPathString(prnPaths as string[]));
         const unsub = onSnapshot(printersRef, (snap) => {
-          const list = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+          const list = snap.docs.map((d: unknown) => ({ id: d.id, ...d.data() }));
           setSavedPrinters(list);
           const boundPrinterId = getBoundPrinterIdForStation(stationId);
           const boundPrinter = boundPrinterId
-            ? list.find((p: any) => String(p?.id || "") === boundPrinterId)
+            ? list.find((p: unknown) => String(p?.id || "") === boundPrinterId)
             : null;
           const targetPrinter = resolveTargetPrinter(list, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
 
@@ -962,7 +962,7 @@ const ProductionStartModal = ({
           }
         });
         return () => unsub();
-    } catch(e: any) {
+    } catch(e: unknown) {
         console.error("Kon printers niet laden", e);
     }
   }, [stationId, isOpen]);
@@ -982,7 +982,7 @@ const ProductionStartModal = ({
       }
 
       // 1) Lokale context check (realtime meegegeven producten in de modal)
-      const localExists = (existingProducts || []).some((p: any) => {
+      const localExists = (existingProducts || []).some((p: unknown) => {
         const lot = String(p?.lotNumber || "").trim().toUpperCase();
         const activeLot = String(p?.activeLot || "").trim().toUpperCase();
         return lot === normalizedLot || activeLot === normalizedLot;
@@ -1014,7 +1014,7 @@ const ProductionStartModal = ({
           lotExistsCacheRef.current.set(normalizedLot, { exists: true, checkedAt: now });
           return true;
         }
-      } catch (scopedErr: any) {
+      } catch (scopedErr: unknown) {
         // Niet blokkeren op index/permissie issues; overige checks blijven actief.
       }
 
@@ -1047,7 +1047,7 @@ const ProductionStartModal = ({
       const exists = archiveChecks.some(Boolean);
       lotExistsCacheRef.current.set(normalizedLot, { exists, checkedAt: now });
       return exists;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Fout bij lot validatie:", error);
       return false;
     }
@@ -1062,7 +1062,7 @@ const ProductionStartModal = ({
 
     const extractSeq = (lot: string | null | undefined) => extractLotSequence(lot, baseLotStr);
 
-    existingProducts?.forEach((p: any) => {
+    existingProducts?.forEach((p: unknown) => {
         const seq = extractSeq(p.lotNumber || p.activeLot);
         if (seq > maxSeq) maxSeq = seq;
     });
@@ -1073,40 +1073,40 @@ const ProductionStartModal = ({
             const counterValue = Number(counterSnap.data().lastSequence || 0);
             return Math.max(maxSeq, Number.isFinite(counterValue) ? counterValue : 0);
         }
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error("Fout bij lezen counter:", e);
     }
 
     try {
       const trackingRef = collection(db, getPathString(PATHS.TRACKING as string[]));
       const trackingSnap = await getDocs(query(trackingRef, limit(2000)));
-      trackingSnap.forEach((docSnap: any) => {
+      trackingSnap.forEach((docSnap: unknown) => {
         const seq = extractSeq(String(docSnap.data()?.lotNumber || ""));
         if (seq > maxSeq) maxSeq = seq;
       });
 
       const archiveRef = collection(db, getPathString(getArchiveItemsPath(new Date().getFullYear())));
       const archiveSnap = await getDocs(query(archiveRef, limit(2000)));
-      archiveSnap.forEach((docSnap: any) => {
+      archiveSnap.forEach((docSnap: unknown) => {
         const seq = extractSeq(String(docSnap.data()?.lotNumber || ""));
         if (seq > maxSeq) maxSeq = seq;
       });
 
       const trackingPathPrefix = `${(PATHS.TRACKING || []).join("/")}/`;
       const scopedTrackingSnap = await getDocs(query(collectionGroup(db, "items"), limit(2000)));
-      scopedTrackingSnap.forEach((docSnap: any) => {
+      scopedTrackingSnap.forEach((docSnap: unknown) => {
         const path = String(docSnap.ref?.path || "");
         if (!path.startsWith(trackingPathPrefix)) return;
         const seq = extractSeq(docSnap.data()?.lotNumber);
         if (seq > maxSeq) maxSeq = seq;
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Fout bij ophalen max sequence:", error);
     }
 
     try {
         await setDoc(counterRef, { lastSequence: maxSeq, updatedAt: serverTimestamp() }, { merge: true });
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (isPermissionDeniedError(e)) {
         if (!counterPermissionWarnedRef.current) {
           counterPermissionWarnedRef.current = true;
@@ -1130,7 +1130,7 @@ const ProductionStartModal = ({
     const data = counterSnap.data() || {};
     const recycled = Array.isArray(data.recycledSequences)
       ? data.recycledSequences
-          .map((n: any) => Number(n))
+          .map((n: unknown) => Number(n))
           .filter((n: number) => Number.isFinite(n) && n > 0)
           .sort((a, b) => a - b)
       : [];
@@ -1141,7 +1141,7 @@ const ProductionStartModal = ({
       const exists = await checkLotNumberExists(candidate);
       if (!exists) {
         const nextRecycled = recycled.filter((n: number) => n !== seq);
-        await setDoc(counterRef, { recycledSequences: nextRecycled, updatedAt: serverTimestamp() }, { merge: true }).catch((e: any) => {
+        await setDoc(counterRef, { recycledSequences: nextRecycled, updatedAt: serverTimestamp() }, { merge: true }).catch((e: unknown) => {
           if (!isPermissionDeniedError(e)) {
             throw e;
           }
@@ -1183,14 +1183,14 @@ const ProductionStartModal = ({
 
       const recycled = Array.isArray(counterData.recycledSequences)
         ? Array.from(new Set(counterData.recycledSequences
-            .map((n: any) => Number(n))
+            .map((n: unknown) => Number(n))
             .filter((n: number) => Number.isFinite(n) && n > 0)))
             .sort((a: number, b: number) => a - b)
         : [];
 
       const usedSeqList = Array.isArray(counterData.usedSequences)
         ? Array.from(new Set(counterData.usedSequences
-            .map((n: any) => Number(n))
+            .map((n: unknown) => Number(n))
             .filter((n: number) => Number.isFinite(n) && n > 0)))
         : [];
 
@@ -1366,7 +1366,7 @@ const ProductionStartModal = ({
             setLotNumber(newLotNumber);
             setLotError("");
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Error setting lot number", error);
         if (isMounted && lotRefreshRunIdRef.current === runId) {
           setLotError("Waarschuwing: Kan uniciteit niet garanderen.");
@@ -1440,11 +1440,11 @@ const ProductionStartModal = ({
             : 0;
           const newMax = Math.max(lastSequence, candidateMax);
           const recycled = Array.isArray(counterData.recycledSequences)
-            ? counterData.recycledSequences.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
+            ? counterData.recycledSequences.map((n: unknown) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
             : [];
           
           const usedSeqList = Array.isArray(counterData.usedSequences)
-            ? Array.from(new Set(counterData.usedSequences.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)))
+            ? Array.from(new Set(counterData.usedSequences.map((n: unknown) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)))
             : [];
 
           const rangeStart = currentSeq;
@@ -1470,7 +1470,7 @@ const ProductionStartModal = ({
           
           await deleteDoc(doc(db, getPathString(PATHS.COUNTERS), oldDocId)).catch(() => {});
 
-      } catch (e: any) {
+      } catch (e: unknown) {
         if (isPermissionDeniedError(e)) {
           if (!counterPermissionWarnedRef.current) {
             counterPermissionWarnedRef.current = true;
@@ -1709,7 +1709,7 @@ const ProductionStartModal = ({
           [
             ...selectedTemplateIds,
             selectedLabelId,
-            String((selectedLabel as any)?.id || "").trim(),
+            String((selectedLabel as unknown)?.id || "").trim(),
           ]
             .map((entry) => String(entry || "").trim())
             .filter(Boolean)
@@ -1762,10 +1762,10 @@ const ProductionStartModal = ({
             ...previewData,
             lotNumber: effectiveLotNumber,
           };
-          const darkness = Number.parseInt(String((targetPrinter as any)?.darkness || '15'), 10);
+          const darkness = Number.parseInt(String((targetPrinter as unknown)?.darkness || '15'), 10);
           printData = await renderLabelForPrinter({
             printer: targetPrinter as Record<string, unknown>,
-            template: selectedLabel as any,
+            template: selectedLabel as unknown,
             data: printPreviewData as Record<string, unknown>,
             printerDpi: dpiForPrint,
             darkness: Number.isFinite(darkness) ? darkness : 15,
@@ -1940,10 +1940,10 @@ const ProductionStartModal = ({
 
               try {
                 const dpiForPrint = getNormalizedPrinterDpi(targetPrinter, 203);
-                const darkness = Number.parseInt(String((targetPrinter as any)?.darkness || '15'), 10);
+                const darkness = Number.parseInt(String((targetPrinter as unknown)?.darkness || '15'), 10);
                 const currentPrintData = await renderLabelForPrinter({
                   printer: targetPrinter as Record<string, unknown>,
-                  template: templateToPrint as any,
+                  template: templateToPrint as unknown,
                   data: { ...previewData, lotNumber: currentLot } as Record<string, unknown>,
                   printerDpi: dpiForPrint,
                   darkness: Number.isFinite(darkness) ? darkness : 15,
@@ -2029,7 +2029,7 @@ const ProductionStartModal = ({
           showError(t("productionStartModal.errors.stringLotPrintFailed", { message: printMessage }));
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
       // Als de start al gecommit is, behandelen we dit als naverwerkingsfout
       // (bijv. print/telemetrie) en niet als mislukte productie-start.
@@ -2590,7 +2590,7 @@ const ProductionStartModal = ({
               selectedLabel ? (
                 <div className="flex flex-col items-center gap-4">
                   <LabelVisualPreview
-                    label={selectedLabel as any}
+                    label={selectedLabel as unknown}
                     data={activePreviewData}
                     zoom={previewZoom}
                     className="shadow-[0_0_100px_rgba(0,0,0,0.8)] relative transition-all duration-500 origin-center border-2 border-white/10"

@@ -22,7 +22,7 @@ interface Order {
   orderNumber?: string;
   labels?: string[];
   project?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 interface MalOptimizationPanelProps {

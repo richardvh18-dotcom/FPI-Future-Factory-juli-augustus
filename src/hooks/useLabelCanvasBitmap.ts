@@ -135,7 +135,7 @@ export const useLivePreviewCapture = () => {
 
         try {
             // Probeer html2canvas te gebruiken als beschikbaar
-            const html2canvas = (window as any).html2canvas;
+            const html2canvas = (window as unknown as { html2canvas: Function }).html2canvas;
             if (html2canvas) {
                 const canvas = await html2canvas(previewRef.current, {
                     backgroundColor: '#ffffff',

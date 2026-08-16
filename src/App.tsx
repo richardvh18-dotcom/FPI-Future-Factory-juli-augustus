@@ -72,7 +72,7 @@ const DigitalPlanningHub = safeLazy(() => import("./components/digitalplanning/D
 const MobileScanner = safeLazy(() => import("./components/digitalplanning/MobileScanner"));
 const ShopFloorMobileApp = safeLazy(() => import("./components/planning/ShopFloorMobileApp"));
 const CalculatorView = safeLazy(() => import("./components/CalculatorView"));
-const AiAssistantView = safeLazy(() => import("./components/ai/AiAssistantView"));
+const CopilotInterfaceRoute = safeLazy(() => import("./components/copilot/CopilotInterface").then(m => ({ default: m.CopilotInterface })));
 const AdminLogView = safeLazy(() => import("./components/admin/AdminLogView"));
 const QCHub = safeLazy(() => import("./components/qc/QCHub"));
 const PrintQueueAdminView = safeLazy(() => import("./components/printer/PrintQueueAdminView"));
@@ -156,7 +156,7 @@ const App = () => {
         success: true,
       });
       navigate("/");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Login fout:", err);
       await logComplianceEvent("system", "LOGIN_FAILED", {
         email,
@@ -290,7 +290,11 @@ const App = () => {
                 <Route path="/scanner" element={<MobileScanner onScan={() => {}} onClose={() => navigate(-1)} />} />
                 <Route path="/inspector" element={<ShopFloorMobileApp />} />
                 <Route path="/calculator" element={<CalculatorView />} />
-                <Route path="/assistant" element={<AiAssistantView />} />
+                <Route path="/assistant" element={
+                  <div className="h-full w-full bg-slate-50 p-4 md:p-6 overflow-hidden">
+                    <CopilotInterfaceRoute />
+                  </div>
+                } />
                 <Route path="/qc/*" element={<QCHub />} />
                 <Route path="/messages" element={<AdminMessagesView user={user as any} />} />
                 <Route

@@ -5,7 +5,8 @@ import { doc, getDoc } from "firebase/firestore";
 import { db, auth, logActivity } from "../../config/firebase";
 import { PATHS } from "../../config/dbPaths";
 import { useNotifications } from "../../contexts/NotificationContext";
-import { DEFAULT_CONTEXT } from "./AiChatView";
+const DEFAULT_CONTEXT = `Je bent de Future Factory Plant Manager Copilot.
+Beantwoord vragen over de productie, instellingen en logboeken accuraat.`;
 import { saveAiContextConfig } from "../../services/planningSecurityService";
 
 const AiContextManager: FC = () => {

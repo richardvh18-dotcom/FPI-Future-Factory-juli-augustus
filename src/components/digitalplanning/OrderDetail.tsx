@@ -64,11 +64,11 @@ import { functions } from "../../config/firebase";
 
 type OrderDetailProps = {
   order: any;
-  products?: any[];
+  products?: unknown[];
   onClose: () => void;
   isManager?: boolean;
-  onDeleteLot?: (...args: any[]) => void;
-  onMoveLot?: (...args: any[]) => void;
+  onDeleteLot?: (...args: unknown[]) => void;
+  onMoveLot?: (...args: unknown[]) => void;
   currentDepartment?: string | null;
   allowedStations?: StationOption[];
   onOpenDossier?: (dossier: any) => void;
@@ -88,7 +88,7 @@ const isOnHoldStatusValue = (value: unknown): boolean => {
 type ProductRecord = {
   id: string;
   lotNumber: string;
-  [key: string]: any;
+  [key: string]: unknown;
 };
 type StationOption = {
   id: string;
@@ -337,7 +337,7 @@ const OrderDetail = React.memo(({
       showSuccess(t("digitalplanning.order_detail.move_success", "Order succesvol verplaatst"));
       setShowOrderMoveModal(false);
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       showError(err.message || t("digitalplanning.order_detail.move_error", "Fout bij verplaatsen order"));
     }
@@ -347,7 +347,7 @@ const OrderDetail = React.memo(({
     if (!order?.orderId) return;
     try {
       setIsSyncing(true);
-      const reconcileFn = httpsCallable(functions, 'reconcileOrderControl');
+      const reconcileFn = httpsCallable<unknown, unknown>(functions, 'reconcileOrderControl');
       await reconcileFn({ orderId: order.orderId, machine: '' });
       showSuccess("Tellers succesvol gesynchroniseerd.");
     } catch (err) {

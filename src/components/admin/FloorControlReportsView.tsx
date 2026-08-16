@@ -32,7 +32,7 @@ type FloorControlLog = {
   foundCount: number;
   missingCount: number;
   unexpectedCount: number;
-  details: Record<string, any>;
+  details: Record<string, unknown>;
 };
 
 export default function FloorControlReportsView() {

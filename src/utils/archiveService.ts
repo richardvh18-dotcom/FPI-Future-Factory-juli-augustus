@@ -3,7 +3,7 @@ import app from "../config/firebase";
 import i18n from "../i18n";
 
 const functions = getFunctions(app);
-const archivePlanningOrderCallable = httpsCallable(functions, "archivePlanningOrder");
+const archivePlanningOrderCallable = httpsCallable<unknown, unknown>(functions, "archivePlanningOrder");
 
 type ArchiveReason = "completed" | "rejected" | "manual";
 

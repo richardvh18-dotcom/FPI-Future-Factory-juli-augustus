@@ -229,7 +229,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
         }
         // Voor andere machines accepteren we voorlopig dat het lot (nog) niet in het systeem zit.
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Fout bij lot validatie:", err);
       showError("Fout bij het controleren van het lotnummer in de database.");
       setLoading(false);
@@ -306,7 +306,7 @@ const AddLabMeasurementModal = ({ onClose, defaultType = "ri" }: AddLabMeasureme
         notes: "",
       }));
       onClose();
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
       showError(err.message || "Fout bij opslaan van meting.");
     } finally {

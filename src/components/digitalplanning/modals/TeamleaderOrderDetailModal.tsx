@@ -33,7 +33,7 @@ import {
 import StatusBadge from '../common/StatusBadge';
 import CancelOrderModal from "./CancelOrderModal";
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 
 const getErrorMessage = (error: unknown): string => {
   if (error instanceof Error) return error.message;

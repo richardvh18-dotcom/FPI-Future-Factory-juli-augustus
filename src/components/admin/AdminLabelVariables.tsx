@@ -94,7 +94,7 @@ const AdminLabelVariables: React.FC = () => {
   const [formState, setFormState, clearPersistedForm] = useFormPersistence<{
     formCode: string;
     variables: RuleVariable[];
-    testInputs: Record<string, any>;
+    testInputs: Record<string, unknown>;
   }>("admin_label_logic_form", {
     formCode: "",
     variables: [],

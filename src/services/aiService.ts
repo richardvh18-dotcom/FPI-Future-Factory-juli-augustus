@@ -103,11 +103,13 @@ class AIService {
   public availableModel: string;
   public functions: Functions;
   public aiProxyGenerate: unknown;
+  public askCopilotCallable: unknown;
 
   constructor() {
     this.availableModel = 'gemini-2.5-flash';
     this.functions = getFunctions(app, 'europe-west1');
-    this.aiProxyGenerate = httpsCallable(this.functions, 'aiProxyGenerate');
+    this.aiProxyGenerate = httpsCallable<unknown, unknown>(this.functions, 'aiProxyGenerate');
+    this.askCopilotCallable = httpsCallable<unknown, unknown>(this.functions, 'askCopilot');
     
     // Expose debug functie globally voor troubleshooting
     if (typeof window !== 'undefined') {
@@ -730,6 +732,37 @@ class AIService {
       }
 
       throw new Error(err?.message || i18n.t("gemini.proxy_error", "AI proxy request mislukt"));
+    }
+  }
+
+  async askCopilot(query: string, history: unknown[] = []) {
+    if (!this.isConfigured()) {
+      throw new Error(i18n.t("gemini.api_disabled", "AI functionaliteit is uitgeschakeld."));
+    }
+    
+    if (!auth.currentUser) {
+      throw new Error(i18n.t("gemini.auth_required", "Je moet ingelogd zijn om AI te gebruiken."));
+    }
+    
+    try {
+      const response = await (this.askCopilotCallable as (payload: Record<string, unknown>) => Promise<unknown>)({
+        query,
+        history,
+      });
+
+      const payload = response as { data?: { success?: boolean; answer?: string; toolCalls?: unknown[] } } | undefined;
+      
+      if (!payload?.data?.success) {
+        throw new Error(i18n.t("gemini.no_answer", "Geen geldig antwoord ontvangen van Copilot"));
+      }
+
+      return {
+        answer: payload.data.answer,
+        toolCalls: payload.data.toolCalls || []
+      };
+    } catch (error: unknown) {
+      console.error('Copilot proxy error:', error);
+      throw error;
     }
   }
 

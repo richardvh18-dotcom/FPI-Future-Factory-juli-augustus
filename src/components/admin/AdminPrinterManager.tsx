@@ -739,7 +739,7 @@ const TempLabelModal = ({ onClose, printers, labelTemplates, labelRules, onPrint
     setResults([]);
     setSearchDiagnostics([]);
     try {
-      const { results: finalResults, diagnostics } = await executeOrderLabelSearch(orderStr, initialList as any);
+      const { results: finalResults, diagnostics } = await executeOrderLabelSearch(orderStr, initialList as LabelTemplate[]);
       setSearchDiagnostics(diagnostics);
       setResults(finalResults as TempOrderRecord[]);
 
@@ -1615,14 +1615,14 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
         lotNumber: String(orderData.lotNumber || order),
       });
       const processedData = applyLabelLogic(labelData, labelLogicRules);
-      const widthMm = Number((selectedTemplate as any)?.width) || resolveRollWidthMm(printer);
-      const heightMm = Number((selectedTemplate as any)?.height) || 40;
+      const widthMm = Number((selectedTemplate as Record<string, unknown>)?.width) || resolveRollWidthMm(printer);
+      const heightMm = Number((selectedTemplate as Record<string, unknown>)?.height) || 40;
 
       try {
         const bitmapZpl = await renderLabelForPrinter({
           printer,
-          template: selectedTemplate as any,
-          data: processedData as any,
+          template: selectedTemplate as LabelTemplate,
+          data: processedData as Record<string, unknown>,
           printerDpi: driver.nativeDpi,
           darkness,
           printSpeed,
@@ -1649,7 +1649,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       };
       const fallbackBitmapZpl = await renderLabelForPrinter({
         printer,
-        template: fallbackTemplate as any,
+        template: fallbackTemplate as LabelTemplate,
         data: {
           orderNumber: order,
           itemCode: item,

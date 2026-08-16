@@ -138,6 +138,8 @@ export const PATHS: Record<string, string[]> = {
   QC_MEASUREMENTS: withPathMode([BASE, "production", "qc_measurements"]),
   QC_INSPECTIONS: withPathMode([BASE, "production", "qc_inspections"]),
   
+  // --- AI INSIGHTS ---
+  AI_INSIGHTS: [BASE, "insights", "reports"],
   AI_CONFIG: [BASE, "settings", "ai_config", "main"],
   ROLES: [BASE, "settings", "roles"],
   SITE_CONFIG_APP: [BASE, "settings", "site_config", "app"],

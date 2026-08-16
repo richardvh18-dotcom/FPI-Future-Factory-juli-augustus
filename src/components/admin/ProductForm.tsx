@@ -81,10 +81,10 @@ type Verifier = {
 };
 
 type ProductFormProps = {
-  initialData?: any;
+  initialData?: unknown;
   onSubmit?: () => void;
   onCancel?: () => void;
-  user?: any;
+  user?: unknown;
 };
 
 const getErrorMessage = (err: unknown): string => {
@@ -189,7 +189,7 @@ const ProductForm = ({ initialData, onSubmit, onCancel, user }: ProductFormProps
     loading: settingsLoading,
     productRange,
     generalConfig,
-  } = useSettingsData(user as any);
+  } = useSettingsData(user as unknown);
   const { notify } = useNotifications();
   const [saving, setSaving] = useState(false);
   const isAdminUser = String(user?.role || "").toLowerCase() === "admin";

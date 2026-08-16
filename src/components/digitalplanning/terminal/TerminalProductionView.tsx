@@ -4,7 +4,7 @@ import { Zap, ChevronRight, ChevronDown, ArrowLeft, ClipboardCheck, ScanBarcode,
 import { useNotifications } from "../../../contexts/NotificationContext";
 import { useTouchKeyboardPreference } from "../../../hooks/useTouchKeyboardPreference";
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 
 type TerminalProductionViewProps = {
   activeWikkelingen?: AnyRecord[];
@@ -12,8 +12,8 @@ type TerminalProductionViewProps = {
   selectedTrackedId?: string | null;
   onSelectTracked?: (id: string | null) => void;
   selectedWikkeling?: AnyRecord | null;
-  onReleaseProduct?: (...args: any[]) => void | Promise<void>;
-  onCancelProduction?: (...args: any[]) => void | Promise<void>;
+  onReleaseProduct?: (...args: unknown[]) => void | Promise<void>;
+  onCancelProduction?: (...args: unknown[]) => void | Promise<void>;
   scanInput?: string;
   setScanInput?: (value: string) => void;
   onScan?: (e: React.KeyboardEvent<HTMLInputElement>) => void;

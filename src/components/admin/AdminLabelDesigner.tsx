@@ -397,7 +397,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
     void restoreUsbConnection();
   }, []);
 
-  const mapOrderDoc = (snap: any): OrderRecord => {
+  const mapOrderDoc = (snap: unknown): OrderRecord => {
     const data = (snap.data?.() || {}) as Record<string, unknown>;
     const path = String(snap.ref?.path || '');
     const pathMachine = path.match(/\/machines\/([^/]+)\/orders\//i)?.[1] || '';
@@ -717,8 +717,8 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
 
     const printData = await renderLabelForPrinter({
       printer: null,
-      template: labelConfig as any,
-      data: data as any,
+      template: labelConfig as unknown,
+      data: data as unknown,
       printerDpi: resolvedDpi,
       darkness: 15,
       printSpeed: 3,
@@ -757,7 +757,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
           name: labelName,
           folder: labelFolder,
           tags: labelTags,
-          elements: elements as any,
+          elements: elements as unknown,
         },
         data,
         printerDpi: dpi,
@@ -1152,7 +1152,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
         return cleanEl;
       });
 
-      const isSpecial = sanitizedElements.some((el: any) => el.variable === "SPECIAL_TEXT");
+      const isSpecial = sanitizedElements.some(() => el.variable === "SPECIAL_TEXT");
       const tagsToSave = tagsOverride !== null ? tagsOverride : (labelTags || []);
 
       await setDoc(docRef, {
