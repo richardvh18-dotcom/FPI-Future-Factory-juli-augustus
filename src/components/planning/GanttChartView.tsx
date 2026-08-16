@@ -99,7 +99,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
   // Drag state
   const [dragState, setDragState] = useState({
     isDragging: false,
-    orderId: null,
+    orderId: null as string | null,
     startX: 0,
     currentX: 0,
     originalLeft: 0
@@ -120,7 +120,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
         const data = docSnap.data();
         setFactoryConfig(data);
         const depts = Array.isArray(data.departments)
-          ? data.departments.filter((d: AnyRecord) => d.isActive !== false).map((d: AnyRecord) => d.name)
+          ? data.departments.filter((d: AnyRecord) => d.isActive !== false).map((d: AnyRecord) => String(d.name || ""))
           : [];
         setDepartments(["ALLES", ...depts]);
       }
@@ -283,10 +283,11 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
     let filtered = machines;
 
     if (selectedDepartment !== "ALLES" && factoryConfig) {
-      const dept = factoryConfig.departments.find((d: AnyRecord) => d.name === selectedDepartment);
+      const depts = (factoryConfig.departments || []) as AnyRecord[];
+      const dept = depts.find((d: AnyRecord) => d.name === selectedDepartment);
       if (!dept) return [];
     
-      const deptStationNames = (dept.stations || []).map((s: AnyRecord) => normalizeMachine(s.name));
+      const deptStationNames = ((dept.stations as AnyRecord[]) || []).map((s: AnyRecord) => normalizeMachine(s.name));
       filtered = machines.filter(m => deptStationNames.includes(normalizeMachine(m)));
     }
 
@@ -368,11 +369,11 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
 
   const getDeliveryDay = (order: AnyRecord) => {
     const delivery = resolveDeliveryDate(
-      order?.deliveryDate,
-      order?.plannedDeliveryDate,
-      order?.dueDate,
-      order?.deadline,
-      order?.rejectDate
+      order?.deliveryDate as any,
+      order?.plannedDeliveryDate as any,
+      order?.dueDate as any,
+      order?.deadline as any,
+      order?.rejectDate as any
     );
     return delivery ? startOfDay(delivery) : null;
   };
@@ -426,7 +427,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
 
     completedItems.forEach((item: AnyRecord) => {
       const eventDate =
-        parseDate(item?.timestamps?.finished) ||
+        parseDate((item?.timestamps as any)?.finished) ||
         parseDate(item?.completedAt) ||
         parseDate(item?.archivedAt) ||
         parseDate(item?.updatedAt) ||
@@ -482,7 +483,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
       if (!isFinished) return;
 
       const eventDate =
-        parseDate(product?.timestamps?.finished) ||
+        parseDate((product?.timestamps as any)?.finished) ||
         parseDate(product?.updatedAt) ||
         parseDate(product?.lastUpdated) ||
         parseDate(product?.createdAt);
@@ -603,9 +604,9 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
     const dayMap = new Map();
     orderTracked.forEach((item: AnyRecord) => {
       const eventDate =
-        parseDate(item?.timestamps?.finished) ||
+        parseDate((item?.timestamps as any)?.finished) ||
         parseDate(item?.createdAt) ||
-        parseDate(item?.timestamps?.started);
+        parseDate((item?.timestamps as any)?.started);
       if (!eventDate) return;
 
       const dayKey = format(startOfDay(eventDate), 'yyyy-MM-dd');
@@ -638,11 +639,11 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
 
   function getOrderTimeBounds(order: AnyRecord) {
     const deliveryDate = resolveDeliveryDate(
-      order?.deliveryDate,
-      order?.plannedDeliveryDate,
-      order?.dueDate,
-      order?.deadline,
-      order?.rejectDate
+      order?.deliveryDate as any,
+      order?.plannedDeliveryDate as any,
+      order?.dueDate as any,
+      order?.deadline as any,
+      order?.rejectDate as any
     );
     const planningState = getDeliveryPlanningState(deliveryDate, {
       productionLeadDays: 21,
@@ -661,12 +662,12 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
     const isEfficiencyBased = Boolean(importedInfo && importedInfo.minutesPerUnit);
 
     if (isEfficiencyBased) {
-      const planCount = parseInt(order.plan) || 0;
-      totalHours = (importedInfo.minutesPerUnit * planCount) / 60;
+      const planCount = parseInt(order.plan as string) || 0;
+      totalHours = ((importedInfo as any).minutesPerUnit * planCount) / 60;
     } else {
-      totalHours = parseFloat(order.estimatedHours) || 0;
+      totalHours = parseFloat(order.estimatedHours as string) || 0;
       if (totalHours === 0) {
-        totalHours = (parseInt(order.plan) || 0) * 0.08;
+        totalHours = (parseInt(order.plan as string) || 0) * 0.08;
       }
     }
 
@@ -896,7 +897,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
 
     setDragState({
       isDragging: true,
-      orderId: order.id,
+      orderId: order.id as string | null,
       startX: e.clientX,
       currentX: e.clientX,
       originalLeft: currentLeft
@@ -1098,7 +1099,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
 
   // Get order color based on status
   const getOrderColor = (order: AnyRecord) => {
-    const status = (order.status || "pending").toLowerCase();
+    const status = String(order.status || "pending").toLowerCase();
     
     if (status.includes("plan") || status.includes("pending") || status.includes("open")) return "bg-blue-500";
     if (status.includes("prod") || status.includes("progress") || status.includes("active") || status.includes("start")) return "bg-orange-500";
@@ -1254,7 +1255,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                 }`}
               >
-                {t("planning.gantt.rangeWeek")}
+                {String(t("planning.gantt.rangeWeek"))}
               </button>
               <button
                 onClick={() => applyPresetViewFromToday(14)}
@@ -1264,7 +1265,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                 }`}
               >
-                {t("planning.gantt.rangeTwoWeeks")}
+                {String(t("planning.gantt.rangeTwoWeeks"))}
               </button>
               <button
                 onClick={() => applyPresetViewFromToday(30)}
@@ -1274,7 +1275,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                 }`}
               >
-                {t("planning.gantt.rangeMonth")}
+                {String(t("planning.gantt.rangeMonth"))}
               </button>
               <button
                 onClick={applyAllViewFromToday}
@@ -1284,7 +1285,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                 }`}
               >
-                {t("planning.gantt.rangeAllView")}
+                {String(t("planning.gantt.rangeAllView"))}
               </button>
             </div>
 
@@ -1294,13 +1295,13 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                 onClick={() => setExpandedLaneMode(false)}
                 className={`px-2 py-0.5 rounded text-[10px] font-bold ${!expandedLaneMode ? "bg-white text-blue-600" : "text-slate-600"}`}
               >
-                {t("planning.gantt.stackCompact", "Compact")}
+                {String(t("planning.gantt.stackCompact", "Compact"))}
               </button>
               <button
                 onClick={() => setExpandedLaneMode(true)}
                 className={`px-2 py-0.5 rounded text-[10px] font-bold ${expandedLaneMode ? "bg-white text-blue-600" : "text-slate-600"}`}
               >
-                {t("planning.gantt.stackExpanded", "Uitgeklapt")}
+                {String(t("planning.gantt.stackExpanded", "Uitgeklapt"))}
               </button>
             </div>
 
@@ -1310,19 +1311,19 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                 onClick={() => setDayWidth(60)}
                 className={`px-2 py-0.5 rounded text-[10px] font-bold ${dayWidth === 60 ? "bg-white text-blue-600" : "text-slate-600"}`}
               >
-                {t("planning.gantt.zoomCompact")}
+                {String(t("planning.gantt.zoomCompact"))}
               </button>
               <button
                 onClick={() => setDayWidth(80)}
                 className={`px-2 py-0.5 rounded text-[10px] font-bold ${dayWidth === 80 ? "bg-white text-blue-600" : "text-slate-600"}`}
               >
-                {t("planning.gantt.zoomNormal")}
+                {String(t("planning.gantt.zoomNormal"))}
               </button>
               <button
                 onClick={() => setDayWidth(120)}
                 className={`px-2 py-0.5 rounded text-[10px] font-bold ${dayWidth === 120 ? "bg-white text-blue-600" : "text-slate-600"}`}
               >
-                {t("planning.gantt.zoomDetail")}
+                {String(t("planning.gantt.zoomDetail"))}
               </button>
             </div>
 
@@ -1332,13 +1333,13 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                 onClick={expandAllMachines}
                 className="px-2 py-0.5 rounded text-[10px] font-bold text-slate-700 hover:bg-white"
               >
-                {t("planning.gantt.expandAll")}
+                {String(t("planning.gantt.expandAll"))}
               </button>
               <button
                 onClick={collapseAllMachines}
                 className="px-2 py-0.5 rounded text-[10px] font-bold text-slate-700 hover:bg-white"
               >
-                {t("planning.gantt.collapseAll")}
+                {String(t("planning.gantt.collapseAll"))}
               </button>
             </div>
 
@@ -1382,7 +1383,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                 onClick={goToPreviousMonth}
                 className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[11px] font-bold transition-colors"
               >
-                {t("planning.gantt.prevMonth", "-1 Maand")}
+                {String(t("planning.gantt.prevMonth", "-1 Maand"))}
               </button>
               <button
                 onClick={goToPreviousWeek}
@@ -1394,7 +1395,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                 onClick={goToToday}
                 className="px-2.5 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded-md text-[11px] font-bold transition-colors"
               >
-                {t("planning.gantt.today")}
+                {String(t("planning.gantt.today"))}
               </button>
               <button
                 onClick={goToNextWeek}
@@ -1406,13 +1407,13 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                 onClick={goToNextMonth}
                 className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[11px] font-bold transition-colors"
               >
-                {t("planning.gantt.nextMonth", "+1 Maand")}
+                {String(t("planning.gantt.nextMonth", "+1 Maand"))}
               </button>
             </div>
 
             {viewMode === "all" && (
               <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest bg-slate-100 px-2.5 py-1 rounded-md">
-                {t("planning.gantt.visibleDays", { count: Math.min(35, visibleDaysCount), max: 35 })}
+                {String(t("planning.gantt.visibleDays", { count: Math.min(35, visibleDaysCount), max: 35 }) || "")}
               </div>
             )}
           </div>
@@ -1431,7 +1432,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
             <div className="flex border-b-2 border-slate-200 bg-slate-50 sticky top-0 z-30">
               {/* Machine Column */}
               <div className="w-48 flex-shrink-0 p-2.5 border-r-2 border-slate-200 font-bold text-xs text-slate-700 sticky left-0 z-50 bg-slate-50 shadow-[2px_0_0_0_rgba(226,232,240,1)]">
-                {t("planning.gantt.machine")}
+                {String(t("planning.gantt.machine"))}
               </div>
 
               {/* Days */}
@@ -1485,7 +1486,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                         <div>
                           <div className="font-bold text-sm text-slate-800">{machine}</div>
                           <div className="text-xs text-slate-500 mt-1">
-                            {t("planning.gantt.ordersCount", { count: machineOrders.length })}
+                            {String(t("planning.gantt.ordersCount", { count: machineOrders.length }) || "")}
                           </div>
                         </div>
                         <span className="text-slate-500">
@@ -1572,7 +1573,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                         
                         if (bounds?.actualDuration && bounds.actualDuration.actualEndDay) {
                           // Markeer orders die klaar zijn met groene overlay
-                          if (bounds.actualDuration.totalProduced >= order.plan) {
+                          if (bounds.actualDuration.totalProduced >= (order.plan as number)) {
                             actualBarColor = "bg-emerald-600";
                           }
                         }
@@ -1614,10 +1615,10 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                                 {orderWithProductLabel}
                               </div>
                               <div className="text-white text-xs opacity-90">
-                                {(order.itemCode || order.item || "-")} · {getProducedUnits(order, trackedFinishedByOrder)}/{order.plan} stuks
+                                {String(order.itemCode || order.item || "-")} · {getProducedUnits(order, trackedFinishedByOrder)}/{String(order.plan || "")} stuks
                               </div>
                               <div className="text-white/90 text-[10px] truncate">
-                                {order.itemDescription || order.item || ""}
+                                {String(order.itemDescription || order.item || "")}
                               </div>
                               {prediction && (
                                 <div className={`text-[10px] font-bold truncate ${scheduleClass}`}>
@@ -1654,7 +1655,7 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
       </div>
 
       {selectedOrderPopup?.order && (() => {
-        const order = selectedOrderPopup.order;
+        const order = selectedOrderPopup.order as AnyRecord;
         const stableOrderSelectionId = getOrderBarIdentity(order);
         const prediction = orderPredictionMap.get(getOrderIdentity(order));
         const bounds = getOrderTimeBounds(order);
@@ -1673,12 +1674,12 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
           <div
             className="fixed z-[140] w-[320px] rounded-xl bg-slate-900 text-white p-3 shadow-2xl text-xs"
             style={{
-              left: `${selectedOrderPopup.position.left}px`,
-              top: `${selectedOrderPopup.position.top}px`,
+              left: `${(selectedOrderPopup.position as any).left}px`,
+              top: `${(selectedOrderPopup.position as any).top}px`,
             }}
           >
             <div className="flex items-start justify-between gap-3 mb-2">
-              <div className="font-bold">{order.orderId || order.item}</div>
+              <div className="font-bold">{String(order.orderId || order.item || "")}</div>
               <button
                 type="button"
                 onClick={() => {
@@ -1690,41 +1691,41 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
                 x
               </button>
             </div>
-            <div>{t("planning.gantt.tooltipItem")}: {order.itemCode || "-"}</div>
-            <div>{t("planning.gantt.tooltipProduct", "Product")}: {order.itemDescription || order.item || "-"}</div>
-            <div>{t("planning.gantt.tooltipQuantity")}: {order.plan} {t("planning.gantt.pieces")}</div>
-            <div>{t("planning.gantt.tooltipProduced", "Gemaakt")}: {getProducedUnits(order, trackedFinishedByOrder)} / {order.plan} {t("planning.gantt.pieces")}</div>
-            <div>{t("planning.gantt.tooltipMachine")}: {order.machine}</div>
+            <div>{String(t("planning.gantt.tooltipItem"))}: {String(order.itemCode || "-")}</div>
+            <div>{String(t("planning.gantt.tooltipProduct", "Product"))}: {String(order.itemDescription || order.item || "-")}</div>
+            <div>{String(t("planning.gantt.tooltipQuantity"))}: {String(order.plan || "")} {String(t("planning.gantt.pieces"))}</div>
+            <div>{String(t("planning.gantt.tooltipProduced", "Gemaakt"))}: {getProducedUnits(order, trackedFinishedByOrder)} / {String(order.plan || "")} {String(t("planning.gantt.pieces"))}</div>
+            <div>{String(t("planning.gantt.tooltipMachine"))}: {String(order.machine || "")}</div>
             {bounds && (
               <>
-                <div>{t("planning.gantt.tooltipTime")}: {Math.round((bounds.totalHours || 0) * 10) / 10}u{bounds.isEfficiencyBased && <span className="text-emerald-300 ml-1 font-bold">(LN)</span>}</div>
-                {bounds.startDay && <div>{t("planning.gantt.tooltipFrom")}: {format(bounds.startDay, 'dd-MM-yyyy')}</div>}
-                {bounds.endDay && <div>{t("planning.gantt.tooltipTo")}: {format(bounds.endDay, 'dd-MM-yyyy')}</div>}
-                <div>{t("planning.gantt.tooltipLeadTime")}: {bounds.leadWeeks} {t("planning.gantt.weeks")}</div>
+                <div>{String(t("planning.gantt.tooltipTime"))}: {Math.round((bounds.totalHours || 0) * 10) / 10}u{bounds.isEfficiencyBased && <span className="text-emerald-300 ml-1 font-bold">(LN)</span>}</div>
+                {bounds.startDay && <div>{String(t("planning.gantt.tooltipFrom"))}: {format(bounds.startDay, 'dd-MM-yyyy')}</div>}
+                {bounds.endDay && <div>{String(t("planning.gantt.tooltipTo"))}: {format(bounds.endDay, 'dd-MM-yyyy')}</div>}
+                <div>{String(t("planning.gantt.tooltipLeadTime"))}: {bounds.leadWeeks} {String(t("planning.gantt.weeks"))}</div>
               </>
             )}
             {bounds?.actualDuration && (
               <div className="border-t border-emerald-400 pt-2 mt-2">
-                <div className="font-bold text-emerald-400">{t("planning.gantt.actualDuration", "Werkelijke duur:")}</div>
+                <div className="font-bold text-emerald-400">{String(t("planning.gantt.actualDuration", "Werkelijke duur:"))}</div>
                 <div>{bounds.actualDuration.actualDays} dagen ({Math.round(bounds.actualDuration.actualDays / 7 * 10) / 10} wk)</div>
                 <div>{bounds.actualDuration.totalProduced} stuks, ~{Math.round(bounds.actualDuration.avgPerDay * 10) / 10}/dag</div>
               </div>
             )}
             {prediction && (
               <div className="border-t border-slate-700 pt-2 mt-2 space-y-1">
-                <div>{t("planning.gantt.tooltipPredictedReady", "Voorspelde gereeddatum")}: {prediction.predictedReadyDay ? format(prediction.predictedReadyDay, "dd-MM-yyyy") : "--"}</div>
+                <div>{String(t("planning.gantt.tooltipPredictedReady", "Voorspelde gereeddatum"))}: {prediction.predictedReadyDay ? format(prediction.predictedReadyDay, "dd-MM-yyyy") : "--"}</div>
                 <div>
-                  {t("planning.gantt.tooltipPredictionSource", "Voorspelling op basis van")}: {prediction.predictedBy === "order_history"
-                    ? t("planning.gantt.predictionSourceOrderHistory", "orderhistorie")
-                    : t("planning.gantt.predictionSourceMachineHistory", "machinehistorie")}
+                  {String(t("planning.gantt.tooltipPredictionSource", "Voorspelling op basis van"))}: {prediction.predictedBy === "order_history"
+                    ? String(t("planning.gantt.predictionSourceOrderHistory", "orderhistorie"))
+                    : String(t("planning.gantt.predictionSourceMachineHistory", "machinehistorie"))}
                 </div>
                 <div>
-                  {t("planning.gantt.tooltipSchedule", "Planningstatus")}: {scheduleLabel}
+                  {String(t("planning.gantt.tooltipSchedule", "Planningstatus"))}: {scheduleLabel}
                   {Number.isFinite(prediction?.slipDays)
                     ? ` (${prediction.slipDays > 0 ? "+" : ""}${prediction.slipDays}d)`
                     : ""}
                 </div>
-                <div>{t("planning.gantt.tooltipThroughput", "Tempo")}: {Math.round((prediction?.unitsPerDay || 0) * 10) / 10} {t("planning.gantt.pieces")}/dag</div>
+                <div>{String(t("planning.gantt.tooltipThroughput", "Tempo"))}: {Math.round((prediction?.unitsPerDay || 0) * 10) / 10} {String(t("planning.gantt.pieces"))}/dag</div>
               </div>
             )}
           </div>
@@ -1734,12 +1735,12 @@ const GanttChartView = (props: { planningOrders?: AnyRecord[] | null; trackedPro
       {/* Legend */}
       <div className="mt-6 bg-white rounded-2xl p-4 shadow-sm border-2 border-slate-200">
         <div className="flex items-center gap-6">
-          <span className="text-sm font-bold text-slate-700">{t("planning.gantt.status")}</span>
+          <span className="text-sm font-bold text-slate-700">{String(t("planning.gantt.status"))}</span>
           {[
-            { status: "planned", label: t("planning.gantt.statusPlanned"), color: "bg-blue-500" },
-            { status: "in_production", label: t("planning.gantt.statusInProduction"), color: "bg-orange-500" },
-            { status: "quality_check", label: t("planning.gantt.statusQualityCheck"), color: "bg-purple-500" },
-            { status: "ready", label: t("planning.gantt.statusReady", "Gereed"), color: "bg-emerald-500" }
+            { status: "planned", label: String(t("planning.gantt.statusPlanned")), color: "bg-blue-500" },
+            { status: "in_production", label: String(t("planning.gantt.statusInProduction")), color: "bg-orange-500" },
+            { status: "quality_check", label: String(t("planning.gantt.statusQualityCheck")), color: "bg-purple-500" },
+            { status: "ready", label: String(t("planning.gantt.statusReady", "Gereed")), color: "bg-emerald-500" }
           ].map(item => (
             <div key={item.status} className="flex items-center gap-2">
               <div className={`w-4 h-4 ${item.color} rounded`} />

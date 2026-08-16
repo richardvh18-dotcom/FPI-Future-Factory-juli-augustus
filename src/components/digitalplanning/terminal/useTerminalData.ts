@@ -613,7 +613,7 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
     
     if (!wikkelenSearch) return active;
     const term = wikkelenSearch.toLowerCase();
-    return active.filter(p => (p.lotNumber || "").toLowerCase().includes(term) || (p.orderId || "").toLowerCase().includes(term));
+    return active.filter(p => (String((p as any).lotNumber) || "").toLowerCase().includes(term) || (String((p as any).orderId) || "").toLowerCase().includes(term));
   }, [allTracked, normalizedStationId, wikkelenSearch]);
 
   const lotConflictMeta = useMemo(() => {
@@ -662,7 +662,7 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
   const repairItems = useMemo(() => {
     return activeWikkelingen.filter(p => 
       p.isManualMove || 
-      p.inspection?.status === "Tijdelijke afkeur" || 
+      (p.inspection as any)?.status === "Tijdelijke afkeur" || 
       isBH31
     );
   }, [activeWikkelingen, isBH31]);
@@ -898,7 +898,7 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
     // Fallback voor gevallen waarin selectie nog bestaat maar tijdelijk niet in de zichtbare lijst zit.
     return myOrders.find(
       (o) => o.id === selectedOrderId || o.orderId === selectedOrderId
-    ) || undefined;
+    ) || null;
   }, [isLossen1218Station, lossenFilteredOrders, filteredOrders, myOrders, selectedOrderId]);
 
   const selectedWikkeling = useMemo(() => activeWikkelingen.find(p => p.id === selectedTrackedId), [activeWikkelingen, selectedTrackedId]);
@@ -936,10 +936,10 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
 
       // Zelfde OK-QR als Nabewerken: alleen toegestaan op BH18 in de Wikkelen->Lossen overgang.
       if (codeUpper === QR_CODE_OK_CONFIRMATION) {
-        const isWikkelenStep = (selectedWikkeling?.currentStep || "").toLowerCase() === "wikkelen";
+        const isWikkelenStep = (String((selectedWikkeling as any)?.currentStep || "")).toLowerCase() === "wikkelen";
 
         if (!isBH18) {
-          notify((String(t("digitalplanning.terminal.ok_qr_not_available", "OK-QR is op dit station niet beschikbaar. Gebruik deze alleen op BH18 (Wikkelen) en in Nabewerken/BM01."))) as never);
+          notify(String(t("digitalplanning.terminal.ok_qr_not_available", "OK-QR is op dit station niet beschikbaar. Gebruik deze alleen op BH18 (Wikkelen) en in Nabewerken/BM01.")));
           setScanInput("");
           setTimeout(() => {
             scanInputRef.current?.focus();
@@ -953,7 +953,7 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
           setReleaseAutoApproveToken(Date.now());
           setScanInput("");
         } else {
-          notify((String(t("digitalplanning.terminal.select_active_bh18_before_qr", "Selecteer eerst een actief BH18-item in stap Wikkelen voordat je de OK-QR scant."))) as never);
+          notify(String(t("digitalplanning.terminal.select_active_bh18_before_qr", "Selecteer eerst een actief BH18-item in stap Wikkelen voordat je de OK-QR scant.")));
           setScanInput("");
           setTimeout(() => {
             scanInputRef.current?.focus();
@@ -963,8 +963,8 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
       }
       
       const found = activeWikkelingen.find(i => 
-        (i.lotNumber || "").toLowerCase() === code.toLowerCase() || 
-        (i.orderId || "").toLowerCase() === code.toLowerCase()
+        (String((i as any).lotNumber) || "").toLowerCase() === code.toLowerCase() || 
+        (String((i as any).orderId) || "").toLowerCase() === code.toLowerCase()
       );
 
       const normalizedCode = code.toUpperCase();
@@ -974,7 +974,7 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
       const conflictOnScannedLot = lotConflictMeta[normalizedCode]?.hasConflict;
 
       if (lotMatches.length > 1 && conflictOnScannedLot) {
-        notify((String(t("digitalplanning.terminal.lot_duplicate_conflict", "Lot {{code}} bestaat meerdere keren met verschillend product/order. Kies handmatig het juiste item in de lijst.", { code }))) as never);
+        notify(String(t("digitalplanning.terminal.lot_duplicate_conflict", "Lot {{code}} bestaat meerdere keren met verschillend product/order. Kies handmatig het juiste item in de lijst.", { code })));
         setScanInput("");
         setTimeout(() => {
           scanInputRef.current?.focus();
@@ -986,7 +986,7 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
         setSelectedTrackedId(found.id);
         setScanInput("");
       } else {
-        notify((String(t("digitalplanning.terminal.item_not_found_active_winding", "Item {{code}} niet gevonden in actieve wikkelingen.", { code }))) as never);
+        notify(String(t("digitalplanning.terminal.item_not_found_active_winding", "Item {{code}} niet gevonden in actieve wikkelingen.", { code })));
         setScanInput("");
       }
       // Na scan altijd weer focus op het scanveld

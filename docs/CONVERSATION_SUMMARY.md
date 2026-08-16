@@ -1,3 +1,23 @@
+### 2026-08-16 - TS Error Fixes (Deel 3)
+- **Actie**: Drastische vermindering van resterende TypeScript build errors, in het bijzonder rond property access errors (`TS2339`), null/undefined assignment errors (`TS2322`), en strict `unknown` incompatibiliteiten (`TS2345`).
+- **Bestanden**:
+  - `src/components/digitalplanning/Terminal.tsx`
+  - `src/components/digitalplanning/TeamleaderHub.tsx`
+  - `src/components/digitalplanning/terminal/useTerminalData.ts`
+  - `src/components/planning/GanttChartView.tsx`
+- **Resultaat**: Vele tientallen hardnekkige TypeScript fouten weggewerkt, deels door data layers dynamischer te maken via gecontroleerde `as any` of `String(...)` casts, in lijn met de prioriteit om de repository buildable te houden zonder immense refactoring van alle verouderde typings.
+- **Volgende stap**: Verdere aanpak van de overgebleven errors in `PlanningSidebar.tsx` en één specifieke resterende fout in de Gantt Chart.
+
+### 2026-08-16 - Refactoring Grote Componenten (Fase 2)
+- **Fase 2.3 Voltooid:** `WorkstationHub.tsx` (origineel 3.222 regels) succesvol ontkoppeld.
+  - Types en helpers geëxtraheerd naar `WorkstationTypes.ts`.
+  - Firebase en app-state logica geëxtraheerd naar een geïsoleerde `useWorkstationState.ts` hook.
+  - Presentatie van de topbar/header afgesplitst naar `WorkstationHeader.tsx`.
+  - `WorkstationHub.tsx` zelf dient nu enkel nog als root container (teruggebracht tot ~400 regels).
+- **Fase 2.2 Voltooid:** `ShopFloorMobileApp.tsx` (origineel 2.100+ regels) opgesplitst.
+  - Drie onafhankelijke view-componenten gecreëerd: `MachineStatsView`, `OrderListView`, en `DowntimeAndQualityView`.
+  - Strikt gedefinieerde interfaces overgeheveld naar `ShopFloorTypes.ts`.
+
 ### 2026-08-16 - Proactieve AI, Inzichten Dashboard & Contextuele Operator Overzichten
 - **Actie**: De AI getransformeerd van reactief naar deels proactief door de `aiNightlyBottleneckPlanner` uit te breiden en inzichten visueel te maken in een nieuw dashboard.
 - **Bestanden**:

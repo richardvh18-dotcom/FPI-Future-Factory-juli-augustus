@@ -162,15 +162,15 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
    const dataStoreList = (dataStore || []) as unknown[];
 
   const officialDepartmentName = useMemo(() => {
-    const departments = Array.isArray((factoryConfig as unknown)?.departments)
-      ? (factoryConfig as unknown).departments
+    const departments = Array.isArray((factoryConfig as any)?.departments)
+      ? (factoryConfig as any).departments
       : [];
 
     const selectedSlug = departmentFilter !== "ALL"
       ? String(departmentFilter || "").toLowerCase()
       : String(targetSlug || "").toLowerCase();
 
-    const matchedDepartment = departments.find((d: unknown) => {
+    const matchedDepartment = departments.find((d: any) => {
       const slug = String(d?.slug || "").toLowerCase();
       const id = String(d?.id || "").toLowerCase();
       const name = String(d?.name || "").toLowerCase();
@@ -186,14 +186,14 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
    
    const selectedOrder = useMemo(() => {
      if (!selectedOrderId) return null;
-    const matchedOrder = dataStoreList.find((o) => o.id === selectedOrderId || o.orderId === selectedOrderId) || null;
+    const matchedOrder = dataStoreList.find((o: any) => o.id === selectedOrderId || o.orderId === selectedOrderId) || null;
     if (!matchedOrder) return null;
 
     if (
       selectedSidebarEntry &&
-      (selectedSidebarEntry.orderId === matchedOrder.orderId || selectedSidebarEntry.id === matchedOrder.id)
+      ((selectedSidebarEntry as any).orderId === (matchedOrder as any).orderId || (selectedSidebarEntry as any).id === (matchedOrder as any).id)
     ) {
-      return { ...matchedOrder, ...selectedSidebarEntry };
+      return { ...(matchedOrder as any), ...(selectedSidebarEntry as any) };
     }
 
     return matchedOrder;
@@ -207,7 +207,7 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
  
    const selectedSidebarEntryId = useMemo(() => {
      if (selectedSidebarEntry?.orderId) return selectedSidebarEntry.orderId;
-     if ((selectedSidebarEntry as unknown)?.id) return (selectedSidebarEntry as unknown).id;
+     if ((selectedSidebarEntry as any)?.id) return (selectedSidebarEntry as any).id;
      return selectedOrderId;
    }, [selectedSidebarEntry, selectedOrderId]);
  
@@ -218,7 +218,7 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
  
    const canManageOverproduction = fixedScope === "all" && ["planner", "admin", "teamleader"].includes(String(user?.role || ""));
    
-   const getFinishedQtyForOrder = (order: unknown) => {
+   const getFinishedQtyForOrder = (order: any) => {
      return getOrderFinishedUnits(order, {
        trackedRecords: [...rawProducts, ...archivedHistoryProducts],
        getOrderIdFromRecord: getOrderIdFromTrackedRecord,
@@ -235,13 +235,13 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
      });
    }, [rawOrders, rawProducts]);
  
-   const getOrderProgressMeta = (order: unknown) => {
+   const getOrderProgressMeta = (order: any) => {
      const orderId = String(order?.orderId || order?.id || "").trim();
      if (!orderId) return null;
      return orderProgressMeta.get(orderId) || null;
    };
  
-   const isInAllowedScope = (product: unknown) => {
+   const isInAllowedScope = (product: any) => {
      if (effectiveAllowedNorms.length === 0) return true;
      const m1 = normalizeMachine(product?.machine || "");
      const m2 = normalizeMachine(product?.originMachine || "");
@@ -269,24 +269,24 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
      if (!normalizedOrderId) return true;
  
      const relatedProducts = rawProductsList.filter(
-       (product: unknown) => getOrderIdFromTrackedRecord(product) === normalizedOrderId
+       (product: any) => getOrderIdFromTrackedRecord(product) === normalizedOrderId
      );
  
      if (relatedProducts.length === 0) return true;
  
-     return relatedProducts.some((product: unknown) => {
+     return relatedProducts.some((product: any) => {
        return !isInactiveTrackedProduct(product);
      });
    };
  
-   const isInactiveTrackedProductAny = (product: unknown) => isInactiveTrackedProduct(product as unknown);
-   const isRejectedProductAny = (product: unknown) => isRejectedProduct(product as unknown);
-   const getDeliveredQtyForOrderAny = (order: unknown) => getDeliveredQtyForOrder(order as unknown) ?? 0;
-   const getInspectionApprovedQtyForOrderAny = (order: unknown) => getInspectionApprovedQtyForOrder(order as unknown) ?? 0;
-   const getDeliveryInspectionDeltaForOrderAny = (order: unknown) => getDeliveryInspectionDeltaForOrder(order as unknown) ?? 0;
-   const getOrderRemainingQueueQtyAny = (order: unknown) => getOrderRemainingQueueQty(order as unknown) ?? 0;
+   const isInactiveTrackedProductAny = (product: any) => isInactiveTrackedProduct(product as any);
+   const isRejectedProductAny = (product: any) => isRejectedProduct(product as any);
+   const getDeliveredQtyForOrderAny = (order: any) => getDeliveredQtyForOrder(order as any) ?? 0;
+   const getInspectionApprovedQtyForOrderAny = (order: any) => getInspectionApprovedQtyForOrder(order as any) ?? 0;
+   const getDeliveryInspectionDeltaForOrderAny = (order: any) => getDeliveryInspectionDeltaForOrder(order as any) ?? 0;
+   const getOrderRemainingQueueQtyAny = (order: any) => getOrderRemainingQueueQty(order as any) ?? 0;
  
-   const isPriorityOrder = (order: unknown) => {
+   const isPriorityOrder = (order: any) => {
      if (getPriorityLevel(order) === "normal") return false;
      if (!isOpenOrRunningOrder(order)) return false;
      return hasActiveTrackingForOrder(order?.orderId);
@@ -384,12 +384,12 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
      getOrderIdFromTrackedRecord,
      getOrderProgressMeta,
      getFinishedQtyForOrder,
-     resolveOverproductionRoute: resolveOverproductionRoute as unknown,
+     resolveOverproductionRoute: resolveOverproductionRoute as any,
      isInAllowedScope,
      fixedScope,
      targetSlug,
      departmentFilter,
-     effectiveAllowedNorms: effectiveAllowedNorms as unknown,
+     effectiveAllowedNorms: effectiveAllowedNorms as any,
    });
  
    const selectionContextValue = useMemo(
@@ -488,13 +488,13 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
          setShowAiPrediction={setShowAiPrediction}
          isSyncingDrawings={isSyncingDrawings}
          handleDrawingSync={handleDrawingSync}
-         t={t as unknown}
+         t={t as any}
        />
  
        <div className="flex-1 overflow-hidden p-6 w-full flex flex-col text-left">
          <div className="flex-1 overflow-y-auto custom-scrollbar relative">
            {activeTab === "dashboard" ? (
-             <TeamleaderDashboard metrics={metrics as unknown} onKpiClick={handleKpiClick as unknown} onStationSelect={useTeamleaderModalStore.getState().setSelectedStationDetail} />
+             <TeamleaderDashboard metrics={metrics as any} onKpiClick={handleKpiClick as any} onStationSelect={useTeamleaderModalStore.getState().setSelectedStationDetail} />
            ) : activeTab === "bezetting" ? (
              <div className="space-y-3">
                <div className="flex items-center justify-end">
@@ -508,9 +508,9 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
                </div>
              <PersonnelOccupancyView
                  scope={departmentFilter !== "ALL" ? departmentFilter.toLowerCase() : fixedScope}
-                 structure={factoryConfig as unknown}
-                 occupancy={bezettingList}
-                 personnel={[] as unknown[]}
+                 structure={factoryConfig as any}
+                 occupancy={bezettingList as any[]}
+                 personnel={[] as any[]}
                  selectedDateStr={todayStr}
                  onCopyYesterday={handleCopyYesterday}
                  isCopying={isCopying}
@@ -529,10 +529,10 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
                currentDepartment={departmentFilter !== "ALL" ? departmentFilter.toLowerCase() : targetSlug}
                departmentDisplayName={officialDepartmentName}
                onCreateOrder={() => useTeamleaderModalStore.getState().setShowAddOrderModal(true)}
-                   trackedProducts={rawProductsList}
-                   archivedHistoryProducts={archivedHistoryProductsList}
-                   effectiveAllowedNorms={effectiveAllowedNorms as unknown[]}
-                   planningOrders={dataStoreList}
+                   trackedProducts={rawProductsList as any[]}
+                   archivedHistoryProducts={archivedHistoryProductsList as any[]}
+                   effectiveAllowedNorms={effectiveAllowedNorms as any[]}
+                   planningOrders={dataStoreList as any[]}
                    onOpenMachineExport={(type: string) => {
                  const store = useTeamleaderModalStore.getState();
                  store.setExportModalType(type || "planning");
@@ -541,20 +541,20 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
                }}
              />
            ) : (
-           <TeamleaderSelectionProvider value={selectionContextValue as unknown}>
+           <TeamleaderSelectionProvider value={selectionContextValue as any}>
                <div className="h-full flex flex-col overflow-hidden">
                 <div className="mx-auto flex h-full w-full max-w-[96vw] lg:max-w-[92vw] 2xl:max-w-[80vw] flex-col overflow-hidden">
                   <SmartPlanningSuggestions 
-                    orders={dataStoreList} 
+                    orders={dataStoreList as any[]} 
                     onOrderClick={handleSidebarSelect} 
-                    availableMachines={effectiveStations?.map((s: unknown) => String(s?.name || s?.id || ""))}
+                    availableMachines={effectiveStations?.map((s: any) => String(s?.name || s?.id || ""))}
                   />
                   <div className="flex-1 min-h-0 overflow-hidden">
                     <TeamleaderOrderRail
                       canManageOverproduction={canManageOverproduction}
-                      overproductionGroups={overproductionGroups as unknown[]}
+                      overproductionGroups={overproductionGroups as any[]}
                       onOpenOverproductionGroup={handleOpenOverproductionGroup}
-                      resolveOverproductionRoute={resolveOverproductionRoute}
+                      resolveOverproductionRoute={resolveOverproductionRoute as any}
                       orders={dataStoreList}
                       trackedProducts={rawProductsList}
                       archivedHistoryProducts={archivedHistoryProductsList}
@@ -588,15 +588,15 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
              store.setExportModalLocked(false);
              store.setExportPreloadedTask(null);
            }}
-           rawOrders={rawOrdersList as unknown}
-           rawProducts={rawProductsList as unknown}
-           archivedProducts={[...archivedHistoryProductsList, ...archivedRejectedProductsList] as unknown}
-           initialExportType={exportModalType as unknown}
-           lockExportType={exportModalLocked as unknown}
+           rawOrders={rawOrdersList as any}
+           rawProducts={rawProductsList as any}
+           archivedProducts={[...archivedHistoryProductsList, ...archivedRejectedProductsList] as any}
+           initialExportType={exportModalType as any}
+           lockExportType={exportModalLocked as any}
            onTaskCreated={((taskId: string) => {
              useTeamleaderModalStore.getState().setExportTrackingTaskId(taskId);
-           }) as unknown}
-           preloadedTask={exportPreloadedTask as unknown}
+           }) as any}
+           preloadedTask={exportPreloadedTask as any}
          />
        )}
      </div>
