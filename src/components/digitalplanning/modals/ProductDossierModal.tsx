@@ -35,7 +35,7 @@ import ProductDetailModal from "../../products/ProductDetailModal";
 import AutoScaledLabelPreview from "../../printer/AutoScaledLabelPreview";
 import { useLabelPreview } from "../../../hooks/useLabelPreview";
 import { getDriver } from "../../../utils/printerDrivers";
-import { renderLabelToBitmapZpl } from "../../../utils/zebraLabelRenderEngine";
+import { renderLabelForPrinter } from "../../../utils/printerProtocolService";
 import ConfirmationModal from "./ConfirmationModal";
 import { formatDateTimeSafe, toDateSafe } from "../../../utils/dateUtils";
 import { useNotifications } from '../../../contexts/NotificationContext';
@@ -891,7 +891,8 @@ const ProductDossierModal = ({
         const driver = getDriver(targetPrinter as Record<string, unknown>);
         const widthMm = Number((dossierLabel as unknown)?.width) || 90;
         const heightMm = Number((dossierLabel as unknown)?.height) || 40;
-        zplToReprint = await renderLabelToBitmapZpl({
+        zplToReprint = await renderLabelForPrinter({
+          printer: targetPrinter as Record<string, unknown>,
           template: dossierLabel as unknown,
           data: dossierPreviewData as Record<string, unknown>,
           printerDpi: Number(driver.nativeDpi) || 203,

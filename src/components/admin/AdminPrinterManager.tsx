@@ -325,7 +325,7 @@ const buildCalibrationCrossZpl = ({ printer, labelWidthMm = 90, labelHeightMm = 
 
   let zpl = "^XA\n";
   if (mediaMode) zpl += `${mediaMode}\n`; // cut-mode vroeg in format
-  zpl += "^MTD\n";   // Direct Thermal — geen lint; voorkomt RIBBON ERROR op Argox PPLZ
+  zpl += "^MTT\n";   // Thermal Transfer — gebruik inktlint; voorkomt dat het lint scheurt
   zpl += `~SD${darkness}\n`;
 
   zpl += `^PR${printSpeed}\n`;
