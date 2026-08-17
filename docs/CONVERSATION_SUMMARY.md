@@ -1,26 +1,11 @@
-### 2026-08-17 - Lighthouse CJ-PRO II: RIBBON ERROR Fix & WebUSB Koppeling
+## 2026-08-17: Printer Rendering & Hardware Tweaks
 
-- **Root cause gevonden**: Printer crashte (USB reset) bij labels >25mm door **RIBBON ERROR**.
-  - Firmware stond op `Ribbon Sensor: Thermal Transfer` maar de printer print op **Direct Thermisch papier** (geen lint).
-  - Bij 25mm was de print te snel voor de sensor; bij 50mm had de sensor genoeg tijd om RIBBON ERROR te triggeren → printer crash → USB reset.
-- **Firmware fix**: `Ribbon Sensor` in Argox Printer Tool gewijzigd naar **Direct Thermal** → Send.
-  - `Length (Continuous)` ook gewijzigd naar **2000mm** voor maximale labellengte.
-- **Code fixes**:
-  - `canvasToBitmapZpl.ts`: `^MTD` (Direct Thermal) toegevoegd aan bitmap ZPL header.
-  - `AdminPrinterManager.tsx` (`buildCalibrationCrossZpl`): `^MTD` toegevoegd + grote `^GB` rechthoek vervangen door 4 losse dunne lijnen (voorkomt firmware render buffer overflow bij Argox AME-3230Pro).
-- **WebUSB setup vastgesteld**:
-  - WinUSB driver geïnstalleerd via Zadig → printer staat onder "USB-apparaten" in Apparaatbeheer.
-  - Printer werkt **alleen direct** aangesloten (niet via USB hub) met WebUSB/Chrome.
-  - Argox Printer Tool werkt nog steeds naast WinUSB.
-- **Printer config in app** (Beheer → Printers → Lighthouse Lossen):
-  - Driver: `lighthouse-cjpro2`, VID: 5732, PID: 3856, Serial: 24L0A4551021
-  - DPI: 203, Rol: 90mm, Type: continuous, Darkness: 25, Speed: 2, Bitmap: aan
-  - Queue stations: BH11, BH31, LOSSEN
-- **Resultaat**: 90×25mm ✅ en 90×50mm ✅ printen en snijden correct.
-- **Volgende stap**: Code commit & push. GatewayPC setup voor Chromebook printing.
+- **Opgelost:** Inktlint (Thermal Transfer) fouten opgelost door fysieke problemen (verkeerd lint / slippende as) vast te stellen.
+- **Opgelost:** Overlappende tekst op de Lighthouse printer (203 DPI) gefixt door `textScaleFactor` in `lighthouseRenderEngine.tsx` terug te brengen van `1.6` naar `1.05`, zodat deze qua fysieke dimensies exact overeenkomt met de 300 DPI Zebra labels.
+- **Aangepast:** Standaard Darkness in `printerDrivers.ts` voor Lighthouse verlaagd van 25 naar 15, en Speed verhoogd naar 3, om te voorkomen dat het inktlint aan zwaar bedrukte etiketten vastsmelt.
+- **Aangepast:** Herprints (via ProductDossierModal) gebruiken nu correct de georkestreerde `renderLabelForPrinter` in plaats van direct de `zebraLabelRenderEngine` aan te roepen, zodat printer-specifieke settings (zoals ^MTT en DPI) correct worden toegepast.
 
-
-
+### 2026-08-17 - Lighthouse CJ-PRO II Driver Bijwerken (Argox Tool Export)
 - **Actie**: `src/utils/printerDrivers.ts` bijgewerkt op basis van de **Argox Printer Tool** export (`Tijdelijke Bestanden/Export.xml`).
   - **Model vastgesteld**: Argox `AME-3230Pro` in PPLZ-emulatie = Lighthouse CJ-PRO II bij 203 DPI.
   - `defaultDarkness`: 15 → **25** (gemeten waarde uit Argox Tool).
