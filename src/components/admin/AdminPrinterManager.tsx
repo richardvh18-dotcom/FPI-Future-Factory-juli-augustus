@@ -325,11 +325,22 @@ const buildCalibrationCrossZpl = ({ printer, labelWidthMm = 90, labelHeightMm = 
 
   let zpl = "^XA\n";
   if (mediaMode) zpl += `${mediaMode}\n`; // cut-mode vroeg in format
+  zpl += "^MTD\n";   // Direct Thermal — geen lint; voorkomt RIBBON ERROR op Argox PPLZ
   zpl += `~SD${darkness}\n`;
+
   zpl += `^PR${printSpeed}\n`;
   zpl += `^PW${widthDots}\n`;
   zpl += `^LL${heightDots}\n`;
-  zpl += `^FO${margin},${margin}^GB${Math.max(1, widthDots - (margin * 2))},${Math.max(1, heightDots - (margin * 2))},2^FS\n`;
+  // Buitenrand als 4 losse dunne lijnen i.p.v. één grote ^GB rechthoek.
+  // Reden: de Argox PPLZ firmware (AME-3230Pro) crasht bij een ^GB die groter is dan ~30KB
+  // renderbuffer (bijv. 688×368 dots ≈ 32KB). Vier dunne lijnen vermijden dit.
+  const bw = Math.max(1, widthDots - (margin * 2));
+  const bh = Math.max(1, heightDots - (margin * 2));
+  zpl += `^FO${margin},${margin}^GB${bw},2,2^FS\n`;                    // boven
+  zpl += `^FO${margin},${margin + bh - 2}^GB${bw},2,2^FS\n`;           // onder
+  zpl += `^FO${margin},${margin}^GB2,${bh},2^FS\n`;                    // links
+  zpl += `^FO${margin + bw - 2},${margin}^GB2,${bh},2^FS\n`;           // rechts
+
   zpl += `^FO${centerX - crossHalf},${centerY}^GB${crossHalf * 2},1,1^FS\n`;
   zpl += `^FO${centerX},${centerY - crossHalf}^GB1,${crossHalf * 2},1^FS\n`;
 

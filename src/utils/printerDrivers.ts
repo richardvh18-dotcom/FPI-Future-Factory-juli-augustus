@@ -9,7 +9,8 @@
  *  - zebra-zm400-203  : Zebra ZM400 203 DPI (8 dots/mm)
  *  - zebra-zm400-300  : Zebra ZM400 300 DPI (12 dots/mm)
  *  - zebra-epl2-203   : Zebra EPL2 Label Printer 203 DPI
- *  - lighthouse-cjpro2: Lighthouse CJ-PRO II 300 DPI, TSPL/Windows-driver
+ *  - lighthouse-cjpro2: Lighthouse CJ-PRO II 203 DPI, PPLZ/ZPL (Argox AME-3230Pro)
+ *                         USB VID: 0x1664, PID: 0x0F10
  */
 
 type PrinterDriver = {
@@ -24,7 +25,12 @@ type PrinterDriver = {
   suppressBackfeed: boolean;
   utf8Encoding: boolean;
   mediaMode: string | null;
+  /** USB Vendor ID — gedeeld door alle printers van dit model. */
+  usbVendorId?: number;
+  /** USB Product ID — gedeeld door alle printers van dit model. */
+  usbProductId?: number;
 };
+
 
 type PrinterProfile = Record<string, unknown> & {
   driverModel?: string;
@@ -87,13 +93,19 @@ export const PRINTER_DRIVERS: Record<string, PrinterDriver> = {
     label: 'Lighthouse CJ-PRO II',
     nativeDpi: 203,
     dotsPerMm: 8,
-    defaultDarkness: 15,
-    defaultSpeed: 4,
-    labelLanguage: 'zpl',    // This Argox-based unit is observed as PPLZ/ZPL-compatible.
+    // Gemeten via Argox Printer Tool (Export.xml, aug 2026):
+    // darkness 25, speed 2, sensor type 2 (gap), labelWidth 899 dots @ 203 DPI
+    defaultDarkness: 25,
+    defaultSpeed: 2,
+    labelLanguage: 'zpl',    // PPLZ-emulatie (Argox AME-3230Pro), ZPL-compatibel.
     cutCommand: null,
     suppressBackfeed: false,
     utf8Encoding: true,
     mediaMode: null,
+    // USB identifiers (VID/PID gedeeld door alle Lighthouse CJ-PRO II printers).
+    // Individuele printers worden onderscheiden via hun serienummer in Firestore.
+    usbVendorId: 0x1664,
+    usbProductId: 0x0F10,
   },
 };
 

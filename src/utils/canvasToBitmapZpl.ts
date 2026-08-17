@@ -291,7 +291,9 @@ export const canvasToZplGfa = (
     // Bouw ZPL commando
     let zpl = "^XA";
     zpl += "^CI28";  // UTF-8 Encoding
+    zpl += "^MTD";   // Direct Thermal — geen lint; voorkomt RIBBON ERROR op Argox PPLZ
     zpl += `^PW${widthDots}`;  // Print Width
+
     zpl += `^LL${heightDots}`;  // Label Length
     zpl += `^MD${darkness}`;    // Media Darkness
     zpl += `^PR${printSpeed}`;  // Print Speed

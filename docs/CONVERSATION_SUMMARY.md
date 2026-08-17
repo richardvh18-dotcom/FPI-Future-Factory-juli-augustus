@@ -1,4 +1,37 @@
+### 2026-08-17 - Lighthouse CJ-PRO II: RIBBON ERROR Fix & WebUSB Koppeling
+
+- **Root cause gevonden**: Printer crashte (USB reset) bij labels >25mm door **RIBBON ERROR**.
+  - Firmware stond op `Ribbon Sensor: Thermal Transfer` maar de printer print op **Direct Thermisch papier** (geen lint).
+  - Bij 25mm was de print te snel voor de sensor; bij 50mm had de sensor genoeg tijd om RIBBON ERROR te triggeren → printer crash → USB reset.
+- **Firmware fix**: `Ribbon Sensor` in Argox Printer Tool gewijzigd naar **Direct Thermal** → Send.
+  - `Length (Continuous)` ook gewijzigd naar **2000mm** voor maximale labellengte.
+- **Code fixes**:
+  - `canvasToBitmapZpl.ts`: `^MTD` (Direct Thermal) toegevoegd aan bitmap ZPL header.
+  - `AdminPrinterManager.tsx` (`buildCalibrationCrossZpl`): `^MTD` toegevoegd + grote `^GB` rechthoek vervangen door 4 losse dunne lijnen (voorkomt firmware render buffer overflow bij Argox AME-3230Pro).
+- **WebUSB setup vastgesteld**:
+  - WinUSB driver geïnstalleerd via Zadig → printer staat onder "USB-apparaten" in Apparaatbeheer.
+  - Printer werkt **alleen direct** aangesloten (niet via USB hub) met WebUSB/Chrome.
+  - Argox Printer Tool werkt nog steeds naast WinUSB.
+- **Printer config in app** (Beheer → Printers → Lighthouse Lossen):
+  - Driver: `lighthouse-cjpro2`, VID: 5732, PID: 3856, Serial: 24L0A4551021
+  - DPI: 203, Rol: 90mm, Type: continuous, Darkness: 25, Speed: 2, Bitmap: aan
+  - Queue stations: BH11, BH31, LOSSEN
+- **Resultaat**: 90×25mm ✅ en 90×50mm ✅ printen en snijden correct.
+- **Volgende stap**: Code commit & push. GatewayPC setup voor Chromebook printing.
+
+
+
+- **Actie**: `src/utils/printerDrivers.ts` bijgewerkt op basis van de **Argox Printer Tool** export (`Tijdelijke Bestanden/Export.xml`).
+  - **Model vastgesteld**: Argox `AME-3230Pro` in PPLZ-emulatie = Lighthouse CJ-PRO II bij 203 DPI.
+  - `defaultDarkness`: 15 → **25** (gemeten waarde uit Argox Tool).
+  - `defaultSpeed`: 4 → **2** (gemeten waarde uit Argox Tool).
+  - `usbVendorId: 0x1664` en `usbProductId: 0x0F10` toegevoegd aan de driver-definitie.
+  - `PrinterDriver` type uitgebreid met optionele `usbVendorId?` en `usbProductId?` velden.
+- **Toelichting meerdere Lighthouses**: VID/PID zijn identiek voor alle Lighthouse CJ-PRO II printers. Individuele printers worden onderscheiden via het **serienummer** dat in Firestore wordt opgeslagen (bestaande logica in `usbPrintService.ts`, regel 122).
+- **Volgende stap**: Code commit & push.
+
 ### 2026-08-17 - Lighthouse Continue Rol & Printer Routing Bugfix
+
 - **Actie**: 
   - Testprint voor Lighthouse-printers in `AdminPrinterManager.tsx` aangepast met `^MNN` (Continue media) en `^LL` (Label Lengte) tags zodat printers op een continue rol niet meer vastlopen tijdens een testprint.
   - In `ProductionStartModal.tsx` `resolveTargetPrinterAsync` verrijkt met logica om de nieuwe dynamische routeringsregels (`PRINTER_ROUTING_RULES`) asynchroon op te halen en mee te wegen in de routeringsbeslissing, in plaats van uitsluitend op fallback rules (`GENERAL` -> `ZM400 Pilot`) te varen.
