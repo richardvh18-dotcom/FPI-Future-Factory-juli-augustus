@@ -1,3 +1,11 @@
+### 2026-08-17 - Bugfix "Gereed voor LN" Orderregels en Telling
+- **Actie**: Probleem verholpen waarbij reeds voltooide/gearchiveerde producten niet werden meegerekend in de `readyReportedCount` en `todoCount` in de "Gereed voor LN" export. `archivedHistoryProducts` toegevoegd aan `combinedProducts` in `ImportExportDashboard.tsx`. Tevens ondersteuning toegevoegd voor timestamps die in Firestore als flat keys met dot-notation (zoals `timestamps.wikkelen_end`) zijn opgeslagen via een nieuwe `getTimestampValue` helper.
+- **Volgende stap**: Controleren of de telling in de webapp nu correct wordt weergegeven.
+
+### 2026-08-17 - Omgevingsvariabelen en Ontwikkelserver Start
+- **Actie**: `.env` configuratiebestand aangemaakt met Firebase- en admin-omgevingsvariabelen. Dependencies geïnstalleerd en ontwikkelserver gestart op poort 3000 (`vite --port 3000`).
+- **Volgende stap**: Ontwikkeling voortzetten of testen.
+
 ### 2026-08-16 - Update Digital Planning en Workstation Components
 - **Actie**: Diverse updates en opschoning van `WorkstationHub`, `TerminalPlanningView`, `AutomationRulesView`, hooks (`useFactoryConfig`, `usePlanningData`), en andere digital planning gerelateerde componenten opgeslagen.
 - **Volgende stap**: Implementatieplan voor optimalisatie van Firestore-reads klaargezet voor toekomstige uitvoering.

@@ -102,6 +102,18 @@ type ImportExportDashboardProps = {
   onOpenMachineExport?: (mode: string) => void;
 };
 
+const getTimestampValue = (entry: EntryRecord, key: string): unknown => {
+  if (!entry) return null;
+  if (entry.timestamps && typeof entry.timestamps === "object" && key in entry.timestamps) {
+    return (entry.timestamps as Record<string, unknown>)[key];
+  }
+  const flatKey = `timestamps.${key}`;
+  if (flatKey in entry) {
+    return entry[flatKey];
+  }
+  return null;
+};
+
 const toDateCandidate = (value: unknown): Date | null => {
   if (!value) return null;
   if (typeof (value as TimestampLike).toDate === "function") {
@@ -115,7 +127,7 @@ const toDateCandidate = (value: unknown): Date | null => {
 
 const toEntryDate = (entry: EntryRecord): Date | null => {
   const candidates = [
-    entry?.timestamps?.finished,
+    getTimestampValue(entry, "finished"),
     entry?.archivedAt,
     entry?.updatedAt,
     entry?.createdAt,
@@ -131,9 +143,9 @@ const toEntryDate = (entry: EntryRecord): Date | null => {
 
 const toWikkelenStartDate = (entry: EntryRecord): Date | null => {
   const candidates = [
-    entry?.timestamps?.wikkelen_start,
-    entry?.timestamps?.station_start,
-    entry?.timestamps?.started,
+    getTimestampValue(entry, "wikkelen_start"),
+    getTimestampValue(entry, "station_start"),
+    getTimestampValue(entry, "started"),
     entry?.createdAt,
   ];
 
@@ -147,9 +159,9 @@ const toWikkelenStartDate = (entry: EntryRecord): Date | null => {
 
 const toWikkelenCompletionDate = (entry: EntryRecord): Date | null => {
   const candidates = [
-    entry?.timestamps?.wikkelen_end,
-    entry?.timestamps?.lossen_start,
-    entry?.timestamps?.finished,
+    getTimestampValue(entry, "wikkelen_end"),
+    getTimestampValue(entry, "lossen_start"),
+    getTimestampValue(entry, "finished"),
     entry?.archivedAt,
     entry?.updatedAt,
     entry?.createdAt,
@@ -162,6 +174,7 @@ const toWikkelenCompletionDate = (entry: EntryRecord): Date | null => {
 
   return null;
 };
+
 
 const normalizeStation = (value: unknown = "") => {
   const raw = String(value || "").trim().toUpperCase().replace(/\s+/g, " ");
@@ -333,9 +346,9 @@ const hasNahardingSignal = (entry: EntryRecord): boolean => {
   const status = normalizeStation(entry?.status || "");
   const lastStation = normalizeStation(entry?.lastStation || "");
   const timestampSignals = [
-    entry?.timestamps?.oven_naharding_start,
-    entry?.timestamps?.naharding_start,
-    entry?.timestamps?.naharding_end,
+    getTimestampValue(entry, "oven_naharding_start"),
+    getTimestampValue(entry, "naharding_start"),
+    getTimestampValue(entry, "naharding_end"),
   ];
   const hasTimestampSignal = timestampSignals.some((value) => Boolean(value));
 
@@ -351,10 +364,10 @@ const hasWikkelSignal = (entry: EntryRecord): boolean => {
   const status = normalizeStation(entry?.status || "");
   const lastStation = normalizeStation(entry?.lastStation || "");
   const timestampSignals = [
-    entry?.timestamps?.wikkelen_start,
-    entry?.timestamps?.wikkelen_end,
-    entry?.timestamps?.station_start,
-    entry?.timestamps?.started,
+    getTimestampValue(entry, "wikkelen_start"),
+    getTimestampValue(entry, "wikkelen_end"),
+    getTimestampValue(entry, "station_start"),
+    getTimestampValue(entry, "started"),
   ];
   const hasTimestampSignal = timestampSignals.some((value) => Boolean(value));
 
@@ -671,7 +684,7 @@ const ImportExportDashboard = ({
   }, [planningOrders]);
 
   const lnReadyQrRows = useMemo(() => {
-    const combinedProducts = [...trackedProducts];
+    const combinedProducts = [...trackedProducts, ...archivedHistoryProducts];
     const groupedRows = new Map<string, LnReadyGroupedRow>();
     const cutoff = new Date(Date.now() - 5 * 60 * 1000); // 5 minuten pauze
     const exportFallbackStart = new Date(2020, 0, 1);
