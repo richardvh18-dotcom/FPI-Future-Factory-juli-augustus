@@ -31,7 +31,7 @@ export const renderLabelToBitmapZpl = async ({
   darkness = 15,
   printSpeed = 3,
   strictFontSizing = false,
-  textScaleFactor = 1.6,
+  textScaleFactor = 1.05,
   widthMm,
   heightMm,
   printer,

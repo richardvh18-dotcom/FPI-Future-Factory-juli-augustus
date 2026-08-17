@@ -94,9 +94,10 @@ export const PRINTER_DRIVERS: Record<string, PrinterDriver> = {
     nativeDpi: 203,
     dotsPerMm: 8,
     // Gemeten via Argox Printer Tool (Export.xml, aug 2026):
-    // darkness 25, speed 2, sensor type 2 (gap), labelWidth 899 dots @ 203 DPI
-    defaultDarkness: 25,
-    defaultSpeed: 2,
+    // Let op: darkness 25 / speed 2 laat het inktlint vastsmelten bij zware labels.
+    // Veilige defaults voor labels met veel tekst: darkness 15, speed 3.
+    defaultDarkness: 15,
+    defaultSpeed: 3,
     labelLanguage: 'zpl',    // PPLZ-emulatie (Argox AME-3230Pro), ZPL-compatibel.
     cutCommand: null,
     suppressBackfeed: false,
