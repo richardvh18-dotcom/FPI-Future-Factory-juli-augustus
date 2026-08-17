@@ -1,8 +1,11 @@
-### 2026-08-17 - Bugfix "Gereed voor LN" Orderregels en Telling
-- **Actie**: Probleem verholpen waarbij reeds voltooide/gearchiveerde producten niet werden meegerekend in de `readyReportedCount` en `todoCount` in de "Gereed voor LN" export. `archivedHistoryProducts` toegevoegd aan `combinedProducts` in `ImportExportDashboard.tsx`. Tevens ondersteuning toegevoegd voor timestamps die in Firestore als flat keys met dot-notation (zoals `timestamps.wikkelen_end`) zijn opgeslagen via een nieuwe `getTimestampValue` helper.
-- **Volgende stap**: Controleren of de telling in de webapp nu correct wordt weergegeven.
+### 2026-08-17 - Lighthouse Continue Rol & Printer Routing Bugfix
+- **Actie**: 
+  - Testprint voor Lighthouse-printers in `AdminPrinterManager.tsx` aangepast met `^MNN` (Continue media) en `^LL` (Label Lengte) tags zodat printers op een continue rol niet meer vastlopen tijdens een testprint.
+  - In `ProductionStartModal.tsx` `resolveTargetPrinterAsync` verrijkt met logica om de nieuwe dynamische routeringsregels (`PRINTER_ROUTING_RULES`) asynchroon op te halen en mee te wegen in de routeringsbeslissing, in plaats van uitsluitend op fallback rules (`GENERAL` -> `ZM400 Pilot`) te varen.
+- **Aanbeveling**: Hoewel de dynamische routering nu wordt geladen, is het nog steeds robuuster om voor een Lighthouse-printer (bijv. "Lighthouse Lossen") via de "Printers" (Admin) instelling het station "BH11" expliciet toe te voegen aan de "Queue Stations". Dat is een 'harde koppeling' en wint altijd van eventuele fallbacks.
+- **Volgende stap**: Code commit & push.
 
-### 2026-08-17 - Omgevingsvariabelen en Ontwikkelserver Start
+### 2026-08-17 - Bugfix "Gereed voor LN" Orderregels en Telling
 - **Actie**: `.env` configuratiebestand aangemaakt met Firebase- en admin-omgevingsvariabelen. Dependencies geïnstalleerd en ontwikkelserver gestart op poort 3000 (`vite --port 3000`).
 - **Volgende stap**: Ontwikkeling voortzetten of testen.
 

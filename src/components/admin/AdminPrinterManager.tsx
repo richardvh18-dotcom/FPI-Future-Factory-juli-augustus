@@ -1829,12 +1829,14 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       return [
         '^XA',
         '^CI28',
+        rollType === 'continuous' ? '^MNN' : '',
+        `^LL${heightDots}`,
         '^LH0,0',
         `^FO24,24^A0N,34,28^FD${safeTitle}^FS`,
         `^FO24,70^A0N,24,20^FD${safePrinter}^FS`,
         '^XZ',
         '',
-      ].join('\r\n');
+      ].filter(Boolean).join('\r\n');
     }
 
     // ZPL/default: zonder QR voor maximale firmware-compatibiliteit.

@@ -537,7 +537,23 @@ const ProductionStartModal = ({
       : null;
     if (fetchedBound) return fetchedBound;
 
-    const fetchedResolved = resolveTargetPrinter(fetchedPrinters, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
+    let dynamicRules: any[] = [];
+    try {
+      const rulesPath = getPathString(PATHS.PRINTER_ROUTING_RULES);
+      if (rulesPath) {
+        const rulesSnap = await getDocs(collection(db, rulesPath));
+        dynamicRules = rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      }
+    } catch (e) {
+      console.warn("Kon printerRules niet ophalen", e);
+    }
+
+    const fetchedResolved = resolvePrinterForRouting(fetchedPrinters, {
+      stationId,
+      routeKey: isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`,
+      labelRoute: isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`
+    }, dynamicRules);
+    
     if (fetchedResolved) return fetchedResolved;
 
     const fetchedById = printConfig.printerId
