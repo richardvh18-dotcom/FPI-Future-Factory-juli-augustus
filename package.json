@@ -1,6 +1,6 @@
 {
   "name": "fpi-future-factory",
-  "version": "0.1.166",
+  "version": "0.1.167",
   "private": true,
   "type": "module",
   "dependencies": {
