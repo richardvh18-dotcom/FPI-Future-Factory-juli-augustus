@@ -5,6 +5,15 @@
 - **Opgelost:** Centrale printerrouting wordt nu eerst opgehaald en toegepast. Actieve regels kunnen zowel op printernaam als printer-ID routeren en winnen van stale lokale bindings; lokale binding/default blijft alleen fallback als centrale routing niets vindt.
 - **Test:** Regressietest toegevoegd voor `BH18 -> zebra-zm400-pilot` met een oude binding naar `lighthouse-lossen`. Gerichte Vitest-suite: **7 tests geslaagd**.
 
+## 2026-08-18 - Gereed voor LN exporttelling gecorrigeerd
+
+- **Incident:** De export `Gereed voor LN` kon producten al meenemen op basis van `wikkelen_start`, dezelfde producten dubbel tellen uit actieve en gearchiveerde bronnen en afgekeurde records meenemen in de fallback-ordertelling.
+- **Opgelost:** De selectie gebruikt nu uitsluitend een werkelijk gereedmoment (`wikkelen_end`, `lossen_start` of `finished`), dedupliceert op product-ID/lotnummer en sluit afgekeurde/geannuleerde records volledig uit.
+- **Aanvulling:** Het totaal gebruikt nu het hoogste van gepland/quantity en het aantal unieke feitelijke records. Daardoor wordt bijvoorbeeld een order met 5 gepland en 5 historische producten als totaal 10 weergegeven.
+- **Concrete controle:** Voor `N20025344` zijn 10 unieke producten `completed/GEREED` en 1 uniek product `Wacht op Nabewerking` aangeleverd. De correcte LN-regel is daarom **11 totaal, 10 gereedgemeld, 0 nog te doen, 1 wikkelstap**; de oude regel `5 / 4 / 0 / 1` was onjuist.
+- **Databronoorzaak:** `useTeamleaderFirestore` laadde archiefhistorie alleen vanaf 14 dagen terug. De records van 29 juni tot en met 12 augustus kwamen daardoor niet in de lokale Dev-data terecht. De archiefgrens staat nu op 1 januari van het lopende jaar; deduplicatie gebruikt lotnummer vóór document-ID.
+- **Validatie:** Geen diagnostics in `ImportExportDashboard.tsx`, productiebuild geslaagd en de gerichte suite met 7 printertests blijft groen. Deze wijziging staat lokaal klaar en is nog niet gedeployed.
+
 ## 2026-08-18 - TypeScriptfouten gefaseerd verminderd
 
 - **Opgelost:** Verwijderde callbackparameters hersteld in Calculator-, admin- en AI-componenten; `TS2304` staat nu op nul.

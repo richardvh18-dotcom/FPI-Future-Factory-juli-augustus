@@ -162,9 +162,6 @@ const toWikkelenCompletionDate = (entry: EntryRecord): Date | null => {
     getTimestampValue(entry, "wikkelen_end"),
     getTimestampValue(entry, "lossen_start"),
     getTimestampValue(entry, "finished"),
-    entry?.archivedAt,
-    entry?.updatedAt,
-    entry?.createdAt,
   ];
 
   for (const value of candidates) {
@@ -684,7 +681,13 @@ const ImportExportDashboard = ({
   }, [planningOrders]);
 
   const lnReadyQrRows = useMemo(() => {
-    const combinedProducts = [...trackedProducts, ...archivedHistoryProducts];
+    const combinedProducts = Array.from(
+      [...trackedProducts, ...archivedHistoryProducts].reduce((unique, product, index) => {
+        const key = String(product.lotNumber || product.id || `row_${index}`).trim();
+        if (!unique.has(key)) unique.set(key, product);
+        return unique;
+      }, new Map<string, EntryRecord>()).values()
+    );
     const groupedRows = new Map<string, LnReadyGroupedRow>();
     const cutoff = new Date(Date.now() - 5 * 60 * 1000); // 5 minuten pauze
     const exportFallbackStart = new Date(2020, 0, 1);
@@ -708,7 +711,7 @@ const ImportExportDashboard = ({
       const isCompleted = status === "completed" || step === "FINISHED" || currentStation === "GEREED";
 
       if (status === "rejected" || step === "REJECTED" || status === "deleted" || status === "cancelled" || status === "geannuleerd") {
-          // Do not count
+          return;
       } else if (isCompleted) {
           current.readyCount += 1;
       } else if (hasNahardingSignal(product)) {
@@ -716,7 +719,7 @@ const ImportExportDashboard = ({
       } else if (hasWikkelSignal(product)) {
           current.wikkelCount += 1;
       }
-      
+
       current.totalOrderCount += 1;
       orderStats.set(orderId, current);
     });
@@ -734,11 +737,11 @@ const ImportExportDashboard = ({
       const step = String(product?.currentStep || "").trim().toUpperCase();
       if (status === "rejected" || step === "REJECTED" || status === "deleted" || status === "cancelled" || status === "geannuleerd") return;
 
-      const startDate = toWikkelenStartDate(product);
-      if (!startDate) return;
+      const readyDate = toWikkelenCompletionDate(product);
+      if (!readyDate) return;
 
-      if (startDate > cutoff) return;
-      if (lnRangeMode === "export" && startDate <= exportAnchor) return;
+      if (readyDate > cutoff) return;
+      if (lnRangeMode === "export" && readyDate <= exportAnchor) return;
       
       const isCompleted = status === "completed" || step === "FINISHED" || String(product?.currentStation || "").trim().toUpperCase() === "GEREED";
       if (hasNahardingSignal(product) || isCompleted) return;
@@ -746,8 +749,8 @@ const ImportExportDashboard = ({
       const inRange = lnRangeMode === "export"
         ? true
         : lnRangeMode === "day"
-          ? isSameDay(startDate, selectedLnDate)
-          : isWithinInterval(startDate, {
+          ? isSameDay(readyDate, selectedLnDate)
+          : isWithinInterval(readyDate, {
               start: startOfISOWeek(selectedLnDate),
               end: endOfISOWeek(selectedLnDate),
             });
@@ -761,11 +764,12 @@ const ImportExportDashboard = ({
       const orderQuantity = toSafeNumber(order?.quantity);
       const stats = orderStats.get(orderId) || { totalOrderCount: 0, nahardingCount: 0, wikkelCount: 0, readyCount: 0 };
       
-      const totalOrderCount = Number.isFinite(orderPlan) && orderPlan > 0
+      const plannedOrderCount = Number.isFinite(orderPlan) && orderPlan > 0
         ? orderPlan
         : Number.isFinite(orderQuantity) && orderQuantity > 0
           ? orderQuantity
-          : stats.totalOrderCount || 0;
+          : 0;
+      const totalOrderCount = Math.max(plannedOrderCount, stats.totalOrderCount || 0);
           
       const refOpsText = "20"; // Vast ingesteld op referentiecode 20
       const rowKey = `${originStation}__${orderId}`;
