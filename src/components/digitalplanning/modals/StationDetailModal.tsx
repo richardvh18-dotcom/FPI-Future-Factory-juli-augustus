@@ -24,7 +24,7 @@ import {
 import StatusBadge from "../common/StatusBadge";
 import InternalQrImage from "../../../utils/InternalQrImage";
 
-type AnyRecord = Record<string, unknown>;
+type AnyRecord = Record<string, any>;
 
 type DateLikeInput =
   | Date
@@ -43,9 +43,9 @@ type DateLikeInput =
 
 type StationDetailModalProps = {
   stationId: string;
-  allOrders: unknown[];
-  allProducts: unknown[];
-  allArchivedProducts?: unknown[];
+  allOrders: AnyRecord[];
+  allProducts: AnyRecord[];
+  allArchivedProducts?: AnyRecord[];
   onClose: () => void;
 };
 

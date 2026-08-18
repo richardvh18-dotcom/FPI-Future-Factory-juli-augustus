@@ -51,7 +51,7 @@ const AiMessage: FC<AiMessageProps> = ({ message, factoryStructure, onNavigate, 
           const lowerText = matchText.toLowerCase();
           const foundDept = factoryStructure.departments.find((d: Department) => 
             d.name.toLowerCase() === lowerText || 
-            d.stations?.some(() => s.name.toLowerCase() === lowerText)
+            d.stations?.some((station) => station.name.toLowerCase() === lowerText)
           );
           if (foundDept) targetDepartment = foundDept.id;
         }

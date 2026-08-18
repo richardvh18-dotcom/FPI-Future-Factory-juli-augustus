@@ -204,7 +204,7 @@ const ConfigManagerView = () => {
           )}
 
           <div className="space-y-2">
-            {currentList.map(() => (
+            {currentList.map((item) => (
               <div key={item.id} className="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:shadow-md transition-shadow">
                 {activeTab === "printerRules" ? (
                   <div className="flex items-center gap-2">

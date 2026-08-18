@@ -8,22 +8,28 @@ import { nl } from "date-fns/locale";
 import { httpsCallable } from "firebase/functions";
 import { functions } from "../../../config/firebase";
 import { useBackgroundTasks } from "../../../contexts/BackgroundTaskContext";
+import type { BackgroundTask } from "../../../contexts/BackgroundTaskContext";
 import { useTranslation } from "react-i18next";
+
+type ExportRecord = Record<string, any>;
+type PdfWithAutoTable = jsPDF & {
+  autoTable: (options: Record<string, unknown>) => void;
+};
 
 const safeToDate = (value: unknown) => {
   if (!value) return null;
 
-  if (typeof value?.toDate === "function") {
-    const converted = value.toDate();
+  if (typeof value === "object" && value !== null && typeof (value as ExportRecord).toDate === "function") {
+    const converted = (value as ExportRecord).toDate();
     return Number.isFinite(converted?.getTime?.()) ? converted : null;
   }
 
-  if (typeof value === "object" && Number.isFinite(value.seconds)) {
-    const converted = new Date(value.seconds * 1000);
+  if (typeof value === "object" && value !== null && Number.isFinite((value as ExportRecord).seconds)) {
+    const converted = new Date((value as ExportRecord).seconds * 1000);
     return Number.isFinite(converted.getTime()) ? converted : null;
   }
 
-  const converted = new Date(value);
+  const converted = new Date(String(value));
   return Number.isFinite(converted.getTime()) ? converted : null;
 };
 
@@ -36,13 +42,13 @@ const safeFormatDate = (value: unknown, pattern: string, fallback = "") => {
 type TeamleaderExportModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  rawOrders?: unknown[];
-  rawProducts?: unknown[];
-  archivedProducts?: unknown[];
+  rawOrders?: ExportRecord[];
+  rawProducts?: ExportRecord[];
+  archivedProducts?: ExportRecord[];
   initialExportType?: string;
   lockExportType?: boolean;
   onTaskCreated?: (taskId: string) => void;
-  preloadedTask?: unknown;
+  preloadedTask?: BackgroundTask;
 };
 
 export default function TeamleaderExportModal({
@@ -83,18 +89,18 @@ export default function TeamleaderExportModal({
   }, [initialExportType, isOpen, preloadedTask]);
 
   // Haal actieve taak op uit de task lijst
-  const activeTask = preloadedTask ||
-    (activeTaskId ? (tasks as unknown[]).find((t: unknown) => t.id === activeTaskId) : null);
+  const activeTask: BackgroundTask | null = preloadedTask ||
+    (activeTaskId ? tasks.find((task) => task.id === activeTaskId) || null : null);
 
   // 1. Ontdubbelen en meest definitieve staat bepalen voor lotnummers
   const allProducts = useMemo(() => {
     const unique = new Map();
 
-    [...rawProducts, ...archivedProducts].forEach((p: unknown) => {
+    [...rawProducts, ...archivedProducts].forEach((p: ExportRecord) => {
       const lot = String(p.lotNumber || p.id || "").trim().toUpperCase();
       if (!lot) return;
 
-      const getScore = (item: unknown) => {
+      const getScore = (item: ExportRecord) => {
         const isArchived = !!(item.archived || item._archived || item.archivedAt);
         const statusUpper = String(item.status || "").toUpperCase();
         const stepUpper = String(item.currentStep || "").toUpperCase();
@@ -130,11 +136,11 @@ export default function TeamleaderExportModal({
   const allOrders = useMemo(() => {
     const map = new Map();
     
-    rawOrders.forEach((o: unknown) => {
+    rawOrders.forEach((o: ExportRecord) => {
       if (o.orderId) map.set(String(o.orderId).trim().toUpperCase(), o);
     });
 
-    allProducts.forEach((p: unknown) => {
+    allProducts.forEach((p: ExportRecord) => {
       const orderId = String(p.orderId || "").trim().toUpperCase();
       if (!orderId) return;
 
@@ -155,7 +161,7 @@ export default function TeamleaderExportModal({
 
   // 3. Alleen actieve lotnummers (Voor Lotnummer Export)
   const activeProducts = useMemo(() => {
-    return allProducts.filter((p: unknown) => {
+    return allProducts.filter((p: ExportRecord) => {
       const isArchived = !!(p.archived || p._archived || p.archivedAt);
       const statusUpper = String(p.status || "").toUpperCase();
       const stepUpper = String(p.currentStep || "").toUpperCase();
@@ -177,14 +183,14 @@ export default function TeamleaderExportModal({
   // 4. Beschikbare machines uit orders én lotnummers
   const availableMachines = useMemo(() => {
     const machines = new Set<string>();
-    allOrders.forEach((o: unknown) => {
+    allOrders.forEach((o: ExportRecord) => {
       if (o.machine) {
         let m = String(o.machine).toUpperCase().replace(/\s/g, "");
         if (m.startsWith("40")) m = m.slice(2);
         if (m) machines.add(m);
       }
     });
-    activeProducts.forEach((p: unknown) => {
+    activeProducts.forEach((p: ExportRecord) => {
       const m = p.currentStation || p.machine || p.originMachine || "";
       if (m) {
         let cleanM = String(m).toUpperCase().replace(/\s/g, "");
@@ -199,7 +205,7 @@ export default function TeamleaderExportModal({
   const displayedMachines = useMemo(() => {
     if (exportType === "lotnummers") {
       const locs = new Set<string>();
-      activeProducts.forEach((p: unknown) => {
+      activeProducts.forEach((p: ExportRecord) => {
         const loc = p.currentStation || p.currentStep || "Onbekend";
         if (loc) locs.add(String(loc).trim());
       });
@@ -214,12 +220,12 @@ export default function TeamleaderExportModal({
 
   // 5. Data Planning Export (Originele logica)
   const planningExportData = useMemo(() => {
-    const getDeliveryDate = (order: unknown) => {
+    const getDeliveryDate = (order: ExportRecord) => {
       const d = order.deliveryDate || order.plannedDeliveryDate || order.dueDate || order.dateObj;
       return safeToDate(d);
     };
 
-    const machineOrders = allOrders.filter((o: unknown) => {
+    const machineOrders = allOrders.filter((o: ExportRecord) => {
       if (selectedMachine === "Alle machines") return true;
       let orderMachine = String(o.machine || "").toUpperCase().replace(/\s/g, "");
       if (orderMachine.startsWith("40")) orderMachine = orderMachine.slice(2);
@@ -230,15 +236,15 @@ export default function TeamleaderExportModal({
       return orderMachine === filterMachine;
     });
 
-    return machineOrders.map((order: unknown) => {
+    return machineOrders.map((order: ExportRecord) => {
       const orderId = String(order.orderId || "").trim().toUpperCase();
-      const orderProducts = allProducts.filter((p: unknown) => String(p.orderId || "").trim().toUpperCase() === orderId);
+      const orderProducts = allProducts.filter((p: ExportRecord) => String(p.orderId || "").trim().toUpperCase() === orderId);
 
       let inBehandelingCount = 0;
       let gereedCount = 0;
       const actieveStappen = new Set();
 
-      orderProducts.forEach((p: unknown) => {
+      orderProducts.forEach((p: ExportRecord) => {
         const stepUpper = String(p.currentStep || "").toUpperCase();
         const statusUpper = String(p.status || "").toUpperCase();
         const isArchived = !!(p.archived || p._archived || p.archivedAt);
@@ -289,7 +295,7 @@ export default function TeamleaderExportModal({
         datumLabel,
         huidigeStap
       };
-    }).filter((order: unknown) => {
+    }).filter((order: ExportRecord) => {
       if (orderStatusFilter === "gereed" && !order.isGeheelGereed) return false;
       if (orderStatusFilter === "lopend" && order.isGeheelGereed) return false;
 
@@ -305,7 +311,7 @@ export default function TeamleaderExportModal({
         if (d < startDate || d > endDate) return false;
       }
       return true;
-    }).sort((a: unknown, b: unknown) => {
+    }).sort((a: ExportRecord, b: ExportRecord) => {
         const weekA = Number(a.weekNumber || a.week || 0);
         const weekB = Number(b.weekNumber || b.week || 0);
         if (weekA !== weekB) return weekA - weekB;
@@ -318,7 +324,7 @@ export default function TeamleaderExportModal({
 
   // 6. Data Lotnummer Export
   const lotnummerExportData = useMemo(() => {
-    const getDwellTime = (product: unknown) => {
+    const getDwellTime = (product: ExportRecord) => {
       let startTime = new Date();
       if (product.updatedAt) {
         startTime = typeof product.updatedAt.toDate === 'function' ? product.updatedAt.toDate() : new Date(product.updatedAt);
@@ -330,14 +336,14 @@ export default function TeamleaderExportModal({
       return formatDistanceStrict(startTime, new Date(), { locale: nl });
     };
 
-    return activeProducts.filter((p: unknown) => {
+    return activeProducts.filter((p: ExportRecord) => {
       if (selectedMachine === "Alle machines") {
         return true; 
       }
       
       const pLoc = String(p.currentStation || p.currentStep || "Onbekend").trim();
       return pLoc.toLowerCase() === selectedMachine.toLowerCase();
-    }).map((product: unknown) => {
+    }).map((product: ExportRecord) => {
       return {
         "Lotnummer": product.lotNumber || "Onbekend",
         "Ordernummer": product.orderId || product.orderNumber || "Onbekend",
@@ -348,7 +354,7 @@ export default function TeamleaderExportModal({
         "Verblijftijd": getDwellTime(product),
         "Metingen": product.measurements ? Object.entries(product.measurements).map(([k,v]) => `${k}: ${v}`).join(" | ") : "-"
       };
-    }).sort((a: unknown, b: unknown) => {
+    }).sort((a: ExportRecord, b: ExportRecord) => {
       const locCompare = a["Huidig Station"].localeCompare(b["Huidig Station"]);
       if (locCompare !== 0) return locCompare;
       return String(a.Lotnummer).localeCompare(String(b.Lotnummer), undefined, { numeric: true, sensitivity: 'base' });
@@ -363,7 +369,7 @@ export default function TeamleaderExportModal({
     if (weekParts.length !== 2) return [];
     const filterWeek = weekParts[1];
 
-    const isMatch = (product: unknown) => {
+    const isMatch = (product: ExportRecord) => {
       const lotStr = String(product.lotNumber || "").trim().toUpperCase();
       
       // 1. Probeer de week uit het lotnummer te halen (Formaat: 40YYWW..., QCYYWW..., of VQCYYWW...)
@@ -399,7 +405,7 @@ export default function TeamleaderExportModal({
 
     const weekProducts = allProducts.filter(p => isMatch(p));
     
-    const sortedData = weekProducts.filter((p: unknown) => {
+    const sortedData = weekProducts.filter((p: ExportRecord) => {
       if (selectedMachine === "Alle machines") return true;
       
       let prodMachine = String(p.originMachine || p.machine || p.currentStation || "").toUpperCase().replace(/\s/g, "");
@@ -409,13 +415,13 @@ export default function TeamleaderExportModal({
       if (filterMachine.startsWith("40")) filterMachine = filterMachine.slice(2);
       
       return prodMachine === filterMachine;
-    }).map((p: unknown) => ({
+    }).map((p: ExportRecord) => ({
       "Lotnummer": String(p.lotNumber || "Onbekend").trim(),
       "Machine": String(p.originMachine || p.machine || p.currentStation || "Onbekend").trim(),
       "Ordernummer": String(p.orderId || p.orderNumber || "Onbekend"),
       "Status": String(p.status || p.currentStep || "Onbekend"),
       "Aangemaakt op": safeFormatDate(p.createdAt || p.updatedAt, "dd-MM-yyyy HH:mm")
-    })).sort((a: unknown, b: unknown) => {
+    })).sort((a: ExportRecord, b: ExportRecord) => {
       const locCompare = a.Machine.localeCompare(b.Machine);
       if (locCompare !== 0) return locCompare;
       
@@ -465,7 +471,7 @@ export default function TeamleaderExportModal({
   }, [allProducts, selectedWeek, selectedMachine, exportType]);
 
   // 7. Active Data Array
-  const currentData = useMemo(() => {
+  const currentData: ExportRecord[] = useMemo(() => {
     if (exportType === "planning") return planningExportData;
     if (exportType === "lotnummers") return lotnummerExportData;
     if (exportType === "lotnummer_controle") return lotnummerControleData;
@@ -475,8 +481,8 @@ export default function TeamleaderExportModal({
   const handleExportCloud = async () => {
     setIsRequestingExport(true);
     try {
-      const requestExportTask = httpsCallable<unknown, unknown>(functions, 'requestExportTask');
-      const result: unknown = await requestExportTask({
+      const requestExportTask = httpsCallable<ExportRecord, ExportRecord>(functions, 'requestExportTask');
+      const result = await requestExportTask({
         exportType,
         taskName: `Export ${exportType} voor ${selectedMachine}`,
         filter: {
@@ -488,7 +494,7 @@ export default function TeamleaderExportModal({
           endDate
         }
       });
-      const taskId = String(result?.data?.taskId || "").trim();
+      const taskId = String(result.data?.taskId || "").trim();
       if (taskId) {
         setActiveTaskId(taskId);
         if (onTaskCreated) onTaskCreated(taskId);
@@ -510,7 +516,7 @@ export default function TeamleaderExportModal({
       const excelData: unknown[] = [];
       let currentWeek: unknown = null;
 
-      planningExportData.forEach((order: unknown) => {
+      planningExportData.forEach((order: ExportRecord) => {
         const orderWeek = order.weekNumber || order.week || '?';
         if (currentWeek !== orderWeek) {
           excelData.push({
@@ -539,7 +545,7 @@ export default function TeamleaderExportModal({
     } else if (exportType === "lotnummers") {
       const excelData: unknown[] = [];
       let currentLoc: unknown = null;
-      lotnummerExportData.forEach((row: unknown) => {
+      lotnummerExportData.forEach((row: ExportRecord) => {
         const rowLoc = row["Huidig Station" as keyof typeof row];
         if (currentLoc !== rowLoc) {
           excelData.push({
@@ -557,7 +563,7 @@ export default function TeamleaderExportModal({
     } else if (exportType === "lotnummer_controle") {
       const excelData: unknown[] = [];
       let currentLoc: unknown = null;
-      lotnummerControleData.forEach((row: unknown) => {
+      lotnummerControleData.forEach((row: ExportRecord) => {
         const rowLoc = row.Machine;
         if (currentLoc !== rowLoc) {
           excelData.push({
@@ -595,7 +601,7 @@ export default function TeamleaderExportModal({
       const tableData: unknown[] = [];
       let currentWeek: unknown = null;
 
-      planningExportData.forEach((order: unknown) => {
+      planningExportData.forEach((order: ExportRecord) => {
         const orderWeek = order.weekNumber || order.week || '?';
         if (currentWeek !== orderWeek) {
           tableData.push([
@@ -609,7 +615,7 @@ export default function TeamleaderExportModal({
         ]);
       });
 
-      (doc as unknown).autoTable({
+      (doc as PdfWithAutoTable).autoTable({
         startY: 28,
         head: [['Leverdatum', 'Week', 'Manufactured Item', 'Item Desc', 'Huidige Stap', 'Plan', 'Gewikkeld', 'Te doen', 'Gereed']],
         body: tableData,
@@ -627,7 +633,7 @@ export default function TeamleaderExportModal({
 
       const tableData: unknown[] = [];
       let currentLoc: unknown = null;
-      lotnummerExportData.forEach((row: unknown) => {
+      lotnummerExportData.forEach((row: ExportRecord) => {
         const rowLoc = row["Huidig Station" as keyof typeof row];
         if (currentLoc !== rowLoc) {
           tableData.push([
@@ -647,7 +653,7 @@ export default function TeamleaderExportModal({
         ]);
       });
 
-      (doc as unknown).autoTable({
+      (doc as PdfWithAutoTable).autoTable({
         startY: 28,
         head: [['Lotnummer', 'Ordernummer', 'Product', 'Oorsprong', 'Huidig Station', 'Status', 'Verblijftijd', 'Metingen']],
         body: tableData,
@@ -665,7 +671,7 @@ export default function TeamleaderExportModal({
 
       const tableData: unknown[] = [];
       let currentLoc: unknown = null;
-      lotnummerControleData.forEach((row: unknown) => {
+      lotnummerControleData.forEach((row: ExportRecord) => {
         const rowLoc = row.Machine;
         if (currentLoc !== rowLoc) {
           tableData.push([
@@ -687,7 +693,7 @@ export default function TeamleaderExportModal({
         }
       });
 
-      (doc as unknown).autoTable({
+      (doc as PdfWithAutoTable).autoTable({
         startY: 28,
         head: [['Lotnummer', 'Machine', 'Ordernummer', 'Status', 'Aangemaakt op']],
         body: tableData,
@@ -907,8 +913,8 @@ export default function TeamleaderExportModal({
                                  let displayVal = val;
                                  if (val instanceof Date) {
                                     displayVal = format(val, 'dd-MM-yyyy HH:mm');
-                                 } else if (val && typeof val === 'object' && typeof (val as unknown).toDate === 'function') {
-                                    displayVal = format((val as unknown).toDate(), 'dd-MM-yyyy HH:mm');
+                                } else if (val && typeof val === 'object' && typeof (val as ExportRecord).toDate === 'function') {
+                                  displayVal = format((val as ExportRecord).toDate(), 'dd-MM-yyyy HH:mm');
                                  } else if (typeof val === 'object' && val !== null) {
                                     displayVal = JSON.stringify(val);
                                  }

@@ -258,8 +258,8 @@ export default function AdminLabelPrintRules() {
                 <h3 className="font-black text-slate-800 uppercase tracking-wide flex items-center gap-3">{rule.name} {!rule.active && <span className="text-[9px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded uppercase tracking-widest">Inactief</span>}</h3>
                 <p className="text-xs text-slate-500 mt-1.5 font-medium">ALS <span className="font-black text-slate-700">{rule.conditions.length} voorwaarde(n)</span> matcht DAN <span className="font-black text-blue-600">Print {rule.output.labelCount}x {
                   String(rule.output.templateIds && rule.output.templateIds.length > 0
-                    ? rule.output.templateIds.map(id => labelTemplates?.find(() => t.id === id)?.name || id).join(" + ")
-                    : labelTemplates?.find(() => t.id === (rule.output.templateId || rule.output.labelSizeId))?.name || rule.output.templateId || rule.output.labelSizeId || "Dynamisch")
+                    ? rule.output.templateIds.map(id => labelTemplates?.find((template) => template.id === id)?.name || id).join(" + ")
+                    : labelTemplates?.find((template) => template.id === (rule.output.templateId || rule.output.labelSizeId))?.name || rule.output.templateId || rule.output.labelSizeId || "Dynamisch")
                 }</span>{rule.output.requiredTags?.length ? ` + Tags: [${rule.output.requiredTags.join(", ")}]` : ""}</p>
               </div>
             </div>

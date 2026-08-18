@@ -10,6 +10,7 @@ import {
   getDoc,
   doc,
   setDoc,
+  updateDoc,
   limit,
 } from "firebase/firestore";
 import {

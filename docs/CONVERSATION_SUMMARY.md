@@ -1,3 +1,17 @@
+﻿## 2026-08-18 - BH18 Printerrouting Lighthouse/Zebra gescheiden
+
+- **Incident:** Een label voor een order die op BH18 werd gestart kwam ondanks de bedoelde queue-routing uit `Lighthouse Lossen` in plaats van `Zebra ZM400 Pilot`.
+- **Oorzaak:** `ProductionStartModal` accepteerde een oude lokale stationbinding of `printConfig.printerId` voordat actieve Firestore-routeringsregels waren geladen. Daarnaast gaf `resolvePrinterForRouting` lokale bindings voorrang op actieve dynamische regels.
+- **Opgelost:** Centrale printerrouting wordt nu eerst opgehaald en toegepast. Actieve regels kunnen zowel op printernaam als printer-ID routeren en winnen van stale lokale bindings; lokale binding/default blijft alleen fallback als centrale routing niets vindt.
+- **Test:** Regressietest toegevoegd voor `BH18 -> zebra-zm400-pilot` met een oude binding naar `lighthouse-lossen`. Gerichte Vitest-suite: **7 tests geslaagd**.
+
+## 2026-08-18 - TypeScriptfouten gefaseerd verminderd
+
+- **Opgelost:** Verwijderde callbackparameters hersteld in Calculator-, admin- en AI-componenten; `TS2304` staat nu op nul.
+- **Opgelost:** Firestore-recordtypes toegevoegd aan `TeamleaderExportModal`, `StationDetailModal` en `ProductDossierModal`, inclusief veilige datum-, PDF- en labelpreviewtypes.
+- **Resultaat:** `npm run type-check` ging van ongeveer 700 naar **377 resterende fouten**. De drie aangepaste modalclusters zijn foutvrij; resterende meldingen zitten in andere componenten.
+- **Vervolg:** Ook `ProductionStartModal` is lokaal aangescherpt; de foutstand daalde verder naar **325**. Daarvan zijn nog 18 meldingen over, naast onafhankelijke clusters in andere digital-planning- en admin-schermen.
+
 ## 2026-08-17: Printer Rendering & Hardware Tweaks
 
 - **Opgelost:** Inktlint (Thermal Transfer) fouten opgelost door fysieke problemen (verkeerd lint / slippende as) vast te stellen.
@@ -21409,12 +21423,14 @@ econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat
  -   * * V e r t e x   A I   E m b e d d i n g s : * *   N i e u w e   \  i E m b e d d i n g s S e r v i c e . t s \   g e b o u w d   d i e   d o c u m e n t e n   ( P D F s   e t c )   o p k n i p t   i n   c h u n k s   e n   V e c t o r   E m b e d d i n g s   o p s l a a t   i n   d e   F i r e s t o r e   \ c h u n k s \   s u b c o l l e c t i e   v o o r   r a z e n d s n e l l e   D o c u m e n t   R A G   v i a   \ s e a r c h K n o w l e d g e B a s e \ . 
  -   * * F r o n t e n d   U n i f i c a t i e : * *   \ A i A s s i s t a n t V i e w . t s x \   ( o u d e   c h a t )   e n   \ A i C h a t V i e w . t s x \   v e r w i j d e r d .   A l l e   r o u t e s   ( z o a l s   \ / a s s i s t a n t \ )   e n   t a b s   p o i n t e n   n u   n a a r   \ A i C e n t e r V i e w . t s x \   /   \ C o p i l o t I n t e r f a c e . t s x \ . 
  -   * * D e p l o y m e n t   F i x e s : * *   V e r t e x   A I   i n i t i a l i s a t i e   i n   \ A i C o p i l o t S e r v i c e \   i s   l u i   g e m a a k t   ( l a z y   l o a d )   o m   t i m e - o u t s   t e   v o o r k o m e n .   F i r e b a s e   C l o u d   F u n c t i o n s   s u c c e s v o l   g e d e p l o y e d . 
-  
+ 
+ 
  
  
  # #   C o p i l o t   C o s t   C o n t r o l   ( F a s e   6 )   ( 1 6   A u g   2 0 2 6 ) 
  -   * * S e m a n t i c   C a c h i n g : * *   \  i C a c h e S e r v i c e . t s \   g e ï m p l e m e n t e e r d .   V r a g e n   w o r d e n   o m g e z e t   i n   e m b e d d i n g s   e n   v e r g e l e k e n   m e t   e e r d e r e   v r a g e n .   B i j   > 9 5 %   g e l i j k e n i s   w o r d t   d e   c a c h e   d i r e c t   g e r e t o u r n e e r d   ( 0   k o s t e n ) . 
  -   * * R a t e   L i m i t i n g : * *   \  i U s a g e T r a c k e r . t s \   g e ï m p l e m e n t e e r d .   E r   z i j n   d a g e l i j k s e   q u o t a s   i n g e s t e l d   p e r   r o l   ( O p e r a t o r s :   2 5 ,   T e a m l e a d e r s :   1 0 0 )   o m   m i s b r u i k   t e   v o o r k o m e n . 
  -   D e p l o y m e n t   g e t r i g g e r d . 
-  
+ 
+ 
  

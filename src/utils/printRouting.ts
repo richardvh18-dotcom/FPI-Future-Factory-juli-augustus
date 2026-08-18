@@ -136,6 +136,7 @@ export const getPrinterRoutingTokens = (printer: PrinterRoutingTarget | null | u
   if (!printer) return [];
 
   const tokens = new Set<string>();
+  if (printer.id) tokens.add(normalizeRouteToken(printer.id));
   toTokenList(printer.routingKeys).forEach((entry) => tokens.add(entry));
   toTokenList(printer.routingTags).forEach((entry) => tokens.add(entry));
   toTokenList(printer.queueStations).forEach((entry) => tokens.add(entry));
@@ -146,6 +147,38 @@ export const getPrinterRoutingTokens = (printer: PrinterRoutingTarget | null | u
   }
 
   return Array.from(tokens).filter(Boolean);
+};
+
+const getActiveDynamicTargets = (
+  context: PrinterRoutingContext,
+  dynamicRules: PrinterRoutingRule[]
+): string[] => {
+  const station = normalizeRouteToken(context.stationId);
+  const itemCode = normalizeRouteToken(context.itemCode || context.item);
+
+  return dynamicRules
+    .filter((rule) => rule.isActive && rule.targetPrinter)
+    .filter((rule) => {
+      const targetValue = rule.conditionType === 'station'
+        ? station
+        : rule.conditionType === 'itemCode'
+          ? itemCode
+          : '';
+      const conditionValue = normalizeRouteToken(rule.conditionValue);
+
+      if (rule.operator === 'startsWith') return targetValue.startsWith(conditionValue);
+      if (rule.operator === 'equals') return targetValue === conditionValue;
+      if (rule.operator === 'regex') {
+        try {
+          return new RegExp(rule.conditionValue, 'i').test(targetValue);
+        } catch {
+          return false;
+        }
+      }
+      return false;
+    })
+    .map((rule) => normalizeRouteToken(rule.targetPrinter))
+    .filter(Boolean);
 };
 
 const getPersistedStationBinding = (context: PrinterRoutingContext = {}): string => {
@@ -171,6 +204,15 @@ export const resolvePrinterForRouting = <T extends PrinterRoutingTarget>(
   dynamicRules: PrinterRoutingRule[] = []
 ): T | null => {
   if (!Array.isArray(printers) || printers.length === 0) return null;
+
+  const dynamicTargets = getActiveDynamicTargets(context, dynamicRules);
+  if (dynamicTargets.length > 0) {
+    const dynamicPrinter = printers.find((printer) => {
+      const printerTokens = getPrinterRoutingTokens(printer);
+      return dynamicTargets.some((target) => printerTokens.includes(target));
+    });
+    if (dynamicPrinter) return dynamicPrinter;
+  }
 
   const persistedBindingId = getPersistedStationBinding(context);
   if (persistedBindingId) {

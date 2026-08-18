@@ -1152,7 +1152,7 @@ const AdminLabelDesigner = ({ onBack, openLabelId = null }: { onBack?: () => voi
         return cleanEl;
       });
 
-      const isSpecial = sanitizedElements.some(() => el.variable === "SPECIAL_TEXT");
+      const isSpecial = sanitizedElements.some((element) => element.variable === "SPECIAL_TEXT");
       const tagsToSave = tagsOverride !== null ? tagsOverride : (labelTags || []);
 
       await setDoc(docRef, {

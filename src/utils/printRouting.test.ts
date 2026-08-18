@@ -19,4 +19,37 @@ describe('resolvePrinterForRouting', () => {
 
     expect(result?.id).toBe('bound-printer');
   });
+
+  it('prefers an active station rule over a stale local binding', () => {
+    const lighthousePrinter = {
+      id: 'lighthouse-lossen',
+      name: 'Lighthouse Lossen',
+      queueStations: ['BH18'],
+    };
+    const zebraPrinter = {
+      id: 'zebra-zm400-pilot',
+      name: 'Zebra ZM400 Pilot',
+      queueStations: ['GENERAL'],
+    };
+
+    localStorage.setItem(
+      'print_station_printer_bindings_v1',
+      JSON.stringify({ BH18: 'lighthouse-lossen' })
+    );
+
+    const result = resolvePrinterForRouting([lighthousePrinter, zebraPrinter], {
+      stationId: 'BH18',
+    }, [
+      {
+        id: 'bh18-rule',
+        conditionType: 'station',
+        operator: 'equals',
+        conditionValue: 'BH18',
+        targetPrinter: 'zebra-zm400-pilot',
+        isActive: true,
+      },
+    ]);
+
+    expect(result?.id).toBe('zebra-zm400-pilot');
+  });
 });

@@ -317,7 +317,7 @@ const AdminDatabaseView = () => {
       if (key === "PLANNING" || key === "TRACKING") {
         const factorySnap = await getDoc(doc(db, getPathString(PATHS.FACTORY_CONFIG)));
         if (factorySnap.exists() && factorySnap.data().departments) {
-          const configDepts = factorySnap.data().departments.map(() => d.name || d.id);
+          const configDepts = factorySnap.data().departments.map((department) => department.name || department.id);
           depts = Array.from(new Set([...depts, ...configDepts]));
         }
       }
@@ -349,9 +349,9 @@ const AdminDatabaseView = () => {
       // Combineer altijd met FACTORY_CONFIG om ontbrekende "ghost" documents aan te vullen
       const factorySnap = await getDoc(doc(db, getPathString(PATHS.FACTORY_CONFIG)));
       if (factorySnap.exists() && factorySnap.data().departments) {
-        const foundDept = factorySnap.data().departments.find(() => d.name.toLowerCase() === dept.toLowerCase() || d.id.toLowerCase() === dept.toLowerCase());
+        const foundDept = factorySnap.data().departments.find((department) => department.name.toLowerCase() === dept.toLowerCase() || department.id.toLowerCase() === dept.toLowerCase());
         if (foundDept && foundDept.stations) {
-          const configMachines = foundDept.stations.map(() => s.name || s.id);
+          const configMachines = foundDept.stations.map((station) => station.name || station.id);
           machines = Array.from(new Set([...machines, ...configMachines]));
         }
       }

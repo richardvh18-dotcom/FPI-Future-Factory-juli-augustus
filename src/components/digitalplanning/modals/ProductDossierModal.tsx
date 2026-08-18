@@ -1,5 +1,6 @@
 import { updatePlanningOrderPriority } from "../../../services/planningSecurityService";
 import React, { useState, useMemo, useRef } from "react";
+import type { TFunction } from "i18next";
 import {
   X,
   Info,
@@ -66,7 +67,19 @@ type DateLikeInput =
   | null
   | undefined;
 
-const getMeasurementLabel = (key: string, t: unknown): string => {
+type DossierLabel = {
+  id?: string;
+  width?: number;
+  height?: number;
+  [key: string]: unknown;
+};
+
+type PdfWithAutoTable = {
+  autoTable: (options: Record<string, unknown>) => void;
+  lastAutoTable: { finalY: number };
+};
+
+const getMeasurementLabel = (key: string, t: TFunction): string => {
   const labels: Record<string, string> = {
     "RI_Department": t("qc.meas_department", "Afdeling"),
     "Brix_Department": t("qc.meas_department", "Afdeling"),
@@ -161,7 +174,7 @@ const MEASUREMENT_ORDER = [
   "TWtb"
 ];
 
-const formatMeasurementValue = (key: string, value: unknown, t: unknown): string => {
+const formatMeasurementValue = (key: string, value: unknown, t: TFunction): string => {
   const strVal = String(value);
   if (key === "Brix_VisualCheck" || key === "RI_VisualCheck") {
     if (value === true || strVal.toLowerCase() === "true") return t("qc.visual_check_ok", "Ja (Akkoord)");
@@ -197,6 +210,7 @@ type DossierProduct = {
   parentOrderId?: string;
   item?: string;
   itemCode?: string;
+  status?: string;
   labelZPL?: string;
   labelTemplateId?: string | null;
   archived?: boolean;
@@ -221,6 +235,12 @@ type DossierProduct = {
   sourcePath?: string;
   __docPath?: string;
   archiveDocId?: string;
+};
+
+type StationRecord = {
+  id: string;
+  name: string;
+  [key: string]: unknown;
 };
 
 type DossierOrder = {
@@ -335,7 +355,7 @@ const ProductDossierModal = ({
     item: product.item,
   } : {}, [product]);
   const { selectedLabel: dossierLabel, previewData: dossierPreviewData } = useLabelPreview(labelProductData, resolvedLabelTemplateId || undefined) as {
-    selectedLabel?: { width?: number; height?: number } | null;
+    selectedLabel?: DossierLabel | null;
     previewData?: Record<string, unknown>;
   };
 
@@ -558,30 +578,30 @@ const ProductDossierModal = ({
 
   // Stations lijst opschonen (BH31 toevoegen, dubbele BM01 verwijderen)
   const sortedStations = useMemo(() => {
-    const stations = [...WORKSTATIONS];
+    const stations: StationRecord[] = [...WORKSTATIONS] as StationRecord[];
     
     // Check of BH31 ontbreekt en voeg toe
-    if (!stations.find((s: unknown) => s.id === "BH31")) {
-      stations.push({ id: "BH31", name: "BH31" } as unknown);
+    if (!stations.find((station) => station.id === "BH31")) {
+      stations.push({ id: "BH31", name: "BH31" });
     }
 
     // Filter "Station BM01" en duplicaten
-    const uniqueStations = stations.filter((s: unknown, index: number, self: unknown[]) => 
-      index === self.findIndex((t: unknown) => t.id === s.id) && 
-      s.id !== "Station BM01" && s.name !== "Station BM01"
+    const uniqueStations = stations.filter((station, index, self) =>
+      index === self.findIndex((candidate) => candidate.id === station.id) &&
+      station.id !== "Station BM01" && station.name !== "Station BM01"
     );
 
-    return uniqueStations.sort((a: unknown, b: unknown) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    return uniqueStations.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
   }, []);
 
   const moveStations = useMemo(() => {
     if (isArchivedProduct) {
       const allowed = new Set(["BH31", "Nabewerking", "BM01"]);
-      return sortedStations.filter((s: unknown) => allowed.has(s.id));
+      return sortedStations.filter((station) => allowed.has(station.id));
     }
     if (!isTijdelijkeAfkeur) return sortedStations;
     const allowed = new Set(["BH31", "Nabewerking", "LOSSEN"]);
-    return sortedStations.filter((s: unknown) => allowed.has(s.id));
+    return sortedStations.filter((station) => allowed.has(station.id));
   }, [isArchivedProduct, isTijdelijkeAfkeur, sortedStations]);
 
   // Effect: Verrijk historie met operator data uit occupancy als deze ontbreekt
@@ -600,7 +620,7 @@ const ProductDossierModal = ({
         if (!entry.station || (!entry.timestamp && !entry.time)) return entry;
 
         try {
-          const ts = toDateSafe((entry.timestamp || entry.time) as unknown);
+          const ts = toDateSafe(entry.timestamp || entry.time);
           if (!ts || isNaN(ts.getTime())) return entry;
           
           const dateStr = ts.toISOString().split('T')[0];
@@ -634,7 +654,7 @@ const ProductDossierModal = ({
   }, [product, isOpen]);
 
   const formatDeadline = (val: unknown) => {
-    const date = toDateSafe(val as unknown);
+    const date = toDateSafe(val as DateLikeInput);
     if (date) return format(date, "dd-MM-yyyy");
     return String(val || "-");
   };
@@ -668,7 +688,7 @@ const ProductDossierModal = ({
       doc.setFont("helvetica", "bold");
       doc.text("Status:", 14, 50);
       doc.setFont("helvetica", "normal");
-      doc.text(String((product as unknown)?.status || "-"), 45, 50);
+      doc.text(String(product?.status || "-"), 45, 50);
 
       doc.setFont("helvetica", "bold");
       doc.text("QC Samenvatting:", 14, 56);
@@ -709,14 +729,14 @@ const ProductDossierModal = ({
           measBody.push([getMeasurementLabel(k, t), formatMeasurementValue(k, v, t)]);
         });
 
-        (doc as unknown).autoTable({
+        (doc as unknown as PdfWithAutoTable).autoTable({
           startY: startY + 5,
           head: [['Meting', 'Waarde']],
           body: measBody,
           theme: 'grid',
           headStyles: { fillColor: [59, 130, 246] }
         });
-        startY = (doc as unknown).lastAutoTable.finalY + 15;
+        startY = (doc as unknown as PdfWithAutoTable).lastAutoTable.finalY + 15;
       }
 
       if (product?.inspection?.reasons && product.inspection.reasons.length > 0) {
@@ -725,14 +745,14 @@ const ProductDossierModal = ({
         doc.text("Inspectie Bevindingen", 14, startY);
         
         const inspBody = product.inspection.reasons.map(r => [r]);
-        (doc as unknown).autoTable({
+        (doc as unknown as PdfWithAutoTable).autoTable({
           startY: startY + 5,
           head: [['Reden / Afwijking']],
           body: inspBody,
           theme: 'grid',
           headStyles: { fillColor: [244, 63, 94] }
         });
-        startY = (doc as unknown).lastAutoTable.finalY + 15;
+        startY = (doc as unknown as PdfWithAutoTable).lastAutoTable.finalY + 15;
       }
 
       if (historyWithOperators && historyWithOperators.length > 0) {
@@ -747,7 +767,7 @@ const ProductDossierModal = ({
            h.operatorName || h.operatorNumber || h.user || "Systeem"
          ]);
          
-         (doc as unknown).autoTable({
+         (doc as unknown as PdfWithAutoTable).autoTable({
            startY: startY + 5,
            head: [['Tijdstip', 'Station', 'Actie', 'Door']],
            body: histBody,
@@ -889,11 +909,11 @@ const ProductDossierModal = ({
 
       if (dossierLabel && dossierPreviewData) {
         const driver = getDriver(targetPrinter as Record<string, unknown>);
-        const widthMm = Number((dossierLabel as unknown)?.width) || 90;
-        const heightMm = Number((dossierLabel as unknown)?.height) || 40;
+        const widthMm = Number(dossierLabel.width) || 90;
+        const heightMm = Number(dossierLabel.height) || 40;
         zplToReprint = await renderLabelForPrinter({
           printer: targetPrinter as Record<string, unknown>,
-          template: dossierLabel as unknown,
+          template: dossierLabel,
           data: dossierPreviewData as Record<string, unknown>,
           printerDpi: Number(driver.nativeDpi) || 203,
           darkness: Number((targetPrinter as Record<string, unknown>)?.darkness) || driver.defaultDarkness || 15,
@@ -1155,8 +1175,8 @@ const ProductDossierModal = ({
                       >
                         {dossierLabel ? (
                           <AutoScaledLabelPreview
-                            label={dossierLabel as unknown}
-                            data={dossierPreviewData as unknown}
+                            label={dossierLabel}
+                            data={dossierPreviewData}
                             className="shadow-md"
                             maxScale={1}
                           />
@@ -1462,9 +1482,9 @@ const ProductDossierModal = ({
                     className="px-4 py-4 bg-white border-2 border-slate-200 rounded-2xl font-bold text-xs text-slate-700 outline-none focus:border-blue-500"
                   >
                     <option value="">{t("common.chooseStation", "Kies station...")}</option>
-                    {moveStations.map((s: unknown) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
+                    {moveStations.map((station) => (
+                      <option key={station.id} value={station.id}>
+                        {station.name}
                       </option>
                     ))}
                   </select>
