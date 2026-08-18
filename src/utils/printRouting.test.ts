@@ -20,6 +20,20 @@ describe('resolvePrinterForRouting', () => {
     expect(result?.id).toBe('bound-printer');
   });
 
+  it('uses a BH18 persisted binding when the context station is 40BM18', () => {
+    const boundPrinter = { id: 'bound-printer', name: 'Bound Printer', queueStations: ['BH18'] };
+    const fallbackPrinter = { id: 'fallback-printer', name: 'Lighthouse Lossen', queueStations: ['BH18'] };
+
+    localStorage.setItem('print_station_printer_bindings_v1', JSON.stringify({ BH18: 'bound-printer' }));
+
+    const result = resolvePrinterForRouting([fallbackPrinter, boundPrinter], {
+      stationId: '40BM18',
+      routeKey: 'STATION:40BM18',
+    });
+
+    expect(result?.id).toBe('bound-printer');
+  });
+
   it('prefers an active station rule over a stale local binding', () => {
     const lighthousePrinter = {
       id: 'lighthouse-lossen',

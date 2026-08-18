@@ -1,10 +1,17 @@
 const normalizeRouteToken = (value: unknown): string =>
-  String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/^#+/, "")
-    .replace(/\s+/g, "")
-    .replace(/^40(?=BH|BM|BA)/, "");
+  {
+    const compact = String(value || "")
+      .trim()
+      .toUpperCase()
+      .replace(/^#+/, "")
+      .replace(/\s+/g, "")
+      .replace(/^40(?=BH|BM|BA)/, "");
+
+    // Legacy alias op de vloer: BM18/40BM18 is functioneel BH18.
+    if (compact === "BM18") return "BH18";
+
+    return compact;
+  };
 
 const toTokenList = (value: unknown): string[] => {
   if (Array.isArray(value)) {

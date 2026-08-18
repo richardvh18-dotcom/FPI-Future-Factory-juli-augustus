@@ -1,4 +1,42 @@
-﻿## 2026-08-18 - BH18 Printerrouting Lighthouse/Zebra gescheiden
+﻿## 2026-08-18 - Printklik-printerkeuze + Labels Printing multi-afdeling
+
+- **Aangepast op verzoek:** De printerkeuze staat niet meer vast bovenin `Print Stations`.
+- **Nieuw gedrag:** Bij het klikken op **Print** in zowel `Lotnummers Afdrukken` als `Order Labels` verschijnt nu een keuzedialoog voor de doelprinter (bij meerdere `Labels Printing` printers).
+- **Queue toewijzing:** De gekozen printer-ID wordt direct op de queue-job gezet (`printerId` + `targetPrinterName`), zodat output uit de expliciet gekozen printer komt.
+- **Queue Stations verbeterd:** In `AdminPrinterManager` is stationkoppeling niet langer afdelingsbeperkt; je kunt nu `Labels Printing` aan printers uit verschillende afdelingen koppelen.
+
+## 2026-08-18 - Print Stations: expliciete printerkeuze voor Labels Printing
+
+- **Vraag uit de vloer:** `Lotnummers Afdrukken` en `Order Labels` in `Print Stations` moeten niet impliciet naar één queue-printer gaan, maar operator moet per actie de doelprinter kunnen kiezen (bijv. Lighthouse Lossen of ZM400 Pilot).
+- **Opgelost in UI/flow:** In `PrintQueueAdminView` is een expliciete selector toegevoegd: **"Printer voor Labels Printing"**.
+- **Gedrag nu:**
+    - `Lotnummers Afdrukken` queuet naar de gekozen printer-ID.
+    - `Order Labels` queuet naar diezelfde gekozen printer-ID.
+    - Tegels worden uitgeschakeld als er geen printer met queue-station `Labels Printing` beschikbaar is.
+- **Resultaat:** Labels Printing queue kan functioneel over meerdere printers verdeeld worden, met expliciete operator-keuze per werkmoment.
+
+## 2026-08-18 - Queue claim-fix bij meerdere pc's/printers
+
+- **Situatie:** Queue-jobs voor `Labels Printing` stonden correct op de Lighthouse-printer, maar een andere pc (met fysiek gekoppelde `ZM400 Pilot`) kon jobs toch claimen door lokale stationbinding-prioriteit.
+- **Oorzaak:** In de auto-processor en admin queueview had stationbinding/saved printer prioriteit boven de daadwerkelijk verbonden USB-identiteit.
+- **Opgelost:** Selectie van de actieve verwerker draait nu om:
+    1. **Eerst** exacte USB-identiteit (serial of unieke VID/PID match),
+    2. daarna pas stationbinding/saved fallback.
+- **Effect:** Een pc met ZM400 claimt geen Lighthouse-queue-jobs meer puur op basis van lokale binding; jobs blijven bij de juiste printer-processor.
+
+## 2026-08-18 - Printerroutering 40BM18/BH18 gelijkgetrokken
+
+- **Incident:** Printtaken aangemaakt vanuit account/stationcontext `40BM18` werden niet altijd door de bedoelde BH18-printer opgepakt, waardoor jobs op `pending/printing` konden blijven staan.
+- **Oorzaak:** In meerdere printerpaden werd `40BM18` genormaliseerd naar `BM18` terwijl printerstations op `BH18` staan geconfigureerd. Daardoor miste stationmatching in queue-routing.
+- **Opgelost:** Stationnormalisatie uitgebreid met alias `BM18 -> BH18` in:
+    - `src/components/printer/printQueueProcessorHelpers.ts`
+    - `src/components/printer/PrintQueueAutoProcessor.tsx`
+    - `src/components/printer/PrintQueueAdminView.tsx`
+    - `src/services/printRouting.ts`
+    - `src/utils/printRouting.ts`
+- **Test:** Regressietests toegevoegd voor `40BM18` context in `printQueueProcessorHelpers.test.ts` en `printRouting.test.ts`.
+
+## 2026-08-18 - BH18 Printerrouting Lighthouse/Zebra gescheiden
 
 - **Incident:** Een label voor een order die op BH18 werd gestart kwam ondanks de bedoelde queue-routing uit `Lighthouse Lossen` in plaats van `Zebra ZM400 Pilot`.
 - **Oorzaak:** `ProductionStartModal` accepteerde een oude lokale stationbinding of `printConfig.printerId` voordat actieve Firestore-routeringsregels waren geladen. Daarnaast gaf `resolvePrinterForRouting` lokale bindings voorrang op actieve dynamische regels.

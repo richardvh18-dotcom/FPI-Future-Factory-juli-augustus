@@ -1262,9 +1262,8 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
   const handleAddQueueStation = async () => {
     const station = queueStationToAdd.trim();
     if (!station) return;
-    const selectableStations = selectedQueueDepartment
-      ? (departmentStations[selectedQueueDepartment] || [])
-      : availableStations;
+    // Stations mogen printer-afdeling overstijgen (bijv. Labels Printing op meerdere printers).
+    const selectableStations = availableStations;
     if (!selectableStations.includes(station)) return;
     if (queueStations.includes(station)) {
       setQueueStationToAdd("");
@@ -2640,12 +2639,10 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
               value={queueStationToAdd}
               onChange={(e) => setQueueStationToAdd(e.target.value)}
               className="w-full md:w-1/3 p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-sm"
-              disabled={isSavingQueueStations || !selectedQueuePrinterId || (selectedQueueDepartment ? (departmentStations[selectedQueueDepartment] || []).length === 0 : availableStations.length === 0)}
+              disabled={isSavingQueueStations || !selectedQueuePrinterId || availableStations.length === 0}
             >
-              <option value="">{selectedQueueDepartment
-                ? t("adminPrinterManager.selectStationFromDepartment", `3. Selecteer station uit ${selectedQueueDepartment}...`)
-                : t("adminPrinterManager.selectStationFromFactoryConfig", "3. Selecteer station...")}</option>
-              {(selectedQueueDepartment ? (departmentStations[selectedQueueDepartment] || []) : availableStations)
+              <option value="">{t("adminPrinterManager.selectStationFromFactoryConfig", "3. Selecteer station...")}</option>
+              {availableStations
                 .filter((s) => !queueStations.includes(s))
                 .map((s) => (
                   <option key={s} value={s}>{s}</option>

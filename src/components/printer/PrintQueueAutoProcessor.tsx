@@ -132,6 +132,9 @@ const normalizeStationKey = (value: unknown): string => {
     .replace(/[^A-Z0-9]+/g, '')
     .replace(/^40(?=BH|BM|BA)/, '');
 
+  // Legacy alias op de vloer: BM18/40BM18 is functioneel BH18.
+  if (compact === 'BM18') return 'BH18';
+
   if (compact.includes('LABELSPRINTING')) return 'LABELSPRINTING';
 
   const stationTokenMatch = compact.match(/(BH|BM|BA)\d{2,3}/);
@@ -145,6 +148,9 @@ const normalizeStationBindingKey = (value: unknown): string => {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '')
     .replace(/^40(?=BH|BM|BA)/, '');
+
+  // Legacy alias op de vloer: BM18/40BM18 is functioneel BH18.
+  if (compact === 'BM18') return 'BH18';
 
   if (compact.includes('LABELSPRINTING')) return 'LABELSPRINTING';
 
@@ -285,6 +291,24 @@ const normalizeJob = (docSnap: any): PrintJob | null => {
 };
 
 const getCurrentPrinterId = (printers: PrinterConfig[], usbDevice: USBDevice | null): string | null => {
+  if (usbDevice) {
+    const usbSerial = String(usbDevice.serialNumber || '').trim();
+    if (usbSerial) {
+      const serialMatch = printers.find((printer) => String(printer.usbSerialNumber || '').trim() === usbSerial);
+      if (serialMatch?.id) return serialMatch.id;
+    }
+
+    const matches = printers.filter((printer) => {
+      const pVendor = parseUsbId(printer.vendorId);
+      const pProduct = parseUsbId(printer.productId);
+      return pVendor !== undefined && pProduct !== undefined && pVendor === usbDevice.vendorId && pProduct === usbDevice.productId;
+    });
+
+    if (matches.length === 1) {
+      return matches[0].id || null;
+    }
+  }
+
   const selectedStation = String(localStorage.getItem(PRINT_STATION_SELECTED_KEY) || '').trim();
   const stationKey = normalizeStationBindingKey(selectedStation);
   if (stationKey) {
@@ -300,24 +324,6 @@ const getCurrentPrinterId = (printers: PrinterConfig[], usbDevice: USBDevice | n
   if (savedPrinterId) {
     const savedPrinter = printers.find((printer) => printer.id === savedPrinterId);
     if (savedPrinter?.id) return savedPrinter.id;
-  }
-
-  if (!usbDevice) return null;
-
-  const usbSerial = String(usbDevice.serialNumber || '').trim();
-  if (usbSerial) {
-    const serialMatch = printers.find((printer) => String(printer.usbSerialNumber || '').trim() === usbSerial);
-    if (serialMatch?.id) return serialMatch.id;
-  }
-
-  const matches = printers.filter((printer) => {
-    const pVendor = parseUsbId(printer.vendorId);
-    const pProduct = parseUsbId(printer.productId);
-    return pVendor !== undefined && pProduct !== undefined && pVendor === usbDevice.vendorId && pProduct === usbDevice.productId;
-  });
-
-  if (matches.length === 1) {
-    return matches[0].id || null;
   }
 
   return null;

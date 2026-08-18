@@ -115,6 +115,7 @@ type TempLabelModalProps = {
   usbDevice: USBDevice | null;
   setUsbDevice: React.Dispatch<React.SetStateAction<USBDevice | null>>;
   activeQueuePrinter: PrinterConfig | null;
+  requestLabelsQueuePrinter: (reason: string) => Promise<PrinterConfig | null>;
   selectedStation: string | null;
   departmentGroups?: DepartmentGroup[];
   printers?: PrinterConfig[];
@@ -231,6 +232,9 @@ const normalizeStationKey = (value: unknown): string => {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '')
     .replace(/^40(?=BH|BM|BA)/, '');
+
+  // Legacy alias op de vloer: BM18/40BM18 is functioneel BH18.
+  if (compact === 'BM18') return 'BH18';
 
   if (compact.includes('LABELSPRINTING')) return 'LABELSPRINTING';
 
@@ -368,16 +372,6 @@ const getPrinterRoutingViolation = (job: PrintJob, printer: PrinterConfig | null
 };
 
 const resolveUsbBoundPrinter = (printers: PrinterConfig[], usbDevice: USBDevice | null, stationId?: string): PrinterConfig | null => {
-  const stationKey = normalizeStationBindingKey(stationId);
-  if (stationKey) {
-    const stationBindings = readStationBindings();
-    const boundPrinterId = String(stationBindings[stationKey] || '').trim();
-    if (boundPrinterId) {
-      const boundPrinter = printers.find((printer) => printer.id === boundPrinterId) || null;
-      if (boundPrinter) return boundPrinter;
-    }
-  }
-
   if (usbDevice) {
     const usbSerial = String(usbDevice.serialNumber || '').trim();
     if (usbSerial) {
@@ -389,6 +383,16 @@ const resolveUsbBoundPrinter = (printers: PrinterConfig[], usbDevice: USBDevice 
       (printer) => Number(printer.vendorId) === usbDevice.vendorId && Number(printer.productId) === usbDevice.productId
     );
     if (usbMatches.length === 1) return usbMatches[0];
+  }
+
+  const stationKey = normalizeStationBindingKey(stationId);
+  if (stationKey) {
+    const stationBindings = readStationBindings();
+    const boundPrinterId = String(stationBindings[stationKey] || '').trim();
+    if (boundPrinterId) {
+      const boundPrinter = printers.find((printer) => printer.id === boundPrinterId) || null;
+      if (boundPrinter) return boundPrinter;
+    }
   }
 
   const savedPrinterId = String(localStorage.getItem(USB_PRINTER_ID_KEY) || '').trim();
@@ -552,7 +556,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, printerDpi = 203, han
 };
 
 // --- Modal: Tijdelijke Labels Zoeken ---
-const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printerDpi = 203, usbDevice, setUsbDevice, activeQueuePrinter, selectedStation, departmentGroups = [], printers = [] }: TempLabelModalProps) => {
+const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printerDpi = 203, usbDevice, setUsbDevice, activeQueuePrinter, requestLabelsQueuePrinter, selectedStation, departmentGroups = [], printers = [] }: TempLabelModalProps) => {
   const { t } = useTranslation();
   const { notify } = useNotifications();
   
@@ -562,6 +566,11 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
 
   // Printfunctie nu binnen de modal zodat t altijd beschikbaar is
   const handleTempLegacyPrint = async (orderData: AnyRecord, template: any, processedData: any, quantity = 1) => {
+    const chosenPrinter = await requestLabelsQueuePrinter('Order Labels printen');
+    if (!chosenPrinter?.id) {
+      throw new Error('Geen Labels Printing printer geselecteerd.');
+    }
+
     const dpi = printerDpi;
     const darkness = 15; // of printerDarkness als beschikbaar
 
@@ -580,7 +589,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
           const widthMm = Number((currentTemplate as any)?.width || 90);
           const heightMm = Number((currentTemplate as any)?.height || 40);
           const rendered = await renderLabelForPrinter({
-            printer: activeQueuePrinter as Record<string, unknown>,
+            printer: chosenPrinter as Record<string, unknown>,
             template: currentTemplate as any,
             data: processedData as AnyRecord,
             printerDpi: dpi,
@@ -607,7 +616,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
         ],
       };
       zpl = await renderLabelForPrinter({
-        printer: activeQueuePrinter as Record<string, unknown>,
+        printer: chosenPrinter as Record<string, unknown>,
         template: fallbackTemplate as any,
         data: {
           orderNumber: order,
@@ -623,9 +632,9 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
     }
 
     try {
-      if (activeQueuePrinter?.id) {
+      if (chosenPrinter?.id) {
         await queuePrintJob(
-          activeQueuePrinter.id,
+          chosenPrinter.id,
           zpl,
           {
             description: `Order label voor ${order}`,
@@ -633,7 +642,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
             orderId: order,
             lotNumber: orderData.lotNumber || order,
             stationId: LABELS_PRINTING_QUEUE_STATION,
-            targetPrinterName: activeQueuePrinter.name,
+            targetPrinterName: chosenPrinter.name,
             width: parseInt(String(template?.width || 90), 10),
             height: parseInt(String(template?.height || 40), 10),
             renderMode: 'bitmap',
@@ -646,7 +655,7 @@ const TempLabelModal = ({ onClose, labelTemplates = [], labelRules = [], printer
             source: 'temp_order_labels'
           }
         );
-        notify(t("common.printLabelQueued", { order, printer: activeQueuePrinter.name }));
+        notify(t("common.printLabelQueued", { order, printer: chosenPrinter.name }));
         return;
       }
 
@@ -1487,6 +1496,10 @@ const PrintQueueAdminView = () => {
   const [factoryConfig, setFactoryConfig] = useState<AnyRecord | null>(null);
   const [bindingStation, setBindingStation] = useState<string>(() => String(localStorage.getItem(PRINT_STATION_SELECTED_KEY) || '').trim());
   const [stationBindings, setStationBindings] = useState<Record<string, string>>(() => readStationBindings());
+  const [isLabelsPrinterPickerOpen, setIsLabelsPrinterPickerOpen] = useState(false);
+  const [labelsPrinterPickerReason, setLabelsPrinterPickerReason] = useState('');
+  const [labelsPrinterPickerSelectionId, setLabelsPrinterPickerSelectionId] = useState('');
+  const labelsPrinterPickerResolveRef = useRef<((printer: PrinterConfig | null) => void) | null>(null);
 
   useEffect(() => {
     usbDeviceRef.current = usbDevice;
@@ -1876,17 +1889,49 @@ const PrintQueueAdminView = () => {
     });
   }, [printers, stationContext]);
 
+  const labelsQueuePrinters = useMemo(() => {
+    return printers.filter((printer) => getPrinterAllowedStationKeys(printer).includes('LABELSPRINTING'));
+  }, [printers]);
+
+  const selectedLabelsQueuePrinter = useMemo(() => preferredLabelQueuePrinter || labelsQueuePrinters[0] || null, [preferredLabelQueuePrinter, labelsQueuePrinters]);
+
+  const requestLabelsQueuePrinter = useCallback((reason: string) => {
+    if (labelsQueuePrinters.length === 0) {
+      return Promise.resolve(null);
+    }
+
+    if (labelsQueuePrinters.length === 1) {
+      return Promise.resolve(labelsQueuePrinters[0]);
+    }
+
+    return new Promise<PrinterConfig | null>((resolve) => {
+      labelsPrinterPickerResolveRef.current = resolve;
+      setLabelsPrinterPickerReason(reason);
+      setLabelsPrinterPickerSelectionId(labelsQueuePrinters[0]?.id || '');
+      setIsLabelsPrinterPickerOpen(true);
+    });
+  }, [labelsQueuePrinters]);
+
+  const closeLabelsPrinterPicker = useCallback((printer: PrinterConfig | null) => {
+    const resolver = labelsPrinterPickerResolveRef.current;
+    labelsPrinterPickerResolveRef.current = null;
+    setIsLabelsPrinterPickerOpen(false);
+    setLabelsPrinterPickerReason('');
+    setLabelsPrinterPickerSelectionId('');
+    if (resolver) resolver(printer);
+  }, []);
+
   const activeTilePrinterContext = useMemo(() => {
     const labelsPrinterName = String(
-      preferredLabelQueuePrinter?.name || preferredLabelQueuePrinter?.id || 'Geen queue printer'
+      selectedLabelsQueuePrinter?.name || selectedLabelsQueuePrinter?.id || 'Geen queue printer'
     );
 
-    if (preferredLabelQueuePrinter) {
+    if (selectedLabelsQueuePrinter) {
       return `Queue: ${labelsPrinterName}`;
     }
 
     return 'Queue printer nog niet toegewezen';
-  }, [preferredLabelQueuePrinter]);
+  }, [selectedLabelsQueuePrinter]);
 
   // Auto-print logica
   useEffect(() => {
@@ -2268,18 +2313,19 @@ const PrintQueueAdminView = () => {
   };
 
   const handleDirectLotPrintBatch = async (batchData: string, lotCount: number) => {
-    if (!activeQueuePrinter?.id) {
+    const chosenPrinter = await requestLabelsQueuePrinter('Lotnummers afdrukken');
+    if (!chosenPrinter?.id) {
       throw new Error('Geen wachtrijprinter geconfigureerd.');
     }
 
     await queuePrintJob(
-      activeQueuePrinter.id,
+      chosenPrinter.id,
       batchData,
       {
         description: `Lotnummers batch (${lotCount})`,
         quantity: 1,
         stationId: LABELS_PRINTING_QUEUE_STATION,
-        targetPrinterName: activeQueuePrinter.name,
+        targetPrinterName: chosenPrinter.name,
         queuedAsBatch: true,
         source: 'lot_number_batch',
         lotCount,
@@ -2287,7 +2333,7 @@ const PrintQueueAdminView = () => {
     );
 
     setError('');
-    notify(`Lotnummers in wachtrij gezet (${lotCount}) naar ${String(activeQueuePrinter.name || activeQueuePrinter.id)}.`);
+    notify(`Lotnummers in wachtrij gezet (${lotCount}) naar ${String(chosenPrinter.name || chosenPrinter.id)}.`);
   };
 
   const resolveTargetPrinterForJob = useCallback((job: PrintJob): PrinterConfig | null => {
@@ -2839,6 +2885,7 @@ const PrintQueueAdminView = () => {
         <button
           type="button"
           onClick={() => setShowLotModal(true)}
+          disabled={labelsQueuePrinters.length === 0}
           className="flex items-center gap-4 bg-white border-2 border-slate-200 hover:border-blue-500 rounded-2xl p-4 transition-all hover:shadow-lg group text-left"
         >
           <div className="p-4 bg-blue-50 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
@@ -2858,6 +2905,7 @@ const PrintQueueAdminView = () => {
         <button
           type="button"
           onClick={() => setShowTempModal(true)}
+          disabled={labelsQueuePrinters.length === 0}
           className="flex items-center gap-4 bg-white border-2 border-slate-200 hover:border-emerald-500 rounded-2xl p-4 transition-all hover:shadow-lg group text-left"
         >
           <div className="p-4 bg-emerald-50 text-emerald-600 rounded-xl group-hover:bg-emerald-600 group-hover:text-white transition-colors">
@@ -3198,7 +3246,8 @@ const PrintQueueAdminView = () => {
           printerDpi={printerDpi}
           usbDevice={usbDevice}
           setUsbDevice={setUsbDevice}
-          activeQueuePrinter={activeQueuePrinter}
+          activeQueuePrinter={selectedLabelsQueuePrinter}
+          requestLabelsQueuePrinter={requestLabelsQueuePrinter}
           selectedStation={selectedStation}
           departmentGroups={departmentGroups}
           printers={printers}
@@ -3206,7 +3255,44 @@ const PrintQueueAdminView = () => {
       )}
 
       {showLotModal && (
-        <LotPrintModal onClose={() => setShowLotModal(false)} departmentGroups={departmentGroups} onPrintBatch={handleDirectLotPrintBatch} printer={activeQueuePrinter} />
+        <LotPrintModal onClose={() => setShowLotModal(false)} departmentGroups={departmentGroups} onPrintBatch={handleDirectLotPrintBatch} printer={selectedLabelsQueuePrinter} />
+      )}
+
+      {isLabelsPrinterPickerOpen && (
+        <div className="fixed inset-0 z-[250] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5">
+            <h3 className="text-sm font-black uppercase tracking-widest text-slate-800">Kies printer</h3>
+            <p className="text-xs text-slate-500 mt-1">{labelsPrinterPickerReason || 'Selecteer de printer voor Labels Printing.'}</p>
+            <select
+              value={labelsPrinterPickerSelectionId}
+              onChange={(e) => setLabelsPrinterPickerSelectionId(e.target.value)}
+              className="mt-3 w-full p-3 border-2 border-slate-200 rounded-xl font-bold bg-slate-50"
+            >
+              {labelsQueuePrinters.map((printer) => (
+                <option key={printer.id} value={printer.id}>{String(printer.name || printer.id)}</option>
+              ))}
+            </select>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => closeLabelsPrinterPicker(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-bold text-xs uppercase"
+              >
+                Annuleren
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const printer = labelsQueuePrinters.find((p) => p.id === labelsPrinterPickerSelectionId) || null;
+                  closeLabelsPrinterPicker(printer);
+                }}
+                className="px-4 py-2 rounded-xl bg-blue-600 text-white font-black text-xs uppercase tracking-widest"
+              >
+                Printen
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

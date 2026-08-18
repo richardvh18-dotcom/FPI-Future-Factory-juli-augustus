@@ -43,6 +43,19 @@ describe('getPrinterForQueueJob', () => {
     expect(result?.id).toBe('printer-b');
   });
 
+  it('maps legacy station 40BM18 to BH18 so BH18 printer routing still matches', () => {
+    const bh18Printer = { id: 'printer-bh18', name: 'Zebra BH18', queueStations: ['BH18'] };
+    const fallbackPrinter = { id: 'fallback', name: 'Fallback', queueStations: ['BH31'] };
+
+    const result = getPrinterForQueueJob(
+      { metadata: { stationId: '40BM18' } },
+      fallbackPrinter,
+      [fallbackPrinter, bh18Printer]
+    );
+
+    expect(result?.id).toBe('printer-bh18');
+  });
+
   it('allows an explicitly targeted printer even when the station keys do not match', () => {
     const targetPrinter = { id: 'printer-b', name: 'Lighthouse Lossen', queueStations: ['BH31', 'BM01', 'LOSSEN'] };
     const job = {
