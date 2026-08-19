@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildProtocolAwareUsbPayload, buildProtocolAwareUsbProbePayload, buildTsplUsbPayload, normalizePrinterProtocol } from './printerProtocolService';
-import { getDriver } from './printerDrivers';
+import { getDriver, resolvePrinterDpi } from './printerDrivers';
 
 describe('normalizePrinterProtocol', () => {
   it('infers ZPL/PPLZ for Lighthouse printers from the driver profile when no explicit protocol is stored', () => {
@@ -17,6 +17,25 @@ describe('normalizePrinterProtocol', () => {
 
     expect(driver.nativeDpi).toBe(203);
     expect(Math.round((90 / 25.4) * driver.nativeDpi)).toBe(719);
+  });
+
+  it('keeps Lighthouse at 203 DPI when a stale 300 DPI value is stored', () => {
+    expect(resolvePrinterDpi({
+      driverModel: 'lighthouse-cjpro2',
+      name: 'Printer Lostafel',
+      dpi: 300,
+    })).toBe(203);
+  });
+
+  it('recognizes legacy Lighthouse printer IDs without a Lighthouse name', () => {
+    const printer = {
+      id: 'lighthouseprinter',
+      name: 'Printer Lostafel',
+      dpi: 300,
+    };
+
+    expect(getDriver(printer).id).toBe('lighthouse-cjpro2');
+    expect(resolvePrinterDpi(printer)).toBe(203);
   });
 });
 

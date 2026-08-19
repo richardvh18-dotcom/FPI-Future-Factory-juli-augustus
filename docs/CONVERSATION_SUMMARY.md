@@ -1,4 +1,16 @@
-﻿## 2026-08-18 - Printklik-printerkeuze + Labels Printing multi-afdeling
+﻿## 2026-08-19 - Lighthouse DPI-fix gedeployed
+
+- **Versie:** App bijgewerkt van `0.1.170` naar `0.1.171` in `package.json`, `package-lock.json` en `public/version.json`.
+- **Deploy:** Frontend succesvol gedeployed naar Firebase Hosting: `https://future-factory-377ef.web.app`.
+- **Backend:** Geen Cloud Functions-deploy nodig; de wijziging zit volledig in de frontend-rendering.
+
+## 2026-08-19 - Lighthouse Lostafel DPI gecorrigeerd
+
+- **Probleem:** Een geselecteerde Lighthouse-printer kon door een opgeslagen `dpi: 300`-waarde als 300 DPI worden gerenderd.
+- **Oplossing:** `resolvePrinterDpi` gebruikt voor het Lighthouse CJ-PRO II-driverprofiel altijd de hardware-DPI van 203; verouderde DPI-configuratie overschrijft dit niet meer. Legacy-profielen worden ook herkend via printer-ID, drivernaam en productnaam.
+- **Test:** Regressietests toegevoegd; alle 8 tests in `printerProtocolService.test.ts` slagen.
+
+## 2026-08-18 - Printklik-printerkeuze + Labels Printing multi-afdeling
 
 - **Aangepast op verzoek:** De printerkeuze staat niet meer vast bovenin `Print Stations`.
 - **Nieuw gedrag:** Bij het klikken op **Print** in zowel `Lotnummers Afdrukken` als `Order Labels` verschijnt nu een keuzedialoog voor de doelprinter (bij meerdere `Labels Printing` printers).

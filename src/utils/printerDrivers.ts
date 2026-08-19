@@ -33,6 +33,7 @@ type PrinterDriver = {
 
 
 type PrinterProfile = Record<string, unknown> & {
+  id?: string;
   driverModel?: string;
   name?: string;
   deviceName?: string;
@@ -116,6 +117,22 @@ export const DEFAULT_DRIVER_ID = 'zebra-zm400-203';
 const isDriverId = (value: unknown): value is keyof typeof PRINTER_DRIVERS =>
   typeof value === 'string' && value in PRINTER_DRIVERS;
 
+const isLighthouseProfile = (printerProfile: PrinterProfile | null): boolean => {
+  const hint = [
+    printerProfile?.id,
+    printerProfile?.driverModel,
+    printerProfile?.name,
+    printerProfile?.deviceName,
+    printerProfile?.model,
+    printerProfile?.productName,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toUpperCase();
+
+  return hint.includes('LIGHTHOUSE') || hint.includes('CJ-PRO') || hint.includes('PPLZ');
+};
+
 /**
  * Resolve een driver uit een Firestore printer-profiel.
  *
@@ -134,6 +151,9 @@ export const getDriver = (printerProfile: PrinterProfile | null): PrinterDriver 
   // 1. Expliciete driver-ID opgeslagen door beheerder
   const stored = printerProfile.driverModel;
   if (isDriverId(stored)) return PRINTER_DRIVERS[stored];
+
+  // Ondersteun oudere configuraties met een vrije Lighthouse-drivernaam.
+  if (isLighthouseProfile(printerProfile)) return PRINTER_DRIVERS['lighthouse-cjpro2'];
 
   // 2. Naamhint (legacy / nog niet gemigreerde profielen)
   const hint = [
@@ -206,10 +226,13 @@ export const resolvePrinterDpi = (
   printerProfile: PrinterProfile | null,
   fallback = 203
 ): number => {
+  const driver = getDriver(printerProfile);
+  if (driver.id === 'lighthouse-cjpro2') return driver.nativeDpi;
+
   const parsed = Number.parseInt(String(printerProfile?.dpi ?? ''), 10);
   if (Number.isFinite(parsed) && parsed > 0) return parsed;
 
-  const driverDpi = Number(getDriver(printerProfile)?.nativeDpi);
+  const driverDpi = Number(driver.nativeDpi);
   if (Number.isFinite(driverDpi) && driverDpi > 0) return driverDpi;
 
   return fallback;
