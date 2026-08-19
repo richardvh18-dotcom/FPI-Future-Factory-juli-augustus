@@ -1,4 +1,4 @@
-import { getDriver, resolvePrinterDpi } from './printerDrivers';
+import { getDriver, isLighthouseProfile, resolvePrinterDpi } from './printerDrivers';
 import { renderLabelToBitmapZpl as zebraRenderLabelToBitmap } from './zebraLabelRenderEngine';
 import { renderLabelToBitmapZpl as lighthouseRenderLabelToBitmap } from './lighthouseRenderEngine';
 import { renderLabelToTspl, buildTsplUsbPayload } from './tsplPrintService';
@@ -104,18 +104,20 @@ export const renderLabelForPrinter = async (args: RenderLabelForPrinterArgs): Pr
   }
 
   const nameHint = String(args.printer?.name || args.printer?.deviceName || args.printer?.model || args.printer?.productName || '').toLowerCase();
-  const isLighthouse = nameHint.includes('lighthouse') || nameHint.includes('cj-pro') || nameHint.includes('pplz');
+  const isLighthouse = isLighthouseProfile(args.printer || null) || nameHint.includes('lighthouse') || nameHint.includes('cj-pro') || nameHint.includes('pplz');
 
   const renderArgs = {
     template: args.template,
     data: args.data,
-    printerDpi: Number(args.printerDpi || resolvePrinterDpi(args.printer || null, 203)),
+    // Lighthouse CJ-PRO II is physically 203 DPI; never trust stale caller metadata.
+    printerDpi: isLighthouse ? 203 : Number(args.printerDpi || resolvePrinterDpi(args.printer || null, 203)),
     darkness: args.darkness,
     printSpeed: args.printSpeed,
     strictFontSizing: args.strictFontSizing,
     textScaleFactor: args.textScaleFactor,
     widthMm: args.widthMm,
     heightMm: args.heightMm,
+    printer: args.printer,
   };
 
   if (isLighthouse) {

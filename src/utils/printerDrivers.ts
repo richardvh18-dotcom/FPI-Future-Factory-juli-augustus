@@ -117,7 +117,7 @@ export const DEFAULT_DRIVER_ID = 'zebra-zm400-203';
 const isDriverId = (value: unknown): value is keyof typeof PRINTER_DRIVERS =>
   typeof value === 'string' && value in PRINTER_DRIVERS;
 
-const isLighthouseProfile = (printerProfile: PrinterProfile | null): boolean => {
+export const isLighthouseProfile = (printerProfile: PrinterProfile | null): boolean => {
   const hint = [
     printerProfile?.id,
     printerProfile?.driverModel,

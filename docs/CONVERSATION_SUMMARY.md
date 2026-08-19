@@ -1,4 +1,10 @@
-﻿## 2026-08-19 - Lighthouse DPI-fix gedeployed
+﻿## 2026-08-19 - Lighthouse DPI-clamp op laatste renderpunt
+
+- **Aanvulling:** De eerdere DPI-resolver kon nog worden omzeild wanneer een caller expliciet 300 DPI meegaf.
+- **Oplossing:** `renderLabelForPrinter` dwingt voor elk Lighthouse/CJ-PRO/PPLZ-profiel nu altijd 203 DPI af, inclusief productie-start en queue-regeneratie.
+- **Validatie:** 8/8 gerichte printertests geslaagd; TypeScript diagnostics zijn schoon.
+
+## 2026-08-19 - Lighthouse DPI-fix gedeployed
 
 - **Versie:** App bijgewerkt van `0.1.170` naar `0.1.171` in `package.json`, `package-lock.json` en `public/version.json`.
 - **Deploy:** Frontend succesvol gedeployed naar Firebase Hosting: `https://future-factory-377ef.web.app`.
