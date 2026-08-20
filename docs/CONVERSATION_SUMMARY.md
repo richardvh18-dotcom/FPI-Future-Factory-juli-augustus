@@ -1,20 +1,33 @@
-﻿## 2026-08-19 - Lighthouse DPI-clamp op laatste renderpunt
+## 2026-08-18 — Tweeweg USB/TCP Printer Statuscommunicatie
 
-- **Aanvulling:** De eerdere DPI-resolver kon nog worden omzeild wanneer een caller expliciet 300 DPI meegaf.
-- **Oplossing:** `renderLabelForPrinter` dwingt voor elk Lighthouse/CJ-PRO/PPLZ-profiel nu altijd 203 DPI af, inclusief productie-start en queue-regeneratie.
-- **Validatie:** 8/8 gerichte printertests geslaagd; TypeScript diagnostics zijn schoon.
+### Wat is geïmplementeerd
 
-## 2026-08-19 - Lighthouse DPI-fix gedeployed
+**Automatische status na elke printjob (on-demand):**
+- **WebUSB:** Na `printRawUsbToDevice()` en `printBinaryUsbToDevice()` wordt automatisch een `~HS` (Host Status) commando gestuurd (fire-and-forget, 500ms delay). Resultaat wordt opgeslagen in Firestore.
+- **TCP:** Na `sendRawTcp()` in `PrintService.ts` op de GatewayPC wordt automatisch een nieuwe TCP-verbinding geopend voor `~HS`. Resultaat wordt opgeslagen via `saveGatewayEvent()`.
 
-- **Versie:** App bijgewerkt van `0.1.170` naar `0.1.171` in `package.json`, `package-lock.json` en `public/version.json`.
-- **Deploy:** Frontend succesvol gedeployed naar Firebase Hosting: `https://future-factory-377ef.web.app`.
-- **Backend:** Geen Cloud Functions-deploy nodig; de wijziging zit volledig in de frontend-rendering.
+**Handmatige check:**
+- `GET /api/printer-status?profileId=xxx` endpoint op de GatewayPC voor TCP-printers.
+- "Controleer Status" knop in AdminPrinterManager → Statushistorie tab voor WebUSB-printers.
 
-## 2026-08-19 - Lighthouse Lostafel DPI gecorrigeerd
+**ZPL Native error codes (volledige ~HS parsing):**
+- `PAPER_OUT`, `PAUSED`, `BUFFER_FULL`, `HEAD_OPEN`, `RIBBON_OUT`, `THERMAL_FAULT`
+- Argox/Lighthouse (PPLZ) is ZPL-compatibel — zelfde parsing
 
-- **Probleem:** Een geselecteerde Lighthouse-printer kon door een opgeslagen `dpi: 300`-waarde als 300 DPI worden gerenderd.
-- **Oplossing:** `resolvePrinterDpi` gebruikt voor het Lighthouse CJ-PRO II-driverprofiel altijd de hardware-DPI van 203; verouderde DPI-configuratie overschrijft dit niet meer. Legacy-profielen worden ook herkend via printer-ID, drivernaam en productnaam.
-- **Test:** Regressietests toegevoegd; alle 8 tests in `printerProtocolService.test.ts` slagen.
+**Firestore opslag:** `gateway_events/printers/records/{auto-id}` met velden: `eventType: "PRINTER_STATUS"`, `printerId`, `status`, `errors`, `nativeCodes`, `rawResponse`, `source` (webusb/tcp), `triggeredBy` (print_job/manual), `timestamp`
+
+**AdminPrinterManager — Statushistorie tab:**
+- Nieuw "📊 Statushistorie" tab naast Config / Queue Stations / Print Wachtrij
+- Laatste status badge met native codes + timestamp + trigger-info
+- Foutmeldingen worden getoond als rode melding-box
+- 7-dagen history tabel: datum/tijd, status badge, native codes, trigger, meldingen
+
+### Gewijzigde bestanden
+- `src/utils/printerStatus.ts` — `PrinterStatusResult` type, `savePrinterStatusToFirestore()`, `loadPrinterStatusHistory()`
+- `src/utils/usbPrintService.ts` — `parseZebraStatus()` uitgebreid, `readPrinterStatusUsb()` retourneert nu result, `queryAndSavePrinterStatusUsb()` publiek exporteerbaar, auto-status na print (fire-and-forget)
+- `GatewayPC/src/services/PrintService.ts` — `parseTcpZebraStatus()`, `queryTcpPrinterStatus()`, `queryStatus()` methode op PrintService, auto-status na TCP print
+- `GatewayPC/src/app.ts` — `GET /api/printer-status` endpoint
+- `src/components/admin/AdminPrinterManager.tsx` — Statushistorie tab met badge, handmatige check knop, 7-dagen tabel
 
 ## 2026-08-18 - Printklik-printerkeuze + Labels Printing multi-afdeling
 

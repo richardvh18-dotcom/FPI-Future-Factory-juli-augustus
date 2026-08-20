@@ -1,4 +1,5 @@
 import { auth, logActivity } from "../config/firebase";
+import { type PrinterStatusResult, savePrinterStatusToFirestore } from './printerStatus';
 
 type UsbPrinterFilterInput = {
   vendorId?: unknown;
@@ -277,69 +278,123 @@ const normalizeUsbError = (err: unknown): Error => {
   return new Error(String(err || "Onbekende USB fout"));
 };
 
-const parseZebraStatus = (statusString: string): string | null => {
-  // ~HS returns 3 lines of CSV. Line 1:
-  // <STX>030,0,0,0844,000,0,0,0,000,0,0,0<ETX><CR><LF>
-  // Third value is paper out flag (1 = paper out).
-  // Sixth value is pause flag (1 = paused).
-  // Second line has head open flag, etc.
-  
-  if (!statusString || statusString.trim() === '') return null;
-  // eslint-disable-next-line no-control-regex
-  const lines = statusString.split('\n').map(l => l.trim().replace(/\u0002|\u0003/g, ''));
-  if (lines.length === 0) return null;
-
+/**
+ * Parseert de ruwe ZPL ~HS (Host Status) response naar een gestructureerd PrinterStatusResult.
+ *
+ * ZPL ~HS retourneert 3 regels CSV:
+ *   Regel 1: <STX>NNN,PAPER_OUT,PAUSE,LABEL_LEN,unused,BUFFER_FULL,...<ETX>
+ *   Regel 2: <STX>NNN,HEAD_OPEN,RIBBON_OUT,THERMAL_FAULT,...<ETX>
+ *   Regel 3: <STX>label_length,...<ETX>
+ *
+ * Argox PPLZ (Lighthouse) is ZPL-compatibel en retourneert hetzelfde formaat.
+ */
+const parseZebraStatus = (
+  rawResponse: string,
+  source: 'webusb' | 'tcp' = 'webusb',
+  triggeredBy: 'print_job' | 'manual' = 'print_job',
+): PrinterStatusResult => {
   const errors: string[] = [];
-  const line1 = lines[0].split(',');
-  if (line1.length >= 6) {
-    if (line1[1] === '1') errors.push("Papier/Media is op (Paper Out).");
-    if (line1[2] === '1') errors.push("Pause staat aan.");
-    if (line1[5] === '1') errors.push("Buffer is vol.");
+  const nativeCodes: string[] = [];
+
+  if (!rawResponse || rawResponse.trim() === '') {
+    return { status: 'offline', errors: ['Geen antwoord van printer.'], nativeCodes: ['NO_RESPONSE'], rawResponse, checkedAt: new Date().toISOString(), source, triggeredBy };
   }
-  
+
+  // Strip STX (\u0002) en ETX (\u0003) control chars
+  // eslint-disable-next-line no-control-regex
+  const lines = rawResponse.split('\n').map(l => l.trim().replace(/[\u0002\u0003]/g, ''));
+
+  const line1 = (lines[0] ?? '').split(',');
+  if (line1.length >= 6) {
+    if (line1[1] === '1') { errors.push('Papier/media is op.'); nativeCodes.push('PAPER_OUT'); }
+    if (line1[2] === '1') { errors.push('Printer staat op pauze.'); nativeCodes.push('PAUSED'); }
+    if (line1[5] === '1') { errors.push('Databuffer is vol.'); nativeCodes.push('BUFFER_FULL'); }
+  }
+
   if (lines.length > 1) {
-    const line2 = lines[1].split(',');
+    const line2 = (lines[1] ?? '').split(',');
     if (line2.length >= 3) {
-      if (line2[1] === '1') errors.push("Printkop staat open (Head Open).");
-      if (line2[2] === '1') errors.push("Lint is op (Ribbon Out).");
+      if (line2[1] === '1') { errors.push('Printkop staat open.'); nativeCodes.push('HEAD_OPEN'); }
+      if (line2[2] === '1') { errors.push('Inktlint is op.'); nativeCodes.push('RIBBON_OUT'); }
+      if (line2.length >= 4 && line2[3] === '1') { errors.push('Thermal transfer fout.'); nativeCodes.push('THERMAL_FAULT'); }
     }
   }
 
-  if (errors.length > 0) {
-    return errors.join(" ");
-  }
+  // Bepaal geaggregeerde status
+  let status: PrinterStatusResult['status'] = 'ready';
+  if (nativeCodes.includes('PAPER_OUT')) status = 'paper_out';
+  else if (nativeCodes.includes('HEAD_OPEN')) status = 'head_open';
+  else if (nativeCodes.includes('RIBBON_OUT')) status = 'ribbon_out';
+  else if (nativeCodes.includes('PAUSED')) status = 'paused';
+  else if (errors.length > 0) status = 'error';
 
-  return null;
+  return { status, errors, nativeCodes, rawResponse, checkedAt: new Date().toISOString(), source, triggeredBy };
 };
 
+/**
+ * Vraag de printerstatus op via USB (~HS commando).
+ * Retourneert een PrinterStatusResult — altijd, ook bij fouten.
+ * Gooit nooit een exception.
+ */
 const readPrinterStatusUsb = async (
   device: USBDevice,
   outEndpointNumber: number,
-  inEndpointNumber: number | null
-): Promise<void> => {
-  if (inEndpointNumber === null || inEndpointNumber === undefined) return;
-  
+  inEndpointNumber: number | null,
+  triggeredBy: 'print_job' | 'manual' = 'print_job',
+): Promise<PrinterStatusResult | null> => {
+  if (inEndpointNumber === null || inEndpointNumber === undefined) return null;
+
   try {
-    // Stuur ~HS commando
-    const req = new TextEncoder().encode("~HS\r\n");
+    const req = new TextEncoder().encode('~HS\r\n');
     await device.transferOut(outEndpointNumber, req as unknown as BufferSource);
-    
-    // Lees antwoord
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const res = await (device as any).transferIn(inEndpointNumber, 1024);
     if (res.status === 'ok' && res.data) {
-      const decoder = new TextDecoder();
-      const statusText = decoder.decode(res.data);
-      const errorMsg = parseZebraStatus(statusText);
-      if (errorMsg) {
-        throw new Error(`Printer Fout: ${errorMsg}`);
-      }
+      const rawResponse = new TextDecoder().decode(res.data as ArrayBuffer);
+      return parseZebraStatus(rawResponse, 'webusb', triggeredBy);
     }
+    return parseZebraStatus('', 'webusb', triggeredBy);
   } catch (err) {
-    if (err instanceof Error && err.message.startsWith('Printer Fout:')) {
-      throw err; // Gooi geparseerde printer error door
+    console.warn('[PrinterStatus] USB status read mislukt:', err);
+    return {
+      status: 'offline',
+      errors: ['Kon printer niet bereiken via USB.'],
+      nativeCodes: ['USB_READ_ERROR'],
+      rawResponse: '',
+      checkedAt: new Date().toISOString(),
+      source: 'webusb',
+      triggeredBy,
+    };
+  }
+};
+
+/**
+ * Publieke export: vraag printer status op via USB, sla op in Firestore.
+ * Bedoeld voor de handmatige "Controleer Status" knop in AdminPrinterManager.
+ * @param device       - geopend USBDevice
+ * @param printerId    - Firestore printer ID
+ * @param printerName  - Leesbare printernaam
+ * @param triggeredBy  - 'print_job' of 'manual'
+ */
+export const queryAndSavePrinterStatusUsb = async (
+  device: USBDevice,
+  printerId: string,
+  printerName: string,
+  triggeredBy: 'print_job' | 'manual' = 'manual',
+): Promise<PrinterStatusResult | null> => {
+  try {
+    const endpointInfo = getOutEndpoint(device);
+    if (!endpointInfo) return null;
+    const inEp = getInEndpoint(device, endpointInfo.interfaceNumber, endpointInfo.alternateSetting);
+    const result = await readPrinterStatusUsb(device, endpointInfo.endpointNumber, inEp, triggeredBy);
+    if (result) {
+      // Fire-and-forget — wacht niet op Firestore
+      void savePrinterStatusToFirestore(printerId, printerName, result);
     }
-    // Andere errors (timeout etc) negeren we, we willen de flow niet breken als status read faalt.
-    console.warn("Kon printer status niet uitlezen:", err);
+    return result;
+  } catch {
+    return null;
   }
 };
 
@@ -587,14 +642,21 @@ export const printRawUsbToDevice = async ({
       }
     }
 
-    // Status check na printen voor ZPL printers
+    // Status check na printen voor ZPL printers — fire-and-forget, blokkeert printjob niet
     const isZpl = normalizePrinterProtocol(printer as any) === 'zpl';
     if (isZpl) {
       const inEndpoint = getInEndpoint(device, endpointInfo.interfaceNumber, endpointInfo.alternateSetting);
       if (inEndpoint !== null) {
-        // Korte wachttijd om de printer de kans te geven de foutstatus bij te werken (bijv. als hij halverwege printen in error schiet)
-        await new Promise(r => setTimeout(r, 500));
-        await readPrinterStatusUsb(device, endpointInfo.endpointNumber, inEndpoint);
+        void (async () => {
+          // Korte wachttijd: geeft printer kans om foutstatus bij te werken na het printen
+          await new Promise(r => setTimeout(r, 500));
+          const statusResult = await readPrinterStatusUsb(device, endpointInfo.endpointNumber, inEndpoint, 'print_job');
+          if (statusResult) {
+            const printerId = String((printer as Record<string, unknown>)?.id ?? '');
+            const printerName = String((printer as Record<string, unknown>)?.name ?? device.productName ?? 'USB Printer');
+            void savePrinterStatusToFirestore(printerId, printerName, statusResult);
+          }
+        })();
       }
     }
 
@@ -660,6 +722,23 @@ export const printBinaryUsbToDevice = async ({
         await transferChunk(payload.slice(offset, offset + USB_TRANSFER_CHUNK_SIZE));
       }
     }
+
+    // Status check na binaire print — fire-and-forget
+    void (async () => {
+      await new Promise(r => setTimeout(r, 500));
+      const endpointInfo2 = getOutEndpoint(device);
+      if (endpointInfo2) {
+        const inEp = getInEndpoint(device, endpointInfo2.interfaceNumber, endpointInfo2.alternateSetting);
+        if (inEp !== null) {
+          const statusResult = await readPrinterStatusUsb(device, endpointInfo2.endpointNumber, inEp, 'print_job');
+          if (statusResult) {
+            const printerId = String((device as unknown as Record<string, unknown>)?.id ?? '');
+            const printerName = String(device.productName ?? 'USB Printer');
+            void savePrinterStatusToFirestore(printerId, printerName, statusResult);
+          }
+        }
+      }
+    })();
 
     if (logMessage) {
       try { await logActivity(auth.currentUser?.uid || "system", "PRINT_LABEL", logMessage); }

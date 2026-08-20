@@ -20,7 +20,12 @@ import {
   Tag,
   Search,
   Crosshair,
-  Loader2
+  Loader2,
+  Activity,
+  CheckCircle,
+  AlertCircle,
+  WifiOff,
+  PauseCircle,
 } from "lucide-react";
 import { 
   collection, 
@@ -71,6 +76,8 @@ import {
   buildOrderLabelTemplateProduct,
 } from "../../utils/orderLabelTemplateUtils";
 import { isPrinterOnline } from "../../utils/printerStatus";
+import { loadPrinterStatusHistory, type PrinterStatusRecord } from "../../utils/printerStatus";
+import { queryAndSavePrinterStatusUsb } from "../../utils/usbPrintService";
 import { resolvePreferredQueueDepartment } from "../../utils/printerQueueStationUtils";
 
 // Parse USB ID strings (e.g., "1234" or "0x1234") to numbers
@@ -1088,7 +1095,7 @@ const CalibrationModal = ({ printer, onClose, onPrint, onApply }: {
 const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | null) => void }) => {
   const { t } = useTranslation();
   const { showSuccess, showError, showInfo, showConfirm } = useNotifications();
-  const [activeTab, setActiveTab] = useState<"config" | "queue-stations" | "queue">("config"); // 'config' | 'queue-stations' | 'queue'
+  const [activeTab, setActiveTab] = useState<"config" | "queue-stations" | "queue" | "status-history">("config"); // 'config' | 'queue-stations' | 'queue' | 'status-history'
   const [printers, setPrinters] = useState<PrinterRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdding, setIsAdding] = useState(false);
@@ -1111,6 +1118,13 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
   const { labelTemplates, labelRules: labelLogicRules } = useLabelCatalog();
   const [windowsHostMode, setWindowsHostMode] = useState(false);
   const [savingWindowsHostMode, setSavingWindowsHostMode] = useState(false);
+
+  // Printer status state
+  const [printerStatusHistory, setPrinterStatusHistory] = useState<PrinterStatusRecord[]>([]);
+  const [loadingStatusHistory, setLoadingStatusHistory] = useState(false);
+  const [manualStatusResult, setManualStatusResult] = useState<PrinterStatusRecord | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+
   
   // Form state
   const [formData, setFormData, clearPersistedPrinterForm] = useFormPersistence<PrinterFormData>(
@@ -1659,7 +1673,7 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
       };
       const fallbackBitmapZpl = await renderLabelForPrinter({
         printer,
-        template: fallbackTemplate as LabelTemplate,
+        template: fallbackTemplate as unknown as LabelTemplate,
         data: {
           orderNumber: order,
           itemCode: item,
@@ -1992,6 +2006,13 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
     });
     setEditingId(printer.id);
     setIsAdding(true);
+    // Laad statushistorie voor deze printer
+    setManualStatusResult(null);
+    setLoadingStatusHistory(true);
+    loadPrinterStatusHistory(printer.id, 7)
+      .then((records) => setPrinterStatusHistory(records))
+      .catch(() => setPrinterStatusHistory([]))
+      .finally(() => setLoadingStatusHistory(false));
   };
 
   return (
@@ -2059,6 +2080,30 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
           }`}
         >
           <List size={16} /> Print Wachtrij
+        </button>
+        <button
+          onClick={() => {
+            if (editingId) {
+              setActiveTab("status-history");
+              setLoadingStatusHistory(true);
+              const editingPrinter = printers.find(p => p.id === editingId);
+              if (editingPrinter) {
+                loadPrinterStatusHistory(editingPrinter.id, 7)
+                  .then((records) => setPrinterStatusHistory(records))
+                  .catch(() => setPrinterStatusHistory([]))
+                  .finally(() => setLoadingStatusHistory(false));
+              } else {
+                setLoadingStatusHistory(false);
+              }
+            } else {
+              setActiveTab("status-history");
+            }
+          }}
+          className={`px-6 py-3 rounded-2xl font-black uppercase text-xs tracking-widest transition-all flex items-center gap-2 ${
+            activeTab === "status-history" ? "bg-slate-900 text-white shadow-lg" : "bg-white text-slate-500 hover:bg-slate-50 border border-slate-200"
+          }`}
+        >
+          <Activity size={16} /> {t('printerStatus.historyTab', 'Statushistorie')}
         </button>
       </div>
 
@@ -2686,6 +2731,194 @@ const AdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: string | nu
           <PrintQueueAdminView />
         </div>
       )}
+
+      {activeTab === "status-history" && (() => {
+        const editingPrinter = printers.find(p => p.id === editingId);
+        const lastStatus = manualStatusResult ?? (printerStatusHistory.length > 0 ? printerStatusHistory[0] : null);
+
+        const statusBadge = (status: string) => {
+          if (status === 'ready') return { icon: <CheckCircle size={16} className="text-emerald-600" />, label: t('printerStatus.ready', 'Gereed'), bg: 'bg-emerald-50 border-emerald-200 text-emerald-700' };
+          if (status === 'paper_out') return { icon: <AlertCircle size={16} className="text-red-600" />, label: t('printerStatus.paperOut', 'Papier op'), bg: 'bg-red-50 border-red-200 text-red-700' };
+          if (status === 'head_open') return { icon: <AlertCircle size={16} className="text-orange-600" />, label: t('printerStatus.headOpen', 'Kop open'), bg: 'bg-orange-50 border-orange-200 text-orange-700' };
+          if (status === 'ribbon_out') return { icon: <AlertCircle size={16} className="text-orange-600" />, label: t('printerStatus.ribbonOut', 'Lint op'), bg: 'bg-orange-50 border-orange-200 text-orange-700' };
+          if (status === 'paused') return { icon: <PauseCircle size={16} className="text-yellow-600" />, label: t('printerStatus.paused', 'Gepauzeerd'), bg: 'bg-yellow-50 border-yellow-200 text-yellow-700' };
+          if (status === 'offline') return { icon: <WifiOff size={16} className="text-slate-500" />, label: t('printerStatus.offline', 'Offline'), bg: 'bg-slate-50 border-slate-200 text-slate-600' };
+          return { icon: <AlertCircle size={16} className="text-red-600" />, label: t('printerStatus.error', 'Fout'), bg: 'bg-red-50 border-red-200 text-red-700' };
+        };
+
+        const handleManualUsbCheck = async () => {
+          if (!editingPrinter) return;
+          setCheckingStatus(true);
+          try {
+            const { findAuthorizedUsbDevice } = await import('../../utils/usbPrintService');
+            const device = await findAuthorizedUsbDevice({
+              vendorId: editingPrinter.vendorId,
+              productId: editingPrinter.productId,
+              usbSerialNumber: editingPrinter.usbSerialNumber,
+            });
+            if (!device) {
+              showError(t('printerStatus.noUsbDevice', 'Geen USB-printer gevonden. Koppel de printer en kies hem via de browser.'));
+              return;
+            }
+            if (!device.opened) await device.open();
+            if (!device.configuration) await device.selectConfiguration(1);
+            const result = await queryAndSavePrinterStatusUsb(device, editingPrinter.id, editingPrinter.name ?? 'Printer', 'manual');
+            if (result) {
+              const record: PrinterStatusRecord = {
+                ...result,
+                id: 'manual-' + Date.now(),
+                printerId: editingPrinter.id,
+                printerName: editingPrinter.name ?? 'Printer',
+                timestamp: result.checkedAt,
+              };
+              setManualStatusResult(record);
+              setPrinterStatusHistory(prev => [record, ...prev]);
+            }
+          } catch (err: unknown) {
+            showError(t('printerStatus.checkFailed', 'Statuscheck mislukt') + ': ' + String(err instanceof Error ? err.message : err));
+          } finally {
+            setCheckingStatus(false);
+          }
+        };
+
+        return (
+          <div className="space-y-5">
+            {!editingPrinter ? (
+              <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+                <Activity size={32} className="mx-auto mb-3 text-slate-300" />
+                <p className="text-slate-500 font-bold">{t('printerStatus.selectPrinterFirst', 'Selecteer een printer om de statushistorie te zien.')}</p>
+                <p className="text-slate-400 text-sm mt-1">{t('printerStatus.selectPrinterHint', 'Klik op "Bewerken" bij een printer in de Config-tab.')}</p>
+              </div>
+            ) : (
+              <>
+                {/* Huidige status */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">{t('printerStatus.currentStatus', 'Huidige status')}</p>
+                      <h3 className="text-base font-black text-slate-800">{editingPrinter.name}</h3>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {lastStatus ? (() => {
+                        const badge = statusBadge(lastStatus.status);
+                        return (
+                          <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border font-bold text-sm ${badge.bg}`} title={lastStatus.nativeCodes.join(', ') + (lastStatus.rawResponse ? '\n\n~HS: ' + lastStatus.rawResponse.slice(0, 80) : '')}>
+                            {badge.icon}
+                            <span>{badge.label}</span>
+                            {lastStatus.nativeCodes.length > 0 && lastStatus.nativeCodes[0] !== 'NO_RESPONSE' && (
+                              <span className="font-mono text-xs opacity-70 ml-1">[{lastStatus.nativeCodes.join(', ')}]</span>
+                            )}
+                          </div>
+                        );
+                      })() : (
+                        <div className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-400 font-bold text-sm">
+                          <WifiOff size={16} />
+                          <span>{t('printerStatus.noDataYet', 'Nog geen statusdata')}</span>
+                        </div>
+                      )}
+                      {lastStatus && (
+                        <span className="text-xs text-slate-400 font-mono">
+                          {new Date(lastStatus.checkedAt).toLocaleString('nl-NL')}
+                          {' · '}
+                          {lastStatus.triggeredBy === 'manual' ? t('printerStatus.manual', 'Handmatig') : t('printerStatus.afterPrint', 'Na print')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {lastStatus?.errors && lastStatus.errors.length > 0 && (
+                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl">
+                      {lastStatus.errors.map((e, i) => (
+                        <p key={i} className="text-sm font-bold text-red-700">⚠️ {e}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Handmatige status knop — alleen voor WebUSB printers */}
+                  {editingPrinter.type === 'webusb' && (
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        onClick={handleManualUsbCheck}
+                        disabled={checkingStatus}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-xl font-black text-xs uppercase tracking-wider hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {checkingStatus
+                          ? <><Loader2 size={14} className="animate-spin" /> {t('printerStatus.checking', 'Controleren...')}</>
+                          : <><Activity size={14} /> {t('printerStatus.checkNow', 'Controleer Status')}</>
+                        }
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 7-dagen geschiedenis tabel */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <h3 className="font-black text-slate-800 uppercase text-xs tracking-widest flex items-center gap-2">
+                      <Activity size={16} /> {t('printerStatus.history7Days', 'Statushistorie (7 dagen)')}
+                    </h3>
+                    <span className="text-xs text-slate-400 font-mono">{printerStatusHistory.length} {t('printerStatus.records', 'records')}</span>
+                  </div>
+                  {loadingStatusHistory ? (
+                    <div className="p-8 text-center text-slate-400">
+                      <Loader2 size={24} className="mx-auto animate-spin mb-2" />
+                      <p className="font-bold text-sm">{t('common.loading', 'Laden...')}</p>
+                    </div>
+                  ) : printerStatusHistory.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400">
+                      <Activity size={24} className="mx-auto mb-2 opacity-30" />
+                      <p className="font-bold text-sm">{t('printerStatus.noHistory', 'Nog geen statusrecords voor deze printer.')}</p>
+                      <p className="text-xs mt-1">{t('printerStatus.noHistoryHint', 'Status wordt automatisch bijgehouden na elke printjob.')}</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-100">
+                            <th className="px-4 py-3 text-left font-black text-slate-500 uppercase tracking-widest">{t('common.dateTime', 'Datum/Tijd')}</th>
+                            <th className="px-4 py-3 text-left font-black text-slate-500 uppercase tracking-widest">{t('common.status', 'Status')}</th>
+                            <th className="px-4 py-3 text-left font-black text-slate-500 uppercase tracking-widest">{t('printerStatus.nativeCodes', 'Native codes')}</th>
+                            <th className="px-4 py-3 text-left font-black text-slate-500 uppercase tracking-widest">{t('printerStatus.trigger', 'Trigger')}</th>
+                            <th className="px-4 py-3 text-left font-black text-slate-500 uppercase tracking-widest">{t('common.errors', 'Meldingen')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {printerStatusHistory.map((record, idx) => {
+                            const badge = statusBadge(record.status);
+                            return (
+                              <tr key={record.id + idx} className={`border-b border-slate-50 hover:bg-slate-50 transition-colors ${idx === 0 ? 'bg-blue-50/30' : ''}`}>
+                                <td className="px-4 py-3 font-mono text-slate-600 whitespace-nowrap">
+                                  {new Date(record.timestamp).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-bold ${badge.bg}`}>
+                                    {badge.icon}
+                                    {badge.label}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 font-mono text-slate-500">
+                                  {record.nativeCodes.length > 0 ? record.nativeCodes.join(', ') : '—'}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${record.triggeredBy === 'manual' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
+                                    {record.triggeredBy === 'manual' ? t('printerStatus.manual', 'Handmatig') : t('printerStatus.afterPrint', 'Na print')}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-slate-600 max-w-xs">
+                                  {record.errors.length > 0 ? record.errors.join(' ') : <span className="text-emerald-600 font-bold">✓ {t('printerStatus.noErrors', 'Geen meldingen')}</span>}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 };
