@@ -85,6 +85,28 @@ const isOnHoldStatusValue = (value: unknown): boolean => {
   return normalized === "on_hold" || normalized === "hold" || normalized === "paused";
 };
 
+const LN_EXPORT_HISTORY_STORAGE_KEY = "fpiff_ln_qr_history_v1";
+
+const readLnOfferedCountForOrder = (orderId: unknown): number => {
+  if (typeof window === "undefined") return 0;
+  const normalizedOrderId = String(orderId || "").trim();
+  if (!normalizedOrderId) return 0;
+
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(LN_EXPORT_HISTORY_STORAGE_KEY) || "[]");
+    if (!Array.isArray(parsed)) return 0;
+    return parsed.reduce((total, entry) => {
+      if (!entry?.resetCounters || !Array.isArray(entry.rows)) return total;
+      return total + entry.rows.reduce((rowTotal: number, row: Record<string, unknown>) => {
+        if (String(row?.orderId || "").trim() !== normalizedOrderId) return rowTotal;
+        return rowTotal + Math.max(0, Number(row?.count || 0) || 0);
+      }, 0);
+    }, 0);
+  } catch {
+    return 0;
+  }
+};
+
 type ProductRecord = {
   id: string;
   lotNumber: string;
@@ -139,6 +161,7 @@ const OrderDetail = React.memo(({
   const [orderEditReason, setOrderEditReason] = useState("");
   const [orderEditError, setOrderEditError] = useState("");
   const [isSavingOrderEdit, setIsSavingOrderEdit] = useState(false);
+  const [lnOfferedAmount, setLnOfferedAmount] = useState(0);
   const [noteDraft, setNoteDraft] = useState("");
   const [planDraft, setPlanDraft] = useState("");
   const [todoDraft, setTodoDraft] = useState("");
@@ -182,6 +205,16 @@ const OrderDetail = React.memo(({
     };
     fetchArchived();
   }, [order?.orderId]);
+
+  useEffect(() => {
+    const refreshLnOfferedAmount = () => {
+      setLnOfferedAmount(readLnOfferedCountForOrder(order?.orderId || order?.id));
+    };
+
+    refreshLnOfferedAmount();
+    window.addEventListener("storage", refreshLnOfferedAmount);
+    return () => window.removeEventListener("storage", refreshLnOfferedAmount);
+  }, [order?.orderId, order?.id]);
 
   useEffect(() => {
     if (!order) return;
@@ -1116,8 +1149,8 @@ const OrderDetail = React.memo(({
           </div>
         </div>
 
-        {/* Rij 3: Aantal, To do, In behandeling, Gereed (met LN Aangeboden) */}
-        <div className="grid grid-cols-4 gap-2">
+        {/* Rij 3: Aantal, To do, In behandeling, Gereed en LN aangeboden */}
+        <div className="grid grid-cols-5 gap-2">
           <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight block mb-0.5">{t("digitalplanning.order_detail.amount")}</span>
             {canEditOrderPlan ? (
@@ -1184,6 +1217,10 @@ const OrderDetail = React.memo(({
           <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight block mb-0.5">{t("digitalplanning.order_detail.produced_amount", "Gereed")} / LN Aangeboden</span>
             <span className="font-bold text-xs text-emerald-700">{producedAmount}</span>
+          </div>
+          <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-200">
+            <span className="text-[9px] font-black text-emerald-700 uppercase tracking-tight block mb-0.5">{t("orderDetail.lnOffered", "LN aangeboden")}</span>
+            <span className="font-black text-xs text-emerald-900">{lnOfferedAmount}</span>
           </div>
         </div>
 

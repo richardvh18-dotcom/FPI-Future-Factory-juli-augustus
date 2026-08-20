@@ -1,5 +1,7 @@
 import * as functions from "firebase-functions/v1";
 import * as admin from "firebase-admin";
+import { validateCallableData } from "../utils/validatedCallable";
+import { manualSyncDrawingsCallableSchema } from "../utils/callableSchemas";
 
 const normalizeCode = (value: unknown): string => String(value || "").trim().toUpperCase();
 const compactCode = (value: unknown): string => normalizeCode(value).replace(/[^A-Z0-9]/g, "");
@@ -68,6 +70,7 @@ export const manualSyncDrawings = functions
   .region("europe-west1")
   .runWith({ timeoutSeconds: 540, memory: "1GB" })
   .https.onCall(async (data: any, context: any) => {
+    validateCallableData(manualSyncDrawingsCallableSchema, data);
     // 1. Auth check
     if (!context.auth) {
       throw new functions.https.HttpsError("unauthenticated", "You must be logged in to trigger drawing sync.");

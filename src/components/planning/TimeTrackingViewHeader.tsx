@@ -2,7 +2,7 @@
 import React from 'react';
 import { Calendar, Clock, Building2 } from 'lucide-react';
 
-type TranslateFn = any;
+type TranslateFn = (key: string, fallback?: string, options?: Record<string, unknown>) => string;
 
 type TimeTrackingViewHeaderProps = {
   t: TranslateFn;

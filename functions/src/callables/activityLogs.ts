@@ -1,6 +1,8 @@
 // @ts-nocheck
 const functions = require("firebase-functions/v1");
 const { Logging } = require("@google-cloud/logging");
+const { validateCallableData } = require("../utils/validatedCallable");
+const { activityLogsCallableSchema } = require("../utils/callableSchemas");
 
 const logging = new Logging();
 
@@ -9,10 +11,7 @@ exports.getOrderActivityLogs = functions.region("europe-west1").https.onCall(asy
     throw new functions.https.HttpsError("unauthenticated", "User must be authenticated.");
   }
 
-  const { orderId } = data;
-  if (!orderId || typeof orderId !== "string") {
-    throw new functions.https.HttpsError("invalid-argument", "Missing or invalid orderId.");
-  }
+  const { orderId } = validateCallableData(activityLogsCallableSchema, data);
 
   try {
     const filter = `resource.type="cloud_function" AND jsonPayload.details.orderId="${orderId.replace(/"/g, '\\"')}"`;

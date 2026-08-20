@@ -1,3 +1,161 @@
+﻿## 2026-08-20 — LN "In behandeling"-teller: iteratie teruggedraaid naar git-versie
+
+### Wat is besproken
+- Meerdere pogingen om de "In behandeling"-teller in `ImportExportDashboard.tsx` correct te definiëren t.o.v. de LN-wikkelstap en de reset-export.
+- Vastgestelde businessregel (voor toekomstig gebruik): "In behandeling" mag alleen tellen op basis van reeds geëxporteerde/gereset LN-batches (`offeredCount`), niet op de nog niet geëxporteerde `wikkelCount`. Vóór een export/reset moet "In behandeling" dus 0 blijven, ook als er al wikkelstappen lopen.
+- Op verzoek van de gebruiker zijn zowel de kolomweergave (`Totaal order` + `In behandeling`) als de bijbehorende `inProcessCount`-berekening weer teruggedraaid.
+
+### Wat is aangepast
+- `git checkout -- src/components/digitalplanning/ImportExportDashboard.tsx` uitgevoerd: bestand staat weer gelijk aan de laatste commit (geen local diff meer).
+- Geen andere bestanden gewijzigd deze sessie.
+
+### Verificatie
+- `git status --short` en `git diff --stat` op het bestand → geen wijzigingen, bevestigt volledige terugdraai.
+
+### Openstaand voor vervolg
+- De juiste "In behandeling"-logica (gebaseerd op `offeredCount - readyReportedCount - nahardingCount`, met "LN wikkelstap" als aparte niet-geëxporteerde teller) is nog niet opnieuw geïmplementeerd. Bij hervatting: gebruik bovenstaande businessregel als uitgangspunt.
+
+---
+
+## 2026-08-20 — LN-tellingen uitgebreid met vloerstatus en aangeboden teller
+
+### Wat is aangepast
+- In `ImportExportDashboard.tsx` een extra kolom toegevoegd: `In behandeling`.
+- De vloerwaarde wordt begrensd op het ordertotaal en berekend na aftrek van gereedgemeld, naharding, actuele LN-wikkelstappen en officiële reset-exports.
+- De LN-PDF bevat dezelfde extra kolom.
+- In `OrderDetail.tsx` een extra tegel toegevoegd: `LN aangeboden`.
+- Deze tegel telt per order de som van geëxporteerde `row.count`-waarden waarvoor `Exporteren en resetten` is gekozen.
+- `Alleen exporteren` telt bewust niet mee als officiële LN-aanbieding.
+
+### Verificatie
+- Editor-diagnostics voor beide gewijzigde componenten → geen fouten.
+- Gerichte TypeScript-check op de gewijzigde regels → geen nieuwe meldingen.
+- `git diff --check` → geslaagd.
+
+---
+
+## 2026-08-20 — Programma 1 Fase 1C: Firebase onCall-validatie
+
+### Wat is gedaan
+- Zod-validatie toegevoegd aan de Functions-package.
+- Specifieke payloadschema’s toegevoegd voor AI, QC, scheduler, activity logs, Firebase usage, drawing sync en planning order-control.
+- De bestaande `withAudit`-wrapper valideert nu alle aangesloten callable-payloads als object vóór audit logging en businesslogica.
+- De drie legacy-callables in `functions/index.js` (`aiProxyGenerate`, `clientLogActivity`, `logClientError`) voorzien van specifieke Zod-schema’s.
+- Het Fase 1C-item voor alle Firebase `onCall`-handlers afgevinkt.
+
+### Verificatie
+- `cd functions && npm run build` → geslaagd.
+- Alle gevonden `onCall`-registraties hebben nu een specifieke schema-validatie of centrale `withAudit`-validatie.
+- Programma 1 staat nu op `12/20` taken (`60%`).
+
+---
+
+## 2026-08-20 — Programma 1 Fase 1C: Zod-schema’s toegevoegd
+
+### Wat is gedaan
+- Zod toegevoegd als runtime-validatiedependency.
+- `src/schemas/productionSchemas.ts` toegevoegd met `MachineStatusSchema`, `InforOrderSchema`, `PrintJobSchema` en `QualityMeasurementSchema`.
+- Gerichte regressietests toegevoegd in `tests/productionSchemas.test.ts`.
+- De vier concrete Fase 1C-schema-items afgevinkt in `docs/ARCHITECTURE_TASKS.md`.
+
+### Verificatie
+- `npx vitest run tests/productionSchemas.test.ts` → `4 passed`.
+- ESLint op `src/schemas/productionSchemas.ts` → exit code 0.
+- TypeScript-uitvoer bevat geen meldingen voor de nieuwe schema- of testbestanden.
+- De brede validatie van alle Firebase `onCall`-handlers blijft nog open.
+
+---
+
+## 2026-08-20 — Programma 1: AI-context Firestore-generics vervolgd
+
+- De AI-contextproviders gebruiken nu consequent getypeerde Firestore-querywrappers (`Query<RecordLike>`), inclusief de resterende `collectionGroup('orders')`-query.
+- `aiService.ts` bevat geen expliciete `any` meer en blijft lint/type-check schoon.
+- De roadmap-items `aiService.ts` en repo-brede Firestore `DocumentSnapshot<T>`-generics blijven open: de AI abstraction layer en volledige callback-migratie zijn nog niet afgerond.
+
+### Verificatie
+- TypeScript-diagnostics op `contextProviders.ts` en `aiService.ts` → geen fouten.
+- `npx eslint src/services/ai/contextProviders.ts src/services/aiService.ts --max-warnings=0` → exit code 0.
+
+---
+
+## 2026-08-20 — Programma 1: geen nieuwe expliciete `any` toegestaan
+
+### Wat is aangepast
+- `scripts/check-any-count.cjs` controleert naast de historische baseline ook `maxAllowed`.
+- `.any-baseline.json` heeft nu `maxAllowed: 483`, de actuele tellerstand.
+- Nieuwe expliciete `any`-typen laten `check:any` en daarmee de validatie falen.
+- De bestaande baseline `742` en roadmap-target `500` blijven als historische voortgangswaarden behouden.
+
+### Verificatie
+- `node scripts/check-any-count.cjs` → `483`, binnen de actuele limiet.
+- `npx vitest run tests/check-any-count.test.ts` → `1 passed`.
+
+---
+
+## 2026-08-20 — Architectuurtaaklijst bijgewerkt
+
+- In `docs/ARCHITECTURE_TASKS.md` de afgeronde Programma 1-items afgevinkt: CI-baseline, `MazakView.tsx`, `planningSecurityService.ts` en `742 → 500`.
+- Voortgang bijgewerkt naar `7/16` taken (`44%`).
+- Openstaande AI-, Firestore- en Zod-items blijven bewust open.
+
+---
+
+## 2026-08-20 — Programma 1: TeamleaderHub type-cleanup
+
+### Wat is gedaan
+- Lokale order-, product- en department-records in `TeamleaderHub.tsx` getypeerd als `Record<string, unknown>`.
+- `any`-casts bij helperfuncties vervangen door concrete recordtypes.
+- Componentgrenzen aangescherpt met bestaande `React.ComponentProps`-contracten.
+
+### Verificatie
+- `npx eslint src/components/digitalplanning/TeamleaderHub.tsx --max-warnings=0` → exit code 0.
+- `node scripts/check-any-count.cjs` → `483` expliciete `any`-hits.
+- Programma 1-doel `500` is hiermee gehaald; baseline was `742`.
+
+---
+
+## 2026-08-20 — Programma 1: ProductionStartModal type-cleanup
+
+### Wat is gedaan
+- `src/components/digitalplanning/modals/ProductionStartModal.tsx` opgeschoond met concrete `OrderLike`/`PrinterLike`-types.
+- Vrije `Record<string, any>`-en `any[]`-patronen in printer- en orderpayloads vervangen zonder runtime-logica te wijzigen.
+- Centrale print-/routinglogica in de modal gecontroleerd en opnieuw gevalideerd tegen de repo-regels.
+
+### Verificatie
+- `node scripts/check-any-count.cjs` → `537` expliciete `any`-hits, onder baseline `742` maar nog boven doel `500`.
+- `npx eslint src/components/digitalplanning/modals/ProductionStartModal.tsx --max-warnings=0` → exit code 0.
+
+---
+
+## 2026-08-20 — Programma 1: Type Safety baseline geinstalleerd
+
+### Wat is gedaan
+- `scripts/check-any-count.cjs` aangemaakt om expliciete `any`-gebruik te tellen en te vergelijken met een baseline.
+- `.any-baseline.json` toegevoegd met baseline `742` en target `500`.
+- `package.json` uitgebreid met `check:any` en geïntegreerd in `validate`/`validate:strict`.
+- Gerichte Vitest-check toegevoegd in `tests/check-any-count.test.ts`.
+
+### Verificatie
+- `node scripts/check-any-count.cjs` → resultaat: `652` expliciete `any`-hits, onder baseline `742` maar boven target `500`.
+- `npx vitest run tests/check-any-count.test.ts` → `1 passed (1)`.
+
+### Volgende stap
+- Programma 1 wordt voortgezet met het expliciet reduceren van hotspots zoals `MazakView.tsx`, `planningSecurityService.ts` en Firestore-callback typing.
+
+---
+
+## 2026-08-20 — Programma 1: Mazak label-types opgeschoond
+
+### Wat is gedaan
+- `TranslateFn` in `MazakView.tsx` vervangen door een concrete functie-signatuur.
+- `LabelTemplate` uitgebreid met een expliciete `LabelElement`-type.
+- De vrije label-template map met `elements: ...map((el: any) => ...)` geüpgraded naar `LabelElement` zonder expliciete `any`.
+
+### Verificatie
+- `npx eslint src/components/digitalplanning/MazakView.tsx` → exit code 0.
+
+---
+
 ## 2026-08-18 — Tweeweg USB/TCP Printer Statuscommunicatie
 
 ### Wat is geïmplementeerd

@@ -124,6 +124,19 @@ type OperatorPrintRule = {
   labelSize?: "large" | "small";
 };
 
+type OrderLike = Record<string, unknown>;
+type PrinterLike = {
+  id?: string;
+  name?: string;
+  vendorId?: string;
+  productId?: string;
+  usbSerialNumber?: string;
+  dpi?: number | string;
+  linkedStations?: unknown[];
+  queueStations?: unknown[];
+  [key: string]: unknown;
+};
+
 const isPermissionDeniedError = (error: unknown) => {
   const code = String(error?.code || "").toLowerCase();
   const message = String(error?.message || "").toLowerCase();
@@ -158,7 +171,7 @@ const getBoundPrinterIdForStation = (station: string): string => {
   }
 };
 
-const persistPrinterBindingForAutoProcessor = (station: string, printer: Record<string, any>) => {
+const persistPrinterBindingForAutoProcessor = (station: string, printer: PrinterLike) => {
   if (typeof window === "undefined") return;
   const safeStation = normalizeStationBindingKey(station);
   const safePrinterId = String(printer?.id || "").trim();
@@ -235,10 +248,10 @@ const getMachineCode = (station: string | null | undefined) => {
   return `4${digits.slice(-2).padStart(2, "0")}`;
 };
 
-const getNormalizedPrinterDpi = (printer: Record<string, any>, fallback = 203) => {
+const getNormalizedPrinterDpi = (printer: PrinterLike, fallback = 203) => {
   const driverDpi = Number(getDriver(printer)?.nativeDpi);
   if (Number.isFinite(driverDpi) && driverDpi > 0) return driverDpi;
-  const parsed = Number.parseInt(printer?.dpi, 10);
+  const parsed = Number.parseInt(String(printer?.dpi ?? ""), 10);
   if (Number.isFinite(parsed) && parsed > 0) return parsed;
   return fallback;
 };
@@ -263,14 +276,14 @@ const getNormalizedLabelTags = (label: LabelOption): string[] =>
     .map((tag) => String(tag || "").trim().toUpperCase())
     .filter(Boolean);
 
-const getOrderCodeTags = (order: Record<string, any>): string[] => {
+const getOrderCodeTags = (order: OrderLike): string[] => {
   const orderText = [order?.item, order?.itemCode, order?.itemDescription, order?.description, order?.extraCode]
     .map((value) => String(value || "").toUpperCase())
     .join(" ");
   return Array.from(new Set(orderText.match(/\bA\d[A-Z]\d\b/g) || []));
 };
 
-const getOrderPrimaryCode = (order: Record<string, any>): string => {
+const getOrderPrimaryCode = (order: OrderLike): string => {
   const explicitCode = String(order?.extraCode || order?.code || "").trim().toUpperCase();
   if (explicitCode) return explicitCode;
 
@@ -281,14 +294,14 @@ const getOrderPrimaryCode = (order: Record<string, any>): string => {
 const hasSpecificOrderCodeTag = (label: LabelOption): boolean =>
   getNormalizedLabelTags(label).some((tag) => /^A\d[A-Z]\d$/.test(tag));
 
-const getOrderNominalDiameter = (order: Record<string, any>): number => {
+const getOrderNominalDiameter = (order: OrderLike): number => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
   const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
   const parsed = match ? parseInt(match[1], 10) : parseInt(String(order?.diameter || order?.dn || "0"), 10);
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const getOrderAngle = (order: Record<string, any>): number | null => {
+const getOrderAngle = (order: OrderLike): number | null => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
   const degreeMatch = itemIdentifier.match(/\b(11\.25|22\.5|30|45|60|90)\s*(?:DEG|GR|°)?\b/);
   if (!degreeMatch) return null;
@@ -296,7 +309,7 @@ const getOrderAngle = (order: Record<string, any>): number | null => {
   return Number.isFinite(angle) ? angle : null;
 };
 
-const isSleevelessCouplerOrder = (order: Record<string, any>): boolean => {
+const isSleevelessCouplerOrder = (order: OrderLike): boolean => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription, order?.description]
     .join(" ")
     .toUpperCase();
@@ -305,7 +318,7 @@ const isSleevelessCouplerOrder = (order: Record<string, any>): boolean => {
   return hasSleeveToken && hasCouplerToken;
 };
 
-const getOrderProductTypeKey = (order: Record<string, any>): string => {
+const getOrderProductTypeKey = (order: OrderLike): string => {
   const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
   const teePairMatch = itemIdentifier.match(/(\d+)\s*[xX/]\s*(\d+)/);
   const hasWyeTee = /\bWYE\b|\bY[\s-]?TEE\b/.test(itemIdentifier);
@@ -322,7 +335,7 @@ const getOrderProductTypeKey = (order: Record<string, any>): string => {
   return "OTHER";
 };
 
-const resolveOperatorPrintRule = (order: Record<string, any>, rules: OperatorPrintRule[] | null | undefined): OperatorPrintRule | null => {
+const resolveOperatorPrintRule = (order: OrderLike, rules: OperatorPrintRule[] | null | undefined): OperatorPrintRule | null => {
   const list = Array.isArray(rules) ? rules : [];
   if (list.length === 0) return null;
 
@@ -366,14 +379,14 @@ const ProductionStartModal = ({
   stationId = "",
   existingProducts = [],
 }: {
-  order: any;
+  order: OrderLike;
   isOpen: boolean;
   onClose: () => void;
   onStartInitiated?: () => void;
-  onStart: (...args: any[]) => void | Promise<void>;
-  onOpenProductInfo?: (...args: any[]) => void;
+  onStart: (...args: unknown[]) => void | Promise<void>;
+  onOpenProductInfo?: (...args: unknown[]) => void;
   stationId?: string;
-  existingProducts?: any[];
+  existingProducts?: OrderLike[];
 }) => {
   const { t } = useTranslation();
   const { showSuccess, showError , notify} = useNotifications();
@@ -424,10 +437,10 @@ const ProductionStartModal = ({
   const [previewZoom, setPreviewZoom] = useState(1);
   const location = useLocation();
   
-  const [savedPrinters, setSavedPrinters] = useState<any[]>([]);
-  const [generalSettings, setGeneralSettings] = useState<Record<string, any>>({ flangeSeriesRules: [] });
+  const [savedPrinters, setSavedPrinters] = useState<PrinterLike[]>([]);
+  const [generalSettings, setGeneralSettings] = useState<Record<string, unknown>>({ flangeSeriesRules: [] });
   const [dynamicPrintRules, setDynamicPrintRules] = useState<PrintRuleDef[]>([]);
-  const [toolingMolds, setToolingMolds] = useState<any[]>([]);
+  const [toolingMolds, setToolingMolds] = useState<OrderLike[]>([]);
   const [relatedItemCodes, setRelatedItemCodes] = useState<string[]>([]);
   const [printConfig, setPrintConfig] = useState({
     mode: "queue", 
@@ -498,14 +511,14 @@ const ProductionStartModal = ({
     return String(Number.isFinite(parsed) && parsed > 0 ? parsed : fallback);
   };
 
-  const printerHasStation = (printer: Record<string, any>, station: string) => {
+  const printerHasStation = (printer: PrinterLike, station: string) => {
     if (!printer || !station) return false;
     const linked = Array.isArray(printer.linkedStations) ? printer.linkedStations : [];
     const queue = Array.isArray(printer.queueStations) ? printer.queueStations : [];
     return [...linked, ...queue].includes(station);
   };
 
-  const resolveTargetPrinter = (printerList: Record<string, any>[], station: string, routeKey: string) => {
+  const resolveTargetPrinter = (printerList: PrinterLike[], station: string, routeKey: string) => {
     return resolvePrinterForRouting(printerList, {
       stationId: station,
       routeKey,
@@ -516,10 +529,10 @@ const ProductionStartModal = ({
   const resolveTargetPrinterAsync = async () => {
     const boundPrinterId = getBoundPrinterIdForStation(stationId);
     const currentBound = boundPrinterId
-      ? savedPrinters.find((p: Record<string, any>) => String(p?.id || "") === boundPrinterId)
+      ? savedPrinters.find((p: PrinterLike) => String(p?.id || "") === boundPrinterId)
       : null;
     const currentById = printConfig.printerId
-      ? savedPrinters.find((p: Record<string, any>) => p.id === printConfig.printerId)
+      ? savedPrinters.find((p: PrinterLike) => p.id === printConfig.printerId)
       : null;
 
     const prnPaths = PATHS.PRINTERS;
@@ -532,10 +545,10 @@ const ProductionStartModal = ({
     }
 
     const fetchedBound = boundPrinterId
-      ? fetchedPrinters.find((p: Record<string, any>) => String(p?.id || "") === boundPrinterId)
+      ? fetchedPrinters.find((p: PrinterLike) => String(p?.id || "") === boundPrinterId)
       : null;
 
-    let dynamicRules: any[] = [];
+    let dynamicRules: Record<string, unknown>[] = [];
     try {
       const rulesPath = getPathString(PATHS.PRINTER_ROUTING_RULES);
       if (rulesPath) {
@@ -957,7 +970,7 @@ const ProductionStartModal = ({
           setSavedPrinters(list);
           const boundPrinterId = getBoundPrinterIdForStation(stationId);
           const boundPrinter = boundPrinterId
-            ? list.find((p: Record<string, any>) => String(p?.id || "") === boundPrinterId)
+            ? list.find((p: PrinterLike) => String(p?.id || "") === boundPrinterId)
             : null;
           const targetPrinter = resolveTargetPrinter(list, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
 
@@ -994,7 +1007,7 @@ const ProductionStartModal = ({
       }
 
       // 1) Lokale context check (realtime meegegeven producten in de modal)
-      const localExists = (existingProducts || []).some((p: Record<string, any>) => {
+      const localExists = (existingProducts || []).some((p: OrderLike) => {
         const lot = String(p?.lotNumber || "").trim().toUpperCase();
         const activeLot = String(p?.activeLot || "").trim().toUpperCase();
         return lot === normalizedLot || activeLot === normalizedLot;

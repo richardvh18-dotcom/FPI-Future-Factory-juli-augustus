@@ -1,6 +1,7 @@
 const functions = require('firebase-functions/v1');
 const admin = require('firebase-admin');
 const XLSX = require('xlsx');
+const { z } = require('zod');
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -38,6 +39,30 @@ const AI_MAX_CLIENT_ERROR_MSG = 1600;
 const AI_MAX_CLIENT_ERROR_STACK = 4000;
 const DEFAULT_SCOPED_DEPARTMENT = 'Fittings';
 const DEFAULT_SCOPED_MACHINE = 'UNASSIGNED';
+
+const aiProxyCallableSchema = z.object({
+  messages: z.array(z.record(z.string(), z.unknown())).min(1).max(AI_MAX_MESSAGES),
+  systemPrompt: z.string().max(AI_MAX_SYSTEM_PROMPT_CHARS).optional().default(''),
+  modelName: z.string().optional(),
+}).passthrough();
+const clientActivityCallableSchema = z.object({
+  action: z.string().min(1).max(100),
+  details: z.record(z.string(), z.unknown()).optional().default({}),
+}).passthrough();
+const clientErrorCallableSchema = z.object({
+  message: z.string().min(1).max(AI_MAX_CLIENT_ERROR_MSG),
+  stack: z.string().max(AI_MAX_CLIENT_ERROR_STACK).optional().default(''),
+  source: z.string().max(120).optional().default(''),
+  userAgent: z.string().max(500).optional().default(''),
+}).passthrough();
+
+const validateLegacyCallableData = (schema, data) => {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    throw new functions.https.HttpsError('invalid-argument', 'De payload van deze actie is ongeldig.', result.error.flatten());
+  }
+  return result.data;
+};
 const { executeDrawingSync } = require('./src/services/drawingSyncService');
 
 /**
@@ -2257,6 +2282,7 @@ exports.scheduleAtpsLiveExport = functions
  */
 const googleAiApiKeySecret = functions.params.defineSecret('GOOGLE_AI_API_KEY');
 exports.aiProxyGenerate = functions.region('europe-west1').runWith({ secrets: ['GOOGLE_AI_API_KEY'] }).https.onCall(async (data, context) => {
+  const validatedData = validateLegacyCallableData(aiProxyCallableSchema, data);
   if (!context.auth?.uid) {
     throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist voor AI requests.');
   }
@@ -2266,9 +2292,9 @@ exports.aiProxyGenerate = functions.region('europe-west1').runWith({ secrets: ['
     throw new functions.https.HttpsError('failed-precondition', 'Google AI key ontbreekt in backend configuratie.');
   }
 
-  const rawMessages = Array.isArray(data?.messages) ? data.messages : [];
-  const systemPrompt = String(data?.systemPrompt || '').trim();
-  const requestedModel = String(data?.modelName || '').trim();
+  const rawMessages = validatedData.messages;
+  const systemPrompt = validatedData.systemPrompt.trim();
+  const requestedModel = String(validatedData.modelName || '').trim();
   const modelName = requestedModel || 'gemini-2.5-flash';
 
   if (!AI_ALLOWED_MODELS.has(modelName)) {
@@ -2364,10 +2390,7 @@ functions.params.defineSecret('ATPS_EXPORT_TOKEN');
 exports.sendEmail = sendEmail;
 
 exports.clientLogActivity = functions.region('europe-west1').https.onCall(async (data, context) => {
-  const { action, details } = data;
-  if (!action) {
-    throw new functions.https.HttpsError('invalid-argument', 'Action is verplicht.');
-  }
+  const { action, details } = validateLegacyCallableData(clientActivityCallableSchema, data);
 
   const isFailedLogin = action === 'LOGIN_FAILED';
   if (!context.auth?.uid && !isFailedLogin) {
@@ -2396,17 +2419,14 @@ exports.clientLogActivity = functions.region('europe-west1').https.onCall(async 
 });
 
 exports.logClientError = functions.region('europe-west1').https.onCall(async (data, context) => {
+  const validatedData = validateLegacyCallableData(clientErrorCallableSchema, data);
   if (!context.auth?.uid) {
     throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist voor error logging.');
   }
 
-  const message = clampText(data?.message, AI_MAX_CLIENT_ERROR_MSG).trim();
-  const stack = clampText(data?.stack, AI_MAX_CLIENT_ERROR_STACK).trim();
-  const source = clampText(data?.source, 120).trim();
-
-  if (!message) {
-    throw new functions.https.HttpsError('invalid-argument', 'message is verplicht.');
-  }
+  const message = clampText(validatedData.message, AI_MAX_CLIENT_ERROR_MSG).trim();
+  const stack = clampText(validatedData.stack, AI_MAX_CLIENT_ERROR_STACK).trim();
+  const source = clampText(validatedData.source, 120).trim();
 
   await db.collection(CLIENT_ERROR_LOG_COLLECTION).add({
     uid: context.auth.uid,
@@ -2414,7 +2434,7 @@ exports.logClientError = functions.region('europe-west1').https.onCall(async (da
     message,
     stack,
     source,
-    userAgent: clampText(data?.userAgent, 500),
+    userAgent: clampText(validatedData.userAgent, 500),
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 

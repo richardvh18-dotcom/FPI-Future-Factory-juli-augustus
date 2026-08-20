@@ -2,7 +2,7 @@ import React from 'react';
 import { Calendar, ChevronRight, Factory } from 'lucide-react';
 import StatusBadge from './common/StatusBadge';
 
-type TranslateFn = any;
+type TranslateFn = (key: string, fallback?: string, options?: Record<string, unknown>) => string;
 
 type PlanningSidebarOrderCardProps = {
   order: Record<string, unknown>;

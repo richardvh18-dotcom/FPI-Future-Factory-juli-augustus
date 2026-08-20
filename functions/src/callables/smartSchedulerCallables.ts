@@ -1,16 +1,15 @@
 // @ts-nocheck
 
 const functions = require('firebase-functions/v1');
+const { validateCallableData } = require('../utils/validatedCallable');
+const { smartSchedulerCallableSchema } = require('../utils/callableSchemas');
 
 exports.calculateSmartSuggestions = functions.region('europe-west1').https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Gebruiker moet ingelogd zijn.');
   }
 
-  const { orders } = data;
-  if (!Array.isArray(orders)) {
-    return { topOrders: [] };
-  }
+  const { orders } = validateCallableData(smartSchedulerCallableSchema, data);
 
   // Filter alleen orders die nog niet gereed of geannuleerd zijn
   const activeOrders = orders.filter(o => {

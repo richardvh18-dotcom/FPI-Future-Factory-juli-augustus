@@ -5,6 +5,13 @@ const { saveQcMeasurementService, saveQcInspectionService, updateQcMeasurementSe
 
 // resolveUserRoleForContext is CommonJS-exported in this codebase.
 const { resolveUserRoleForContext } = require("../auth/resolveUserRole");
+const { validateCallableData } = require("../utils/validatedCallable");
+const {
+  qcMeasurementCallableSchema,
+  qcInspectionCallableSchema,
+  qcMeasurementUpdateCallableSchema,
+  qcMigrationCallableSchema,
+} = require("../utils/callableSchemas");
 
 const toHttpsError = (error: unknown, fallbackMessage: string): HttpsError => {
   if (error instanceof HttpsError) {
@@ -22,7 +29,7 @@ const toHttpsError = (error: unknown, fallbackMessage: string): HttpsError => {
 };
 
 export const saveQcMeasurement = onCall({ region: 'europe-west1' }, async (request: any) => {
-  const data = request.data as any;
+  const data = validateCallableData(qcMeasurementCallableSchema, request.data);
 
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Gebruiker is niet ingelogd.");
@@ -46,7 +53,7 @@ export const saveQcMeasurement = onCall({ region: 'europe-west1' }, async (reque
 });
 
 export const saveQcInspection = onCall({ region: 'europe-west1' }, async (request: any) => {
-  const data = request.data as any;
+  const data = validateCallableData(qcInspectionCallableSchema, request.data);
 
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Gebruiker is niet ingelogd.");
@@ -64,7 +71,7 @@ export const saveQcInspection = onCall({ region: 'europe-west1' }, async (reques
 });
 
 export const updateQcMeasurement = onCall({ region: 'europe-west1' }, async (request: any) => {
-  const data = request.data as any;
+  const data = validateCallableData(qcMeasurementUpdateCallableSchema, request.data);
 
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Gebruiker is niet ingelogd.");
@@ -87,7 +94,7 @@ export const updateQcMeasurement = onCall({ region: 'europe-west1' }, async (req
 });
 
 export const migrateLegacyQcData = onCall({ region: 'europe-west1' }, async (request: any) => {
-  const data = request.data as any;
+  const data = validateCallableData(qcMigrationCallableSchema, request.data);
 
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Gebruiker is niet ingelogd.");

@@ -2,6 +2,9 @@
 
 const functions = require('firebase-functions/v1');
 const auditService = require('../services/auditService');
+const { z } = require('zod');
+
+const callableDataSchema = z.record(z.string(), z.unknown());
 
 /**
  * Higher Order Function om automatisch audit logging toe te passen op Cloud Functions callables.
@@ -14,12 +17,21 @@ const auditService = require('../services/auditService');
  */
 const withAudit = (actionName, callableFunction, callableBuilder = (handler) => functions.region('europe-west1').https.onCall(handler)) => {
   return callableBuilder(async (data, context) => {
+    const parsedData = callableDataSchema.safeParse(data);
+    if (!parsedData.success) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'De payload van deze actie moet een object zijn.',
+        parsedData.error.flatten(),
+      );
+    }
+
     // 1. Log Start van de actie
-    await auditService.logCallable(context, `${actionName}_STARTED`, data, { severity: 'INFO' });
+    await auditService.logCallable(context, `${actionName}_STARTED`, parsedData.data, { severity: 'INFO' });
 
     try {
       // 2. Voer de werkelijke business logica uit
-      const result = await callableFunction(data, context);
+      const result = await callableFunction(parsedData.data, context);
 
       // 3. Log Succes (inclusief eventuele resultaten)
       await auditService.logCallable(context, `${actionName}_SUCCESS`, result || {}, { severity: 'INFO' });

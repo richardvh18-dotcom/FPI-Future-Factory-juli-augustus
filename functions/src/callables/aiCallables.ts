@@ -2,6 +2,8 @@ import * as functions from 'firebase-functions/v1';
 import { aiCopilotService } from '../services/ai/aiCopilotService';
 import { aiEmbeddingsService } from '../services/ai/aiEmbeddingsService';
 import { aiUsageTracker } from '../services/ai/aiUsageTracker';
+import { validateCallableData } from '../utils/validatedCallable';
+import { copilotCallableSchema, embeddingsCallableSchema } from '../utils/callableSchemas';
 
 /**
  * HTTPS Callable for the Agentic Copilot
@@ -14,7 +16,7 @@ export const askCopilot = functions
     timeoutSeconds: 120, // Copilot might take longer with multiple function calls
     memory: '1GB'
   })
-  .https.onCall(async (data: any, context: functions.https.CallableContext) => {
+  .https.onCall(async (rawData: unknown, context: functions.https.CallableContext) => {
     // 1. Check Authentication
     if (!context.auth) {
       throw new functions.https.HttpsError(
@@ -24,7 +26,7 @@ export const askCopilot = functions
     }
 
     try {
-      const { query, history } = data;
+      const { query, history } = validateCallableData(copilotCallableSchema, rawData);
 
       if (!query || typeof query !== 'string') {
         throw new functions.https.HttpsError(
@@ -76,7 +78,7 @@ export const generateDocumentEmbeddings = functions
     timeoutSeconds: 300, // Kan lang duren voor grote PDFs
     memory: '1GB'
   })
-  .https.onCall(async (data: any, context: functions.https.CallableContext) => {
+  .https.onCall(async (rawData: unknown, context: functions.https.CallableContext) => {
     if (!context.auth) {
       throw new functions.https.HttpsError(
         'unauthenticated',
@@ -85,7 +87,7 @@ export const generateDocumentEmbeddings = functions
     }
 
     try {
-      const { docId, fullText, fileName } = data;
+      const { docId, fullText, fileName } = validateCallableData(embeddingsCallableSchema, rawData);
 
       if (!docId || !fullText) {
         throw new functions.https.HttpsError(

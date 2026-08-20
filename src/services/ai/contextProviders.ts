@@ -1,5 +1,5 @@
 
-import { collection, collectionGroup, query, getDocs, addDoc, setDoc, getDoc, doc, limit, orderBy, where, serverTimestamp } from 'firebase/firestore';
+import { collection, collectionGroup, query, getDocs, addDoc, setDoc, getDoc, doc, limit, orderBy, where, serverTimestamp, type Query, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { db, logActivity } from '../../config/firebase';
 import { PATHS, getPathString, getPlanningArchivePath } from '../../config/dbPaths';
 import i18n from '../../i18n';
@@ -11,14 +11,12 @@ import { getErrorMessage, clamp, asRecord, AI_TRACKING_READ_LIMIT, AI_OCCUPANCY_
 
 // RecordLike definition
 type RecordLike = Record<string, unknown>;
-type FirestoreDocLike = {
-  id: string;
-  data: () => RecordLike;
-  ref?: { path: string };
-};
+type FirestoreDocLike = QueryDocumentSnapshot<RecordLike>;
 type FirestoreSnapshotLike = {
-  docs: FirestoreDocLike[];
+  docs: QueryDocumentSnapshot<RecordLike>[];
 };
+const typedCollection = (path: string) => collection(db, path) as Query<RecordLike>;
+const typedCollectionGroup = (collectionId: string) => collectionGroup(db, collectionId) as Query<RecordLike>;
 
 export const getProductionOrders = async (limitCount = 50) => {
     try {
@@ -40,7 +38,7 @@ export const getProductionOrders = async (limitCount = 50) => {
       
       // Probeer PATHS.PLANNING eerst
       try {
-        const planningCollection = collection(db, getPathString(PATHS.PLANNING));
+        const planningCollection = typedCollection(getPathString(PATHS.PLANNING));
         const q = query(planningCollection, limit(limitCount));
         const snapshot = await getDocs(q);
         
@@ -65,7 +63,7 @@ export const getProductionOrders = async (limitCount = 50) => {
       // Legacy planning pad fallback
       try {
         const legacyPath = ['future-factory', 'production', 'data', 'digital_planning', 'orders'];
-        const legacyCollection = collection(db, getPathString(legacyPath));
+        const legacyCollection = typedCollection(getPathString(legacyPath));
         const legacySnap = await getDocs(query(legacyCollection, limit(limitCount)));
 
         const legacyOrders = legacySnap.docs.map(doc => ({
@@ -88,7 +86,7 @@ export const getProductionOrders = async (limitCount = 50) => {
 
       // Scoped orders fallback via collectionGroup
       try {
-        const scopedSnap = await getDocs(query(collectionGroup(db, 'orders'), limit(Math.max(80, limitCount * 3))));
+        const scopedSnap = await getDocs(query(typedCollectionGroup('orders'), limit(Math.max(80, limitCount * 3))));
 
         const scopedOrders = scopedSnap.docs.map(doc => ({
           id: doc.id,
@@ -110,7 +108,7 @@ export const getProductionOrders = async (limitCount = 50) => {
       
       // Probeer PATHS.TRACKING
       try {
-        const trackingCollection = collection(db, getPathString(PATHS.TRACKING));
+        const trackingCollection = typedCollection(getPathString(PATHS.TRACKING));
         const q = query(trackingCollection, limit(limitCount));
         const snapshot = await getDocs(q);
         
@@ -242,7 +240,7 @@ export const searchProductionOrders = async (searchTerm: string) => {
 export const getCatalogProducts = async (limitCount = 50): Promise<CatalogProduct[]> => {
     try {
       // Probeer producten uit inventory op te halen
-      const inventoryCollection = collection(db, getPathString(PATHS.INVENTORY));
+      const inventoryCollection = typedCollection(getPathString(PATHS.INVENTORY));
       const q = query(inventoryCollection, limit(limitCount));
       const snapshot = await getDocs(q);
       
@@ -260,7 +258,7 @@ export const getRecentProductionActivity = async (limitCount = 10) => {
     const results: unknown[] = [];
     for (const pathKey of ['TRACKING', 'PLANNING'] as const) {
       try {
-        const col = collection(db, getPathString(PATHS[pathKey]));
+        const col = typedCollection(getPathString(PATHS[pathKey]));
         let snapshot;
         // Probeer timestamp desc, dan createdAt desc, dan zonder sortering
         try {
@@ -285,7 +283,7 @@ export const getProductionTimes = async (limitCount = 20) => {
     const results: unknown[] = [];
     for (const pathKey of ['TIME_LOGS'] as const) {
       try {
-        const col = collection(db, getPathString(PATHS[pathKey]));
+        const col = typedCollection(getPathString(PATHS[pathKey]));
         let snapshot;
         try {
           snapshot = await getDocs(query(col, orderBy('timestamp', 'desc'), limit(limitCount)));
@@ -312,7 +310,7 @@ export const getProductionTimes = async (limitCount = 20) => {
 
 export const getAiDocuments = async (limitCount = 20): Promise<AiDocument[]> => {
     try {
-      const docsCollection = collection(db, getPathString(PATHS.AI_DOCUMENTS));
+      const docsCollection = typedCollection(getPathString(PATHS.AI_DOCUMENTS));
       const q = query(docsCollection, orderBy('uploadedAt', 'desc'), limit(limitCount));
       const snapshot = await getDocs(q);
 
@@ -376,11 +374,12 @@ export const getCapacityContext = async () => {
     // --- 3. Al bezette uren ophalen uit OCCUPANCY ---
     const occupancyByDay: Record<string, number> = { /* empty */ };
     try {
-      const occSnap = await getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(1000)));
+      const occSnap = await getDocs(query(typedCollection(getPathString(PATHS.OCCUPANCY)), limit(1000)));
       occSnap.docs.forEach(d => {
         const data = d.data();
-        if (data.date && workdays.includes(data.date)) {
-          occupancyByDay[data.date] = (occupancyByDay[data.date] || 0) + (Number(data.hours) || 8);
+        const date = String(data.date || '');
+        if (date && workdays.includes(date)) {
+          occupancyByDay[date] = (occupancyByDay[date] || 0) + (Number(data.hours) || 8);
         }
       });
     } catch (err) {
@@ -393,7 +392,7 @@ export const getCapacityContext = async () => {
     const activeOrders: RecordLike[] = [];
     try {
       const efficiencyRows = await fetchScopedEfficiencyHours({ db, mode: 'active', maxDocs: 100 });
-      const trackingSnap = await getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(AI_TRACKING_READ_LIMIT)));
+      const trackingSnap = await getDocs(query(typedCollection(getPathString(PATHS.TRACKING)), limit(AI_TRACKING_READ_LIMIT)));
       const trackingData = trackingSnap.docs.map(d => d.data() as RecordLike);
 
       efficiencyRows.forEach((std: RecordLike) => {
@@ -618,7 +617,7 @@ export const getPredictivePlanningContext = async (scenario: unknown = null) => 
       // 2) Real-time bezetting vandaag -> effectieve restcapaciteit
       let occupiedToday = 0;
       try {
-        const occSnap = await getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(AI_OCCUPANCY_READ_LIMIT)));
+        const occSnap = await getDocs(query(typedCollection(getPathString(PATHS.OCCUPANCY)), limit(AI_OCCUPANCY_READ_LIMIT)));
         const todayIso = new Date().toISOString().slice(0, 10);
         occSnap.docs.forEach((docSnap) => {
           const row = docSnap.data() as Record<string, unknown>;
@@ -641,10 +640,10 @@ export const getPredictivePlanningContext = async (scenario: unknown = null) => 
       // 3) Werk met efficiency + tracking + planningdata
       const [efficiencyRows, trackingSnap, planningSnap, planningLegacySnap, planningScopedSnap] = await Promise.all([
         fetchScopedEfficiencyHours({ db, mode: 'active', maxDocs: 200 }),
-        getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(AI_TRACKING_READ_LIMIT))),
-        getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(AI_PLANNING_READ_LIMIT))),
-        getDocs(query(collection(db, 'future-factory/production/data/digital_planning/orders'), limit(AI_PLANNING_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
-        getDocs(query(collectionGroup(db, 'orders'), limit(AI_SCOPED_ORDERS_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
+        getDocs(query(typedCollection(getPathString(PATHS.TRACKING)), limit(AI_TRACKING_READ_LIMIT))),
+        getDocs(query(typedCollection(getPathString(PATHS.PLANNING)), limit(AI_PLANNING_READ_LIMIT))),
+        getDocs(query(typedCollection('future-factory/production/data/digital_planning/orders'), limit(AI_PLANNING_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
+        getDocs(query(typedCollectionGroup('orders'), limit(AI_SCOPED_ORDERS_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
       ]);
 
       const trackingRows = trackingSnap.docs.map(d => d.data() as Record<string, unknown>);
@@ -872,15 +871,15 @@ export const getOperationalSnapshotContext = async () => {
     try {
       const thisYear = new Date().getFullYear();
       const [planningSnap, planningLegacySnap, planningScopedSnap, trackingSnap, trackingScopedItemsSnap, occupancySnap, inventorySnap, archiveCurrentYearSnap, archivePrevYearSnap] = await Promise.all([
-        getDocs(query(collection(db, getPathString(PATHS.PLANNING)), limit(250))),
-        getDocs(query(collection(db, 'future-factory/production/data/digital_planning/orders'), limit(250))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
-        getDocs(query(collectionGroup(db, 'orders'), limit(AI_SCOPED_ORDERS_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
-        getDocs(query(collection(db, getPathString(PATHS.TRACKING)), limit(AI_TRACKING_READ_LIMIT))),
-        getDocs(query(collectionGroup(db, 'items'), limit(AI_SCOPED_ITEMS_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
-        getDocs(query(collection(db, getPathString(PATHS.OCCUPANCY)), limit(200))),
-        getDocs(query(collection(db, getPathString(PATHS.INVENTORY)), limit(200))),
-        getDocs(query(collection(db, getPathString(getPlanningArchivePath(thisYear))), limit(AI_ARCHIVE_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
-        getDocs(query(collection(db, getPathString(getPlanningArchivePath(thisYear - 1))), limit(AI_ARCHIVE_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
+        getDocs(query(typedCollection(getPathString(PATHS.PLANNING)), limit(250))),
+        getDocs(query(typedCollection('future-factory/production/data/digital_planning/orders'), limit(250))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
+        getDocs(query(typedCollectionGroup('orders'), limit(AI_SCOPED_ORDERS_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
+        getDocs(query(typedCollection(getPathString(PATHS.TRACKING)), limit(AI_TRACKING_READ_LIMIT))),
+        getDocs(query(typedCollectionGroup('items'), limit(AI_SCOPED_ITEMS_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
+        getDocs(query(typedCollection(getPathString(PATHS.OCCUPANCY)), limit(200))),
+        getDocs(query(typedCollection(getPathString(PATHS.INVENTORY)), limit(200))),
+        getDocs(query(typedCollection(getPathString(getPlanningArchivePath(thisYear))), limit(AI_ARCHIVE_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
+        getDocs(query(typedCollection(getPathString(getPlanningArchivePath(thisYear - 1))), limit(AI_ARCHIVE_READ_LIMIT))).catch(() => ({ docs: [] } as FirestoreSnapshotLike)),
       ]);
 
       const planningRowsRaw: RecordLike[] = [

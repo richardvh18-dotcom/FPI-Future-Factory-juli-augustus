@@ -131,13 +131,28 @@ type PlanningOrder = {
   [key: string]: unknown;
 };
 
+type LabelElement = {
+  type?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  fontSize?: number;
+  isBold?: boolean;
+  content?: string;
+  maxLines?: number;
+  align?: "left" | "center" | "right";
+  vAlign?: "top" | "center" | "bottom";
+  [key: string]: unknown;
+};
+
 type LabelTemplate = {
   id: string;
   name?: string;
   width?: number;
   height?: number;
   tags?: string[];
-  elements?: unknown[];
+  elements?: LabelElement[];
   [key: string]: unknown;
 };
 
@@ -434,7 +449,7 @@ const getItemNominalDiameter = (item: Record<string, unknown>): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-type TranslateFn = any;
+type TranslateFn = (key: string, fallback?: string, options?: Record<string, unknown>) => string;
 
 type MazakTabNavigationProps = {
   activeTab: MazakTab;
@@ -2746,7 +2761,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
       const labelTemplateOverride = {
         ...FREE_TEXT_LABEL_TEMPLATE,
-        elements: FREE_TEXT_LABEL_TEMPLATE.elements?.map((el: any) => {
+        elements: FREE_TEXT_LABEL_TEMPLATE.elements?.map((el: LabelElement) => {
           if (el.type === 'text') {
             return {
               ...el,

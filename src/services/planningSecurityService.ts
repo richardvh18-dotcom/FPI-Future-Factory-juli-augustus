@@ -30,6 +30,12 @@ export function createCallableWrapper<TInput, TOutput = BaseResponse>(
 type CallableFn = (payload?: unknown) => Promise<{ data?: unknown }>;
 const callableWithRuntime = (callable: CallableFn) => async (payload: unknown = {}) => callable(payload);
 
+type DocumentId = string;
+type RecordMap = Record<string, unknown>;
+type IdList = string[];
+type OptionalText = string | number | null | undefined;
+
+type ProductionCommandValue = string | number | boolean | null | undefined;
 
 const rejectTrackedProductFinalCallable = callableWithRuntime(httpsCallable(functions, "rejectTrackedProductFinal"));
 const tempRejectTrackedProductCallable = callableWithRuntime(httpsCallable(functions, "tempRejectTrackedProduct"));
@@ -110,7 +116,7 @@ const updateProductionStandardCallable = callableWithRuntime(httpsCallable(funct
 
 
 export interface RejectTrackedProductFinalInput {
-  productId: any;
+  productId: string;
   reasons?: string[];
   note?: string;
   source?: string;
@@ -118,7 +124,7 @@ export interface RejectTrackedProductFinalInput {
 }
 
 export interface TempRejectTrackedProductInput {
-  productId: any;
+  productId: string;
   reasons?: string[];
   note?: string;
   station?: string;
@@ -129,10 +135,10 @@ export interface TempRejectTrackedProductInput {
 }
 
 export interface AdvanceTrackedProductInput {
-  productId: any;
+  productId: string;
   nextStation?: string;
-  nextStep: any;
-  nextStatus: any;
+  nextStep: string;
+  nextStatus: string;
   lastStation?: string;
   note?: string;
   actorLabel?: string;
@@ -140,12 +146,12 @@ export interface AdvanceTrackedProductInput {
   historyAction?: string;
   historyDetails?: string;
   clearManualMove?: boolean;
-  measurements?: any;
+  measurements?: RecordMap | null;
   source?: string;
 }
 
 export interface CompleteTrackedProductRepairInput {
-  productId: any;
+  productId: string;
   station?: string;
   actions?: string[];
   note?: string;
@@ -154,19 +160,19 @@ export interface CompleteTrackedProductRepairInput {
 }
 
 export interface RouteTrackedProductsToLossenInput {
-  productIds: any;
+  productIds: string[];
   originStation?: string;
-  centralStation?: any;
+  centralStation?: string;
   centralOperators?: string[];
   actorLabel?: string;
   source?: string;
 }
 
 export interface StartWorkstationProductionRunInput {
-  orderDocId: any;
-  lotStart: any;
-  stringCount: any;
-  stationId: any;
+  orderDocId: string;
+  lotStart: string;
+  stringCount: number;
+  stationId: string;
   orderDocPath?: string;
   orderSourcePath?: string;
   actorLabel?: string;
@@ -180,22 +186,22 @@ export interface StartWorkstationProductionRunInput {
 }
 
 export interface ToggleTrackedProductPauseInput {
-  productId: any;
+  productId: string;
   note?: string;
   actorLabel?: string;
   source?: string;
 }
 
 export interface MarkTrackedProductReminderInput {
-  productId: any;
+  productId: string;
   reminderSent?: boolean;
   actorLabel?: string;
   source?: string;
 }
 
 export interface MoveTrackedProductManualInput {
-  productOrLotId: any;
-  newStation: any;
+  productOrLotId: string;
+  newStation: string;
   isRepairMove?: boolean;
   repairInstruction?: string;
   source?: string;
@@ -203,14 +209,14 @@ export interface MoveTrackedProductManualInput {
 }
 
 export interface ArchiveRejectedTrackedProductInput {
-  productId: any;
+  productId: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface CompleteTrackedProductInput {
-  productId: any;
-  finishType: any;
+  productId: string;
+  finishType: "archive" | "forward" | "post_inspection";
   fromStation?: string;
   note?: string;
   actorLabel?: string;
@@ -218,45 +224,45 @@ export interface CompleteTrackedProductInput {
 }
 
 export interface CancelTrackedProductionInput {
-  productId: any;
+  productId: string;
   selectedStation?: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface MovePlanningOrderInput {
-  orderDocId: any;
-  targetType: any;
-  targetId: any;
+  orderDocId: string;
+  targetType: "department" | "station";
+  targetId: string;
   currentDepartment?: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface RetrievePlanningOrderInput {
-  orderDocId: any;
+  orderDocId: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface TogglePlanningOrderHoldInput {
-  orderDocId: any;
+  orderDocId: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface ArchivePlanningOrderInput {
-  orderDocId: any;
-  reason?: any;
+  orderDocId: string;
+  reason?: "completed" | "manual" | "rejected";
   source?: string;
   actorLabel?: string;
 }
 
 export interface AssignOverproductionInput {
-  targetOrderDocId: any;
-  targetOrderId: any;
-  productIds: any;
-  routeStation: any;
+  targetOrderDocId: string;
+  targetOrderId: string;
+  productIds: string[];
+  routeStation: string;
   sourceOrderId?: string;
   originMachine?: string;
   source?: string;
@@ -264,38 +270,38 @@ export interface AssignOverproductionInput {
 }
 
 export interface CancelPlanningOrderInput {
-  orderDocId: any;
+  orderDocId: string;
   reason?: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface AssignPersonnelToStationInput {
-  stationId: any;
-  operatorId: any;
+  stationId: string;
+  operatorId: string;
   operatorNumber?: string;
   operatorName?: string;
-  date: any;
+  date: string;
   departmentId?: string;
   hoursWorked?: number;
-  shiftType?: any;
+  shiftType?: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface RemovePersonnelAssignmentInput {
-  assignmentId: any;
+  assignmentId: string;
   stationId?: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface LoanPersonnelToDepartmentInput {
-  operatorNumber: any;
+  operatorNumber: string;
   operatorName?: string;
-  targetDepartment: any;
-  targetStation: any;
-  date: any;
+  targetDepartment: string;
+  targetStation: string;
+  date: string;
   shiftLabel?: string;
   shiftStart?: string;
   shiftEnd?: string;
@@ -309,14 +315,14 @@ export interface LoanPersonnelToDepartmentInput {
 }
 
 export interface CreateProductionMessagesInput {
-  messages: any;
+  messages: RecordMap[];
   source?: string;
   actorLabel?: string;
 }
 
 export interface TransitionPrintQueueJobStatusInput {
-  jobId: any;
-  status: any;
+  jobId: string;
+  status: string;
   error?: string;
   source?: string;
   actorLabel?: string;
@@ -324,27 +330,27 @@ export interface TransitionPrintQueueJobStatusInput {
 }
 
 export interface RequeuePrintQueueJobInput {
-  jobId: any;
+  jobId: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface DeletePrintQueueJobInput {
-  jobId: any;
+  jobId: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface StartProductionLotsInput {
-  orderDocId: any;
+  orderDocId: string;
   orderDocPath?: string;
   orderSourcePath?: string;
-  orderId: any;
-  itemCode: any;
+  orderId: string;
+  itemCode: string;
   item?: string;
-  lotStart: any;
-  totalToProduce: any;
-  stationId: any;
+  lotStart: string;
+  totalToProduce: number;
+  stationId: string;
   stationLabel?: string;
   actorLabel?: string;
   labelZplData?: string;
@@ -358,49 +364,49 @@ export interface StartProductionLotsInput {
 }
 
 export interface EditTrackedProductLotNumberInput {
-  productId: any;
-  newLotNumber: any;
-  reason: any;
+  productId: string;
+  newLotNumber: string;
+  reason: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface ReassignTrackedProductOrderInput {
-  productId: any;
-  newOrderId: any;
+  productId: string;
+  newOrderId: string;
   targetOrderDocId?: string;
   targetOrderPath?: string;
-  reason: any;
+  reason: string;
   source?: string;
   actorLabel?: string;
 }
 
 export interface LinkPlanningOrderProductInput {
-  orderDocId: any;
-  productId: any;
+  orderDocId: string;
+  productId: string;
   productImage?: string;
 }
 
 export interface CreatePlanningOrderManualInput {
-  orderId: any;
-  item: any;
-  machine: any;
-  plan: any;
-  itemCode?: any;
-  itemDescription?: any;
-  drawing?: any;
-  notes?: any;
-  project?: any;
-  projectDesc?: any;
-  extraCode?: any;
-  plannedDate?: any;
-  deliveryDate?: any;
-  totalPlannedHours?: any;
-  onlyLabelPrint?: any;
+  orderId: string;
+  item: string;
+  machine: string;
+  plan: number;
+  itemCode?: string;
+  itemDescription?: string;
+  drawing?: string;
+  notes?: string;
+  project?: string;
+  projectDesc?: string;
+  extraCode?: string;
+  plannedDate?: OptionalText;
+  deliveryDate?: OptionalText;
+  totalPlannedHours?: OptionalText;
+  onlyLabelPrint?: boolean;
 }
 
 export interface MarkMazakLabelsPrintedInput {
-  productIds: any;
+  productIds: string[];
   stationId?: string;
   isReprint?: boolean;
   source?: string;
@@ -408,23 +414,23 @@ export interface MarkMazakLabelsPrintedInput {
 }
 
 export interface AddOrderDependencyInput {
-  orderId: any;
-  dependencyId: any;
+  orderId: string;
+  dependencyId: string;
 }
 
 export interface RemoveOrderDependencyInput {
-  orderId: any;
-  dependencyId: any;
+  orderId: string;
+  dependencyId: string;
 }
 
 export interface UpdateOrderKanbanStatusInput {
-  orderId: any;
-  status: any;
+  orderId: string;
+  status: string;
 }
 
 export interface SaveProductRecordInput {
   productId?: string;
-  productData?: any;
+  productData?: RecordMap;
   clearVerification?: boolean;
 }
 
@@ -435,11 +441,11 @@ export interface VerifyProductRecordInput {
 
 export interface UpsertConversionRecordInput {
   recordId?: string;
-  recordData?: any;
+  recordData?: RecordMap;
 }
 
 export interface UpsertConversionBatchInput {
-  items?: Record<string, unknown>[];
+  items?: RecordMap[];
   mode?: "merge" | "new_only";
 }
 
@@ -1858,7 +1864,19 @@ export const saveLnQrExportHistory = async ({
 };
 
 
-export const fetchOrderActivityLogs = createCallableWrapper<{ orderId: string }, { logs: any[] }>('getOrderActivityLogs');
+export interface ActivityLogEntry {
+  id?: string;
+  orderId?: string;
+  timestamp?: string | number | Date;
+  actorLabel?: string;
+  action?: string;
+  note?: string;
+  source?: string;
+  details?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export const fetchOrderActivityLogs = createCallableWrapper<{ orderId: string }, { logs: ActivityLogEntry[] }>('getOrderActivityLogs');
 
 
 export interface GenerateDocumentEmbeddingsInput {

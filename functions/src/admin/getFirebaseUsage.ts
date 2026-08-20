@@ -2,6 +2,8 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import monitoring from "@google-cloud/monitoring";
 import { CloudCatalogClient } from "@google-cloud/billing";
+import { validateCallableData } from "../utils/validatedCallable";
+import { firebaseUsageCallableSchema } from "../utils/callableSchemas";
 
 // We use the default application credentials.
 let metricServiceClient: any = null;
@@ -63,6 +65,7 @@ async function fetchMetric(projectId: string, metricType: string, periodDays: nu
  * Only administrators can access this data.
  */
 export const getFirebaseUsageAndCosts = onCall({ region: "europe-west1" }, async (request) => {
+  const { periodDays = 1 } = validateCallableData(firebaseUsageCallableSchema, request.data);
   // 1. Authenticate & Authorize
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Gebruiker is niet ingelogd.");
@@ -85,8 +88,6 @@ export const getFirebaseUsageAndCosts = onCall({ region: "europe-west1" }, async
 
     // 2. Determine project ID
     const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || "fpi-future-factory-test";
-
-    const periodDays = request.data?.periodDays || 1;
 
     // 3. Fetch Metrics
     // Firestore Reads

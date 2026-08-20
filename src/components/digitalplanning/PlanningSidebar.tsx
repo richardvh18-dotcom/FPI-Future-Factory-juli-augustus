@@ -20,7 +20,7 @@ import { getArchiveItemsPath } from "../../config/dbPaths";
 import { endOfISOWeek, format, getISOWeek, isSameDay, isWithinInterval, startOfISOWeek, isValid } from "date-fns";
 import { getEffectivePlanQty, getOrderFinishedUnits, getOrderIdentity, getTrackedRecordOrderId } from "../../utils/planningProgress";
 
-type TranslateFn = any;
+type TranslateFn = (key: string, fallback?: string, options?: Record<string, unknown>) => string;
 
 type SidebarRecord = {
   id: string;

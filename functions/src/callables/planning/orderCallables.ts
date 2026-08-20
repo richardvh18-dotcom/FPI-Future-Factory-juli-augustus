@@ -23,6 +23,9 @@ const {
   ARCHIVE_RESTORE_ALLOWED_ROLES,
 } = require('../config/planningConstants');
 const { clean, clampText } = require('../utils/text');
+const { validateCallableData } = require('../../utils/validatedCallable');
+const { planningOrderLookupCallableSchema } = require('../../utils/callableSchemas');
+const { reconcileOrderCallableSchema } = require('../../utils/callableSchemas');
 const { resolveUserRoleForContext } = require('../auth/resolveUserRole');
 const { resolveDbContext } = require('../repositories/planningRepository');
 const {
@@ -359,6 +362,7 @@ const movePlanningOrder = withAudit('MOVE_PLANNING_ORDER', async (data, context)
 });
 
 const retrievePlanningOrder = functions.region('europe-west1').https.onCall(async (data, context) => {
+  const { orderDocId, source, actorLabel } = validateCallableData(planningOrderLookupCallableSchema, data);
   if (!context.auth?.uid) {
     throw new functions.https.HttpsError('unauthenticated', 'Inloggen vereist.');
   }
@@ -368,16 +372,19 @@ const retrievePlanningOrder = functions.region('europe-west1').https.onCall(asyn
     throw new functions.https.HttpsError('permission-denied', 'Geen rechten om order terug te halen.');
   }
 
-  const orderDocId = clean(data?.orderDocId);
-  const source = clampText(data?.source, 80);
-  const actorLabel = clampText(data?.actorLabel, 120);
+  const normalizedOrderDocId = clean(orderDocId);
+  const normalizedSource = clampText(source, 80);
+  const normalizedActorLabel = clampText(actorLabel, 120);
 
-  if (!orderDocId) {
+  if (!normalizedOrderDocId) {
     throw new functions.https.HttpsError('invalid-argument', 'orderDocId is verplicht.');
   }
 
   try {
     const result = await retrievePlanningOrderService({
+      orderDocId: normalizedOrderDocId,
+      source: normalizedSource,
+      actorLabel: normalizedActorLabel,
       orderDocId,
       source,
       actorLabel,
@@ -826,20 +833,21 @@ const importPlanningOrders = withAudit('IMPORT_PLANNING_ORDERS', async (data, co
 });
 
 const reconcileOrderControl = functions.region('europe-west1').https.onCall(async (data, context) => {
+  const { orderId, machine } = validateCallableData(reconcileOrderCallableSchema, data);
   const auth = context?.auth;
   if (!auth?.uid) throw new Error('UNAUTHENTICATED');
 
   const { resolveDbContext } = require('../repositories/planningRepository');
   const ctx = resolveDbContext();
 
-  const orderId = String(data?.orderId || '').trim();
-  const machine = String(data?.machine || '').trim();
+  const normalizedOrderId = String(orderId).trim();
+  const normalizedMachine = String(machine).trim();
 
-  if (!orderId || !machine) {
+  if (!normalizedOrderId || !normalizedMachine) {
     throw new Error('INVALID_PARAMS');
   }
 
-  return reconcileOrderControlState({ ctx, orderId, machine });
+  return reconcileOrderControlState({ ctx, orderId: normalizedOrderId, machine: normalizedMachine });
 });
 
 

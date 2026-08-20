@@ -7,26 +7,26 @@
 ## Programma 1 — Type Safety (`any` 742 → <100) · Prioriteit P1
 
 ### Fase 1A — CI Baseline
-- [ ] `scripts/check-any-count.cjs` aanmaken — telt `any` en vergelijkt met baseline
-- [ ] `.any-baseline.json` aanmaken met `{ "baseline": 742, "target": 500 }`
-- [ ] `"check:any"` script toevoegen aan `package.json`
-- [ ] `check:any` integreren in `npm run validate`
+- [x] `scripts/check-any-count.cjs` aanmaken — telt `any` en vergelijkt met baseline
+- [x] `.any-baseline.json` aanmaken met `{ "baseline": 742, "target": 500 }`
+- [x] `"check:any"` script toevoegen aan `package.json`
+- [x] `check:any` integreren in `npm run validate`
 
 ### Fase 1B — Hotspots aanpakken
-- [ ] `MazakView.tsx` — `any` opruimen (na Module Hardening split)
-- [ ] `planningSecurityService.ts` — `unknown` + type guards introduceren
+- [x] `MazakView.tsx` — `any` opruimen (na Module Hardening split)
+- [x] `planningSecurityService.ts` — `unknown` + type guards introduceren
 - [ ] `aiService.ts` — typering na AI Abstraction (Programma 4)
 - [ ] Firebase Firestore callbacks — `DocumentSnapshot<T>` generics
-- [ ] Baseline verlagen: **742 → 500**
+- [x] Baseline verlagen: **742 → 500**
 - [ ] Baseline verlagen: **500 → 250**
 - [ ] Baseline verlagen: **250 → 100**
 
 ### Fase 1C — Zod uitbreiden
-- [ ] `MachineStatusSchema` — PLC/OT data validatie
-- [ ] `InforOrderSchema` — ERP import validatie
-- [ ] `PrintJobSchema` — printer routing validatie
-- [ ] `QualityMeasurementSchema` — QC invoer validatie
-- [ ] Alle Firebase `onCall`-handlers voorzien van Zod-validatie
+- [x] `MachineStatusSchema` — PLC/OT data validatie
+- [x] `InforOrderSchema` — ERP import validatie
+- [x] `PrintJobSchema` — printer routing validatie
+- [x] `QualityMeasurementSchema` — QC invoer validatie
+- [x] Alle Firebase `onCall`-handlers voorzien van Zod-validatie
 
 ---
 
@@ -181,7 +181,7 @@
 
 | Programma | Taken | Afgevinkt | % |
 |---|---|---|---|
-| 1 — Type Safety | 14 | 0 | 0% |
+| 1 — Type Safety | 20 | 12 | 60% |
 | 2 — Module Hardening | 31 | 0 | 0% |
 | 3 — MES Core | 27 | 0 | 0% |
 | 4 — AI Abstraction | 7 | 0 | 0% |
