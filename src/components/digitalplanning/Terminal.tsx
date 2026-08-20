@@ -1229,7 +1229,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       return (
         <div className="flex flex-col h-full bg-slate-50 text-slate-900 overflow-hidden animate-in fade-in">
           <div className="flex-1 overflow-hidden h-full text-left">
-            <MazakView stationId={effectiveStationId || undefined} products={allTracked as any} />
+            <MazakView stationId={effectiveStationId as string} products={allTracked as any} />
           </div>
         </div>
       );
@@ -1237,7 +1237,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
     return (
       <div className="flex flex-col h-full bg-slate-50 text-slate-900 overflow-hidden animate-in fade-in">
         <div className="flex-1 overflow-hidden h-full text-left">
-          <LossenView stationId={effectiveStationId || undefined} appId={appId || undefined} products={allTracked as any} />
+          <LossenView stationId={effectiveStationId as string} appId={appId || undefined} products={allTracked as any} />
         </div>
       </div>
     );
@@ -1421,9 +1421,9 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
               /* TAB LOSSEN */
               <div className="flex-1 overflow-hidden h-full text-left">
                 {isMazak ? (
-                  <MazakView stationId={effectiveStationId || undefined} products={allTracked as any} />
+                  <MazakView stationId={effectiveStationId as string} products={allTracked as any} />
                 ) : (
-                  <LossenView stationId={effectiveStationId || undefined} appId={appId || undefined} products={allTracked as any} />
+                  <LossenView stationId={effectiveStationId as string} appId={appId || undefined} products={allTracked as any} />
                 )}
               </div>
             )}
@@ -1459,7 +1459,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
                 setActiveTab("wikkelen");
               }
             }}
-          onStart={handleStartProduction} existingProducts={allTracked as any[]}
+          onStart={handleStartProduction as any} existingProducts={allTracked as any[]}
           />
         </div>
       )}

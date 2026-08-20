@@ -242,7 +242,7 @@ const TerminalPlanningView = ({
       const moldCodes = String(m.itemCode || "").toUpperCase().split(",").map(c => c.trim());
       return moldCodes.includes(code);
     });
-    
+
     if (!match) {
       const sortedMolds = [...toolingMolds].sort((a, b) => String(b.matcher || "").length - String(a.matcher || "").length);
       match = sortedMolds.find(m => {
@@ -571,13 +571,12 @@ const TerminalPlanningView = ({
 
             items.push(
               <div key={`week-${weekKey}`} className={`flex items-center gap-3 px-1 pt-2 pb-1 ${isPast && !isCurrentWeek ? 'opacity-50' : ''}`}>
-                <div className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border ${weekBorderClass} ${
-                  isCurrentWeek
+                <div className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest border ${weekBorderClass} ${isCurrentWeek
                     ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
                     : isPast
                       ? 'bg-slate-50 text-slate-600'
                       : 'bg-emerald-50 text-emerald-700'
-                }`}>
+                  }`}>
                   Week {weekNum}{isCurrentWeek && <span className="ml-1 opacity-70"> • Nu</span>}
                 </div>
                 <div className="flex-1 h-px bg-slate-100" />
@@ -600,11 +599,10 @@ const TerminalPlanningView = ({
               }
               onSelectOrder(order.id);
             }}
-            className={`px-3 py-2.5 rounded-2xl border transition-all cursor-pointer grid grid-cols-[180px_minmax(0,1.25fr)_minmax(0,1.05fr)_minmax(0,0.95fr)_minmax(0,0.85fr)_120px_120px_72px] items-center gap-2 ${
-              selectedOrderId === order.id
+            className={`px-3 py-2.5 rounded-2xl border transition-all cursor-pointer grid grid-cols-[180px_minmax(0,1.25fr)_minmax(0,1.05fr)_minmax(0,0.95fr)_minmax(0,0.85fr)_120px_120px_72px] items-center gap-2 ${selectedOrderId === order.id
                 ? "bg-emerald-50 border-emerald-500 shadow-sm"
                 : priorityCardClass
-            }`}
+              }`}
           >
             <div className="min-w-0 overflow-hidden">
               <div className="truncate text-[10px] font-black uppercase tracking-[0.16em] text-slate-600">
@@ -668,131 +666,129 @@ const TerminalPlanningView = ({
             </div>
           </div>
         ) : (
-        <div
-          key={order.id}
-          ref={(el) => (itemRefs.current[order.id] = el)}
-          onClick={() => onSelectOrder(order.id)}
-          className={`min-h-[100px] px-4 py-3 rounded-3xl border-2 transition-all flex items-center justify-between relative overflow-hidden cursor-pointer ${
-            selectedOrderId === order.id
-              ? "bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-100 translate-x-1"
-              : priorityCardClass
-          }`}
-        >
-          {isNewOrder && (
-            <div className="absolute top-0 right-0 px-4 py-1 bg-blue-500 text-white text-[9px] font-black uppercase tracking-widest rounded-bl-2xl shadow-sm z-10">
-              {t("digitalplanning.terminal.new_order", "Nieuw")}
-            </div>
-          )}
-          <div className="flex items-center gap-4 flex-1 overflow-hidden">
-            {/* WIK/Drawing Button */}
-            <div
-              onClick={(e) => {
-                if (drawingLinked && onViewDrawing) {
-                  e.stopPropagation();
-                  onViewDrawing(order.drawing);
-                }
-              }}
-              className={`p-2.5 rounded-2xl shrink-0 transition-all ${
-                drawingLinked
-                  ? "bg-blue-100 text-blue-600 cursor-pointer hover:bg-blue-200 active:scale-95"
-                  : "bg-slate-50 text-slate-300"
+          <div
+            key={order.id}
+            ref={(el) => (itemRefs.current[order.id] = el)}
+            onClick={() => onSelectOrder(order.id)}
+            className={`min-h-[100px] px-4 py-3 rounded-3xl border-2 transition-all flex items-center justify-between relative overflow-hidden cursor-pointer ${selectedOrderId === order.id
+                ? "bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-100 translate-x-1"
+                : priorityCardClass
               }`}
-              title={drawingLinked ? t("digitalplanning.order_detail.view_drawing", "Bekijk tekening/productkaart") : ""}
-            >
-              <FileImage size={22} />
-            </div>
-
-            <div className="flex-1 overflow-hidden">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="inline-block px-3 py-1 bg-slate-200 text-slate-800 rounded-lg text-sm font-black uppercase tracking-wider border border-slate-300 shadow-sm">
-                  Order: {order.orderId}
-                </span>
-                {priorityBadge && (
-                  <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wide ${priorityBadge.className}`}>
-                    {priorityBadge.label}
-                  </span>
-                )}
+          >
+            {isNewOrder && (
+              <div className="absolute top-0 right-0 px-4 py-1 bg-blue-500 text-white text-[9px] font-black uppercase tracking-widest rounded-bl-2xl shadow-sm z-10">
+                {t("digitalplanning.terminal.new_order", "Nieuw")}
               </div>
-              <h4 className="font-black text-base sm:text-lg leading-tight uppercase text-slate-900 mb-1 line-clamp-2">
-                {displayName}
-              </h4>
-              {(order.extraCode && order.extraCode !== "-") || typeBadge ? (
-                <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                  {order.extraCode && order.extraCode !== "-" && (
-                    <span className="inline-block px-2.5 py-1 bg-amber-100 text-amber-700 border border-amber-200 rounded-lg text-[11px] font-black uppercase tracking-wide">
-                      {order.extraCode}
+            )}
+            <div className="flex items-center gap-4 flex-1 overflow-hidden">
+              {/* WIK/Drawing Button */}
+              <div
+                onClick={(e) => {
+                  if (drawingLinked && onViewDrawing) {
+                    e.stopPropagation();
+                    onViewDrawing(order.drawing);
+                  }
+                }}
+                className={`p-2.5 rounded-2xl shrink-0 transition-all ${drawingLinked
+                    ? "bg-blue-100 text-blue-600 cursor-pointer hover:bg-blue-200 active:scale-95"
+                    : "bg-slate-50 text-slate-300"
+                  }`}
+                title={drawingLinked ? t("digitalplanning.order_detail.view_drawing", "Bekijk tekening/productkaart") : ""}
+              >
+                <FileImage size={22} />
+              </div>
+
+              <div className="flex-1 overflow-hidden">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="inline-block px-3 py-1 bg-slate-200 text-slate-800 rounded-lg text-sm font-black uppercase tracking-wider border border-slate-300 shadow-sm">
+                    Order: {order.orderId}
+                  </span>
+                  {priorityBadge && (
+                    <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wide ${priorityBadge.className}`}>
+                      {priorityBadge.label}
                     </span>
                   )}
-                  {typeBadge && (
-                    <span className={`inline-block px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wide ${typeBadge.className}`}>
-                      {typeBadge.label}
-                    </span>
-                  )}
-                  {stockBadge && (
+                </div>
+                <h4 className="font-black text-base sm:text-lg leading-tight uppercase text-slate-900 mb-1 line-clamp-2">
+                  {displayName}
+                </h4>
+                {(order.extraCode && order.extraCode !== "-") || typeBadge ? (
+                  <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                    {order.extraCode && order.extraCode !== "-" && (
+                      <span className="inline-block px-2.5 py-1 bg-amber-100 text-amber-700 border border-amber-200 rounded-lg text-[11px] font-black uppercase tracking-wide">
+                        {order.extraCode}
+                      </span>
+                    )}
+                    {typeBadge && (
+                      <span className={`inline-block px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wide ${typeBadge.className}`}>
+                        {typeBadge.label}
+                      </span>
+                    )}
+                    {stockBadge && (
+                      <span className={`inline-block px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wide ${stockBadge.className}`}>
+                        {stockBadge.label}
+                      </span>
+                    )}
+                  </div>
+                ) : stockBadge ? (
+                  <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                     <span className={`inline-block px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wide ${stockBadge.className}`}>
                       {stockBadge.label}
                     </span>
-                  )}
-                </div>
-              ) : stockBadge ? (
-                <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                  <span className={`inline-block px-2.5 py-1 rounded-lg text-[11px] font-black uppercase tracking-wide ${stockBadge.className}`}>
-                    {stockBadge.label}
-                  </span>
-                </div>
-              ) : null}
-              {order.projectDesc && (
-                <p className="text-[10px] font-bold text-blue-500 uppercase truncate flex items-center gap-1">
-                  <Briefcase size={10} /> {order.projectDesc}
-                </p>
-              )}
-              {order.holdReason && (
-                <div className="mt-1.5 rounded-lg border border-red-500 bg-red-100 px-2 py-1 shadow-md shadow-red-200">
-                  <p className="text-[9px] font-black uppercase tracking-wide text-red-800 flex items-center gap-1">
-                    <AlertCircle size={10} /> {t("terminalPlanning.holdReason", "GEBLOKKEERD (Hold Reason)")}
+                  </div>
+                ) : null}
+                {order.projectDesc && (
+                  <p className="text-[10px] font-bold text-blue-500 uppercase truncate flex items-center gap-1">
+                    <Briefcase size={10} /> {order.projectDesc}
                   </p>
-                  <p className="truncate text-[10px] font-bold text-red-900 mt-0.5">
-                    {order.holdReason}
-                  </p>
-                </div>
-              )}
-              {(order.poText || order.notes) && !order.holdReason && (
-                <div className="mt-1.5 rounded-lg border border-amber-400 bg-amber-100 px-2 py-0.5 animate-pulse shadow-md shadow-amber-300/50">
-                  <p className="text-[9px] font-black uppercase tracking-wide text-amber-800">{t("terminalPlanning.poText", "PO Text")}</p>
-                  <p className="truncate text-[10px] font-bold text-amber-900">
-                    {order.poText || order.notes}
-                  </p>
-                </div>
-              )}
+                )}
+                {order.holdReason && (
+                  <div className="mt-1.5 rounded-lg border border-red-500 bg-red-100 px-2 py-1 shadow-md shadow-red-200">
+                    <p className="text-[9px] font-black uppercase tracking-wide text-red-800 flex items-center gap-1">
+                      <AlertCircle size={10} /> {t("terminalPlanning.holdReason", "GEBLOKKEERD (Hold Reason)")}
+                    </p>
+                    <p className="truncate text-[10px] font-bold text-red-900 mt-0.5">
+                      {order.holdReason}
+                    </p>
+                  </div>
+                )}
+                {(order.poText || order.notes) && !order.holdReason && (
+                  <div className="mt-1.5 rounded-lg border border-amber-400 bg-amber-100 px-2 py-0.5 animate-pulse shadow-md shadow-amber-300/50">
+                    <p className="text-[9px] font-black uppercase tracking-wide text-amber-800">{t("terminalPlanning.poText", "PO Text")}</p>
+                    <p className="truncate text-[10px] font-bold text-amber-900">
+                      {order.poText || order.notes}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
 
-          {/* Status & Timing Info */}
-          <div className="flex flex-col items-end gap-1.5 text-right shrink-0 ml-4">
-            <div className="flex items-center gap-2">
-              <StatusBadge status={order.status} />
-            </div>
-            <div className="flex flex-col items-end">
-              <span className="text-xs font-black text-slate-900">
-                {t("digitalplanning.terminal.made", "Gemaakt")}: {produced} / {total} ST
-              </span>
-              {rejectedCount > 0 && (
-                <span className="text-[10px] font-black text-rose-600 uppercase">
-                  {t("status.rejected", "Afkeur")}: {rejectedCount}
+            {/* Status & Timing Info */}
+            <div className="flex flex-col items-end gap-1.5 text-right shrink-0 ml-4">
+              <div className="flex items-center gap-2">
+                <StatusBadge status={order.status} />
+              </div>
+              <div className="flex flex-col items-end">
+                <span className="text-xs font-black text-slate-900">
+                  {t("digitalplanning.terminal.made", "Gemaakt")}: {produced} / {total} ST
                 </span>
-              )}
-              <span className={`text-xs uppercase tracking-tighter ${urgencyClass}`}>
-                {formatDateWithWeek(deliveryDate)}
-              </span>
+                {rejectedCount > 0 && (
+                  <span className="text-[10px] font-black text-rose-600 uppercase">
+                    {t("status.rejected", "Afkeur")}: {rejectedCount}
+                  </span>
+                )}
+                <span className={`text-xs uppercase tracking-tighter ${urgencyClass}`}>
+                  {formatDateWithWeek(deliveryDate)}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
         )
       );
     });
 
     return items;
-   
+
   }, [sortedOrders, showAllWeeks, selectedOrderId, productionProgressMap, rejectedCountMap, planningViewMode]);
 
   // Scroll selected item into view
@@ -810,10 +806,10 @@ const TerminalPlanningView = ({
     : 0;
   const selectedOrderProduced = selectedOrder
     ? Math.max(
-        productionProgressMap[String(selectedOrder.orderId || "").trim()] || 0,
-        Number(selectedOrder.trackedFinishedCount) || 0,
-        Number(selectedOrder.produced) || 0
-      )
+      productionProgressMap[String(selectedOrder.orderId || "").trim()] || 0,
+      Number(selectedOrder.trackedFinishedCount) || 0,
+      Number(selectedOrder.produced) || 0
+    )
     : 0;
   const selectedOrderRejected = selectedOrder
     ? rejectedCountMap[String(selectedOrder.orderId || "").trim()] || 0
@@ -940,9 +936,8 @@ const TerminalPlanningView = ({
     <>
       {/* Sidebar Planning */}
       <div
-        className={`w-full ${planningViewMode === "list" ? "lg:w-full" : "lg:w-7/12"} p-4 md:p-6 bg-white border-r border-slate-100 flex flex-col overflow-hidden ${
-          selectedOrderId && shouldShowPlanningDetailPanel(planningViewMode, selectedOrderId) ? "hidden lg:flex" : "flex"
-        } text-left`}
+        className={`w-full ${planningViewMode === "list" ? "lg:w-full" : "lg:w-7/12"} p-4 md:p-6 bg-white border-r border-slate-100 flex flex-col overflow-hidden ${selectedOrderId && shouldShowPlanningDetailPanel(planningViewMode, selectedOrderId) ? "hidden lg:flex" : "flex"
+          } text-left`}
       >
         {/* Header Section */}
         <div className="mb-4 flex flex-col lg:flex-row lg:items-center gap-3">
@@ -1033,11 +1028,10 @@ const TerminalPlanningView = ({
             {!isBM01 && (
               <button
                 onClick={onToggleAllWeeks}
-                className={`px-4 py-3 rounded-2xl border-2 transition-all font-black text-[10px] uppercase tracking-widest flex items-center gap-2 shadow-sm ${
-                  showAllWeeks
+                className={`px-4 py-3 rounded-2xl border-2 transition-all font-black text-[10px] uppercase tracking-widest flex items-center gap-2 shadow-sm ${showAllWeeks
                     ? "bg-slate-900 border-slate-900 text-white"
                     : "bg-white border-slate-100 text-slate-400 hover:text-slate-600"
-                }`}
+                  }`}
               >
                 <Layers size={16} /> {showAllWeeks ? t("common.week", "Week") : t("common.all", "Alles")}
               </button>
@@ -1074,447 +1068,444 @@ const TerminalPlanningView = ({
 
       {shouldShowPlanningDetailPanel(planningViewMode, selectedOrderId) && (
         <div
-          className={`flex-1 p-6 md:p-8 bg-slate-50 flex flex-col overflow-y-auto custom-scrollbar ${
-            !selectedOrderId ? "hidden lg:flex" : "flex"
-          }`}
+          className={`flex-1 p-6 md:p-8 bg-slate-50 flex flex-col overflow-y-auto custom-scrollbar ${!selectedOrderId ? "hidden lg:flex" : "flex"
+            }`}
         >
           {selectedOrder ? (
-          <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
-            {/* Robot Program Status Hook */}
-            {(() => {
-              // Internal hook simulation inside render loop if needed, or effect below
-              return null;
-            })()}
-            {/* Header Card */}
-            <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-8 opacity-10">
-                <Factory size={120} />
-              </div>
+            <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
+              {/* Robot Program Status Hook */}
+              {(() => {
+                // Internal hook simulation inside render loop if needed, or effect below
+                return null;
+              })()}
+              {/* Header Card */}
+              <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-8 opacity-10">
+                  <Factory size={120} />
+                </div>
 
-              <div className="flex justify-between items-start mb-8 relative z-10">
-                <div>
-                  <button
-                    onClick={() => onSelectOrder(null)}
-                    className="lg:hidden p-2 bg-white/10 rounded-full mb-4 inline-block"
-                  >
-                    <ArrowLeft size={20} />
-                  </button>
-                  <div className="mb-2">
-                    <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base sm:text-lg font-black uppercase tracking-widest border border-white/40 shadow-sm">
-                      Order: {selectedOrder.orderId}
-                    </span>
+                <div className="flex justify-between items-start mb-8 relative z-10">
+                  <div>
+                    <button
+                      onClick={() => onSelectOrder(null)}
+                      className="lg:hidden p-2 bg-white/10 rounded-full mb-4 inline-block"
+                    >
+                      <ArrowLeft size={20} />
+                    </button>
+                    <div className="mb-2">
+                      <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base sm:text-lg font-black uppercase tracking-widest border border-white/40 shadow-sm">
+                        Order: {selectedOrder.orderId}
+                      </span>
+                    </div>
+                    <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
+                      {getOrderDisplayName(selectedOrder)}
+                    </h2>
+                    <p className="text-xs font-bold text-white/60 mt-1">
+                      {selectedOrder.itemCode || "-"}
+                    </p>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {selectedOrderPriorityBadge && (
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide ${selectedOrderPriorityBadge.className}`}>
+                          {selectedOrderPriorityBadge.label}
+                        </span>
+                      )}
+                      {selectedOrderTypeBadge && (
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide ${selectedOrderTypeBadge.className}`}>
+                          {selectedOrderTypeBadge.label}
+                        </span>
+                      )}
+                      {selectedOrder.extraCode && selectedOrder.extraCode !== "-" && (
+                        <span className="bg-amber-400 text-amber-900 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide">
+                          {selectedOrder.extraCode}
+                        </span>
+                      )}
+                      {selectedOrderStockBadge && (
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide ${selectedOrderStockBadge.className}`}>
+                          {selectedOrderStockBadge.label}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
-                    {getOrderDisplayName(selectedOrder)}
-                  </h2>
-                  <p className="text-xs font-bold text-white/60 mt-1">
-                    {selectedOrder.itemCode || "-"}
-                  </p>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    {selectedOrderPriorityBadge && (
-                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide ${selectedOrderPriorityBadge.className}`}>
-                        {selectedOrderPriorityBadge.label}
-                      </span>
-                    )}
-                    {selectedOrderTypeBadge && (
-                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide ${selectedOrderTypeBadge.className}`}>
-                        {selectedOrderTypeBadge.label}
-                      </span>
-                    )}
-                    {selectedOrder.extraCode && selectedOrder.extraCode !== "-" && (
-                      <span className="bg-amber-400 text-amber-900 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide">
-                        {selectedOrder.extraCode}
-                      </span>
-                    )}
-                    {selectedOrderStockBadge && (
-                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wide ${selectedOrderStockBadge.className}`}>
-                        {selectedOrderStockBadge.label}
-                      </span>
-                    )}
+                  <StatusBadge status={selectedOrder.status} />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-6 border-t border-white/10 pt-8 relative z-10">
+                  <div>
+                    <p className="text-[10px] font-black text-white/40 uppercase mb-1">
+                      {t("digitalplanning.order_detail.delivery_date_aq", "Leverdatum (AQ)")}
+                    </p>
+                    <p
+                      className={`text-lg font-black ${getUrgencyColor(
+                        selectedOrder.plannedDeliveryDate || selectedOrder.deliveryDate
+                      )}`}
+                    >
+                      {formatDateWithWeek(
+                        selectedOrder.plannedDeliveryDate || selectedOrder.deliveryDate,
+                        t("digitalplanning.na", "N.v.t.")
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-white/40 uppercase mb-1">
+                      {t("digitalplanning.order_detail.total_plan", "Orderhoeveelheid")}
+                    </p>
+                    <p className="text-lg font-black">
+                      {selectedOrderTotal} {t("digitalplanning.terminal.pieces", "stuks")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-white/40 uppercase mb-1">
+                      {t("digitalplanning.terminal.made", "Gemaakt")}
+                    </p>
+                    <p className="text-lg font-black text-blue-300">
+                      {selectedOrderProducedDisplay} {t("digitalplanning.terminal.pieces", "stuks")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-white/40 uppercase mb-1">
+                      {t("status.rejected", "Afkeur")}
+                    </p>
+                    <p className="text-lg font-black text-rose-300">
+                      {selectedOrderRejected} {t("digitalplanning.terminal.pieces", "stuks")}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-white/40 uppercase mb-1">
+                      {t("digitalplanning.order_detail.todo_amount", "Te doen")}
+                    </p>
+                    <p className="text-lg font-black text-amber-300">
+                      {selectedOrderTodoDisplay} {t("digitalplanning.terminal.pieces", "stuks")}
+                    </p>
                   </div>
                 </div>
-                <StatusBadge status={selectedOrder.status} />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-6 border-t border-white/10 pt-8 relative z-10">
-                <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase mb-1">
-                    {t("digitalplanning.order_detail.delivery_date_aq", "Leverdatum (AQ)")}
-                  </p>
-                  <p
-                    className={`text-lg font-black ${getUrgencyColor(
-                      selectedOrder.plannedDeliveryDate || selectedOrder.deliveryDate
-                    )}`}
-                  >
-                    {formatDateWithWeek(
-                      selectedOrder.plannedDeliveryDate || selectedOrder.deliveryDate,
-                      t("digitalplanning.na", "N.v.t.")
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase mb-1">
-                    {t("digitalplanning.order_detail.total_plan", "Orderhoeveelheid")}
-                  </p>
-                  <p className="text-lg font-black">
-                    {selectedOrderTotal} {t("digitalplanning.terminal.pieces", "stuks")}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase mb-1">
-                    {t("digitalplanning.terminal.made", "Gemaakt")}
-                  </p>
-                  <p className="text-lg font-black text-blue-300">
-                    {selectedOrderProducedDisplay} {t("digitalplanning.terminal.pieces", "stuks")}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase mb-1">
-                    {t("status.rejected", "Afkeur")}
-                  </p>
-                  <p className="text-lg font-black text-rose-300">
-                    {selectedOrderRejected} {t("digitalplanning.terminal.pieces", "stuks")}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-black text-white/40 uppercase mb-1">
-                    {t("digitalplanning.order_detail.todo_amount", "Te doen")}
-                  </p>
-                  <p className="text-lg font-black text-amber-300">
-                    {selectedOrderTodoDisplay} {t("digitalplanning.terminal.pieces", "stuks")}
-                  </p>
-                </div>
-              </div>
-            </div>
+              {/* Demand Order (Klantorder/Spoolbouw) waarschuwing */}
+              {(() => {
+                if (!selectedOrder.demandOrder) return null;
+                const dType = String(selectedOrder.demandOrderType || "").toLowerCase();
+                const isSalesOrder = dType === "verkooporder" || dType === "sales order";
+                const isProdOrder = dType === "productieorder" || dType === "production order";
 
-            {/* Demand Order (Klantorder/Spoolbouw) waarschuwing */}
-            {(() => {
-              if (!selectedOrder.demandOrder) return null;
-              const dType = String(selectedOrder.demandOrderType || "").toLowerCase();
-              const isSalesOrder = dType === "verkooporder" || dType === "sales order";
-              const isProdOrder = dType === "productieorder" || dType === "production order";
-              
-              if (isSalesOrder) {
+                if (isSalesOrder) {
+                  return (
+                    <div className="bg-red-100 rounded-[2rem] px-6 py-4 flex items-start gap-3 shadow-md shadow-red-200/50 border border-red-200 mt-6">
+                      <span className="text-red-600 mt-0.5 shrink-0 animate-bounce">
+                        <Truck size={20} />
+                      </span>
+                      <div>
+                        <p className="text-[9px] font-black text-red-600/80 uppercase tracking-widest mb-0.5">{t("terminalPlanning.demandOrderType", "Vrachtwagen-Prioriteit")}</p>
+                        <p className="text-sm font-black text-red-900 leading-snug">
+                          {t("terminalPlanning.demandOrderCustomer", "Let op: Product direct bestemd voor klantorder {{orderId}}", { orderId: selectedOrder.demandOrder })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+                if (isProdOrder) {
+                  return (
+                    <div className="bg-purple-100 rounded-[2rem] px-6 py-4 flex items-start gap-3 shadow-md shadow-purple-200/50 border border-purple-200 mt-6">
+                      <span className="text-purple-600 mt-0.5 shrink-0 animate-pulse">
+                        <Factory size={20} />
+                      </span>
+                      <div>
+                        <p className="text-[9px] font-black text-purple-600/80 uppercase tracking-widest mb-0.5">{t("terminalPlanning.demandOrderType_Internal", "Interne Afhankelijkheid")}</p>
+                        <p className="text-sm font-black text-purple-900 leading-snug">
+                          {t("terminalPlanning.demandOrderInternal", "Let op: Spoolbouw wacht op dit onderdeel voor order {{orderId}}", { orderId: selectedOrder.demandOrder })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div className="bg-red-100 rounded-[2rem] px-6 py-4 flex items-start gap-3 shadow-md shadow-red-200/50 border border-red-200 mt-6">
-                    <span className="text-red-600 mt-0.5 shrink-0 animate-bounce">
-                      <Truck size={20} />
+                    <span className="text-red-600 mt-0.5 shrink-0 animate-pulse">
+                      <AlertCircle size={20} />
                     </span>
                     <div>
-                      <p className="text-[9px] font-black text-red-600/80 uppercase tracking-widest mb-0.5">{t("terminalPlanning.demandOrderType", "Vrachtwagen-Prioriteit")}</p>
+                      <p className="text-[9px] font-black text-red-600/80 uppercase tracking-widest mb-0.5">{t("terminalPlanning.demandOrderType_Spoolbouw", "Spoed: Spoolbouw")}</p>
                       <p className="text-sm font-black text-red-900 leading-snug">
-                        {t("terminalPlanning.demandOrderCustomer", "Let op: Product direct bestemd voor klantorder {{orderId}}", { orderId: selectedOrder.demandOrder })}
+                        {t("terminalPlanning.demandOrderSpoolbouw", "Let op: Dit product is direct bestemd voor Spoolbouw order {{orderId}}", { orderId: selectedOrder.demandOrder })}
                       </p>
                     </div>
                   </div>
                 );
-              }
-              if (isProdOrder) {
+              })()}
+
+              {/* PO Text - direct onder de zwarte header, alleen tonen als aanwezig */}
+              {(() => {
+                const poText = String(selectedOrder.notes || selectedOrder.poText || "").trim();
+                if (!poText || poText === "-") return null;
                 return (
-                  <div className="bg-purple-100 rounded-[2rem] px-6 py-4 flex items-start gap-3 shadow-md shadow-purple-200/50 border border-purple-200 mt-6">
-                    <span className="text-purple-600 mt-0.5 shrink-0 animate-pulse">
-                      <Factory size={20} />
+                  <div className="bg-amber-400 rounded-[2rem] px-6 py-4 flex items-start gap-3 shadow-md shadow-amber-100">
+                    <span className="text-amber-900 mt-0.5 shrink-0">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
                     </span>
                     <div>
-                      <p className="text-[9px] font-black text-purple-600/80 uppercase tracking-widest mb-0.5">{t("terminalPlanning.demandOrderType_Internal", "Interne Afhankelijkheid")}</p>
-                      <p className="text-sm font-black text-purple-900 leading-snug">
-                        {t("terminalPlanning.demandOrderInternal", "Let op: Spoolbouw wacht op dit onderdeel voor order {{orderId}}", { orderId: selectedOrder.demandOrder })}
-                      </p>
+                      <p className="text-[9px] font-black text-amber-900/60 uppercase tracking-widest mb-0.5">{t("terminalPlanning.poTextNote", "PO Text / Opmerking")}</p>
+                      <p className="text-sm font-black text-amber-900 leading-snug">{poText}</p>
                     </div>
                   </div>
                 );
-              }
-              return (
-                <div className="bg-red-100 rounded-[2rem] px-6 py-4 flex items-start gap-3 shadow-md shadow-red-200/50 border border-red-200 mt-6">
-                  <span className="text-red-600 mt-0.5 shrink-0 animate-pulse">
-                    <AlertCircle size={20} />
-                  </span>
-                  <div>
-                    <p className="text-[9px] font-black text-red-600/80 uppercase tracking-widest mb-0.5">{t("terminalPlanning.demandOrderType_Spoolbouw", "Spoed: Spoolbouw")}</p>
-                    <p className="text-sm font-black text-red-900 leading-snug">
-                      {t("terminalPlanning.demandOrderSpoolbouw", "Let op: Dit product is direct bestemd voor Spoolbouw order {{orderId}}", { orderId: selectedOrder.demandOrder })}
-                    </p>
-                  </div>
-                </div>
-              );
-            })()}
+              })()}
 
-            {/* PO Text - direct onder de zwarte header, alleen tonen als aanwezig */}
-            {(() => {
-              const poText = String(selectedOrder.notes || selectedOrder.poText || "").trim();
-              if (!poText || poText === "-") return null;
-              return (
-                <div className="bg-amber-400 rounded-[2rem] px-6 py-4 flex items-start gap-3 shadow-md shadow-amber-100">
-                  <span className="text-amber-900 mt-0.5 shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                  </span>
-                  <div>
-                    <p className="text-[9px] font-black text-amber-900/60 uppercase tracking-widest mb-0.5">{t("terminalPlanning.poTextNote", "PO Text / Opmerking")}</p>
-                    <p className="text-sm font-black text-amber-900 leading-snug">{poText}</p>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Lotnummers — direct zichtbaar in Lossen 12/18 (geen startknop) */}
-            {!onStartProduction && (
-              <div className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-sm">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <Layers size={14} /> Lotnummers ({selectedOrderLots.length})
-                  </h4>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">
-                    actief {activeSelectedOrderLots.length} | archief {archivedSelectedOrderLots.length}
-                  </span>
-                </div>
-                {selectedOrderLots.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">{t("terminalPlanning.noLotsFoundForOrder", "Geen lotnummers gevonden voor deze order.")}</p>
-                ) : (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {selectedOrderLots.map((lot) => {
-                        const lotKey = String(lot || "").trim();
-                        const isArchivedLot = archivedLotSet.has(lotKey);
-                        const isActiveLot = activeLotSet.has(lotKey);
-                        const lotClass = isArchivedLot
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                          : isActiveLot
-                            ? "border-blue-200 bg-blue-50 text-blue-900"
-                            : "border-slate-200 bg-white text-slate-700";
-
-                        return (
-                          <div
-                            key={lot}
-                            className={`px-3 py-2 rounded-xl border text-xs font-black tracking-wide ${lotClass}`}
-                          >
-                            {lot}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Action Area - tonen als er een startfunctie is (niet in Lossen 12/18) */}
-            {onStartProduction && (
-            <div className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-sm">
-              <div className="flex flex-col gap-4">
-                {selectedOrder.status === 'on_hold' ? (
-                  <div className="w-full py-6 bg-orange-100 text-orange-700 rounded-[1.5rem] font-black uppercase text-lg flex items-center justify-center gap-4 border-2 border-orange-200">
-                    <PauseCircle size={28} /> {t("digitalplanning.terminal.order_on_hold", "Order on hold")}
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => onStartProduction()}
-                    className="w-full py-6 bg-blue-600 text-white rounded-[1.5rem] font-black uppercase text-lg shadow-xl shadow-blue-200 hover:bg-blue-700 hover:-translate-y-1 active:translate-y-0 transition-all flex items-center justify-center gap-4"
-                  >
-                    <PlayCircle size={28} /> {t("digitalplanning.order_detail.start_production", "Start Productie")}
-                  </button>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <button
-                    onClick={() => {
-                      if (onViewDrawing) {
-                        onViewDrawing(selectedOrder.drawing);
-                      }
-                    }}
-                    className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 ${
-                      selectedOrder.drawing && selectedOrder.drawing !== "-" && selectedOrder.drawing !== ""
-                        ? "bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    <FileImage size={16} /> {t("digitalplanning.order_detail.view_drawing", "Bekijk tekening/productkaart")}
-                    {selectedOrder.drawing && selectedOrder.drawing !== "-" && selectedOrder.drawing !== "" && (
-                      <span className="ml-1 w-2 h-2 bg-blue-500 rounded-full" />
-                    )}
-                  </button>
-
-                  {/* WIKKELROBOTPROGRAMMA KNOP (GROEN BIJ PROGRAMMA, ROOD BIJ GEEN PROGRAMMA) */}
-                  {isBh18Context && (
-                    <button
-                      type="button"
-                      onClick={() => setShowRobotModal(true)}
-                      className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border shadow-sm ${
-                        hasRobotProgram
-                          ? "bg-emerald-600 border-emerald-700 hover:bg-emerald-700 text-white shadow-emerald-200"
-                          : "bg-rose-600 border-rose-700 hover:bg-rose-700 text-white shadow-rose-200"
-                      }`}
-                    >
-                      <Cpu size={16} /> {t("digitalplanning.terminal.robot_program", "Wikkelrobotprogramma")}
-                      <span className={`w-2 h-2 rounded-full ${hasRobotProgram ? "bg-emerald-200 animate-pulse" : "bg-rose-200"}`} />
-                    </button>
-                  )}
-
-                  {isSelectedOrderTee && (
-                    <button
-                      type="button"
-                      onClick={() => setShowGlassCutListModal(true)}
-                      className="py-4 bg-slate-100 text-slate-700 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2 border border-slate-200"
-                    >
-                      <FileText size={16} className="text-amber-600" /> 📐 Glas- & Snijtekening
-                    </button>
-                  )}
-
-                  {shouldShowRobotProgramButton && (
-                    <div className="space-y-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowRobotProgramDetails((value) => !value)}
-                        className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border ${robotProgramState === 'ready' ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700' : 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700'}`}
-                      >
-                        <FileText size={16} /> Robotprogramma BH18
-                      </button>
-                      {showRobotProgramDetails && robotProgramDetails ? (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left text-[11px] text-slate-700 shadow-sm">
-                          <div className="font-black uppercase tracking-widest text-slate-500 mb-2">Robotinstellingen</div>
-                          <div className="space-y-1">
-                            <div><span className="font-black text-slate-600">Positie:</span> {robotProgramDetails?.preparation?.robotPosition ?? 1}</div>
-                            <div><span className="font-black text-slate-600">Station:</span> {robotProgramDetails?.stationId || 'BH18'}</div>
-                            <div><span className="font-black text-slate-600">Diameter:</span> {robotProgramDetails?.preparation?.diameterMm ? `${robotProgramDetails.preparation.diameterMm} mm` : '-'}</div>
-                            <div><span className="font-black text-slate-600">Drukklasse:</span> {robotProgramDetails?.preparation?.pressureClass || '-'}</div>
-                            {robotProgramDetails?.preparation?.notes ? <div><span className="font-black text-slate-600">Notitie:</span> {robotProgramDetails.preparation.notes}</div> : null}
-                          </div>
-                        </div>
-                      ) : showRobotProgramDetails && robotProgramState === 'missing' ? (
-                        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-left text-[11px] text-rose-700 shadow-sm">
-                          Geen robotprogramma voorbereid voor deze order.
-                        </div>
-                      ) : null}
-                    </div>
-                  )}
-
-                  <button className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2">
-                    <AlertCircle size={16} /> {t("digitalplanning.terminal.quality_requirements", "Kwaliteitseisen")}
-                  </button>
-                </div>
-              </div>
-            </div>
-            )}
-
-            {/* Info Card */}
-            <div className="bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-sm space-y-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <section className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
-                    {t("digitalplanning.order_detail.project_details", "Project Details")}
-                  </h4>
-                  <p className="text-base font-black text-slate-700 uppercase">
-                    {selectedOrder.projectDesc || t("digitalplanning.terminal.no_project_name", "Geen projectnaam")}
-                  </p>
-                  <p className="text-xs font-bold text-slate-400 mt-1">
-                    {t("digitalplanning.terminal.customer", "Klant")}: {selectedOrder.customer || t("common.unknown", "Onbekend")}
-                  </p>
-                  {selectedOrder.extraCode && selectedOrder.extraCode !== "-" && (
-                    <p className="text-xs font-bold text-slate-500 mt-1">
-                      Code: <span className="text-amber-600 font-black">{selectedOrder.extraCode}</span>
-                    </p>
-                  )}
-                </section>
-
-                {matchedMold && (
-                  <section className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100">
-                    <h4 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                      <Layers size={14} className="text-indigo-500" />
-                      {t("digitalplanning.order_detail.mold_config", "Mal Configuratie")}
+              {/* Lotnummers — direct zichtbaar in Lossen 12/18 (geen startknop) */}
+              {!onStartProduction && (
+                <div className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                      <Layers size={14} /> Lotnummers ({selectedOrderLots.length})
                     </h4>
-                    <div className="flex items-center gap-3">
-                      <span className="bg-indigo-200 text-indigo-800 px-3 py-1.5 rounded-xl text-lg uppercase font-black">
-                        {matchedMold.cavityCount}x
-                      </span>
-                      <span className="font-bold text-base text-indigo-900 leading-tight">
-                        {matchedMold.matcher || matchedMold.itemCode || t("common.unknown", "Onbekend")}
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">
+                      actief {activeSelectedOrderLots.length} | archief {archivedSelectedOrderLots.length}
+                    </span>
+                  </div>
+                  {selectedOrderLots.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">{t("terminalPlanning.noLotsFoundForOrder", "Geen lotnummers gevonden voor deze order.")}</p>
+                  ) : (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {selectedOrderLots.map((lot) => {
+                          const lotKey = String(lot || "").trim();
+                          const isArchivedLot = archivedLotSet.has(lotKey);
+                          const isActiveLot = activeLotSet.has(lotKey);
+                          const lotClass = isArchivedLot
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                            : isActiveLot
+                              ? "border-blue-200 bg-blue-50 text-blue-900"
+                              : "border-slate-200 bg-white text-slate-700";
+
+                          return (
+                            <div
+                              key={lot}
+                              className={`px-3 py-2 rounded-xl border text-xs font-black tracking-wide ${lotClass}`}
+                            >
+                              {lot}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Action Area - tonen als er een startfunctie is (niet in Lossen 12/18) */}
+              {onStartProduction && (
+                <div className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-sm">
+                  <div className="flex flex-col gap-4">
+                    {selectedOrder.status === 'on_hold' ? (
+                      <div className="w-full py-6 bg-orange-100 text-orange-700 rounded-[1.5rem] font-black uppercase text-lg flex items-center justify-center gap-4 border-2 border-orange-200">
+                        <PauseCircle size={28} /> {t("digitalplanning.terminal.order_on_hold", "Order on hold")}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => onStartProduction()}
+                        className="w-full py-6 bg-blue-600 text-white rounded-[1.5rem] font-black uppercase text-lg shadow-xl shadow-blue-200 hover:bg-blue-700 hover:-translate-y-1 active:translate-y-0 transition-all flex items-center justify-center gap-4"
+                      >
+                        <PlayCircle size={28} /> {t("digitalplanning.order_detail.start_production", "Start Productie")}
+                      </button>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <button
+                        onClick={() => {
+                          if (onViewDrawing) {
+                            onViewDrawing(selectedOrder.drawing);
+                          }
+                        }}
+                        className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 ${selectedOrder.drawing && selectedOrder.drawing !== "-" && selectedOrder.drawing !== ""
+                            ? "bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100"
+                            : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                      >
+                        <FileImage size={16} /> {t("digitalplanning.order_detail.view_drawing", "Bekijk tekening/productkaart")}
+                        {selectedOrder.drawing && selectedOrder.drawing !== "-" && selectedOrder.drawing !== "" && (
+                          <span className="ml-1 w-2 h-2 bg-blue-500 rounded-full" />
+                        )}
+                      </button>
+
+                      {/* WIKKELROBOTPROGRAMMA KNOP (GROEN BIJ PROGRAMMA, ROOD BIJ GEEN PROGRAMMA) */}
+                      {isBh18Context && (
+                        <button
+                          type="button"
+                          onClick={() => setShowRobotModal(true)}
+                          className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border shadow-sm ${hasRobotProgram
+                              ? "bg-emerald-600 border-emerald-700 hover:bg-emerald-700 text-white shadow-emerald-200"
+                              : "bg-rose-600 border-rose-700 hover:bg-rose-700 text-white shadow-rose-200"
+                            }`}
+                        >
+                          <Cpu size={16} /> {t("digitalplanning.terminal.robot_program", "Wikkelrobotprogramma")}
+                          <span className={`w-2 h-2 rounded-full ${hasRobotProgram ? "bg-emerald-200 animate-pulse" : "bg-rose-200"}`} />
+                        </button>
+                      )}
+
+                      {isSelectedOrderTee && (
+                        <button
+                          type="button"
+                          onClick={() => setShowGlassCutListModal(true)}
+                          className="py-4 bg-slate-100 text-slate-700 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2 border border-slate-200"
+                        >
+                          <FileText size={16} className="text-amber-600" /> 📐 Glas- & Snijtekening
+                        </button>
+                      )}
+
+                      {shouldShowRobotProgramButton && (
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowRobotProgramDetails((value) => !value)}
+                            className={`py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 border ${robotProgramState === 'ready' ? 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700' : 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700'}`}
+                          >
+                            <FileText size={16} /> Robotprogramma BH18
+                          </button>
+                          {showRobotProgramDetails && robotProgramDetails ? (
+                            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left text-[11px] text-slate-700 shadow-sm">
+                              <div className="font-black uppercase tracking-widest text-slate-500 mb-2">Robotinstellingen</div>
+                              <div className="space-y-1">
+                                <div><span className="font-black text-slate-600">Positie:</span> {robotProgramDetails?.preparation?.robotPosition ?? 1}</div>
+                                <div><span className="font-black text-slate-600">Station:</span> {robotProgramDetails?.stationId || 'BH18'}</div>
+                                <div><span className="font-black text-slate-600">Diameter:</span> {robotProgramDetails?.preparation?.diameterMm ? `${robotProgramDetails.preparation.diameterMm} mm` : '-'}</div>
+                                <div><span className="font-black text-slate-600">Drukklasse:</span> {robotProgramDetails?.preparation?.pressureClass || '-'}</div>
+                                {robotProgramDetails?.preparation?.notes ? <div><span className="font-black text-slate-600">Notitie:</span> {robotProgramDetails.preparation.notes}</div> : null}
+                              </div>
+                            </div>
+                          ) : showRobotProgramDetails && robotProgramState === 'missing' ? (
+                            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-left text-[11px] text-rose-700 shadow-sm">
+                              Geen robotprogramma voorbereid voor deze order.
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+
+                      <button className="py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2">
+                        <AlertCircle size={16} /> {t("digitalplanning.terminal.quality_requirements", "Kwaliteitseisen")}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Info Card */}
+              <div className="bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-sm space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <section className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">
+                      {t("digitalplanning.order_detail.project_details", "Project Details")}
+                    </h4>
+                    <p className="text-base font-black text-slate-700 uppercase">
+                      {selectedOrder.projectDesc || t("digitalplanning.terminal.no_project_name", "Geen projectnaam")}
+                    </p>
+                    <p className="text-xs font-bold text-slate-400 mt-1">
+                      {t("digitalplanning.terminal.customer", "Klant")}: {selectedOrder.customer || t("common.unknown", "Onbekend")}
+                    </p>
+                    {selectedOrder.extraCode && selectedOrder.extraCode !== "-" && (
+                      <p className="text-xs font-bold text-slate-500 mt-1">
+                        Code: <span className="text-amber-600 font-black">{selectedOrder.extraCode}</span>
+                      </p>
+                    )}
+                  </section>
+
+                  {matchedMold && (
+                    <section className="bg-indigo-50 p-6 rounded-3xl border border-indigo-100">
+                      <h4 className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <Layers size={14} className="text-indigo-500" />
+                        {t("digitalplanning.order_detail.mold_config", "Mal Configuratie")}
+                      </h4>
+                      <div className="flex items-center gap-3">
+                        <span className="bg-indigo-200 text-indigo-800 px-3 py-1.5 rounded-xl text-lg uppercase font-black">
+                          {matchedMold.cavityCount}x
+                        </span>
+                        <span className="font-bold text-base text-indigo-900 leading-tight">
+                          {matchedMold.matcher || matchedMold.itemCode || t("common.unknown", "Onbekend")}
+                        </span>
+                      </div>
+                    </section>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t pt-8">
+                  <section className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+                      <History size={14} /> {t("digitalplanning.order_detail.administration", "Administratie")}
+                    </h4>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center border-b border-slate-200 pb-2">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase">
+                          {t("digitalplanning.order_detail.creation_date", "Aanmaakdatum Order")}:
+                        </span>
+                        <span className="text-sm font-black text-blue-600 flex items-center gap-2">
+                          <Calendar size={14} /> {selectedOrder.orderCreationDate || t("digitalplanning.terminal.not_available", "Niet beschikbaar")}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase">
+                          {t("productionStartModal.labels.drawing", "Tekening")}:
+                        </span>
+                        <span className="text-sm font-black text-slate-700">
+                          {selectedOrder.drawing || "-"}
+                        </span>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+
+                {optimizationPanel}
+
+                {/* Lotnummers — alleen tonen als er een startknop is (niet in Lossen 12/18 want staat al bovenaan) */}
+                {onStartProduction && (
+                  <section className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                        <Layers size={14} /> Lotnummers ({selectedOrderLots.length})
+                      </h4>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">
+                        actief {activeSelectedOrderLots.length} | archief {archivedSelectedOrderLots.length}
                       </span>
                     </div>
+
+                    {selectedOrderLots.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">{t("terminalPlanning.noLotsFoundForOrder", "Geen lotnummers gevonden voor deze order.")}</p>
+                    ) : (
+                      <div className="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 custom-scrollbar">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {selectedOrderLots.map((lot) => {
+                            const lotKey = String(lot || "").trim();
+                            const isArchivedLot = archivedLotSet.has(lotKey);
+                            const isActiveLot = activeLotSet.has(lotKey);
+                            const lotClass = isArchivedLot
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                              : isActiveLot
+                                ? "border-blue-200 bg-blue-50 text-blue-900"
+                                : "border-slate-200 bg-white text-slate-700";
+
+                            return (
+                              <div
+                                key={lot}
+                                className={`px-3 py-2 rounded-xl border text-xs font-black tracking-wide ${lotClass}`}
+                              >
+                                {lot}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </section>
                 )}
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 border-t pt-8">
-                <section className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                    <History size={14} /> {t("digitalplanning.order_detail.administration", "Administratie")}
-                  </h4>
-                  <div className="space-y-3">
-                    <div className="flex justify-between items-center border-b border-slate-200 pb-2">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase">
-                        {t("digitalplanning.order_detail.creation_date", "Aanmaakdatum Order")}:
-                      </span>
-                      <span className="text-sm font-black text-blue-600 flex items-center gap-2">
-                        <Calendar size={14} /> {selectedOrder.orderCreationDate || t("digitalplanning.terminal.not_available", "Niet beschikbaar")}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[11px] font-bold text-slate-500 uppercase">
-                        {t("productionStartModal.labels.drawing", "Tekening")}:
-                      </span>
-                      <span className="text-sm font-black text-slate-700">
-                        {selectedOrder.drawing || "-"}
-                      </span>
-                    </div>
-                  </div>
-                </section>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center opacity-20">
+              <div className="w-32 h-32 bg-slate-200 rounded-full flex items-center justify-center mb-6">
+                <FileText size={48} className="text-slate-400" />
               </div>
-
-              {optimizationPanel}
-
-              {/* Lotnummers — alleen tonen als er een startknop is (niet in Lossen 12/18 want staat al bovenaan) */}
-              {onStartProduction && (
-              <section className="bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <Layers size={14} /> Lotnummers ({selectedOrderLots.length})
-                  </h4>
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">
-                    actief {activeSelectedOrderLots.length} | archief {archivedSelectedOrderLots.length}
-                  </span>
-                </div>
-
-                {selectedOrderLots.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">{t("terminalPlanning.noLotsFoundForOrder", "Geen lotnummers gevonden voor deze order.")}</p>
-                ) : (
-                  <div className="max-h-56 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 custom-scrollbar">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {selectedOrderLots.map((lot) => {
-                        const lotKey = String(lot || "").trim();
-                        const isArchivedLot = archivedLotSet.has(lotKey);
-                        const isActiveLot = activeLotSet.has(lotKey);
-                        const lotClass = isArchivedLot
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                          : isActiveLot
-                            ? "border-blue-200 bg-blue-50 text-blue-900"
-                            : "border-slate-200 bg-white text-slate-700";
-
-                        return (
-                          <div
-                            key={lot}
-                            className={`px-3 py-2 rounded-xl border text-xs font-black tracking-wide ${lotClass}`}
-                          >
-                            {lot}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </section>
-              )}
+              <h4 className="text-2xl font-black uppercase italic tracking-tighter">
+                {t("teamleader.select_order", "Selecteer een order uit de lijst")}
+              </h4>
             </div>
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center opacity-20">
-            <div className="w-32 h-32 bg-slate-200 rounded-full flex items-center justify-center mb-6">
-              <FileText size={48} className="text-slate-400" />
-            </div>
-            <h4 className="text-2xl font-black uppercase italic tracking-tighter">
-              {t("teamleader.select_order", "Selecteer een order uit de lijst")}
-            </h4>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
       )}
 
       {planningViewMode === "list" && activeListPopupOrder && (

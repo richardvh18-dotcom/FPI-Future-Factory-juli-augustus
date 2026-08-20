@@ -88,7 +88,7 @@ const toEntryDate = (entry: SidebarRecord) => {
   for (const value of candidates) {
     if (!value) continue;
     if (typeof (value as unknown)?.toDate === "function") {
-      const converted = (value as unknown).toDate();
+      const converted = (value as unknown)?.toDate?.();
       if (Number.isFinite(converted?.getTime?.())) return converted;
     }
 
@@ -161,7 +161,7 @@ const PlanningSidebar = ({
     const term = (deferredSearchTerm || "").toLowerCase().trim();
     // Check if search term looks like a lot number (6+ digits or contains only numbers)
     const isLotNumberSearch = /\d{6,}/.test(term) || (/^\d+$/.test(term) && term.length > 5);
-    
+
     if (isLotNumberSearch && dataScope === "active") {
       // Switch to "all" (active + history) when searching for lot numbers
       setDataScope("all");
@@ -447,9 +447,9 @@ const PlanningSidebar = ({
       const inRange = completedRangeMode === "day"
         ? isSameDay(completedAt, selectedCompletedDate)
         : isWithinInterval(completedAt, {
-            start: startOfISOWeek(selectedCompletedDate),
-            end: endOfISOWeek(selectedCompletedDate),
-          });
+          start: startOfISOWeek(selectedCompletedDate),
+          end: endOfISOWeek(selectedCompletedDate),
+        });
 
       if (!inRange) return;
 
@@ -509,7 +509,7 @@ const PlanningSidebar = ({
             null;
           const rejectDate =
             typeof (rejectDateRaw as unknown)?.toDate === "function"
-              ? (rejectDateRaw as unknown).toDate()
+              ? (rejectDateRaw as unknown)?.toDate?.()
               : new Date((rejectDateRaw as unknown) || Date.now());
 
           const weekNumber = Number.isFinite(getISOWeek(rejectDate)) ? getISOWeek(rejectDate) : currentWeek;
@@ -684,9 +684,9 @@ const PlanningSidebar = ({
     { value: "completed_inspection", label: "Gereedlijst Eindinspectie" },
     ...(enableRejectionScopes
       ? [
-          { value: "temp_reject", label: "Tijdelijke Afkeur" },
-          { value: "definitive_reject", label: "Definitieve Afkeur" },
-        ]
+        { value: "temp_reject", label: "Tijdelijke Afkeur" },
+        { value: "definitive_reject", label: "Definitieve Afkeur" },
+      ]
       : []),
   ];
 
@@ -865,7 +865,7 @@ const PlanningSidebar = ({
         if (typeof (deliveryRaw as unknown)?.toMillis === "function") {
           dateMs = (deliveryRaw as unknown).toMillis();
         } else if (typeof (deliveryRaw as unknown)?.toDate === "function") {
-          dateMs = (deliveryRaw as unknown).toDate().getTime();
+          dateMs = (deliveryRaw as unknown)?.toDate?.().getTime();
         } else if (deliveryRaw instanceof Date) {
           dateMs = deliveryRaw.getTime();
         } else {
@@ -945,7 +945,7 @@ const PlanningSidebar = ({
           null;
         const entryDate =
           typeof (entryDateRaw as unknown)?.toDate === "function"
-            ? (entryDateRaw as unknown).toDate()
+            ? (entryDateRaw as unknown)?.toDate?.()
             : new Date((entryDateRaw as unknown) || 0);
         if (rejectPeriod === "this_week") return entryWeek === thisWeek && entryYear === thisYear;
         if (rejectPeriod === "previous_week") return entryWeek === previousWeek && entryYear === previousWeekYear;
@@ -1087,19 +1087,19 @@ const PlanningSidebar = ({
         const yearA = Number(a.weekYear || a.year || currentYear);
         const weekB = Number(b.weekNumber || b.week || 999);
         const yearB = Number(b.weekYear || b.year || currentYear);
-        
+
         const absWeekA = yearA * 52 + weekA;
         const absWeekB = yearB * 52 + weekB;
         const absCurrent = currentYear * 52 + currentWeek;
-        
+
         const isBacklogA = absWeekA < absCurrent;
         const isBacklogB = absWeekB < absCurrent;
-        
+
         if (isBacklogA && !isBacklogB) return 1;
         if (!isBacklogA && isBacklogB) return -1;
-        
+
         if (absWeekA !== absWeekB) return absWeekA - absWeekB;
-        
+
         return (a.orderId || "").localeCompare(b.orderId || "");
       }
 
@@ -1131,22 +1131,22 @@ const PlanningSidebar = ({
       const yearA = Number(a.weekYear || a.year || currentYear);
       const weekB = Number(b.weekNumber || b.week || 999);
       const yearB = Number(b.weekYear || b.year || currentYear);
-      
+
       // Absolute weekwaarde voor vergelijking
       const absWeekA = yearA * 52 + weekA;
       const absWeekB = yearB * 52 + weekB;
       const absCurrent = currentYear * 52 + currentWeek;
-      
+
       const isBacklogA = absWeekA < absCurrent;
       const isBacklogB = absWeekB < absCurrent;
-      
+
       // Backlog moet ONDERAAN ("daaronder moet een splitsing komen")
       if (isBacklogA && !isBacklogB) return 1;
       if (!isBacklogA && isBacklogB) return -1;
-      
+
       // Binnen de groepen: Sorteer op week (Oplopend: Week 10, 11, 12...)
       if (absWeekA !== absWeekB) return absWeekA - absWeekB;
-      
+
       // Fallback: Order ID
       return (a.orderId || "").localeCompare(b.orderId || "");
     });
@@ -1309,7 +1309,7 @@ const PlanningSidebar = ({
         product?.lastUpdated ||
         product?.createdAt ||
         null;
-      const eventDate = typeof eventDateRaw?.toDate === "function" ? eventDateRaw.toDate() : new Date(eventDateRaw || 0);
+      const eventDate = typeof eventDateRaw?.toDate === "function" ? eventDateRaw?.toDate?.() : new Date(eventDateRaw || 0);
       if (!Number.isFinite(eventDate.getTime()) || eventDate < windowStart) return;
 
       byMachineFinished.set(machine, (byMachineFinished.get(machine) || 0) + 1);
@@ -1338,7 +1338,7 @@ const PlanningSidebar = ({
       ];
       for (const value of candidates) {
         if (!value) continue;
-        const parsed = typeof (value as unknown)?.toDate === "function" ? (value as unknown).toDate() : new Date(value as unknown);
+        const parsed = typeof (value as unknown)?.toDate === "function" ? (value as unknown)?.toDate?.() : new Date(value as unknown);
         if (Number.isFinite(parsed.getTime())) return parsed;
       }
       return new Date(today);
@@ -1354,7 +1354,7 @@ const PlanningSidebar = ({
       ];
       for (const value of candidates) {
         if (!value) continue;
-        const parsed = typeof (value as unknown)?.toDate === "function" ? (value as unknown).toDate() : new Date(value as unknown);
+        const parsed = typeof (value as unknown)?.toDate === "function" ? (value as unknown)?.toDate?.() : new Date(value as unknown);
         if (Number.isFinite(parsed.getTime())) {
           parsed.setHours(0, 0, 0, 0);
           return parsed;
@@ -1413,7 +1413,7 @@ const PlanningSidebar = ({
           let earliestStart = new Date();
           for (const val of orderStartCandidates) {
             if (!val) continue;
-            const parsed = typeof (val as unknown)?.toDate === "function" ? (val as unknown).toDate() : new Date(val as unknown);
+            const parsed = typeof (val as unknown)?.toDate === "function" ? (val as unknown)?.toDate?.() : new Date(val as unknown);
             if (Number.isFinite(parsed.getTime()) && parsed < earliestStart) {
               earliestStart = parsed;
             }
@@ -1421,7 +1421,7 @@ const PlanningSidebar = ({
 
           const daysWorking = Math.max(0.1, (Date.now() - earliestStart.getTime()) / (1000 * 60 * 60 * 24));
           const specificSpeed = produced / daysWorking;
-          
+
           if (specificSpeed > 0) {
             currentSpeed = Math.max(0.1, specificSpeed);
           }
@@ -1451,11 +1451,11 @@ const PlanningSidebar = ({
         if (!hasStarted) {
           finalPredictedReadyDate = null;
           if (deliveryDate && deliveryDate.getTime() <= today.getTime()) {
-             slipDays = Math.round((today.getTime() - deliveryDate.getTime()) / (24 * 60 * 60 * 1000));
-             scheduleStatus = slipDays > 0 ? "behind" : "on_time";
+            slipDays = Math.round((today.getTime() - deliveryDate.getTime()) / (24 * 60 * 60 * 1000));
+            scheduleStatus = slipDays > 0 ? "behind" : "on_time";
           } else {
-             slipDays = null;
-             scheduleStatus = "unknown";
+            slipDays = null;
+            scheduleStatus = "unknown";
           }
         }
 
@@ -1479,17 +1479,17 @@ const PlanningSidebar = ({
       const prediction = predictedScheduleByOrder.get(getOrderIdentity(order));
       const predictionDateStr = prediction?.predictedReadyDate ? format(prediction.predictedReadyDate, "yyyy-MM-dd") : "";
       return {
-      orderId: order.orderId || "",
-      lotNumber: order.lotNumber || order.activeLot || "",
-      item: order.item || order.itemDescription || order.itemCode || "",
-      machine: order.machine || order.originMachine || order.currentStation || "",
-      status: order.status || "",
-      week: order.weekNumber || order.week || "",
-      year: order.weekYear || order.year || "",
-      rejectType: order.rejectKind === "temp_reject" ? "Tijdelijke afkeur" : order.rejectKind === "definitive_reject" ? "Definitieve afkeur" : "",
-      rejectReason: order.inspection?.reasons ? order.inspection.reasons.join(" | ") : "",
-      updatedAt: typeof (order.updatedAt as unknown)?.toDate === "function" ? (order.updatedAt as unknown).toDate().toISOString() : String(order.updatedAt || ""),
-      predictedReadyDate: predictionDateStr,
+        orderId: order.orderId || "",
+        lotNumber: order.lotNumber || order.activeLot || "",
+        item: order.item || order.itemDescription || order.itemCode || "",
+        machine: order.machine || order.originMachine || order.currentStation || "",
+        status: order.status || "",
+        week: order.weekNumber || order.week || "",
+        year: order.weekYear || order.year || "",
+        rejectType: order.rejectKind === "temp_reject" ? "Tijdelijke afkeur" : order.rejectKind === "definitive_reject" ? "Definitieve afkeur" : "",
+        rejectReason: order.inspection?.reasons ? order.inspection.reasons.join(" | ") : "",
+        updatedAt: typeof (order.updatedAt as unknown)?.toDate === "function" ? (order.updatedAt as unknown)?.toDate?.().toISOString() : String(order.updatedAt || ""),
+        predictedReadyDate: predictionDateStr,
       };
     });
 
@@ -1575,15 +1575,15 @@ const PlanningSidebar = ({
       const prediction = predictedScheduleByOrder.get(getOrderIdentity(order));
       const predictionDateStr = prediction?.predictedReadyDate ? format(prediction.predictedReadyDate, "dd-MM-yyyy") : "-";
       return {
-      lotNumber: order?.lotNumber || order?.activeLot || "",
-      orderId: order?.orderId || order?.id || "",
-      product: order?.item || order?.itemDescription || order?.itemCode || "",
-      station: getStationLabel(order?.machine || ""),
-      poText: order?.notes || order?.poText || "",
-      status: order?.status || "",
-      finishedAt: "-",
-      createdAt: "-",
-      predictedReadyDate: predictionDateStr,
+        lotNumber: order?.lotNumber || order?.activeLot || "",
+        orderId: order?.orderId || order?.id || "",
+        product: order?.item || order?.itemDescription || order?.itemCode || "",
+        station: getStationLabel(order?.machine || ""),
+        poText: order?.notes || order?.poText || "",
+        status: order?.status || "",
+        finishedAt: "-",
+        createdAt: "-",
+        predictedReadyDate: predictionDateStr,
       };
     });
   }, [filteredOrders, trackedProducts, archivedProducts, archivedHistoryProducts, predictedScheduleByOrder]);
@@ -1693,7 +1693,7 @@ const PlanningSidebar = ({
       if (!value) continue;
       const date =
         typeof value?.toDate === "function"
-          ? (value as unknown).toDate()
+          ? (value as unknown)?.toDate?.()
           : new Date(value as unknown);
       if (Number.isFinite(date.getTime())) {
         const dateStr = date.toLocaleDateString("nl-NL", {
@@ -1710,7 +1710,7 @@ const PlanningSidebar = ({
   };
 
   const formatDateWithWeek = (dateInput: unknown) => {
-    const date = typeof (dateInput as unknown)?.toDate === "function" ? (dateInput as unknown).toDate() : new Date(dateInput as unknown);
+    const date = typeof (dateInput as unknown)?.toDate === "function" ? (dateInput as unknown)?.toDate?.() : new Date(dateInput as unknown);
     if (!Number.isFinite(date.getTime())) return "--";
     const dateStr = date.toLocaleDateString("nl-NL", {
       day: "2-digit",
@@ -1869,95 +1869,95 @@ const PlanningSidebar = ({
           />
         </div>
         <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <select 
-                value={selectedMachine}
-                onChange={(e) => setSelectedMachine(e.target.value)}
-                className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
-              >
-                {machines.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </select>
-            </div>
-            <div className="relative flex-1">
-              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              {isRejectScope ? (
-                <select
-                  value={rejectPeriod}
-                  onChange={(e) => setRejectPeriod(e.target.value)}
-                  className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
-                >
-                  <option value="this_week">{t("planningSidebar.thisWeek", "Deze week")}</option>
-                  <option value="previous_week">{t("planningSidebar.previousWeek", "Vorige week")}</option>
-                  <option value="this_month">{t("planningSidebar.thisMonth", "Deze maand")}</option>
-                  <option value="this_year">{t("planningSidebar.thisYear", "Dit jaar")}</option>
-                  <option value="all">{t("planningSidebar.all", "Alles")}</option>
-                </select>
-              ) : isCompletedScope ? (
-                <select
-                  value={completedRangeMode}
-                  onChange={(e) => setCompletedRangeMode(e.target.value)}
-                  className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
-                >
-                  <option value="day">{t("planningSidebar.perDay", "Per dag")}</option>
-                  <option value="week">{t("planningSidebar.perWeek", "Per week")}</option>
-                </select>
-              ) : (
-                <select
-                  value={sortMode}
-                  onChange={(e) => setSortMode(e.target.value)}
-                  className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
-                >
-                  <option value="week_backlog">{t("digitalplanning.sidebar.sort_week_backlog", "Week + Backlog")}</option>
-                  <option value="overdue">{t("digitalplanning.sidebar.sort_overdue", "Te laat (maken/leveren)")}</option>
-                  <option value="in_progress_first">{t("digitalplanning.sidebar.sort_in_progress_first", "In behandeling eerst")}</option>
-                  <option value="date_asc">{t("digitalplanning.sidebar.sort_date_asc", "Datum oplopend")}</option>
-                  <option value="date_desc">{t("digitalplanning.sidebar.sort_date_desc", "Datum aflopend")}</option>
-                  <option value="recently_added">{t("digitalplanning.sidebar.sort_recently_added", "Onlangs toegevoegd")}</option>
-                </select>
-              )}
-            </div>
-            <div className="relative flex-1">
-              <Archive className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+          <div className="relative flex-1">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+            <select
+              value={selectedMachine}
+              onChange={(e) => setSelectedMachine(e.target.value)}
+              className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
+            >
+              {machines.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </div>
+          <div className="relative flex-1">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+            {isRejectScope ? (
               <select
-                value={dataScope}
-                onChange={(e) => setDataScope(e.target.value)}
+                value={rejectPeriod}
+                onChange={(e) => setRejectPeriod(e.target.value)}
                 className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
               >
-                {scopeOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
+                <option value="this_week">{t("planningSidebar.thisWeek", "Deze week")}</option>
+                <option value="previous_week">{t("planningSidebar.previousWeek", "Vorige week")}</option>
+                <option value="this_month">{t("planningSidebar.thisMonth", "Deze maand")}</option>
+                <option value="this_year">{t("planningSidebar.thisYear", "Dit jaar")}</option>
+                <option value="all">{t("planningSidebar.all", "Alles")}</option>
               </select>
-            </div>
-            {isCompletedScope && (
-              <div className="relative flex-1">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                <input
-                  type="date"
-                  value={completedDateValue}
-                  onChange={(e) => setCompletedDateValue(e.target.value)}
-                  className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
-                />
-              </div>
+            ) : isCompletedScope ? (
+              <select
+                value={completedRangeMode}
+                onChange={(e) => setCompletedRangeMode(e.target.value)}
+                className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
+              >
+                <option value="day">{t("planningSidebar.perDay", "Per dag")}</option>
+                <option value="week">{t("planningSidebar.perWeek", "Per week")}</option>
+              </select>
+            ) : (
+              <select
+                value={sortMode}
+                onChange={(e) => setSortMode(e.target.value)}
+                className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
+              >
+                <option value="week_backlog">{t("digitalplanning.sidebar.sort_week_backlog", "Week + Backlog")}</option>
+                <option value="overdue">{t("digitalplanning.sidebar.sort_overdue", "Te laat (maken/leveren)")}</option>
+                <option value="in_progress_first">{t("digitalplanning.sidebar.sort_in_progress_first", "In behandeling eerst")}</option>
+                <option value="date_asc">{t("digitalplanning.sidebar.sort_date_asc", "Datum oplopend")}</option>
+                <option value="date_desc">{t("digitalplanning.sidebar.sort_date_desc", "Datum aflopend")}</option>
+                <option value="recently_added">{t("digitalplanning.sidebar.sort_recently_added", "Onlangs toegevoegd")}</option>
+              </select>
             )}
-            <button
-              type="button"
-              onClick={isCompletedScope ? handleExportCompletedPdf : handleExportCurrentPdf}
-              disabled={filteredOrders.length === 0}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-              title={isCompletedScope ? "Exporteer gereedlijst als PDF" : "Exporteer huidige lijst als PDF"}
+          </div>
+          <div className="relative flex-1">
+            <Archive className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+            <select
+              value={dataScope}
+              onChange={(e) => setDataScope(e.target.value)}
+              className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
             >
-              <Printer size={14} /> PDF
-            </button>
-            <button
-              type="button"
-              onClick={isCompletedScope ? handleExportCompletedExcel : handleExportCurrentList}
-              disabled={filteredOrders.length === 0}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
-              title={isCompletedScope ? "Exporteer gereedlijst als Excel" : "Exporteer huidige lijst"}
-            >
-              <Download size={14} /> {isCompletedScope ? "Excel" : "Export"}
-            </button>
+              {scopeOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+          {isCompletedScope && (
+            <div className="relative flex-1">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+              <input
+                type="date"
+                value={completedDateValue}
+                onChange={(e) => setCompletedDateValue(e.target.value)}
+                className="w-full pl-9 pr-2 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-bold uppercase outline-none focus:border-blue-500 cursor-pointer"
+              />
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={isCompletedScope ? handleExportCompletedPdf : handleExportCurrentPdf}
+            disabled={filteredOrders.length === 0}
+            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+            title={isCompletedScope ? "Exporteer gereedlijst als PDF" : "Exporteer huidige lijst als PDF"}
+          >
+            <Printer size={14} /> PDF
+          </button>
+          <button
+            type="button"
+            onClick={isCompletedScope ? handleExportCompletedExcel : handleExportCurrentList}
+            disabled={filteredOrders.length === 0}
+            className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+            title={isCompletedScope ? "Exporteer gereedlijst als Excel" : "Exporteer huidige lijst"}
+          >
+            <Download size={14} /> {isCompletedScope ? "Excel" : "Export"}
+          </button>
         </div>
       </div>
 
@@ -2016,7 +2016,7 @@ const PlanningSidebar = ({
                   const y = Number(order.weekYear || order.year || currentYear);
                   const absW = y * 52 + w;
                   const absC = currentYear * 52 + currentWeek;
-                  
+
                   if (absW < absC) {
                     currentLabel = "Backlog";
                   } else if (Number.isFinite(w) && w !== 999 && w !== 0) {

@@ -65,6 +65,7 @@ type LnReadyGroupedRow = {
   todoCount?: number;
   nahardingCount?: number;
   wikkelCount?: number;
+  inBehandelingCount?: number;
   refOpsText: string;
   count: number;
 };
@@ -790,6 +791,7 @@ const ImportExportDashboard = ({
         todoCount,
         nahardingCount,
         wikkelCount,
+        inBehandelingCount: 0,
         refOpsText,
         count: 0,
       };
@@ -800,7 +802,10 @@ const ImportExportDashboard = ({
 
     const periodToken = lnPeriodLabel;
 
-    const groupedRowsArray = Array.from(groupedRows.values()).sort((a, b) => {
+    const groupedRowsArray = Array.from(groupedRows.values()).map(row => {
+      row.inBehandelingCount = Math.max(0, (row.wikkelCount || 0) + (row.nahardingCount || 0) - row.count);
+      return row;
+    }).sort((a, b) => {
       if (a.station !== b.station) return a.station.localeCompare(b.station);
       return a.orderId.localeCompare(b.orderId);
     });
@@ -1004,13 +1009,14 @@ const ImportExportDashboard = ({
       startY: meta.exportedAt ? 30 : 25,
       styles: { fontSize: 9, cellPadding: 2 },
       headStyles: { fillColor: [15, 23, 42], textColor: 255 },
-      head: [["Station", "Order", "Product", "Totaal order", "Gereedgemeld", "Nog te doen", "LN wikkelstap"]],
+      head: [["Station", "Order", "Product", "Totaal order", "Gereed", "In Beh.", "Nog te doen", "LN wikkelstap"]],
       body: rows.map((row) => [
         String(row.station || "-"),
         String(row.orderId || "-"),
         String(row.item || "-"),
         Number((row.totalOrderCount || 0) || 0),
         Number(row.readyReportedCount || 0),
+        Number(row.inBehandelingCount || 0),
         Number((row.todoCount || 0) || 0),
         Number(row.count || 0),
       ]),
@@ -1090,6 +1096,7 @@ const ImportExportDashboard = ({
       doc.text(`Item: ${String(row.item || "-")}`, 12, y + 18);
       doc.text(`Totaal order: ${Number((row.totalOrderCount || 0) || 0)}`, 12, y + 23);
       doc.text(`Naharding (geweest): ${Number(row.nahardingCount || 0)}`, 12, y + 28);
+      doc.text(`In behandeling: ${Number(row.inBehandelingCount || 0)}`, 12, y + 33);
 
       doc.addImage(orderDataUrl, "PNG", qrOrderX, y, qrSize, qrSize);
       doc.addImage(refDataUrl, "PNG", qrRefX, y, qrSize, qrSize);
@@ -1618,13 +1625,14 @@ const ImportExportDashboard = ({
 
               <div className="rounded-2xl border border-slate-200 overflow-hidden">
                 <div className="overflow-x-auto">
-                  <div className="grid min-w-[56rem] grid-cols-[6rem_8rem_minmax(16rem,1fr)_5.5rem_5.5rem_5.5rem_6.5rem] gap-4 bg-slate-100 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 items-start">
+                  <div className="grid min-w-[62rem] grid-cols-[6rem_8rem_minmax(12rem,1fr)_5rem_5rem_5rem_5rem_6rem] gap-4 bg-slate-100 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-500 items-start">
                   <span className="whitespace-nowrap">{t("importExportDashboard.station", "Station")}</span>
                   <span className="whitespace-nowrap">{t("importExportDashboard.order", "Order")}</span>
                   <span className="whitespace-nowrap">{t("importExportDashboard.product", "Product")}</span>
-                  <span className="whitespace-nowrap">Totaal order</span>
-                  <span className="whitespace-nowrap">Gereedgemeld</span>
-                  <span className="whitespace-nowrap">Nog te doen</span>
+                  <span className="whitespace-nowrap">Totaal</span>
+                  <span className="whitespace-nowrap">Gereed</span>
+                  <span className="whitespace-nowrap">In Beh.</span>
+                  <span className="whitespace-nowrap">Nog doen</span>
                   <span className="whitespace-nowrap">LN wikkelstap</span>
                   </div>
                 </div>
@@ -1635,12 +1643,13 @@ const ImportExportDashboard = ({
                     </div>
                   ) : (
                     lnReadyQrRows.map((row) => (
-                      <div key={row.id} className="grid min-w-[56rem] grid-cols-[6rem_8rem_minmax(16rem,1fr)_5.5rem_5.5rem_5.5rem_6.5rem] gap-4 px-4 py-3 text-xs text-slate-700 items-center">
+                      <div key={row.id} className="grid min-w-[62rem] grid-cols-[6rem_8rem_minmax(12rem,1fr)_5rem_5rem_5rem_5rem_6rem] gap-4 px-4 py-3 text-xs text-slate-700 items-center">
                         <span className="font-bold whitespace-nowrap">{row.station || "-"}</span>
                         <span className="font-bold whitespace-nowrap">{row.orderId || "-"}</span>
                         <span className="truncate" title={row.item}>{row.item || "-"}</span>
                         <span className="font-bold text-slate-700 whitespace-nowrap">{(row.totalOrderCount || 0) || 0}</span>
                         <span className="font-bold text-emerald-700 whitespace-nowrap">{row.readyReportedCount || 0}</span>
+                        <span className="font-bold text-purple-700 whitespace-nowrap">{row.inBehandelingCount || 0}</span>
                         <span className="font-bold text-orange-700 whitespace-nowrap">{(row.todoCount || 0) || 0}</span>
                         <span className="font-bold text-blue-600 whitespace-nowrap">{row.count || 0}</span>
                       </div>

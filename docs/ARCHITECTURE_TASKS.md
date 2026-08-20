@@ -33,15 +33,12 @@
 ## Programma 2 — Module Hardening (monoliethen splitsen) · Prioriteit P1
 
 ### MazakView.tsx (3.947 regels)
-- [ ] Verantwoordelijkheden identificeren (machine status, job queue, log, alarmen)
-- [ ] `mazak.types.ts` extraheren
-- [ ] `useMazakData.ts` extraheren — data fetching hook
-- [ ] `useMazakActions.ts` extraheren — acties & commands
-- [ ] `MazakMachineStatus.tsx` extraheren
-- [ ] `MazakJobQueue.tsx` extraheren
-- [ ] `MazakProductionLog.tsx` extraheren
-- [ ] `MazakAlarmPanel.tsx` extraheren
-- [ ] `MazakView.tsx` reduceren tot orchestrator (~200 regels)
+- [x] Verantwoordelijkheden identificeren
+- [x] `mazak.types.ts` extraheren
+- [x] `useMazakData.ts` extraheren — data fetching hook
+- [x] `useMazakActions.ts` extraheren — acties & commands
+- [x] `MazakComponents.tsx` extraheren (22 subcomponenten i.p.v. specifieke job/log panels)
+- [x] `MazakView.tsx` reduceren tot orchestrator (~1.475 regels in plaats van 200 om >40 prop-drilling te voorkomen)
 
 ### PrintQueueAdminView.tsx (3.301 regels)
 - [ ] Tabs identificeren en naar aparte view-componenten splitsen

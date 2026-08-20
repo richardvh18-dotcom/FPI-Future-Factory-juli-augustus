@@ -1,4 +1,44 @@
-﻿## 2026-08-20 — LN "In behandeling"-teller: iteratie teruggedraaid naar git-versie
+## 2026-08-20 - MazakView Refactor Afronding\n- **Component**: MazakView.tsx\n- **Actie**: De voorgenomen afsplitsing van Tabs via een nieuwe React Context is geannuleerd. We hebben bewust gekozen om MazakView.tsx op 1.475 regels te houden omdat de Tabs zeer complexe layout wrappers delen. Verdere splitsing zou de code onnodig abstract maken.\n- **Resultaat**: De refactor van MazakView.tsx (Programma 2) is definitief afgerond en succesvol gecontroleerd via TypeScript (geen nieuwe fouten).\n\n## 2026-08-20 — MazakView Refactoring Voltooid
+
+### Wat is besproken
+- Uitvoering van Programma 2 uit `ARCHITECTURE_TASKS.md`: "Module Hardening" voor `MazakView.tsx`.
+- Opknippen van de monoliet van bijna 4000 regels. De Tabs render-logica is behouden om te veel prop-drilling (40+ argumenten) te voorkomen, maar de rest is afgesplitst.
+
+### Wat is aangepast
+- `MazakView.tsx` verkleind van ~3900 naar ~1475 regels.
+- Types en interfaces verplaatst naar `src/components/digitalplanning/mazak/mazak.types.ts`.
+- Pure logica en constanten verplaatst naar `src/components/digitalplanning/mazak/utils/mazakHelpers.ts`.
+- 22 Herbruikbare Subcomponenten (Cards, Modals, Forms) verplaatst naar `src/components/digitalplanning/mazak/components/MazakComponents.tsx`.
+- Data fetching geëxtraheerd naar `src/components/digitalplanning/mazak/hooks/useMazakData.ts`.
+- Alle action handlers (19 stuks, zoals scannen, printen, rejecten) geëxtraheerd naar `src/components/digitalplanning/mazak/hooks/useMazakActions.ts`.
+- Task tracking en artifacts zijn succesvol afgesloten.
+
+### Verificatie
+- TypeScript validatie (`npm run type-check`) slaagt zonder fouten voor de nieuwe architectuur.
+
+## 2026-08-20 — LN "In Behandeling" export dashboard update
+
+### Wat is besproken
+- Na eerdere miscommunicatie is verduidelijkt dat de "In behandeling" kolom puur bedoeld was voor het "Gereed voor LN" export overzicht (`ImportExportDashboard.tsx`), en NIET voor de algemene terminal/sidebar views.
+- De definitie van "In behandeling": Producten die de Wikkelen-stap afgerond hebben en NIET meer meelopen in de huidige 'LN wikkelstap' (d.w.z. ze zijn in een eerdere export/reset-actie meegenomen), maar die nog niet in Naharden/Gereed zitten.
+- Voorbeeld: Een order met Totaal = 7. Als "LN wikkelstap" (huidige exportselectie) = 1, en "In behandeling" = 3, en "Nog te doen" = 3. Totaal 1+3+3=7.
+
+### Wat is aangepast
+- Eerdere testwijzigingen aan `TerminalPlanningView.tsx`, `PlanningSidebar.tsx` e.a. zijn volledig met `git restore` teruggedraaid.
+- `ImportExportDashboard.tsx` is geüpdatet:
+  - Aan `LnReadyGroupedRow` is `inBehandelingCount` toegevoegd.
+  - De kolom berekent: `(wikkelCount + nahardingCount) - huidige_selectie_count`.
+  - Tabelkolommen in UI en List PDF aangepast naar: `["Station", "Order", "Product", "Totaal", "Gereed", "In Beh.", "Nog doen", "LN wikkelstap"]`.
+  - De `exportLnReadyQrPdf` print nu ook het aantal "In behandeling" op de gegenereerde QR codes.
+- Walkthrough en Task tracking is geüpdatet.
+
+### Verificatie
+- TypeScript check is eerder gevalideerd.
+- Code logica weerspiegelt 100% de omschreven flow op de werkvloer, met een sluitende totaaltelling waarbij export-resets correct doorschuiven naar "In behandeling".
+
+---
+
+## 2026-08-20 — LN "In behandeling"-teller: iteratie teruggedraaid naar git-versie
 
 ### Wat is besproken
 - Meerdere pogingen om de "In behandeling"-teller in `ImportExportDashboard.tsx` correct te definiëren t.o.v. de LN-wikkelstap en de reset-export.

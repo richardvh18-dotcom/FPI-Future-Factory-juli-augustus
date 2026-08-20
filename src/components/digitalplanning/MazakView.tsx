@@ -1,5 +1,35 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
+
+import { 
+  TimestampLike, ProductItem, OccupancyEntry, PlanningOrder, 
+  LabelElement, LabelTemplate, PrinterConfig, AdminUser, 
+  MazakViewProps, SeriesHeaderRow, DisplayRow, MazakTab, 
+  SavedFreeLabelTemplate, MazakTabNavigationProps, MazakListItemCardProps,
+  MazakPlanningOrderCardProps, MazakAdjustListItemCardProps, MazakSelectedProductHeroProps,
+  MazakSelectedPlanningOrderHeroProps, MazakPlanningActiveLotsPanelProps,
+  MazakAdjustSelectionPanelProps, MazakEmptySelectionPlaceholderProps,
+  MazakFreeLabelHeroProps, MazakFreeLabelPreviewPanelProps, MazakFreeLabelActionsProps,
+  MazakFreeLabelAlignmentSelectorProps, MazakFreeLabelSizingFieldsProps,
+  MazakFreeLabelTextFieldsProps, MazakFreeLabelFormPanelProps, MazakAdjustModalHeaderProps,
+  MazakAdjustOrderModalActionsProps, MazakAdjustRequestModalActionsProps, MazakAdjustPreviewPanelProps,
+  MazakAdjustOrderModalLeftPanelProps, MazakAdjustRequestModalBodyProps,
+  TranslateFn
+} from './mazak/mazak.types';
+import * as helpers from './mazak/utils/mazakHelpers';
+import {
+  MazakTabNavigation, MazakListItemCard, MazakPlanningOrderCard,
+  MazakAdjustListItemCard, MazakSelectedProductHero, MazakSelectedPlanningOrderHero,
+  MazakPlanningActiveLotsPanel, MazakAdjustSelectionPanel, MazakEmptySelectionPlaceholder,
+  MazakFreeLabelHero, MazakFreeLabelPreviewPanel, MazakFreeLabelActions,
+  MazakFreeLabelAlignmentSelector, MazakFreeLabelSizingFields, MazakFreeLabelTextFields,
+  MazakFreeLabelFormPanel, MazakAdjustModalHeader, MazakAdjustOrderModalActions,
+  MazakAdjustRequestModalActions, MazakAdjustPreviewPanel, MazakAdjustOrderModalLeftPanel,
+  MazakAdjustRequestModalBody
+} from './mazak/components/MazakComponents';
+import { useMazakData } from './mazak/hooks/useMazakData';
+import { useMazakActions } from './mazak/hooks/useMazakActions';
+
 import {
   collection,
   collectionGroup,
@@ -63,1460 +93,23 @@ import { LargeSequencePrintModal } from "./modals/LargeSequencePrintModal";
 
 const QR_CODE_OK_CONFIRMATION = "FPI-ACTION-APPROVE-OK";
 const DEFAULT_MAZAK_DPI = 300;
-const clampFreeLabelFontSize = (value: unknown): number => {
-  const parsed = Number.parseInt(String(value ?? ""), 10);
-  if (!Number.isFinite(parsed)) return 10;
-  return Math.max(6, Math.min(75, parsed));
-};
-
-const FREE_TEXT_LABEL_TEMPLATE: LabelTemplate = {
-  id: "MAZAK-FREE-TEXT-90x35",
-  name: "Vrij tekst 100x25",
-  width: 100,
-  height: 25,
-  elements: [
-    { type: "text", x: 3, y: 2, width: 94, height: 21, fontSize: 10, isBold: true, content: "{freeText}", maxLines: 4 },
-  ],
-};
-
-type TimestampLike = { toDate?: () => Date; seconds?: number };
-
-type ProductItem = {
-  id?: string;
-  orderId?: string;
-  lotNumber?: string;
-  item?: string;
-  itemCode?: string;
-  productId?: string;
-  extraCode?: string;
-  seriesGroupId?: string;
-  mazakLabelPrinted?: boolean;
-  status?: string;
-  currentStep?: string;
-  currentStation?: string;
-  machine?: string;
-  lastStation?: string;
-  inspection?: { status?: string };
-  createdAt?: TimestampLike | string | number | Date | null;
-  updatedAt?: TimestampLike | string | number | Date | null;
-  [key: string]: unknown;
-};
-
-type OccupancyEntry = {
-  station?: string;
-  machineId?: string;
-  date?: TimestampLike | string | number | Date | null;
-  shift?: string;
-  operatorNumber?: string;
-};
-
-type PlanningOrder = {
-  id?: string;
-  orderDocId?: string;
-  orderDocPath?: string;
-  orderId?: string;
-  item?: string;
-  itemCode?: string;
-  machine?: string;
-  plan?: number | string;
-  productId?: string;
-  extraCode?: string;
-  lotNumber?: string;
-  status?: string;
-  week?: number | string;
-  weekNumber?: number | string;
-  year?: number | string;
-  weekYear?: number | string;
-  createdAt?: TimestampLike | string | number | Date | null;
-  [key: string]: unknown;
-};
-
-type LabelElement = {
-  type?: string;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-  fontSize?: number;
-  isBold?: boolean;
-  content?: string;
-  maxLines?: number;
-  align?: "left" | "center" | "right";
-  vAlign?: "top" | "center" | "bottom";
-  [key: string]: unknown;
-};
-
-type LabelTemplate = {
-  id: string;
-  name?: string;
-  width?: number;
-  height?: number;
-  tags?: string[];
-  elements?: LabelElement[];
-  [key: string]: unknown;
-};
-
-type PrinterConfig = {
-  id: string;
-  name?: string;
-  dpi?: number | string;
-  isDefault?: boolean;
-  linkedStations?: unknown[];
-  queueStations?: unknown[];
-  [key: string]: unknown;
-};
-
-type AdminUser = { uid?: string; email?: string | null };
-
-type MazakViewProps = {
-  stationId?: string;
-  products?: ProductItem[];
-};
-
-type SeriesHeaderRow = {
-  id: string;
-  isSeriesHeader: true;
-  seriesGroupId: string;
-  orderId: string;
-  seriesCount: number;
-  seriesUnits: ProductItem[];
-};
-
-type DisplayRow = ProductItem | SeriesHeaderRow;
-
-type MazakTab = "planning" | "inbox" | "process" | "adjust" | "free";
-
-type SavedFreeLabelTemplate = {
-  id: string;
-  name: string;
-  text: string;
-  align: "left" | "center" | "right";
-  fontSize: number;
-  quantity: number;
-  updatedAt?: number;
-};
-
-const isSeriesHeaderRow = (row: DisplayRow): row is SeriesHeaderRow =>
-  (row as SeriesHeaderRow).isSeriesHeader === true;
-
-const toMillisFromMixed = (value: unknown): number => {
-  if (!value) return 0;
-  if (typeof (value as TimestampLike).toDate === "function") {
-    const date = (value as TimestampLike).toDate?.();
-    return date ? date.getTime() : 0;
-  }
-  if (typeof (value as TimestampLike).seconds === "number") {
-    return Number((value as TimestampLike).seconds) * 1000;
-  }
-  if (value instanceof Date) return value.getTime();
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  if (typeof value === "string") {
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  return 0;
-};
-
-const getUrgencyColorClass = (value: unknown): string => {
-  const dateMillis = toMillisFromMixed(value);
-  if (!dateMillis) return "text-slate-400";
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const deliveryDate = new Date(dateMillis);
-  deliveryDate.setHours(0, 0, 0, 0);
-
-  const diffInDays = Math.floor((deliveryDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
-
-  if (diffInDays <= 7) return "text-red-600 font-black";
-  if (diffInDays <= 14) return "text-blue-600 font-black";
-  return "text-slate-600 font-bold";
-};
-
-const isSeriesEligibleItem = (item: ProductItem) => {
-  const statusUpper = String(item?.status || "").toUpperCase();
-  const stepUpper = String(item?.currentStep || "").toUpperCase();
-  return statusUpper !== "REJECTED" && stepUpper !== "REJECTED";
-};
-
-const getLotSeriesPrefix = (lotNumber: unknown) => {
-  const raw = String(lotNumber || "").trim();
-  if (!raw) return "";
-  const match = raw.match(/^(.*?)(\d{3})$/);
-  if (!match) return "";
-  return match[1];
-};
-
-const getLotSeriesSequence = (lotNumber: unknown): number | null => {
-  const raw = String(lotNumber || "").trim();
-  if (!raw) return null;
-  const match = raw.match(/(\d{3})$/);
-  if (!match) return null;
-  const parsed = Number(match[1]);
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
-const getOrderIdFamily = (orderId: unknown): string => {
-  const raw = String(orderId || "").trim().toUpperCase();
-  if (!raw) return "";
-  const match = raw.match(/\d{3}/);
-  return match ? match[0] : "";
-};
-
-const getFlangeSizeToken = (value: unknown): string => {
-  const raw = String(value || "").toUpperCase();
-  if (!raw) return "";
-
-  const normalizeCandidate = (token: string): string => {
-    const cleaned = String(token || "").replace(/^0+/, "");
-    const parsed = Number.parseInt(cleaned || "0", 10);
-    if (!Number.isFinite(parsed) || parsed < 40 || parsed > 1200) return "";
-    return String(parsed);
-  };
-
-  // Voorbeelden die we willen kunnen lezen:
-  // "FL 350", "FL-350", "FLENS 350", "FLANGE350", "DN350", "350MM"
-  const patterns = [
-    /\bFL(?:ENS|ANGE)?\s*[-_/]*\s*(\d{2,4})\b/,
-    /\bDN\s*[-_/]*\s*(\d{2,4})\b/,
-    /\b(\d{2,4})\s*MM\b/,
-  ];
-
-  for (const pattern of patterns) {
-    const match = raw.match(pattern);
-    const normalized = normalizeCandidate(match?.[1] || "");
-    if (normalized) return normalized;
-  }
-
-  // Fallback voor samengestelde itemcodes waar FL-maat niet als los woord staat,
-  // bijvoorbeeld "FLST...0350...". Alleen toepassen als er FL-hints aanwezig zijn.
-  const hasFlangeHint = /FL|FLS|FLST|FLENS|FLANGE/.test(raw);
-  if (!hasFlangeHint) return "";
-
-  const knownDiameters = new Set([
-    40, 50, 60, 65, 75, 80, 90, 100, 110, 125, 140, 150, 160, 180, 200,
-    225, 250, 280, 300, 315, 320, 350, 355, 400, 450, 500, 560, 600, 630,
-    700, 710, 750, 800, 900, 1000, 1100, 1200,
-  ]);
-
-  const numberMatches = raw.match(/\d{2,4}/g) || [];
-  const normalizedNumbers = numberMatches
-    .map((token) => normalizeCandidate(token))
-    .filter(Boolean);
-
-  if (normalizedNumbers.length === 0) return "";
-
-  const knownMatch = normalizedNumbers.find((token) => knownDiameters.has(Number(token)));
-  if (knownMatch) return knownMatch;
-
-  return normalizedNumbers[0] || "";
-};
-
-const stationNameFromValue = (stationValue: unknown): string => {
-  if (!stationValue) return "";
-  if (typeof stationValue === "string") return stationValue.trim();
-  if (typeof stationValue === "object") {
-    const stationObj = stationValue as Record<string, unknown>;
-    return String(
-      stationObj.name || stationObj.station || stationObj.id || stationObj.code || ""
-    ).trim();
-  }
-  return String(stationValue).trim();
-};
-
-const hasFlangeTag = (template: LabelTemplate): boolean => {
-  const tags = Array.isArray(template?.tags)
-    ? template.tags.map((tag) => String(tag || "").toUpperCase().trim())
-    : [];
-  return tags.includes("FLANGE");
-};
-
-const getMaterialIntentTags = (product: ProductItem): Set<string> => {
-  const combined = [
-    product?.item,
-    product?.itemCode,
-    product?.productId,
-    product?.extraCode,
-    (product as Record<string, unknown>)?.itemDescription,
-    (product as Record<string, unknown>)?.description,
-    (product as Record<string, unknown>)?.articleDescription,
-  ]
-    .map((value) => String(value || "").toUpperCase())
-    .join(" ");
-
-  const tags = new Set<string>();
-
-  if (/\bEST\d*\b/.test(combined)) {
-    tags.add("EST");
-    tags.add("WAVISTRONG");
-  }
-  if (/\bCST\d*\b/.test(combined)) {
-    tags.add("CST");
-    tags.add("WAVISTRONG");
-    tags.add("CONDUCTIVE");
-  }
-  if (/\bEWT\d*\b/.test(combined)) {
-    tags.add("EWT");
-    tags.add("WAVISTRONG");
-  }
-  if (/\bEMT\d*\b/.test(combined)) {
-    tags.add("EMT");
-    tags.add("FIBERMAR");
-  }
-  if (/\bCMT\d*\b/.test(combined)) {
-    tags.add("CMT");
-    tags.add("FIBERMAR");
-    tags.add("CONDUCTIVE");
-  }
-
-  if (combined.includes("WAVISTRONG")) tags.add("WAVISTRONG");
-  if (combined.includes("FIBERMAR")) tags.add("FIBERMAR");
-
-  return tags;
-};
-
-const scoreTemplateForProductIntent = (template: LabelTemplate, intentTags: Set<string>): number => {
-  const tags = Array.isArray(template?.tags)
-    ? template.tags.map((tag) => String(tag || "").toUpperCase().trim()).filter(Boolean)
-    : [];
-  const tagSet = new Set(tags);
-  const nameUpper = String(template?.name || "").toUpperCase();
-
-  let score = 0;
-
-  if (tagSet.has("FLANGE") || tagSet.has("FLENS") || tagSet.has("FLENZEN")) score += 30;
-
-  if (intentTags.has("EST") && tagSet.has("EST")) score += 140;
-  if (intentTags.has("CST") && tagSet.has("CST")) score += 140;
-  if (intentTags.has("EWT") && tagSet.has("EWT")) score += 140;
-  if (intentTags.has("EMT") && tagSet.has("EMT")) score += 140;
-  if (intentTags.has("CMT") && tagSet.has("CMT")) score += 140;
-
-  if (intentTags.has("WAVISTRONG") && tagSet.has("WAVISTRONG")) score += 90;
-  if (intentTags.has("FIBERMAR") && tagSet.has("FIBERMAR")) score += 90;
-  if (intentTags.has("CONDUCTIVE") && tagSet.has("CONDUCTIVE")) score += 50;
-
-  if (intentTags.has("WAVISTRONG") && !intentTags.has("FIBERMAR") && tagSet.has("FIBERMAR")) score -= 120;
-  if (intentTags.has("FIBERMAR") && !intentTags.has("WAVISTRONG") && tagSet.has("WAVISTRONG")) score -= 120;
-
-  if (intentTags.has("WAVISTRONG") && nameUpper.includes("WAVISTRONG")) score += 25;
-  if (intentTags.has("FIBERMAR") && nameUpper.includes("FIBERMAR")) score += 25;
-
-  return score;
-};
-
-const selectQueuePrinterForStation = (
-  printers: PrinterConfig[],
-  stationId: string,
-  templateTags: string[] = []
-): PrinterConfig | null => {
-  if (!Array.isArray(printers) || printers.length === 0) return null;
-  return resolvePrinterForRouting(printers, {
-    stationId,
-    routeKey: 'MAZAK',
-    labelRoute: 'mazak',
-    templateTags,
-  });
-};
-
-const templateExtraCodeTokens = (template: LabelTemplate): string[] => {
-  const candidates: unknown[] = [
-    template?.extraCodes,
-    template?.requiredExtraCodes,
-    template?.applicableExtraCodes,
-    template?.extraCode,
-  ];
-
-  const flattened: string[] = candidates.flatMap((value) => {
-    if (Array.isArray(value)) return value.map((entry) => String(entry || "").trim());
-    if (typeof value === "string") {
-      return value
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter(Boolean);
-    }
-    return [];
-  });
-
-  return Array.from(new Set(flattened.map((entry) => entry.toUpperCase()).filter(Boolean)));
-};
-
-const getItemNominalDiameter = (item: Record<string, unknown>): number => {
-  const itemIdentifier = [item?.item, item?.itemCode, item?.itemDescription].join(" ").toUpperCase();
-  const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
-  const parsed = match ? parseInt(match[1], 10) : parseInt(String(item?.diameter || item?.dn || "0"), 10);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-type TranslateFn = (key: string, fallback?: string, options?: Record<string, unknown>) => string;
-
-type MazakTabNavigationProps = {
-  activeTab: MazakTab;
-  onSelectTab: (tab: MazakTab) => void;
-  t: TranslateFn;
-};
-
-const MazakTabNavigation = ({ activeTab, onSelectTab, t }: MazakTabNavigationProps) => (
-  <div className="p-2 bg-slate-50 border-b border-slate-200 shrink-0 shadow-sm">
-    <div className="flex justify-center overflow-x-auto">
-      <div className="flex bg-slate-200 p-1 rounded-2xl w-full max-w-2xl min-w-[320px]">
-        <button
-          onClick={() => onSelectTab("planning")}
-          className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "planning" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-        >
-          Planning
-        </button>
-        <button
-          onClick={() => onSelectTab("inbox")}
-          className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "inbox" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-        >
-          {t("mazak.tab_inbox", "Inbox / Printen")}
-        </button>
-        <button
-          onClick={() => onSelectTab("process")}
-          className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "process" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-        >
-          {t("mazak.tab_complete", "Gereedmelden")}
-        </button>
-        <button
-          onClick={() => onSelectTab("adjust")}
-          className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "adjust" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-        >
-          {t("mazak.tab_adjust", "Aanpassen")}
-        </button>
-        <button
-          onClick={() => onSelectTab("free")}
-          className={`flex-1 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === "free" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-        >
-          {t("mazak.tab_labels", "Labels")}
-        </button>
-      </div>
-    </div>
-  </div>
-);
-
-type MazakListItemCardProps = {
-  item: ProductItem;
-  activeTab: MazakTab;
-  isSelected: boolean;
-  onSelect: (item: ProductItem) => void;
-  t: TranslateFn;
-};
-
-const MazakListItemCard = ({ item, activeTab, isSelected, onSelect, t }: MazakListItemCardProps) => (
-  <div
-    onClick={() => onSelect(item)}
-    className={`bg-white border-2 rounded-2xl p-3 shadow-sm hover:border-blue-300 transition-all group animate-in slide-in-from-bottom-2 cursor-pointer ${isSelected ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-100"}`}
-  >
-    <div className="flex justify-between items-start mb-2">
-      <div className="text-left">
-        <span className="text-[9px] font-black text-slate-400 uppercase block mb-1">{item.orderId}</span>
-        <span className="font-black text-slate-900 text-base tracking-tighter">{item.lotNumber}</span>
-        <p className="text-[10px] font-bold text-slate-500 mt-0.5 truncate max-w-[180px]">{item.item}</p>
-      </div>
-      <div className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${activeTab === "inbox" ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"}`}>
-        {activeTab === "inbox" ? t("mazak.print_badge", "Printen") : t("mazak.complete_badge", "Gereedmelden")}
-      </div>
-    </div>
-    <div className="bg-slate-50 rounded-lg p-2 border border-slate-100">
-      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{t("lossen.manufactured_item")}</p>
-      <p className="text-[10px] font-mono font-bold text-slate-700 truncate">{item.itemCode}</p>
-      {item.lastStation && (
-        <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-200/60 opacity-80">
-          <History size={10} className="text-blue-500" />
-          <span className="text-[8px] font-black text-slate-500 uppercase italic">
-            {t("mazak.from_station", "Van")}: {item.lastStation}
-          </span>
-        </div>
-      )}
-    </div>
-  </div>
-);
-
-type MazakPlanningOrderCardProps = {
-  order: PlanningOrder;
-  isSelected: boolean;
-  onSelect: (order: PlanningOrder) => void;
-  orderMaterialBadge: string;
-  orderProduced: number;
-  orderTotal: number;
-  orderDeliveryLabel: string;
-  orderDeliveryColorClass: string;
-  t: TranslateFn;
-};
-
-const MazakPlanningOrderCard = ({
-  order,
-  isSelected,
-  onSelect,
-  orderMaterialBadge,
-  orderProduced,
-  orderTotal,
-  orderDeliveryLabel,
-  orderDeliveryColorClass,
-  t,
-}: MazakPlanningOrderCardProps) => (
-  <div
-    onClick={() => onSelect(order)}
-    className={`min-h-[100px] px-4 py-3 rounded-3xl border-2 transition-all flex items-center justify-between relative overflow-hidden cursor-pointer ${
-      isSelected
-        ? "bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-100 translate-x-1"
-        : "bg-white border-slate-100 hover:border-blue-300"
-    }`}
-  >
-    <div className="flex items-center gap-4 flex-1 overflow-hidden">
-      <div className="flex-1 overflow-hidden">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="inline-block px-3 py-1 bg-slate-200 text-slate-800 rounded-lg text-sm font-black uppercase tracking-wider border border-slate-300 shadow-sm">
-            {t("productionStartModal.labels.order", "Order")}: {String(order.orderId || "-")}
-          </span>
-          {orderMaterialBadge && (
-            <span className="inline-block px-2.5 py-1 bg-sky-100 text-sky-700 border border-sky-200 rounded-lg text-[11px] font-black uppercase tracking-wide">
-              {orderMaterialBadge}
-            </span>
-          )}
-        </div>
-        <h4 className="font-black text-base sm:text-lg leading-tight uppercase text-slate-900 mb-1 line-clamp-2">
-          {String(order.item || "-")}
-        </h4>
-      </div>
-    </div>
-    <div className="flex flex-col items-end gap-1.5 text-right shrink-0 ml-4">
-      <StatusBadge status={order.status} />
-      <span className="text-xs font-black text-slate-700 uppercase tracking-tighter">
-        {t("digitalplanning.terminal.made", "Gemaakt")}: {orderProduced} / {orderTotal} ST
-      </span>
-      <span className={`text-xs uppercase tracking-tighter ${orderDeliveryColorClass}`}>
-        {orderDeliveryLabel}
-      </span>
-    </div>
-  </div>
-);
-
-type MazakAdjustListItemCardProps = {
-  item: ProductItem;
-  isSelected: boolean;
-  onSelect: (item: ProductItem) => void;
-  t: TranslateFn;
-};
-
-const MazakAdjustListItemCard = ({ item, isSelected, onSelect, t }: MazakAdjustListItemCardProps) => {
-  const stage = item.mazakLabelPrinted
-    ? t("mazak.complete_badge", "Gereedmelden")
-    : t("mazak.print_badge", "Printen");
-
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(item)}
-      className={`w-full text-left bg-white border-2 rounded-2xl p-4 shadow-sm transition-all ${isSelected ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-100 hover:border-blue-200"}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{item.orderId || "-"}</p>
-          <p className="text-base font-black text-slate-900">{item.lotNumber || item.id || "-"}</p>
-          <p className="text-xs font-bold text-slate-600 mt-1 truncate">{item.item || "-"}</p>
-          <p className="text-[10px] font-black text-slate-400 uppercase mt-1">{item.itemCode || "-"}</p>
-        </div>
-        <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${item.mazakLabelPrinted ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
-          {stage}
-        </span>
-      </div>
-    </button>
-  );
-};
-
-type MazakSelectedProductHeroProps = {
-  product: ProductItem;
-  onClear: () => void;
-  t: TranslateFn;
-};
-
-const MazakSelectedProductHero = ({ product, onClear, t }: MazakSelectedProductHeroProps) => (
-  <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
-    <div className="flex justify-between items-start mb-8 relative z-10">
-      <div>
-        <button
-          onClick={onClear}
-          className="lg:hidden p-2 bg-white/10 rounded-full mb-4 inline-block"
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <div className="mb-2">
-          <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base font-black uppercase tracking-widest border border-white/40 shadow-sm">
-            {t("productionStartModal.labels.order", "Order")}: {product.orderId}
-          </span>
-        </div>
-        <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
-          {product.item || "-"}
-        </h2>
-        <p className="text-xs font-bold text-white/60 mt-1">
-          {product.itemCode || "-"}
-        </p>
-      </div>
-      <div className="flex items-start gap-3">
-        <StatusBadge status={product.status} />
-        <button onClick={onClear} className="p-2 rounded-full text-slate-300 hover:bg-white/10">
-          <X size={20} />
-        </button>
-      </div>
-    </div>
-
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-white/10 pt-8 relative z-10">
-      <div>
-        <p className="text-[10px] font-black text-white/40 uppercase mb-1">Lotnummer</p>
-        <p className="text-lg font-black text-sky-300">{product.lotNumber || "-"}</p>
-      </div>
-      <div>
-        <p className="text-[10px] font-black text-white/40 uppercase mb-1">Wikkelmachine</p>
-        <p className="text-lg font-black text-amber-300">{product.lastStation || "Onbekend"}</p>
-      </div>
-      <div>
-        <p className="text-[10px] font-black text-white/40 uppercase mb-1">Status</p>
-        <p className="text-lg font-black text-blue-300 uppercase">{String(product.status || "-")}</p>
-      </div>
-    </div>
-  </div>
-);
-
-type MazakSelectedPlanningOrderHeroProps = {
-  order: PlanningOrder;
-  materialBadge: string;
-  deliveryLabel: string;
-  quantity: number;
-  produced: number;
-  t: TranslateFn;
-  onClear: () => void;
-};
-
-const MazakSelectedPlanningOrderHero = ({
-  order,
-  materialBadge,
-  deliveryLabel,
-  quantity,
-  produced,
-  t,
-  onClear,
-}: MazakSelectedPlanningOrderHeroProps) => (
-  <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
-    <div className="flex justify-between items-start mb-8 relative z-10">
-      <div>
-        <button
-          onClick={onClear}
-          className="lg:hidden p-2 bg-white/10 rounded-full mb-4 inline-block"
-        >
-          <ArrowLeft size={20} />
-        </button>
-        <div className="mb-2">
-          <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base font-black uppercase tracking-widest border border-white/40 shadow-sm">
-            {t("productionStartModal.labels.order", "Order")}: {order.orderId}
-          </span>
-        </div>
-        <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
-          {order.item || "-"}
-        </h2>
-        <p className="text-xs font-bold text-white/60 mt-1">
-          {order.itemCode || "-"}
-        </p>
-        {materialBadge && (
-          <div className="mt-2">
-            <span className="inline-block px-2.5 py-1 bg-sky-300 text-sky-950 rounded-lg text-[11px] font-black uppercase tracking-wide">
-              {materialBadge}
-            </span>
-          </div>
-        )}
-      </div>
-      <StatusBadge status={order.status} />
-    </div>
-
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-t border-white/10 pt-8 relative z-10">
-      <div>
-        <p className="text-[10px] font-black text-white/40 uppercase mb-1">
-          {t("digitalplanning.order_detail.delivery_date_aq", "Leverdatum (AQ)")}
-        </p>
-        <p className="text-lg font-black text-sky-300">
-          {deliveryLabel}
-        </p>
-      </div>
-      <div>
-        <p className="text-[10px] font-black text-white/40 uppercase mb-1">
-          {t("digitalplanning.order_detail.total_plan", "Orderhoeveelheid")}
-        </p>
-        <p className="text-lg font-black text-amber-300">
-          {quantity} {t("digitalplanning.terminal.pieces", "stuks")}
-        </p>
-      </div>
-      <div>
-        <p className="text-[10px] font-black text-white/40 uppercase mb-1">
-          {t("digitalplanning.terminal.made", "Gemaakt")}
-        </p>
-        <p className="text-lg font-black text-blue-300">
-          {produced} {t("digitalplanning.terminal.pieces", "stuks")}
-        </p>
-      </div>
-    </div>
-  </div>
-);
-
-type MazakPlanningActiveLotsPanelProps = {
-  products: ProductItem[];
-  onSelectProduct: (product: ProductItem) => void;
-  t: TranslateFn;
-};
-
-const MazakPlanningActiveLotsPanel = ({ products, onSelectProduct, t }: MazakPlanningActiveLotsPanelProps) => (
-  <div className="border-t border-white/10 pt-6 mt-6 relative z-10">
-    <p className="text-[10px] font-black text-white/40 uppercase mb-3 tracking-widest">
-      {t("digitalplanning.terminal.active_lots", "Actieve lotnummers")} ({products.length})
-    </p>
-    {products.length === 0 ? (
-      <p className="text-xs font-bold text-white/60 italic">
-        {t("mazak.no_active_lots_for_order", "Nog geen actieve lotnummers voor deze order.")}
-      </p>
-    ) : (
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        {products.map((product) => {
-          const lotKey = String(product?.lotNumber || product?.id || "-");
-          return (
-            <button
-              key={String(product?.id || lotKey)}
-              type="button"
-              onClick={() => onSelectProduct(product)}
-              className="text-left px-3 py-2 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 transition-all"
-            >
-              <p className="text-xs font-black text-white uppercase tracking-wide">{lotKey}</p>
-              <p className="text-[10px] font-bold text-white/70 truncate">
-                {String(product?.item || product?.itemCode || "-")}
-              </p>
-            </button>
-          );
-        })}
-      </div>
-    )}
-  </div>
-);
-
-type MazakAdjustSelectionPanelProps = {
-  product: ProductItem;
-  onChangeOrder: () => void;
-  onRequestNewOrder: () => void;
-  t: TranslateFn;
-};
-
-const MazakAdjustSelectionPanel = ({
-  product,
-  onChangeOrder,
-  onRequestNewOrder,
-  t,
-}: MazakAdjustSelectionPanelProps) => (
-  <>
-    <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl relative overflow-hidden">
-      <div className="mb-4">
-        <span className="inline-block px-4 py-1.5 bg-white/25 text-white rounded-xl text-base font-black uppercase tracking-widest border border-white/40 shadow-sm">
-          {t("productionStartModal.labels.order", "Order")}: {product.orderId || "-"}
-        </span>
-      </div>
-      <h2 className="text-2xl md:text-3xl font-black text-white leading-tight uppercase italic max-w-3xl mb-1.5">
-        {product.item || "-"}
-      </h2>
-      <p className="text-xs font-bold text-white/60 mt-1">{product.itemCode || "-"}</p>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-white/10 pt-6 mt-6">
-        <div>
-          <p className="text-[10px] font-black text-white/40 uppercase mb-1">Lotnummer</p>
-          <p className="text-lg font-black text-sky-300">{product.lotNumber || product.id || "-"}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-black text-white/40 uppercase mb-1">Huidige fase</p>
-          <p className="text-lg font-black text-amber-300">
-            {product.mazakLabelPrinted
-              ? t("mazak.complete_badge", "Gereedmelden")
-              : t("mazak.print_badge", "Printen")}
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-      <button
-        onClick={onChangeOrder}
-        className="p-6 bg-white rounded-3xl border-2 border-slate-100 hover:border-blue-400 hover:shadow-lg transition-all flex flex-col items-center justify-center gap-3 group"
-      >
-        <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
-          <ArrowRight size={32} />
-        </div>
-        <span className="text-sm font-black uppercase tracking-widest text-slate-700 group-hover:text-blue-700">
-          Ordernummer wijzigen
-        </span>
-      </button>
-      <button
-        onClick={onRequestNewOrder}
-        className="p-6 bg-white rounded-3xl border-2 border-slate-100 hover:border-amber-400 hover:shadow-lg transition-all flex flex-col items-center justify-center gap-3 group"
-      >
-        <div className="p-4 bg-amber-50 text-amber-600 rounded-2xl group-hover:bg-amber-500 group-hover:text-white transition-colors">
-          <Tag size={32} />
-        </div>
-        <span className="text-sm font-black uppercase tracking-widest text-slate-700 group-hover:text-amber-700">
-          Verzoek nieuw ordernummer
-        </span>
-      </button>
-    </div>
-  </>
-);
-
-type MazakEmptySelectionPlaceholderProps = {
-  activeTab: MazakTab;
-  t: TranslateFn;
-};
-
-const MazakEmptySelectionPlaceholder = ({ activeTab, t }: MazakEmptySelectionPlaceholderProps) => (
-  <div className="flex-1 flex flex-col items-center justify-center opacity-30 text-center text-left">
-    {activeTab === "inbox" ? (
-      <Printer size={80} className="mb-6 text-slate-200" />
-    ) : activeTab === "planning" ? (
-      <History size={80} className="mb-6 text-slate-200" />
-    ) : activeTab === "free" ? (
-      <Tag size={80} className="mb-6 text-slate-200" />
-    ) : (
-      <ClipboardCheck size={80} className="mb-6 text-slate-200" />
-    )}
-    <h4 className="text-2xl font-black uppercase italic text-slate-300 text-left">
-      {activeTab === "inbox"
-        ? t("mazak.select_to_print", "Selecteer order om te printen")
-        : activeTab === "planning"
-          ? t("mazak.select_planned_order", "Selecteer geplande order")
-          : activeTab === "adjust"
-            ? t("mazak.adjust_pick_product", "Selecteer lot voor aanpassen")
-            : activeTab === "free"
-              ? t("mazak.labels_ready", "Kies een label type om te printen")
-              : t("mazak.select_to_process", "Selecteer order om te verwerken")}
-    </h4>
-  </div>
-);
-
-type MazakFreeLabelHeroProps = {
-  t: TranslateFn;
-};
-
-const MazakFreeLabelHero = ({ t }: MazakFreeLabelHeroProps) => (
-  <div className="bg-slate-900 rounded-[35px] p-6 text-white border-4 border-blue-500/20 relative overflow-hidden shadow-xl text-left">
-    <span className="text-[8px] font-black text-blue-400 uppercase block mb-1 text-left">{t("mazak.labels_header", "Labels")}</span>
-    <h2 className="text-3xl font-black italic leading-none text-left">100 x 25 mm</h2>
-    <p className="text-xs font-bold text-white/70 mt-2">{t("mazak.labels_subtitle", "Kies uit de verschillende label opties")}</p>
-  </div>
-);
-
-type MazakFreeLabelPreviewPanelProps = {
-  template: LabelTemplate;
-  freeText: string;
-  printerDpi: number;
-  t: TranslateFn;
-};
-
-const MazakFreeLabelPreviewPanel = ({ template, freeText, printerDpi, t }: MazakFreeLabelPreviewPanelProps) => (
-  <div className="bg-white rounded-[40px] p-8 border border-slate-200 shadow-sm text-left">
-    <div className="text-[9px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center gap-2 mb-4">
-      <Printer size={12} className="text-blue-500" /> {t("productionStartModal.labels.labelPreview", "Etiket preview")}
-    </div>
-    <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-      <AutoScaledLabelPreview
-        label={template}
-        data={{ freeText: freeText || t("mazak.free_label_preview_placeholder", "Vrije tekst preview") }}
-        className="w-full"
-        printerDpi={printerDpi}
-        maxScale={1}
-        exactBitmapPreview
-      />
-    </div>
-  </div>
-);
-
-type MazakFreeLabelActionsProps = {
-  printing: boolean;
-  savingFreeTemplate: boolean;
-  freeLabelText: string;
-  freeLabelTemplateName: string;
-  freeLabelQuantity: number;
-  onPrint: () => void;
-  onSaveTemplate: () => void;
-  t: TranslateFn;
-};
-
-const MazakFreeLabelActions = ({
-  printing,
-  savingFreeTemplate,
-  freeLabelText,
-  freeLabelTemplateName,
-  freeLabelQuantity,
-  onPrint,
-  onSaveTemplate,
-  t,
-}: MazakFreeLabelActionsProps) => (
-  <>
-    <button
-      onClick={onPrint}
-      disabled={printing || !freeLabelText.trim()}
-      className="w-full py-4 bg-blue-600 text-white rounded-[22px] font-black uppercase text-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-    >
-      {printing ? <Loader2 size={18} className="animate-spin" /> : <Printer size={18} />}
-      {printing
-        ? t("common.loading", "Laden...")
-        : t("mazak.print_free_labels", "Print {{count}} vrij label(s)", { count: Math.max(1, Math.min(50, Number(freeLabelQuantity) || 1)) })}
-    </button>
-
-    <button
-      onClick={onSaveTemplate}
-      disabled={savingFreeTemplate || !freeLabelTemplateName.trim() || !freeLabelText.trim()}
-      className="w-full py-3 bg-slate-100 text-slate-700 rounded-[18px] font-black uppercase text-xs hover:bg-slate-200 transition-all flex items-center justify-center gap-2 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
-    >
-      {savingFreeTemplate ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-      {savingFreeTemplate
-        ? t("common.loading", "Laden...")
-        : t("mazak.save_free_label_template", "Opslaan als template")}
-    </button>
-  </>
-);
-
-type MazakFreeLabelAlignmentSelectorProps = {
-  align: "left" | "center" | "right";
-  onSelectAlign: (align: "left" | "center" | "right") => void;
-  t: TranslateFn;
-};
-
-const MazakFreeLabelAlignmentSelector = ({
-  align,
-  onSelectAlign,
-  t,
-}: MazakFreeLabelAlignmentSelectorProps) => (
-  <div>
-    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-      {t("mazak.free_label_alignment", "Uitlijning")}
-    </label>
-    <div className="grid grid-cols-3 gap-2">
-      <button
-        type="button"
-        onClick={() => onSelectAlign("left")}
-        className={`px-3 py-3 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${align === "left" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
-      >
-        {t("common.left", "Links")}
-      </button>
-      <button
-        type="button"
-        onClick={() => onSelectAlign("center")}
-        className={`px-3 py-3 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${align === "center" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
-      >
-        {t("common.center", "Midden")}
-      </button>
-      <button
-        type="button"
-        onClick={() => onSelectAlign("right")}
-        className={`px-3 py-3 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all ${align === "right" ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}
-      >
-        {t("common.right", "Rechts")}
-      </button>
-    </div>
-  </div>
-);
-
-type MazakFreeLabelSizingFieldsProps = {
-  freeLabelFontSize: number;
-  freeLabelQuantity: number;
-  onChangeFontSize: (value: unknown) => void;
-  onChangeQuantity: (value: string) => void;
-  t: TranslateFn;
-};
-
-const MazakFreeLabelSizingFields = ({
-  freeLabelFontSize,
-  freeLabelQuantity,
-  onChangeFontSize,
-  onChangeQuantity,
-  t,
-}: MazakFreeLabelSizingFieldsProps) => (
-  <>
-    <div>
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-        {t("mazak.free_label_font_size", "Lettergrootte")}
-      </label>
-      <input
-        type="number"
-        min={6}
-        max={75}
-        value={String(freeLabelFontSize)}
-        onChange={(e) => {
-          onChangeFontSize(e.target.value);
-        }}
-        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500"
-      />
-      <p className="mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-        {t("mazak.free_label_font_size_hint", "Vrij invoerbaar, max 75 pt")}
-      </p>
-    </div>
-
-    <div>
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-        {t("mazak.quantity", "Aantal")}
-      </label>
-      <input
-        type="number"
-        min={1}
-        max={50}
-        value={freeLabelQuantity}
-        onChange={(e) => {
-          onChangeQuantity(String(e.target.value || "1"));
-        }}
-        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500"
-      />
-      <p className="mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-        {t("mazak.fixed_free_label_size", "Vast formaat: 100x25 mm")}
-      </p>
-    </div>
-  </>
-);
-
-type MazakFreeLabelTextFieldsProps = {
-  freeLabelTemplateName: string;
-  freeLabelText: string;
-  onChangeTemplateName: (value: string) => void;
-  onChangeFreeText: (value: string) => void;
-  t: TranslateFn;
-};
-
-const MazakFreeLabelTextFields = ({
-  freeLabelTemplateName,
-  freeLabelText,
-  onChangeTemplateName,
-  onChangeFreeText,
-  t,
-}: MazakFreeLabelTextFieldsProps) => (
-  <>
-    <div>
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-        {t("mazak.free_label_template_name", "Template naam")}
-      </label>
-      <input
-        type="text"
-        value={freeLabelTemplateName}
-        onChange={(e) => onChangeTemplateName(e.target.value)}
-        maxLength={80}
-        placeholder={t("mazak.free_label_template_name_placeholder", "Bijv. Waarschuwing rood")}
-        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500"
-      />
-    </div>
-
-    <div>
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-        {t("mazak.free_label_text", "Vrije tekst")}
-      </label>
-      <textarea
-        value={freeLabelText}
-        onChange={(e) => onChangeFreeText(e.target.value)}
-        rows={6}
-        maxLength={250}
-        placeholder={t("mazak.free_label_placeholder", "Typ hier de tekst voor het vrije label...")}
-        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 outline-none focus:border-blue-500 resize-none"
-      />
-    </div>
-  </>
-);
-
-type MazakFreeLabelFormPanelProps = {
-  freeLabelTemplateName: string;
-  freeLabelText: string;
-  freeLabelAlign: "left" | "center" | "right";
-  freeLabelFontSize: number;
-  freeLabelQuantity: number;
-  printing: boolean;
-  savingFreeTemplate: boolean;
-  onChangeTemplateName: (value: string) => void;
-  onChangeFreeText: (value: string) => void;
-  onSelectAlign: (align: "left" | "center" | "right") => void;
-  onChangeFontSize: (value: unknown) => void;
-  onChangeQuantity: (value: string) => void;
-  onPrint: () => void;
-  onSaveTemplate: () => void;
-  t: TranslateFn;
-};
-
-const MazakFreeLabelFormPanel = ({
-  freeLabelTemplateName,
-  freeLabelText,
-  freeLabelAlign,
-  freeLabelFontSize,
-  freeLabelQuantity,
-  printing,
-  savingFreeTemplate,
-  onChangeTemplateName,
-  onChangeFreeText,
-  onSelectAlign,
-  onChangeFontSize,
-  onChangeQuantity,
-  onPrint,
-  onSaveTemplate,
-  t,
-}: MazakFreeLabelFormPanelProps) => (
-  <div className="bg-white rounded-[40px] p-8 border border-slate-200 shadow-sm space-y-5 text-left">
-    <MazakFreeLabelTextFields
-      freeLabelTemplateName={freeLabelTemplateName}
-      freeLabelText={freeLabelText}
-      onChangeTemplateName={onChangeTemplateName}
-      onChangeFreeText={onChangeFreeText}
-      t={t}
-    />
-
-    <MazakFreeLabelAlignmentSelector
-      align={freeLabelAlign}
-      onSelectAlign={onSelectAlign}
-      t={t}
-    />
-
-    <MazakFreeLabelSizingFields
-      freeLabelFontSize={freeLabelFontSize}
-      freeLabelQuantity={freeLabelQuantity}
-      onChangeFontSize={onChangeFontSize}
-      onChangeQuantity={onChangeQuantity}
-      t={t}
-    />
-
-    <MazakFreeLabelActions
-      printing={printing}
-      savingFreeTemplate={savingFreeTemplate}
-      freeLabelText={freeLabelText}
-      freeLabelTemplateName={freeLabelTemplateName}
-      freeLabelQuantity={freeLabelQuantity}
-      onPrint={onPrint}
-      onSaveTemplate={onSaveTemplate}
-      t={t}
-    />
-  </div>
-);
-
-type MazakAdjustModalHeaderProps = {
-  title: string;
-  lotLabel: string;
-  onClose: () => void;
-  disabled: boolean;
-};
-
-const MazakAdjustModalHeader = ({
-  title,
-  lotLabel,
-  onClose,
-  disabled,
-}: MazakAdjustModalHeaderProps) => (
-  <div className="flex justify-between items-center mb-6">
-    <div>
-      <h3 className="text-2xl font-black text-slate-800 uppercase italic">
-        {title}
-      </h3>
-      <p className="text-sm text-slate-500 font-bold mt-1">
-        Lot: {lotLabel}
-      </p>
-    </div>
-    <button
-      onClick={onClose}
-      className="p-2 rounded-full text-slate-400 hover:bg-slate-100 transition-colors"
-      disabled={disabled}
-    >
-      <X size={24} />
-    </button>
-  </div>
-);
-
-type MazakAdjustOrderModalActionsProps = {
-  submitting: boolean;
-  canSubmit: boolean;
-  onCancel: () => void;
-  onSubmit: () => Promise<void>;
-};
-
-const MazakAdjustOrderModalActions = ({
-  submitting,
-  canSubmit,
-  onCancel,
-  onSubmit,
-}: MazakAdjustOrderModalActionsProps) => (
-  <div className="mt-6 pt-6 border-t border-slate-100 flex justify-end gap-3 shrink-0">
-    <button
-      onClick={onCancel}
-      className="px-6 py-3 rounded-xl bg-slate-100 text-slate-600 font-black uppercase text-xs hover:bg-slate-200 transition-all disabled:opacity-50"
-      disabled={submitting}
-    >
-      Annuleren
-    </button>
-    <button
-      onClick={onSubmit}
-      disabled={!canSubmit}
-      className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-xs hover:bg-blue-700 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg"
-    >
-      {submitting ? <Loader2 size={16} className="animate-spin" /> : <Printer size={16} />}
-      Wijzigen & Printen
-    </button>
-  </div>
-);
-
-type MazakAdjustRequestModalActionsProps = {
-  submitting: boolean;
-  canSubmit: boolean;
-  onCancel: () => void;
-  onSubmit: () => Promise<void>;
-  t: TranslateFn;
-};
-
-const MazakAdjustRequestModalActions = ({
-  submitting,
-  canSubmit,
-  onCancel,
-  onSubmit,
-  t,
-}: MazakAdjustRequestModalActionsProps) => (
-  <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-    <button
-      onClick={onCancel}
-      className="px-6 py-3 rounded-xl bg-slate-100 text-slate-600 font-black uppercase text-xs hover:bg-slate-200 transition-all disabled:opacity-50"
-      disabled={submitting}
-    >
-      Annuleren
-    </button>
-    <button
-      onClick={onSubmit}
-      disabled={!canSubmit}
-      className="px-6 py-3 bg-amber-500 text-white rounded-xl font-black uppercase text-xs hover:bg-amber-600 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed shadow-lg"
-    >
-      {submitting ? <Loader2 size={16} className="animate-spin" /> : <Tag size={16} />}
-      {t("mazak.adjust_send_request", "Verzoek nieuw ordernummer versturen")}
-    </button>
-  </div>
-);
-
-type MazakAdjustPreviewPanelProps = {
-  hasTargetOrder: boolean;
-  previewTemplates: LabelTemplate[];
-  previewData: Record<string, unknown>;
-  printerDpi: number;
-};
-
-const MazakAdjustPreviewPanel = ({
-  hasTargetOrder,
-  previewTemplates,
-  previewData,
-  printerDpi,
-}: MazakAdjustPreviewPanelProps) => (
-  <div className="flex-1 min-h-0 bg-slate-50 rounded-2xl p-6 border border-slate-100 flex flex-col">
-    <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4">
-      Nieuw Label Voorbeeld
-    </p>
-    {hasTargetOrder ? (
-      <div className="flex-1 min-h-0 flex flex-col">
-        {previewTemplates.length > 0 ? (
-          <div className="space-y-4 overflow-y-auto custom-scrollbar pr-2 max-h-[42vh]">
-            {previewTemplates.map((template) => (
-              <div key={template.id} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
-                <p className="text-[9px] font-bold text-slate-400 mb-2 uppercase">{template.name}</p>
-                <AutoScaledLabelPreview
-                  label={template}
-                  data={previewData}
-                  printerDpi={printerDpi}
-                  maxScale={0.36}
-                  exactBitmapPreview
-                />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-slate-400 font-bold italic">Geen geschikt flens-template gevonden.</p>
-        )}
-      </div>
-    ) : (
-      <div className="flex-1 flex items-center justify-center">
-        <p className="text-xs text-slate-400 font-bold italic text-center">
-          Selecteer een doelorder om het nieuwe label te zien.
-        </p>
-      </div>
-    )}
-  </div>
-);
-
-type MazakAdjustOrderModalLeftPanelProps = {
-  adjustOrderSearch: string;
-  selectedAdjustFlangeSize: string;
-  selectedAdjustOrderFamily: string;
-  adjustTargetOrders: PlanningOrder[];
-  selectedAdjustTargetOrder: PlanningOrder | null;
-  adjustReason: string;
-  onChangeAdjustOrderSearch: (value: string) => void;
-  onSelectAdjustTargetOrder: (order: PlanningOrder) => void;
-  onChangeAdjustReason: (value: string) => void;
-  t: TranslateFn;
-};
-
-const MazakAdjustOrderModalLeftPanel = ({
-  adjustOrderSearch,
-  selectedAdjustFlangeSize,
-  selectedAdjustOrderFamily,
-  adjustTargetOrders,
-  selectedAdjustTargetOrder,
-  adjustReason,
-  onChangeAdjustOrderSearch,
-  onSelectAdjustTargetOrder,
-  onChangeAdjustReason,
-  t,
-}: MazakAdjustOrderModalLeftPanelProps) => (
-  <div className="flex-1 space-y-4">
-    <div className="relative">
-      <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-      <input
-        type="text"
-        value={adjustOrderSearch}
-        onChange={(e) => onChangeAdjustOrderSearch(e.target.value)}
-        placeholder={t("mazak.adjust_target_search", "Zoek doelorder (ordernummer of type)...")}
-        className="w-full pl-11 pr-4 py-3 bg-slate-50 border-2 border-slate-100 focus:border-blue-500 rounded-xl font-bold text-sm outline-none transition-all placeholder:text-slate-300"
-      />
-    </div>
-
-    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-1">
-      {selectedAdjustFlangeSize
-        ? t("mazak.adjust_size_filter_active", "Filter actief: alleen flensmaat FL {{size}}", { size: selectedAdjustFlangeSize })
-        : selectedAdjustOrderFamily
-          ? t("mazak.adjust_family_filter_active", "Filter actief: alleen orders met ID-reeks {{family}}", { family: selectedAdjustOrderFamily })
-          : t("mazak.adjust_family_filter_missing", "Geen FL-maat of 3-cijferige ID-reeks gevonden op bronorder; filter niet toegepast")}
-    </p>
-
-    <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-      {adjustTargetOrders.length === 0 ? (
-        <p className="text-xs font-bold text-slate-500 italic px-1">
-          Geen passende order gevonden.
-        </p>
-      ) : (
-        adjustTargetOrders.map((order) => {
-          const orderKey = String(order.id || order.orderId || "");
-          const isSelected = String(selectedAdjustTargetOrder?.id || selectedAdjustTargetOrder?.orderId || "") === orderKey;
-          return (
-            <button
-              key={orderKey}
-              type="button"
-              onClick={() => onSelectAdjustTargetOrder(order)}
-              className={`w-full text-left px-3 py-2 rounded-xl border transition-all ${isSelected ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-200"}`}
-            >
-              <p className="text-xs font-black text-slate-800 uppercase tracking-wide">{order.orderId || "-"}</p>
-              <p className="text-[11px] font-bold text-slate-600 truncate">{order.item || "-"}</p>
-            </button>
-          );
-        })
-      )}
-    </div>
-
-    <div>
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-        {t("mazak.adjust_reason", "Opmerking / waarom (Verplicht)")}
-      </label>
-      <textarea
-        value={adjustReason}
-        onChange={(e) => onChangeAdjustReason(e.target.value)}
-        rows={3}
-        maxLength={300}
-        placeholder={t("mazak.adjust_reason_placeholder", "Waarom wordt dit lot aan een ander ordernummer gekoppeld?")}
-        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-blue-500 resize-none"
-      />
-    </div>
-  </div>
-);
-
-type MazakAdjustRequestModalBodyProps = {
-  adjustReason: string;
-  adjustRequestNote: string;
-  onChangeAdjustReason: (value: string) => void;
-  onChangeAdjustRequestNote: (value: string) => void;
-  t: TranslateFn;
-};
-
-const MazakAdjustRequestModalBody = ({
-  adjustReason,
-  adjustRequestNote,
-  onChangeAdjustReason,
-  onChangeAdjustRequestNote,
-  t,
-}: MazakAdjustRequestModalBodyProps) => (
-  <div className="space-y-4 mb-6">
-    <p className="text-xs font-bold text-slate-600">
-      {t("mazak.adjust_no_existing_order_help", "Als er nog geen passende order in de planning staat, stuur je een bericht voor een nieuw ordernummer. Dit product blijft geparkeerd totdat het nieuwe order bestaat en je de aanpassing kunt uitvoeren.")}
-    </p>
-    <div>
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-        Reden (Verplicht)
-      </label>
-      <textarea
-        value={adjustReason}
-        onChange={(e) => onChangeAdjustReason(e.target.value)}
-        rows={3}
-        maxLength={300}
-        placeholder="Waarom is een nieuw ordernummer nodig?"
-        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-amber-400 resize-none"
-      />
-    </div>
-    <div>
-      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block ml-1">
-        Opmerking
-      </label>
-      <textarea
-        value={adjustRequestNote}
-        onChange={(e) => onChangeAdjustRequestNote(e.target.value)}
-        rows={2}
-        maxLength={500}
-        placeholder={t("mazak.adjust_request_note", "Extra toelichting voor planner/teamleader (optioneel)")}
-        className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-amber-400 resize-none"
-      />
-    </div>
-  </div>
-);
-
-const extractQueuedJobId = (value: unknown): string => {
-  if (typeof value === "string") return value.trim();
-  if (!value || typeof value !== "object") return "";
-
-  const row = value as Record<string, unknown>;
-  const direct = String(row.jobId || row.id || "").trim();
-  if (direct) return direct;
-
-  const nested = row.data as Record<string, unknown> | undefined;
-  return String(nested?.jobId || nested?.id || "").trim();
-};
-
-const applyBatchCutMode = (zpl: string, shouldCut: boolean, quantity: number = 1): string => {
-  // Gebruik ALTIJD ^MMT (Tear-off mode) om te voorkomen dat de printer automatisch knipt na elk label (^XZ).
-  // We sturen de knip-opdracht handmatig aan het einde van de batch met ~JK (Delayed Cut).
-  const cutMedia = "^MMT";
-  // Gebruik ^PQ altijd met N (no pause), omdat we geen pauzes willen tussen labels.
-  const cutPq = `^PQ${quantity},0,0,N`;
-  let modified = String(zpl || "");
-  
-  if (/\^MM[^^\n]*/.test(modified)) {
-    modified = modified.replace(/\^MM[^^\n]*/g, cutMedia);
-  } else {
-    modified = modified.replace(/\^XA/i, `^XA\n${cutMedia}`);
-  }
-
-  if (/\^PQ[^^\n]*/.test(modified)) {
-    modified = modified.replace(/\^PQ[^^\n]*/g, cutPq);
-  } else {
-    modified = modified.replace(/\^XZ/i, `\n${cutPq}\n^XZ`);
-  }
-
-  // Als dit het allerlaatste label in de batch is, trigger de knipschaar met ~JK
-  if (shouldCut) {
-    modified += "\n~JK";
-  }
-
-  return modified;
-};
 
 const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const { t } = useTranslation();
   const { user } = useAdminAuth() as { user: AdminUser | null };
   const { notify } = useNotifications();
-  const [items, setItems] = useState<ProductItem[]>([]);
+  
   const occupancy = useOccupancyListener() as OccupancyEntry[];
-  const [loading, setLoading] = useState(true);
+  const {
+    items, setItems,
+    loading, setLoading,
+    availableLabels,
+    availablePrinters,
+    savedFreeLabelTemplates, setSavedFreeLabelTemplates,
+    planningOrders, setPlanningOrders
+  } = useMazakData(stationId);
+
+  
   const [selectedProduct, setSelectedProduct] = useState<ProductItem | null>(null);
   const [showActionModal, setShowActionModal] = useState(false);
   const [scanInputInbox, setScanInputInbox] = useState("");
@@ -1530,8 +123,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [bulkSeriesProducts, setBulkSeriesProducts] = useState<ProductItem[]>([]);
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [availableLabels, setAvailableLabels] = useState<LabelTemplate[]>([]);
-  const [availablePrinters, setAvailablePrinters] = useState<PrinterConfig[]>([]);
+  
+  
   const [selectedLabelId, setSelectedLabelId] = useState("");
   const [printing, setPrinting] = useState(false);
   const [freeLabelText, setFreeLabelText] = useState("");
@@ -1539,10 +132,10 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const [freeLabelAlign, setFreeLabelAlign] = useState<"left" | "center" | "right">("left");
   const [freeLabelFontSize, setFreeLabelFontSize] = useState<number>(12);
   const [freeLabelTemplateName, setFreeLabelTemplateName] = useState("");
-  const [savedFreeLabelTemplates, setSavedFreeLabelTemplates] = useState<SavedFreeLabelTemplate[]>([]);
+  
   const [selectedFreeTemplateId, setSelectedFreeTemplateId] = useState("");
   const [savingFreeTemplate, setSavingFreeTemplate] = useState(false);
-  const [planningOrders, setPlanningOrders] = useState<PlanningOrder[]>([]);
+  
   const [selectedPlanningOrder, setSelectedPlanningOrder] = useState<PlanningOrder | null>(null);
   const [planningSearch, setPlanningSearch] = useState("");
   const [adjustSearch, setAdjustSearch] = useState("");
@@ -1608,6 +201,21 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     }
   }, [activeTab]);
 
+  
+  const actions = useMazakActions({
+    user, notify, stationId, items, setItems, selectedProduct, setSelectedProduct,
+    scanInputInbox, setScanInputInbox, scanInputProcess, setScanInputProcess,
+    scanInputAdjust, setScanInputAdjust, activeScanInput, setActiveScanInput,
+    activeTab, setActiveTab, setShowActionModal, setShowPrintModal,
+    setShowAdjustOrderModal, setShowRequestNewOrderModal, setShowLargeSequenceModal,
+    setShowFreeLabelModal, selectedAdjustTargetOrder, adjustRequestNote, setAdjustSubmitting,
+    setAdjustReason, setAdjustOrderSearch, setSelectedAdjustTargetOrder, setAdjustRequestNote,
+    freeLabelTemplateName, freeLabelQuantity, freeLabelAlign, freeLabelFontSize, freeLabelText,
+    setSavingFreeTemplate, setFreeLabelTemplateName, setFreeLabelText, selectedLabelId,
+    availableLabels, availablePrinters, setPrinting, t: t as unknown as TranslateFn
+  });
+  const { handleItemClick, handleCloseModal, handleOpenActionModal, handleOpenAdjustOrderFromSelectedProduct, handleOpenRequestNewOrderFromSelectedProduct, handleReprintAdjustedOrderLabel, handlePrintLabels, handlePrintEmptyLabel, handlePrintLargeSequence, handlePrintFreeLabels, handleSaveFreeLabelTemplate, handleDeleteFreeLabelTemplate, handleManualPrintForward, handlePostProcessingFinish, handleSubmitOrderReassign, handleRequestNewOrderFromPlanner, handleScan, handleSelectTab } = actions;
+
   const isShiftActive = useCallback((shiftLabel: unknown) => {
     const now = new Date();
     const currentTime = now.getHours() * 60 + now.getMinutes();
@@ -1638,7 +246,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       .filter((occ: OccupancyEntry) => {
         const occStation = normalizeMachine(occ.station || occ.machineId || "");
         if (occStation !== currentStation) return false;
-        const dateMillis = toMillisFromMixed(occ.date);
+        const dateMillis = helpers.toMillisFromMixed(occ.date);
         if (!dateMillis) return false;
         const occDate = new Date(dateMillis);
         occDate.setHours(0, 0, 0, 0);
@@ -1762,7 +370,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
           const name = String(row.name || "").trim();
           const text = String(row.text || "");
           const quantity = Math.max(1, Math.min(50, Number.parseInt(String(row.quantity || "1"), 10) || 1));
-          const fontSize = clampFreeLabelFontSize(row.fontSize);
+          const fontSize = helpers.clampFreeLabelFontSize(row.fontSize);
           const updatedAt = Number.parseInt(String(row.updatedAt || "0"), 10) || Date.now();
           if (!id || !name) return null;
           return { id, name, text, align, quantity, fontSize, updatedAt } as SavedFreeLabelTemplate;
@@ -1788,7 +396,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       excludeTempOrderLabels: true,
     }) as LabelTemplate[];
 
-    const flangeOnly = productFiltered.filter((template) => hasFlangeTag(template));
+    const flangeOnly = productFiltered.filter((template) => helpers.hasFlangeTag(template));
     const isReprintMode = activeTab === "process";
 
     // Herprint moet altijd mogelijk blijven voor Flange-items,
@@ -1801,7 +409,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
     // Voorbereiding voor fijnmazige extraCode-matching: templates zonder extraCode-beperking blijven zichtbaar.
     return flangeOnly.filter((template) => {
-      const templateCodes = templateExtraCodeTokens(template);
+      const templateCodes = helpers.templateExtraCodeTokens(template);
       if (templateCodes.length === 0) return true;
       if (!productExtraCode) return false;
       return templateCodes.includes(productExtraCode);
@@ -1833,7 +441,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   }, [availableLabels, selectedLabelId]);
 
   const selectedQueuePrinter = useMemo<PrinterConfig | null>(() => {
-    return selectQueuePrinterForStation(availablePrinters, stationId || "", selectedRoutingTags);
+    return helpers.selectQueuePrinterForStation(availablePrinters, stationId || "", selectedRoutingTags);
   }, [availablePrinters, stationId, selectedRoutingTags]);
 
   const mazakPrinterDpi = useMemo<number>(() => {
@@ -1861,12 +469,12 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       excludeTempOrderLabels: true,
     }) as LabelTemplate[];
 
-    const flangeOnly = productFiltered.filter((template) => hasFlangeTag(template));
+    const flangeOnly = productFiltered.filter((template) => helpers.hasFlangeTag(template));
     if (flangeOnly.length === 0) return [];
 
-    const intentTags = getMaterialIntentTags(product);
+    const intentTags = helpers.getMaterialIntentTags(product);
     const rankedFlange = [...flangeOnly].sort((a, b) => {
-      const scoreDiff = scoreTemplateForProductIntent(b, intentTags) - scoreTemplateForProductIntent(a, intentTags);
+      const scoreDiff = helpers.scoreTemplateForProductIntent(b, intentTags) - helpers.scoreTemplateForProductIntent(a, intentTags);
       if (scoreDiff !== 0) return scoreDiff;
       return String(a?.name || a?.id || "").localeCompare(String(b?.name || b?.id || ""));
     });
@@ -1875,7 +483,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
     const linked = resolveLinkedTemplateChain(availableLabels, String(preferredRoot?.id || ""), { maxDepth: 4 }) as LabelTemplate[];
     const allowedIds = new Set(flangeOnly.map((template) => String(template.id || "")));
-    const linkedFlange = linked.filter((template) => hasFlangeTag(template) && allowedIds.has(String(template.id || "")));
+    const linkedFlange = linked.filter((template) => helpers.hasFlangeTag(template) && allowedIds.has(String(template.id || "")));
     if (linkedFlange.length > 0) return linkedFlange;
 
     return [preferredRoot];
@@ -1922,8 +530,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
   const freeLabelTemplate = useMemo<LabelTemplate>(() => {
     return {
-      ...FREE_TEXT_LABEL_TEMPLATE,
-      elements: (FREE_TEXT_LABEL_TEMPLATE.elements || []).map((element: unknown) => {
+      ...helpers.FREE_TEXT_LABEL_TEMPLATE,
+      elements: (helpers.FREE_TEXT_LABEL_TEMPLATE.elements || []).map((element: unknown) => {
         const candidate = element as Record<string, unknown> | null;
         if (!candidate || candidate.type !== "text") return element;
         return {
@@ -1980,8 +588,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
           );
         })
         .sort((a, b) => {
-          const timeA = toMillisFromMixed(a.updatedAt || a.createdAt || 0);
-          const timeB = toMillisFromMixed(b.updatedAt || b.createdAt || 0);
+          const timeA = helpers.toMillisFromMixed(a.updatedAt || a.createdAt || 0);
+          const timeB = helpers.toMillisFromMixed(b.updatedAt || b.createdAt || 0);
           return timeB - timeA;
         });
 
@@ -2026,8 +634,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     });
 
     return Array.from(deduped.values()).sort((a, b) => {
-      const timeA = toMillisFromMixed(a.updatedAt || a.createdAt || 0);
-      const timeB = toMillisFromMixed(b.updatedAt || b.createdAt || 0);
+      const timeA = helpers.toMillisFromMixed(a.updatedAt || a.createdAt || 0);
+      const timeB = helpers.toMillisFromMixed(b.updatedAt || b.createdAt || 0);
       return timeB - timeA;
     });
   }, [inboxItems, processItems]);
@@ -2051,8 +659,8 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
   const adjustTargetOrders = useMemo(() => {
     const sourceOrder = String(selectedAdjustProduct?.orderId || "").trim().toUpperCase();
-    const sourceFamily = getOrderIdFamily(sourceOrder);
-    const sourceFlangeSize = getFlangeSizeToken([
+    const sourceFamily = helpers.getOrderIdFamily(sourceOrder);
+    const sourceFlangeSize = helpers.getFlangeSizeToken([
       selectedAdjustProduct?.item,
       selectedAdjustProduct?.itemCode,
       (selectedAdjustProduct as Record<string, unknown>)?.itemDescription,
@@ -2065,7 +673,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       const orderId = String(order.orderId || "").trim().toUpperCase();
       if (!orderId || orderId === sourceOrder) return false;
 
-      const orderFlangeSize = getFlangeSizeToken([
+      const orderFlangeSize = helpers.getFlangeSizeToken([
         order.item,
         order.itemCode,
         (order as Record<string, unknown>)?.itemDescription,
@@ -2075,7 +683,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
       if (sourceFlangeSize) {
         if (!orderFlangeSize || orderFlangeSize !== sourceFlangeSize) return false;
-      } else if (sourceFamily && getOrderIdFamily(orderId) !== sourceFamily) {
+      } else if (sourceFamily && helpers.getOrderIdFamily(orderId) !== sourceFamily) {
         // Fallback voor records zonder duidelijke FL-maat.
         return false;
       }
@@ -2097,12 +705,12 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
         const weekA = Number(a.week || a.weekNumber || 0);
         const weekB = Number(b.week || b.weekNumber || 0);
         if (weekA !== weekB) return weekA - weekB;
-        return toMillisFromMixed(b.createdAt || 0) - toMillisFromMixed(a.createdAt || 0);
+        return helpers.toMillisFromMixed(b.createdAt || 0) - helpers.toMillisFromMixed(a.createdAt || 0);
       })
       .slice(0, 30);
   }, [planningOrders, selectedAdjustProduct, adjustOrderSearch]);
 
-  const selectedAdjustFlangeSize = getFlangeSizeToken([
+  const selectedAdjustFlangeSize = helpers.getFlangeSizeToken([
     selectedAdjustProduct?.item,
     selectedAdjustProduct?.itemCode,
     (selectedAdjustProduct as Record<string, unknown>)?.itemDescription,
@@ -2110,12 +718,12 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     selectedAdjustProduct?.productId,
   ].join(" "));
 
-  const selectedAdjustOrderFamily = getOrderIdFamily(selectedAdjustProduct?.orderId || "");
+  const selectedAdjustOrderFamily = helpers.getOrderIdFamily(selectedAdjustProduct?.orderId || "");
   const isBulkInboxMode = activeTab === "inbox" && bulkSeriesProducts.length > 1;
   const selectedTemplateChain = useMemo<LabelTemplate[]>(() => {
     if (!selectedLabelId) return [];
     const chain = resolveLinkedTemplateChain(availableLabels, selectedLabelId, { maxDepth: 4 }) as LabelTemplate[];
-    return chain.filter((template) => hasFlangeTag(template));
+    return chain.filter((template) => helpers.hasFlangeTag(template));
   }, [availableLabels, selectedLabelId]);
   const effectiveTemplateChain = selectedTemplateChain.length > 0
     ? selectedTemplateChain
@@ -2123,7 +731,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
   const labelsPerItem = Math.max(1, effectiveTemplateChain.length);
   const effectiveItemsToPrint = isBulkInboxMode ? bulkSeriesProducts : (selectedProduct ? [selectedProduct] : []);
   const totalLabelCount = effectiveItemsToPrint.reduce((acc, item) => {
-    const diameter = getItemNominalDiameter(item);
+    const diameter = helpers.getItemNominalDiameter(item);
     const copies = (diameter > 450 && diameter <= 700) ? 2 : 1;
     return acc + (labelsPerItem * copies);
   }, 0);
@@ -2215,7 +823,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       const weekB = Number(b.week || b.weekNumber || 0);
       if (weekA !== weekB) return weekA - weekB;
 
-      return toMillisFromMixed(b.createdAt || 0) - toMillisFromMixed(a.createdAt || 0);
+      return helpers.toMillisFromMixed(b.createdAt || 0) - helpers.toMillisFromMixed(a.createdAt || 0);
     });
 
     return result;
@@ -2261,7 +869,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
     if (!selectedPlanningOrder) return "-";
     const record = selectedPlanningOrder as Record<string, unknown>;
     const rawDate = record.plannedDeliveryDate || record.deliveryDate || record.plannedDate || null;
-    const dateMillis = toMillisFromMixed(rawDate);
+    const dateMillis = helpers.toMillisFromMixed(rawDate);
     if (dateMillis > 0) {
       const deliveryDate = new Date(dateMillis);
       const week = getISOWeek(deliveryDate);
@@ -2288,112 +896,11 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       .sort((a, b) => String(a?.lotNumber || a?.id || "").localeCompare(String(b?.lotNumber || b?.id || "")));
   }, [items, selectedPlanningOrder]);
 
-  const handleItemClick = (item: ProductItem) => {
-    let sameSeries: ProductItem[] = [];
-
-    if (activeTab === "inbox" && item.seriesGroupId) {
-      sameSeries = inboxItems.filter(
-        (seriesItem) =>
-          seriesItem.seriesGroupId === item.seriesGroupId && isSeriesEligibleItem(seriesItem)
-      );
-    }
-
-    // Fallback voor legacy records zonder seriesGroupId: groepeer op lot-prefix + order/item.
-    if (activeTab === "inbox" && sameSeries.length <= 1) {
-      const lotPrefix = getLotSeriesPrefix(item?.lotNumber);
-      const orderKey = String(item?.orderId || "").trim().toUpperCase();
-      const itemCodeKey = String(item?.itemCode || "").trim().toUpperCase();
-
-      if (lotPrefix) {
-        sameSeries = inboxItems.filter((seriesItem: ProductItem) => {
-          if (!isSeriesEligibleItem(seriesItem)) return false;
-
-          const candidatePrefix = getLotSeriesPrefix(seriesItem?.lotNumber);
-          if (!candidatePrefix || candidatePrefix !== lotPrefix) return false;
-
-          const candidateOrder = String(seriesItem?.orderId || "").trim().toUpperCase();
-          if (orderKey && candidateOrder && candidateOrder !== orderKey) return false;
-
-          const candidateItemCode = String(seriesItem?.itemCode || "").trim().toUpperCase();
-          if (itemCodeKey && candidateItemCode && candidateItemCode !== itemCodeKey) return false;
-
-          return true;
-        });
-      }
-    }
-
-    if (activeTab === "inbox" && sameSeries.length > 1) {
-      const lotPrefix = getLotSeriesPrefix(item?.lotNumber);
-      const orderKey = String(item?.orderId || "").trim().toUpperCase();
-      const itemCodeKey = String(item?.itemCode || "").trim().toUpperCase();
-      const seedSequences = sameSeries
-        .map((seriesItem) => getLotSeriesSequence(seriesItem?.lotNumber))
-        .filter((value): value is number => Number.isFinite(value));
-
-      if (lotPrefix && seedSequences.length > 0) {
-        const minSeq = Math.min(...seedSequences);
-        const maxSeq = Math.max(...seedSequences);
-
-        const expandedSeries = items.filter((candidate) => {
-          if (!isSeriesEligibleItem(candidate)) return false;
-          const candidatePrefix = getLotSeriesPrefix(candidate?.lotNumber);
-          if (!candidatePrefix || candidatePrefix !== lotPrefix) return false;
-
-          const candidateOrder = String(candidate?.orderId || "").trim().toUpperCase();
-          if (orderKey && candidateOrder && candidateOrder !== orderKey) return false;
-
-          const candidateItemCode = String(candidate?.itemCode || "").trim().toUpperCase();
-          if (itemCodeKey && candidateItemCode && candidateItemCode !== itemCodeKey) return false;
-
-          const candidateSeq = getLotSeriesSequence(candidate?.lotNumber);
-          if (typeof candidateSeq !== "number" || !Number.isFinite(candidateSeq)) return false;
-
-          return candidateSeq >= minSeq && candidateSeq <= maxSeq;
-        });
-
-        sameSeries = expandedSeries.sort((a, b) => {
-          const aSeq = getLotSeriesSequence(a?.lotNumber) || 0;
-          const bSeq = getLotSeriesSequence(b?.lotNumber) || 0;
-          return aSeq - bSeq;
-        });
-      }
-    }
-
-    setBulkSeriesProducts(sameSeries.length > 1 ? sameSeries : []);
-    setSelectedProduct(item);
-  };
-
-  const handleCloseModal = () => {
-    setSelectedProduct(null);
-    setBulkSeriesProducts([]);
-    setShowActionModal(false);
-  };
-
-  const handleOpenActionModal = () => {
-    if (!selectedProduct) return;
-    setShowActionModal(true);
-  };
-
-  const handleOpenAdjustOrderFromSelectedProduct = () => {
-    if (!selectedProduct) return;
-    setSelectedAdjustProduct(selectedProduct);
-    setAdjustOrderSearch("");
-    setSelectedAdjustTargetOrder(null);
-    setShowAdjustOrderModal(true);
-  };
-
-  const handleOpenRequestNewOrderFromSelectedProduct = () => {
-    if (!selectedProduct) return;
-    setSelectedAdjustProduct(selectedProduct);
-    setAdjustRequestNote("");
-    setShowRequestNewOrderModal(true);
-  };
-
   const resolveQueuePrinterForPrint = async (): Promise<PrinterConfig> => {
     if (selectedQueuePrinter?.id) return selectedQueuePrinter;
 
     if (availablePrinters.length > 0) {
-      const fromState = selectQueuePrinterForStation(availablePrinters, stationId || "", selectedRoutingTags);
+      const fromState = helpers.selectQueuePrinterForStation(availablePrinters, stationId || "", selectedRoutingTags);
       if (fromState?.id) return fromState;
     }
 
@@ -2404,827 +911,11 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
 
     if (fetchedPrinters.length > 0) {
       setAvailablePrinters(fetchedPrinters);
-      const fromFetch = selectQueuePrinterForStation(fetchedPrinters, stationId || "", selectedRoutingTags);
+      const fromFetch = helpers.selectQueuePrinterForStation(fetchedPrinters, stationId || "", selectedRoutingTags);
       if (fromFetch?.id) return fromFetch;
     }
 
     throw new Error("Geen geldige Mazak-printer geconfigureerd voor de queue.");
-  };
-
-  const handleReprintAdjustedOrderLabel = async (product: ProductItem, previousOrderId: string, newOrderId: string): Promise<string> => {
-    const queuePrinter = await resolveQueuePrinterForPrint();
-    const queuePrinterId = String(queuePrinter?.id || "").trim();
-    const queueStationId = normalizeMachine(stationId || "MAZAK") || "MAZAK";
-    if (!queuePrinterId) {
-      throw new Error("Geen geldige Mazak-printer geconfigureerd voor de queue.");
-    }
-
-    const templatesToPrint = resolvePreferredFlangeTemplatesForProduct(product);
-    if (templatesToPrint.length === 0) {
-      throw new Error("Geen flens-labeltemplate beschikbaar voor herprint na orderwijziging.");
-    }
-
-    const processedData = processLabelData(product);
-    const diameter = getItemNominalDiameter(product);
-    const copies = (diameter > 450 && diameter <= 700) ? 2 : 1;
-    const zplChunks: string[] = [];
-
-    for (let idx = 0; idx < templatesToPrint.length; idx++) {
-      const templateToUse = templatesToPrint[idx];
-      const zplCode = await renderLabelToBitmapZpl({
-        template: templateToUse,
-        data: processedData,
-        printerDpi: mazakPrinterDpi,
-        darkness: 15,
-        printSpeed: 3,
-        widthMm: Number(templateToUse?.width) || 90,
-        heightMm: Number(templateToUse?.height) || 40,
-      });
-
-      if (!String(zplCode || "").trim()) {
-        throw new Error(`Lege ZPL gegenereerd voor template ${String(templateToUse?.name || templateToUse?.id || "onbekend")}.`);
-      }
-
-      const isLastInBatch = idx === templatesToPrint.length - 1;
-      zplChunks.push(applyBatchCutMode(zplCode, isLastInBatch, copies));
-    }
-
-    const batchPayload = zplChunks.join("\n");
-    if (!batchPayload) {
-      throw new Error("Geen geldige printpayload voor orderwijziging opgebouwd.");
-    }
-
-    const queuedJobId = await queuePrintJob(
-      queuePrinterId,
-      batchPayload,
-      {
-        description: `Mazak Herprint na orderwijziging ${previousOrderId} -> ${newOrderId}`,
-        templateId: String(templatesToPrint[0]?.id || ""),
-        templateName: templatesToPrint.length > 1 ? "Mazak Label Batch" : (templatesToPrint[0]?.name || "Mazak Label"),
-        machineId: queueStationId,
-        stationId: queueStationId,
-        targetStation: queueStationId,
-        targetPrinterName: queuePrinter?.name || queueStationId,
-        orderId: newOrderId,
-        previousOrderId,
-        lotNumber: String(product?.lotNumber || product?.id || ""),
-        lotNumbers: [String(product?.lotNumber || product?.id || "")].filter(Boolean),
-        lotCount: 1,
-        labelCount: templatesToPrint.length * copies,
-        quantity: 1,
-        isReprint: true,
-        linkedSequenceTotal: templatesToPrint.length,
-        linkedRootTemplateId: String(templatesToPrint[0]?.id || ""),
-        cutMode: "last-only",
-        queuedAsBatch: true,
-        reason: "order-reassign",
-      }
-    );
-
-    await markMazakLabelsPrinted({
-      productIds: [String(product.id || product.lotNumber || "")].filter(Boolean),
-      stationId,
-      isReprint: true,
-      source: "MazakView:adjust-order-reprint",
-      actorLabel: user?.email || "Mazak Operator",
-    });
-
-    const normalizedJobId = extractQueuedJobId(queuedJobId);
-    return normalizedJobId;
-  };
-
-  const handlePrintLabels = async () => {
-    if (!selectedProduct || !selectedLabelId) return;
-
-    setPrinting(true);
-    
-    try {
-      const isReprint = activeTab === "process";
-      const itemsToPrint = isBulkInboxMode ? bulkSeriesProducts : [selectedProduct];
-      const templatesToPrint = effectiveTemplateChain;
-      const queuePrinter = await resolveQueuePrinterForPrint();
-      const queuePrinterId = String(queuePrinter?.id || "").trim();
-      const queueStationId = normalizeMachine(stationId || "MAZAK") || "MAZAK";
-      const queuedJobIds: string[] = [];
-
-      if (!queuePrinterId) {
-        throw new Error("Geen geldige Mazak-printer geconfigureerd voor de queue.");
-      }
-
-      if (templatesToPrint.length === 0) {
-        throw new Error("Geen geldig template geselecteerd.");
-      }
-
-      const zplChunks: string[] = [];
-      const lotNumbersForBatch: string[] = [];
-
-      for (let itemIdx = 0; itemIdx < itemsToPrint.length; itemIdx++) {
-        const item = itemsToPrint[itemIdx];
-        const processedData = processLabelData(item);
-        lotNumbersForBatch.push(String(item?.lotNumber || "").trim());
-
-        const diameter = getItemNominalDiameter(item);
-        const copies = (diameter > 450 && diameter <= 700) ? 2 : 1;
-
-        const itemZpls: Array<{ zpl: string; qty: number }> = [];
-
-        for (let idx = 0; idx < templatesToPrint.length; idx++) {
-          const templateToUse = templatesToPrint[idx];
-          const zplCode = await renderLabelToBitmapZpl({
-            template: templateToUse,
-            data: processedData,
-            printerDpi: mazakPrinterDpi,
-            darkness: 15,
-            printSpeed: 3,
-            widthMm: Number(templateToUse?.width) || 90,
-            heightMm: Number(templateToUse?.height) || 40,
-          });
-
-          if (!String(zplCode || "").trim()) {
-            throw new Error(`Lege ZPL gegenereerd voor template ${String(templateToUse?.name || templateToUse?.id || "onbekend")}.`);
-          }
-
-          itemZpls.push({ zpl: zplCode, qty: copies });
-        }
-        
-        // Pas de knip (cut) toe voor de hele batch: knip pas na het allerlaatste label van het allerlaatste product
-        for (let i = 0; i < itemZpls.length; i++) {
-          const isLastInBatch = itemIdx === itemsToPrint.length - 1 && i === itemZpls.length - 1;
-          zplChunks.push(applyBatchCutMode(itemZpls[i].zpl, isLastInBatch, itemZpls[i].qty));
-        }
-      }
-
-      const batchPayload = zplChunks.join("\n");
-      if (!batchPayload) {
-        throw new Error("Geen geldige batchpayload voor Mazak print opgebouwd.");
-      }
-
-      const queuedJobId = await queuePrintJob(
-        queuePrinterId,
-        batchPayload,
-        {
-          description: `${isReprint ? "Mazak Herprint" : "Mazak Print"} batch ${String(selectedProduct?.orderId || "-")} (${itemsToPrint.length} lot${itemsToPrint.length === 1 ? "" : "s"})`,
-          templateId: String(selectedLabelId),
-          templateName: templatesToPrint.length > 1 ? "Mazak Label Batch" : (templatesToPrint[0]?.name || "Mazak Label"),
-          machineId: queueStationId,
-          stationId: queueStationId,
-          targetStation: queueStationId,
-          targetPrinterName: queuePrinter?.name || queueStationId,
-          orderId: selectedProduct?.orderId,
-          lotNumber: lotNumbersForBatch[0] || selectedProduct?.lotNumber,
-          lotNumbers: lotNumbersForBatch.filter(Boolean),
-          lotCount: itemsToPrint.length,
-          labelCount: totalLabelCount,
-          quantity: 1, // De ZPL payload bevat al het exacte aantal labels, we sturen de hele bundel 1x door
-          isReprint,
-          linkedSequenceTotal: templatesToPrint.length,
-          linkedRootTemplateId: String(selectedLabelId || ""),
-          cutMode: "last-only",
-          queuedAsBatch: true,
-        }
-      );
-
-      const normalizedJobId = extractQueuedJobId(queuedJobId);
-      if (!normalizedJobId) {
-        throw new Error("Queue response bevat geen geldig jobId.");
-      }
-
-      const rootJobRef = doc(db, getPathString(PATHS.PRINT_QUEUE), normalizedJobId);
-      const rootJobSnap = await getDoc(rootJobRef);
-      if (!rootJobSnap.exists()) {
-        const scopedSnap = await getDocs(
-          query(
-            collectionGroup(db, "items"),
-            where("id", "==", normalizedJobId),
-            where("_scopeType", "==", "print_queue"),
-            limit(1)
-          )
-        );
-
-        if (scopedSnap.empty) {
-          throw new Error(`Queue job niet gevonden na aanmaak (jobId: ${normalizedJobId}).`);
-        }
-      }
-      queuedJobIds.push(normalizedJobId);
-
-      await markMazakLabelsPrinted({
-        productIds: itemsToPrint.map((item) => item.id || item.lotNumber).filter(Boolean),
-        stationId,
-        isReprint,
-        source: "MazakView",
-        actorLabel: user?.email || "Mazak Operator",
-      });
-
-      await logActivity(
-        user?.uid || "system",
-        isReprint ? "REPRINT_LABELS" : "PRINT_LABELS",
-        `Mazak: ${totalLabelCount} label(s) naar queue gestuurd voor ${selectedProduct.orderId} (Herprint: ${isReprint})`
-      );
-
-      setShowPrintModal(false);
-      if (!isReprint) {
-        setSelectedProduct(null);
-        setBulkSeriesProducts([]);
-        setActiveTab("process"); // Spring direct naar gereedmelden
-      }
-      notify(
-        `${t(
-          "mazak.labels_queued_success",
-          "{{count}} label(s) succesvol naar de print wachtrij verstuurd!",
-          { count: totalLabelCount }
-        )}${queuedJobIds[0] ? ` (job: ${queuedJobIds[0]})` : ""}`
-      );
-    } catch (err) {
-      console.error("Fout bij printen:", err);
-      const message = err instanceof Error ? err.message : String(err || "Onbekende fout");
-      notify(`${t("mazak.print_error", "Er is een fout opgetreden bij het printen.")}: ${message}`);
-    } finally {
-      setPrinting(false);
-    }
-  };
-
-  const handlePrintEmptyLabel = async () => {
-    setPrinting(true);
-    try {
-      const queuePrinter = await resolveQueuePrinterForPrint();
-      const queuePrinterId = String(queuePrinter?.id || "").trim();
-      const queueStationId = normalizeMachine(stationId || "MAZAK") || "MAZAK";
-      if (!queuePrinterId) {
-        throw new Error("Geen geldige Mazak-printer geconfigureerd voor de queue.");
-      }
-
-      await queuePrintJob(
-        queuePrinterId,
-        "~JK\\n^XA\\n^XZ",
-        {
-          description: "Leeg Label",
-          machineId: queueStationId,
-          stationId: queueStationId,
-          targetStation: queueStationId,
-          targetPrinterName: queuePrinter?.name || queueStationId,
-          queuedAsBatch: true
-        }
-      );
-      notify(t("mazak.empty_label_printed", "Leeg label wordt geprint."));
-    } catch (err: unknown) {
-      console.error(err);
-      notify(err.message || t("mazak.print_failed", "Printen mislukt."));
-    } finally {
-      setPrinting(false);
-    }
-  };
-
-  const handlePrintLargeSequence = async (station: string, week: string, startLot: string, quantity: number, incremental: boolean) => {
-    setPrinting(true);
-    try {
-      const queuePrinter = await resolveQueuePrinterForPrint();
-      const queuePrinterId = String(queuePrinter?.id || "").trim();
-      const queueStationId = normalizeMachine(stationId || "MAZAK") || "MAZAK";
-      if (!queuePrinterId) {
-        throw new Error("Geen geldige Mazak-printer geconfigureerd voor de queue.");
-      }
-
-      const template: LabelTemplate = {
-        id: "LARGE-SEQUENCE-100x25",
-        name: "Grote Volgnummers 100x25",
-        width: 100,
-        height: 25,
-        elements: [
-          { type: "qr", x: 2, y: 3, size: 15, content: "{lotNumber}" },
-          { type: "text", x: 19, y: 7, width: 80, height: 18, fontSize: 40, isBold: true, content: "{lotNumber}", maxLines: 1 }
-        ]
-      };
-
-      const zplChunks: string[] = [];
-      let currentSequence = BigInt(startLot);
-      for (let i = 0; i < quantity; i++) {
-        const lotNumberToPrint = incremental ? (currentSequence + BigInt(i)).toString().padStart(15, "0") : startLot;
-        const zplCode = await renderLabelToBitmapZpl({
-          template,
-          data: { lotNumber: lotNumberToPrint },
-          printerDpi: mazakPrinterDpi,
-          darkness: 15,
-          printSpeed: 3,
-          widthMm: 100,
-          heightMm: 25
-        });
-        const isLastInBatch = i === quantity - 1;
-        zplChunks.push(applyBatchCutMode(zplCode, isLastInBatch, 1));
-      }
-
-      const batchPayload = zplChunks.join("\\n");
-      await queuePrintJob(
-        queuePrinterId,
-        batchPayload,
-        {
-          description: `Grote volgnummers (${quantity}x)`,
-          templateId: template.id,
-          templateName: template.name,
-          machineId: queueStationId,
-          stationId: queueStationId,
-          targetStation: queueStationId,
-          targetPrinterName: queuePrinter?.name || queueStationId,
-          labelCount: quantity,
-          quantity: 1,
-          queuedAsBatch: true
-        }
-      );
-
-      notify(t("mazak.large_sequence_printed", "Grote volgnummers succesvol in de wachtrij geplaatst."));
-      setShowLargeSequenceModal(false);
-    } catch (err: unknown) {
-      console.error(err);
-      notify(err.message || t("mazak.print_failed", "Printen mislukt."));
-    } finally {
-      setPrinting(false);
-    }
-  };
-
-  const handlePrintFreeLabels = async (templateName: string, text: string, align: "left"|"center"|"right", vAlign: "top"|"center"|"bottom", fontSize: string, quantity: number) => {
-    const normalizedFreeText = text.trim();
-    const qty = Math.max(1, Math.min(50, Number(quantity) || 1));
-    const normalizedFontSize = clampFreeLabelFontSize(fontSize);
-
-    if (!normalizedFreeText) {
-      notify(t("mazak.free_label_text_required", "Vul eerst vrije tekst in."));
-      return;
-    }
-
-    setPrinting(true);
-    try {
-      const queuePrinter = await resolveQueuePrinterForPrint();
-      const queuePrinterId = String(queuePrinter?.id || "").trim();
-      const queueStationId = normalizeMachine(stationId || "MAZAK") || "MAZAK";
-      if (!queuePrinterId) {
-        throw new Error("Geen geldige Mazak-printer geconfigureerd voor de queue.");
-      }
-
-      const labelTemplateOverride = {
-        ...FREE_TEXT_LABEL_TEMPLATE,
-        elements: FREE_TEXT_LABEL_TEMPLATE.elements?.map((el: LabelElement) => {
-          if (el.type === 'text') {
-            return {
-              ...el,
-              fontSize: normalizedFontSize,
-              align: align,
-              vAlign: vAlign,
-            };
-          }
-          return el;
-        })
-      };
-
-      const zplCode = await renderLabelToBitmapZpl({
-        template: labelTemplateOverride,
-        data: { text: normalizedFreeText },
-        printerDpi: mazakPrinterDpi,
-        darkness: 15,
-        printSpeed: 3,
-        widthMm: 100,
-        heightMm: 25,
-      });
-
-      await queuePrintJob(
-        queuePrinterId,
-        applyBatchCutMode(zplCode, true, qty),
-        {
-          description: `Vrij label (${qty}x)`,
-          templateId: FREE_TEXT_LABEL_TEMPLATE.id,
-          templateName: FREE_TEXT_LABEL_TEMPLATE.name,
-          machineId: queueStationId,
-          stationId: queueStationId,
-          targetStation: queueStationId,
-          targetPrinterName: queuePrinter?.name || queueStationId,
-          labelCount: qty,
-          quantity: 1,
-          queuedAsBatch: true
-        }
-      );
-      notify(t("mazak.free_labels_queued", "{{count}} vrije labels in wachtrij geplaatst.", { count: qty }));
-      setShowFreeLabelModal(false);
-    } catch (err) {
-      console.error("Fout bij printen vrije labels:", err);
-      const message = err instanceof Error ? err.message : String(err || "Onbekende fout");
-      notify(`${t("mazak.print_error", "Er is een fout opgetreden bij het printen.")}: ${message}`);
-    } finally {
-      setPrinting(false);
-    }
-  };
-
-  const handleSaveFreeLabelTemplate = async (templateName: string, text: string, align: "left"|"center"|"right", vAlign: "top"|"center"|"bottom", fontSize: string, quantity: number) => {
-    const normalizedName = templateName.trim();
-    if (!normalizedName) return;
-    
-    setSavingFreeTemplate(true);
-    try {
-      const docRef = doc(db, getPathString(PATHS.GENERAL_SETTINGS));
-      const newTemplate = {
-        id: crypto.randomUUID(),
-        name: normalizedName,
-        text,
-        align,
-        vAlign,
-        fontSize: String(fontSize),
-        quantity,
-        updatedAt: Date.now()
-      };
-      
-      // Update or add
-      const existing = savedFreeLabelTemplates.filter(t => t.name !== normalizedName);
-      const updatedList = [newTemplate, ...existing].slice(0, 50);
-      
-      await updateDoc(docRef, {
-        mazakFreeLabelTemplates: updatedList
-      });
-    } catch (err: unknown) {
-      console.error("Fout bij opslaan van template:", err);
-      throw err;
-    } finally {
-      setSavingFreeTemplate(false);
-    }
-  };
-
-  const handleDeleteFreeLabelTemplate = async (templateId: string) => {
-    try {
-      const docRef = doc(db, getPathString(PATHS.GENERAL_SETTINGS));
-      const updatedList = savedFreeLabelTemplates.filter(t => t.id !== templateId);
-      await updateDoc(docRef, {
-        mazakFreeLabelTemplates: updatedList
-      });
-      notify(t("mazak.template_deleted_success", "Template verwijderd."));
-    } catch (err: unknown) {
-      console.error(err);
-      notify(t("mazak.template_deleted_error", "Fout bij verwijderen van template."));
-    }
-  };
-
-  const handleManualPrintForward = async () => {
-    if (!selectedProduct) return;
-
-    const itemsToForward = isBulkInboxMode ? bulkSeriesProducts : [selectedProduct];
-    if (!itemsToForward.length) return;
-
-    setPrinting(true);
-    try {
-      await markMazakLabelsPrinted({
-        productIds: itemsToForward.map((item) => item.id || item.lotNumber).filter(Boolean),
-        stationId,
-        isReprint: false,
-        source: "MazakView:manual-forward",
-        actorLabel: user?.email || "Mazak Operator",
-      });
-
-      await logActivity(
-        user?.uid || "system",
-        "MARK_MAZAK_LABELS_MANUAL",
-        `Mazak: ${itemsToForward.length} lot(s) handmatig gelabeld en doorgestuurd voor ${selectedProduct.orderId || "onbekend"}`
-      );
-
-      setSelectedProduct(null);
-      setBulkSeriesProducts([]);
-      setActiveTab("process");
-
-      notify(
-        t(
-          "mazak.manual_labels_forwarded",
-          "{{count}} lot(s) handmatig gelabeld en doorgestuurd naar Gereedmelden.",
-          { count: itemsToForward.length }
-        )
-      );
-    } catch (err) {
-      console.error("Fout bij handmatig labelen/doorgaan:", err);
-      notify(t("mazak.manual_label_forward_error", "Handmatig labelen/doorgaan is mislukt."));
-    } finally {
-      setPrinting(false);
-    }
-  };
-
-  const handlePostProcessingFinish = async (status: string, data: { note?: string; reasons?: string[] }, productOverride: ProductItem | null = null) => {
-    const product = productOverride || selectedProduct;
-    if (!product) return;
-    const productId = product.id || product.lotNumber;
-
-    try {
-      if (status === "completed") {
-        await completeTrackedProduct({
-          productId,
-          finishType: "forward",
-          fromStation: stationId,
-          note: data.note || "",
-          actorLabel: user?.email,
-          source: "MazakView",
-        });
-        setActiveTab("process");
-        notify(t("mazak.process_success", "Lot {{lot}} is succesvol doorgestuurd.", { lot: product.lotNumber || productId }));
-        if (selectedProductRef.current && selectedProductRef.current.id === product.id) {
-          handleCloseModal();
-        }
-        return;
-      }
-
-      if (status === "rejected") {
-        await rejectTrackedProductFinal({
-          productId,
-          reasons: data.reasons || [],
-          note: data.note || "",
-          source: "MazakView",
-          actorLabel: user?.email,
-        });
-        setActiveTab("process");
-        notify(t("mazak.reject_success", "Lot {{lot}} is definitief afgekeurd.", { lot: product.lotNumber || productId }));
-        if (selectedProductRef.current && selectedProductRef.current.id === product.id) {
-          handleCloseModal();
-        }
-        return;
-      }
-
-      await tempRejectTrackedProduct({
-        productId,
-        reasons: data.reasons || [],
-        note: data.note || "",
-        station: stationId,
-        actorLabel: user?.email || "Operator",
-        source: "MazakView",
-      });
-      await logActivity(
-        user?.uid || "system",
-        "QUALITY_TEMP_REJECT",
-        `Mazak afhandeling: lot ${product.lotNumber || product.id}, status temp_reject`
-      );
-
-      setActiveTab("process");
-      notify(t("mazak.temp_reject_success", "Lot {{lot}} is op tijdelijke afkeur gezet.", { lot: product.lotNumber || productId }));
-
-      if (selectedProductRef.current && selectedProductRef.current.id === product.id) {
-        handleCloseModal();
-      }
-    } catch (error) {
-      console.error("Fout bij Mazak afronden:", error);
-      notify(t("mazak.process_error", "Verwerken is mislukt. Probeer opnieuw."));
-    }
-  };
-
-  const handleSubmitOrderReassign = async () => {
-    const product = selectedAdjustProduct;
-    const targetOrder = selectedAdjustTargetOrder;
-    const reason = String(adjustReason || "").trim();
-    if (!product || !targetOrder?.orderId) {
-      notify(t("mazak.adjust_target_order_required", "Selecteer eerst een doelorder."));
-      return;
-    }
-    if (!reason) {
-      notify(t("mazak.adjust_reason_required", "Geef een opmerking/reden op."));
-      return;
-    }
-
-    const productId = String(product.id || product.lotNumber || "").trim();
-    if (!productId) {
-      notify(t("mazak.adjust_product_required", "Selecteer eerst een lot/product."));
-      return;
-    }
-
-    setAdjustSubmitting(true);
-    try {
-      const previousOrderId = String(product.orderId || "").trim();
-      const nextOrderId = String(targetOrder.orderId || "").trim();
-      await reassignTrackedProductOrder({
-        productId,
-        newOrderId: nextOrderId,
-        targetOrderDocId: String(targetOrder.id || targetOrder.orderDocId || "").trim(),
-        targetOrderPath: String(targetOrder.orderDocPath || "").trim(),
-        reason,
-        source: "MazakView:adjust-order",
-        actorLabel: user?.email || "Mazak Operator",
-      });
-
-      await logActivity(
-        user?.uid || "system",
-        "TRACKED_PRODUCT_ORDER_REASSIGN",
-        `Mazak aanpassen: lot ${product.lotNumber || productId} verplaatst van ${product.orderId || "-"} naar ${nextOrderId}`
-      );
-
-      let reprintJobId = "";
-      try {
-        const productForReprint = { 
-          ...product, 
-          item: targetOrder.item || product.item,
-          itemCode: targetOrder.itemCode || product.itemCode,
-          productId: targetOrder.productId || product.productId,
-          extraCode: targetOrder.extraCode || product.extraCode,
-          
-          // Wis verouderde productvelden zodat de label-parser zuiver de nieuwe orderdata pakt
-          description: targetOrder.description || "",
-          itemDescription: targetOrder.itemDescription || "",
-          articleDescription: targetOrder.articleDescription || "",
-          specs: targetOrder.specs || null,
-          pn: targetOrder.pn || null,
-          dn: targetOrder.dn || null,
-          diameter: targetOrder.diameter || null,
-          project: targetOrder.project || "",
-
-          orderId: nextOrderId,
-          orderNumber: nextOrderId,
-          Order: nextOrderId,
-          order: nextOrderId,
-          originalOrderId: nextOrderId,
-          Productieorder: nextOrderId
-        };
-        reprintJobId = await handleReprintAdjustedOrderLabel(productForReprint, previousOrderId || "-", nextOrderId);
-      } catch (reprintErr) {
-        const reprintWarning = reprintErr instanceof Error ? reprintErr.message : String(reprintErr || "Onbekende fout");
-        console.error("Herprint na orderwijziging mislukt:", reprintErr);
-
-        if (previousOrderId && previousOrderId.toUpperCase() !== nextOrderId.toUpperCase()) {
-          try {
-            await reassignTrackedProductOrder({
-              productId,
-              newOrderId: previousOrderId,
-              reason: `Rollback na mislukte label-herprint (${reason})`,
-              source: "MazakView:adjust-order-rollback",
-              actorLabel: user?.email || "Mazak Operator",
-            });
-
-            await logActivity(
-              user?.uid || "system",
-              "TRACKED_PRODUCT_ORDER_REASSIGN_ROLLBACK",
-              `Mazak rollback: lot ${product.lotNumber || productId} teruggezet van ${nextOrderId} naar ${previousOrderId} na mislukte herprint`
-            );
-
-            notify(
-              `${t("mazak.adjust_reassign_error", "Ordernummer wijzigen is mislukt.")} ${t("mazak.adjust_reprint_warning", "Automatische label-herprint is mislukt.")}: ${reprintWarning}. ${t("mazak.adjust_rollback_done", "Wijziging is automatisch teruggedraaid.")}`
-            );
-            return;
-          } catch (rollbackErr) {
-            const rollbackMessage = rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr || "Onbekende fout");
-            console.error("Rollback na mislukte herprint is ook mislukt:", rollbackErr);
-            notify(
-              `${t("mazak.adjust_reassign_success", "Ordernummer gewijzigd: lot {{lot}} is nu gekoppeld aan order {{order}}.", { lot: product.lotNumber || productId, order: nextOrderId })} ${t("mazak.adjust_reprint_warning", "Automatische label-herprint is mislukt.")}: ${reprintWarning}. ${t("mazak.adjust_rollback_failed", "Rollback is mislukt; handmatige correctie nodig.")}: ${rollbackMessage}`
-            );
-            return;
-          }
-        }
-
-        notify(
-          `${t("mazak.adjust_reassign_success", "Ordernummer gewijzigd: lot {{lot}} is nu gekoppeld aan order {{order}}.", { lot: product.lotNumber || productId, order: nextOrderId })} ${t("mazak.adjust_reprint_warning", "Automatische label-herprint is mislukt.")}: ${reprintWarning}`
-        );
-        return;
-      }
-
-      setSelectedAdjustProduct((prev) => (prev ? { ...prev, orderId: nextOrderId } : prev));
-      setSelectedAdjustTargetOrder(null);
-      setAdjustReason("");
-      notify(
-        `${t(
-          "mazak.adjust_reassign_success",
-          "Ordernummer gewijzigd: lot {{lot}} is nu gekoppeld aan order {{order}}.",
-          { lot: product.lotNumber || productId, order: nextOrderId }
-        )}${reprintJobId ? ` (${t("mazak.adjust_reprint_job", "reprint job")}: ${reprintJobId})` : ""}`
-      );
-    } catch (error) {
-      console.error("Fout bij ordernummer wijzigen in Mazak:", error);
-      const message = error instanceof Error ? error.message : String(error || "Onbekende fout");
-      notify(`${t("mazak.adjust_reassign_error", "Ordernummer wijzigen is mislukt.")}: ${message}`);
-    } finally {
-      setAdjustSubmitting(false);
-    }
-  };
-
-  const handleRequestNewOrderFromPlanner = async () => {
-    const product = selectedAdjustProduct;
-    const reason = String(adjustReason || "").trim();
-    const requestNote = String(adjustRequestNote || "").trim();
-
-    if (!product) {
-      notify(t("mazak.adjust_product_required", "Selecteer eerst een lot/product."));
-      return;
-    }
-    if (!reason) {
-      notify(t("mazak.adjust_reason_required", "Geef een opmerking/reden op."));
-      return;
-    }
-
-    const lotNumber = String(product.lotNumber || product.id || "onbekend");
-    const currentOrder = String(product.orderId || "onbekend");
-    const productType = String(product.item || product.itemCode || "onbekend");
-
-    setAdjustSubmitting(true);
-    try {
-      await createProductionMessages({
-        messages: [
-          {
-            from: user?.email || "Mazak Operator",
-            senderId: user?.uid || "system",
-            subject: `Nieuw ordernummer nodig voor lot ${lotNumber}`,
-            content: [
-              "Mazak Aanpassen: product verkeerd geboord en moet omgeboekt worden.",
-              `Lotnummer: ${lotNumber}`,
-              `Huidig ordernummer: ${currentOrder}`,
-              `Type: ${productType}`,
-              `Reden: ${reason}`,
-              requestNote ? `Extra opmerking: ${requestNote}` : null,
-            ].filter(Boolean).join("\n"),
-            title: `Nieuw ordernummer nodig (${lotNumber})`,
-            message: `Lot ${lotNumber} (${productType}) wacht op nieuw ordernummer. Reden: ${reason}`,
-            priority: "high",
-            type: "warning",
-            source: "MazakView",
-            targetRoles: ["teamleader", "planner", "admin"],
-            targetGroup: "TEAMLEADERS_AND_PLANNERS",
-            broadcastToAll: true,
-            relatedLot: lotNumber,
-            metadata: {
-              kind: "mazak_order_reassign_request",
-              lotNumber,
-              currentOrderId: currentOrder,
-              productType,
-              reason,
-              note: requestNote || null,
-              station: stationId,
-            },
-          },
-        ],
-        source: "MazakView",
-        actorLabel: user?.email || "Mazak Operator",
-      });
-
-      await logActivity(
-        user?.uid || "system",
-        "MAZAK_REASSIGN_REQUEST_NEW_ORDER",
-        `Mazak aanpassen: nieuw ordernummer aangevraagd voor lot ${lotNumber} (huidig order ${currentOrder})`
-      );
-
-      setAdjustRequestNote("");
-      notify(
-        t(
-          "mazak.adjust_request_sent",
-          "Verzoek verstuurd naar Teamleader/Planner. Dit product blijft geparkeerd tot een nieuw ordernummer beschikbaar is."
-        )
-      );
-      setShowRequestNewOrderModal(false);
-    } catch (error) {
-      console.error("Fout bij aanvragen nieuw ordernummer:", error);
-      const message = error instanceof Error ? error.message : String(error || "Onbekende fout");
-      notify(`${t("mazak.adjust_request_error", "Versturen van verzoek is mislukt.")}: ${message}`);
-    } finally {
-      setAdjustSubmitting(false);
-    }
-  };
-
-  const handleScan = async (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Enter") return;
-
-    const code = activeScanInput.trim().toUpperCase();
-    if (!code) return;
-
-    if (activeTab === "planning" || activeTab === "free") {
-      setActiveScanInput("");
-      return;
-    }
-
-    if (code === QR_CODE_OK_CONFIRMATION && selectedProduct) {
-      if (activeTab === "inbox") {
-        notify(t("mazak.must_print_before_approve", "Dit item moet eerst geprint worden voordat het goedgekeurd kan worden."));
-        setActiveScanInput("");
-        return;
-      }
-      setActiveScanInput("");
-      await handlePostProcessingFinish("completed", { note: "Goedgekeurd via QR Scan" }, selectedProduct);
-      return;
-    }
-
-    const listToSearch = activeTab === "inbox"
-      ? inboxItems
-      : activeTab === "process"
-        ? processItems
-        : adjustCandidates;
-    const found = listToSearch.find(
-      (item) =>
-        String(item.lotNumber || "").toLowerCase() === code.toLowerCase() ||
-        String(item.orderId || "").toLowerCase() === code.toLowerCase()
-    );
-
-    if (found) {
-      if (activeTab === "adjust") {
-        setSelectedAdjustProduct(found);
-        setAdjustSearch(code);
-      } else {
-        handleItemClick(found);
-      }
-      setActiveScanInput("");
-      if (activeTab === "process") {
-        setTimeout(() => {
-          setShowActionModal(true);
-        }, 0);
-      }
-    } else {
-      notify(t("lossen.item_not_found", "Item {{code}} niet gevonden", { code }));
-      setActiveScanInput("");
-      setSelectedProduct(null);
-    }
-
-    setTimeout(() => {
-      scanInputRef.current?.focus();
-    }, 50);
   };
 
   if (loading) {
@@ -3234,13 +925,6 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
       </div>
     );
   }
-
-  const handleSelectTab = (tab: MazakTab) => {
-    setActiveTab(tab);
-    setSelectedProduct(null);
-    setSelectedPlanningOrder(null);
-    setBulkSeriesProducts([]);
-  };
 
   const currentList = activeTab === "inbox"
     ? inboxItems
@@ -3527,7 +1211,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                     const orderDeliveryLabel = (() => {
                       const record = order as Record<string, unknown>;
                       const rawDate = record.plannedDeliveryDate || record.deliveryDate || record.plannedDate || null;
-                      const dateMillis = toMillisFromMixed(rawDate);
+                      const dateMillis = helpers.toMillisFromMixed(rawDate);
                       if (dateMillis > 0) {
                         const deliveryDate = new Date(dateMillis);
                         const week = getISOWeek(deliveryDate);
@@ -3550,7 +1234,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
                       const record = order as Record<string, unknown>;
                       return record.plannedDeliveryDate || record.deliveryDate || record.plannedDate || null;
                     })();
-                    const orderDeliveryColorClass = getUrgencyColorClass(orderDeliveryRaw);
+                    const orderDeliveryColorClass = helpers.getUrgencyColorClass(orderDeliveryRaw);
                     
                     const showDivider = weekLabel !== lastWeekLabel;
                     if (showDivider) {
@@ -3591,7 +1275,7 @@ const MazakView = ({ stationId = "Mazak", products = [] }: MazakViewProps) => {
               </>
             ) : activeTab === "inbox" ? (
               displayRows.map((item) => {
-              if (isSeriesHeaderRow(item)) {
+              if (helpers.isSeriesHeaderRow(item)) {
                 const isCollapsed = !!collapsedGroups[item.seriesGroupId];
                 return (
                   <div

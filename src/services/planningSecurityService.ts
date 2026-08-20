@@ -668,7 +668,7 @@ export const completeTrackedProduct = createCallableWrapper<CompleteTrackedProdu
     const { productId, finishType, fromStation, note, actorLabel, source } = payload;
     const processed = {
         productId: String(productId || "").trim(),
-        finishType: String(finishType || "").trim(),
+        finishType: String(finishType || "").trim() as "archive" | "forward" | "post_inspection",
         fromStation: String(fromStation || "").trim(),
         note: String(note || "").trim(),
         actorLabel: String(actorLabel || "").trim(),
@@ -738,7 +738,7 @@ export const movePlanningOrder = createCallableWrapper<MovePlanningOrderInput>(
     const { orderDocId, targetType, targetId, currentDepartment, source, actorLabel } = payload;
     const processed = {
         orderDocId: String(orderDocId || "").trim(),
-        targetType: String(targetType || "").trim().toLowerCase(),
+        targetType: String(targetType || "").trim().toLowerCase() as "department" | "station",
         targetId: String(targetId || "").trim(),
         currentDepartment: String(currentDepartment || "").trim(),
         source: String(source || "").trim(),
@@ -860,7 +860,7 @@ export const archivePlanningOrder = createCallableWrapper<ArchivePlanningOrderIn
     const { orderDocId, reason, source, actorLabel } = payload;
     const processed = {
         orderDocId: String(orderDocId || "").trim(),
-        reason: String(reason || "").trim().toLowerCase(),
+        reason: String(reason || "").trim().toLowerCase() as "completed" | "manual" | "rejected" | undefined,
         source: String(source || "").trim(),
         actorLabel: String(actorLabel || "").trim(),
       };
@@ -868,7 +868,7 @@ export const archivePlanningOrder = createCallableWrapper<ArchivePlanningOrderIn
         throw new Error("orderDocId is verplicht.");
       }
     
-      if (!["completed", "manual", "rejected"].includes(processed.reason)) {
+      if (!["completed", "manual", "rejected"].includes(processed.reason as string)) {
         throw new Error('reason moet "completed", "manual" of "rejected" zijn.');
       }
     return processed;
