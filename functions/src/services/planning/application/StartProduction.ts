@@ -1,6 +1,7 @@
 // @ts-nocheck
 
 const { admin, db } = require('../../../config/firebase');
+const IdempotencyRegistry = require('../../domain/IdempotencyRegistry');
 const { BASE, USER_ACCOUNTS_COLLECTION } = require('../../../config/planningConstants');
 const auditService = require('../../auditService');
 const {
@@ -1120,7 +1121,9 @@ const startWorkstationProductionRunService = async ({
   auth,
   userRole,
   dbCtx = null,
+  commandId = null,
 }) => {
+  await IdempotencyRegistry.checkAndLock(commandId, { action: 'startWorkstationProductionRunService' });
   const ctx = dbCtx || resolveDbContext(null);
   const { orderDoc } = await resolvePlanningOrderLocator({ ctx, orderDocId });
   if (!orderDoc) {
@@ -1390,7 +1393,9 @@ const startProductionLotsService = async ({
   isVirtualLot = false,
   virtualReason = '',
   dbCtx = null,
+  commandId = null,
 }) => {
+  await IdempotencyRegistry.checkAndLock(commandId, { action: 'startProductionLotsService' });
   const ctx = dbCtx || resolveDbContext(null);
   const safeOrderDocId = clean(orderDocId);
   const safeOrderDocPath = clean(orderDocPath);

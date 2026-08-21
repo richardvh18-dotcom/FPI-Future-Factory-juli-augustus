@@ -249,7 +249,7 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
      return orderProgressMeta.get(orderId) || null;
    };
  
-  const isInAllowedScope = (product: TeamleaderRecord) => {
+  const isInAllowedScope = (product: any) => {
      if (effectiveAllowedNorms.length === 0) return true;
      const m1 = normalizeMachine(product?.machine || "");
      const m2 = normalizeMachine(product?.originMachine || "");
@@ -277,18 +277,18 @@ import { TeamleaderModalProvider, useTeamleaderModalStore } from "./modals/Teaml
      if (!normalizedOrderId) return true;
  
      const relatedProducts = rawProductsList.filter(
-      (product: TeamleaderRecord) => getOrderIdFromTrackedRecord(product) === normalizedOrderId
+      (product: any) => getOrderIdFromTrackedRecord(product) === normalizedOrderId
      );
  
      if (relatedProducts.length === 0) return true;
  
-    return relatedProducts.some((product: TeamleaderRecord) => {
+    return relatedProducts.some((product: any) => {
        return !isInactiveTrackedProduct(product);
      });
    };
  
-  const isInactiveTrackedProductAny = (product: TeamleaderRecord) => isInactiveTrackedProduct(product) as boolean;
-  const isRejectedProductAny = (product: TeamleaderRecord) => isRejectedProduct(product) as boolean;
+  const isInactiveTrackedProductAny = (product: any) => isInactiveTrackedProduct(product) as boolean;
+  const isRejectedProductAny = (product: any) => isRejectedProduct(product) as boolean;
   const getDeliveredQtyForOrderAny = (order: TeamleaderRecord) => getDeliveredQtyForOrder(order) ?? 0;
   const getInspectionApprovedQtyForOrderAny = (order: TeamleaderRecord) => getInspectionApprovedQtyForOrder(order) ?? 0;
   const getDeliveryInspectionDeltaForOrderAny = (order: TeamleaderRecord) => getDeliveryInspectionDeltaForOrder(order) ?? 0;

@@ -1190,7 +1190,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
     if (!itemToRepair) return;
     try {
       await completeTrackedProductRepair({
-        productId: itemToRepair.id || itemToRepair.lotNumber,
+        productId: String(itemToRepair.id || itemToRepair.lotNumber || ""),
         station: effectiveStationId,
         actions: data.actions || [],
         note: data.notes || "",

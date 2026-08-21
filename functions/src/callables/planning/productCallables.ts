@@ -426,6 +426,7 @@ const toggleTrackedProductPause = withAudit('TOGGLE_TRACKED_PRODUCT_PAUSE', asyn
   }
 
   const productId = clean(data?.productId);
+  const commandId = clean(data?.commandId);
   const note = clampText(data?.note, 600);
   const actorLabel = clampText(data?.actorLabel, 120);
   const source = clampText(data?.source, 80);
@@ -436,6 +437,7 @@ const toggleTrackedProductPause = withAudit('TOGGLE_TRACKED_PRODUCT_PAUSE', asyn
 
   try {
     const result = await toggleTrackedProductPauseService({
+      commandId,
       productId,
       note,
       actorLabel,
@@ -453,6 +455,7 @@ const toggleTrackedProductPause = withAudit('TOGGLE_TRACKED_PRODUCT_PAUSE', asyn
     );
     return result;
   } catch (error) {
+    if (error === 'ALREADY_PROCESSED' || error?.message === 'ALREADY_PROCESSED') return { ok: true, status: 'already_processed', message: 'Command already processed successfully' };
     handleCallableError(error);
   }
 });
@@ -509,6 +512,7 @@ const moveTrackedProductManual = withAudit('MOVE_TRACKED_PRODUCT_MANUAL', async 
   }
 
   const productOrLotId = clean(data?.productOrLotId);
+  const commandId = clean(data?.commandId);
   const newStation = clean(data?.newStation);
   const source = clampText(data?.source, 80);
   const actorLabel = clampText(data?.actorLabel, 120);
@@ -525,6 +529,7 @@ const moveTrackedProductManual = withAudit('MOVE_TRACKED_PRODUCT_MANUAL', async 
 
   try {
     const result = await moveTrackedProductManualService({
+      commandId,
       productOrLotId,
       newStation,
       source,
@@ -543,6 +548,7 @@ const moveTrackedProductManual = withAudit('MOVE_TRACKED_PRODUCT_MANUAL', async 
     );
     return result;
   } catch (error) {
+    if (error === 'ALREADY_PROCESSED' || error?.message === 'ALREADY_PROCESSED') return { ok: true, status: 'already_processed', message: 'Command already processed successfully' };
     handleCallableError(error);
   }
 });
@@ -598,6 +604,7 @@ const completeTrackedProduct = withAudit('COMPLETE_PRODUCT', async (data, contex
   }
 
   const productId = clean(data?.productId);
+  const commandId = clean(data?.commandId);
   const finishType = clean(data?.finishType).toLowerCase();
   const fromStation = clampText(data?.fromStation, 80);
   const note = clampText(data?.note, 600);
@@ -614,6 +621,7 @@ const completeTrackedProduct = withAudit('COMPLETE_PRODUCT', async (data, contex
 
   try {
     const result = await completeTrackedProductService({
+      commandId,
       productId,
       finishType,
       fromStation,
@@ -632,6 +640,7 @@ const completeTrackedProduct = withAudit('COMPLETE_PRODUCT', async (data, contex
     );
     return result;
   } catch (error) {
+    if (error === 'ALREADY_PROCESSED' || error?.message === 'ALREADY_PROCESSED') return { ok: true, status: 'already_processed', message: 'Command already processed successfully' };
     handleCallableError(error);
   }
 });
@@ -647,6 +656,7 @@ const cancelTrackedProduction = withAudit('CANCEL_TRACKED_PRODUCTION', async (da
   }
 
   const productId = clean(data?.productId);
+  const commandId = clean(data?.commandId);
   const selectedStation = clampText(data?.selectedStation, 80);
   const source = clampText(data?.source, 80);
   const actorLabel = clampText(data?.actorLabel, 120);
@@ -657,6 +667,7 @@ const cancelTrackedProduction = withAudit('CANCEL_TRACKED_PRODUCTION', async (da
 
   try {
     const result = await cancelTrackedProductionService({
+      commandId,
       productId,
       selectedStation,
       source,
@@ -674,6 +685,7 @@ const cancelTrackedProduction = withAudit('CANCEL_TRACKED_PRODUCTION', async (da
     );
     return result;
   } catch (error) {
+    if (error === 'ALREADY_PROCESSED' || error?.message === 'ALREADY_PROCESSED') return { ok: true, status: 'already_processed', message: 'Command already processed successfully' };
     handleCallableError(error);
   }
 });
@@ -762,6 +774,7 @@ const startProductionLots = withAudit('START_PRODUCTION_LOTS', async (data, cont
   }
 
   const orderDocId = clean(data?.orderDocId);
+  const commandId = clean(data?.commandId);
   const orderDocPath = clean(data?.orderDocPath);
   const orderSourcePath = clean(data?.orderSourcePath);
   const orderId = clean(data?.orderId);
@@ -790,6 +803,7 @@ const startProductionLots = withAudit('START_PRODUCTION_LOTS', async (data, cont
 
   try {
     const result = await startProductionLotsService({
+      commandId,
       orderDocId,
       orderDocPath,
       orderSourcePath,
@@ -819,6 +833,7 @@ const startProductionLots = withAudit('START_PRODUCTION_LOTS', async (data, cont
     );
     return result;
   } catch (error) {
+    if (error === 'ALREADY_PROCESSED' || error?.message === 'ALREADY_PROCESSED') return { ok: true, status: 'already_processed', message: 'Command already processed successfully' };
     const rawMessage = String(error?.message || '').toLowerCase();
     if (
       rawMessage.includes('document path') ||

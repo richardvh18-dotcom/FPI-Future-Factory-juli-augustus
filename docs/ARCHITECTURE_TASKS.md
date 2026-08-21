@@ -40,13 +40,14 @@
 - [x] `MazakComponents.tsx` extraheren (22 subcomponenten i.p.v. specifieke job/log panels)
 - [x] `MazakView.tsx` reduceren tot orchestrator (~1.475 regels in plaats van 200 om >40 prop-drilling te voorkomen)
 
-### PrintQueueAdminView.tsx (3.301 regels)
-- [ ] Tabs identificeren en naar aparte view-componenten splitsen
-- [ ] Data-logica naar hooks extraheren
+### PrintQueueAdminView.tsx (3.301 regels -> 550 regels)
+- [x] Tabs identificeren en naar aparte view-componenten splitsen
+- [x] Data-logica naar hooks extraheren (usePrintQueueAdmin.tsx)
 
 ### AdminPrinterManager.tsx (2.926 regels)
-- [ ] Hook + subcomponenten patroon toepassen
-- [ ] `useAdminPrinterManager.ts` hook extraheren
+- [x] Statushistorie tab verwijderd en verplaatst naar modal
+- [x] Hook + subcomponenten patroon toepassen
+- [x] `useAdminPrinterManager.ts` hook extraheren
 
 ### ProductionStartModal.tsx (2.782 regels)
 - [ ] Wizard-stappen als aparte subcomponenten maken
@@ -81,14 +82,14 @@
 ## Programma 3 — MES Core Formalisatie · Prioriteit P1
 
 ### 3A — Idempotency Keys ⚡ (Klein, hoge impact — begin hier)
-- [ ] `functions/src/services/planning/domain/IdempotencyRegistry.ts` aanmaken
-- [ ] `src/services/commandService.ts` aanmaken met `generateCommandId()`
-- [ ] `StartProduction.ts` voorzien van idempotency-check
-- [ ] `CompleteProduction.ts` voorzien van idempotency-check
-- [ ] `PauseProduction.ts` voorzien van idempotency-check
-- [ ] `CancelProduction.ts` voorzien van idempotency-check
-- [ ] `MoveProduction.ts` voorzien van idempotency-check
-- [ ] Alle overige kritieke commands voorzien van idempotency-check
+- [x] `functions/src/services/planning/domain/IdempotencyRegistry.ts` aanmaken
+- [x] `src/services/commandService.ts` aanmaken met `generateCommandId()`
+- [x] `StartProduction.ts` voorzien van idempotency-check
+- [x] `CompleteProduction.ts` voorzien van idempotency-check
+- [x] `PauseProduction.ts` voorzien van idempotency-check
+- [x] `CancelProduction.ts` voorzien van idempotency-check
+- [x] `MoveProduction.ts` voorzien van idempotency-check
+- [x] Alle overige kritieke commands voorzien van idempotency-check
 
 ### 3B — Event Store
 - [ ] `functions/src/services/planning/domain/EventStore.ts` aanmaken

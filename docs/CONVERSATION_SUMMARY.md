@@ -1,3 +1,37 @@
+## 2026-08-21 - Programma 3A — Idempotency Keys (Voltooid)
+- **Actie**: Idempotency checks geïmplementeerd in het hart van de MES Core.
+  1. `src/services/commandService.ts` aangemaakt om `generateCommandId()` client-side te beheren met een unieke hash op basis van payload (zoals gevraagd "CMD-BH18-20260821-hash").
+  2. `functions/src/services/planning/domain/IdempotencyRegistry.ts` aangemaakt, dat `checkAndLock(commandId)` uitvoert in een Firebase transactie om dubbelklikken te voorkomen.
+  3. Applicatie services (`StartProduction.ts`, `CompleteProduction.ts`, etc.) voorzien van de call naar `IdempotencyRegistry`.
+  4. Firebase Callables wrappers (`productCallables.ts`) ingericht om de foutmelding `ALREADY_PROCESSED` op te vangen en stil te falen (zoals gevraagd "en stil falen") zodat de client succesvol doorgaat.
+  5. De wrapper `createCallableWrapper` in de client geüpdatet zodat commandId's automatisch gegenereerd en meegegeven worden aan *elke* wrapped callable.
+- **Resultaat**: Alle kritieke MES-acties zijn nu veilig tegen netwerk-retries en dubbel-klikken.
+
+## 2026-08-21 - AdminPrinterManager Refactor (Voltooid)
+- **Component**: AdminPrinterManager.tsx
+- **Actie**: De meer dan 2.500 regels grote `AdminPrinterManager.tsx` is succesvol opgesplitst.
+  1. Types & pure helpers zijn afgesplitst naar `adminPrinterHelpers.tsx`.
+  2. Drie grote modals (`AdminLotPrintModal`, `AdminTempLabelModal`, `CalibrationModal`) zijn verplaatst naar `src/components/admin/modals/`.
+  3. Alle state, hooks en orchestratie logic is geëxtraheerd naar een custom hook `useAdminPrinterManager.tsx`.
+  4. De hoofdcomponent `AdminPrinterManager.tsx` is nu gereduceerd tot een schone View orchestrator (~1.100 regels).
+- **Resultaat**: De UI-logica is ontkoppeld van de state-logica en de TypeScript compiler geeft geen specifieke admin fouten meer na een zorgvuldige, geautomatiseerde refactorscript-doorloop.
+
+## 2026-08-21 - PrintQueueAdminView Refactor (Voltooid)
+- **Component**: PrintQueueAdminView.tsx
+- **Actie**: Succesvolle tweede poging tot opsplitsing van de 3.300 regels tellende monoliet PrintQueueAdminView.tsx.
+  1. Types & pure helpers zijn afgesplitst naar printQueue.types.ts en printQueueHelpers.tsx.
+  2. Modals (TempLabelModal en LotPrintModal) zijn verplaatst naar een aparte modals/ map.
+  3. Alle data-fetching, state, en memoization logic (~1.400 regels) is ge�xtraheerd naar een custom hook usePrintQueueAdmin.tsx.
+  4. De hoofdcomponent PrintQueueAdminView.tsx is gereduceerd van ~3.300 regels naar slechts ~550 regels, en dient nu puur als orchestrator voor de Views/Tabs.
+- **Resultaat**: De UI-logica is nu gescheiden van de state-logica. De 
+pm run type-check en module-resolutie slagen beide zonder fouten.
+
+## 2026-08-21 - Printer Beheer: Statushistorie verplaatst naar Modal
+- **Component**: AdminPrinterManager.tsx
+- **Actie**: De weergave van recente foutmeldingen (statushistorie) voor printers was voorheen verstopt in een apart tabblad. Dit tabblad toonde echter een placeholder-tekst als er geen printer via de "Config" tab in de modal was geopend, wat verwarrend was voor gebruikers.
+  We hebben de tab "Statushistorie" en de knop volledig verwijderd. In plaats daarvan wordt de tabel met de "Laatste 15 Foutmeldingen" nu direct geïnjecteerd onderaan de "Bewerken" (Config) modal (`isAdding = true`).
+- **Resultaat**: Wanneer een gebruiker op het bewerken (potlood) icoontje van een printer klikt, zien ze nu direct de laatste foutmeldingen en statussen van die printer, vlak boven de Opslaan/Annuleren knoppen. Geen verwarrende tabbladen meer.
+
 ## 2026-08-21 - Camera Login & Tablet Portret Layout
 - **Component**: LoginView / MobileScanner / ProductionStartModal
 - **Actie**: `html5-qrcode` toegevoegd om inloggen via de ingebouwde camera van tablets te ondersteunen (wanneer er geen hardware scanner is). Flexbox breakpoints in `ProductionStartModal` veranderd van `md` naar `lg` zodat de app in tablet-portretmodus een kolom-layout gebruikt in plaats van elementen samen te drukken.

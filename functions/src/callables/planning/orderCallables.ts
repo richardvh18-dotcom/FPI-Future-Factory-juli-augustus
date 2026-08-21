@@ -168,6 +168,7 @@ const startWorkstationProductionRun = withAudit('START_WORKSTATION_PRODUCTION_RU
   }
 
   const orderDocId = clean(data?.orderDocId);
+  const commandId = clean(data?.commandId);
   const lotStart = clean(data?.lotStart);
   const stringCount = Number(data?.stringCount);
   const stationId = clean(data?.stationId);
@@ -190,6 +191,7 @@ const startWorkstationProductionRun = withAudit('START_WORKSTATION_PRODUCTION_RU
 
   try {
     const result = await startWorkstationProductionRunService({
+      commandId,
       orderDocId,
       lotStart,
       stringCount,
@@ -215,6 +217,7 @@ const startWorkstationProductionRun = withAudit('START_WORKSTATION_PRODUCTION_RU
     );
     return result;
   } catch (error) {
+    if (error === 'ALREADY_PROCESSED' || error?.message === 'ALREADY_PROCESSED') return { ok: true, status: 'already_processed', message: 'Command already processed successfully' };
     handleCallableError(error);
   }
 });

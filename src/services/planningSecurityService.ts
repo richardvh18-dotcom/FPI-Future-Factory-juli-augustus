@@ -1,5 +1,6 @@
 import { getFunctions, httpsCallable } from "firebase/functions";
 import app from "../config/firebase";
+import { generateCommandId } from "./commandService";
 import { PATHS, getPathString } from "../config/dbPaths";
 
 const functions = getFunctions(app, 'europe-west1');
@@ -22,6 +23,17 @@ export function createCallableWrapper<TInput, TOutput = BaseResponse>(
         processedPayload = validated as TInput;
       }
     }
+    
+    // Auto-inject commandId if not present (Programma 3A: Idempotency Keys)
+    if (processedPayload && typeof processedPayload === 'object' && !('commandId' in processedPayload)) {
+      const anyPayload = processedPayload as any;
+      const station = anyPayload.stationId || anyPayload.terminalMachine || anyPayload.originMachine || "SYS";
+      // Deterministic hash based on the payload string ensures double-clicks generate the exact same commandId
+      const hashPayload = JSON.stringify({ fn: functionName, ...processedPayload });
+      anyPayload.commandId = generateCommandId(station, hashPayload);
+      processedPayload = anyPayload;
+    }
+    
     const result = await callable(processedPayload);
     return (result?.data as TOutput) || ({ ok: false } as unknown as TOutput);
   };

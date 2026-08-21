@@ -1995,19 +1995,19 @@ export const useWorkstationState = ({ initialStationId, onExit, searchOrder }: W
         .filter(Boolean);
 
       const startResult = (await startWorkstationProductionRun({
-        orderDocId: order.id,
+        orderDocId: String(order.id || ""),
         lotStart: customLotNumber,
         stringCount: batchCount,
-        stationId: selectedStation,
-        orderDocPath: String(order?.__docPath || ""),
-        orderSourcePath: String(order?.sourcePath || ""),
+        stationId: String(selectedStation || ""), // TS Fix
+        orderDocPath: String((order as any)?.__docPath || ""),
+        orderSourcePath: String((order as any)?.sourcePath || ""),
         actorLabel: currentUser?.email || "Operator",
         labelZplData: typeof labelZplData === "string" ? labelZplData : "",
-        labelTemplateId: labelTemplateId || "",
-        seriesGroupId: seriesGroupId || "",
+        labelTemplateId: String(labelTemplateId || ""), // TS Fix
+        seriesGroupId: String(seriesGroupId || ""), // TS Fix
         isFlangeSeries: !!startOptions?.isFlangeSeries,
         lotNumbers: explicitLotNumbers,
-        stationOperators: stationOperators.filter(Boolean) as string[],
+        stationOperators: stationOperators.filter(Boolean) as string[] as string[],
         source: "WorkstationHub",
       })) as StartProductionResult;
 
@@ -2296,7 +2296,7 @@ export const useWorkstationState = ({ initialStationId, onExit, searchOrder }: W
       if (!itemToRepair) return;
       try {
         await completeTrackedProductRepair({
-          productId: itemToRepair.id || itemToRepair.lotNumber,
+          productId: String(itemToRepair.id || itemToRepair.lotNumber || ""),
           station: "BH31",
           actions: data.actions || [],
           note: data.notes || "",

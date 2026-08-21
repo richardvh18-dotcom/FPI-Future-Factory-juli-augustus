@@ -1,6 +1,7 @@
 // @ts-nocheck
 
 const { admin, db } = require('../../../config/firebase');
+const IdempotencyRegistry = require('../../domain/IdempotencyRegistry');
 const { BASE, USER_ACCOUNTS_COLLECTION } = require('../../../config/planningConstants');
 const auditService = require('../../auditService');
 const {
@@ -1113,7 +1114,9 @@ const completeTrackedProductService = async ({
   auth,
   userRole,
   dbCtx = null,
+  commandId = null,
 }) => {
+  await IdempotencyRegistry.checkAndLock(commandId, { action: 'completeTrackedProductService' });
   const ctx = dbCtx || resolveDbContext(null);
   const trackedDoc = await getTrackedProductDocByIdOrLot(productId, ctx._rds);
   if (!trackedDoc) {

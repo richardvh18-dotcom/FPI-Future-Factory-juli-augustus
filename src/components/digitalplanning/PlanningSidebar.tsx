@@ -129,7 +129,7 @@ const PlanningSidebar = ({
     orders.forEach((o) => {
       const val = o.createdAt || o.importDate;
       if (!val) return;
-      const ms = typeof val?.toMillis === 'function' ? val.toMillis() : new Date(val).getTime();
+      const ms = typeof val?.toMillis === 'function' ? (val as any).toMillis() : new Date(val).getTime();
       if (Number.isFinite(ms) && ms > maxMs) {
         maxMs = ms;
       }
@@ -576,7 +576,7 @@ const PlanningSidebar = ({
     const fortyEightHoursAgo = Date.now() - 48 * 60 * 60 * 1000;
     const val = order.createdAt || order.importDate;
     if (!val) return false;
-    const ms = typeof val?.toMillis === 'function' ? val.toMillis() : new Date(val).getTime();
+    const ms = typeof val?.toMillis === 'function' ? (val as any).toMillis() : new Date(val).getTime();
     return Number.isFinite(ms) && ms > fortyEightHoursAgo;
   };
 
@@ -585,7 +585,7 @@ const PlanningSidebar = ({
     if (!latestImportTimestamp) return false;
     const val = order.createdAt || order.importDate;
     if (!val) return false;
-    const ms = typeof val?.toMillis === 'function' ? val.toMillis() : new Date(val).getTime();
+    const ms = typeof val?.toMillis === 'function' ? (val as any).toMillis() : new Date(val).getTime();
     return Number.isFinite(ms) && (latestImportTimestamp - ms) < 5 * 60 * 1000;
   };
 
@@ -692,7 +692,7 @@ const PlanningSidebar = ({
 
   // ── Helpers voor gereed-berekening (moeten vóór filteredOrders staan) ──────
   const getNumeric = (value: unknown) => {
-    const parsed = Number(value);
+    const parsed = Number(value as any);
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
@@ -873,7 +873,7 @@ const PlanningSidebar = ({
           if (Number.isFinite(parsed)) dateMs = parsed;
         }
 
-        if (dateMs !== null && dateMs < startOfTodayMs) {
+        if (dateMs !== null && (dateMs as any) < (startOfTodayMs as any)) {
           return true;
         }
       }
@@ -883,7 +883,7 @@ const PlanningSidebar = ({
       if (Number.isFinite(w) && w > 0 && w !== 999) {
         const absW = y * 52 + w;
         const absC = currentYear * 52 + currentWeek;
-        if (absW < absC) {
+        if ((absW as any) < (absC as any)) {
           return true;
         }
       }
@@ -1078,8 +1078,8 @@ const PlanningSidebar = ({
         if (isNewA) {
           const valA = a.createdAt || a.importDate;
           const valB = b.createdAt || b.importDate;
-          const msA = typeof valA?.toMillis === 'function' ? valA.toMillis() : new Date(valA || 0).getTime();
-          const msB = typeof valB?.toMillis === 'function' ? valB.toMillis() : new Date(valB || 0).getTime();
+          const msA = typeof valA?.toMillis === 'function' ? (valA as any).toMillis() : new Date(valA || 0).getTime();
+          const msB = typeof valB?.toMillis === 'function' ? (valB as any).toMillis() : new Date(valB || 0).getTime();
           if (msA !== msB) return msB - msA;
         }
 
@@ -1092,8 +1092,8 @@ const PlanningSidebar = ({
         const absWeekB = yearB * 52 + weekB;
         const absCurrent = currentYear * 52 + currentWeek;
 
-        const isBacklogA = absWeekA < absCurrent;
-        const isBacklogB = absWeekB < absCurrent;
+        const isBacklogA = (absWeekA as any) < (absCurrent as any);
+        const isBacklogB = (absWeekB as any) < (absCurrent as any);
 
         if (isBacklogA && !isBacklogB) return 1;
         if (!isBacklogA && isBacklogB) return -1;
@@ -1137,8 +1137,8 @@ const PlanningSidebar = ({
       const absWeekB = yearB * 52 + weekB;
       const absCurrent = currentYear * 52 + currentWeek;
 
-      const isBacklogA = absWeekA < absCurrent;
-      const isBacklogB = absWeekB < absCurrent;
+      const isBacklogA = (absWeekA as any) < (absCurrent as any);
+      const isBacklogB = (absWeekB as any) < (absCurrent as any);
 
       // Backlog moet ONDERAAN ("daaronder moet een splitsing komen")
       if (isBacklogA && !isBacklogB) return 1;
@@ -1154,7 +1154,7 @@ const PlanningSidebar = ({
 
   const totalProductQty = useMemo(() => {
     return filteredOrders.reduce((sum, order) => {
-      const qty = Math.max(1, getEffectivePlanQty(order) || Number(order?.plan) || Number(order?.quantity) || 1);
+      const qty = Math.max(1, getEffectivePlanQty(order) || Number(order?.plan as any) || Number(order?.quantity as any) || 1);
       return sum + qty;
     }, 0);
   }, [filteredOrders]);
@@ -1310,7 +1310,7 @@ const PlanningSidebar = ({
         product?.createdAt ||
         null;
       const eventDate = typeof eventDateRaw?.toDate === "function" ? eventDateRaw?.toDate?.() : new Date(eventDateRaw || 0);
-      if (!Number.isFinite(eventDate.getTime()) || eventDate < windowStart) return;
+      if (!Number.isFinite(eventDate.getTime()) || (eventDate as any) < (windowStart as any)) return;
 
       byMachineFinished.set(machine, (byMachineFinished.get(machine) || 0) + 1);
     });
@@ -1338,7 +1338,7 @@ const PlanningSidebar = ({
       ];
       for (const value of candidates) {
         if (!value) continue;
-        const parsed = typeof (value as unknown)?.toDate === "function" ? (value as unknown)?.toDate?.() : new Date(value as unknown);
+        const parsed = typeof (value as any)?.toDate === "function" ? (value as any)?.toDate?.() : new Date(value as any);
         if (Number.isFinite(parsed.getTime())) return parsed;
       }
       return new Date(today);
@@ -1354,7 +1354,7 @@ const PlanningSidebar = ({
       ];
       for (const value of candidates) {
         if (!value) continue;
-        const parsed = typeof (value as unknown)?.toDate === "function" ? (value as unknown)?.toDate?.() : new Date(value as unknown);
+        const parsed = typeof (value as any)?.toDate === "function" ? (value as any)?.toDate?.() : new Date(value as any);
         if (Number.isFinite(parsed.getTime())) {
           parsed.setHours(0, 0, 0, 0);
           return parsed;
@@ -1413,8 +1413,8 @@ const PlanningSidebar = ({
           let earliestStart = new Date();
           for (const val of orderStartCandidates) {
             if (!val) continue;
-            const parsed = typeof (val as unknown)?.toDate === "function" ? (val as unknown)?.toDate?.() : new Date(val as unknown);
-            if (Number.isFinite(parsed.getTime()) && parsed < earliestStart) {
+            const parsed = typeof (val as any)?.toDate === "function" ? (val as any)?.toDate?.() : new Date(val as any);
+            if (Number.isFinite(parsed.getTime()) && (parsed as any) < (earliestStart as any)) {
               earliestStart = parsed;
             }
           }
@@ -1441,7 +1441,7 @@ const PlanningSidebar = ({
           ? "unknown"
           : slipDays !== null && slipDays > 0
             ? "behind"
-            : slipDays !== null && slipDays < 0
+            : slipDays !== null && (slipDays as any) < (0 as any)
               ? "ahead"
               : "on_time";
 
@@ -1628,7 +1628,7 @@ const PlanningSidebar = ({
     doc.text(`Totaal: ${filteredOrders.length} orders (${totalProductQty} producten)`, 225, 20);
 
     const exportRows = filteredOrders.map((order: SidebarRecord) => {
-      const qty = Math.max(1, getEffectivePlanQty(order) || Number(order.plan) || Number(order.quantity) || 1);
+      const qty = Math.max(1, getEffectivePlanQty(order) || Number(order.plan as any) || Number(order.quantity as any) || 1);
       const deliveryDateStr = formatDeliveryDate(order);
       const weekStr = order.weekNumber || order.week ? `W${order.weekNumber || order.week}` : "-";
       const stationStr = getStationLabel(order.machine || order.originMachine || order.currentStation || "-");
@@ -1710,7 +1710,7 @@ const PlanningSidebar = ({
   };
 
   const formatDateWithWeek = (dateInput: unknown) => {
-    const date = typeof (dateInput as unknown)?.toDate === "function" ? (dateInput as unknown)?.toDate?.() : new Date(dateInput as unknown);
+    const date = typeof (dateInput as any)?.toDate === "function" ? (dateInput as any)?.toDate?.() : new Date(dateInput as any);
     if (!Number.isFinite(date.getTime())) return "--";
     const dateStr = date.toLocaleDateString("nl-NL", {
       day: "2-digit",
@@ -2017,7 +2017,7 @@ const PlanningSidebar = ({
                   const absW = y * 52 + w;
                   const absC = currentYear * 52 + currentWeek;
 
-                  if (absW < absC) {
+                  if ((absW as any) < (absC as any)) {
                     currentLabel = "Backlog";
                   } else if (Number.isFinite(w) && w !== 999 && w !== 0) {
                     currentLabel = y !== currentYear ? `Week ${w} (${y})` : `Week ${w}`;
