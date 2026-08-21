@@ -1,3 +1,8 @@
+## 2026-08-21 - Camera Login & Tablet Portret Layout
+- **Component**: LoginView / MobileScanner / ProductionStartModal
+- **Actie**: `html5-qrcode` toegevoegd om inloggen via de ingebouwde camera van tablets te ondersteunen (wanneer er geen hardware scanner is). Flexbox breakpoints in `ProductionStartModal` veranderd van `md` naar `lg` zodat de app in tablet-portretmodus een kolom-layout gebruikt in plaats van elementen samen te drukken.
+- **Resultaat**: Succesvol; UI schaalt nu goed op portrait-tablets en inloggen werkt nu via device-camera's.
+
 ## 2026-08-20 - MazakView Refactor Afronding\n- **Component**: MazakView.tsx\n- **Actie**: De voorgenomen afsplitsing van Tabs via een nieuwe React Context is geannuleerd. We hebben bewust gekozen om MazakView.tsx op 1.475 regels te houden omdat de Tabs zeer complexe layout wrappers delen. Verdere splitsing zou de code onnodig abstract maken.\n- **Resultaat**: De refactor van MazakView.tsx (Programma 2) is definitief afgerond en succesvol gecontroleerd via TypeScript (geen nieuwe fouten).\n\n## 2026-08-20 — MazakView Refactoring Voltooid
 
 ### Wat is besproken

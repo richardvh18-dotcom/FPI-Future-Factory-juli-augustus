@@ -2174,9 +2174,9 @@ const ProductionStartModal = ({
 
   return (
     <div className="fixed inset-0 bg-slate-900/90 z-[100] flex items-center justify-center p-2 md:p-4 backdrop-blur-md animate-in fade-in overflow-hidden">
-      <div className={`bg-white w-full max-w-6xl h-[calc(100dvh-1rem)] md:h-[85dvh] rounded-[40px] shadow-2xl flex flex-col md:flex-row overflow-hidden border border-white/10 transition-all duration-300`}>
+      <div className={`bg-white w-full max-w-6xl h-[calc(100dvh-1rem)] lg:h-[85dvh] rounded-[40px] shadow-2xl flex flex-col lg:flex-row overflow-hidden border border-white/10 transition-all duration-300`}>
         {/* LINKS: CONFIGURATIE */}
-        <div className={`${showPreviewPane ? "w-full md:w-1/3" : "w-full"} ${isCompactAutoLayout ? "p-3 md:p-3.5" : "p-4"} ${showPreviewPane ? "border-r" : ""} border-slate-100 flex flex-col bg-slate-50/50 overflow-y-auto custom-scrollbar`}>
+        <div className={`${showPreviewPane ? "w-full lg:w-5/12 xl:w-1/3" : "w-full"} ${isCompactAutoLayout ? "p-3 lg:p-4" : "p-4"} ${showPreviewPane ? "border-b lg:border-b-0 lg:border-r" : ""} border-slate-100 flex flex-col bg-slate-50/50 overflow-y-auto custom-scrollbar`}>
           <div className="flex justify-between items-start mb-4">
             <div className="text-left">
               <h2 className="text-xl font-black text-slate-900 uppercase italic tracking-tighter">
