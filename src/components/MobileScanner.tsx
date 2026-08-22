@@ -113,8 +113,8 @@ const MobileScanner = ({ onScan, active }: MobileScannerProps) => {
           </form>
         </>
       ) : (
-        <div className="w-full bg-white rounded-xl overflow-hidden p-2 relative z-20">
-          <div id="reader" className="w-full [&_video]:rounded-lg [&_video]:w-full"></div>
+        <div className="w-full flex-1 min-h-0 bg-black rounded-xl overflow-hidden relative z-20 flex flex-col">
+          <div id="reader" className="w-full h-full flex items-center justify-center [&_video]:rounded-lg [&_video]:w-full [&_video]:h-full [&_video]:object-cover"></div>
         </div>
       )}
     </div>
