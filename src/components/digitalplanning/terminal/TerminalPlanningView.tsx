@@ -950,7 +950,7 @@ const TerminalPlanningView = ({
               ref={searchInputRef}
               type="text"
               placeholder={t("digitalplanning.terminal.search_order_product_project", "Zoek order, product of project...")}
-              className="w-full pl-12 pr-24 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-base font-bold outline-none focus:border-blue-500 transition-all shadow-sm"
+              className="w-full pl-12 pr-32 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl text-base font-bold outline-none focus:border-blue-500 transition-all shadow-sm"
               value={searchTerm}
               onChange={(e) => onSearchChange(e.target.value)}
               inputMode={suppressSoftKeyboard ? "none" : "text"}
@@ -975,10 +975,11 @@ const TerminalPlanningView = ({
                     setTouchKeyboardPreferred(true);
                     requestAnimationFrame(() => searchInputRef.current?.focus());
                   }}
-                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-blue-600 hover:text-blue-700"
+                  className="inline-flex items-center justify-center gap-1.5 px-3 h-9 rounded-lg border-2 border-blue-200 bg-blue-50 text-blue-700 font-bold hover:bg-blue-100 hover:border-blue-300 transition-all shadow-sm"
                   title={t("digitalplanning.terminal.keyboard", "Toetsenbord")}
                 >
-                  <Keyboard size={14} />
+                  <Keyboard size={16} />
+                  <span className="text-xs">{t("digitalplanning.terminal.keyboard", "Toetsenbord")}</span>
                 </button>
               )}
             </div>

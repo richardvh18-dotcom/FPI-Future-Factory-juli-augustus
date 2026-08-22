@@ -46,7 +46,7 @@ const TerminalGereedTab = ({ allTracked = [], stationId, effectiveStationId }: T
             value={gereedSearch}
             onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGereedSearch(e.target.value)}
             placeholder={t("digitalplanning.terminal.search_product_order_lot", "Zoek op product, order of lotnummer...")}
-            className="w-full rounded-xl border border-slate-200 bg-white pl-4 pr-20 py-3 text-sm font-medium text-slate-700 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-300"
+            className="w-full rounded-xl border border-slate-200 bg-white pl-4 pr-36 py-3 text-sm font-medium text-slate-700 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-300"
             inputMode={isTouchDevice && !touchKeyboardPreferred ? "none" : "text"}
           />
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -69,10 +69,11 @@ const TerminalGereedTab = ({ allTracked = [], stationId, effectiveStationId }: T
                 setTouchKeyboardPreferred(true);
                 requestAnimationFrame(() => searchInputRef.current?.focus());
               }}
-              className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-blue-600 hover:text-blue-700"
+              className="inline-flex items-center justify-center gap-1.5 px-3 h-8 rounded-lg border-2 border-blue-200 bg-blue-50 text-blue-700 font-bold hover:bg-blue-100 hover:border-blue-300 transition-all shadow-sm"
               title={t("digitalplanning.terminal.keyboard", "Toetsenbord")}
             >
               <Keyboard size={14} />
+              <span className="text-xs">{t("digitalplanning.terminal.keyboard", "Toetsenbord")}</span>
             </button>
           </div>
         </div>

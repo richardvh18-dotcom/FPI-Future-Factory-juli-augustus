@@ -173,7 +173,7 @@ export const WorkstationModals = ({
                 placeholder={t("personnelOccupancy.labels.employeeNumber", "Personeelsnummer")}
                 autoFocus
                 inputMode={isTouchDevice && !touchKeyboardPreferred ? "none" : "text"}
-                className="w-full p-3 pr-24 rounded-xl border-2 border-slate-200 bg-white font-bold text-slate-800 outline-none focus:border-blue-500"
+                className="w-full p-3 pr-36 rounded-xl border-2 border-slate-200 bg-white font-bold text-slate-800 outline-none focus:border-blue-500"
               />
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                 {store.operatorBadgeInput ? (
@@ -195,10 +195,11 @@ export const WorkstationModals = ({
                     setTouchKeyboardPreferred(true);
                     requestAnimationFrame(() => operatorInputRef.current?.focus());
                   }}
-                  className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-blue-600 hover:text-blue-700"
+                  className="inline-flex items-center justify-center gap-1.5 px-3 h-8 rounded-lg border-2 border-blue-200 bg-blue-50 text-blue-700 font-bold hover:bg-blue-100 hover:border-blue-300 transition-all shadow-sm"
                   title={t("digitalplanning.terminal.keyboard", "Toetsenbord")}
                 >
                   <Keyboard size={14} />
+                  <span className="text-xs">{t("digitalplanning.terminal.keyboard", "Toetsenbord")}</span>
                 </button>
               </div>
             </div>

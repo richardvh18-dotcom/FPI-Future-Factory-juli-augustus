@@ -1077,7 +1077,7 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: Lot
         darkness,
       });
 
-      await onPrintBatch(zplBatch, lots.length);
+      await onPrintBatch(zplBatch, lots.length, lots[0]);
       notify(t("common.lotsPrintedQueued", {
         count: parsedCount,
         printer: printer?.name || printer?.id || station,
@@ -1990,7 +1990,7 @@ const PrintStationView = () => {
     }
   };
 
-  const handleDirectLotPrintBatch = async (batchData: string, lotCount: number) => {
+  const handleDirectLotPrintBatch = async (batchData: string, lotCount: number, firstLot?: string) => {
 
 
     if (!activeQueuePrinter?.id) {
@@ -2001,7 +2001,7 @@ const PrintStationView = () => {
       activeQueuePrinter.id,
       batchData,
       {
-        description: `Lotnummers batch (${lotCount})`,
+        description: `Lotnummers batch (${lotCount})${firstLot ? ` - Start: ${firstLot}` : ''}`,
         quantity: 1,
         stationId: LABELS_PRINTING_QUEUE_STATION,
         targetPrinterName: activeQueuePrinter.name,

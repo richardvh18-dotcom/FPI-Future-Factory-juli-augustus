@@ -420,7 +420,7 @@ const PlanningListView = ({
                 ref={searchInputRef}
                 type="text"
                 placeholder={i18n.t("placeholders.dpPlanningListSearch", "Zoek order, project of item...")}
-                className="w-full pl-9 pr-20 py-2.5 bg-slate-50 border-none rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+                className="w-full pl-9 pr-36 py-2.5 bg-slate-50 border-none rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500/20 transition-all"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 inputMode={isTouchDevice && !touchKeyboardPreferred ? "none" : "text"}
@@ -445,10 +445,11 @@ const PlanningListView = ({
                     setTouchKeyboardPreferred(true);
                     requestAnimationFrame(() => searchInputRef.current?.focus());
                   }}
-                  className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-slate-200 bg-white text-blue-600 hover:text-blue-700"
+                  className="inline-flex items-center justify-center gap-1.5 px-2.5 h-7 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 font-bold hover:bg-blue-100 hover:border-blue-300 transition-all shadow-sm"
                   title={i18n.t("digitalplanning.terminal.keyboard", "Toetsenbord")}
                 >
                   <Keyboard size={12} />
+                  <span className="text-[10px] uppercase tracking-wider">{i18n.t("digitalplanning.terminal.keyboard", "Toetsenbord")}</span>
                 </button>
               </div>
             </div>

@@ -1,3 +1,29 @@
+## 2026-08-22 - Fix Knipperen Oude Orders in BH Planning (Voltooid)
+- **Probleem**: Bij het inladen van de planning (bijv. voor BH18) knipperde de lijst 2 of 3 keer, waarbij oude (al afgeronde) orders kort zichtbaar waren voordat de definitieve planning inlaadde.
+- **Actie**: In `useTerminalData.ts` is een extra controle ingebouwd die direct kijkt of een order in de database de status "completed", "finished", etc. heeft (`isInactivePlanningStatus(o.status)`). 
+- **Resultaat**: Afgeronde orders worden nu direct overgeslagen bij de initiële render, in plaats van te wachten tot de productie-archiefdata (`allTracked` en `archiveTrackedItems`) is ingeladen om te berekenen dat ze klaar zijn. Dit voorkomt het storende knipperen.
+
+## 2026-08-22 - Auto Label Print voor alle BH machines (Voltooid)
+- **Actie**: In de `ProductionStartModal` is de standaard printmodus aangepast.
+- **Resultaat**: Voorheen stond de "Label print" alleen automatisch op "Auto" voor BH18 en BH12. Nu wordt dit voor **alle** machines die beginnen met "BH" (bijv. BH11, BH15, BH31, etc.) standaard op "Auto" gezet in plaats van "Manueel".
+
+## 2026-08-22 - Eerste Lotnummer in Batch Print Queue (Voltooid)
+- **Actie**: Bij het genereren en afdrukken van een reeks lotnummers (batch) wordt nu het allereerste lotnummer meegegeven aan de wachtrij.
+  - De functie `onPrintBatch` in diverse modal-componenten is uitgebreid om `lots[0]` door te geven.
+  - In `usePrintQueueAdmin` en `PrintStationView` wordt dit verwerkt in de beschrijving van de printopdracht.
+- **Resultaat**: In de printwachtrij staat nu niet alleen meer "Lotnummers batch (10)", maar bijvoorbeeld "Lotnummers batch (10) - Start: 402634BM01400001". Hierdoor is meteen inzichtelijk welke machineserie is geprint.
+
+## 2026-08-22 - Versienummer in Header (Voltooid)
+- **Actie**: Het huidige versienummer (uit `package.json`) dynamisch toegevoegd aan de statusknop in de applicatie-header.
+- **Resultaat**: Gebruikers en beheerders kunnen in één oogopslag in de header (rechtsboven, naast de status "Productie Actief" / "Test Actief") zien op welke versie de client momenteel draait, waardoor snel duidelijk is of een automatische update is doorgevoerd.
+
+## 2026-08-22 - UI Verbetering Toetsenbord Knop Tablet (Voltooid)
+- **Actie**: De knop om het toetsenbord te openen in tabletmodus duidelijker gemaakt in de zoekbalken van de terminal en planningsweergaven.
+  1. Tekst "Toetsenbord" toegevoegd naast het icoon in `TerminalPlanningView`, `TerminalProductionView`, `TerminalGereedTab`, `WorkstationModals` en `PlanningListView`.
+  2. Styling van de knoppen verduidelijkt (groter, opvallendere achtergrond met `bg-blue-50`/`bg-orange-50` en borders).
+  3. Padding-right (`pr-36`) van de bijbehorende invulvelden vergroot zodat de tekst niet achter de bredere knop valt.
+- **Resultaat**: Operators kunnen nu veel duidelijker zien waar ze moeten klikken om het schermtoetsenbord op te roepen in tabletmodus.
+
 ## 2026-08-21 - Programma 3A — Idempotency Keys (Voltooid)
 - **Actie**: Idempotency checks geïmplementeerd in het hart van de MES Core.
   1. `src/services/commandService.ts` aangemaakt om `generateCommandId()` client-side te beheren met een unieke hash op basis van payload (zoals gevraagd "CMD-BH18-20260821-hash").

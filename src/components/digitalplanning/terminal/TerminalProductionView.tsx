@@ -281,7 +281,7 @@ const TerminalProductionView = ({
               inputMode={shouldSuppressSoftKeyboard ? "none" : "text"}
               onKeyDown={onScan}
               placeholder={t("digitalplanning.terminal.scan_lot_placeholder", "Scan lotnummer...")}
-              className="w-full pl-14 pr-28 py-4 bg-white border-2 border-orange-100 focus:border-orange-500 focus:ring-2 focus:ring-orange-300 rounded-2xl font-bold text-lg shadow-sm outline-none transition-all placeholder:text-slate-300"
+              className="w-full pl-14 pr-36 py-4 bg-white border-2 border-orange-100 focus:border-orange-500 focus:ring-2 focus:ring-orange-300 rounded-2xl font-bold text-lg shadow-sm outline-none transition-all placeholder:text-slate-300"
             />
             <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
               {scanInput ? (
@@ -300,10 +300,11 @@ const TerminalProductionView = ({
                 <button
                   type="button"
                   onClick={openManualKeyboard}
-                  className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-orange-200 bg-white text-orange-600 hover:text-orange-700"
+                  className="inline-flex items-center justify-center gap-1.5 px-3 h-10 rounded-lg border-2 border-orange-200 bg-orange-50 text-orange-700 font-bold hover:bg-orange-100 hover:border-orange-300 transition-all shadow-sm"
                   title={t("digitalplanning.terminal.keyboard", "Toetsenbord")}
                 >
-                  <Keyboard size={16} />
+                  <Keyboard size={18} />
+                  <span className="text-sm">{t("digitalplanning.terminal.keyboard", "Toetsenbord")}</span>
                 </button>
               )}
             </div>

@@ -476,8 +476,10 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
         const startedAtStation = Number(stationCounterField ? o?.[stationCounterField] || 0 : 0);
         const planAtStation = Number(o.plan || o.quantity || 0);
         const actualStartedCount = madeCountMap[orderId] || 0;
-        const hasShortage = planAtStation > 0 && actualStartedCount < planAtStation;
-        const hasRemainingPlan = (startedAtStation > 0 && planAtStation > startedAtStation) || hasShortage;
+        
+        const isOrderFinished = isInactivePlanningStatus(o.status);
+        const hasShortage = planAtStation > 0 && actualStartedCount < planAtStation && !isOrderFinished;
+        const hasRemainingPlan = ((startedAtStation > 0 && planAtStation > startedAtStation) || hasShortage) && !isOrderFinished;
         const meta = stationOrderMeta.get(orderId);
         const hasStationActivity = (meta?.active || 0) > 0;
 

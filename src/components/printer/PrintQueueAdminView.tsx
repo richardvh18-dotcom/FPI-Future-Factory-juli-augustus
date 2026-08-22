@@ -124,7 +124,7 @@ type TempLabelModalProps = {
 type LotPrintModalProps = {
   onClose: () => void;
   departmentGroups: DepartmentGroup[];
-  onPrintBatch: (batchData: string, lotCount: number) => Promise<void>;
+  onPrintBatch: (batchData: string, lotCount: number, firstLot?: string) => Promise<void>;
   printer: PrinterConfig | null;
 };
 
@@ -1309,7 +1309,7 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: Lot
         darkness,
       });
 
-      await onPrintBatch(zplBatch, lots.length);
+      await onPrintBatch(zplBatch, lots.length, lots[0]);
       notify(t("common.lotsPrintedQueued", {
         count: parsedCount,
         printer: printer?.name || printer?.id || station,

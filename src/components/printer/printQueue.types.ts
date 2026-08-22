@@ -61,7 +61,7 @@ export type TempLabelModalProps = {
 export type LotPrintModalProps = {
   onClose: () => void;
   departmentGroups: DepartmentGroup[];
-  onPrintBatch: (batchData: string, lotCount: number) => Promise<void>;
+  onPrintBatch: (batchData: string, lotCount: number, firstLot?: string) => Promise<void>;
   printer: PrinterConfig | null;
 };
 

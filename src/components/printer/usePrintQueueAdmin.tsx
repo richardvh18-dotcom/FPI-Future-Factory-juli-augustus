@@ -933,7 +933,7 @@ export const usePrintQueueAdmin = () => {
     }
   };
 
-  const handleDirectLotPrintBatch = async (batchData: string, lotCount: number) => {
+  const handleDirectLotPrintBatch = async (batchData: string, lotCount: number, firstLot?: string) => {
     const chosenPrinter = await requestLabelsQueuePrinter('Lotnummers afdrukken');
     if (!chosenPrinter?.id) {
       throw new Error('Geen wachtrijprinter geconfigureerd.');
@@ -943,7 +943,7 @@ export const usePrintQueueAdmin = () => {
       chosenPrinter.id,
       batchData,
       {
-        description: `Lotnummers batch (${lotCount})`,
+        description: `Lotnummers batch (${lotCount})${firstLot ? ` - Start: ${firstLot}` : ''}`,
         quantity: 1,
         stationId: LABELS_PRINTING_QUEUE_STATION,
         targetPrinterName: chosenPrinter.name,

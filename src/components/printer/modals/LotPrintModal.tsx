@@ -69,7 +69,7 @@ const LotPrintModal = ({ onClose, departmentGroups, onPrintBatch, printer }: Lot
         darkness,
       });
 
-      await onPrintBatch(zplBatch, lots.length);
+      await onPrintBatch(zplBatch, lots.length, lots[0]);
       notify(t("common.lotsPrintedQueued", {
         count: parsedCount,
         printer: printer?.name || printer?.id || station,

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Search, Factory, X, Bot, Sparkles, Menu, Loader2 } from "lucide-react";
 import { PATHS } from "../config/dbPaths";
+import packageJson from "../../package.json";
 
 interface HeaderProps {
   searchQuery: string;
@@ -115,7 +116,7 @@ const Header = ({ searchQuery, setSearchQuery, onSearchSubmit, isSearching, logo
             ) : isAIMode || searchQuery.startsWith('?') ? (
               <Sparkles className="text-purple-400 animate-pulse" size={16} />
             ) : (
-              <Search className="text-slate-500 group-focus-within:text-blue-400 transition-colors" size={16} />
+              <Search className="text-slate-400 group-focus-within:text-blue-400 transition-colors" size={16} />
             )}
           </div>
           <input
@@ -125,10 +126,10 @@ const Header = ({ searchQuery, setSearchQuery, onSearchSubmit, isSearching, logo
                 ? t('header.search_ai_placeholder', 'Vraag AI...')
                 : t('header.search_placeholder', 'Zoeken...')
             }
-            className={`w-full border rounded-2xl py-2 md:py-2.5 pl-10 md:pl-12 pr-20 md:pr-24 text-xs md:text-sm font-medium outline-none transition-all placeholder:text-slate-600 ${
+            className={`w-full border rounded-2xl py-2 md:py-2.5 pl-10 md:pl-12 pr-20 md:pr-24 text-xs md:text-sm font-medium outline-none transition-all placeholder:text-slate-400 ${
               isAIMode || searchQuery.startsWith('?')
-                ? 'bg-purple-900/20 border-purple-500/50 text-purple-100 focus:bg-purple-900/30 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/10'
-                : 'bg-white/5 border-slate-700 text-slate-200 focus:bg-white/10 focus:border-blue-500/50 focus:ring-4 focus:ring-blue-500/5'
+                ? 'bg-purple-900/40 border-purple-500/60 text-purple-100 focus:bg-purple-800/50 focus:border-purple-400 focus:ring-4 focus:ring-purple-500/10'
+                : 'bg-white/10 border-slate-600 text-slate-200 focus:bg-white/20 focus:border-blue-500/60 focus:ring-4 focus:ring-blue-500/10'
             }`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -172,7 +173,10 @@ const Header = ({ searchQuery, setSearchQuery, onSearchSubmit, isSearching, logo
                 : "bg-rose-400"
             }`}
           ></div>
-          {isOnline ? onlineStatusLabel : 'Offline'}
+          <span className="flex items-center gap-1.5">
+            {isOnline ? onlineStatusLabel : 'Offline'}
+            <span className="opacity-50 font-mono">v{packageJson.version}</span>
+          </span>
         </div>
       </div>
     </header>
