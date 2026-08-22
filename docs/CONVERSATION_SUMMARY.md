@@ -1,3 +1,10 @@
+## 2026-08-22 - Header Versie Badge & Print Queue Bug (Voltooid/Onderzocht)
+- **Actie (UI)**: De status badge met het versienummer in `Header.tsx` is helderder gemaakt (opacity-50 verwijderd) en responsive gemaakt. Op tabletformaat (`md` breakpoint) verschijnt hij nu als compacte aanklikbare knop (alleen met het bolletje en versienummer) naast de zoekbalk.
+- **Onderzoek (Bug)**: Geïnvestigeerd waarom printopdrachten 4x werden herhaald met intervallen van 10-15 minuten.
+  - **Oorzaak**: Het 15-minuten interval correspondeert met de `VersionObserver` die elke 15 minuten op nieuwe versies checkt en de app ververst. Als een printopdracht geprint werd maar (bijv. door een offline/time-out netwerkmoment) de Firebase status niet naar `completed` werd omgezet, bleef deze lokaal steken in Firestore als `pending`.
+  - Telkens als de Gateway PC (de pagina) herlaadde na een versie-update (wat vandaag 4x gebeurde), starte de `PrintQueueAutoProcessor` opnieuw en pikte de "blijven hangen" `pending` jobs weer op om opnieuw te printen.
+  - **Oplossing**: De code is in een eerdere commit (`fix: improve labels printing queue printer selection and routing`) al verbeterd zodat het correct fouten afvangt bij de state-transitiefase. Zolang de Gateway PC up-to-date is (v0.1.171), zou dit specifieke gedrag in de toekomst beperkt moeten worden.
+
 ## 2026-08-22 - Fix Knipperen Oude Orders in BH Planning (Voltooid)
 - **Probleem**: Bij het inladen van de planning (bijv. voor BH18) knipperde de lijst 2 of 3 keer, waarbij oude (al afgeronde) orders kort zichtbaar waren voordat de definitieve planning inlaadde.
 - **Actie**: In `useTerminalData.ts` is een extra controle ingebouwd die direct kijkt of een order in de database de status "completed", "finished", etc. heeft (`isInactivePlanningStatus(o.status)`). 

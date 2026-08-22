@@ -154,15 +154,16 @@ const Header = ({ searchQuery, setSearchQuery, onSearchSubmit, isSearching, logo
         </div>
       </div>
 
-      <div className="hidden lg:flex min-w-[280px] justify-end">
+      <div className="hidden md:flex lg:min-w-[280px] justify-end ml-2 lg:ml-0">
         <div
-          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border ${
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border cursor-pointer hover:opacity-80 transition-opacity ${
             isOnline
               ? isTestPathMode
                 ? "bg-amber-500/10 border-amber-500/30 text-amber-400"
                 : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
               : "bg-rose-500/10 border-rose-500/30 text-rose-400"
           }`}
+          title={isOnline ? onlineStatusLabel : 'Offline'}
         >
           <div
             className={`w-1.5 h-1.5 rounded-full ${
@@ -174,8 +175,8 @@ const Header = ({ searchQuery, setSearchQuery, onSearchSubmit, isSearching, logo
             }`}
           ></div>
           <span className="flex items-center gap-1.5">
-            {isOnline ? onlineStatusLabel : 'Offline'}
-            <span className="opacity-50 font-mono">v{packageJson.version}</span>
+            <span className="hidden lg:inline">{isOnline ? onlineStatusLabel : 'Offline'}</span>
+            <span className="font-mono">v{packageJson.version}</span>
           </span>
         </div>
       </div>
