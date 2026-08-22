@@ -540,14 +540,16 @@ export const generateLotBatchZPL = ({
     const toDots = (mm: number): number => Math.round(mm * dotsPerMm);
     const safeFillRatio = Math.max(0.8, Math.min(Number(textFillRatio) || 0.97, 0.99));
 
-    // Fijn-afstelling voor 300 DPI: QR iets compacter zodat de code ruim vrij blijft van de scheidingslijn.
-    const effectiveQrSizeMm = printerDpi === 300 ? Math.max(8, qrSizeMm - 0.5) : qrSizeMm;
+    // Fijn-afstelling voor 300 DPI: Lighthouse (203 DPI) emulaties printen vaak groter dan exacte wiskundige dots.
+    // Voor zuivere Zebra 300 DPI printers schalen we de tekst en QR fysiek op zodat ze visueel matchen.
+    const effectiveQrSizeMm = printerDpi === 300 ? qrSizeMm + 2 : qrSizeMm;
     const effectiveTextFillRatio = printerDpi === 300 ? Math.min(0.99, safeFillRatio + 0.01) : safeFillRatio;
+    const effectiveTextHeightMm = printerDpi === 300 ? textHeightMm * 1.3 : textHeightMm;
 
     const leftQrX = toDots(qrXmm);
     const qrY = toDots(qrYmm);
     const textY = toDots(textYmm);
-    const fontHeightDots = toDots(textHeightMm);
+    const fontHeightDots = toDots(effectiveTextHeightMm);
     const targetQrSizeDots = toDots(effectiveQrSizeMm);
     const autoQrCellWidth = Math.max(3, Math.round(targetQrSizeDots / 24));
     const effectiveQrCellWidth = Number.isFinite(Number(qrCellWidth)) && Number(qrCellWidth) > 0

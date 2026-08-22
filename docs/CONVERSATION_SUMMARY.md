@@ -1,4 +1,8 @@
-﻿## 2026-08-22 - Fix Print Wachtrij Prioriteit en DPI Scaling voor Lotnummers (Voltooid)
+﻿## 2026-08-22 - Fix DPI Schaling voor 300 DPI Zebra ZM400 Lotnummers (Voltooid)
+- **Probleem**: De lotnummers geprint op een "echte" Zebra ZM400 (300 DPI) kwamen fysiek te klein uit vergeleken met de Lighthouse CJ-PRO (203 DPI) printer emulaties waaraan de gebruikers gewend waren, hoewel de software mathematisch dezelfde millimeters doorgaf.
+- **Actie**: In src/utils/zplHelper.ts (generateLotBatchZPL) is specifieke logica toegevoegd om tekst en QR-codes op 300 DPI printers met ~30% op te schalen. De qrSizeMm krijgt er 2mm bij (wat de celgrootte naar 5 in plaats van 4 brengt op 300 DPI) en de 	extHeightMm wordt met 1.3 vermenigvuldigd (van 7mm naar ~9.1mm).
+- **Resultaat**: Lotnummers en QR-codes op 300 DPI printers vullen nu beter de beschikbare 13mm hoogte op, waardoor de fysieke print beter overeenkomt met de robuuste visuele verwachting.
+## 2026-08-22 - Fix Print Wachtrij Prioriteit en DPI Scaling voor Lotnummers (Voltooid)
 - **Probleem 1**: Wanneer een admin op de PC een productie start voor station BH18, kwam het label niet uit de correcte BH18-wachtrijprinter, maar uit "Printer Lossen".
 - **Oorzaak 1**: In esolvePrinterForRouting kreeg een opgeslagen (legacy) lokale browser fallback (localStorage) per ongeluk voorrang op de database-gebonden wachtrijstations.
 - **Actie 1**: In src/utils/printRouting.ts is de prioriteit aangepast, zodat database routing altijd sterker weegt dan de lokale fallback van de PC.
@@ -21794,4 +21798,5 @@ econcileOrderControl aan via Firebase Callable. Dit stelt de teamleider in staat
  
  
  
+
 
