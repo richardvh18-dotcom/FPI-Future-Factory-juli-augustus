@@ -222,13 +222,13 @@ export const resolvePrinterForRouting = <T extends PrinterRoutingTarget>(
   }
 
   const persistedBindingId = getPersistedStationBinding(context);
+  let persistedPrinter: T | null = null;
   if (persistedBindingId) {
-    const persistedPrinter = printers.find((printer) => String(printer.id || '').trim() === persistedBindingId) || null;
-    if (persistedPrinter) return persistedPrinter;
+    persistedPrinter = printers.find((printer) => String(printer.id || '').trim() === persistedBindingId) || null;
   }
 
   const candidates = getPrinterRoutingCandidates(context, dynamicRules);
-  if (candidates.length === 0) return null;
+  if (candidates.length === 0) return persistedPrinter;
 
   let bestPrinter: T | null = null;
   let bestScore = 0;
@@ -261,7 +261,8 @@ export const resolvePrinterForRouting = <T extends PrinterRoutingTarget>(
     }
   }
 
-  return bestPrinter;
+  // Database matches take priority over the legacy browser binding fallback.
+  return bestPrinter || persistedPrinter || null;
 };
 
 export const serializeRoutingKeys = (value: unknown): string[] => {

@@ -49,7 +49,7 @@ import {
 } from "firebase/firestore";
 import { getDriver, applyCalibration, PRINTER_DRIVERS } from "../../utils/printerDrivers";
 import { queuePrintJob } from "../../services/planningSecurityService";
-import { generatePrintData } from "../../utils/zplHelper";
+import { generatePrintData, generateLotBatchZPL } from "../../utils/zplHelper";
 import {
   processLabelData,
   resolveLabelContent,
@@ -544,8 +544,6 @@ export const useAdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: s
 
     const driver = getDriver(printer);
     const darkness = printer.darkness ? parseInt(printer.darkness) : driver.defaultDarkness;
-    const printSpeed = printer.speed ? parseInt(printer.speed, 10) : driver.defaultSpeed;
-    const dotsPerMm = driver.dotsPerMm;
     const rollWidthMm = resolveRollWidthMm(printer);
 
     const lots = [];
@@ -554,53 +552,32 @@ export const useAdminPrinterManager = ({ onNavigate }: { onNavigate?: (screen: s
       lots.push(`${baseLot}${String(seqNum).padStart(4, '0')}`);
     }
 
-    let batchData = "";
-    const labelH = 13; // mm
-    const gapH = 2; // mm
-    const qrCellWidth = 4; // Grovere modules voor betere scanbaarheid door nonwoven/hars
-    const qrY = Math.round(1.0 * dotsPerMm);
-    const leftQrX = Math.round(2 * dotsPerMm);
-    const qrSizeMm = 11;
-    const leftMarginMm = 2;
-    const rightMarginMm = 2;
-    const gapAfterQrMm = 2;
-    const textY = Math.round(3 * dotsPerMm);
-    const fontHeightDots = Math.round(6 * dotsPerMm); // hoogte
-    const fontWidthDots = Math.round(7 * dotsPerMm); // ruimer opgezet
-    const lotChars = 15;
-    const textAreaStartDots = Math.round((leftMarginMm + qrSizeMm + gapAfterQrMm) * dotsPerMm);
-    const textAreaWidthDots = Math.round((rollWidthMm - rightMarginMm - (leftMarginMm + qrSizeMm + gapAfterQrMm)) * dotsPerMm);
-    const estimatedTextWidthDots = lotChars * fontWidthDots;
-    const textX = Math.max(
-      textAreaStartDots,
-      textAreaStartDots + Math.round((textAreaWidthDots - estimatedTextWidthDots) / 2)
-    );
-
-    batchData += `SIZE ${rollWidthMm} mm,${labelH} mm\r\nGAP ${gapH} mm,0 mm\r\nDENSITY ${darkness}\r\nSPEED ${printSpeed}\r\nDIRECTION 0,0\r\n`;
-    lots.forEach((lot) => {
-      batchData += `CLS\r\n`;
-      batchData += `QRCODE ${leftQrX},${qrY},H,${qrCellWidth},A,0,M2,S7,"${lot}"\r\n`;
-      batchData += `TEXT ${textX},${textY},"ARIAL.TTF",0,${fontWidthDots},${fontHeightDots},"${lot}"\r\n`;
-      batchData += `BAR ${Math.round(2 * dotsPerMm)},${Math.round(12.4 * dotsPerMm)},${Math.round(86 * dotsPerMm)},1\r\n`;
-      batchData += `PRINT 1,1\r\n`;
+    const batchData = generateLotBatchZPL({
+      lots,
+      printerDpi: driver.nativeDpi || 203,
+      darkness: darkness,
+      labelWidthMm: rollWidthMm || 90,
     });
-    // Altijd 1 knipopdracht na de volledige batch (4, 10, 100, ...)
-    batchData += `CUT\r\n`;
-    batchData = applyCalibration(batchData, printer, getDriver(printer));
 
     try {
       const result = await sendPrintJob(printer, batchData, {
-        description: `Lotnummer batch (${config.count})`,
-        quantity: Number(config.count) || 1
+        description: `Lotnummers batch (${config.count})`,
+        quantity: 1,
+        stationId: config.station,
+        targetPrinterName: printer.name,
+        queuedAsBatch: true,
+        source: 'lot_number_batch',
+        lotCount: config.count,
       });
+
       showSuccess(
         result.mode === 'queue'
-          ? `${config.count} labels in wachtrij gezet voor ${printer.name}.`
-          : `${config.count} labels verzonden naar ${printer.name}.`
+          ? `Batch van ${config.count} lotnummers in wachtrij gezet voor ${printer.name}.`
+          : `Batch van ${config.count} lotnummers afgedrukt via USB.`
       );
       setShowLotModal(false);
-    } catch (e: unknown) {
-      showError(`Print via ${printer.name} mislukt: ${getErrMsg(e)}`);
+    } catch (err: unknown) {
+      showError("Fout bij afdrukken lotnummers: " + getErrMsg(err));
     }
   };
 
