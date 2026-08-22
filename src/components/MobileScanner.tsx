@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import i18n from 'i18next';
 import { ScanLine, Camera } from 'lucide-react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Html5Qrcode } from 'html5-qrcode';
 
 interface MobileScannerProps {
   onScan: (value: string) => void;
@@ -12,7 +12,7 @@ const MobileScanner = ({ onScan, active }: MobileScannerProps) => {
   const [inputValue, setInputValue] = useState<string>('');
   const [useCamera, setUseCamera] = useState<boolean>(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
   useEffect(() => {
     if (active && !useCamera && inputRef.current) {
@@ -22,27 +22,43 @@ const MobileScanner = ({ onScan, active }: MobileScannerProps) => {
 
   useEffect(() => {
     if (active && useCamera) {
-      const scanner = new Html5QrcodeScanner(
-        "reader",
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        /* verbose= */ false
-      );
+      let isMounted = true;
+      const scanner = new Html5Qrcode("reader");
       scannerRef.current = scanner;
 
-      scanner.render(
+      scanner.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
         (decodedText) => {
-          if (decodedText && onScan) {
-            scanner.clear();
-            onScan(decodedText.trim());
+          if (decodedText && onScan && isMounted) {
+            scanner.stop().then(() => {
+              if (isMounted) {
+                scanner.clear();
+                onScan(decodedText.trim());
+              }
+            }).catch(() => {
+              if (isMounted) {
+                onScan(decodedText.trim());
+              }
+            });
           }
         },
         (error) => {
-          // ignoring continuous errors
+          // ignore
         }
-      );
+      ).catch((err) => {
+        console.error("Camera start error:", err);
+      });
 
       return () => {
-        scanner.clear().catch(console.error);
+        isMounted = false;
+        if (scanner.isScanning) {
+          scanner.stop().then(() => {
+            scanner.clear();
+          }).catch(() => {});
+        } else {
+          scanner.clear();
+        }
         scannerRef.current = null;
       };
     }

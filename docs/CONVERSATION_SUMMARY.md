@@ -1,3 +1,7 @@
+## 2026-08-22 - Fix Camera Permissies bij QR Login (Voltooid)
+- **Actie**: In `MobileScanner.tsx` is de onderliggende bibliotheek-aanroep veranderd van `Html5QrcodeScanner` (die een eigen verwarrende UI rendert met een extra start-knop) naar de directe `Html5Qrcode` API.
+- **Resultaat**: Zodra een gebruiker nu in de Login QR modal op het tabblad "Camera" klikt, wordt de camera onmiddellijk gestart (`scanner.start()`) waardoor de browser *direct* om de benodigde camera-permissies vraagt. Voorheen werd dit niet altijd de eerste keer gevraagd omdat de gebruiker eerst op een onduidelijke secundaire knop in de scanner-box moest klikken.
+
 ## 2026-08-22 - Header Versie Badge & Print Queue Bug (Voltooid/Onderzocht)
 - **Actie (UI)**: De status badge met het versienummer in `Header.tsx` is helderder gemaakt (opacity-50 verwijderd) en responsive gemaakt. Op tabletformaat (`md` breakpoint) verschijnt hij nu als compacte aanklikbare knop (alleen met het bolletje en versienummer) naast de zoekbalk.
 - **Onderzoek (Bug)**: Geïnvestigeerd waarom printopdrachten 4x werden herhaald met intervallen van 10-15 minuten.
