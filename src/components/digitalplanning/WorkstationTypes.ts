@@ -302,7 +302,7 @@ export const normalizePlanningStatus = (status: unknown) => String(status || "")
 
 export const isInactivePlanningStatus = (status: unknown) => {
   const normalized = normalizePlanningStatus(status);
-  return ["completed", "cancelled", "shipped", "rejected", "finished", "deleted"].includes(normalized);
+  return ["completed", "cancelled", "shipped", "rejected", "finished", "deleted", "gereed", "afkeur", "klaar"].includes(normalized);
 };
 
 export const toFiniteNumber = (value: unknown) => {

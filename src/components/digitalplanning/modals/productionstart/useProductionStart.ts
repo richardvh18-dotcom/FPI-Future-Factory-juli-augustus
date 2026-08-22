@@ -1,0 +1,2301 @@
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useLocation } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import {
+  PlayCircle,
+  Printer,
+  RefreshCw,
+  QrCode,
+  Layers,
+  X,
+  Keyboard,
+  Activity,
+  FileText,
+  AlertTriangle,
+  CheckCircle2,
+  Loader2,
+  Database,
+  Cpu
+} from "lucide-react";
+import { collection, collectionGroup, getDocs, query, where, onSnapshot, doc, getDoc, setDoc, deleteDoc, serverTimestamp, runTransaction, limit, orderBy } from "firebase/firestore";
+
+import { db, auth, logActivity } from "../../../../config/firebase"; 
+import { PATHS, getArchiveItemsPath, getPathString } from "../../../../config/dbPaths";
+import {
+  filterLabelsByProduct,
+  processLabelData,
+  evaluatePrintRules,
+  getCompactPrintVariables,
+  type PrintRuleDef
+} from "../../../../utils/labelHelpers";
+import { getFlangeSeriesInfo } from "../../../../utils/flangeSeriesHelper";
+import { lookupProductByManufacturedId } from "../../../../utils/conversionLogic";
+import { useNotifications } from "../../../../contexts/NotificationContext";
+import { useProgressOperationsStore } from "../../../../contexts/ProgressOperationContext";
+import { generateLotBatchZPL } from "../../../../utils/zplHelper";
+import { renderLabelForPrinter } from "../../../../utils/printerProtocolService";
+import { getDriver } from "../../../../utils/printerDrivers";
+import { queuePrintJob } from "../../../../services/planningSecurityService";
+import { resolvePrinterForRouting } from "../../../../utils/printRouting";
+import LabelVisualPreview from "../../../printer/LabelVisualPreview";
+import { useLabelPreview } from "../../../../hooks/useLabelPreview";
+import InternalQrImage from "../../../../utils/InternalQrImage";
+import { extractLotSequence } from "../lotSequenceHelpers";
+import { buildBh18RobotProgramPreparation } from "../../../../services/robotProgramService";
+import { enqueueGatewayPcJob } from "../../../../services/gatewayPcService";
+import { safeSetLocalStorage as safeSetLocalStorageShared } from "../../../../utils/safeStorage";
+
+/**
+ * DPI-aware PIXELS_PER_MM for print preview parity
+ * Must match zplHelper.js printer DPI conversions
+ */
+const getPixelsPerMm = (printerDpi = 203) => {
+  return (printerDpi || 203) / 25.4;
+};
+
+const DEFAULT_PRINTER_DPI = 203;
+const LOT_ARCHIVE_LOOKBACK_YEARS = 6;
+const USB_PRINTER_VENDOR_KEY = "usb_printer_vendor";
+const USB_PRINTER_PRODUCT_KEY = "usb_printer_product";
+const USB_PRINTER_SERIAL_KEY = "usb_printer_serial";
+const USB_PRINTER_ID_KEY = "usb_printer_id";
+const PRINT_STATION_SELECTED_KEY = "print_station_selected_station";
+const PRINT_STATION_BINDINGS_KEY = "print_station_printer_bindings_v1";
+const START_OPERATION_TIMEOUT_MS = 45000;
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  return String(error);
+};
+
+const truncateText = (value: unknown, maxLen = 160): string =>
+  String(value || "").trim().slice(0, maxLen);
+
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> => {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  try {
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+    });
+
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  }
+};
+
+const tryParseObject = (raw: string): Record<string, unknown> => {
+  try {
+    const parsed = JSON.parse(raw as string);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+const RECYCLED_SEQUENCE_SCAN_LIMIT = 20;
+
+const safeSetLocalStorage = (key: string, value: string) =>
+  safeSetLocalStorageShared(key, value, {
+    cleanupKeys: [USB_PRINTER_SERIAL_KEY, PRINT_STATION_BINDINGS_KEY],
+  });
+
+const safeStoredUsbSerial = (value: unknown): string => String(value || "").trim().slice(0, 128);
+
+type LabelOption = {
+  id: string;
+  name?: string;
+  width?: number | string;
+  height?: number | string;
+  tags?: string[];
+};
+
+type OperatorPrintRule = {
+  id?: string;
+  enabled?: boolean;
+  productType?: string;
+  code?: string;
+  minDiameter?: number;
+  maxDiameter?: number;
+  angle?: number;
+  labelCount?: number;
+  labelSize?: "large" | "small";
+};
+
+type OrderLike = Record<string, unknown>;
+type PrinterLike = {
+  id?: string;
+  name?: string;
+  vendorId?: string;
+  productId?: string;
+  usbSerialNumber?: string;
+  dpi?: number | string;
+  linkedStations?: unknown[];
+  queueStations?: unknown[];
+  [key: string]: unknown;
+};
+
+const isPermissionDeniedError = (error: unknown) => {
+  const code = String((error as any)?.code || "").toLowerCase();
+  const message = String((error as any)?.message || "").toLowerCase();
+  return code.includes("permission-denied") || message.includes("insufficient permissions");
+};
+
+const normalizeStationBindingKey = (value: unknown): string =>
+  String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/^40(?=BH|BM|BA)/, "");
+
+const getBoundPrinterIdForStation = (station: string): string => {
+  if (typeof window === "undefined") return "";
+  const stationKey = normalizeStationBindingKey(station);
+  if (!stationKey) return "";
+
+  try {
+    const raw = String(localStorage.getItem(PRINT_STATION_BINDINGS_KEY) || "").trim();
+    if (!raw) return "";
+    const parsed = tryParseObject(raw);
+
+    const direct = String(parsed[stationKey] || "").trim();
+    if (direct) return direct;
+
+    // Support keys with/without 40-prefix.
+    const altKey = stationKey.startsWith("40") ? stationKey.slice(2) : `40${stationKey}`;
+    return String(parsed[altKey] || "").trim();
+  } catch {
+    return "";
+  }
+};
+
+const persistPrinterBindingForAutoProcessor = (station: string, printer: PrinterLike) => {
+  if (typeof window === "undefined") return;
+  const safeStation = normalizeStationBindingKey(station);
+  const safePrinterId = String(printer?.id || "").trim();
+  if (!safeStation || !safePrinterId) return;
+
+  try {
+    safeSetLocalStorage(PRINT_STATION_SELECTED_KEY, safeStation);
+
+    const vendorId = String(printer?.vendorId || "").trim();
+    const productId = String(printer?.productId || "").trim();
+    const serial = safeStoredUsbSerial(printer?.usbSerialNumber);
+    if (vendorId && productId) {
+      safeSetLocalStorage(USB_PRINTER_ID_KEY, safePrinterId);
+      safeSetLocalStorage(USB_PRINTER_VENDOR_KEY, vendorId);
+      safeSetLocalStorage(USB_PRINTER_PRODUCT_KEY, productId);
+      if (serial) {
+        safeSetLocalStorage(USB_PRINTER_SERIAL_KEY, serial);
+      }
+    } else {
+      // Bescherm USB-herstel: niet-USB printers mogen de bestaande USB-context NIET wissen.
+    }
+
+    const raw = String(localStorage.getItem(PRINT_STATION_BINDINGS_KEY) || "").trim();
+    const parsed = raw ? tryParseObject(raw) : {};
+    const updated = {
+      ...parsed,
+      [safeStation]: safePrinterId,
+    };
+    safeSetLocalStorage(PRINT_STATION_BINDINGS_KEY, JSON.stringify(updated));
+  } catch {
+    // Local storage is best-effort; print queueing must continue.
+  }
+};
+
+// Functie om ISO week en bijbehorend ISO jaar te berekenen
+const getIsoWeekAndYear = (d: Date) => {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+  const year = date.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const weekNo = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return { week: String(weekNo).padStart(2, '0'), year: String(year) };
+};
+
+// Machine naar FPI code mapping
+const getMachineCode = (station: string | null | undefined) => {
+  if (!station) return "999";
+  const normalized = String(station).toUpperCase().trim();
+  const baseStation = normalized.startsWith('40') ? normalized.substring(2) : normalized;
+  
+  const map: Record<string, string> = {
+    'BH11': '411',
+    'BH12': '412',
+    'BH15': '415',
+    'BH16': '416',
+    'BH17': '417',
+    'BH18': '418',
+    'BH31': '431',
+    'BH05': '405',
+    'BH07': '407',
+    'BH08': '408',
+    'BH09': '409',
+    'BA05': '405',
+    'BA07': '417'
+  };
+  
+  if (map[baseStation]) return map[baseStation];
+
+  const digits = baseStation.replace(/\D/g, "");
+  if (!digits) return "999";
+  
+  if (digits.length === 3) return digits;
+  if (digits.length === 1) return `40${digits}`;
+  return `4${digits.slice(-2).padStart(2, "0")}`;
+};
+
+const getNormalizedPrinterDpi = (printer: PrinterLike, fallback = 203) => {
+  const driverDpi = Number(getDriver(printer)?.nativeDpi);
+  if (Number.isFinite(driverDpi) && driverDpi > 0) return driverDpi;
+  const parsed = Number.parseInt(String(printer?.dpi ?? ""), 10);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  return fallback;
+};
+
+const normalizeStationCode = (station: unknown): string => {
+  const normalized = String(station || "").trim().toUpperCase();
+  return normalized.startsWith("40") ? normalized.slice(2) : normalized;
+};
+
+export const isBh18Station = (station: unknown): boolean => normalizeStationCode(station) === "BH18";
+
+const isLargeLabelOption = (label: LabelOption): boolean =>
+  (Number(label.height) >= 45 && !String(label.name || "").toLowerCase().includes("smal")) ||
+  String(label.name || "").toLowerCase().includes("groot") ||
+  String(label.name || "").toLowerCase().includes("standard");
+
+const isSmallLabelOption = (label: LabelOption): boolean =>
+  String(label.name || "").toLowerCase().includes("smal") || Number(label.height) < 45;
+
+const getNormalizedLabelTags = (label: LabelOption): string[] =>
+  (Array.isArray(label.tags) ? label.tags : [])
+    .map((tag) => String(tag || "").trim().toUpperCase())
+    .filter(Boolean);
+
+const getOrderCodeTags = (order: OrderLike): string[] => {
+  const orderText = [order?.item, order?.itemCode, order?.itemDescription, order?.description, order?.extraCode]
+    .map((value) => String(value || "").toUpperCase())
+    .join(" ");
+  return Array.from(new Set(orderText.match(/\bA\d[A-Z]\d\b/g) || []));
+};
+
+const getOrderPrimaryCode = (order: OrderLike): string => {
+  const explicitCode = String(order?.extraCode || order?.code || "").trim().toUpperCase();
+  if (explicitCode) return explicitCode;
+
+  const tags = getOrderCodeTags(order);
+  return String(tags[0] || "").trim().toUpperCase();
+};
+
+const hasSpecificOrderCodeTag = (label: LabelOption): boolean =>
+  getNormalizedLabelTags(label).some((tag) => /^A\d[A-Z]\d$/.test(tag));
+
+const getOrderNominalDiameter = (order: OrderLike): number => {
+  const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
+  const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
+  const parsed = match ? parseInt(match[1], 10) : parseInt(String(order?.diameter || order?.dn || "0"), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getOrderAngle = (order: OrderLike): number | null => {
+  const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
+  const degreeMatch = itemIdentifier.match(/\b(11\.25|22\.5|30|45|60|90)\s*(?:DEG|GR|°)?\b/);
+  if (!degreeMatch) return null;
+  const angle = Number.parseFloat(degreeMatch[1]);
+  return Number.isFinite(angle) ? angle : null;
+};
+
+const isSleevelessCouplerOrder = (order: OrderLike): boolean => {
+  const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription, order?.description]
+    .join(" ")
+    .toUpperCase();
+  const hasSleeveToken = /\bSLEEVE?LESS\b/.test(itemIdentifier);
+  const hasCouplerToken = itemIdentifier.includes("COUPLER") || itemIdentifier.includes("MOF");
+  return hasSleeveToken && hasCouplerToken;
+};
+
+const getOrderProductTypeKey = (order: OrderLike): string => {
+  const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(" ").toUpperCase();
+  const teePairMatch = itemIdentifier.match(/(\d+)\s*[xX/]\s*(\d+)/);
+  const hasWyeTee = /\bWYE\b|\bY[\s-]?TEE\b/.test(itemIdentifier);
+  const hasTee = itemIdentifier.includes("TEE") || hasWyeTee;
+  const isUnequalBySize = teePairMatch && teePairMatch[1] !== teePairMatch[2];
+  if (isSleevelessCouplerOrder(order)) return "COUPLER";
+  if (itemIdentifier.includes("ELB") || itemIdentifier.includes("BOCHT")) return "ELBOW";
+  if (itemIdentifier.includes("FLANGE") || itemIdentifier.includes("FLENS")) return "FLANGE";
+  if (itemIdentifier.includes("UNEQUAL") || itemIdentifier.includes("VERLOOP TEE") || (hasTee && isUnequalBySize)) return "UNEQUAL-TEE";
+  if (hasTee) return "EQUAL-TEE";
+  if (itemIdentifier.includes("REDUCER") || itemIdentifier.includes("VERLOOP")) return "REDUCER";
+  if (itemIdentifier.includes("COUPLER") || itemIdentifier.includes("MOF")) return "COUPLER";
+  if (itemIdentifier.includes("ADAPTOR") || itemIdentifier.includes("ADAPTER")) return "ADAPTOR";
+  return "OTHER";
+};
+
+const resolveOperatorPrintRule = (order: OrderLike, rules: OperatorPrintRule[] | null | undefined): OperatorPrintRule | null => {
+  const list = Array.isArray(rules) ? rules : [];
+  if (list.length === 0) return null;
+
+  const diameter = getOrderNominalDiameter(order);
+  const angle = getOrderAngle(order);
+  const productType = getOrderProductTypeKey(order);
+  const orderCode = getOrderPrimaryCode(order);
+
+  return (
+    list.find((rule) => {
+      if (rule?.enabled === false) return false;
+
+      const ruleType = String(rule?.productType || "ANY").toUpperCase();
+      if (ruleType !== "ANY" && ruleType !== productType) return false;
+
+      const ruleCode = String(rule?.code || "ANY").trim().toUpperCase();
+      if (ruleCode !== "ANY") {
+        if (!orderCode || orderCode !== ruleCode) return false;
+      }
+
+      if (typeof rule?.minDiameter === "number" && diameter < rule.minDiameter) return false;
+      if (typeof rule?.maxDiameter === "number" && diameter > rule.maxDiameter) return false;
+
+      if (typeof rule?.angle === "number") {
+        if (angle === null) return false;
+        if (Math.abs(angle - rule.angle) > 0.001) return false;
+      }
+
+      return true;
+    }) || null
+  );
+};
+
+export const useProductionStart = ({
+  order,
+  isOpen,
+  onClose,
+  onStartInitiated,
+  onStart,
+  onOpenProductInfo,
+  stationId = "",
+  existingProducts = [],
+}: {
+  order: OrderLike;
+  isOpen: boolean;
+  onClose: () => void;
+  onStartInitiated?: () => void;
+  onStart: (...args: unknown[]) => void | Promise<void>;
+  onOpenProductInfo?: (...args: unknown[]) => void;
+  stationId?: string;
+  existingProducts?: OrderLike[];
+}) => {
+  const { t } = useTranslation();
+  const { showSuccess, showError , notify} = useNotifications();
+  const addOperation = useProgressOperationsStore((state: any) => state.addOperation);
+  const updateOperation = useProgressOperationsStore((state: any) => state.updateOperation);
+  const removeOperation = useProgressOperationsStore((state: any) => state.removeOperation);
+  const [mode, setMode] = useState(() => {
+    const normalized = String(stationId || "").toUpperCase().trim();
+    const noPrefix = normalized.startsWith("40") ? normalized.slice(2) : normalized;
+    return noPrefix.startsWith("BH") ? "auto" : "manual";
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      const normalized = String(stationId || "").toUpperCase().trim();
+      const noPrefix = normalized.startsWith("40") ? normalized.slice(2) : normalized;
+      setMode(noPrefix.startsWith("BH") ? "auto" : "manual");
+    }
+  }, [isOpen, stationId]);
+  const [lotNumber, setLotNumber] = useState("");
+  const [stringCount, setStringCount] = useState("1");
+  const [labelCount, setLabelCount] = useState("1");
+  const [manualLotInput, setManualLotInput] = useState("");
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<string[]>([]);
+  const [manualOrderInput, setManualOrderInput] = useState("");
+  const [assignedOperators, setAssignedOperators] = useState<Array<{ number: string; name: string }>>([]);
+  const [operatorInput, setOperatorInput] = useState("");
+
+  const [previewLotIndex, setPreviewLotIndex] = useState(0);
+
+  useEffect(() => {
+    setPreviewLotIndex(0);
+  }, [stringCount, isOpen]);
+  
+  // Refs voor autofocus bij barcode scanning
+  const orderInputRef = useRef<HTMLInputElement>(null);
+  const lotInputRef = useRef<HTMLInputElement>(null);
+  const manualLotAutoStartTimeoutRef = useRef<any>(null);
+  const lotRefreshRunIdRef = useRef(0);
+  const lastLotInputAtRef = useRef(0);
+  const previousLotInputRef = useRef("");
+  const scannerLikeLotInputRef = useRef(false);
+  const lastResetKeyRef = useRef("");
+  const [orderValidated, setOrderValidated] = useState(false);
+  const [orderError, setOrderError] = useState("");
+
+  const [selectedLabelId, setSelectedLabelId] = useState("");
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const location = useLocation();
+  
+  const [savedPrinters, setSavedPrinters] = useState<PrinterLike[]>([]);
+  const [generalSettings, setGeneralSettings] = useState<Record<string, unknown>>({ flangeSeriesRules: [] });
+  const [dynamicPrintRules, setDynamicPrintRules] = useState<PrintRuleDef[]>([]);
+  const [toolingMolds, setToolingMolds] = useState<OrderLike[]>([]);
+  const [relatedItemCodes, setRelatedItemCodes] = useState<string[]>([]);
+  const [printConfig, setPrintConfig] = useState({
+    mode: "queue", 
+    printerIp: "",
+    printerId: ""
+  });
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const previewAreaRef = useRef<HTMLDivElement>(null);
+  const counterPermissionWarnedRef = useRef(false);
+  const lotExistsCacheRef = useRef<Map<string, { exists: boolean; checkedAt: number }>>(new Map());
+
+  const [isCheckingLot, setIsCheckingLot] = useState(false);
+  const [isAutoLotRefreshing, setIsAutoLotRefreshing] = useState(false);
+  const [lotError, setLotError] = useState("");
+  const [isStarting, setIsStarting] = useState(false);
+  const [robotPosition, setRobotPosition] = useState<number | null>(1);
+  const [manualMinimumSeq, setManualMinimumSeq] = useState<number | null>(null);
+  const [manualPoolHint, setManualPoolHint] = useState("");
+  const isManualMode = mode === "manual";
+  const shouldAutoFocusInputs = useMemo(() => {
+    if (typeof window === "undefined") return true;
+    const hasCoarsePointer = typeof window.matchMedia === "function"
+      ? window.matchMedia("(pointer: coarse)").matches
+      : false;
+    const hasTouch = typeof navigator !== "undefined" && Number(navigator.maxTouchPoints || 0) > 0;
+    return !(hasCoarsePointer || hasTouch);
+  }, []);
+  const flangeSeriesInfo = useMemo(
+    () =>
+      getFlangeSeriesInfo(
+        order,
+        generalSettings?.flangeSeriesRules,
+        toolingMolds,
+        stationId,
+        relatedItemCodes
+      ),
+    [order, generalSettings?.flangeSeriesRules, toolingMolds, stationId, relatedItemCodes]
+  );
+  const isFlangeOrder = !!flangeSeriesInfo?.isFlange;
+  const normalizedStation = String(stationId || "").toUpperCase().trim();
+  const normalizedStationNoPrefix = normalizedStation.startsWith("40")
+    ? normalizedStation.slice(2)
+    : normalizedStation;
+  const isBh11OrBh15Station = normalizedStationNoPrefix === "BH11" || normalizedStationNoPrefix === "BH15";
+  const isBh12Station = normalizedStationNoPrefix === "BH12";
+  const isSleevelessCoupler = isSleevelessCouplerOrder(order);
+  const hasFlangeIndicator = /\b(?:FL|FLENS|FLANGE|STUB)\b/.test(
+    [
+      order?.item,
+      order?.itemDescription,
+      order?.description,
+      order?.article,
+      order?.itemCode,
+    ]
+      .map((value) => String(value || "").toUpperCase())
+      .join(" ")
+      ) || String(order?.itemCode || "").trim().toUpperCase().startsWith("FL") || String(order?.item || "").trim().toUpperCase().startsWith("FL");
+  const shouldUseFlangeLabelFlow = !isSleevelessCoupler && (isFlangeOrder || hasFlangeIndicator);
+
+  const sanitizePositiveIntInput = (value: unknown) => {
+    const digitsOnly = String(value ?? "").replace(/\D/g, "");
+    return digitsOnly;
+  };
+
+  const normalizePositiveIntInput = (value: unknown, fallback = 1) => {
+    const parsed = parseInt(String(value || ""), 10);
+    return String(Number.isFinite(parsed) && parsed > 0 ? parsed : fallback);
+  };
+
+  const printerHasStation = (printer: PrinterLike, station: string) => {
+    if (!printer || !station) return false;
+    const linked = Array.isArray(printer.linkedStations) ? printer.linkedStations : [];
+    const queue = Array.isArray(printer.queueStations) ? printer.queueStations : [];
+    return [...linked, ...queue].includes(station);
+  };
+
+  const resolveTargetPrinter = (printerList: PrinterLike[], station: string, routeKey: string) => {
+    return resolvePrinterForRouting(printerList, {
+      stationId: station,
+      routeKey,
+      labelRoute: routeKey,
+    });
+  };
+
+  const resolveTargetPrinterAsync = async () => {
+    const boundPrinterId = getBoundPrinterIdForStation(stationId);
+    const currentBound = boundPrinterId
+      ? savedPrinters.find((p: PrinterLike) => String((p as any)?.id || "") === boundPrinterId)
+      : null;
+    const currentById = printConfig.printerId
+      ? savedPrinters.find((p: PrinterLike) => (p as any).id === printConfig.printerId)
+      : null;
+
+    const prnPaths = PATHS.PRINTERS;
+    let fetchedPrinters = savedPrinters;
+    try {
+      const snap = await getDocs(collection(db, getPathString(prnPaths as string[])));
+      fetchedPrinters = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch (e) {
+      console.warn("Kon printers niet ophalen, gebruik lokale printerlijst", e);
+    }
+
+    const fetchedBound = boundPrinterId
+      ? fetchedPrinters.find((p: PrinterLike) => String((p as any)?.id || "") === boundPrinterId)
+      : null;
+
+    let dynamicRules: Record<string, unknown>[] = [];
+    try {
+      const rulesPath = getPathString(PATHS.PRINTER_ROUTING_RULES);
+      if (rulesPath) {
+        const rulesSnap = await getDocs(collection(db, rulesPath));
+        dynamicRules = rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      }
+    } catch (e) {
+      console.warn("Kon printerRules niet ophalen", e);
+    }
+
+    const fetchedResolved = resolvePrinterForRouting(fetchedPrinters, {
+      stationId,
+      routeKey: isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`,
+      labelRoute: isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`
+    }, dynamicRules);
+    
+    if (fetchedResolved) return fetchedResolved;
+
+    // Centrale routing heeft voorrang op oude browserbindings en handmatige defaults.
+    return fetchedBound || currentBound || currentById || null;
+  };
+
+  const productForPreview = useMemo(() => ({
+    ...order,
+    orderNumber: isManualMode ? manualOrderInput || order.orderId : order.orderId,
+    productId: order.itemCode,
+    description: order.item,
+    lotNumber: isManualMode ? manualLotInput : (lotNumber || "LADEN..."),
+  }), [order, isManualMode, manualOrderInput, manualLotInput, lotNumber]);
+
+  const { selectedLabel, previewData, availableLabels: allLabels, loadingLabels } = useLabelPreview(productForPreview, selectedTemplateIds[0] || selectedLabelId || undefined);
+  const matchedOperatorPrintRule = useMemo(
+    () => resolveOperatorPrintRule(order, generalSettings?.labelPrintRules as OperatorPrintRule[] | undefined),
+    [order, generalSettings?.labelPrintRules]
+  );
+
+  useEffect(() => {
+    if (isOpen) {
+      let initialCount = parseInt(stringCount, 10) || 1;
+
+      if (!shouldUseFlangeLabelFlow && typeof matchedOperatorPrintRule?.labelCount === "number" && matchedOperatorPrintRule.labelCount > 0) {
+        initialCount = matchedOperatorPrintRule.labelCount;
+      }
+
+      if (isBh12Station && !shouldUseFlangeLabelFlow) {
+        initialCount = 1;
+      }
+
+
+
+      setLabelCount(mode === "qc_steekproef" ? "1" : String(Math.max(1, initialCount)));
+    }
+  }, [isOpen, stringCount, stationId, order, shouldUseFlangeLabelFlow, isBh12Station, mode]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsub = onSnapshot(
+      doc(db, getPathString(PATHS.GENERAL_SETTINGS as string[])),
+      (snap) => {
+        if (snap.exists()) {
+          setGeneralSettings((prev: Record<string, unknown>) => ({ ...prev, ...(snap.data() || {}) }));
+        }
+      },
+      (err) => {
+        console.error("Kon algemene instellingen niet laden:", err);
+      }
+    );
+    return () => unsub();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let active = true;
+    const sourceCode = String(order?.itemCode || order?.item || "").trim();
+    if (!sourceCode) {
+      setRelatedItemCodes([]);
+      return;
+    }
+
+    const loadConversionCodes = async () => {
+      try {
+        const conversion = await lookupProductByManufacturedId(null, sourceCode);
+        const conversionAny = conversion as Record<string, unknown> | null;
+        if (!active) return;
+        const candidates = Array.from(
+          new Set(
+            [
+              sourceCode,
+              conversionAny?.manufacturedId,
+              conversionAny?.targetProductId,
+              conversionAny?.id,
+            ]
+              .map((value) => String(value || "").trim())
+              .filter(Boolean)
+          )
+        );
+        setRelatedItemCodes(candidates);
+      } catch (error) {
+        console.error("Kon conversiecodes niet laden voor mallenmatch:", error);
+        setRelatedItemCodes([sourceCode]);
+      }
+    };
+
+    loadConversionCodes();
+    return () => {
+      active = false;
+    };
+  }, [isOpen, order?.itemCode, order?.item]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsub = onSnapshot(
+      collection(db, getPathString(PATHS.TOOLING_MOLDS as string[])),
+      (snap) => {
+        const rows = snap.docs.map((entry) => ({ id: entry.id, ...entry.data() }));
+        setToolingMolds(rows);
+      },
+      (err: unknown) => {
+        console.error("Kon gereedschap/mallen niet laden:", err);
+        setToolingMolds([]);
+      }
+    );
+    return () => unsub();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !isFlangeOrder) return;
+    const cavityCount = Math.max(1, Number(flangeSeriesInfo?.cavityCount || 1));
+    setStringCount((prev) => (String(prev || "") === "1" ? String(cavityCount) : prev));
+    if (mode === "auto" || mode === "qc_steekproef") {
+      setLabelCount("0");
+    }
+  }, [isOpen, mode, isFlangeOrder, flangeSeriesInfo?.cavityCount]);
+
+  const availableLabels = useMemo(() => {
+    if (!allLabels || allLabels.length === 0) return [];
+    let filteredLabels = filterLabelsByProduct(allLabels, order, { excludeTempOrderLabels: true }) as LabelOption[];
+    const orderCodeTags = getOrderCodeTags(order);
+
+    // Zorg dat exacte A-code templates (bijv. A1Q1) zichtbaar blijven in de modal.
+    if (orderCodeTags.length > 0) {
+      const exactCodeLabels = allLabels.filter((label: LabelOption) => {
+        const normalizedTags = getNormalizedLabelTags(label);
+        return orderCodeTags.some((codeTag) => normalizedTags.includes(codeTag));
+      }) as LabelOption[];
+
+      if (exactCodeLabels.length > 0) {
+        const merged = [...filteredLabels, ...exactCodeLabels];
+        filteredLabels = merged.filter(
+          (label, index, array) => index === array.findIndex((candidate) => String(candidate.id) === String(label.id))
+        );
+      }
+    }
+    
+    // Sortering voor BH18: Grote labels eerst
+    if (stationId === 'BH18') {
+        filteredLabels.sort((a, b) => {
+          const aLarge = Number(a.height) >= 45 || String(a.name || "").toLowerCase().includes("groot") || String(a.name || "").toLowerCase().includes("standard");
+          const bLarge = Number(b.height) >= 45 || String(b.name || "").toLowerCase().includes("groot") || String(b.name || "").toLowerCase().includes("standard");
+            if (aLarge && !bLarge) return -1;
+            if (!aLarge && bLarge) return 1;
+            return 0;
+        });
+    }
+
+    return filteredLabels;
+  }, [allLabels, order, stationId]);
+
+  const selectableLabels = useMemo(() => {
+    if (!Array.isArray(availableLabels) || availableLabels.length === 0) return [];
+
+    const ruleCodeTag = "";
+    const hasRuleSpecificCode = Boolean(ruleCodeTag && ruleCodeTag !== "ANY");
+    if (!hasRuleSpecificCode) return availableLabels;
+
+    const filteredByRuleCode = availableLabels.filter((label: LabelOption) => {
+      const normalizedTags = getNormalizedLabelTags(label);
+      return normalizedTags.includes(ruleCodeTag) || String(label.name || "").toUpperCase().includes(ruleCodeTag);
+    });
+
+    return filteredByRuleCode.length > 0 ? filteredByRuleCode : availableLabels;
+  }, [availableLabels, ]);
+
+  // Autofocus naar ordernummer (of lotnummer) bij openen in manuele modus
+  useEffect(() => {
+    if (isOpen && mode === "manual" && shouldAutoFocusInputs) {
+      setTimeout(() => {
+        if (orderValidated && lotInputRef.current) {
+          lotInputRef.current?.focus();
+        } else if (orderInputRef.current) {
+          orderInputRef.current?.focus();
+        }
+      }, 300);
+    }
+  }, [isOpen, mode, orderValidated, shouldAutoFocusInputs]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const unsub = onSnapshot(
+      collection(db, "future-factory/settings/label_print_rules"),
+      (snap) => {
+        setDynamicPrintRules(snap.docs.map(d => ({ id: d.id, ...d.data() } as PrintRuleDef)));
+      },
+      (err) => console.error("Kon dynamische printregels niet laden:", err)
+    );
+    return () => unsub();
+  }, [isOpen]);
+
+  // 1. Label Templates & Rules Laden
+  useEffect(() => {
+    const setDefaultLabel = () => {
+      if (!isOpen || loadingLabels || selectableLabels.length === 0) return;
+      
+      // Nieuwe logica: Eerst de rule engine proberen
+      const productDataForRules = processLabelData(order);
+      const ruleOutput = evaluatePrintRules(productDataForRules, dynamicPrintRules);
+
+      if (ruleOutput.labelCount) {
+        setLabelCount(String(ruleOutput.labelCount));
+      }
+
+      if (ruleOutput.templateIds && ruleOutput.templateIds.length > 0) {
+        setSelectedTemplateIds(ruleOutput.templateIds);
+        // Als er maar één template is, zet die ook als de 'hoofd' geselecteerde voor de preview
+        if (ruleOutput.templateIds.length === 1) {
+          setSelectedLabelId(ruleOutput.templateIds[0]);
+        }
+        return; // Stop hier, de regel heeft hard de specifieke templates overgenomen
+      }
+
+      try {
+        if (selectableLabels.length > 0) {
+          const isFlange = ruleOutput.labelSizeId === "Flange" ? true : shouldUseFlangeLabelFlow;
+
+          if (isFlange) {
+            // Zoek eerst naar labels met de tag FLANGE, FLENS of FLENZEN
+            let flangeLabels = selectableLabels.filter((l: LabelOption) =>
+              Array.isArray(l.tags) && l.tags.some((tag: string) => /^(FLANGE|FLENS|FLENZEN)$/i.test(tag))
+            );
+
+            const smallFlangeLabels = flangeLabels.filter((label: LabelOption) => isSmallLabelOption(label));
+            if (smallFlangeLabels.length > 0) {
+              flangeLabels = smallFlangeLabels;
+            }
+
+            // Als er geen specifiek FLANGE label is, gebruik dan alle labels als fallback
+            if (flangeLabels.length === 0) {
+              flangeLabels = selectableLabels;
+            }
+
+            const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(' ').toUpperCase();
+            let flangeLabelToSelect = null;
+
+            // Zoek naar specifieke materiaal tags in de labels (CST, EST, ETW/EWT, EMT)
+            const hasMaterialTagOrName = (label: LabelOption, materialVariants: string[]) => {
+              return (Array.isArray(label.tags) && label.tags.some((tag: string) => materialVariants.includes(tag.toUpperCase()))) ||
+                   materialVariants.some((v: string) => String(label.name || "").toUpperCase().includes(v));
+            };
+
+            if (itemIdentifier.includes("EMT")) {
+              flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["EMT", "FIBERMAR"]));
+            } else if (itemIdentifier.includes("CST")) {
+              flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["CST", "WAVISTRONG"]));
+            } else if (itemIdentifier.includes("ETW") || itemIdentifier.includes("EWT")) {
+              flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["ETW", "EWT", "WAVISTRONG"]));
+            } else if (itemIdentifier.includes("EST")) {
+              flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["EST", "WAVISTRONG"]));
+            }
+
+            // Fallback
+            if (!flangeLabelToSelect) {
+                // Als het een van de Wavistrong varianten is, pak dan eventueel een EST label als fallback
+                if (itemIdentifier.includes("CST") || itemIdentifier.includes("EWT") || itemIdentifier.includes("ETW") || itemIdentifier.includes("EST")) {
+                     flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["EST"])) || flangeLabels[0];
+                } else if (itemIdentifier.includes("EMT")) {
+                     flangeLabelToSelect = flangeLabels.find((l: LabelOption) => hasMaterialTagOrName(l, ["EMT"])) || flangeLabels[0];
+                } else {
+                     flangeLabelToSelect = flangeLabels[0];
+                }
+            }
+
+            if (flangeLabelToSelect?.id && flangeLabelToSelect.id !== selectedLabelId) {
+              setSelectedLabelId(flangeLabelToSelect.id);
+            }
+            return;
+          }
+
+          // Voor niet-FL: eerst regel (groot/klein), daarna operatorregel, daarna BH18 fallback.
+          let preferLarge = false;
+          if (ruleOutput.labelSizeId === "Large") {
+             preferLarge = true;
+          } else if (ruleOutput.labelSizeId === "Small") {
+             preferLarge = false;
+          } else if (matchedOperatorPrintRule?.labelSize) {
+             preferLarge = matchedOperatorPrintRule.labelSize === "large";
+          } else {
+             preferLarge = stationId === 'BH18' || isBh12Station;
+          }
+          
+          if (stationId === 'BH18') {
+             const itemIdentifier = [order?.item, order?.itemCode, order?.itemDescription].join(' ').toUpperCase();
+             const match = itemIdentifier.match(/\b(\d{2,4})\s*(?:MM|-|R|X|\b)/);
+             const dia = match ? parseInt(match[1], 10) : parseInt(order?.diameter || order?.dn || 0, 10);
+             if (dia > 0 && dia < 125) {
+                 preferLarge = false; // Kleine variant
+             }
+          }
+          
+          const orderCodeTags = getOrderCodeTags(order);
+          const ruleCodeTag = "";
+          const hasRuleSpecificCode = Boolean(ruleCodeTag && ruleCodeTag !== "ANY");
+          const ruleCodeLabels = hasRuleSpecificCode
+            ? availableLabels.filter((label: LabelOption) => {
+                const normalizedTags = getNormalizedLabelTags(label);
+                return normalizedTags.includes(ruleCodeTag) || String(label.name || "").toUpperCase().includes(ruleCodeTag);
+              })
+            : [];
+          const exactCodeLabels = selectableLabels.filter((label: LabelOption) => {
+            const normalizedTags = getNormalizedLabelTags(label);
+            return orderCodeTags.some((codeTag) => normalizedTags.includes(codeTag));
+          });
+          const codeLabels = selectableLabels.filter((label: LabelOption) =>
+            getNormalizedLabelTags(label).includes("CODE")
+          );
+          const genericCodeLabels = codeLabels.filter((label: LabelOption) => !hasSpecificOrderCodeTag(label));
+          const nonSpecificLabels = selectableLabels.filter((label: LabelOption) => !hasSpecificOrderCodeTag(label));
+          const candidateLabels =
+            ruleCodeLabels.length > 0
+              ? ruleCodeLabels
+              : exactCodeLabels.length > 0
+              ? exactCodeLabels
+              : genericCodeLabels.length > 0
+                ? genericCodeLabels
+                : nonSpecificLabels.length > 0
+                  ? nonSpecificLabels
+                  : availableLabels;
+
+          let defaultLabel = preferLarge
+            ? candidateLabels.find((label: LabelOption) => isLargeLabelOption(label))
+            : candidateLabels.find((label: LabelOption) => isSmallLabelOption(label));
+
+          // Als SMALL expliciet gevraagd is, val niet terug op groot uit een te smalle kandidaatset.
+          if (!defaultLabel && !preferLarge) {
+            defaultLabel = selectableLabels.find((label: LabelOption) => isSmallLabelOption(label));
+          }
+
+          // Als LARGE expliciet gevraagd is, probeer alsnog eerst een grote uit alle labels.
+          if (!defaultLabel && preferLarge) {
+            defaultLabel = selectableLabels.find((label: LabelOption) => isLargeLabelOption(label));
+          }
+
+          if (!defaultLabel) {
+            defaultLabel = candidateLabels[0] || selectableLabels[0];
+          }
+
+          const labelToSelect = defaultLabel?.id || selectableLabels[0]?.id;
+          
+          if (labelToSelect) {
+            if (labelToSelect !== selectedLabelId) {
+              setSelectedLabelId(labelToSelect);
+            }
+            setSelectedTemplateIds([labelToSelect]); // Fallback naar enkele selectie
+          }
+        }
+      } catch (e) {
+        console.error("Fout bij laden labels:", e);
+      }
+    };
+    setDefaultLabel();
+  }, [isOpen, order, selectableLabels, loadingLabels, stationId, shouldUseFlangeLabelFlow, selectedLabelId, isBh12Station, dynamicPrintRules]);
+  
+  // 1b. Operators ophalen voor dit station
+  useEffect(() => {
+    const fetchOccupancy = async () => {
+      if (!isOpen || !stationId) return;
+      const today = new Date().toISOString().split('T')[0];
+      try {
+        const occPaths = PATHS.OCCUPANCY;
+        const q = query(
+          collection(db, getPathString(occPaths as string[])),
+          where("machineId", "==", stationId),
+          where("date", "==", today)
+        );
+        const snapshot = await getDocs(q);
+        const operators = snapshot.docs.map((doc) => ({
+          number: doc.data().operatorNumber,
+          name: doc.data().operatorName
+        }));
+        setAssignedOperators(operators);
+        if (operators.length === 1) {
+          // Auto-fill is handled by mode-watcher useEffect below
+        } else {
+          // Auto-fill is handled by mode-watcher useEffect below
+        }
+      } catch (err: unknown) {
+        console.error("Kon operators niet ophalen", err);
+      }
+    };
+    fetchOccupancy();
+  }, [isOpen, stationId]);
+
+  useEffect(() => {
+    if (mode === "qc_steekproef") {
+      setOperatorInput("");
+    } else if (assignedOperators.length === 1) {
+      setOperatorInput(assignedOperators[0].number);
+    }
+  }, [mode, assignedOperators]);
+
+  // 1c. Printers ophalen
+  useEffect(() => {
+    if(!isOpen) return;
+    try {
+        const prnPaths = PATHS.PRINTERS;
+        const printersRef = collection(db, getPathString(prnPaths as string[]));
+        const unsub = onSnapshot(printersRef, (snap) => {
+          const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setSavedPrinters(list);
+          const boundPrinterId = getBoundPrinterIdForStation(stationId);
+          const boundPrinter = boundPrinterId
+            ? list.find((p: PrinterLike) => String((p as any)?.id || "") === boundPrinterId)
+            : null;
+          const targetPrinter = resolveTargetPrinter(list, stationId, isFlangeOrder ? "MAZAK" : `STATION:${String(stationId || "").toUpperCase()}`);
+
+          const preferredPrinter = boundPrinter || targetPrinter;
+
+          if (preferredPrinter) {
+            // Default naar 'queue' als er een printer is geconfigureerd voor dit station.
+            // De gebruiker kan dit handmatig aanpassen met de print-mode knoppen.
+            setPrintConfig((prev) => ({
+              ...prev,
+              mode: 'queue',
+              printerId: boundPrinterId || prev.printerId || preferredPrinter.id
+            }));
+          }
+        });
+        return () => unsub();
+    } catch(e: unknown) {
+        console.error("Kon printers niet laden", e);
+    }
+  }, [stationId, isOpen]);
+
+  // --- SLIMME LOTNUMMER GENERATOR (FPI STANDAARD) ---
+
+  const checkLotNumberExists = async (lotToCheck: string) => {
+    if (!lotToCheck) return false;
+    try {
+      const normalizedLot = String(lotToCheck || "").trim().toUpperCase();
+      if (!normalizedLot) return false;
+
+      const now = Date.now();
+      const cached = lotExistsCacheRef.current.get(normalizedLot);
+      if (cached && now - cached.checkedAt < 15000) {
+        return cached.exists;
+      }
+
+      // 1) Lokale context check (realtime meegegeven producten in de modal)
+      const localExists = (existingProducts || []).some((p: OrderLike) => {
+        const lot = String(p?.lotNumber || "").trim().toUpperCase();
+        const activeLot = String(p?.activeLot || "").trim().toUpperCase();
+        return lot === normalizedLot || activeLot === normalizedLot;
+      });
+      if (localExists) {
+        lotExistsCacheRef.current.set(normalizedLot, { exists: true, checkedAt: now });
+        return true;
+      }
+
+      // 2) Actieve tracking check (root pad)
+      const trackingRef = collection(db, getPathString(PATHS.TRACKING as string[]));
+      const trackingByLotSnap = await getDocs(query(trackingRef, where("lotNumber", "==", normalizedLot), limit(1)));
+      if (!trackingByLotSnap.empty) {
+        lotExistsCacheRef.current.set(normalizedLot, { exists: true, checkedAt: now });
+        return true;
+      }
+
+      // 2b) Actieve tracking check (scoped items pad)
+      try {
+        const trackingPathPrefix = `${(PATHS.TRACKING || []).join("/")}/`;
+        const scopedItemsSnap = await getDocs(
+          query(collectionGroup(db, "items"), where("lotNumber", "==", normalizedLot), limit(10))
+        );
+        const scopedExists = scopedItemsSnap.docs.some((docSnap) => {
+          const path = String(docSnap.ref?.path || "");
+          return path.startsWith(trackingPathPrefix);
+        });
+        if (scopedExists) {
+          lotExistsCacheRef.current.set(normalizedLot, { exists: true, checkedAt: now });
+          return true;
+        }
+      } catch (scopedErr: unknown) {
+        // Niet blokkeren op index/permissie issues; overige checks blijven actief.
+      }
+
+      // 3) Legacy active production check (orders met activeLot)
+      const actPaths = PATHS.ACTIVE_PRODUCTION;
+      const activeRef = collection(db, getPathString(actPaths as string[]));
+      const activeLotSnap = await getDocs(query(activeRef, where("activeLot", "==", normalizedLot), limit(1)));
+      if (!activeLotSnap.empty) {
+        lotExistsCacheRef.current.set(normalizedLot, { exists: true, checkedAt: now });
+        return true;
+      }
+
+      const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+      if (isOffline) {
+        lotExistsCacheRef.current.set(normalizedLot, { exists: false, checkedAt: now });
+        return false;
+      }
+
+      // 4) Multi-year archive check (failsafe tegen hergebruik van historische lotnummers)
+      const currentYear = new Date().getFullYear();
+      const yearsToCheck = Array.from({ length: LOT_ARCHIVE_LOOKBACK_YEARS }, (_, idx) => currentYear - idx);
+      const archiveChecks = await Promise.all(
+        yearsToCheck.map(async (year) => {
+          const archiveRef = collection(db, getPathString(getArchiveItemsPath(year)));
+          const archiveSnap = await getDocs(query(archiveRef, where("lotNumber", "==", normalizedLot), limit(1)));
+          return !archiveSnap.empty;
+        })
+      );
+
+      const exists = archiveChecks.some(Boolean);
+      lotExistsCacheRef.current.set(normalizedLot, { exists, checkedAt: now });
+      return exists;
+    } catch (error: unknown) {
+      console.error("Fout bij lot validatie:", error);
+      return false;
+    }
+  };
+
+  const getHighestSequenceForBaseLot = async (baseLotStr: string, stationId: string, weekSuffix: string) => {
+    let maxSeq = 0;
+    
+    const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const counterDocId = `${safeStationId}_${weekSuffix}`;
+    const counterRef = doc(db, getPathString(PATHS.COUNTERS), counterDocId);
+
+    const extractSeq = (lot: string | null | undefined) => extractLotSequence(lot, baseLotStr);
+
+    existingProducts?.forEach((p: unknown) => {
+        const seq = extractSeq(p.lotNumber || p.activeLot);
+        if (seq > maxSeq) maxSeq = seq;
+    });
+
+    try {
+        const counterSnap = await getDoc(counterRef);
+        if (counterSnap.exists()) {
+            const counterValue = Number(counterSnap.data().lastSequence || 0);
+            return Math.max(maxSeq, Number.isFinite(counterValue) ? counterValue : 0);
+        }
+    } catch (e: unknown) {
+        console.error("Fout bij lezen counter:", e);
+    }
+
+    try {
+      const trackingRef = collection(db, getPathString(PATHS.TRACKING as string[]));
+      const trackingSnap = await getDocs(query(trackingRef, limit(2000)));
+      trackingSnap.forEach((docSnap: unknown) => {
+        const seq = extractSeq(String((docSnap as any).data()?.lotNumber || ""));
+        if (seq > maxSeq) maxSeq = seq;
+      });
+
+      const archiveRef = collection(db, getPathString(getArchiveItemsPath(new Date().getFullYear())));
+      const archiveSnap = await getDocs(query(archiveRef, limit(2000)));
+      archiveSnap.forEach((docSnap: unknown) => {
+        const seq = extractSeq(String((docSnap as any).data()?.lotNumber || ""));
+        if (seq > maxSeq) maxSeq = seq;
+      });
+
+      const trackingPathPrefix = `${(PATHS.TRACKING || []).join("/")}/`;
+      const scopedTrackingSnap = await getDocs(query(collectionGroup(db, "items"), limit(2000)));
+      scopedTrackingSnap.forEach((docSnap: unknown) => {
+        const path = String(docSnap.ref?.path || "");
+        if (!path.startsWith(trackingPathPrefix)) return;
+        const seq = extractSeq((docSnap as any).data()?.lotNumber);
+        if (seq > maxSeq) maxSeq = seq;
+      });
+    } catch (error: unknown) {
+      console.error("Fout bij ophalen max sequence:", error);
+    }
+
+    try {
+        await setDoc(counterRef, { lastSequence: maxSeq, updatedAt: serverTimestamp() }, { merge: true });
+    } catch (e: unknown) {
+      if (isPermissionDeniedError(e)) {
+        if (!counterPermissionWarnedRef.current) {
+          counterPermissionWarnedRef.current = true;
+          console.warn("Counter write overgeslagen door rechten; fallback zonder counter-sync actief.");
+        }
+      } else {
+        console.error("Kon counter niet initialiseren", e);
+      }
+    }
+
+    return maxSeq;
+  };
+
+  const consumeRecycledSequence = async (baseLot: string, station: string, weekSuffix: string) => {
+    const safeStationId = (station || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const counterDocId = `${safeStationId}_${weekSuffix}`;
+    const counterRef = doc(db, getPathString(PATHS.COUNTERS), counterDocId);
+    const counterSnap = await getDoc(counterRef);
+    if (!counterSnap.exists()) return null;
+
+    const data = counterSnap.data() || {};
+    const recycled = Array.isArray(data.recycledSequences)
+      ? data.recycledSequences
+          .map((n: unknown) => Number(n))
+          .filter((n: number) => Number.isFinite(n) && n > 0)
+          .sort((a, b) => a - b)
+      : [];
+
+    const candidatesToCheck = recycled.slice(0, RECYCLED_SEQUENCE_SCAN_LIMIT);
+    for (const seq of candidatesToCheck) {
+      const candidate = `${baseLot}${String(seq).padStart(4, '0')}`;
+      const exists = await checkLotNumberExists(candidate);
+      if (!exists) {
+        const nextRecycled = recycled.filter((n: number) => n !== seq);
+        await setDoc(counterRef, { recycledSequences: nextRecycled, updatedAt: serverTimestamp() }, { merge: true }).catch((e: unknown) => {
+          if (!isPermissionDeniedError(e)) {
+            throw e;
+          }
+          if (!counterPermissionWarnedRef.current) {
+            counterPermissionWarnedRef.current = true;
+            console.warn("Counter recycled-sequence update overgeslagen door rechten.");
+          }
+        });
+        return candidate;
+      }
+    }
+
+    return null;
+  };
+
+  const claimAutoLotRange = async (count: number | string = 1) => {
+    const quantity = Math.max(1, parseInt(String(count || 1), 10) || 1);
+    const d = new Date();
+    const iso = getIsoWeekAndYear(d);
+
+    const bedrijf = "40";
+    const jaar = iso.year.slice(-2);
+    const week = iso.week;
+    const machine = getMachineCode(stationId);
+    const land = "40";
+
+    const baseLot = `${bedrijf}${jaar}${week}${machine}${land}`;
+    const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const counterDocId = `${safeStationId}_${jaar}${week}`;
+    const counterRef = doc(db, getPathString(PATHS.COUNTERS), counterDocId);
+
+    return runTransaction(db, async (tx) => {
+      const counterSnap = await tx.get(counterRef);
+      const counterData = counterSnap.exists() ? (counterSnap.data() || {}) : {};
+
+      const lastSequence = Number.isFinite(Number(counterData.lastSequence))
+        ? Number(counterData.lastSequence)
+        : 0;
+
+      const recycled = Array.isArray(counterData.recycledSequences)
+        ? Array.from(new Set(counterData.recycledSequences
+            .map((n: unknown) => Number(n))
+            .filter((n: number) => Number.isFinite(n) && n > 0)))
+            .sort((a: number, b: number) => a - b)
+        : [];
+
+      const usedSeqList = Array.isArray(counterData.usedSequences)
+        ? Array.from(new Set(counterData.usedSequences
+            .map((n: unknown) => Number(n))
+            .filter((n: number) => Number.isFinite(n) && n > 0)))
+        : [];
+
+      const maxAttempts = 250;
+      let attempts = 0;
+      let recycledIndex = 0;
+      let sequenceToTry = recycled.length > 0 && quantity === 1 ? recycled[0] : (lastSequence + 1);
+
+      while (attempts < maxAttempts) {
+        attempts += 1;
+        const usingRecycled = quantity === 1 && recycledIndex < recycled.length && sequenceToTry === recycled[recycledIndex];
+        let hasCollision = false;
+
+        if (sequenceToTry <= 0 || sequenceToTry + quantity - 1 > 9999) {
+          hasCollision = true;
+        }
+
+        if (!hasCollision) {
+          for (let i = 0; i < quantity; i++) {
+            const seq = sequenceToTry + i;
+            const candidateLot = `${baseLot}${String(seq).padStart(4, "0")}`;
+            const candidateRef = doc(db, `${getPathString(PATHS.TRACKING as string[])}/${candidateLot}`);
+            const candidateSnap = await tx.get(candidateRef);
+            if (candidateSnap.exists()) {
+              hasCollision = true;
+              break;
+            }
+          }
+        }
+
+        if (!hasCollision) {
+          const nextRecycled = usingRecycled
+            ? recycled.filter((n: number) => n !== sequenceToTry)
+            : recycled;
+          const newLast = Math.max(lastSequence, sequenceToTry + quantity - 1);
+          
+          for (let i = 0; i < quantity; i++) {
+            usedSeqList.push(sequenceToTry + i);
+          }
+          const uniqueUsed = Array.from(new Set(usedSeqList)).sort((a, b) => a - b);
+
+          tx.set(counterRef, {
+            lastSequence: newLast,
+            recycledSequences: nextRecycled,
+            usedSequences: uniqueUsed,
+            updatedAt: serverTimestamp(),
+          }, { merge: true });
+
+          return `${baseLot}${String(sequenceToTry).padStart(4, "0")}`;
+        }
+
+        if (usingRecycled) {
+          recycledIndex += 1;
+          if (recycledIndex < recycled.length) {
+            sequenceToTry = recycled[recycledIndex];
+          } else {
+            sequenceToTry = Math.max(lastSequence + 1, sequenceToTry + 1);
+          }
+        } else {
+          sequenceToTry += 1;
+        }
+      }
+
+      throw new Error("Geen uniek lotnummer beschikbaar voor deze machine/week.");
+    });
+  };
+
+  const claimAutoLotRangeWithoutCounter = async (count: number | string = 1) => {
+    const quantity = Math.max(1, parseInt(String(count || 1), 10) || 1);
+    const d = new Date();
+    const iso = getIsoWeekAndYear(d);
+
+    const bedrijf = "40";
+    const jaar = iso.year.slice(-2);
+    const week = iso.week;
+    const machine = getMachineCode(stationId);
+    const land = "40";
+    const baseLot = `${bedrijf}${jaar}${week}${machine}${land}`;
+    const weekSuffix = `${jaar}${week}`;
+
+    const highestSeq = await getHighestSequenceForBaseLot(baseLot, stationId, weekSuffix);
+    let sequenceToTry = Math.max(1, highestSeq + 1);
+    const maxAttempts = 250;
+
+    for (let attempts = 0; attempts < maxAttempts; attempts += 1) {
+      let hasCollision = false;
+      if (sequenceToTry <= 0 || sequenceToTry + quantity - 1 > 9999) {
+        hasCollision = true;
+      }
+
+      if (!hasCollision) {
+        for (let i = 0; i < quantity; i += 1) {
+          const candidateLot = `${baseLot}${String(sequenceToTry + i).padStart(4, "0")}`;
+          const exists = await checkLotNumberExists(candidateLot);
+          if (exists) {
+            hasCollision = true;
+            break;
+          }
+        }
+      }
+
+      if (!hasCollision) {
+        return `${baseLot}${String(sequenceToTry).padStart(4, "0")}`;
+      }
+
+      sequenceToTry += 1;
+    }
+
+    throw new Error("Geen uniek lotnummer beschikbaar voor deze machine/week.");
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const generateRobustLotNumber = async () => {
+      if (!isOpen || !order || mode !== "auto") return;
+      const runId = ++lotRefreshRunIdRef.current;
+      setIsAutoLotRefreshing(true);
+
+      try {
+        const d = new Date();
+        const iso = getIsoWeekAndYear(d);
+        
+        const bedrijf = "40";
+        const jaar = iso.year.slice(-2);
+        const week = iso.week;
+        const machine = getMachineCode(stationId);
+        const land = "40";
+
+        const baseLot = `${bedrijf}${jaar}${week}${machine}${land}`;
+        const weekSuffix = `${jaar}${week}`;
+
+        // Toon direct een kandidaat op basis van de counter-doc (bijv. BH18_2628),
+        // zodat we niet meer standaard op ...0001 landen.
+        if (isMounted && lotRefreshRunIdRef.current === runId) {
+          const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          const counterDocId = `${safeStationId}_${weekSuffix}`;
+          const counterRef = doc(db, getPathString(PATHS.COUNTERS), counterDocId);
+          try {
+            const counterSnap = await getDoc(counterRef);
+            const currentLast = counterSnap.exists()
+              ? Number(counterSnap.data()?.lastSequence || 0)
+              : 0;
+            const nextSeq = Math.max(1, (Number.isFinite(currentLast) ? currentLast : 0) + 1);
+            setLotNumber(`${baseLot}${String(nextSeq).padStart(4, "0")}`);
+          } catch {
+            setLotNumber(`${baseLot}0001`);
+          }
+        }
+
+        const recycledLot = await consumeRecycledSequence(baseLot, stationId, weekSuffix);
+        if (recycledLot) {
+          if (isMounted && lotRefreshRunIdRef.current === runId) {
+            setLotNumber(recycledLot);
+            setLotError("");
+          }
+          return;
+        }
+
+        const highestSeq = await getHighestSequenceForBaseLot(baseLot, stationId, weekSuffix);
+        
+        let counter = highestSeq + 1;
+        
+        let newLotNumber = `${baseLot}${String(counter).padStart(4, '0')}`;
+
+        while (await checkLotNumberExists(newLotNumber)) {
+            counter++;
+            newLotNumber = `${baseLot}${String(counter).padStart(4, '0')}`;
+            if (counter > 9999) break; 
+        }
+
+        if (isMounted && lotRefreshRunIdRef.current === runId) {
+            setLotNumber(newLotNumber);
+            setLotError("");
+        }
+      } catch (error: unknown) {
+        console.error("Error setting lot number", error);
+        if (isMounted && lotRefreshRunIdRef.current === runId) {
+          setLotError("Waarschuwing: Kan uniciteit niet garanderen.");
+        }
+      } finally {
+        if (isMounted && lotRefreshRunIdRef.current === runId) {
+          setIsAutoLotRefreshing(false);
+        }
+      }
+    };
+
+    generateRobustLotNumber();
+
+    if (isOpen) {
+      const resetKey = `${order?.orderId}_${mode}`;
+      if (lastResetKeyRef.current !== resetKey) {
+        if (mode === "manual") {
+          const isSpecialFlangeStation = ["BH11", "BH12", "BH15"].includes(normalizedStationNoPrefix);
+          const isFlange = shouldUseFlangeLabelFlow;
+          if (isSpecialFlangeStation && isFlange) {
+            setManualLotInput("");
+            setManualOrderInput(order?.orderId || "");
+            setOrderValidated(true);
+            setLotError("");
+          } else {
+            setManualLotInput("");
+            setManualOrderInput("");
+            setOrderValidated(false);
+            setLotError("");
+          }
+        }
+        lastResetKeyRef.current = resetKey;
+      }
+    }
+
+    return () => { isMounted = false; };
+  }, [
+    isOpen,
+    mode,
+    stationId,
+    shouldUseFlangeLabelFlow,
+    normalizedStationNoPrefix,
+    order?.orderId,
+  ]);
+
+  const updateCounterOnStart = async (usedLotNumber: string, count: number) => {
+      if (!usedLotNumber) return;
+      try {
+          const normalizedLot = String(usedLotNumber || "").replace(/\D/g, "");
+          const d = new Date();
+          const iso = getIsoWeekAndYear(d);
+          const lotWeekSuffix = normalizedLot.length >= 6 ? normalizedLot.slice(2, 6) : "";
+          const weekSuffix = /^\d{4}$/.test(lotWeekSuffix)
+            ? lotWeekSuffix
+            : `${iso.year.slice(-2)}${iso.week}`;
+          
+          const safeStationId = (stationId || "UNKNOWN").toUpperCase().replace(/[^A-Z0-9]/g, "");
+          const counterDocId = `${safeStationId}_${weekSuffix}`;
+          const counterRef = doc(db, getPathString(PATHS.COUNTERS), counterDocId);
+          
+          const currentSeq = parseInt(usedLotNumber.slice(-4), 10);
+          if (!Number.isFinite(currentSeq)) {
+            throw new Error("Kan volgnummer uit lotnummer niet bepalen.");
+          }
+
+          const candidateMax = currentSeq + (Math.max(1, Number(count) || 1) - 1);
+          const counterSnap = await getDoc(counterRef);
+          const counterData = counterSnap.exists() ? (counterSnap.data() || {}) : {};
+          const lastSequence = Number.isFinite(Number(counterData.lastSequence))
+            ? Number(counterData.lastSequence)
+            : 0;
+          const newMax = Math.max(lastSequence, candidateMax);
+          const recycled = Array.isArray(counterData.recycledSequences)
+            ? counterData.recycledSequences.map((n: unknown) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
+            : [];
+          
+          const usedSeqList = Array.isArray(counterData.usedSequences)
+            ? Array.from(new Set(counterData.usedSequences.map((n: unknown) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)))
+            : [];
+
+          const rangeStart = currentSeq;
+          const rangeEnd = candidateMax;
+          const nextRecycled = recycled.filter((n: number) => n < rangeStart || n > rangeEnd);
+
+          for (let s = rangeStart; s <= rangeEnd; s++) {
+            usedSeqList.push(s);
+          }
+          const uniqueUsed = Array.from(new Set(usedSeqList)).sort((a, b) => a - b);
+
+          await setDoc(counterRef, { 
+            lastSequence: newMax, 
+            recycledSequences: nextRecycled, 
+            usedSequences: uniqueUsed,
+            updatedAt: serverTimestamp() 
+          }, { merge: true });
+
+          const twoWeeksAgo = new Date();
+          twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+          const isoOld = getIsoWeekAndYear(twoWeeksAgo);
+          const oldDocId = `${safeStationId}_${isoOld.year.slice(-2)}${isoOld.week}`;
+          
+          await deleteDoc(doc(db, getPathString(PATHS.COUNTERS), oldDocId)).catch(() => {});
+
+      } catch (e: unknown) {
+        if (isPermissionDeniedError(e)) {
+          if (!counterPermissionWarnedRef.current) {
+            counterPermissionWarnedRef.current = true;
+            console.warn("Counter update overgeslagen door rechten; productie gaat door.");
+          }
+        } else {
+          console.error("Kon counter niet updaten:", e);
+        }
+      }
+  };
+
+  useEffect(() => {
+    if (!isOpen || mode === "manual") return;
+
+    const previewEl = previewAreaRef.current || containerRef.current;
+    const containerEl = containerRef.current;
+    if (!previewEl || !selectedLabel) return;
+
+    const recalc = () => {
+      const pixelsPerMm = getPixelsPerMm(DEFAULT_PRINTER_DPI);
+      const availableW = Math.max(120, previewEl.clientWidth - 24);
+      const availableH = Math.max(120, previewEl.clientHeight - 24);
+      const widthMm = Number.parseFloat(String(selectedLabel.width ?? "").replace(",", "."));
+      const heightMm = Number.parseFloat(String(selectedLabel.height ?? "").replace(",", "."));
+      const safeWidthMm = Number.isFinite(widthMm) && widthMm > 0 ? widthMm : 90;
+      const safeHeightMm = Number.isFinite(heightMm) && heightMm > 0 ? heightMm : 55;
+      const labelW = safeWidthMm * pixelsPerMm;
+      const labelH = safeHeightMm * pixelsPerMm;
+
+      if (labelW > 0 && labelH > 0) {
+        // Houd preview altijd binnen het zichtbare vak (geen overflow buiten scherm)
+        const fitZoom = Math.min(availableW / labelW, availableH / labelH);
+        const nextZoom = Math.min(7, fitZoom);
+        setPreviewZoom(Math.max(0.35, nextZoom));
+      }
+    };
+
+    // Eerste meting kan te vroeg zijn direct na mode-switch, daarom extra frame.
+    recalc();
+    const raf1 = window.requestAnimationFrame(recalc);
+    const raf2 = window.requestAnimationFrame(recalc);
+
+    const ro = new ResizeObserver(recalc);
+    ro.observe(previewEl);
+    if (containerEl && containerEl !== previewEl) {
+      ro.observe(containerEl);
+    }
+
+    window.addEventListener("resize", recalc);
+
+    return () => {
+      window.cancelAnimationFrame(raf1);
+      window.cancelAnimationFrame(raf2);
+      ro.disconnect();
+      window.removeEventListener("resize", recalc);
+    };
+  }, [selectedLabel, selectedLabelId, isOpen, mode]);
+
+  const handleManualOrderChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.toUpperCase();
+    setManualOrderInput(value);
+    setOrderError("");
+    setOrderValidated(false);
+    scannerLikeLotInputRef.current = false;
+
+    if (value.trim().length >= 4) {
+      const expectedOrderId = order?.orderId?.toUpperCase();
+      if (expectedOrderId && value.trim() === expectedOrderId) {
+        setOrderValidated(true);
+        setOrderError("");
+        if (shouldAutoFocusInputs) {
+          setTimeout(() => {
+            lotInputRef.current?.focus();
+          }, 100);
+        }
+      } else if (value.trim().length >= expectedOrderId?.length) {
+        setOrderError(t("productionStartModal.errors.orderMismatch"));
+      }
+    }
+  };
+
+  // Stations waar lotnummers van andere machines verwacht worden (reparatie, nabewerking, etc.).
+  // Op deze stations wordt de machinecode in het lotnummer NIET gevalideerd.
+  const isLotMachineValidationExempt = (station: string) => {
+    if (!station) return false;
+    const s = String(station).toUpperCase().replace(/\s/g, "");
+    const base = s.startsWith("40") ? s.slice(2) : s;
+    return (
+      base === "BH31" ||
+      base.includes("REPARATI") ||
+      base.includes("REPAIR") ||
+      base.includes("NABEWERK") ||
+      base === "LOSSEN" ||
+      base === "BM01" ||
+      base === "MAZAK"
+    );
+  };
+
+  const validateLotMachineCode = (lotValue: string) => {
+    if (!stationId) return "";
+    // Reparatie en downstream stations: geen machinecode-controle — ze verwerken lots van andere machines.
+    if (isLotMachineValidationExempt(stationId)) return "";
+    
+    const digits = String(lotValue || "").replace(/\D/g, "");
+    
+    if (digits.length === 0) return "";
+    
+    if (digits.length < 15) {
+      return `Lotnummer moet exact 15 cijfers bevatten (huidig: ${digits.length}).`;
+    }
+    
+    if (!digits.startsWith("40")) {
+      return "Lotnummer moet beginnen met '40'.";
+    }
+
+    const expectedCode = getMachineCode(stationId);
+    const lotMachineCode = digits.slice(6, 9);
+    if (lotMachineCode !== expectedCode) {
+      return `Verkeerde machine: lotnummer bevat machinecode '${lotMachineCode}', verwacht '${expectedCode}' voor ${stationId}.`;
+    }
+    return "";
+  };
+
+  const handleManualLotChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.toUpperCase();
+    
+    // Alleen cijfers toestaan en beperken tot 15 tekens
+    value = value.replace(/\D/g, "").slice(0, 15);
+
+    const now = Date.now();
+    const previousValue = previousLotInputRef.current;
+    const deltaLength = value.length - previousValue.length;
+    const deltaTime = now - lastLotInputAtRef.current;
+    const looksScannerLike = deltaLength > 1 || (deltaLength === 1 && lastLotInputAtRef.current > 0 && deltaTime < 40);
+
+    setManualLotInput(value);
+    setLotNumber(value);
+
+    // Machine-specifieke validatie: 15-cijferig lotnummer moet machinecode voor dit station bevatten.
+    const machineError = validateLotMachineCode(value);
+    setLotError(machineError);
+
+    if (!value.trim()) {
+      scannerLikeLotInputRef.current = false;
+    } else if (looksScannerLike) {
+      scannerLikeLotInputRef.current = true;
+    }
+
+    previousLotInputRef.current = value;
+    lastLotInputAtRef.current = now;
+  };
+
+  useEffect(() => {
+    if (!isOpen || !isManualMode || !orderValidated) {
+      setManualMinimumSeq(null);
+      setManualPoolHint("");
+      return;
+    }
+
+    const normalizedManualLot = String(manualLotInput || "").replace(/\D/g, "");
+    if (normalizedManualLot.length !== 15) {
+      setManualMinimumSeq(null);
+      setManualPoolHint("");
+      return;
+    }
+
+    const manualBaseLot = normalizedManualLot.slice(0, -4);
+    const manualWeekSuffix = normalizedManualLot.slice(2, 6);
+    const enteredSeq = parseInt(normalizedManualLot.slice(-4), 10);
+    if (!manualBaseLot || !/^\d{4}$/.test(manualWeekSuffix)) {
+      setManualMinimumSeq(null);
+      setManualPoolHint("");
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const highestSeq = await getHighestSequenceForBaseLot(manualBaseLot, stationId, manualWeekSuffix);
+        if (cancelled) return;
+
+        const minimumNextSeq = Math.max(1, highestSeq + 1);
+        setManualMinimumSeq(minimumNextSeq);
+
+        if (Number.isFinite(enteredSeq) && enteredSeq < minimumNextSeq) {
+          setManualPoolHint(`Lagere volgnummers zijn toegestaan als ze nog vrij zijn. Volgende vrije nummer is meestal vanaf ${String(minimumNextSeq).padStart(4, "0")}.`);
+        } else {
+          setManualPoolHint(`Pool loopt door. Volgende vrije nummer is meestal vanaf ${String(minimumNextSeq).padStart(4, "0")}.`);
+        }
+      } catch {
+        if (!cancelled) {
+          setManualMinimumSeq(null);
+          setManualPoolHint("");
+        }
+      }
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [isOpen, isManualMode, orderValidated, manualLotInput, stationId, existingProducts]);
+
+  const canStartManual = isManualMode && orderValidated && !!manualLotInput.trim() && !orderError && !lotError && !isCheckingLot;
+  const canStartAuto = !isManualMode && !!lotNumber && !lotError;
+
+  const handleStartProduction = async () => {
+    if (isStarting) return;
+    if (isManualMode && !canStartManual) return;
+    if (!isManualMode && !canStartAuto) return;
+
+    scannerLikeLotInputRef.current = false;
+
+    if (!isManualMode && !isFlangeOrder && !selectedLabel) {
+      notify(t("productionStartModal.notifications.selectLabelFirst"));
+      return;
+    }
+
+    setIsStarting(true);
+    const startOpId = `start_${Date.now()}`;
+    addOperation(startOpId, order?.orderId || "order");
+    let startCommitted = false;
+    try {
+      let targetPrinter = null;
+      let effectiveLotNumber = isManualMode ? manualLotInput.trim() : lotNumber;
+      let printData = null;
+      let lotBatchPrintData = null;
+      const totalToProduce = Math.max(1, parseInt(stringCount, 10) || 1);
+      const requestedLabelsToPrint = isFlangeOrder ? 0 : Math.max(1, parseInt(labelCount, 10) || 1);
+      const runtimeRuleOutput = evaluatePrintRules(processLabelData(order), dynamicPrintRules);
+      const ruleForcedLabels = !isFlangeOrder && Number(runtimeRuleOutput?.labelCount) > 0
+        ? Number(runtimeRuleOutput?.labelCount)
+        : null;
+      const templateIdsToPrint = Array.from(
+        new Set(
+          [
+            ...selectedTemplateIds,
+            selectedLabelId,
+            String((selectedLabel as unknown)?.id || "").trim(),
+          ]
+            .map((entry) => String(entry || "").trim())
+            .filter(Boolean)
+        )
+      );
+      const operatorForcedLabels = !isFlangeOrder && typeof matchedOperatorPrintRule?.labelCount === "number" && matchedOperatorPrintRule.labelCount > 0
+        ? matchedOperatorPrintRule.labelCount
+        : null;
+      const labelsToPrint = ruleForcedLabels ?? operatorForcedLabels ?? requestedLabelsToPrint;
+      const normalizedRunStationId = String(stationId || "").toUpperCase();
+      const shouldPrintStringLotBatch =
+        Boolean(generalSettings?.enableStringLotBatchPrint) &&
+        (normalizedRunStationId === "BH11" || normalizedRunStationId === "BH12") &&
+        totalToProduce > 1;
+      let lotBatchLots: string[] = [];
+      if (!isManualMode) {
+        targetPrinter = await resolveTargetPrinterAsync();
+        const previewLotCandidate = String(lotNumber || "").trim();
+        // Gebruik eerst het lot dat al in auto-preview staat om verspringen te voorkomen.
+        if (previewLotCandidate) {
+          effectiveLotNumber = previewLotCandidate;
+        } else {
+          effectiveLotNumber = await claimAutoLotRangeWithoutCounter(totalToProduce);
+        }
+        setLotNumber(effectiveLotNumber);
+
+        // Failsafe: snelle client-check op start- en eindlot.
+        // De server valideert vervolgens alle lots exact bij startProductionLots.
+        const autoStartSeq = parseInt(String(effectiveLotNumber || "").slice(-4), 10);
+        if (!Number.isFinite(autoStartSeq)) {
+          throw new Error(t("productionStartModal.errors.cannotValidateLotRange"));
+        }
+
+        const autoPrefix = String(effectiveLotNumber).slice(0, -4);
+        const firstCandidateLot = `${autoPrefix}${String(autoStartSeq).padStart(4, "0")}`;
+        const lastCandidateLot = `${autoPrefix}${String(autoStartSeq + Math.max(0, totalToProduce - 1)).padStart(4, "0")}`;
+        const [firstExists, lastExists] = await Promise.all([
+          checkLotNumberExists(firstCandidateLot),
+          totalToProduce > 1 ? checkLotNumberExists(lastCandidateLot) : Promise.resolve(false),
+        ]);
+
+        if (firstExists || lastExists) {
+          effectiveLotNumber = await claimAutoLotRangeWithoutCounter(totalToProduce);
+          setLotNumber(effectiveLotNumber);
+        }
+
+        if (!isFlangeOrder && selectedLabel) {
+          const dpiForPrint = getNormalizedPrinterDpi(targetPrinter, 203);
+          const printPreviewData = {
+            ...previewData,
+            lotNumber: effectiveLotNumber,
+          };
+          const darkness = Number.parseInt(String((targetPrinter as unknown)?.darkness || '15'), 10);
+          printData = await renderLabelForPrinter({
+            printer: targetPrinter as Record<string, unknown>,
+            template: selectedLabel as unknown,
+            data: printPreviewData as Record<string, unknown>,
+            printerDpi: dpiForPrint,
+            darkness: Number.isFinite(darkness) ? darkness : 15,
+            printSpeed: 3,
+          });
+        }
+      } else {
+        // Manual mode: eerst machinecode validatie, dan uniciteitscheck.
+        const machineCodeError = validateLotMachineCode(effectiveLotNumber);
+        if (machineCodeError) {
+          setLotError(machineCodeError);
+          throw new Error(machineCodeError);
+        }
+
+        // Manual mode moet uit dezelfde tellerpool komen en altijd doorlopen.
+        const normalizedManualLot = String(effectiveLotNumber || "").replace(/\D/g, "");
+        const manualBaseLot = String(effectiveLotNumber || "").slice(0, -4);
+        const manualWeekSuffix = normalizedManualLot.length >= 6
+          ? normalizedManualLot.slice(2, 6)
+          : "";
+
+        if (!manualBaseLot || !/^\d{4}$/.test(manualWeekSuffix)) {
+          throw new Error(t("productionStartModal.errors.manualLotMustEndWith4Digits"));
+        }
+
+        // Lagere volgnummers mogen handmatig gebruikt worden zolang ze uniek zijn.
+        // Zo kunnen tijdelijk overgeslagen nummers later alsnog worden ingezet.
+
+        // Manual mode moet ook altijd uniciteit afdwingen voor we starten.
+        const manualExists = await checkLotNumberExists(effectiveLotNumber);
+        if (manualExists) {
+          setLotError(t("productionStartModal.errors.lotAlreadyExists", { lot: effectiveLotNumber }));
+          throw new Error(t("productionStartModal.errors.lotAlreadyExists", { lot: effectiveLotNumber }));
+        }
+
+        if (totalToProduce > 1) {
+          const prefix = String(effectiveLotNumber || "").slice(0, -4);
+          const startSeq = parseInt(String(effectiveLotNumber || "").slice(-4), 10);
+          if (!prefix || !Number.isFinite(startSeq)) {
+            throw new Error(t("productionStartModal.errors.manualLotMustEndWith4Digits"));
+          }
+          for (let i = 1; i < totalToProduce; i++) {
+            const candidateLot = `${prefix}${String(startSeq + i).padStart(4, "0")}`;
+            const exists = await checkLotNumberExists(candidateLot);
+            if (exists) {
+              throw new Error(t("productionStartModal.errors.lotAlreadyExistsChooseOther", { lot: candidateLot }));
+            }
+          }
+        }
+      }
+
+      if (totalToProduce > 1) {
+        const prefix = String(effectiveLotNumber || "").slice(0, -4);
+        const startSeq = parseInt(String(effectiveLotNumber || "").slice(-4), 10);
+        if (!prefix || !Number.isFinite(startSeq)) {
+          throw new Error(t("productionStartModal.errors.cannotBuildStringLots"));
+        }
+
+        lotBatchLots = Array.from({ length: totalToProduce }, (_, idx) => (
+          `${prefix}${String(startSeq + idx).padStart(4, "0")}`
+        ));
+
+        // Queue mode gebruikt printer-DPI voor consistente weergave op labelstrip.
+        if (shouldPrintStringLotBatch && printConfig.mode === "queue") {
+          if (!targetPrinter) {
+            targetPrinter = await resolveTargetPrinterAsync();
+          }
+          const lotBatchDpi = getNormalizedPrinterDpi(targetPrinter, 203);
+          const lotBatchDarkness = Number.parseInt(String(targetPrinter?.darkness || "15"), 10);
+          lotBatchPrintData = generateLotBatchZPL({
+            lots: lotBatchLots,
+            orderNumber: isManualMode ? (manualOrderInput || order.orderId) : order.orderId,
+            printerDpi: lotBatchDpi,
+            darkness: Number.isFinite(lotBatchDarkness) ? lotBatchDarkness : 15,
+          });
+        }
+      }
+
+      // Ensure queue mode resolves a target printer before start options are computed.
+      // Without this, skipStartLabel can become true while no queue printer exists.
+      if (printConfig.mode === "queue" && !isFlangeOrder && !targetPrinter && templateIdsToPrint.length > 0) {
+        targetPrinter = await resolveTargetPrinterAsync();
+      }
+
+      const batchCount = Array.isArray(lotBatchLots) && lotBatchLots.length > 0 ? lotBatchLots.length : totalToProduce;
+
+      updateOperation(startOpId, "Bezig met starten...");
+      await withTimeout(
+        Promise.resolve(
+          onStart(
+            order,
+            effectiveLotNumber,
+            totalToProduce,
+            isManualMode ? manualOrderInput : String(order.orderId || ""),
+            operatorInput,
+            selectedOperatorName,
+            printData,
+            !isManualMode ? (selectedLabelId || templateIdsToPrint[0] || null) : null,
+            {
+              printerId: targetPrinter?.id || "",
+              requestedLabelCount: labelsToPrint,
+              isFlangeSeries: isFlangeOrder,
+              skipStartLabel: isFlangeOrder || (
+                printConfig.mode === "queue" &&
+                Boolean(targetPrinter) &&
+                labelsToPrint > 0 &&
+                templateIdsToPrint.length > 0
+              ),
+              lotNumbers: Array.isArray(lotBatchLots) && lotBatchLots.length > 0 ? lotBatchLots : undefined,
+              batchCount,
+              isQcSteekproef: mode === "qc_steekproef",
+            }
+          )
+        ),
+        START_OPERATION_TIMEOUT_MS,
+        "Starten duurt te lang. Controleer netwerk/Firebase en probeer opnieuw."
+      );
+      startCommitted = true;
+
+      updateOperation(startOpId, "Klaar ✓");
+      setTimeout(() => removeOperation(startOpId), 3500);
+
+      if (isBh18Station(normalizedRunStationId)) {
+        const bh18Preparation = buildBh18RobotProgramPreparation({
+          orderId: String(order?.orderId || ""),
+          lotNumber: effectiveLotNumber,
+          stationId: normalizedRunStationId,
+          robotPosition,
+          diameterMm: order?.diameter || order?.dn || order?.innerDiameterMm || order?.size || null,
+          pressureClass: order?.pressureClass || order?.pn || order?.pressure || "PN16",
+          notes: `Start vanuit productie-start voor ${order?.orderId || "order"}`,
+          category: "BH18",
+        });
+
+        try {
+          await enqueueGatewayPcJob("robot_program_prepared", {
+            orderId: String(order?.orderId || ""),
+            lotNumber: effectiveLotNumber,
+            stationId: normalizedRunStationId,
+            robotPosition: robotPosition ?? 1,
+            preparation: bh18Preparation,
+          });
+          showSuccess(`BH18-robotprogramma voorbereid voor positie ${robotPosition ?? 1}`);
+        } catch (jobError) {
+          console.error(jobError);
+          notify("BH18-robotvoorbereiding kon niet worden opgeslagen in de gateway-queue.");
+        }
+      }
+
+      await updateCounterOnStart(effectiveLotNumber, batchCount);
+      void logActivity(auth.currentUser?.uid || "system", "ORDER_RELEASE", `Order started: ${order.orderId}, Lot: ${effectiveLotNumber}`);
+
+      // --- NIEUWE PRINT LOOP VOOR MEERDERE TEMPLATES ---
+      if (!isFlangeOrder && printConfig.mode === "queue" && labelsToPrint > 0 && templateIdsToPrint.length > 0) {
+        if (targetPrinter) {
+          persistPrinterBindingForAutoProcessor(stationId, targetPrinter);
+          const scopedMachineId = normalizedStationNoPrefix || normalizedStationId;
+          
+          const targetLots = Array.isArray(lotBatchLots) && lotBatchLots.length > 0
+            ? lotBatchLots
+            : [effectiveLotNumber];
+
+          let totalQueuedCount = 0;
+
+          for (const currentLot of targetLots) {
+            for (const templateId of templateIdsToPrint) {
+              const templateToPrint = allLabels.find(l => l.id === templateId);
+              if (!templateToPrint) {
+                console.warn(`Template met ID ${templateId} niet gevonden, wordt overgeslagen.`);
+                continue;
+              }
+
+              try {
+                const dpiForPrint = getNormalizedPrinterDpi(targetPrinter, 203);
+                const darkness = Number.parseInt(String((targetPrinter as unknown)?.darkness || '15'), 10);
+                const currentPrintData = await renderLabelForPrinter({
+                  printer: targetPrinter as Record<string, unknown>,
+                  template: templateToPrint as unknown,
+                  data: { ...previewData, lotNumber: currentLot } as Record<string, unknown>,
+                  printerDpi: dpiForPrint,
+                  darkness: Number.isFinite(darkness) ? darkness : 15,
+                  printSpeed: 3,
+                });
+
+                const normalizedPrintData = String(currentPrintData || "").trim();
+                if (!normalizedPrintData) {
+                  throw new Error(`Lege printpayload opgebouwd voor template ${templateToPrint.name}.`);
+                }
+
+                await queuePrintJob(
+                    targetPrinter.id,
+                    normalizedPrintData,
+                    {
+                      description: `Label ${templateToPrint.name} voor ${order.orderId} (Lot: ${currentLot}) (x${labelsToPrint})`,
+                      quantity: labelsToPrint,
+                      labelCount: labelsToPrint,
+                      forceQuantityCopies: true,
+                      orderId: order.orderId,
+                      lotNumber: currentLot,
+                      stationId: stationId || t("common.unknown"),
+                      machineId: scopedMachineId,
+                      originMachine: scopedMachineId,
+                      targetPrinterName: targetPrinter.name,
+                      width: parseInt(String(templateToPrint.width || 0), 10),
+                      height: parseInt(String(templateToPrint.height || 0), 10),
+                      // Keep queue metadata compact to avoid callable 400 (metadata too large).
+                      variables: getCompactPrintVariables(previewData as Record<string, unknown>),
+                      templateId: templateToPrint.id,
+                    }
+                );
+                totalQueuedCount += labelsToPrint;
+              } catch (printError: unknown) {
+                const printMessage = getErrorMessage(printError);
+                notify(t("productionStartModal.errors.printFailedForTemplate", { template: templateToPrint.name, message: printMessage }));
+              }
+            }
+          }
+          showSuccess(t("productionStartModal.notifications.labelsQueued", { count: totalQueuedCount, printer: targetPrinter.name }));
+        } else {
+          console.warn(`Geen printer geconfigureerd voor station ${stationId}, labels overgeslagen.`);
+          notify(`Geen printer geconfigureerd voor station ${stationId}; labels zijn niet in de wachtrij gezet.`);
+        }
+      }
+
+      if (printConfig.mode === "queue" && shouldPrintStringLotBatch && lotBatchPrintData) {
+        try {
+          const normalizedLotBatchData = String(lotBatchPrintData || "").trim();
+          if (!normalizedLotBatchData) {
+            throw new Error("Lege string-lot payload opgebouwd; batch niet in queue geplaatst.");
+          }
+
+          if (targetPrinter) {
+            persistPrinterBindingForAutoProcessor(stationId, targetPrinter);
+            const scopedMachineId = normalizedStationNoPrefix || normalizedStationId;
+            const queueJobId = await queuePrintJob(
+              targetPrinter.id,
+              normalizedLotBatchData,
+              {
+                description: `String lotnummers voor ${order.orderId} (${lotBatchLots.length} + orderregel)` ,
+                quantity: lotBatchLots.length + 1,
+                labelCount: lotBatchLots.length + 1,
+                orderId: order.orderId,
+                lotNumber: effectiveLotNumber,
+                stationId: stationId || t("common.unknown"),
+                machineId: scopedMachineId,
+                originMachine: scopedMachineId,
+                targetPrinterName: targetPrinter.name,
+                isStringLotBatch: true,
+                includesOrderRow: true,
+                lots: lotBatchLots,
+              }
+            );
+              showSuccess(t("productionStartModal.notifications.stringLotsQueued", { count: lotBatchLots.length, printer: targetPrinter.name }));
+            } else if (!isManualMode) {
+              console.warn(`Geen printer geconfigureerd voor station ${stationId}, string lot batch overgeslagen.`);
+            }
+          } catch (printError: unknown) {
+          console.error(printError);
+          const printMessage = getErrorMessage(printError);
+          notify(t("productionStartModal.errors.stringLotPrintFailed", { message: printMessage }));
+          showError(t("productionStartModal.errors.stringLotPrintFailed", { message: printMessage }));
+        }
+      }
+    } catch (e: unknown) {
+      console.error(e);
+      // Als de start al gecommit is, behandelen we dit als naverwerkingsfout
+      // (bijv. print/telemetrie) en niet als mislukte productie-start.
+      if (startCommitted) {
+        updateOperation(startOpId, "Klaar ✓");
+        setTimeout(() => removeOperation(startOpId), 3500);
+        notify("Productie is gestart, maar een naverwerkingsstap faalde. Controleer print/logging.");
+      } else {
+        updateOperation(startOpId, "Fout");
+        setTimeout(() => removeOperation(startOpId), 4000);
+        showError((e as any).message || t("productionStartModal.errors.startFailed"));
+      }
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const handleManualLotKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if ((e.key === "Enter" || e.key === "Tab") && canStartManual) {
+      e.preventDefault();
+      await handleStartProduction();
+    }
+  };
+
+  useEffect(() => {
+    if (manualLotAutoStartTimeoutRef.current) {
+      clearTimeout(manualLotAutoStartTimeoutRef.current);
+      manualLotAutoStartTimeoutRef.current = null;
+    }
+
+    if (!isManualMode || !canStartManual || isStarting || !scannerLikeLotInputRef.current) {
+      return;
+    }
+
+    const snapshotLot = manualLotInput.trim();
+    if (snapshotLot.length < 6) {
+      return;
+    }
+
+    manualLotAutoStartTimeoutRef.current = setTimeout(() => {
+      if (
+        scannerLikeLotInputRef.current &&
+        manualLotInput.trim() === snapshotLot &&
+        document.activeElement === lotInputRef.current
+      ) {
+        void handleStartProduction();
+      }
+    }, 120);
+
+    return () => {
+      if (manualLotAutoStartTimeoutRef.current) {
+        clearTimeout(manualLotAutoStartTimeoutRef.current);
+        manualLotAutoStartTimeoutRef.current = null;
+      }
+    };
+  }, [isManualMode, canStartManual, isStarting, manualLotInput, handleStartProduction]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    return () => {
+      if (manualLotAutoStartTimeoutRef.current) {
+        clearTimeout(manualLotAutoStartTimeoutRef.current);
+        manualLotAutoStartTimeoutRef.current = null;
+      }
+    };
+  }, [isOpen]);
+
+  const selectedOperatorName = assignedOperators.find(op => op.number === operatorInput)?.name;
+  const showPreviewPane = mode !== "manual";
+  const normalizedStationId = String(stationId || "").toUpperCase();
+  const supportsStringLotBatch = normalizedStationId === "BH11" || normalizedStationId === "BH12";
+  const previewStringCount = Math.max(1, parseInt(stringCount, 10) || 1);
+
+  const stringLotPreview = useMemo(() => {
+    if (!showPreviewPane || !supportsStringLotBatch || previewStringCount <= 1) {
+      return { rows: [], valid: false };
+    }
+
+    const baseLot = String(lotNumber || "").trim();
+    const prefix = baseLot.slice(0, -4);
+    const startSeq = parseInt(baseLot.slice(-4), 10);
+    if (!prefix || !Number.isFinite(startSeq)) {
+      return { rows: [], valid: false };
+    }
+
+    const rows = [];
+    for (let i = 0; i < previewStringCount; i++) {
+      rows.push(`${prefix}${String(startSeq + i).padStart(4, "0")}`);
+    }
+
+    return { rows, valid: true };
+  }, [showPreviewPane, supportsStringLotBatch, previewStringCount, lotNumber]);
+
+  const shouldShowStringLotPreview = showPreviewPane && supportsStringLotBatch && previewStringCount > 1;
+  const isCompactAutoLayout = (mode === "auto" || mode === "qc_steekproef") && !isFlangeOrder;
+
+  const currentPreviewLot = useMemo(() => {
+    const count = Math.max(1, parseInt(stringCount, 10) || 1);
+    if (count <= 1 || !lotNumber) return lotNumber;
+    
+    const prefix = String(lotNumber || "").slice(0, -4);
+    const startSeq = parseInt(String(lotNumber || "").slice(-4), 10);
+    if (!prefix || !Number.isFinite(startSeq)) return lotNumber;
+    
+    return `${prefix}${String(startSeq + previewLotIndex).padStart(4, "0")}`;
+  }, [lotNumber, stringCount, previewLotIndex]);
+
+  const activePreviewData = useMemo(() => {
+    if (!previewData) return previewData;
+    return {
+      ...previewData,
+      lotNumber: currentPreviewLot,
+    };
+  }, [previewData, currentPreviewLot]);
+
+  if (!isOpen || !order || location.pathname.includes("/login")) return null;
+
+  return {
+  order,
+  isOpen,
+  onClose,
+  onStartInitiated,
+  onStart,
+  onOpenProductInfo,
+  stationId,
+  existingProducts,
+  addOperation,
+  updateOperation,
+  removeOperation,
+  mode,
+  setMode,
+  lotNumber,
+  setLotNumber,
+  stringCount,
+  setStringCount,
+  labelCount,
+  setLabelCount,
+  manualLotInput,
+  setManualLotInput,
+  selectedTemplateIds,
+  setSelectedTemplateIds,
+  manualOrderInput,
+  setManualOrderInput,
+  assignedOperators,
+  setAssignedOperators,
+  operatorInput,
+  setOperatorInput,
+  previewLotIndex,
+  setPreviewLotIndex,
+  orderInputRef,
+  lotInputRef,
+  manualLotAutoStartTimeoutRef,
+  lotRefreshRunIdRef,
+  lastLotInputAtRef,
+  previousLotInputRef,
+  scannerLikeLotInputRef,
+  lastResetKeyRef,
+  orderValidated,
+  setOrderValidated,
+  orderError,
+  setOrderError,
+  selectedLabelId,
+  setSelectedLabelId,
+  previewZoom,
+  setPreviewZoom,
+  location,
+  savedPrinters,
+  setSavedPrinters,
+  generalSettings,
+  setGeneralSettings,
+  dynamicPrintRules,
+  setDynamicPrintRules,
+  toolingMolds,
+  setToolingMolds,
+  relatedItemCodes,
+  setRelatedItemCodes,
+  printConfig,
+  setPrintConfig,
+  containerRef,
+  previewAreaRef,
+  counterPermissionWarnedRef,
+  lotExistsCacheRef,
+  isCheckingLot,
+  setIsCheckingLot,
+  isAutoLotRefreshing,
+  setIsAutoLotRefreshing,
+  lotError,
+  setLotError,
+  isStarting,
+  setIsStarting,
+  robotPosition,
+  setRobotPosition,
+  manualMinimumSeq,
+  setManualMinimumSeq,
+  manualPoolHint,
+  setManualPoolHint,
+  isManualMode,
+  shouldAutoFocusInputs,
+  flangeSeriesInfo,
+  isFlangeOrder,
+  normalizedStation,
+  normalizedStationNoPrefix,
+  isBh11OrBh15Station,
+  isBh12Station,
+  isSleevelessCoupler,
+  hasFlangeIndicator,
+  shouldUseFlangeLabelFlow,
+  sanitizePositiveIntInput,
+  normalizePositiveIntInput,
+  printerHasStation,
+  resolveTargetPrinter,
+  resolveTargetPrinterAsync,
+  productForPreview,
+  matchedOperatorPrintRule,
+  availableLabels,
+  selectableLabels,
+  checkLotNumberExists,
+  getHighestSequenceForBaseLot,
+  consumeRecycledSequence,
+  claimAutoLotRange,
+  claimAutoLotRangeWithoutCounter,
+  updateCounterOnStart,
+  handleManualOrderChange,
+  isLotMachineValidationExempt,
+  validateLotMachineCode,
+  handleManualLotChange,
+  canStartManual,
+  canStartAuto,
+  handleStartProduction,
+  handleManualLotKeyDown,
+  selectedOperatorName,
+  showPreviewPane,
+  normalizedStationId,
+  supportsStringLotBatch,
+  previewStringCount,
+  stringLotPreview,
+  shouldShowStringLotPreview,
+  isCompactAutoLayout,
+  currentPreviewLot,
+  activePreviewData,
+  loadingLabels,
+  selectedLabel
+};
+}

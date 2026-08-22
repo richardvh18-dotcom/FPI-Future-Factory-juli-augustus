@@ -50,12 +50,12 @@
 - [x] `useAdminPrinterManager.ts` hook extraheren
 
 ### ProductionStartModal.tsx (2.782 regels)
-- [ ] Wizard-stappen als aparte subcomponenten maken
-- [ ] `useProductionStart.ts` hook extraheren
+- [x] Wizard-stappen als aparte subcomponenten maken
+- [x] `useProductionStart.ts` hook extraheren
 
 ### useWorkstationState.ts (2.515 regels)
-- [ ] Domain-specifieke hooks opsplitsen
-- [ ] Hooks per verantwoordelijkheid: data / acties / subscriptions
+- [x] Domain-specifieke hooks opsplitsen
+- [x] Hooks per verantwoordelijkheid: data / acties / subscriptions
 
 ### AdminLabelDesigner.tsx (2.217 regels)
 - [ ] Canvas-component extraheren
@@ -92,35 +92,35 @@
 - [x] Alle overige kritieke commands voorzien van idempotency-check
 
 ### 3B — Event Store
-- [ ] `functions/src/services/planning/domain/EventStore.ts` aanmaken
-- [ ] MES event types definiëren: `ProductionStarted`, `ProductionPaused`, `ProductionCompleted`, `ProductionCancelled`, `QualityRejected`, `MachineStopped`, `MaterialConsumed`, `OrderReleased`, `OrderTransferred`
-- [ ] Firestore-structuur aanmaken: `/events/`, `/eventsByEntity/`, `/eventsByCorrelation/`
-- [ ] `StartProduction.ts` schrijft naar EventStore
-- [ ] `CompleteProduction.ts` schrijft naar EventStore
-- [ ] `PauseProduction.ts` schrijft naar EventStore
-- [ ] `QualityControl.ts` schrijft naar EventStore
-- [ ] Overige handlers schrijven naar EventStore
+- [x] `functions/src/services/planning/domain/EventStore.ts` aanmaken
+- [x] MES event types definiëren: `ProductionStarted`, `ProductionPaused`, `ProductionCompleted`, `ProductionCancelled`, `QualityRejected`, `MachineStopped`, `MaterialConsumed`, `OrderReleased`, `OrderTransferred`
+- [x] Firestore-structuur aanmaken: `/events/`, `/eventsByEntity/`, `/eventsByCorrelation/`
+- [x] `StartProduction.ts` schrijft naar EventStore
+- [x] `CompleteProduction.ts` schrijft naar EventStore
+- [x] `PauseProduction.ts` schrijft naar EventStore
+- [x] `QualityControl.ts` schrijft naar EventStore
+- [x] Overige handlers schrijven naar EventStore
 
 ### 3C — Audit Enhancement
-- [ ] `AuditRecord` interface uitbreiden met: `source`, `correlationId`, `entityType`, `entityId`, `oldValue`, `newValue`, `reason`
-- [ ] `auditService.ts` aanpassen naar nieuw formaat
-- [ ] `source`-veld populeren: `operator | ERP | AI | PLC | system`
-- [ ] `correlationId` doortrekken door alle audit-calls
+- [x] `AuditRecord` interface uitbreiden met: `source`, `correlationId`, `entityType`, `entityId`, `oldValue`, `newValue`, `reason`
+- [x] `auditService.ts` aanpassen naar nieuw formaat
+- [x] `source`-veld populeren: `operator | ERP | AI | PLC | system`
+- [x] `correlationId` doortrekken door alle audit-calls
 
 ### 3D — State Machines
-- [ ] `functions/src/services/planning/domain/OrderStateMachine.ts` aanmaken
-- [ ] Alle geldige state-overgangen definiëren
-- [ ] `StartProduction.ts` gebruikt `OrderStateMachine.canTransition()`
-- [ ] `CompleteProduction.ts` gebruikt `OrderStateMachine.canTransition()`
-- [ ] Overige handlers gevalideerd via StateMachine
-- [ ] Unit tests voor alle state-overgangen
+- [x] `functions/src/services/planning/domain/OrderStateMachine.ts` aanmaken
+- [x] Alle geldige state-overgangen definiëren
+- [x] `StartProduction.ts` gebruikt `OrderStateMachine.canTransition()`
+- [x] `CompleteProduction.ts` gebruikt `OrderStateMachine.canTransition()`
+- [x] Overige handlers gevalideerd via StateMachine
+- [x] Unit tests voor alle state-overgangen
 
 ### 3E — Transactie-review
-- [ ] Productie starten — transactie-audit (order + workstation + log)
-- [ ] Productie beëindigen — transactie-audit (order + voorraad + log)
-- [ ] Materiaalverbruik — transactie-audit (order + stock)
-- [ ] Kwaliteitsafkeur — transactie-audit (batch + qc-status)
-- [ ] Ordertransfer — transactie-audit (van + naar workstation)
+- [x] Productie starten — transactie-audit (order + workstation + log)
+- [x] Productie beëindigen — transactie-audit (order + voorraad + log)
+- [x] Materiaalverbruik — transactie-audit (order + stock)
+- [x] Kwaliteitsafkeur — transactie-audit (batch + qc-status)
+- [x] Ordertransfer — transactie-audit (van + naar workstation)
 
 ---
 
@@ -187,3 +187,11 @@
 | 6 — Offline-First | 10 | 0 | 0% |
 | 7 — OT/OPC-UA | 6 | 0 | 0% |
 | **Totaal** | **103** | **0** | **0%** |
+
+## 4. Dynamische Workflow / Routing Engine (Feature Request)
+**Status:** In afwachting
+**Context:** Op dit moment is de routing van lots (tracked products) in de backend hardcoded. Zodra een product op een willekeurig station afgerond wordt via `forward`, gaat het direct naar BM01 (Eindinspectie). 
+**Probleem:** Gekoppelde, meervoudige flows (zoals Pipe zagen in Spoolbouw ➔ Wikkelen in Fittings ➔ Terug naar Spoolbouw voor frezen Spigot CS ➔ Naar Pipes voor boren spiegat ➔ BM01) kunnen hierdoor niet functioneren, omdat de logica onterecht aanneemt dat de halte vóór BM01 altijd het eindpunt is.
+**Aanpak:**
+- Introduceer een configurabele 'routekaart' of stappenplan per product- of ordertype in de backend (`CompleteProduction.ts`).
+- Een lot behoudt zijn actieve status over deze gehele keten, maar het `currentStation` springt dynamisch naar de volgende halte zoals gedefinieerd in het flow-model (bijv. van `Fittings` naar `Spoolbouw` ipv geforceerd naar `BM01`).

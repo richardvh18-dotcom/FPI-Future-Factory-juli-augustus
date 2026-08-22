@@ -245,7 +245,7 @@ const writeProductionControlEvent = async (ctx, eventType, payload = {}) => {
     const digits = String(lotNumber || '').replace(/\D/g, '');
     const lotMachineCode = digits.length === 15 ? digits.slice(6, 9) : null;
 
-    await colRef.add({
+    const eventPayload = {
       eventType: String(eventType || 'UNKNOWN').toUpperCase(),
       orderId: clean(orderId),
       lotNumber: clean(lotNumber) || null,
@@ -255,7 +255,22 @@ const writeProductionControlEvent = async (ctx, eventType, payload = {}) => {
       operator: clean(operator) || 'system',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       ...extra,
-    });
+    };
+
+    await colRef.add(eventPayload);
+
+    const { EventStore } = require('../../domain/EventStore');
+    if (EventStore && EventStore.append) {
+      await EventStore.append({
+        type: eventType === 'LOT_TRANSITIONED' ? 'OrderTransferred' : 'OrderTransferred', 
+        entityId: clean(orderId),
+        entityType: 'Order',
+        correlationId: extra.commandId || undefined,
+        operatorId: clean(operator) || 'system',
+        stationId: clean(machine),
+        payload: eventPayload,
+      });
+    }
   } catch (err) {
     console.warn('[writeProductionControlEvent] schrijffout (niet-fataal):', eventType, err?.message);
   }

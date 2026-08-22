@@ -244,7 +244,7 @@ const writeProductionControlEvent = async (ctx, eventType, payload = {}) => {
     const digits = String(lotNumber || '').replace(/\D/g, '');
     const lotMachineCode = digits.length === 15 ? digits.slice(6, 9) : null;
 
-    await colRef.add({
+    const eventPayload = {
       eventType: String(eventType || 'UNKNOWN').toUpperCase(),
       orderId: clean(orderId),
       lotNumber: clean(lotNumber) || null,
@@ -254,7 +254,23 @@ const writeProductionControlEvent = async (ctx, eventType, payload = {}) => {
       operator: clean(operator) || 'system',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       ...extra,
-    });
+    };
+
+    await colRef.add(eventPayload);
+
+    const { EventStore } = require('../../domain/EventStore');
+    if (EventStore && EventStore.append) {
+      await EventStore.append({
+        type: eventType === 'LOT_REJECTED' ? 'QualityRejected' : 'QualityRejected', 
+        entityId: clean(orderId),
+        entityType: 'Order',
+        correlationId: extra.commandId || undefined,
+        operatorId: clean(operator) || 'system',
+        stationId: clean(machine),
+        payload: eventPayload,
+      });
+    }
+
   } catch (err) {
     console.warn('[writeProductionControlEvent] schrijffout (niet-fataal):', eventType, err?.message);
   }
@@ -1172,6 +1188,7 @@ const rejectTrackedProductFinalService = async ({
   batch.delete(productRef);
 
   let orderUpdated = false;
+  let finalStatus = null;
   const orderId = clean(productData.orderId);
   if (orderId && orderId !== 'NOG_TE_BEPALEN') {
     const orderDoc = await getPlanningOrderDocByOrderId(orderId, ctx._rds);
@@ -1195,8 +1212,17 @@ const rejectTrackedProductFinalService = async ({
         orderUpdates[stationField] = currentStarted - 1;
       }
 
+      const plan = Number(orderData.plan || orderData.quantity || 0);
+      const produced = Number(orderData.produced || 0);
+      finalStatus = normalizedStatus;
+
       if (['completed', 'finished', 'gereed'].includes(normalizedStatus)) {
-        orderUpdates.status = 'planned';
+        if (plan > 0 && produced >= plan) {
+          finalStatus = 'completed';
+        } else {
+          orderUpdates.status = 'planned';
+          finalStatus = 'planned';
+        }
       }
 
       batch.set(orderDoc.ref, orderUpdates, { merge: true });
@@ -1204,9 +1230,30 @@ const rejectTrackedProductFinalService = async ({
     }
   }
 
+
   await batch.commit();
 
+  if (orderUpdated && finalStatus === 'completed') {
+    const { archivePlanningOrderService } = require('./OrderManagement');
+    try {
+      const activeCount = await countActiveTrackedProductsForOrder({ ctx, orderId });
+      if (activeCount === 0) {
+        await archivePlanningOrderService({
+          orderDocId: orderId,
+          requestedReason: 'completed',
+          source: 'auto_on_last_product',
+          auth,
+          userRole,
+          dbCtx: ctx,
+        });
+      }
+    } catch (archiveErr) {
+      console.warn('[QualityControl] Auto-archive planningorder mislukt:', archiveErr.message);
+    }
+  }
+
   // Schrijf LOT_REJECTED control event.
+
   await writeProductionControlEvent(ctx, 'LOT_REJECTED', {
     department: productData.department || null,
     machine: clean(productData.originMachine) || clean(productData.currentStation) || 'Onbekend',

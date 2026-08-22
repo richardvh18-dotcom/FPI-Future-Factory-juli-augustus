@@ -18,7 +18,7 @@ type ActivityLog = {
   details: string | Record<string, unknown>;
   actor: string;
   timestamp: Date | null;
-  type: 'admin' | 'production';
+  type: 'admin' | 'production' | 'mes_event';
 };
 
 const OrderHistoryModal = ({ isOpen, onClose, orderId }: OrderHistoryModalProps) => {
@@ -113,6 +113,35 @@ const OrderHistoryModal = ({ isOpen, onClose, orderId }: OrderHistoryModalProps)
           console.error("Fout bij ophalen productie logs:", prodErr);
         }
 
+        // 3. Haal formele MES Core Events op (uit de nieuwe EventStore)
+        try {
+          const eventsRef = collection(db, 'eventsByEntity', orderId, 'history');
+          const snapshotEvents = await getDocs(query(eventsRef));
+
+          snapshotEvents.forEach((doc) => {
+            const event = doc.data();
+            const logDate = parseSafeDate(event.createdAt);
+            
+            // Format a clean message based on the payload
+            const machine = event.stationId || event.payload?.machine || '?';
+            const lotStr = event.payload?.lotNumber ? `(Lot ${event.payload.lotNumber}) ` : '';
+            
+            fetchedLogs.push({
+              id: `mes-${doc.id}`,
+              action: event.type || 'EVENT',
+              details: {
+                message: `${lotStr}Station: ${machine}`,
+                ...event.payload
+              },
+              actor: event.operatorId || event.payload?.operator || 'Systeem',
+              timestamp: logDate,
+              type: 'mes_event'
+            });
+          });
+        } catch (eventErr) {
+          console.error("Fout bij ophalen MES events:", eventErr);
+        }
+
         // Sorteer alles op datum aflopend (nieuwste eerst)
         fetchedLogs.sort((a, b) => {
           if (!a.timestamp) return 1;
@@ -179,10 +208,10 @@ const OrderHistoryModal = ({ isOpen, onClose, orderId }: OrderHistoryModalProps)
                  </div>
               )}
               {logs.map((log) => (
-                <div key={log.id} className={`bg-white p-4 rounded-xl border shadow-sm flex flex-col gap-2 ${log.type === 'production' ? 'border-blue-100' : 'border-slate-100'}`}>
+                <div key={log.id} className={`bg-white p-4 rounded-xl border shadow-sm flex flex-col gap-2 ${log.type === 'mes_event' ? 'border-purple-200 bg-purple-50/30' : log.type === 'production' ? 'border-blue-100' : 'border-slate-100'}`}>
                   <div className="flex justify-between items-start">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-md uppercase tracking-wider ${log.type === 'production' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-700'}`}>
-                      {log.type === 'production' ? <Package size={14} /> : null}
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-md uppercase tracking-wider ${log.type === 'mes_event' ? 'bg-purple-100 text-purple-700' : log.type === 'production' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-700'}`}>
+                      {log.type === 'production' ? <Package size={14} /> : log.type === 'mes_event' ? <Clock size={14} /> : null}
                       {log.action.replace(/_/g, ' ')}
                     </span>
                     <span className="text-xs text-slate-400 font-medium whitespace-nowrap">

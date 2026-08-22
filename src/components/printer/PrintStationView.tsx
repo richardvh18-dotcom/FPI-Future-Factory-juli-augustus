@@ -181,7 +181,7 @@ const resolveUsbBoundPrinter = (printers: PrinterConfig[], usbDevice: USBDevice 
   if (usbDevice) {
     const usbSerial = String(usbDevice.serialNumber || '').trim();
     if (usbSerial) {
-      const serialMatch = printers.find((printer) => String((printer as any).usbSerialNumber || '').trim() === usbSerial) || null;
+      const serialMatch = printers.find((printer) => String((printer as unknown).usbSerialNumber || '').trim() === usbSerial) || null;
       if (serialMatch) return serialMatch;
     }
 
@@ -232,7 +232,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
     if (topOptions.length > 0) {
       const isValidSelection = topOptions.some((t: LabelTemplate) => t.id === selectedTemplateId);
       if (!selectedTemplateId || !isValidSelection) {
-        setSelectedTemplateId(pickPreferredTempTemplateId(item, topOptions as any[]));
+        setSelectedTemplateId(pickPreferredTempTemplateId(item, topOptions as unknown[]));
       }
     } else if (selectedTemplateId) {
       setSelectedTemplateId("");
@@ -310,7 +310,7 @@ const TempLabelItem = ({ item, labelTemplates, labelRules, onPrint, printerDpi =
       const previewDataForPrint = buildOrderLabelPreviewData(item, labelRules);
       const renderData = { ...previewDataForPrint, lotNumber: generatedLot };
       
-      const darkness = Number.parseInt(String((bm01Printer as any)?.darkness || '15'), 10);
+      const darkness = Number.parseInt(String((bm01Printer as unknown)?.darkness || '15'), 10);
       
       const zplPayload = await renderLabelForPrinter({
         printer: bm01Printer as Record<string, unknown>,
@@ -1255,7 +1255,7 @@ const PrintStationView = () => {
   const { selectedLabel, previewData, availableLabels } = useLabelPreview(normalizedProductData, selectedLabelId);
   const selectedLabelPreviewChain = useMemo<LabelTemplate[]>(() => {
     if (!selectedLabel) return [];
-    return resolveLinkedTemplateChain(labelTemplates as any[], (selectedLabel as any).id, { maxDepth: 4 }) as LabelTemplate[];
+    return resolveLinkedTemplateChain(labelTemplates as unknown[], (selectedLabel as unknown).id, { maxDepth: 4 }) as LabelTemplate[];
   }, [labelTemplates, selectedLabel]);
   const selectedPreviewTemplates = selectedLabelPreviewChain.length > 0
     ? selectedLabelPreviewChain
@@ -1263,11 +1263,11 @@ const PrintStationView = () => {
 
   const filteredLabels = useMemo(() => {
     if (!normalizedProductData) return availableLabels;
-    return filterOrderLabelsByProduct(availableLabels as any[], buildOrderLabelTemplateProduct(normalizedProductData as AnyRecord));
+    return filterOrderLabelsByProduct(availableLabels as unknown[], buildOrderLabelTemplateProduct(normalizedProductData as AnyRecord));
   }, [availableLabels, normalizedProductData]);
 
   useEffect(() => {
-    if (filteredLabels.length > 0 && !filteredLabels.find((l: any) => String(l.id) === selectedLabelId)) {
+    if (filteredLabels.length > 0 && !filteredLabels.find((l: unknown) => String(l.id) === selectedLabelId)) {
       setSelectedLabelId(String(filteredLabels[0].id));
     }
   }, [filteredLabels, selectedLabelId]);
@@ -1375,7 +1375,7 @@ const PrintStationView = () => {
       }
     };
 
-    const handleUsbConnect = (event: any) => {
+    const handleUsbConnect = (event: unknown) => {
       const device = event.device;
       if (!device) return;
 
@@ -1392,7 +1392,7 @@ const PrintStationView = () => {
       }
     };
 
-    const handleUsbDisconnect = (event: any) => {
+    const handleUsbDisconnect = (event: unknown) => {
       const disconnectedDevice = event.device;
       const currentUsbDevice = usbDeviceRef.current;
       if (!disconnectedDevice || !currentUsbDevice) return;
@@ -1416,15 +1416,15 @@ const PrintStationView = () => {
     };
 
     void restoreUsbConnection();
-    if (typeof navigator !== 'undefined' && 'usb' in navigator && (navigator as any).usb) {
-      (navigator as any).usb.addEventListener('connect', handleUsbConnect as EventListener);
-      (navigator as any).usb.addEventListener('disconnect', handleUsbDisconnect as EventListener);
+    if (typeof navigator !== 'undefined' && 'usb' in navigator && (navigator as unknown).usb) {
+      (navigator as unknown).usb.addEventListener('connect', handleUsbConnect as EventListener);
+      (navigator as unknown).usb.addEventListener('disconnect', handleUsbDisconnect as EventListener);
     }
 
     return () => {
-      if (typeof navigator !== 'undefined' && 'usb' in navigator && (navigator as any).usb) {
-        (navigator as any).usb.removeEventListener('connect', handleUsbConnect as EventListener);
-        (navigator as any).usb.removeEventListener('disconnect', handleUsbDisconnect as EventListener);
+      if (typeof navigator !== 'undefined' && 'usb' in navigator && (navigator as unknown).usb) {
+        (navigator as unknown).usb.removeEventListener('connect', handleUsbConnect as EventListener);
+        (navigator as unknown).usb.removeEventListener('disconnect', handleUsbDisconnect as EventListener);
       }
     };
   }, [printers, isSameUsbDevice]);
@@ -1856,11 +1856,11 @@ const PrintStationView = () => {
         const zplChunks: string[] = [];
 
         for (const currentTemplate of templatesToPrint) {
-          const widthMm = Number((currentTemplate as any)?.width) || 90;
-          const heightMm = Number((currentTemplate as any)?.height) || 40;
+          const widthMm = Number((currentTemplate as unknown)?.width) || 90;
+          const heightMm = Number((currentTemplate as unknown)?.height) || 40;
           const rendered = await renderLabelForPrinter({
             printer: activeQueuePrinter as Record<string, unknown>,
-            template: currentTemplate as any,
+            template: currentTemplate as unknown,
             data: processedData as AnyRecord,
             printerDpi: dpi,
             darkness: bitmapDarkness,
@@ -1888,7 +1888,7 @@ const PrintStationView = () => {
       };
       zpl = await renderLabelForPrinter({
         printer: activeQueuePrinter as Record<string, unknown>,
-        template: fallbackTemplate as any,
+        template: fallbackTemplate as unknown,
         data: {
           orderNumber: order,
           itemCode: item,
@@ -1945,12 +1945,12 @@ const PrintStationView = () => {
     setIsLoading(true);
     try {
       const bitmapDarkness = Math.max(15, Number(printerDarkness) || 15);
-      const templateChain = resolveLinkedTemplateChain(labelTemplates as any[], (selectedLabel as any)?.id, { maxDepth: 4 }) as LabelTemplate[];
+      const templateChain = resolveLinkedTemplateChain(labelTemplates as unknown[], (selectedLabel as unknown)?.id, { maxDepth: 4 }) as LabelTemplate[];
       const templatesToPrint = templateChain.length > 0 ? templateChain : [selectedLabel as LabelTemplate];
 
       const printDataChunks = await renderLabelSequenceForPrinter({
         printer: activeQueuePrinter as Record<string, unknown>,
-        templates: templatesToPrint as any,
+        templates: templatesToPrint as unknown,
         data: (previewData as AnyRecord) || {},
         printerDpi,
         darkness: bitmapDarkness,
@@ -1973,7 +1973,7 @@ const PrintStationView = () => {
           targetPrinterName: activeQueuePrinter.name,
           source: 'batch_order_labels',
           queuedAsBatch: true,
-          templateId: (selectedLabel as any)?.id || null,
+          templateId: (selectedLabel as unknown)?.id || null,
           variables: getCompactPrintVariables(previewData as Record<string, unknown>),
         }
       );
@@ -2135,7 +2135,7 @@ const PrintStationView = () => {
                               {t('printStationView.labelStep', 'Label {{index}}', { index: idx + 1 })}
                             </p>
                           )}
-                          <AutoScaledLabelPreview label={template as any} data={previewData} className="mx-auto" printerDpi={printerDpi} maxScale={1} />
+                          <AutoScaledLabelPreview label={template as unknown} data={previewData} className="mx-auto" printerDpi={printerDpi} maxScale={1} />
                         </div>
                       ))}
                     </div>

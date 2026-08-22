@@ -222,13 +222,13 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
     }
   }, [isGereedTabSourceStation, activeTab]);
   // Helpers
-  const parseDateSafe = (dateInput: any) => {
-    return toDateSafe(dateInput as any);
+  const parseDateSafe = (dateInput: unknown) => {
+    return toDateSafe(dateInput as unknown);
   };
 
-  const normalizePlanningStatus = (status: any) => String(status || "").trim().toLowerCase();
+  const normalizePlanningStatus = (status: unknown) => String(status || "").trim().toLowerCase();
 
-  const normalizeTrackedStatus = (status: any) => String(status || "").trim().toLowerCase();
+  const normalizeTrackedStatus = (status: unknown) => String(status || "").trim().toLowerCase();
 
   const isTrackedProductionActive = (product: TrackedProductDoc) => {
     const status = normalizeTrackedStatus(product?.status);
@@ -237,7 +237,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
 
   const isInactivePlanningStatus = (status: unknown) => {
     const normalized = normalizePlanningStatus(status);
-    return ["completed", "cancelled", "shipped", "rejected", "finished", "deleted"].includes(normalized);
+    return ["completed", "cancelled", "shipped", "rejected", "finished", "deleted", "gereed", "afkeur", "klaar"].includes(normalized);
   };
 
   const isPlannedLikeStatus = (status: unknown) => {
@@ -771,7 +771,8 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       // moet deze zichtbaar blijven zolang er orderniveau resthoeveelheid is.
       const isManuallyIncreased = rawPlanVal > rawQuantity;
       if (isInactivePlanningStatus(o.status) && !hasStationActivity && !hasActiveTracked) {
-          if (!(isManuallyIncreased && madeCount < rawPlanVal)) {
+          // FIX KNIPPEREN: Verberg direct als madeCount 0 is (data laadt nog) of als we niet handmatig verhoogd hebben.
+          if (!isManuallyIncreased || madeCount === 0 || madeCount >= rawPlanVal) {
               return false;
           }
       }
@@ -1123,11 +1124,11 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
         : [startResult?.firstLot || startLot].filter(Boolean);
 
       const startLabelZpl = String(labelZplData || "").trim();
-      const printerId = String((startOptions as any)?.printerId || "").trim();
-      const skipStartLabel = Boolean((startOptions as any)?.skipStartLabel);
+      const printerId = String((startOptions as unknown)?.printerId || "").trim();
+      const skipStartLabel = Boolean((startOptions as unknown)?.skipStartLabel);
       const requestedLabelCount = Math.max(
         1,
-        Number.parseInt(String((startOptions as any)?.requestedLabelCount || "1"), 10) || 1
+        Number.parseInt(String((startOptions as unknown)?.requestedLabelCount || "1"), 10) || 1
       );
 
       if (!skipStartLabel && startLabelZpl && printerId) {
@@ -1221,7 +1222,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
     if (isNabewerking) {
       return (
         <div className="flex-1 overflow-hidden h-full text-left">
-          <Nabewerken products={allTracked as any} orders={orders} />
+          <Nabewerken products={allTracked as unknown} orders={orders} />
         </div>
       );
     }
@@ -1229,7 +1230,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
       return (
         <div className="flex flex-col h-full bg-slate-50 text-slate-900 overflow-hidden animate-in fade-in">
           <div className="flex-1 overflow-hidden h-full text-left">
-            <MazakView stationId={effectiveStationId as string} products={allTracked as any} />
+            <MazakView stationId={effectiveStationId as string} products={allTracked as unknown} />
           </div>
         </div>
       );
@@ -1237,7 +1238,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
     return (
       <div className="flex flex-col h-full bg-slate-50 text-slate-900 overflow-hidden animate-in fade-in">
         <div className="flex-1 overflow-hidden h-full text-left">
-          <LossenView stationId={effectiveStationId as string} appId={appId || undefined} products={allTracked as any} />
+          <LossenView stationId={effectiveStationId as string} appId={appId || undefined} products={allTracked as unknown} />
         </div>
       </div>
     );
@@ -1327,7 +1328,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
                 </div>
                 <div className="flex-1 overflow-hidden flex lg:flex-row">
                 <TerminalPlanningView
-                    orders={lossenFilteredOrders as any}
+                    orders={lossenFilteredOrders as unknown}
                     selectedOrderId={selectedOrderId}
                     onSelectOrder={(id: string | null | undefined) => setSelectedOrderId(id || null)}
                     searchTerm={planningSearch}
@@ -1344,16 +1345,16 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
                     rejectedCountMap={rejectedCountMap}
                     readyForReturnMap={readyForReturnMap}
                     isBM01={false}
-                    trackedProducts={allTracked as any}
+                    trackedProducts={allTracked as unknown}
                     onStartProduction={undefined}
-                    selectedOrder={selectedOrder as any}
+                    selectedOrder={selectedOrder as unknown}
                     onViewDrawing={handleViewDrawing}
                     repairItems={[]}
                     onRepair={undefined}
                     optimizationPanel={
                       <MalOptimizationPanel
-                        currentOrder={selectedOrder as any}
-                        allOrders={myOrders as any[]}
+                        currentOrder={selectedOrder as unknown}
+                        allOrders={myOrders as unknown[]}
                         onSelectOrder={(id: string | undefined) => setSelectedOrderId(id || null)}
                       />
                     }
@@ -1362,7 +1363,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
               </div>
             ) : activeTab === "planning" ? (
             <TerminalPlanningView
-                orders={filteredOrders as any}
+                orders={filteredOrders as unknown}
                 selectedOrderId={selectedOrderId}
                 onSelectOrder={(id: string | null | undefined) => setSelectedOrderId(id || null)}
                 searchTerm={planningSearch}
@@ -1379,17 +1380,17 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
                 rejectedCountMap={rejectedCountMap}
                 readyForReturnMap={readyForReturnMap}
                 isBM01={isBM01}
-                trackedProducts={allTracked as any}
+                trackedProducts={allTracked as unknown}
                 onStartProduction={() => setShowStartModal(true)}
-                selectedOrder={selectedOrder as any}
+                selectedOrder={selectedOrder as unknown}
                 onViewDrawing={handleViewDrawing}
-                repairItems={repairItems as any}
+                repairItems={repairItems as unknown}
                 onRepair={handleRepair}
                 // Mal Optimalisatie: Toon gerelateerde orders in het paneel
                 optimizationPanel={
                   <MalOptimizationPanel 
-                    currentOrder={selectedOrder as any}
-                    allOrders={myOrders as any[]}
+                    currentOrder={selectedOrder as unknown}
+                    allOrders={myOrders as unknown[]}
                     onSelectOrder={(id: string | undefined) => setSelectedOrderId(id || null)}
                   />
                 }
@@ -1397,15 +1398,15 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
             ) : activeTab === "wikkelen" ? (
               /* TAB WIKKELEN */
             <TerminalProductionView
-                activeWikkelingen={activeWikkelingen as any}
+                activeWikkelingen={activeWikkelingen as unknown}
                 lotConflictMeta={lotConflictMeta}
                 selectedTrackedId={selectedTrackedId}
                 onSelectTracked={(id: string | null | undefined) => setSelectedTrackedId(id || null)}
                 selectedWikkeling={selectedWikkeling}
-                onReleaseProduct={handleOpenReleaseModal as any}
+                onReleaseProduct={handleOpenReleaseModal as unknown}
                 scanInput={scanInput}
-                setScanInput={setScanInput as any}
-                onScan={handleScan as any}
+                setScanInput={setScanInput as unknown}
+                onScan={handleScan as unknown}
                 scanInputRef={scanInputRef}
                 scannerMode={scannerMode}
                 onCancelProduction={onCancelProduction}
@@ -1413,7 +1414,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
               />
             ) : activeTab === "gereed" ? (
               <TerminalGereedTab
-                allTracked={allTracked as any}
+                allTracked={allTracked as unknown}
                 stationId={stationId || undefined}
                 effectiveStationId={effectiveStationId || undefined}
               />
@@ -1421,9 +1422,9 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
               /* TAB LOSSEN */
               <div className="flex-1 overflow-hidden h-full text-left">
                 {isMazak ? (
-                  <MazakView stationId={effectiveStationId as string} products={allTracked as any} />
+                  <MazakView stationId={effectiveStationId as string} products={allTracked as unknown} />
                 ) : (
-                  <LossenView stationId={effectiveStationId as string} appId={appId || undefined} products={allTracked as any} />
+                  <LossenView stationId={effectiveStationId as string} appId={appId || undefined} products={allTracked as unknown} />
                 )}
               </div>
             )}
@@ -1459,7 +1460,7 @@ const Terminal = ({ initialStation, onCancelProduction, orders = [] }: TerminalP
                 setActiveTab("wikkelen");
               }
             }}
-          onStart={handleStartProduction as any} existingProducts={allTracked as any[]}
+          onStart={handleStartProduction as unknown} existingProducts={allTracked as unknown[]}
           />
         </div>
       )}

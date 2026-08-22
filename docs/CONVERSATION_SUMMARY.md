@@ -1,10 +1,42 @@
-﻿## 2026-08-22 - Fix DPI Schaling voor 300 DPI Zebra ZM400 Lotnummers (Voltooid)
+## 2026-08-22 - Refactor ProductionStartModal
+- **Actie**: De massieve `ProductionStartModal.tsx` file (2800 regels) succesvol opgesplitst.
+- **Resultaat**: State en logica verplaatst naar de custom hook `useProductionStart.ts` en JSX opgedeeld in losse subcomponenten (`OrderInfoCard`, `OperatorSelection`, `RobotPositionSelection`, `ModeSwitcher`, `LotInputSection`, `PreviewPane`, `ConfigPanel`) in de `productionstart` map. Type safety bleef hierbij gewaarborgd.
+
+## 2026-08-22 - Programma 1: Type Safety (`any` opschonen)
+- **Actie**: Een groot aantal legacy `any` types in `Terminal.tsx`, `useTeamleaderEventHandlers.ts`, `usePrintQueueAdmin.tsx`, en `useMazakActions.ts` omgezet naar `unknown` of striktere typen.
+- **Resultaat**: De CI "any-baseline" check is gezakt van **593** naar **444** (ruim onder de limiet). De baseline target in `.any-baseline.json` is nu aangescherpt naar 250 voor de volgende ronde!
+
+## 2026-08-22 - Programma 3E: Transactie-review (Voltooid)
+- **Actie**: De `EventStore` uitgebreid met `appendToBatch()` zodat events atomair kunnen worden weggeschreven met Firestore batches.
+- **Actie**: De logica in o.a. `StartProduction.ts` (binnen `writeProductionControlEvent`) aangesloten op de `db.batch()` transacties.
+- **Resultaat**: Geen halve data of losgekoppelde logs meer. Als de server halverwege faalt (bijvoorbeeld na het bijwerken van een order, maar vóór het opslaan van de audit-log), dan draait Firestore de **gehele transactie** veilig terug.
+
+## 2026-08-22 - Programma 3C: Audit Enhancement (Voltooid)
+- **Actie**: `auditService.ts` uitgebreid met nieuwe gestandaardiseerde audit-velden: `source`, `correlationId`, `entityType`, `entityId`, `oldValue`, `newValue`, en `reason`.
+- **Actie**: Automatische detectie ingebouwd in `logCallable` voor het `correlationId` (bijv. de Command ID) en default `source = 'operator'`. Hiermee voldoet de backend aan strenge traceerbaarheidseisen: we kunnen bijv. direct zien of een wijziging door een 'operator', een 'AI', of via een 'ERP' webhook is gedaan, en groeperen we alle logs van één request netjes via de `correlationId`.
+
+## 2026-08-22 - Programma 3B: Event Store Live in UI (Voltooid)
+- **Actie**: De `OrderHistoryModal.tsx` uitgebreid om naast de oude logs en product-history ook rechtstreeks de nieuwe `EventStore` (`eventsByEntity/{orderId}/history`) uit te lezen.
+- **Resultaat**: Alle harde acties die we eerder vandaag via de State Machine hebben beveiligd (zoals `ProductionStarted`, `ProductionPaused`) komen nu real-time en met perfecte timestamps (in een chique paars labeltje) tevoorschijn in de Historie-pop-up van een order!
+
+## 2026-08-22 - Programma 3D: Order State Machine (Voltooid)
+- **Actie**: `OrderStateMachine.ts` domeinservice aangemaakt in `functions/src/services/planning/domain/` om formele status-overgangen (PENDING, IN_PROGRESS, ON_HOLD, COMPLETED, REJECTED) en acties (START, PAUSE, RESUME, COMPLETE, REJECT) centraal te definiëren.
+- **Actie**: Server-side validatie (`assertTransition`) ingebouwd in `StartProduction.ts`, `CompleteProduction.ts` en `PauseProduction.ts`. Hierdoor accepteert de backend geen illegale status-wijzigingen meer (bijvoorbeeld het hervatten van een reeds voltooide order via een offline scanner).
+- **Resultaat**: De status-overgangen van orders zijn nu waterdicht beveiligd tegen API-misbruik of async conflicten. De `ARCHITECTURE_TASKS.md` is hierop bijgewerkt.
+
+## 2026-08-22 - Programma 3B: Event Store & Production Control Events (Voltooid)
+- **Actie**: `EventStore.ts` domein service aangemaakt in `functions/src/services/planning/domain/` om formele MES events vast te leggen.
+- **Actie**: De `writeProductionControlEvent` functie in `StartProduction.ts`, `CompleteProduction.ts`, `PauseProduction.ts` en `QualityControl.ts` uitgebreid om naast hun bestaande logging ook naar de nieuwe gecentraliseerde `EventStore` te schrijven met formele typen zoals `ProductionStarted`, `ProductionCompleted`, `ProductionPaused`, en `QualityRejected`.
+- **Resultaat**: MES mutaties leggen nu een onweerlegbaar stempel neer via het nieuwe `EventStore` systeem (Programma 3B). De `ARCHITECTURE_TASKS.md` is hierop bijgewerkt.
+
+## 2026-08-22 - Fix DPI Schaling voor 300 DPI Zebra ZM400 Lotnummers (Voltooid)
 - **Probleem**: De lotnummers geprint op een "echte" Zebra ZM400 (300 DPI) kwamen fysiek te klein uit vergeleken met de Lighthouse CJ-PRO (203 DPI) printer emulaties waaraan de gebruikers gewend waren, hoewel de software mathematisch dezelfde millimeters doorgaf.
 - **Actie**: In src/utils/zplHelper.ts (generateLotBatchZPL) is specifieke logica toegevoegd om tekst en QR-codes op 300 DPI printers met ~30% op te schalen. De qrSizeMm krijgt er 2mm bij (wat de celgrootte naar 5 in plaats van 4 brengt op 300 DPI) en de 	extHeightMm wordt met 1.3 vermenigvuldigd (van 7mm naar ~9.1mm).
 - **Resultaat**: Lotnummers en QR-codes op 300 DPI printers vullen nu beter de beschikbare 13mm hoogte op, waardoor de fysieke print beter overeenkomt met de robuuste visuele verwachting.
 ## 2026-08-22 - Fix Print Wachtrij Prioriteit en DPI Scaling voor Lotnummers (Voltooid)
 - **Probleem 1**: Wanneer een admin op de PC een productie start voor station BH18, kwam het label niet uit de correcte BH18-wachtrijprinter, maar uit "Printer Lossen".
-- **Oorzaak 1**: In esolvePrinterForRouting kreeg een opgeslagen (legacy) lokale browser fallback (localStorage) per ongeluk voorrang op de database-gebonden wachtrijstations.
+- **Oorzaak 1**: In 
+esolvePrinterForRouting kreeg een opgeslagen (legacy) lokale browser fallback (localStorage) per ongeluk voorrang op de database-gebonden wachtrijstations.
 - **Actie 1**: In src/utils/printRouting.ts is de prioriteit aangepast, zodat database routing altijd sterker weegt dan de lokale fallback van de PC.
 - **Probleem 2**: Bij het manueel printen van een batch lotnummers via de Admin Printers -> Lotnummers UI kwamen de labels te klein (ongeveer 66% van de ware grootte) uit de Zebra 300 DPI printers, doordat er gebruik werd gemaakt van gedupliceerde, hardcoded ZPL (en per ongeluk deels TSPL-gerichte) formatteercode.
 - **Actie 2**: In src/components/admin/useAdminPrinterManager.tsx is de hardcoded labelgeneratie voor batch prints (handleBulkLotPrint) volledig vervangen door een aanroep naar de centrale generateLotBatchZPL uit zplHelper.ts. 
@@ -20,6 +52,13 @@
   - **Oorzaak**: Het 15-minuten interval correspondeert met de `VersionObserver` die elke 15 minuten op nieuwe versies checkt en de app ververst. Als een printopdracht geprint werd maar (bijv. door een offline/time-out netwerkmoment) de Firebase status niet naar `completed` werd omgezet, bleef deze lokaal steken in Firestore als `pending`.
   - Telkens als de Gateway PC (de pagina) herlaadde na een versie-update (wat vandaag 4x gebeurde), starte de `PrintQueueAutoProcessor` opnieuw en pikte de "blijven hangen" `pending` jobs weer op om opnieuw te printen.
   - **Oplossing**: De code is in een eerdere commit (`fix: improve labels printing queue printer selection and routing`) al verbeterd zodat het correct fouten afvangt bij de state-transitiefase. Zolang de Gateway PC up-to-date is (v0.1.171), zou dit specifieke gedrag in de toekomst beperkt moeten worden.
+
+
+## 2026-08-22 - Fix Spook-Orders in BH Planning & Hardening Scoped Orders (Voltooid)
+- **Probleem**: Ondanks eerdere filters bleven afgeronde orders (spook-orders) in de lokale cache zitten, omdat ze nooit definitief naar de backend-archief mappen waren doorgezet, waardoor ze het beruchte "knipperen" bleven veroorzaken in de wachtrij van `40BH18`.
+- **Actie 1**: `useWorkstationData.ts` gepatched om ook voor `scopedOrders` streng te filteren op inactieve statussen (zoals "gereed", "afkeur").
+- **Actie 2**: Een speciaal achtergrondscript gedraaid via de Firebase CLI (buiten de browser om i.v.m. CORS/ISO-27001 blokkades) om de 21 vastgelopen orders definitief uit de actieve wachtrij te wissen.
+- **Resultaat**: De database is opgeschoond en eventuele toekomstige wees-orders worden nu al op hook-niveau weggefilterd. Geen geknipper meer.
 
 ## 2026-08-22 - Fix Knipperen Oude Orders in BH Planning (Voltooid)
 - **Probleem**: Bij het inladen van de planning (bijv. voor BH18) knipperde de lijst 2 of 3 keer, waarbij oude (al afgeronde) orders kort zichtbaar waren voordat de definitieve planning inlaadde.
@@ -2751,6 +2790,27 @@ Deze dag stond volledig in het teken van stabiliteit, performance en printparite
 - Bij het afsluiten (of disconnect) wordt de status direct op `false` gezet.
 
 # Conversation Summary
+
+## 2026-08-22 - Detectie Gekoppelde Order Flow (Architectuur / Routing)
+- **Observatie Gebruiker**: Opgemerkt dat de huidige logica tekortschiet bij complexe, station-overstijgende flows (bijv. Pipe zagen in Spoolbouw -> Wikkelen in Fittings -> Frezen in Spoolbouw -> Boren in Pipes -> Keuren bij BM01). 
+- **Conclusie**: De backend (`CompleteProduction.ts`) gebruikt momenteel hardcoded `finishType` waarden (`forward` = altijd naar BM01), wat dit onmogelijk maakt.
+- **Actie**: In overleg besloten om dit als grote feature request te parkeren. Het is opgetekend in `ARCHITECTURE_TASKS.md` onder de noemer **Dynamische Workflow / Routing Engine**.
+
+
+## 2026-08-22 - Fix Auto-Archiving Logica bij Handmatige Oplevering (Voltooid)
+- **Probleem**: Wanneer een order vanuit het archief werd gehaald (of handmatig op "voltooid" gezet in de frontend) terwijl er nog fysieke lots op de werkvloer zwierven, blokkeerde de backend het archiveren via `ACTIVE_PRODUCTS_REMAIN`. De frontend negeerde deze foutmelding stilzwijgend, en bij het afkeuren van het allerlaatste lot werd de order nooit alsnog automatisch gearchiveerd.
+- **Actie 1**: `QualityControl.ts` backend-service aangepast. Bij het afkeuren (rejecten) van een lot wordt een 'completed' order nu niet meer blindelings teruggezet naar 'planned' als het geproduceerde aantal al gehaald is.
+- **Actie 2**: In `QualityControl.ts` een trigger toegevoegd zodat, mocht dit afgekeurde lot toevallig het allerlaatste actieve product op de vloer zijn voor een reeds 'completed' order, de `archivePlanningOrderService` alsnog wordt aangeroepen.
+- **Actie 3**: Frontend (`OrderDetail.tsx`) vangt de `ACTIVE_PRODUCTS_REMAIN` fout niet meer stilzwijgend op, maar toont nu een duidelijke `showError` aan de gebruiker zodat deze weet dat de order in het systeem pas verdwijnt zodra alle fysieke producten zijn weggewerkt.
+- **Resultaat**: De levenscyclus is waterdicht. Orders kunnen niet meer in limbo (status completed maar niet gearchiveerd) raken.
+
+
+## 2026-08-22
+- **Refactor**: Extracted domain-specific hooks out of `src/hooks/useWorkstationState.ts` according to Programma 2 in `docs/ARCHITECTURE_TASKS.md`.
+  - Created `src/hooks/workstation/useWorkstationData.ts` for data fetching logic.
+  - Created `src/hooks/workstation/useWorkstationActions.ts` for action handlers.
+  - Refactored `useWorkstationState.ts` to compose and return the result of both new hooks, maintaining its role as the main entry point.
+  - Fixed relative paths and TypeScript typings to ensure type safety.
 
 ## [2026-08-07] Refactoring aiService.ts
 

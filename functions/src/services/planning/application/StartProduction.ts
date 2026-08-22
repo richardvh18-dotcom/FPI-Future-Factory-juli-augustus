@@ -2,6 +2,7 @@
 
 const { admin, db } = require('../../../config/firebase');
 const IdempotencyRegistry = require('../../domain/IdempotencyRegistry');
+const { EventStore } = require('../../domain/EventStore');
 const { BASE, USER_ACCOUNTS_COLLECTION } = require('../../../config/planningConstants');
 const auditService = require('../../auditService');
 const {
@@ -245,7 +246,7 @@ const writeProductionControlEvent = async (ctx, eventType, payload = {}) => {
     const digits = String(lotNumber || '').replace(/\D/g, '');
     const lotMachineCode = digits.length === 15 ? digits.slice(6, 9) : null;
 
-    await colRef.add({
+    const eventPayload = {
       eventType: String(eventType || 'UNKNOWN').toUpperCase(),
       orderId: clean(orderId),
       lotNumber: clean(lotNumber) || null,
@@ -255,7 +256,34 @@ const writeProductionControlEvent = async (ctx, eventType, payload = {}) => {
       operator: clean(operator) || 'system',
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       ...extra,
-    });
+    };
+
+    if (extra.batch) {
+      const docRef = colRef.doc();
+      extra.batch.set(docRef, eventPayload);
+    } else {
+      await colRef.add(eventPayload);
+    }
+
+    // Write to EventStore as well
+    if (EventStore) {
+      const mesEvent = {
+        type: eventType === 'LOT_ISSUED' ? 'ProductionStarted' : 'ProductionCompleted', // simplistic mapping
+        entityId: clean(orderId),
+        entityType: 'Order',
+        correlationId: extra.commandId || undefined,
+        operatorId: clean(operator) || 'system',
+        stationId: clean(machine),
+        payload: eventPayload,
+      };
+      
+      if (extra.batch && EventStore.appendToBatch) {
+        EventStore.appendToBatch(extra.batch, mesEvent);
+      } else if (EventStore.append) {
+        await EventStore.append(mesEvent);
+      }
+    }
+
   } catch (err) {
     console.warn('[writeProductionControlEvent] schrijffout (niet-fataal):', eventType, err?.message);
   }
@@ -1132,6 +1160,12 @@ const startWorkstationProductionRunService = async ({
 
   // path resolved via ctx
   const orderData = orderDoc.data() || {};
+
+  const { OrderStateMachine } = require('../../domain/OrderStateMachine');
+  if (OrderStateMachine && OrderStateMachine.assertTransition) {
+    OrderStateMachine.assertTransition(orderData.status || 'PENDING', 'START', `OrderId: ${orderData.orderId}`);
+  }
+
   const safeLotStart = clean(lotStart).toUpperCase();
   const safeStationId = clean(stationId);
   const qty = Math.max(1, parseInt(String(stringCount || 1), 10) || 1);
@@ -1300,8 +1334,6 @@ const startWorkstationProductionRunService = async ({
     }
   }
 
-  await batch.commit();
-
   // Schrijf LOT_ISSUED control events voor elk aangemaakt lot.
   await Promise.all(
     createdLots.map((lotNum, i) =>
@@ -1316,10 +1348,14 @@ const startWorkstationProductionRunService = async ({
           runningTotal: currentStartedCount + i + 1,
           plannedAmount,
           seriesGroupId: safeSeriesGroupId || null,
+          commandId,
+          batch, // Pass the batch so events are part of the transaction
         },
       })
     )
   );
+
+  await batch.commit();
 
   let pendingOverflowLots = [...overflowLots];
   let autoAssignedOverflow = null;

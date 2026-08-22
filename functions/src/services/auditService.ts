@@ -48,6 +48,13 @@ async function logAction(userId, action, details = {}, options = {}) {
     severity = 'INFO',
     category = 'PRODUCTION',
     userEmail = null,
+    source = 'system',
+    correlationId = null,
+    entityType = null,
+    entityId = null,
+    oldValue = null,
+    newValue = null,
+    reason = null,
   } = options;
 
   const now = new Date();
@@ -63,6 +70,13 @@ async function logAction(userId, action, details = {}, options = {}) {
     category,
     severity,
     details,
+    source,
+    correlationId,
+    entityType,
+    entityId,
+    oldValue,
+    newValue,
+    reason,
     year,
     month,
     yearMonth,
@@ -93,8 +107,10 @@ async function logAction(userId, action, details = {}, options = {}) {
 function logCallable(context, action, details = {}, options = {}) {
   const uid = context.auth?.uid || 'anonymous';
   const email = context.auth?.token?.email || null;
+  const source = options.source || 'operator';
+  const correlationId = options.correlationId || context.rawRequest?.headers?.['x-correlation-id'] || null;
 
-  logAction(uid, action, details, { ...options, userEmail: email })
+  logAction(uid, action, details, { ...options, userEmail: email, source, correlationId })
     .catch((err) => {
       // Log to Cloud Logging — never let audit failures surface to the caller
       console.error(`[auditService] Failed to write audit log for action "${action}":`, err?.message || err);

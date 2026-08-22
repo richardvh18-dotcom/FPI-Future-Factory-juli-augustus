@@ -785,13 +785,15 @@ const OrderDetail = React.memo(({
       actorLabel: user?.email || auth.currentUser?.email || "Teamleader",
     }).catch((err) => {
       const msg = String(err?.message || "").toLowerCase();
-      const ignorable =
-        msg.includes("permission") ||
-        msg.includes("active_products_remain") ||
-        msg.includes("failed-precondition") ||
-        msg.includes("not-found");
-      if (!ignorable) {
-        console.warn("Auto-archiveren order mislukt:", err);
+      if (msg.includes("active_products_remain")) {
+        showError("Let op: Deze order is gemarkeerd als gereed, maar er zweven fysiek nog actieve lots/producten op de werkvloer. De order wordt pas definitief gearchiveerd zodra alle producten zijn afgehandeld.");
+      } else if (msg.includes("permission") || msg.includes("cors") || msg.includes("internal")) {
+        console.warn("Auto-archiveren (CORS/Perm) mislukt in dev modus:", err);
+      } else {
+        const ignorable = msg.includes("failed-precondition") || msg.includes("not-found");
+        if (!ignorable) {
+          console.warn("Auto-archiveren order mislukt:", err);
+        }
       }
     });
   }, [shouldShowCompletedStatus, orderDocIdForArchive, user?.email]);

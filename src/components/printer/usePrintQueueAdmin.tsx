@@ -211,7 +211,7 @@ export const usePrintQueueAdmin = () => {
       }
     };
 
-    const handleUsbConnect = (event: any) => {
+    const handleUsbConnect = (event: Event) => {
       const device = event.device;
       if (!device) return;
       const savedVendor = localStorage.getItem(USB_PRINTER_VENDOR_KEY);
@@ -224,7 +224,7 @@ export const usePrintQueueAdmin = () => {
       }
     };
 
-    const handleUsbDisconnect = (event: any) => {
+    const handleUsbDisconnect = (event: Event) => {
       const disconnectedDevice = event.device;
       const currentUsbDevice = usbDeviceRef.current;
       if (!disconnectedDevice || !currentUsbDevice) return;
@@ -281,7 +281,7 @@ export const usePrintQueueAdmin = () => {
     let rootJobs: PrintJob[] = [];
     let scopedJobs: PrintJob[] = [];
 
-    const normalizeJob = (docSnap: any): PrintJob | null => {
+    const normalizeJob = (docSnap: import("firebase/firestore").DocumentSnapshot): PrintJob | null => {
       const data = (docSnap.data() || {}) as AnyRecord;
       const metadata = (data.metadata || {}) as AnyRecord;
       const isQueueJob = Boolean(
@@ -323,7 +323,7 @@ export const usePrintQueueAdmin = () => {
       scopedJobs.forEach((job) => {
         if (job?.id) byId.set(job.id, job);
       });
-      const merged = Array.from(byId.values()).sort((a: any, b: any) => tsToMillis(b.createdAt) - tsToMillis(a.createdAt));
+      const merged = Array.from(byId.values()).sort((a: PrintJob, b: PrintJob) => tsToMillis(b.createdAt) - tsToMillis(a.createdAt));
       setPrintJobs(merged);
       setLoading(false);
     };
@@ -344,9 +344,9 @@ export const usePrintQueueAdmin = () => {
 
     let unsubscribeScopedFallback: (() => void) | null = null;
 
-    const applyScopedSnapshot = (snapshot: any) => {
+    const applyScopedSnapshot = (snapshot: import("firebase/firestore").QuerySnapshot) => {
       scopedJobs = snapshot.docs
-        .filter((docSnap: any) => isScopedPrintQueuePath(docSnap.ref?.path))
+        .filter((docSnap: import("firebase/firestore").DocumentSnapshot) => isScopedPrintQueuePath(docSnap.ref?.path))
         .map(normalizeJob)
         .filter((job: PrintJob | null): job is PrintJob => {
           if (!job) return false;
@@ -447,7 +447,7 @@ export const usePrintQueueAdmin = () => {
       .map(stationNameFromValue)
       .filter(Boolean) as string[];
 
-    return Array.from(new Set(stations)).sort((a: any, b: any) => a.localeCompare(b, undefined, { numeric: true }));
+    return Array.from(new Set(stations)).sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
   }, [scopedFactoryDepartments]);
 
   useEffect(() => {
@@ -570,7 +570,7 @@ export const usePrintQueueAdmin = () => {
       const selectedKey = normalizeStationKey(selectedStation);
       const jobStationKeys = getJobStationKeys(j);
       return jobStationKeys.includes(selectedKey);
-    }).sort((a: any, b: any) => getTimestampMillis(a.createdAt) - getTimestampMillis(b.createdAt));
+    }).sort((a: PrintJob, b: PrintJob) => getTimestampMillis(a.createdAt) - getTimestampMillis(b.createdAt));
 
     if (pendingJobs.length > 0) {
       const processQueue = async () => {
@@ -723,7 +723,7 @@ export const usePrintQueueAdmin = () => {
     const scopedStationKeys = new Set(allFactoryStations.map((station) => normalizeStationKey(station)));
     return Array.from(new Set(stations.map(stationNameFromValue).filter(Boolean)))
       .filter((station: unknown) => scopedStationKeys.size === 0 || scopedStationKeys.has(normalizeStationKey(station)))
-      .sort((a: any, b: any) => a.localeCompare(b, undefined, { numeric: true }));
+      .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
   }, [stationContextPrinter, activeQueuePrinter, allFactoryStations]);
 
   useEffect(() => {
@@ -741,7 +741,7 @@ export const usePrintQueueAdmin = () => {
         const stations = Array.from(new Set((Array.isArray(dept?.stations) ? dept.stations : [])
           .map(stationNameFromValue)
           .filter((name): name is string => Boolean(name))))
-          .sort((a: any, b: any) => a.localeCompare(b, undefined, { numeric: true }));
+          .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
         if (stations.length === 0) return null;
 
         const key = String(dept?.id || dept?.slug || `dept-${idx}`) + `_${idx}`;
@@ -1194,7 +1194,7 @@ export const usePrintQueueAdmin = () => {
 
     const optionList = Array.from(searchOptions).slice(0, 10);
 
-    const searchCollectionByFields = async (colRef: any, fields: string[]) => {
+    const searchCollectionByFields = async (colRef: import("firebase/firestore").CollectionReference | import("firebase/firestore").Query, fields: string[]) => {
       for (const field of fields) {
         try {
           const snap = await getDocs(query(colRef, where(field, 'in', optionList), limit(1)));
@@ -1358,7 +1358,7 @@ export const usePrintQueueAdmin = () => {
               .filter((token) => token.length >= 4)
               .some((token) => description.includes(token));
           })
-          .sort((a: any, b: any) => getTimestampMillis(b?.createdAt) - getTimestampMillis(a?.createdAt))[0] || null;
+          .sort((a: PrintJob, b: PrintJob) => getTimestampMillis(b?.createdAt) - getTimestampMillis(a?.createdAt))[0] || null;
 
         setExactReprintJob(matchedQueueJob);
 

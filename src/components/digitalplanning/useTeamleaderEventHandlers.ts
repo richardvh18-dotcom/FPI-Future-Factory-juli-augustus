@@ -18,21 +18,21 @@ import {
 import { useTeamleaderModalStore } from "./modals/TeamleaderModalContext";
 import * as XLSX from "xlsx";
 
-type AnyRecord = Record<string, any>;
+type AnyRecord = Record<string, unknown>;
 
 const getErrorMessage = (err: unknown): string =>
   err instanceof Error ? err.message : String(err || "Onbekende fout");
 
 export type UseTeamleaderEventHandlersArgs = {
-  user: any;
-  navigate: any;
-  t: any;
+  user: unknown;
+  navigate: unknown;
+  t: unknown;
   todayStr: string;
   setActiveTab: (val: string) => void;
   setIsMobileMenuOpen: (val: boolean) => void;
   setShowAiPrediction: (val: boolean) => void;
   setIsSyncingDrawings: (val: boolean) => void;
-  setSelectedSidebarEntry: (val: any) => void;
+  setSelectedSidebarEntry: (val: unknown) => void;
   setSelectedOrderId: (val: string | null) => void;
   setIsCopying: (val: boolean) => void;
   setIsClearing: (val: boolean) => void;
@@ -40,19 +40,19 @@ export type UseTeamleaderEventHandlersArgs = {
   showSuccess: (msg: string) => void;
   showInfo: (msg: string) => void;
   showWarning: (msg: string) => void;
-  showConfirm: (opts: any) => Promise<boolean>;
+  showConfirm: (opts: unknown) => Promise<boolean>;
   notify: (msg: string) => void;
-  dataStore: any[];
-  rawOrders: any[];
-  rawProducts: any[];
-  bezetting: any[];
-  selectedSidebarEntry: any;
-  legacyRejectedOrders: any[];
-  getOrderIdFromTrackedRecord: (record: any) => string;
-  getOrderProgressMeta: (order: any) => any;
-  getFinishedQtyForOrder: (order: any) => number;
-  resolveOverproductionRoute: (order: any, group: any, station: string) => any;
-  isInAllowedScope: (record: any) => boolean;
+  dataStore: unknown[];
+  rawOrders: unknown[];
+  rawProducts: unknown[];
+  bezetting: unknown[];
+  selectedSidebarEntry: unknown;
+  legacyRejectedOrders: unknown[];
+  getOrderIdFromTrackedRecord: (record: unknown) => string;
+  getOrderProgressMeta: (order: unknown) => any;
+  getFinishedQtyForOrder: (order: unknown) => number;
+  resolveOverproductionRoute: (order: unknown, group: unknown, station: string) => any;
+  isInAllowedScope: (record: unknown) => boolean;
   fixedScope: string;
   targetSlug: string;
   departmentFilter: string;
@@ -139,7 +139,7 @@ export const useTeamleaderEventHandlers = ({
   }, [navigate, todayStr]);
 
   // Overproduction handlers
-  const handleOpenOverproductionGroup = useCallback((group: any) => {
+  const handleOpenOverproductionGroup = useCallback((group: unknown) => {
     const store = useTeamleaderModalStore.getState();
     store.setSelectedOverproductionGroup(group);
     store.setOverproductionTargetOrderId("");
@@ -254,7 +254,7 @@ export const useTeamleaderEventHandlers = ({
 
   // Sidebar selection handler
   const handleSidebarSelect = useCallback(
-    async (entry: any) => {
+    async (entry: unknown) => {
       if (!entry) {
         setSelectedOrderId(null);
         setSelectedSidebarEntry(null);
@@ -445,7 +445,7 @@ export const useTeamleaderEventHandlers = ({
   );
 
   const handleReopenArchivedOrderWithIncrease = useCallback(
-    async ({ entry, increaseBy }: { entry?: any; increaseBy: string | number }) => {
+    async ({ entry, increaseBy }: { entry?: unknown; increaseBy: string | number }) => {
       const targetEntry = entry || selectedSidebarEntry;
       if (!targetEntry?.isArchivedOrder) {
         notify("Selecteer eerst een gearchiveerde order.");
@@ -612,7 +612,7 @@ export const useTeamleaderEventHandlers = ({
       return;
     }
 
-    const formatMachineForPlanner = (machine: any) => {
+    const formatMachineForPlanner = (machine: unknown) => {
       const raw = String(machine || "").trim().toUpperCase();
       if (!raw) return "ONBEKEND";
       if (raw.startsWith("40")) return raw;
@@ -629,7 +629,7 @@ export const useTeamleaderEventHandlers = ({
       return Number.isFinite(parsed.getTime()) ? parsed : null;
     };
 
-    const byMachine = (filtered as any[]).reduce<Record<string, AnyRecord[]>>((acc, order: any) => {
+    const byMachine = (filtered as unknown[]).reduce<Record<string, AnyRecord[]>>((acc, order: unknown) => {
       const machineKey = formatMachineForPlanner(order.machine || "ONBEKEND");
       if (!acc[machineKey]) acc[machineKey] = [];
       acc[machineKey].push(order);
@@ -759,7 +759,7 @@ export const useTeamleaderEventHandlers = ({
             return {
               assignmentId: newId,
               data: {
-                ...(old as any),
+                ...(old as unknown),
                 date: currentDayStr,
                 updatedAt: "__SERVER_TIMESTAMP__",
               },
@@ -828,7 +828,7 @@ export const useTeamleaderEventHandlers = ({
 
   // Lot movement handler
   const handleMoveLot = useCallback(
-    async (lotNumber: string, newStation: string, options: any = {}) => {
+    async (lotNumber: string, newStation: string, options: unknown = {}) => {
       if (!lotNumber || !newStation) return;
       try {
         const isRepairMove = Boolean(options?.isRepairMove);
@@ -863,7 +863,7 @@ export const useTeamleaderEventHandlers = ({
 
   // Rejected product archival handler
   const handleArchiveRejectedProduct = useCallback(
-    async (product: any) => {
+    async (product: unknown) => {
       const productId = String(product?.id || product?.lotNumber || "").trim();
       if (!productId) return;
 
@@ -989,7 +989,7 @@ export const useTeamleaderEventHandlers = ({
       let archivedCount = 0;
 
       for (const orderItem of legacyRejectedOrders) {
-        const order = orderItem as any;
+        const order = orderItem as unknown;
         try {
           const ok = await archiveOrder(order, "rejected");
           if (ok) archivedCount += 1;

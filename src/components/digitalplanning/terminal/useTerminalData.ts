@@ -228,7 +228,7 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
 
   const isInactivePlanningStatus = (status: unknown) => {
     const normalized = normalizePlanningStatus(status);
-    return ["completed", "cancelled", "shipped", "rejected", "finished", "deleted"].includes(normalized);
+    return ["completed", "cancelled", "shipped", "rejected", "finished", "deleted", "gereed", "afkeur", "klaar"].includes(normalized);
   };
 
   const isPlannedLikeStatus = (status: unknown) => {
@@ -751,7 +751,8 @@ export const useTerminalData = ({ initialStation, orders = [], planningSearch: i
       // moet deze zichtbaar blijven zolang er orderniveau resthoeveelheid is.
       const isManuallyIncreased = rawPlanVal > rawQuantity;
       if (isInactivePlanningStatus(o.status) && !hasStationActivity && !hasActiveTracked) {
-          if (!(isManuallyIncreased && madeCount < rawPlanVal)) {
+          // FIX KNIPPEREN: Verberg direct als madeCount 0 is (data laadt nog) of als we niet handmatig verhoogd hebben.
+          if (!isManuallyIncreased || madeCount === 0 || madeCount >= rawPlanVal) {
               return false;
           }
       }
